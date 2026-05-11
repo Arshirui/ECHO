@@ -14,7 +14,6 @@ import {
   Music2,
   Radio,
   Settings,
-  SlidersHorizontal,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { AlbumsPage } from '../pages/AlbumsPage';

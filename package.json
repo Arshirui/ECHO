@@ -9,7 +9,8 @@
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "repair:electron": "node scripts/install-electron.cjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.4",

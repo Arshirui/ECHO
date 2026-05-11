@@ -6,7 +6,7 @@ export const SettingsPage = (): JSX.Element => {
     <div className="settings-preview page-stack">
       <div className="settings-row">
         <span>Theme</span>
-        <strong>Dark</strong>
+        <strong>Light</strong>
       </div>
       <div className="settings-row">
         <span>Output mode</span>
