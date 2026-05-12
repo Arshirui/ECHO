@@ -29,6 +29,10 @@
 #include <shellapi.h>
 #endif
 
+#ifndef ECHO_ENABLE_ASIO
+#define ECHO_ENABLE_ASIO 0
+#endif
+
 namespace
 {
 struct Options
@@ -266,6 +270,17 @@ std::string getBackendName(const Options& options, const juce::String& typeName)
     return "wasapi-shared";
 }
 
+std::string getOpenFailurePrefix(const Options& options)
+{
+    if (options.asio)
+        return "ASIO open failed: ";
+
+    if (options.exclusive)
+        return "WASAPI exclusive open failed: ";
+
+    return "output open failed: ";
+}
+
 int pickRate(const juce::Array<double>& rates, bool maxRate)
 {
     if (rates.isEmpty())
@@ -360,9 +375,18 @@ std::vector<DeviceDescriptor> enumerateDevices(DeviceListMode mode, bool dedupe 
     return devices;
 }
 
-void listDevices(bool asioOnly)
+int listDevices(bool asioOnly)
 {
+    if (asioOnly && ! ECHO_ENABLE_ASIO)
+    {
+        logLine("ASIO device enumeration failed: ASIO support is disabled at build time (ECHO_ENABLE_ASIO=OFF)");
+        return 2;
+    }
+
     const auto devices = enumerateDevices(asioOnly ? DeviceListMode::Asio : DeviceListMode::Shared);
+
+    if (asioOnly && devices.empty())
+        logLine("ASIO device enumeration returned no devices");
 
     for (const auto& device : devices)
     {
@@ -373,6 +397,8 @@ void listDevices(bool asioOnly)
             << (device.isDefault ? 1 : 0) << "\t"
             << device.sharedSampleRate << std::endl;
     }
+
+    return 0;
 }
 
 juce::AudioIODeviceType* findTypeByName(juce::OwnedArray<juce::AudioIODeviceType>& types, const juce::String& typeName)
@@ -765,12 +791,16 @@ std::unique_ptr<juce::AudioIODevice> openSelectedDevice(
     }
 
     throw std::runtime_error(
-        "failed to open output device \"" + selected.name.toStdString()
+        getOpenFailurePrefix(options)
+        + "failed to open output device \"" + selected.name.toStdString()
         + "\": " + (lastError.empty() ? "no compatible backend" : lastError));
 }
 
 int runHost(const Options& options)
 {
+    if (options.asio && ! ECHO_ENABLE_ASIO)
+        throw std::runtime_error("ASIO open failed: ASIO support is disabled at build time (ECHO_ENABLE_ASIO=OFF)");
+
     if (options.exclusive)
         logLine("WASAPI exclusive requested; shared fallback is disabled");
 
@@ -795,11 +825,13 @@ int runHost(const Options& options)
     player.setSource(&source);
     device->start(&player);
 
+    const bool openedExclusive = ! options.asio && (options.exclusive || isExclusiveType(openedDescriptor.typeName));
+
     writeJsonLine(
         std::string("{\"ready\":true,\"sampleRate\":") + std::to_string(actualSampleRate)
         + ",\"hardwareSampleRate\":" + std::to_string(actualSampleRate)
         + ",\"channels\":" + std::to_string(options.channels)
-        + ",\"exclusive\":" + std::string(options.exclusive ? "true" : "false")
+        + ",\"exclusive\":" + std::string(openedExclusive ? "true" : "false")
         + ",\"backend\":\"" + getBackendName(options, openedDescriptor.typeName)
         + "\",\"deviceType\":\""
         + jsonEscape(openedDescriptor.typeName) + "\",\"deviceName\":\""
@@ -847,8 +879,7 @@ int main(int argc, char* argv[])
 
         if (options.list)
         {
-            listDevices(options.asio);
-            return 0;
+            return listDevices(options.asio);
         }
 
         return runHost(options);

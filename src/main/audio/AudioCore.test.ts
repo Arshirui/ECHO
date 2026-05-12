@@ -1,11 +1,12 @@
 import { EventEmitter } from 'node:events';
-import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams, execFileSync as nodeExecFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { AudioSession } from './AudioSession';
 import { DecoderPipeline, resolveDecoderFfmpegPath } from './DecoderPipeline';
 import type { DecoderPipelineDependencies } from './DecoderPipeline';
+import { DeviceService } from './DeviceService';
 import { NativeOutputBridge, resolveHostBinary } from './NativeOutputBridge';
 import type { HostSpawner } from './NativeOutputBridge';
 import type {
@@ -171,6 +172,9 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.fileSampleRate).toBe(44100);
     expect(status.decoderOutputSampleRate).toBe(44100);
     expect(status.requestedOutputSampleRate).toBe(44100);
+    expect(status.outputBackend).toBe('wasapi-exclusive');
+    expect(status.outputDeviceType).toBe('Windows Audio (Exclusive Mode)');
+    expect(status.outputDeviceName).toBe('Default output');
     expect(bridges[0].startOptions).toMatchObject({
       requestedOutputSampleRate: 44100,
       exclusive: true,
@@ -347,6 +351,25 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.warnings).toContain('actual_device_sample_rate_mismatch:44100->48000');
     expect(status.error).toBe('exclusive_output_sample_rate_mismatch:44100->48000');
     expect(decoder.decodeRequests).toHaveLength(0);
+  });
+
+  it('ASIO ready metadata is exposed in AudioStatus', async () => {
+    const { bridges, session } = createSessionHarness([probe('asio.flac', 96000)]);
+
+    const status = await session.playLocalFile({
+      filePath: 'asio.flac',
+      output: { outputMode: 'asio', deviceName: 'TEAC ASIO USB DRIVER' },
+    });
+
+    expect(status.outputMode).toBe('asio');
+    expect(status.outputBackend).toBe('asio');
+    expect(status.outputDeviceType).toBe('ASIO');
+    expect(status.outputDeviceName).toBe('TEAC ASIO USB DRIVER');
+    expect(bridges[0].startOptions).toMatchObject({
+      asio: true,
+      exclusive: false,
+      deviceName: 'TEAC ASIO USB DRIVER',
+    });
   });
 
   it('pause stops the active native host and preserves the current position', async () => {
@@ -641,6 +664,42 @@ describe('AudioSession host availability', () => {
     expect(unavailableSession.getStatus().host).toBe('unavailable');
   });
 
+});
+
+describe('DeviceService diagnostics', () => {
+  it('logs native host list failures instead of silently returning an empty ASIO list', () => {
+    const logs: string[] = [];
+    const failure = Object.assign(new Error('command failed'), {
+      status: 2,
+      stderr: Buffer.from('[echo-audio-host] ASIO support is disabled at build time'),
+      stdout: Buffer.from(''),
+    });
+    const execMock = vi.fn(() => {
+      throw failure;
+    });
+    const service = new DeviceService({
+      hostBinary: 'echo-audio-host.exe',
+      execFileSync: execMock as unknown as typeof nodeExecFileSync,
+      logger: (message) => logs.push(message),
+    });
+
+    expect(service.listAsioDevices()).toEqual([]);
+    expect(logs[0]).toContain('asio device enumeration failed');
+    expect(logs[0]).toContain('echo-audio-host.exe');
+    expect(logs[0]).toContain('ASIO support is disabled');
+  });
+
+  it('logs an empty ASIO list distinctly from an enumeration failure', () => {
+    const logs: string[] = [];
+    const service = new DeviceService({
+      hostBinary: 'echo-audio-host.exe',
+      execFileSync: vi.fn(() => '') as unknown as typeof nodeExecFileSync,
+      logger: (message) => logs.push(message),
+    });
+
+    expect(service.listAsioDevices()).toEqual([]);
+    expect(logs[0]).toContain('ASIO device enumeration returned no devices');
+  });
 });
 
 describe('DecoderPipeline ffmpeg resolution', () => {

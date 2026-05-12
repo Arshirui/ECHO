@@ -166,7 +166,7 @@ export class AudioSession extends EventEmitter {
     super();
     this.logger = dependencies.logger ?? defaultLogger;
     this.decoder = dependencies.decoder ?? new DecoderPipeline({ logger: this.logger });
-    this.deviceService = dependencies.deviceService ?? new DeviceService();
+    this.deviceService = dependencies.deviceService ?? new DeviceService({ logger: this.logger });
     this.createBridge = dependencies.createBridge ?? (() => new NativeOutputBridge({ logger: this.logger }));
     this.isNativeHostAvailable = dependencies.isNativeHostAvailable ?? isNativeOutputBridgeAvailable;
     this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';

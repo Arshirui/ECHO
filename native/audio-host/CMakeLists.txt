@@ -9,6 +9,12 @@ set(JUCE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(JUCE_BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
 set(JUCE_BUILD_HELPER_TOOLS OFF CACHE BOOL "" FORCE)
 
+if(WIN32)
+  option(ECHO_ENABLE_ASIO "Enable JUCE ASIO support in echo-audio-host" ON)
+else()
+  option(ECHO_ENABLE_ASIO "Enable JUCE ASIO support in echo-audio-host" OFF)
+endif()
+
 FetchContent_Declare(
   JUCE
   GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
@@ -35,7 +41,8 @@ target_compile_definitions(echo-audio-host
     JUCE_REPORT_APP_USAGE=0
     JUCE_USE_CURL=0
     JUCE_WEB_BROWSER=0
-    JUCE_ASIO=1
+    JUCE_ASIO=$<BOOL:${ECHO_ENABLE_ASIO}>
+    ECHO_ENABLE_ASIO=$<BOOL:${ECHO_ENABLE_ASIO}>
 )
 
 target_link_libraries(echo-audio-host

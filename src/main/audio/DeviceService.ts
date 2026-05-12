@@ -5,6 +5,7 @@ import { resolveHostBinary } from './NativeOutputBridge';
 export type DeviceServiceDependencies = {
   hostBinary?: string | null;
   execFileSync?: typeof execFileSync;
+  logger?: (message: string) => void;
 };
 
 const parsePositiveInteger = (value: string | undefined): number | null => {
@@ -38,6 +39,7 @@ const parseDeviceListLine = (line: string, outputMode: AudioDeviceInfo['outputMo
 export class DeviceService {
   private readonly exec: typeof execFileSync;
   private readonly hostBinary: string | null;
+  private readonly logger: (message: string) => void;
   private readonly cacheTtlMs = 5000;
   private sharedCache: { at: number; devices: AudioDeviceInfo[] } | null = null;
   private asioCache: { at: number; devices: AudioDeviceInfo[] } | null = null;
@@ -45,6 +47,7 @@ export class DeviceService {
   constructor(dependencies: DeviceServiceDependencies = {}) {
     this.exec = dependencies.execFileSync ?? execFileSync;
     this.hostBinary = dependencies.hostBinary ?? null;
+    this.logger = dependencies.logger ?? ((message) => console.warn(message));
   }
 
   listDevices(): AudioDeviceInfo[] {
@@ -83,6 +86,7 @@ export class DeviceService {
     const bin = this.hostBinary ?? resolveHostBinary();
 
     if (!bin) {
+      this.logger(`[DeviceService] echo-audio-host binary not found for ${outputMode} device enumeration`);
       return [];
     }
 
@@ -92,13 +96,28 @@ export class DeviceService {
         encoding: 'utf-8',
       });
 
-      return String(output)
+      const devices = String(output)
         .split('\n')
         .map((line) => line.trim())
         .filter(Boolean)
         .map((line) => parseDeviceListLine(line, outputMode))
         .filter((device): device is AudioDeviceInfo => device !== null);
-    } catch {
+
+      if (outputMode === 'asio' && devices.length === 0) {
+        this.logger(`[DeviceService] ASIO device enumeration returned no devices; host="${bin}" args="${args.join(' ')}"`);
+      }
+
+      return devices;
+    } catch (error) {
+      const details = error as { status?: unknown; stderr?: unknown; stdout?: unknown; message?: unknown };
+      const stderr = Buffer.isBuffer(details.stderr) ? details.stderr.toString('utf8') : String(details.stderr ?? '').trim();
+      const stdout = Buffer.isBuffer(details.stdout) ? details.stdout.toString('utf8') : String(details.stdout ?? '').trim();
+      const message = details.message ? String(details.message) : String(error);
+      this.logger(
+        `[DeviceService] ${outputMode} device enumeration failed; host="${bin}" args="${args.join(' ')}" status=${
+          details.status ?? 'unknown'
+        }; error="${message}"${stderr ? `; stderr="${stderr}"` : ''}${stdout ? `; stdout="${stdout}"` : ''}`,
+      );
       return [];
     }
   }

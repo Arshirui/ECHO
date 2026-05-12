@@ -10,6 +10,7 @@ const buildDir = join(projectRoot, 'out', 'native', 'audio-host');
 const targetDir = join(projectRoot, 'electron-app', 'build');
 const targetExe = join(targetDir, process.platform === 'win32' ? 'echo-audio-host.exe' : 'echo-audio-host');
 const config = process.env.ECHO_AUDIO_HOST_CONFIG || 'Release';
+const enableAsio = process.env.ECHO_ENABLE_ASIO ?? (process.platform === 'win32' ? 'ON' : 'OFF');
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -49,6 +50,7 @@ try {
     'Visual Studio 17 2022',
     '-A',
     'x64',
+    `-DECHO_ENABLE_ASIO=${enableAsio}`,
   ]);
   run('cmake', ['--build', buildDir, '--config', config, '--parallel']);
 
