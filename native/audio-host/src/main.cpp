@@ -43,6 +43,7 @@ struct Options
     int sampleRate = 44100;
     int channels = 2;
     int deviceIndex = -1;
+    int bufferSize = 0;
     double volume = 1.0;
     juce::String deviceName;
 };
@@ -68,6 +69,12 @@ enum class DeviceListMode
 void logLine(const std::string& message)
 {
     std::cerr << "[echo-audio-host] " << message << std::endl;
+}
+
+long long elapsedMs(std::chrono::steady_clock::time_point started)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - started).count();
 }
 
 void writeJsonLine(const std::string& json)
@@ -191,6 +198,10 @@ Options parseOptions(const std::vector<juce::String>& args)
         {
             options.deviceName = args[++i];
         }
+        else if ((arg == "-buffer" || arg == "-buffer-size") && i + 1 < args.size())
+        {
+            options.bufferSize = std::max(0, parseInt(args[++i], options.bufferSize));
+        }
         else if (arg == "-vol" && i + 1 < args.size())
         {
             options.volume = std::max(0.0, std::min(1.0, parseDouble(args[++i], options.volume)));
@@ -279,6 +290,17 @@ std::string getOpenFailurePrefix(const Options& options)
         return "WASAPI exclusive open failed: ";
 
     return "output open failed: ";
+}
+
+int getDeviceBufferSize(const Options& options)
+{
+    if (options.bufferSize > 0)
+        return options.bufferSize;
+
+    if (options.exclusive || options.asio)
+        return 8192;
+
+    return 512;
 }
 
 int pickRate(const juce::Array<double>& rates, bool maxRate)
@@ -536,7 +558,14 @@ public:
 
             const int framesRead = size1 + size2;
             if (framesRead <= 0)
+            {
+                if (! inputEnded.load(std::memory_order_acquire))
+                {
+                    underrunCallbacks.fetch_add(1, std::memory_order_relaxed);
+                    underrunFrames.fetch_add(static_cast<uint64_t>(framesNeeded), std::memory_order_relaxed);
+                }
                 break;
+            }
 
             copyToOutput(start1, size1, *info.buffer, info.startSample + outputOffset);
             copyToOutput(start2, size2, *info.buffer, info.startSample + outputOffset + size1);
@@ -591,9 +620,29 @@ public:
         return inputEnded.load(std::memory_order_acquire) && fifo.getNumReady() == 0;
     }
 
+    bool hasInputEnded() const
+    {
+        return inputEnded.load(std::memory_order_acquire);
+    }
+
+    int getReadyFrames() const
+    {
+        return fifo.getNumReady();
+    }
+
     uint64_t getFramesPlayed() const
     {
         return framesPlayed.load(std::memory_order_relaxed);
+    }
+
+    uint64_t getUnderrunCallbacks() const
+    {
+        return underrunCallbacks.load(std::memory_order_relaxed);
+    }
+
+    uint64_t getUnderrunFrames() const
+    {
+        return underrunFrames.load(std::memory_order_relaxed);
     }
 
 private:
@@ -633,6 +682,8 @@ private:
     std::atomic<bool> inputEnded { false };
     std::atomic<bool> stopRequested { false };
     std::atomic<uint64_t> framesPlayed { 0 };
+    std::atomic<uint64_t> underrunCallbacks { 0 };
+    std::atomic<uint64_t> underrunFrames { 0 };
 };
 
 void stdinReader(PcmRingAudioSource& source, int channels)
@@ -673,6 +724,26 @@ void stdinReader(PcmRingAudioSource& source, int channels)
     source.markInputEnded();
 }
 
+int waitForInitialPcm(PcmRingAudioSource& source, int sampleRate, bool preferPrebuffer)
+{
+    if (! preferPrebuffer)
+        return 0;
+
+    const int targetFrames = std::max(1, std::min(sampleRate / 20, 8192));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1200);
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        const int readyFrames = source.getReadyFrames();
+        if (readyFrames >= targetFrames || source.hasInputEnded())
+            return readyFrames;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    return source.getReadyFrames();
+}
+
 std::vector<int> buildSampleRateAttempts(const Options& options, const DeviceDescriptor& device)
 {
     std::vector<int> rates;
@@ -702,24 +773,34 @@ std::unique_ptr<juce::AudioIODevice> openDevice(
     const Options& options,
     int& actualSampleRate)
 {
+    const auto createStarted = std::chrono::steady_clock::now();
     std::unique_ptr<juce::AudioIODevice> device(type.createDevice(descriptor.name, {}));
+    logLine(
+        "createDevice completed in " + std::to_string(elapsedMs(createStarted))
+        + " ms for " + descriptor.name.toStdString());
 
     if (device == nullptr)
         throw std::runtime_error("failed to create output device");
 
     juce::BigInteger outputChannels;
-    const int availableChannels = std::max(1, device->getOutputChannelNames().size());
-    const int channelCount = std::min(options.channels, availableChannels);
+    const int channelCount = std::max(1, options.channels);
 
     for (int i = 0; i < channelCount; ++i)
         outputChannels.setBit(i);
 
     juce::String lastError;
     const auto attempts = buildSampleRateAttempts(options, descriptor);
+    const int bufferSize = getDeviceBufferSize(options);
 
     for (const auto rate : attempts)
     {
-        lastError = device->open({}, outputChannels, static_cast<double>(rate), 512);
+        const auto openStarted = std::chrono::steady_clock::now();
+        lastError = device->open({}, outputChannels, static_cast<double>(rate), bufferSize);
+        logLine(
+            "device->open(" + std::to_string(rate)
+            + " Hz, " + std::to_string(channelCount)
+            + " ch, buffer=" + std::to_string(bufferSize)
+            + ") completed in " + std::to_string(elapsedMs(openStarted)) + " ms");
 
         if (lastError.isEmpty())
         {
@@ -777,7 +858,8 @@ std::unique_ptr<juce::AudioIODevice> openSelectedDevice(
             actualSampleRate = openedSampleRate;
             logLine(
                 "Opened output with " + candidate.typeName.toStdString()
-                + " at " + std::to_string(actualSampleRate) + " Hz");
+                + " at " + std::to_string(actualSampleRate) + " Hz"
+                + " buffer=" + std::to_string(getDeviceBufferSize(options)) + " frames");
             return device;
         }
         catch (const std::exception& error)
@@ -823,9 +905,10 @@ int runHost(const Options& options)
         options.volume);
     juce::AudioSourcePlayer player;
     player.setSource(&source);
-    device->start(&player);
 
     const bool openedExclusive = ! options.asio && (options.exclusive || isExclusiveType(openedDescriptor.typeName));
+
+    std::thread reader(stdinReader, std::ref(source), options.channels);
 
     writeJsonLine(
         std::string("{\"ready\":true,\"sampleRate\":") + std::to_string(actualSampleRate)
@@ -837,7 +920,11 @@ int runHost(const Options& options)
         + jsonEscape(openedDescriptor.typeName) + "\",\"deviceName\":\""
         + jsonEscape(openedDescriptor.name) + "\"}");
 
-    std::thread reader(stdinReader, std::ref(source), options.channels);
+    const int prebufferedFrames = waitForInitialPcm(source, actualSampleRate, options.exclusive || options.asio);
+    if (options.exclusive || options.asio)
+        logLine("Initial PCM prebuffer before device start: " + std::to_string(prebufferedFrames) + " frames");
+
+    device->start(&player);
     uint64_t lastReported = std::numeric_limits<uint64_t>::max();
 
     while (! source.isDrained())
@@ -846,7 +933,12 @@ int runHost(const Options& options)
 
         if (frames != lastReported)
         {
-            writeJsonLine(std::string("{\"pos\":") + std::to_string(frames) + "}");
+            writeJsonLine(
+                std::string("{\"pos\":") + std::to_string(frames)
+                + ",\"bufferedFrames\":" + std::to_string(source.getReadyFrames())
+                + ",\"underrunCallbacks\":" + std::to_string(source.getUnderrunCallbacks())
+                + ",\"underrunFrames\":" + std::to_string(source.getUnderrunFrames())
+                + "}");
             lastReported = frames;
         }
 
@@ -858,7 +950,19 @@ int runHost(const Options& options)
 
     const auto finalFrames = source.getFramesPlayed();
     if (finalFrames != lastReported)
-        writeJsonLine(std::string("{\"pos\":") + std::to_string(finalFrames) + "}");
+        writeJsonLine(
+            std::string("{\"pos\":") + std::to_string(finalFrames)
+            + ",\"bufferedFrames\":" + std::to_string(source.getReadyFrames())
+            + ",\"underrunCallbacks\":" + std::to_string(source.getUnderrunCallbacks())
+            + ",\"underrunFrames\":" + std::to_string(source.getUnderrunFrames())
+            + "}");
+
+    if (source.getUnderrunCallbacks() > 0)
+    {
+        logLine(
+            "Output underruns: callbacks=" + std::to_string(source.getUnderrunCallbacks())
+            + " frames=" + std::to_string(source.getUnderrunFrames()));
+    }
 
     writeJsonLine("{\"event\":\"ended\"}");
 

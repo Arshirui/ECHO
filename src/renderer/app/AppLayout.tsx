@@ -88,6 +88,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
   const handleImportFile = useCallback(async (): Promise<void> => {
     const playback = window.echo?.playback;
+    const audio = window.echo?.audio;
 
     if (!playback) {
       fileInputRef.current?.click();
@@ -102,7 +103,16 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         return;
       }
 
-      await playback.playLocalFile({ filePath });
+      const audioStatus = await audio?.getStatus().catch(() => null);
+      await playback.playLocalFile({
+        filePath,
+        output: audioStatus
+          ? {
+              outputMode: audioStatus.outputMode,
+              deviceName: audioStatus.outputDeviceName ?? undefined,
+            }
+          : undefined,
+      });
     } catch (error) {
       console.error('Failed to open local audio file from app chrome', error);
     }

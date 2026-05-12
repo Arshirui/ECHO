@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -11,6 +11,63 @@ const targetDir = join(projectRoot, 'electron-app', 'build');
 const targetExe = join(targetDir, process.platform === 'win32' ? 'echo-audio-host.exe' : 'echo-audio-host');
 const config = process.env.ECHO_AUDIO_HOST_CONFIG || 'Release';
 const enableAsio = process.env.ECHO_ENABLE_ASIO ?? (process.platform === 'win32' ? 'ON' : 'OFF');
+
+const patchJuceWasapiExclusiveProbe = () => {
+  if (process.platform !== 'win32') {
+    return;
+  }
+
+  const wasapiSource = join(
+    buildDir,
+    '_deps',
+    'juce-src',
+    'modules',
+    'juce_audio_devices',
+    'native',
+    'juce_WASAPI_windows.cpp',
+  );
+
+  if (!existsSync(wasapiSource)) {
+    throw new Error(`JUCE WASAPI source was not found at ${wasapiSource}`);
+  }
+
+  const source = readFileSync(wasapiSource, 'utf8');
+  const patchedNeedle = 'ECHO-Next fast exclusive open';
+
+  if (source.includes(patchedNeedle)) {
+    return;
+  }
+
+  const needle = [
+    '        querySupportedBufferSizes (*format, tempClient);',
+    '        querySupportedSampleRates (*format, tempClient);',
+    '        maxNumChannels = queryMaxNumChannels (tempClient);',
+  ].join('\r\n');
+
+  const replacement = [
+    '        querySupportedBufferSizes (*format, tempClient);',
+    '',
+    '        // ECHO-Next fast exclusive open:',
+    '        // Some USB DACs take many seconds to answer JUCE\'s exhaustive exclusive-mode',
+    '        // IsFormatSupported scan during createDevice(). Skip that preflight here; the',
+    '        // requested sample rate/channel format is still validated by openClient().',
+    '        if (isExclusiveMode (deviceMode))',
+    '        {',
+    '            maxNumChannels = defaultNumChannels;',
+    '            return;',
+    '        }',
+    '',
+    '        querySupportedSampleRates (*format, tempClient);',
+    '        maxNumChannels = queryMaxNumChannels (tempClient);',
+  ].join('\r\n');
+
+  if (!source.includes(needle)) {
+    throw new Error('Unable to patch JUCE WASAPI exclusive probe; source layout changed.');
+  }
+
+  writeFileSync(wasapiSource, source.replace(needle, replacement));
+  console.log('[build:audio-host] Patched JUCE WASAPI exclusive preflight for fast device open.');
+};
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -52,6 +109,7 @@ try {
     'x64',
     `-DECHO_ENABLE_ASIO=${enableAsio}`,
   ]);
+  patchJuceWasapiExclusiveProbe();
   run('cmake', ['--build', buildDir, '--config', config, '--parallel']);
 
   const builtHost = findBuiltHost();

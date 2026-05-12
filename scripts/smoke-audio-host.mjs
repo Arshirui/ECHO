@@ -68,6 +68,13 @@ const runPcmHost = async (args, { timeoutMs = 15000, sampleRate = 48000, seconds
   const frames = Math.floor(seconds * sampleRate);
   const pcm = Buffer.alloc(frames * channels * Float32Array.BYTES_PER_ELEMENT);
 
+  for (let frame = 0; frame < frames; frame += 1) {
+    const sample = Math.sin((frame / sampleRate) * Math.PI * 2 * 440) * 0.02;
+    for (let channel = 0; channel < channels; channel += 1) {
+      pcm.writeFloatLE(sample, (frame * channels + channel) * Float32Array.BYTES_PER_ELEMENT);
+    }
+  }
+
   child.stdin.write(pcm, (error) => {
     if (error) {
       stdinError = error.message;
@@ -101,6 +108,8 @@ const assertNoSharedFallback = (label, result) => {
     fail(`${label} fell back to shared output; stderr=${result.stderr}; stdout=${result.stdout}`);
   }
 };
+
+const hasAdvancedPosition = (events) => events.some((event) => typeof event.pos === 'number' && event.pos > 0);
 
 const listResult = runList(['-list']);
 
@@ -161,6 +170,9 @@ if (exclusiveResult.exitCode === 0) {
   if (!exclusiveReady || exclusiveReady.exclusive !== true || exclusiveReady.backend !== 'wasapi-exclusive') {
     fail(`exclusive ready metadata invalid; stderr=${exclusiveResult.stderr}; stdout=${exclusiveResult.stdout}`);
   }
+  if (!hasAdvancedPosition(exclusiveResult.events)) {
+    fail(`exclusive did not consume PCM frames; stderr=${exclusiveResult.stderr}; stdout=${exclusiveResult.stdout}`);
+  }
   console.log(`[smoke:audio-host] exclusive ready OK (${exclusiveReady.deviceType ?? 'unknown device type'})`);
 } else if (!/WASAPI exclusive open failed/i.test(exclusiveResult.stderr)) {
   fail(`exclusive failed without explicit diagnostic; exit=${exclusiveResult.exitCode}; stderr=${exclusiveResult.stderr}; stdout=${exclusiveResult.stdout}`);
@@ -180,6 +192,9 @@ if (asioListResult.status === 0 && asioDevices.length > 0) {
   if (asioResult.exitCode === 0) {
     if (!asioReady || asioReady.backend !== 'asio' || asioReady.exclusive !== false) {
       fail(`ASIO ready metadata invalid; stderr=${asioResult.stderr}; stdout=${asioResult.stdout}`);
+    }
+    if (!hasAdvancedPosition(asioResult.events)) {
+      fail(`ASIO did not consume PCM frames; stderr=${asioResult.stderr}; stdout=${asioResult.stdout}`);
     }
     console.log(`[smoke:audio-host] ASIO ready OK (${asioReady.deviceName ?? 'unknown device'})`);
   } else if (!/ASIO open failed/i.test(asioResult.stderr)) {
