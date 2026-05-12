@@ -16,10 +16,12 @@ The UI should feel like a modern desktop music player built for quiet, focused l
 
 The default shell contains:
 
+- frameless ECHO app titlebar with quick actions and window controls
 - left navigation
-- title/status top area
 - main content area
 - bottom playback bar
+
+The titlebar should feel owned by ECHO, not like the operating system's default frame. Window actions still go through typed preload IPC; Renderer must not call Electron APIs directly.
 
 Main pages planned for the first shell:
 

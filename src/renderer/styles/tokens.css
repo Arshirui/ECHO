@@ -30,6 +30,7 @@
   --radius-lg: 18px;
   --shadow-soft: 0 20px 70px rgba(35, 55, 80, 0.12);
   --shadow-panel: 0 12px 36px rgba(42, 61, 84, 0.08);
+  --titlebar-height: 44px;
   --sidebar-width: 220px;
-  --player-height: 92px;
+  --player-height: 116px;
 }

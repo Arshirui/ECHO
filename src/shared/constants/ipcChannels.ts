@@ -1,6 +1,10 @@
 export const IpcChannels = {
   AppGetVersion: 'app:get-version',
+  AppWindowMinimize: 'app:window-minimize',
+  AppWindowToggleMaximize: 'app:window-toggle-maximize',
+  AppWindowClose: 'app:window-close',
   LibraryAddFolder: 'library:add-folder',
+  LibraryChooseFolder: 'library:choose-folder',
   LibraryGetFolders: 'library:get-folders',
   LibraryRemoveFolder: 'library:remove-folder',
   LibraryScanFolder: 'library:scan-folder',

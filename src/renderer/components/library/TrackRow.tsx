@@ -39,7 +39,7 @@ const tagsFromTrack = (track: LibraryTrack): HifiTag[] => {
   if (track.bitDepth && track.sampleRate) {
     tags.push({
       label: `${track.bitDepth}bit / ${track.sampleRate >= 1000 ? `${Math.round(track.sampleRate / 1000)}kHz` : `${track.sampleRate}Hz`}`,
-      kind: 'depth',
+      kind: track.sampleRate >= 88200 || track.bitDepth >= 24 ? 'hires' : 'depth',
     });
   } else if (track.sampleRate) {
     tags.push({
@@ -63,9 +63,9 @@ const tagClassNameByKind: Record<HifiTagKind, string> = {
   lossless: 'tag-lossless',
   depth: 'tag-depth',
   rate: 'tag-depth',
-  bitrate: 'tag-bitrate',
+  bitrate: 'tag-depth',
   bpm: 'tag-bpm',
-  dsf: 'tag-dsf',
+  dsf: 'tag-flac',
   hires: 'tag-hires',
 };
 
@@ -76,7 +76,7 @@ export const TrackRow = memo(
     return (
       <div className="track-row" data-playing={isPlaying} role="listitem">
         <div className="track-cover" data-empty={!track.coverThumb} aria-hidden="true">
-          {track.coverThumb ? <img alt="" src={track.coverThumb} /> : <Music2 size={20} />}
+          {track.coverThumb ? <img alt="" src={track.coverThumb} /> : <Music2 size={22} />}
         </div>
 
         <div className="track-main">
@@ -87,7 +87,7 @@ export const TrackRow = memo(
           <div className="track-subtitle">
             {track.artist} - {track.album}
           </div>
-          <div className="tag-row" aria-label="音频规格">
+          <div className="tag-row track-tags" aria-label="音频规格">
             {tags.map((tag) => (
               <span className={`hifi-tag ${tagClassNameByKind[tag.kind]}`} key={`${track.id}-${tag.label}`}>
                 {tag.label}
@@ -99,13 +99,13 @@ export const TrackRow = memo(
         <div className="track-duration">{formatDuration(track.duration)}</div>
 
         <div className="track-actions" aria-label={`${track.title} 操作`}>
-          <button className="row-action" type="button" aria-label="喜欢" title="喜欢">
+          <button className="row-action" type="button" aria-label={`喜欢 ${track.title}`} title="喜欢">
             <Heart size={16} />
           </button>
-          <button className="row-action" type="button" aria-label="加入队列" title="加入队列">
+          <button className="row-action" type="button" aria-label={`加入队列 ${track.title}`} title="加入队列">
             <ListPlus size={16} />
           </button>
-          <button className="row-action" type="button" aria-label="更多" title="更多">
+          <button className="row-action" type="button" aria-label={`更多 ${track.title}`} title="更多">
             <MoreHorizontal size={16} />
           </button>
         </div>

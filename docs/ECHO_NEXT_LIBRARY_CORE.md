@@ -105,6 +105,20 @@ Covers are cached on disk and deduplicated by `sourceHash`. `getTracks` and `get
 
 Albums are persisted in `albums` and `album_tracks`, so the album wall reads cached rows after restart instead of regrouping all tracks in Renderer memory.
 
+## Native SQLite In Dev
+
+Library Core uses `better-sqlite3`, which is a native Node/Electron module. The binary must match the Electron runtime ABI used by the desktop app, not only the system `node.exe` ABI. If it is built for the wrong ABI, Electron will show an error like `NODE_MODULE_VERSION ... requires NODE_MODULE_VERSION ...` and library APIs such as `library.getTracks` will fail.
+
+Current development uses Electron 37.x because `better-sqlite3@12.9.0` rebuilds cleanly for that Electron ABI on Windows. `npm run dev` runs `npm run rebuild:native` first, which executes:
+
+```bash
+electron-rebuild -w better-sqlite3
+```
+
+After dependency changes or a clean install, use `npm run dev` normally; the predev step keeps the SQLite binding aligned with the Electron desktop runtime. `npm test` runs `npm run rebuild:native:node` first because Vitest executes under the system Node.js ABI, then `posttest` runs `npm run rebuild:native` so the working tree is left ready for Electron dev again.
+
+Browser-only Vite preview cannot scan folders because it has no Electron main process, preload bridge, or native SQLite access.
+
 ## Metadata Priority
 
 Fixed priority:
@@ -173,7 +187,26 @@ IPC handlers validate input and call `LibraryService`. SQL, scanning, metadata, 
 
 `AlbumsPage` reads paged albums with `pageSize = 60` from the persisted `albums` table. It never regroups tracks in Renderer.
 
-Settings has a minimal Library Folders panel for adding a local folder path, scanning, cancelling scans, rescanning, and removing a folder from the library. It is not a file manager and never copies, moves, renames, or deletes disk files.
+Settings and the import fallback view share the same `LibraryFoldersPanel`. It supports:
+
+- system folder selection through `library.chooseFolder()`
+- manual path entry as an advanced fallback
+- add and scan
+- rescan for already imported folders
+- cancel scan
+- remove folder
+
+Import flow:
+
+- `library.chooseFolder()` opens the Electron directory picker in main
+- the sidebar `Import Folder` action opens the directory picker directly; it does not navigate to a page
+- Settings and the fallback import view fill the chosen path into the input and immediately start import and scan
+- repeated imports of the same path are idempotent and become a rescan
+- when a scan completes, the panel calls `library.getSummary()` and emits a `library:changed` window event so SongsPage and AlbumsPage reload their first page
+
+The sidebar `Import File` action opens the existing local audio file picker directly. Phase 1 does not add single-file library ingestion; that remains separate from the folder-based Library Core cache.
+
+This is not a file manager and never copies, moves, renames, or deletes disk files.
 
 ## Performance Budget
 

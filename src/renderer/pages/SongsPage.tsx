@@ -41,7 +41,18 @@ export const SongsPage = (): JSX.Element => {
       setError(null);
 
       try {
-        const result = await window.echo.library.getTracks({
+        const library = window.echo?.library;
+
+        if (!library) {
+          setTracks([]);
+          setPage(1);
+          setTotal(0);
+          setHasMore(false);
+          setError('Desktop bridge unavailable. Open ECHO Next in Electron to read the library.');
+          return;
+        }
+
+        const result = await library.getTracks({
           page: nextPage,
           pageSize,
           search,
@@ -73,11 +84,20 @@ export const SongsPage = (): JSX.Element => {
     void loadTracks(1, 'replace');
   }, [loadTracks]);
 
-  const handleLoadMore = (): void => {
+  useEffect(() => {
+    const handleLibraryChanged = (): void => {
+      void loadTracks(1, 'replace');
+    };
+
+    window.addEventListener('library:changed', handleLibraryChanged);
+    return () => window.removeEventListener('library:changed', handleLibraryChanged);
+  }, [loadTracks]);
+
+  const handleLoadMore = useCallback((): void => {
     if (!isLoading && hasMore) {
       void loadTracks(page + 1, 'append');
     }
-  };
+  }, [hasMore, isLoading, loadTracks, page]);
 
   const handleRefresh = (): void => {
     void loadTracks(1, 'replace');
@@ -87,11 +107,11 @@ export const SongsPage = (): JSX.Element => {
     <div className="songs-page">
       <header className="songs-header">
         <div className="songs-title-group">
-          <h1>歌曲</h1>
-          <span>{total} 首</span>
+          <h1>我的曲目</h1>
+          <span>{total} tracks</span>
         </div>
 
-        <div className="songs-tools" aria-label="歌曲工具">
+        <div className="songs-tools" aria-label="曲目工具">
           <button className="tool-button" type="button" aria-label="导入文件夹" title="导入文件夹">
             <FolderPlus size={17} />
           </button>
@@ -115,7 +135,7 @@ export const SongsPage = (): JSX.Element => {
           <Search size={18} aria-hidden="true" />
           <input
             type="search"
-            placeholder="搜索曲目 / 艺人 / 专辑"
+            placeholder="搜索曲目 / 艺术家 / 专辑"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
           />
@@ -124,7 +144,7 @@ export const SongsPage = (): JSX.Element => {
         <label className="sort-button sort-select">
           <select value={sort} onChange={(event) => setSort(event.target.value as LibrarySort)}>
             <option value="title">默认排序</option>
-            <option value="artist">按艺人</option>
+            <option value="artist">按艺术家</option>
             <option value="album">按专辑</option>
             <option value="recent">最近更新</option>
           </select>
@@ -132,14 +152,13 @@ export const SongsPage = (): JSX.Element => {
         </label>
       </div>
 
-      <TrackList tracks={tracks} currentTrackId={null} />
+      <TrackList tracks={tracks} currentTrackId={null} canLoadMore={hasMore && !isLoading} onEndReached={handleLoadMore} />
 
-      <div className="list-footer">
-        <span>{error ?? (isLoading ? '正在读取曲库...' : `已加载 ${tracks.length} / ${total}`)}</span>
-        <button className="load-more-button" type="button" onClick={handleLoadMore} disabled={!hasMore || isLoading}>
-          加载更多
-        </button>
-      </div>
+      {error || isLoading ? (
+        <div className="list-footer">
+          <span>{error ?? '正在读取曲库...'}</span>
+        </div>
+      ) : null}
     </div>
   );
 };

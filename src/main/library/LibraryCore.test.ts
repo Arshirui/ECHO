@@ -253,6 +253,16 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('addFolder is idempotent for the same path', () => {
+    const harness = createHarness();
+    const first = harness.addFolder();
+    const second = harness.service.addFolder(harness.folder);
+
+    expect(second.id).toBe(first.id);
+    expect(harness.service.getFolders()).toHaveLength(1);
+    harness.cleanup();
+  });
+
   it('addFolder persists across service restart', () => {
     const harness = createHarness();
     harness.addFolder();

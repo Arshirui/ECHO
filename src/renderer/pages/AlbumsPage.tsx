@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { UIEvent } from 'react';
 import { ChevronDown, Disc3, RefreshCw, Search } from 'lucide-react';
 import type { LibraryAlbum, LibrarySort } from '../../shared/types/library';
 
@@ -32,7 +33,18 @@ export const AlbumsPage = (): JSX.Element => {
       setError(null);
 
       try {
-        const result = await window.echo.library.getAlbums({
+        const library = window.echo?.library;
+
+        if (!library) {
+          setAlbums([]);
+          setPage(1);
+          setTotal(0);
+          setHasMore(false);
+          setError('Desktop bridge unavailable. Open ECHO Next in Electron to read albums.');
+          return;
+        }
+
+        const result = await library.getAlbums({
           page: nextPage,
           pageSize,
           search,
@@ -63,6 +75,34 @@ export const AlbumsPage = (): JSX.Element => {
   useEffect(() => {
     void loadAlbums(1, 'replace');
   }, [loadAlbums]);
+
+  useEffect(() => {
+    const handleLibraryChanged = (): void => {
+      void loadAlbums(1, 'replace');
+    };
+
+    window.addEventListener('library:changed', handleLibraryChanged);
+    return () => window.removeEventListener('library:changed', handleLibraryChanged);
+  }, [loadAlbums]);
+
+  const handleLoadMore = useCallback((): void => {
+    if (!isLoading && hasMore) {
+      void loadAlbums(page + 1, 'append');
+    }
+  }, [hasMore, isLoading, loadAlbums, page]);
+
+  const handleAlbumWallScroll = (event: UIEvent<HTMLElement>): void => {
+    if (!hasMore || isLoading) {
+      return;
+    }
+
+    const element = event.currentTarget;
+    const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+
+    if (distanceToBottom < 360) {
+      handleLoadMore();
+    }
+  };
 
   return (
     <div className="albums-page">
@@ -97,7 +137,7 @@ export const AlbumsPage = (): JSX.Element => {
         </label>
       </div>
 
-      <section className="album-wall" aria-label="Album list">
+      <section className="album-wall" aria-label="Album list" onScroll={handleAlbumWallScroll}>
         {albums.map((album) => (
           <article className="album-card" key={album.id}>
             <div className="album-cover" data-empty={!album.coverThumb} aria-hidden="true">
@@ -112,17 +152,11 @@ export const AlbumsPage = (): JSX.Element => {
         ))}
       </section>
 
-      <div className="list-footer">
-        <span>{error ?? (isLoading ? 'Loading albums...' : `Loaded ${albums.length} / ${total}`)}</span>
-        <button
-          className="load-more-button"
-          type="button"
-          onClick={() => loadAlbums(page + 1, 'append')}
-          disabled={!hasMore || isLoading}
-        >
-          Load more
-        </button>
-      </div>
+      {error || isLoading ? (
+        <div className="list-footer">
+          <span>{error ?? 'Loading albums...'}</span>
+        </div>
+      ) : null}
     </div>
   );
 };

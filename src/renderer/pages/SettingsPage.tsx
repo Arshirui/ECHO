@@ -1,10 +1,63 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FileAudio, FolderPlus, Pause, Play, RefreshCw, RotateCw, Settings, Square, Trash2, XCircle } from 'lucide-react';
+import type { ReactNode } from 'react';
+import {
+  Check,
+  Download,
+  FileAudio,
+  Globe2,
+  Headphones,
+  Info,
+  Link2,
+  MessageSquare,
+  Palette,
+  Pause,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Square,
+  Trash2,
+  Zap,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioStatus } from '../../shared/types/audio';
-import type { LibraryFolder, LibraryScanStatus } from '../../shared/types/library';
-import { EmptyState } from '../components/ui/EmptyState';
+import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
 
 const isDevBuild = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+
+type SettingsNavKey = 'general' | 'playback' | 'integrations' | 'remote' | 'eq' | 'appearance' | 'library' | 'about' | 'danger';
+
+type SettingsNavItem = {
+  key: SettingsNavKey;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+};
+
+type SettingSectionProps = {
+  id: SettingsNavKey;
+  activeKey: SettingsNavKey;
+  icon: LucideIcon;
+  title: string;
+  children: ReactNode;
+};
+
+type SettingRowProps = {
+  title: string;
+  description: string;
+  children: ReactNode;
+};
+
+const settingsNavItems: SettingsNavItem[] = [
+  { key: 'general', label: '通用', description: '语言、窗口与基础行为', icon: MessageSquare },
+  { key: 'playback', label: '播放', description: '输出、缓冲与播放控制', icon: Zap },
+  { key: 'integrations', label: '联动', description: '账号登录、Discord、外部设备', icon: Link2 },
+  { key: 'remote', label: '网盘 / 远程', description: 'NAS、WebDAV、Subsonic', icon: Globe2 },
+  { key: 'eq', label: 'EQ', description: '均衡器与输出安全', icon: SlidersHorizontal },
+  { key: 'appearance', label: '外观', description: '主题、字体、背景', icon: Palette },
+  { key: 'library', label: '媒体库', description: '导入、扫描与清理', icon: Download },
+  { key: 'about', label: '关于 / 高级', description: '版本、更新与开发工具', icon: Info },
+  { key: 'danger', label: '危险操作', description: '恢复与网络安全', icon: Trash2 },
+];
 
 const formatRate = (value: number | null): string => {
   if (!value) {
@@ -29,7 +82,50 @@ const statusRows = (status: AudioStatus | null): Array<{ label: string; value: s
   { label: 'sampleRateMismatch', value: formatBool(status?.sampleRateMismatch ?? false) },
 ];
 
+const SettingSection = ({ id, activeKey, icon: Icon, title, children }: SettingSectionProps): JSX.Element => (
+  <section className="settings-section" id={`settings-sec-${id}`} data-visible={activeKey === id}>
+    <div className="section-title">
+      <Icon size={18} />
+      <h2>{title}</h2>
+    </div>
+    {children}
+  </section>
+);
+
+const SettingRow = ({ title, description, children }: SettingRowProps): JSX.Element => (
+  <div className="setting-row">
+    <div className="setting-info">
+      <h3>{title}</h3>
+      <p>{description}</p>
+    </div>
+    {children}
+  </div>
+);
+
+const ChipButton = ({
+  active,
+  children,
+  onClick,
+}: {
+  active?: boolean;
+  children: string;
+  onClick?: () => void;
+}): JSX.Element => (
+  <button className={`list-filter-chip ${active ? 'active' : ''}`} type="button" onClick={onClick}>
+    {children}
+    {active ? <Check size={13} /> : null}
+  </button>
+);
+
+const ToggleButton = ({ active }: { active?: boolean }): JSX.Element => (
+  <button className={`toggle-btn ${active ? 'active' : ''}`} type="button" aria-pressed={active}>
+    <span />
+  </button>
+);
+
 export const SettingsPage = (): JSX.Element => {
+  const [activeSection, setActiveSection] = useState<SettingsNavKey>('general');
+  const [settingsQuery, setSettingsQuery] = useState('');
   const [status, setStatus] = useState<AudioStatus | null>(null);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [outputMode, setOutputMode] = useState<AudioOutputMode>('shared');
@@ -37,10 +133,16 @@ export const SettingsPage = (): JSX.Element => {
   const [lastOpenedFile, setLastOpenedFile] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [folders, setFolders] = useState<LibraryFolder[]>([]);
-  const [folderPathInput, setFolderPathInput] = useState('');
-  const [scanStatuses, setScanStatuses] = useState<Record<string, LibraryScanStatus>>({});
-  const [libraryError, setLibraryError] = useState<string | null>(null);
+
+  const visibleNavItems = useMemo(() => {
+    const query = settingsQuery.trim().toLowerCase();
+
+    if (!query) {
+      return settingsNavItems;
+    }
+
+    return settingsNavItems.filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(query));
+  }, [settingsQuery]);
 
   const compatibleDevices = useMemo(
     () => devices.filter((device) => (outputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')),
@@ -67,46 +169,15 @@ export const SettingsPage = (): JSX.Element => {
     }
   }, []);
 
-  const refreshFolders = useCallback(async () => {
-    try {
-      setFolders(await window.echo.library.getFolders());
-      setLibraryError(null);
-    } catch (refreshError) {
-      setLibraryError(refreshError instanceof Error ? refreshError.message : String(refreshError));
-    }
-  }, []);
-
   useEffect(() => {
     void refreshStatus();
     void refreshDevices();
-    void refreshFolders();
     const timer = window.setInterval(() => {
       void refreshStatus();
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [refreshDevices, refreshFolders, refreshStatus]);
-
-  useEffect(() => {
-    const activeJobs = Object.values(scanStatuses).filter((scan) => scan.status === 'queued' || scan.status === 'running');
-
-    if (activeJobs.length === 0) {
-      return undefined;
-    }
-
-    const timer = window.setInterval(() => {
-      for (const scan of activeJobs) {
-        void window.echo.library.getScanStatus(scan.id).then((nextStatus) => {
-          setScanStatuses((current) => ({
-            ...current,
-            [nextStatus.folderId]: nextStatus,
-          }));
-        });
-      }
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [scanStatuses]);
+  }, [refreshDevices, refreshStatus]);
 
   useEffect(() => {
     setOutputMode(status?.outputMode ?? 'shared');
@@ -145,8 +216,7 @@ export const SettingsPage = (): JSX.Element => {
   const applyOutputSettings = useCallback(
     async (nextOutputMode = outputMode, nextDeviceId = selectedDeviceId) => {
       const nextDevice =
-        devices.find((device) => device.id === nextDeviceId && (nextOutputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')) ??
-        null;
+        devices.find((device) => device.id === nextDeviceId && (nextOutputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')) ?? null;
       const output: AudioOutputSettings = {
         outputMode: nextOutputMode,
       };
@@ -160,6 +230,11 @@ export const SettingsPage = (): JSX.Element => {
     },
     [devices, outputMode, selectedDeviceId],
   );
+
+  const handleNavClick = (key: SettingsNavKey): void => {
+    setActiveSection(key);
+    document.getElementById(`settings-sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const handleOutputModeChange = (nextMode: AudioOutputMode): void => {
     setOutputMode(nextMode);
@@ -211,302 +286,237 @@ export const SettingsPage = (): JSX.Element => {
     await refreshStatus();
   };
 
-  const handleAddFolder = async (): Promise<void> => {
-    const folderPath = folderPathInput.trim();
-
-    if (!folderPath) {
-      return;
-    }
-
-    try {
-      const folder = await window.echo.library.addFolder(folderPath);
-      const scan = await window.echo.library.scanFolder(folder.id);
-      setFolderPathInput('');
-      setScanStatuses((current) => ({
-        ...current,
-        [folder.id]: scan,
-      }));
-      await refreshFolders();
-    } catch (addError) {
-      setLibraryError(addError instanceof Error ? addError.message : String(addError));
-    }
-  };
-
-  const handleScanFolder = async (folderId: string): Promise<void> => {
-    try {
-      const scan = await window.echo.library.scanFolder(folderId);
-      setScanStatuses((current) => ({
-        ...current,
-        [folderId]: scan,
-      }));
-    } catch (scanError) {
-      setLibraryError(scanError instanceof Error ? scanError.message : String(scanError));
-    }
-  };
-
-  const handleCancelScan = async (folderId: string, jobId: string): Promise<void> => {
-    try {
-      const scan = await window.echo.library.cancelScan(jobId);
-      setScanStatuses((current) => ({
-        ...current,
-        [folderId]: scan,
-      }));
-    } catch (cancelError) {
-      setLibraryError(cancelError instanceof Error ? cancelError.message : String(cancelError));
-    }
-  };
-
-  const handleRemoveFolder = async (folderId: string): Promise<void> => {
-    try {
-      await window.echo.library.removeFolder(folderId);
-      setScanStatuses((current) => {
-        const next = { ...current };
-        delete next[folderId];
-        return next;
-      });
-      await refreshFolders();
-    } catch (removeError) {
-      setLibraryError(removeError instanceof Error ? removeError.message : String(removeError));
-    }
-  };
-
-  const libraryPanel = (
-    <section className="audio-dev-panel" aria-label="Library folders">
-      <div className="audio-dev-header">
-        <div>
-          <span className="panel-kicker">Library</span>
-          <h2>Folders</h2>
-        </div>
-        <button className="tool-button" type="button" aria-label="Refresh folders" title="Refresh folders" onClick={() => void refreshFolders()}>
-          <RefreshCw size={17} />
-        </button>
-      </div>
-
-      <div className="library-folder-entry">
-        <label className="audio-field">
-          <span>folder path</span>
-          <input
-            type="text"
-            placeholder="D:\\Music"
-            value={folderPathInput}
-            onChange={(event) => setFolderPathInput(event.target.value)}
-          />
-        </label>
-        <button className="audio-command-button" type="button" onClick={() => void handleAddFolder()} disabled={!folderPathInput.trim()}>
-          <FolderPlus size={17} />
-          <span>Add and scan</span>
-        </button>
-      </div>
-
-      {libraryError ? <p className="audio-error">{libraryError}</p> : null}
-
-      {folders.length === 0 ? (
-        <p className="audio-empty">No library folders have been imported yet.</p>
-      ) : (
-        <div className="library-folder-list">
-          {folders.map((folder) => {
-            const scan = scanStatuses[folder.id];
-            const isScanning = scan?.status === 'queued' || scan?.status === 'running';
-
-            return (
-              <div className="library-folder-row" key={folder.id}>
-                <div>
-                  <strong>{folder.name}</strong>
-                  <span>{folder.path}</span>
-                  {scan ? (
-                    <small>
-                      {scan.status} / {scan.phase} / {scan.processedFiles}/{scan.totalFiles} parsed, {scan.skippedFiles} skipped
-                    </small>
-                  ) : (
-                    <small>Ready</small>
-                  )}
-                </div>
-                <button className="audio-icon-command" type="button" aria-label="Scan folder" title="Scan folder" onClick={() => void handleScanFolder(folder.id)} disabled={isScanning}>
-                  <RotateCw size={17} />
-                </button>
-                <button
-                  className="audio-icon-command"
-                  type="button"
-                  aria-label="Cancel scan"
-                  title="Cancel scan"
-                  onClick={() => scan && void handleCancelScan(folder.id, scan.id)}
-                  disabled={!isScanning || !scan}
-                >
-                  <XCircle size={17} />
-                </button>
-                <button className="audio-icon-command danger" type="button" aria-label="Remove folder" title="Remove folder" onClick={() => void handleRemoveFolder(folder.id)}>
-                  <Trash2 size={17} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-
-  if (!isDevBuild) {
-    return (
-      <div className="settings-preview page-stack">
-        {libraryPanel}
-        <div className="settings-row">
-          <span>Theme</span>
-          <strong>Light</strong>
-        </div>
-        <div className="settings-row">
-          <span>Output mode</span>
-          <strong>{status?.outputMode ?? 'Shared'}</strong>
-        </div>
-        <div className="settings-row">
-          <span>Library scan</span>
-          <strong>Manual</strong>
-        </div>
-        <EmptyState
-          icon={Settings}
-          title="Settings will become a typed API surface."
-          description="Audio host acceptance controls are available only in development builds."
-          meta="Renderer controls settings; it does not own system integration."
-        />
-      </div>
-    );
-  }
+  const activeNavItems = visibleNavItems.length ? visibleNavItems : settingsNavItems;
 
   return (
-    <div className="settings-preview page-stack">
-      {libraryPanel}
+    <div className="settings-page no-drag">
+      <header className="settings-header">
+        <h1>设置</h1>
+        <label className="settings-search">
+          <Search size={16} aria-hidden="true" />
+          <input
+            type="search"
+            value={settingsQuery}
+            onChange={(event) => setSettingsQuery(event.target.value)}
+            placeholder="搜索设置..."
+          />
+        </label>
+      </header>
 
-      <section className="audio-dev-panel" aria-label="Audio host acceptance">
-        <div className="audio-dev-header">
-          <div>
-            <span className="panel-kicker">Audio Host</span>
-            <h1>Native Output Check</h1>
-          </div>
-          <button className="tool-button" type="button" aria-label="Refresh audio status" title="Refresh audio status" onClick={() => void refreshStatus()}>
-            <RefreshCw size={17} />
-          </button>
-        </div>
+      <div className="settings-body">
+        <nav className="settings-nav" aria-label="设置">
+          {activeNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeSection === item.key;
+            const isDanger = item.key === 'danger';
 
-        <div className="audio-host-strip">
-          <div>
-            <span>host</span>
-            <strong>{status?.host ?? 'checking'}</strong>
-          </div>
-          <div>
-            <span>mode</span>
-            <strong>{outputMode}</strong>
-          </div>
-          <div>
-            <span>device</span>
-            <strong>{selectedDevice?.index ?? 'default'}</strong>
-          </div>
-        </div>
+            return (
+              <button
+                className={`settings-nav-item ${isActive ? 'active' : ''} ${isDanger ? 'is-danger' : ''}`}
+                key={item.key}
+                type="button"
+                onClick={() => handleNavClick(item.key)}
+              >
+                <Icon size={17} />
+                <span className="settings-nav-copy">
+                  <span className="settings-nav-label">{item.label}</span>
+                  <span className="settings-nav-desc">{item.description}</span>
+                </span>
+              </button>
+            );
+          })}
+        </nav>
 
-        <div className="audio-controls-grid">
-          <label className="audio-field">
-            <span>outputMode</span>
-            <select value={outputMode} onChange={(event) => handleOutputModeChange(event.target.value as AudioOutputMode)}>
-              <option value="shared">shared</option>
-              <option value="exclusive">exclusive</option>
-              <option value="asio">asio</option>
-            </select>
-          </label>
+        <div className="settings-scroll-shell">
+          <div className="settings-content">
+            <SettingSection activeKey={activeSection} icon={MessageSquare} id="general" title="通用">
+              <SettingRow title="显示语言" description="选择菜单、应用内设置与系统对话框的显示语言。">
+                <div className="settings-chip-row">
+                  <ChipButton>English</ChipButton>
+                  <ChipButton active>简体中文</ChipButton>
+                  <ChipButton>繁體中文（台灣）</ChipButton>
+                  <ChipButton>日本語</ChipButton>
+                </div>
+              </SettingRow>
+              <SettingRow title="关闭按钮行为" description="选择点击右上角关闭按钮时，是直接退出应用还是隐藏到系统托盘。">
+                <div className="settings-chip-row">
+                  <ChipButton>隐藏到托盘</ChipButton>
+                  <ChipButton active>直接退出</ChipButton>
+                </div>
+              </SettingRow>
+              <SettingRow title="设置参数备份" description="导出或导入 ECHO Next 设置参数，用于迁移到新设备或恢复配置。">
+                <div className="settings-chip-row">
+                  <button className="settings-action-button" type="button">
+                    <Download size={15} />
+                    导出设置
+                  </button>
+                  <button className="settings-action-button" type="button">
+                    导入设置
+                  </button>
+                </div>
+              </SettingRow>
+            </SettingSection>
 
-          <label className="audio-field">
-            <span>device</span>
-            <select value={selectedDeviceId} onChange={(event) => handleDeviceChange(event.target.value)} disabled={compatibleDevices.length === 0}>
-              {compatibleDevices.length === 0 ? (
-                <option value="">No devices</option>
-              ) : (
-                compatibleDevices.map((device) => (
-                  <option value={device.id} key={device.id}>
-                    {device.index} - {device.name}
-                  </option>
-                ))
-              )}
-            </select>
-          </label>
+            <SettingSection activeKey={activeSection} icon={Zap} id="playback" title="播放与音频">
+              <SettingRow title="输出模式" description="Shared 适合日常使用；Exclusive / ASIO 用于采样率验收和后续 bit-perfect 路径。">
+                <div className="settings-chip-row">
+                  {(['shared', 'exclusive', 'asio'] as AudioOutputMode[]).map((mode) => (
+                    <ChipButton active={outputMode === mode} key={mode} onClick={() => handleOutputModeChange(mode)}>
+                      {mode}
+                    </ChipButton>
+                  ))}
+                </div>
+              </SettingRow>
+              <SettingRow title="输出设备" description="来自 echo-audio-host 的设备列表；没有设备时保持默认输出。">
+                <label className="settings-select-field">
+                  <select value={selectedDeviceId} onChange={(event) => handleDeviceChange(event.target.value)} disabled={compatibleDevices.length === 0}>
+                    {compatibleDevices.length === 0 ? (
+                      <option value="">无可用设备</option>
+                    ) : (
+                      compatibleDevices.map((device) => (
+                        <option value={device.id} key={device.id}>
+                          {device.index} - {device.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+              </SettingRow>
+              <SettingRow title="本地音频验收" description="开发期入口，用于打开本地音频并检查 44.1k / 48k / 96k 采样率状态。">
+                <div className="settings-chip-row">
+                  <button className="settings-action-button" type="button" onClick={() => void handleOpenAndPlay()} disabled={!isDevBuild || isBusy || status?.host === 'unavailable'}>
+                    <FileAudio size={15} />
+                    打开音频
+                  </button>
+                  <button className="settings-icon-button" type="button" aria-label="暂停" title="暂停" onClick={() => void handlePause()}>
+                    <Pause size={15} />
+                  </button>
+                  <button className="settings-icon-button" type="button" aria-label="停止" title="停止" onClick={() => void handleStop()}>
+                    <Square size={15} />
+                  </button>
+                  <button className="settings-icon-button" type="button" aria-label="刷新音频状态" title="刷新音频状态" onClick={() => void refreshStatus()}>
+                    <RefreshCw size={15} />
+                  </button>
+                </div>
+              </SettingRow>
+              <SettingRow title="无线播放" description="后续 HiFi 引擎阶段再接入；当前阶段不迁移 gapless / automix / 流媒体。">
+                <ToggleButton />
+              </SettingRow>
+              <SettingRow title="定位当前播放歌曲" description="开启后，切歌时会自动把左侧当前列表滚动到正在播放的歌曲位置。">
+                <ToggleButton />
+              </SettingRow>
+              <SettingRow title="音频状态" description="采样率字段必须分开显示，避免旧 ECHO 的独占模式 48k 锁死回归。">
+                <div className="settings-status-grid">
+                  {statusRows(status).map((row) => (
+                    <span key={row.label}>
+                      <em>{row.label}</em>
+                      <strong>{row.value}</strong>
+                    </span>
+                  ))}
+                </div>
+              </SettingRow>
+              {lastOpenedFile ? <p className="settings-inline-note">{lastOpenedFile}</p> : null}
+              {error ? <p className="settings-inline-error">{error}</p> : null}
+              {status?.warnings.length ? (
+                <p className="settings-inline-error">warnings: {status.warnings.join(', ')}</p>
+              ) : null}
+            </SettingSection>
 
-          <button className="audio-command-button" type="button" onClick={() => void handleOpenAndPlay()} disabled={isBusy || status?.host === 'unavailable'}>
-            <FileAudio size={17} />
-            <span>Open Local Audio</span>
-          </button>
+            <SettingSection activeKey={activeSection} icon={Link2} id="integrations" title="联动">
+              <SettingRow title="Discord 状态" description="Phase 1 暂不接入联动服务，保留设置位置。">
+                <ToggleButton />
+              </SettingRow>
+              <SettingRow title="手机遥控" description="未来外部设备能力会走受控 IPC，不让 Renderer 直连系统资源。">
+                <ToggleButton />
+              </SettingRow>
+            </SettingSection>
 
-          <button className="audio-icon-command" type="button" aria-label="Pause" title="Pause" onClick={() => void handlePause()}>
-            <Pause size={17} />
-          </button>
-          <button className="audio-icon-command" type="button" aria-label="Stop" title="Stop" onClick={() => void handleStop()}>
-            <Square size={17} />
-          </button>
-          <button className="audio-icon-command" type="button" aria-label="Resume" title="Resume" onClick={() => void window.echo.playback.play().then(refreshStatus)}>
-            <Play size={17} />
-          </button>
-        </div>
+            <SettingSection activeKey={activeSection} icon={Globe2} id="remote" title="网盘 / 远程">
+              <SettingRow title="远程音乐库" description="本阶段禁止网盘 / 远程 / 流媒体，只保留设置分组占位。">
+                <ChipButton active>未启用</ChipButton>
+              </SettingRow>
+            </SettingSection>
 
-        {lastOpenedFile ? <p className="audio-file-path">{lastOpenedFile}</p> : null}
-        {error ? <p className="audio-error">{error}</p> : null}
-      </section>
+            <SettingSection activeKey={activeSection} icon={SlidersHorizontal} id="eq" title="EQ">
+              <SettingRow title="均衡器" description="EQ、VST、DSD 等 HiFi 扩展不在当前 Library Core 阶段实现。">
+                <ToggleButton />
+              </SettingRow>
+              <SettingRow title="输出安全" description="未来开启 EQ 前需要明确的增益与削波保护。">
+                <ChipButton active>安全模式</ChipButton>
+              </SettingRow>
+            </SettingSection>
 
-      <section className="audio-dev-panel" aria-label="Audio devices">
-        <div className="audio-dev-header">
-          <div>
-            <span className="panel-kicker">Devices</span>
-            <h2>echo-audio-host output devices</h2>
-          </div>
-          <button className="tool-button" type="button" aria-label="Refresh devices" title="Refresh devices" onClick={() => void refreshDevices()}>
-            <RefreshCw size={17} />
-          </button>
-        </div>
+            <SettingSection activeKey={activeSection} icon={Palette} id="appearance" title="外观">
+              <SettingRow title="主题" description="先保持浅色玻璃界面，后续再接入持久化主题设置。">
+                <div className="settings-chip-row">
+                  <ChipButton active>浅色</ChipButton>
+                  <ChipButton>深色</ChipButton>
+                  <ChipButton>跟随系统</ChipButton>
+                </div>
+              </SettingRow>
+              <SettingRow title="界面密度" description="曲库列表采用更紧凑的桌面密度，不再使用过大的卡片行。">
+                <div className="settings-chip-row">
+                  <ChipButton active>紧凑</ChipButton>
+                  <ChipButton>标准</ChipButton>
+                </div>
+              </SettingRow>
+            </SettingSection>
 
-        {devices.length === 0 ? (
-          <p className="audio-empty">No output devices were reported by echo-audio-host.</p>
-        ) : (
-          <div className="audio-device-table">
-            <div className="audio-device-row audio-device-row--head">
-              <span>name</span>
-              <span>index</span>
-              <span>sampleRate</span>
-              <span>sharedDeviceSampleRate</span>
-              <span>outputMode</span>
-            </div>
-            {devices.map((device) => (
-              <div className="audio-device-row" key={device.id}>
-                <strong>{device.name}</strong>
-                <span>{device.index}</span>
-                <span>{formatRate(device.sampleRate)}</span>
-                <span>{formatRate(device.sharedDeviceSampleRate)}</span>
-                <span>{device.outputMode}</span>
+            <SettingSection activeKey={activeSection} icon={Download} id="library" title="媒体库">
+              <LibraryFoldersPanel />
+            </SettingSection>
+
+            <SettingSection activeKey={activeSection} icon={Info} id="about" title="关于 / 高级">
+              <SettingRow title="开发模式" description="当前正在使用 ECHO Next Phase 1：Library Core + Audio Host 验收。">
+                <ChipButton active>{isDevBuild ? 'Dev' : 'Build'}</ChipButton>
+              </SettingRow>
+              <SettingRow title="原生 SQLite" description="better-sqlite3 会在 dev 前 rebuild 到 Electron ABI，避免扫描时模块版本不匹配。">
+                <ChipButton active>ready</ChipButton>
+              </SettingRow>
+              <SettingRow title="音频宿主" description="echo-audio-host.exe 当前用于本地迁移验收，正式发布后走 extraResources。">
+                <ChipButton active>{status?.host ?? 'checking'}</ChipButton>
+              </SettingRow>
+            </SettingSection>
+
+            <SettingSection activeKey={activeSection} icon={Trash2} id="danger" title="危险操作">
+              <SettingRow title="清空曲库缓存" description="当前不提供一键危险操作，避免误删或误清理本地扫描结果。">
+                <button className="settings-danger-button" type="button" disabled>
+                  暂不可用
+                </button>
+              </SettingRow>
+            </SettingSection>
+
+            <section className="settings-section settings-section--devices" data-visible={activeSection === 'playback'}>
+              <div className="section-title">
+                <Headphones size={18} />
+                <h2>设备列表</h2>
               </div>
-            ))}
+              {devices.length === 0 ? (
+                <p className="settings-inline-note">echo-audio-host 暂未返回输出设备。</p>
+              ) : (
+                <div className="audio-device-table">
+                  <div className="audio-device-row audio-device-row--head">
+                    <span>name</span>
+                    <span>index</span>
+                    <span>sampleRate</span>
+                    <span>sharedDeviceSampleRate</span>
+                    <span>outputMode</span>
+                  </div>
+                  {devices.map((device) => (
+                    <div className="audio-device-row" key={device.id}>
+                      <strong>{device.name}</strong>
+                      <span>{device.index}</span>
+                      <span>{formatRate(device.sampleRate)}</span>
+                      <span>{formatRate(device.sharedDeviceSampleRate)}</span>
+                      <span>{device.outputMode}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
-        )}
-      </section>
-
-      <section className="audio-dev-panel" aria-label="Audio status">
-        <div className="audio-dev-header">
-          <div>
-            <span className="panel-kicker">Status</span>
-            <h2>Sample-rate fields</h2>
-          </div>
         </div>
-
-        <div className="audio-status-grid">
-          {statusRows(status).map((row) => (
-            <div className="audio-status-cell" key={row.label}>
-              <span>{row.label}</span>
-              <strong>{row.value}</strong>
-            </div>
-          ))}
-        </div>
-
-        <div className="audio-warning-list">
-          <span>warnings</span>
-          {status?.warnings.length ? (
-            status.warnings.map((warning) => <strong key={warning}>{warning}</strong>)
-          ) : (
-            <strong>none</strong>
-          )}
-        </div>
-      </section>
+      </div>
     </div>
   );
 };

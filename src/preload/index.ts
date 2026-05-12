@@ -5,8 +5,12 @@ import type { EchoApi } from './apiTypes';
 const echoApi: EchoApi = {
   app: {
     getVersion: () => ipcRenderer.invoke(IpcChannels.AppGetVersion),
+    minimize: () => ipcRenderer.invoke(IpcChannels.AppWindowMinimize),
+    toggleMaximize: () => ipcRenderer.invoke(IpcChannels.AppWindowToggleMaximize),
+    close: () => ipcRenderer.invoke(IpcChannels.AppWindowClose),
   },
   library: {
+    chooseFolder: () => ipcRenderer.invoke(IpcChannels.LibraryChooseFolder),
     addFolder: (path) => ipcRenderer.invoke(IpcChannels.LibraryAddFolder, path),
     getFolders: () => ipcRenderer.invoke(IpcChannels.LibraryGetFolders),
     removeFolder: (folderId) => ipcRenderer.invoke(IpcChannels.LibraryRemoveFolder, folderId),

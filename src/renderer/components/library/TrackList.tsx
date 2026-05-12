@@ -6,37 +6,57 @@ import { TrackRow } from './TrackRow';
 type TrackListProps = {
   tracks: LibraryTrack[];
   currentTrackId: string | null;
+  canLoadMore?: boolean;
+  onEndReached?: () => void;
 };
 
-export const TrackList = memo(({ tracks, currentTrackId }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, onEndReached }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const rowVirtualizer = useVirtualizer({
     count: tracks.length,
     getScrollElement: () => scrollParentRef.current,
-    estimateSize: () => 70,
+    estimateSize: () => 76,
     overscan: 10,
   });
 
-  return (
-    <section className="track-list-card" aria-label="歌曲列表">
-      <div className="track-list" ref={scrollParentRef} role="list" data-virtualized="true" data-estimated-row-height="70">
-        <div className="track-virtual-spacer" style={{ height: rowVirtualizer.getTotalSize() }}>
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-            const track = tracks[virtualRow.index];
+  const handleScroll = (): void => {
+    const scrollElement = scrollParentRef.current;
 
-            return (
-              <div
-                className="track-virtual-row"
-                key={track.id}
-                ref={rowVirtualizer.measureElement}
-                data-index={virtualRow.index}
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
-              >
-                <TrackRow isPlaying={track.id === currentTrackId} track={track} />
-              </div>
-            );
-          })}
-        </div>
+    if (!scrollElement || !canLoadMore || !onEndReached) {
+      return;
+    }
+
+    const distanceToBottom = scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight;
+
+    if (distanceToBottom < 320) {
+      onEndReached();
+    }
+  };
+
+  return (
+    <section className="track-list-shell" aria-label="曲目列表">
+      <div className="track-list" ref={scrollParentRef} role="list" data-virtualized="true" data-estimated-row-height="76" onScroll={handleScroll}>
+        {tracks.length === 0 ? (
+          <div className="track-empty-state">没有可显示的曲目。导入音乐文件夹后这里会显示曲库列表。</div>
+        ) : (
+          <div className="track-virtual-spacer" style={{ height: rowVirtualizer.getTotalSize() }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const track = tracks[virtualRow.index];
+
+              return (
+                <div
+                  className="track-virtual-row"
+                  key={track.id}
+                  ref={rowVirtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  <TrackRow isPlaying={track.id === currentTrackId} track={track} />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );

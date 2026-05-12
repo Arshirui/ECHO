@@ -13,8 +13,12 @@ import type { PlaybackStartRequest, PlaybackStatus } from '../shared/types/playb
 export type EchoApi = {
   app: {
     getVersion: () => Promise<string>;
+    minimize: () => Promise<void>;
+    toggleMaximize: () => Promise<void>;
+    close: () => Promise<void>;
   };
   library: {
+    chooseFolder: () => Promise<string | null>;
     addFolder: (path: string) => Promise<LibraryFolder>;
     getFolders: () => Promise<LibraryFolder[]>;
     removeFolder: (folderId: string) => Promise<void>;

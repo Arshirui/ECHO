@@ -65,6 +65,8 @@ Preload must not:
 - parse metadata or covers
 - know which worker implementation backs Library Core
 
+Renderer must not open Electron dialogs directly. Folder chooser UX must go through preload and IPC, not from React components calling `dialog`.
+
 ## Native Worker Boundary
 
 Library Core heavy work must be called through stable interfaces:
@@ -173,6 +175,8 @@ Metadata and cover workers must use concurrency limits. Cover thumbnails must be
 
 SQLite is the source of truth after a scan. Restarting the app must not reparse the whole library.
 
+`better-sqlite3` must be rebuilt for the Electron runtime ABI before desktop dev runs. `npm run dev` owns that check through `npm run rebuild:native`; do not rely on the binary produced for the system Node.js ABI when testing folder import or library scanning in Electron. Vitest uses the system Node.js ABI, so `npm test` owns the opposite rebuild through `npm run rebuild:native:node`.
+
 Required persisted tables:
 
 - `folders`
@@ -208,3 +212,5 @@ Changes touching metadata, cover, audio, library, encoding, database migration, 
 Library Core tests should prefer real SQLite and mocked metadata readers over large binary audio fixtures unless a parser integration bug specifically requires real media.
 
 Tests that touch Library Core must cover the worker boundary with fake `MetadataReader`, `CoverExtractor`, and `FileScanner` implementations so the architecture stays Rust/C++ ready.
+
+Folder import UX must keep `library.chooseFolder()` in main/preload, treat repeated imports as idempotent rescans, and refresh SongsPage / AlbumsPage after import or scan completion through the shared `library:changed` event. Sidebar import entries are direct actions: `Import Folder` opens the folder picker instead of navigating, and `Import File` opens the local audio file picker without exposing Electron dialogs to Renderer code.

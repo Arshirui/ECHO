@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { dialog, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { LibraryPageQuery, LibrarySort } from '../../shared/types/library';
 import { getLibraryService } from '../library/LibraryService';
@@ -41,6 +41,14 @@ const normalizeQuery = (value: unknown): LibraryPageQuery => {
 };
 
 export const registerLibraryIpc = (): void => {
+  ipcMain.handle(IpcChannels.LibraryChooseFolder, async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: '选择音乐文件夹',
+      properties: ['openDirectory'],
+    });
+
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
   ipcMain.handle(IpcChannels.LibraryAddFolder, (_event, folderPath: unknown) =>
     getLibraryService().addFolder(requireText(folderPath, 'folderPath')),
   );

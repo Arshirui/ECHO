@@ -1,6 +1,17 @@
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { BrowserWindow } from 'electron';
 import { clearMainWindow, setMainWindow } from './windowManager';
+
+export const resolvePreloadPath = (baseDir = __dirname): string => {
+  const mjsPreload = join(baseDir, '../preload/index.mjs');
+
+  if (existsSync(mjsPreload)) {
+    return mjsPreload;
+  }
+
+  return join(baseDir, '../preload/index.js');
+};
 
 export const createMainWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
@@ -10,10 +21,10 @@ export const createMainWindow = (): BrowserWindow => {
     minHeight: 680,
     title: 'ECHO Next',
     backgroundColor: '#f7f9fc',
+    frame: false,
     show: false,
-    titleBarStyle: 'hiddenInset',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: resolvePreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,

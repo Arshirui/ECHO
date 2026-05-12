@@ -26,6 +26,8 @@ Phase 0 intentionally kept scanning, playback, and SQLite out of the shell.
 - persisted album wall data that survives restart
 - `SongsPage` with paged API reads and virtualized rows
 - `AlbumsPage` with paged album-wall reads from SQLite
+- sidebar `Import Folder` direct picker plus Settings/fallback folder import UX using `library.chooseFolder()`
+- sidebar `Import File` direct picker for the existing local audio file open path; single-file library ingestion remains deferred
 - focused tests for migration, scanning, metadata priority, cover priority, album grouping, restart persistence, pagination, and scan errors
 
 Deferred beyond the minimal Phase 1 loop:
