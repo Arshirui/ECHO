@@ -58,7 +58,7 @@ bool EqPresetStore::validatePreset(const EqPreset& preset)
     {
         const auto& band = preset.bands[static_cast<size_t>(index)];
 
-        if (! std::isfinite(band.frequencyHz) || std::abs(band.frequencyHz - eqFrequenciesHz[static_cast<size_t>(index)]) > 0.5f)
+        if (! std::isfinite(band.frequencyHz) || band.frequencyHz < eqMinFrequencyHz || band.frequencyHz > eqMaxFrequencyHz)
             return false;
 
         if (! std::isfinite(band.gainDb) || band.gainDb < eqMinGainDb || band.gainDb > eqMaxGainDb)

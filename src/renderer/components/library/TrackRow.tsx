@@ -14,6 +14,7 @@ type TrackRowProps = {
   track: LibraryTrack;
   isPlaying: boolean;
   onPlay?: (track: LibraryTrack) => void;
+  onOpenMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
 };
 
 const formatDuration = (duration: number): string => {
@@ -72,7 +73,7 @@ const tagClassNameByKind: Record<HifiTagKind, string> = {
 };
 
 export const TrackRow = memo(
-  ({ track, isPlaying, onPlay }: TrackRowProps): JSX.Element => {
+  ({ track, isPlaying, onPlay, onOpenMenu }: TrackRowProps): JSX.Element => {
     const tags = tagsFromTrack(track);
     const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
     const shouldShowCover = Boolean(track.coverThumb && track.coverThumb !== failedCoverUrl);
@@ -91,6 +92,26 @@ export const TrackRow = memo(
     const stopActionPropagation = useCallback((event: MouseEvent): void => {
       event.stopPropagation();
     }, []);
+    const handleContextMenu = useCallback(
+      (event: MouseEvent<HTMLDivElement>): void => {
+        if (!onOpenMenu) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        onOpenMenu(track, { x: event.clientX, y: event.clientY });
+      },
+      [onOpenMenu, track],
+    );
+    const handleMoreClick = useCallback(
+      (event: MouseEvent<HTMLButtonElement>): void => {
+        event.stopPropagation();
+        const rect = event.currentTarget.getBoundingClientRect();
+        onOpenMenu?.(track, { x: rect.right - 12, y: rect.bottom + 8 });
+      },
+      [onOpenMenu, track],
+    );
     const handleCoverError = useCallback((): void => {
       if (!track.coverThumb) {
         return;
@@ -114,6 +135,7 @@ export const TrackRow = memo(
         role="listitem"
         tabIndex={onPlay ? 0 : undefined}
         onClick={handlePlay}
+        onContextMenu={handleContextMenu}
         onKeyDown={handleKeyDown}
       >
         <div className="track-cover" data-empty={!shouldShowCover} aria-hidden="true">
@@ -151,14 +173,18 @@ export const TrackRow = memo(
           <button className="row-action" type="button" aria-label={`加入队列 ${track.title}`} title="加入队列">
             <ListPlus size={16} />
           </button>
-          <button className="row-action" type="button" aria-label={`更多 ${track.title}`} title="更多">
+          <button className="row-action" type="button" aria-label={`更多 ${track.title}`} title="更多" onClick={handleMoreClick}>
             <MoreHorizontal size={16} />
           </button>
         </div>
       </div>
     );
   },
-  (previous, next) => previous.track === next.track && previous.isPlaying === next.isPlaying && previous.onPlay === next.onPlay,
+  (previous, next) =>
+    previous.track === next.track &&
+    previous.isPlaying === next.isPlaying &&
+    previous.onPlay === next.onPlay &&
+    previous.onOpenMenu === next.onOpenMenu,
 );
 
 TrackRow.displayName = 'TrackRow';

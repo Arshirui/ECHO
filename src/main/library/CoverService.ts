@@ -6,12 +6,14 @@ import { TsCoverExtractor } from './workers/TsCoverExtractor';
 
 const coverSourceRank: Record<CoverSource, number> = {
   default: 0,
-  folder: 1,
-  embedded: 2,
+  network: 1,
+  folder: 2,
+  embedded: 3,
+  manual: 4,
 };
 
 const coverSourceOrNull = (value: unknown): CoverSource | null =>
-  value === 'embedded' || value === 'folder' || value === 'default' ? value : null;
+  value === 'manual' || value === 'embedded' || value === 'folder' || value === 'network' || value === 'default' ? value : null;
 
 const preferredCoverSource = (current: unknown, next: CoverSource): CoverSource => {
   const currentSource = coverSourceOrNull(current);

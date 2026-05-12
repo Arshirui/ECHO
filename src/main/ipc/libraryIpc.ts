@@ -1,9 +1,12 @@
-import { dialog, ipcMain } from 'electron';
+import { existsSync, writeFileSync } from 'node:fs';
+import { clipboard, dialog, ipcMain, nativeImage, shell } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import type { LibraryPageQuery, LibrarySort } from '../../shared/types/library';
+import type { EditableTrackTags, LibraryPageQuery, LibrarySort, LibraryTrackTagUpdateRequest } from '../../shared/types/library';
 import { getLibraryService } from '../library/LibraryService';
+import { SongCardRenderer } from '../library/SongCardRenderer';
 
 const sortValues = new Set<LibrarySort>(['title', 'artist', 'album', 'recent']);
+const songCardRenderer = new SongCardRenderer();
 
 const requireText = (value: unknown, name: string): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -38,6 +41,70 @@ const normalizeQuery = (value: unknown): LibraryPageQuery => {
   }
 
   return query;
+};
+
+const optionalNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeTagUpdateRequest = (value: unknown): LibraryTrackTagUpdateRequest => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('tag update request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  const tagsInput = input.tags;
+
+  if (!tagsInput || typeof tagsInput !== 'object' || Array.isArray(tagsInput)) {
+    throw new Error('tags must be an object');
+  }
+
+  const tagsRecord = tagsInput as Record<string, unknown>;
+  const readText = (key: keyof EditableTrackTags): string => {
+    const fieldValue = tagsRecord[key];
+    return typeof fieldValue === 'string' ? fieldValue : '';
+  };
+
+  return {
+    trackId: requireText(input.trackId, 'trackId'),
+    tags: {
+      title: readText('title'),
+      artist: readText('artist'),
+      album: readText('album'),
+      albumArtist: readText('albumArtist'),
+      trackNo: optionalNumber(tagsRecord.trackNo),
+      discNo: optionalNumber(tagsRecord.discNo),
+      year: optionalNumber(tagsRecord.year),
+      genre: typeof tagsRecord.genre === 'string' && tagsRecord.genre.trim().length > 0 ? tagsRecord.genre : null,
+    },
+  };
+};
+
+const getExistingTrack = (trackId: unknown) => {
+  const id = requireText(trackId, 'trackId');
+  const track = getLibraryService().getTrack(id);
+
+  if (!track) {
+    throw new Error(`Unknown track ${id}`);
+  }
+
+  return track;
+};
+
+const renderTrackCard = async (trackId: unknown) => {
+  const track = getExistingTrack(trackId);
+  const asset = track.coverId ? getLibraryService().resolveCoverAsset(track.coverId, 'large') : null;
+
+  return songCardRenderer.render({
+    track,
+    coverPath: asset?.filePath && existsSync(asset.filePath) ? asset.filePath : null,
+    coverMimeType: asset?.mimeType ?? null,
+  });
 };
 
 export const registerLibraryIpc = (): void => {
@@ -76,4 +143,58 @@ export const registerLibraryIpc = (): void => {
   );
   ipcMain.handle(IpcChannels.LibraryGetSummary, () => getLibraryService().getSummary());
   ipcMain.handle(IpcChannels.LibraryGetDiagnostics, () => getLibraryService().getDiagnostics());
+  ipcMain.handle(IpcChannels.LibraryUpdateTrackTags, (_event, request: unknown) =>
+    getLibraryService().updateTrackTags(normalizeTagUpdateRequest(request)),
+  );
+  ipcMain.handle(IpcChannels.LibraryOpenTrackInFolder, (_event, trackId: unknown): void => {
+    shell.showItemInFolder(getExistingTrack(trackId).path);
+  });
+  ipcMain.handle(IpcChannels.LibraryOpenTrackWithSystem, async (_event, trackId: unknown): Promise<void> => {
+    const result = await shell.openPath(getExistingTrack(trackId).path);
+
+    if (result) {
+      throw new Error(result);
+    }
+  });
+  ipcMain.handle(IpcChannels.LibraryCopyTrackPath, (_event, trackId: unknown): void => {
+    clipboard.writeText(getExistingTrack(trackId).path);
+  });
+  ipcMain.handle(IpcChannels.LibraryCopyTrackNameArtist, (_event, trackId: unknown): void => {
+    const track = getExistingTrack(trackId);
+    clipboard.writeText(`${track.title} - ${track.artist}`);
+  });
+  ipcMain.handle(IpcChannels.LibraryCopyTrackCover, async (_event, trackId: unknown): Promise<boolean> => {
+    const card = await renderTrackCard(trackId);
+    const image = nativeImage.createFromBuffer(card.pngBuffer);
+    if (image.isEmpty()) {
+      return false;
+    }
+
+    clipboard.writeImage(image);
+    return true;
+  });
+  ipcMain.handle(IpcChannels.LibrarySaveTrackCover, async (_event, trackId: unknown): Promise<string | null> => {
+    const card = await renderTrackCard(trackId);
+    const result = await dialog.showSaveDialog({
+      title: '保存歌曲卡片图片',
+      defaultPath: card.suggestedFileName,
+      filters: [{ name: 'PNG Image', extensions: ['png'] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    writeFileSync(result.filePath, card.pngBuffer);
+    return result.filePath;
+  });
+  ipcMain.handle(IpcChannels.LibraryDeleteTrackFile, async (_event, trackId: unknown): Promise<void> => {
+    const track = getExistingTrack(trackId);
+
+    if (existsSync(track.path)) {
+      await shell.trashItem(track.path);
+    }
+
+    getLibraryService().deleteTrack(track.id);
+  });
 };

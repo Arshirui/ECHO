@@ -7,12 +7,14 @@ import { Sidebar } from '../components/layout/Sidebar';
 import { AppTitleBar } from '../components/layout/AppTitleBar';
 import type { AppRoute, AppRouteId } from './routes';
 import type { AudioStatus } from '../../shared/types/audio';
+import { useI18n } from '../i18n/I18nProvider';
 
 type AppLayoutProps = {
   routes: AppRoute[];
 };
 
 export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
+  const { t } = useI18n();
   const [activeRouteId, setActiveRouteId] = useState<AppRouteId>('songs');
   const [chromeNotice, setChromeNotice] = useState<string | null>(null);
   const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState(false);
@@ -97,7 +99,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
     if (!library) {
       folderInputRef.current?.click();
-      setChromeNotice('Browser preview opened a folder picker. Real library import uses the Electron desktop app.');
+      setChromeNotice(t('notice.browserFolderPicker'));
       return;
     }
 
@@ -114,7 +116,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     } catch (error) {
       console.error('Failed to import folder from app chrome', error);
     }
-  }, [notifyLibraryChanged]);
+  }, [notifyLibraryChanged, t]);
 
   const handleImportFile = useCallback(async (): Promise<void> => {
     const playback = window.echo?.playback;
@@ -122,7 +124,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
     if (!playback) {
       fileInputRef.current?.click();
-      setChromeNotice('Browser preview opened a file picker. Real playback uses the Electron desktop app.');
+      setChromeNotice(t('notice.browserFolderPicker'));
       return;
     }
 
@@ -146,25 +148,25 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     } catch (error) {
       console.error('Failed to open local audio file from app chrome', error);
     }
-  }, []);
+  }, [t]);
 
   const handleWindowAction = useCallback(async (action: 'minimize' | 'toggleMaximize' | 'close'): Promise<void> => {
     const appApi = window.echo?.app;
 
     if (!appApi) {
-      setChromeNotice('Window controls are available in the Electron desktop window.');
+      setChromeNotice(t('notice.windowControlsDesktop'));
       return;
     }
 
     await appApi[action]();
-  }, []);
+  }, [t]);
 
   const handleBrowserFolderPicked = (files: FileList | null): void => {
     if (!files?.length) {
       return;
     }
 
-    setChromeNotice(`Browser preview selected ${files.length} file(s). Open ECHO Next desktop to scan the folder.`);
+    setChromeNotice(t('notice.browserFilePicker', { name: `${files.length} file(s)` }));
   };
 
   const handleBrowserFilePicked = (files: FileList | null): void => {
@@ -174,7 +176,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       return;
     }
 
-    setChromeNotice(`Browser preview selected "${file.name}". Open ECHO Next desktop to play it through Audio Core.`);
+    setChromeNotice(t('notice.browserFilePicker', { name: `"${file.name}"` }));
   };
 
   return (

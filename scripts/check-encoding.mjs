@@ -37,7 +37,13 @@ const suspiciousPatterns = [
   /涓嬭/u,
   /鍒锋/u,
   /鎵/u,
+  /閫氱/u,
+  /璇/u,
+  /鎾/u,
   /鎼滅/u,
+  /绠€/u,
+  /绻侀/u,
+  /鏃ユ/u,
   /榛樿/u,
   /鎸夎/u,
   /鏈€/u,
@@ -45,7 +51,9 @@ const suspiciousPatterns = [
   /娌℃/u,
   /闊抽/u,
   /璁剧/u,
+  /澶栬/u,
   /濯掍/u,
+  /鍏充/u,
   /銆/u,
 ];
 

@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import type { AppRouteId } from '../../app/routes';
+import { useI18n } from '../../i18n/I18nProvider';
 
 type AppTitleBarProps = {
   activeRouteId: AppRouteId;
@@ -37,36 +38,37 @@ export const AppTitleBar = ({
   onToggleMaximize,
   onClose,
 }: AppTitleBarProps): JSX.Element => {
+  const { t } = useI18n();
   const actions: TitleBarAction[] = [
     {
       id: 'songs',
-      label: 'Songs',
+      label: t('route.songs.label'),
       icon: Library,
       active: activeRouteId === 'songs',
       onClick: () => onRouteChange('songs'),
     },
     {
       id: 'albums',
-      label: 'Albums',
+      label: t('route.albums.label'),
       icon: Disc3,
       active: activeRouteId === 'albums',
       onClick: () => onRouteChange('albums'),
     },
     {
       id: 'import-file',
-      label: 'Import File',
+      label: t('route.importFile.label'),
       icon: FileAudio,
       onClick: onImportFile,
     },
     {
       id: 'audio-settings',
-      label: 'Audio Settings',
+      label: t('route.audioSettings.label'),
       icon: Headphones,
       onClick: onOpenAudioSettings,
     },
     {
       id: 'settings',
-      label: 'Settings',
+      label: t('route.settings.label'),
       icon: Settings,
       active: activeRouteId === 'settings',
       onClick: () => onRouteChange('settings'),
@@ -74,13 +76,13 @@ export const AppTitleBar = ({
   ];
 
   return (
-    <header className="app-titlebar" aria-label="Application toolbar">
+    <header className="app-titlebar" aria-label="ECHO Next">
       <div className="app-titlebar-brand">
         <strong>ECHO</strong>
         <span>Next</span>
       </div>
 
-      <div className="app-titlebar-actions" aria-label="Quick actions">
+      <div className="app-titlebar-actions" aria-label={t('app.toolbar.quickActions')}>
         {actions.map((action) => {
           const Icon = action.icon;
 
@@ -100,20 +102,20 @@ export const AppTitleBar = ({
         })}
       </div>
 
-      <div className="window-controls" aria-label="Window controls">
-        <button className="window-control" type="button" aria-label="Minimize" title="Minimize" onClick={onMinimize}>
+      <div className="window-controls" aria-label={t('app.toolbar.windowControls')}>
+        <button className="window-control" type="button" aria-label={t('app.window.minimize')} title={t('app.window.minimize')} onClick={onMinimize}>
           <Minus size={16} />
         </button>
         <button
           className="window-control"
           type="button"
-          aria-label="Maximize"
-          title="Maximize"
+          aria-label={t('app.window.maximize')}
+          title={t('app.window.maximize')}
           onClick={onToggleMaximize}
         >
           <Square size={14} />
         </button>
-        <button className="window-control window-control--close" type="button" aria-label="Close" title="Close" onClick={onClose}>
+        <button className="window-control window-control--close" type="button" aria-label={t('app.window.close')} title={t('app.window.close')} onClick={onClose}>
           <X size={16} />
         </button>
       </div>

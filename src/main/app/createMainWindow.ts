@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { BrowserWindow } from 'electron';
+import { getAppSettings } from './appSettings';
+import { ensureTray, isAppQuitRequested } from './tray';
 import { clearMainWindow, setMainWindow } from './windowManager';
 
 export const resolvePreloadPath = (baseDir = __dirname): string => {
@@ -33,6 +35,14 @@ export const createMainWindow = (): BrowserWindow => {
 
   window.once('ready-to-show', () => {
     window.show();
+  });
+
+  window.on('close', (event) => {
+    if (!isAppQuitRequested() && getAppSettings().hideToTrayOnClose) {
+      event.preventDefault();
+      ensureTray();
+      window.hide();
+    }
   });
 
   window.on('closed', () => {

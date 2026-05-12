@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { createMainWindow } from './createMainWindow';
+import { requestAppQuit } from './tray';
 import { getMainWindow } from './windowManager';
 import { registerCoverProtocolHandler } from '../protocol/coverProtocol';
 
@@ -13,6 +14,10 @@ export const registerAppLifecycle = (): void => {
         createMainWindow();
       }
     });
+  });
+
+  app.on('before-quit', () => {
+    requestAppQuit();
   });
 
   app.on('window-all-closed', () => {

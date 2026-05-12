@@ -52,7 +52,7 @@ std::string EqMessageProtocol::createStateMessage(const EqProcessor& processor)
         if (index > 0)
             output << ',';
 
-        output << "{\"frequencyHz\":" << eqFrequenciesHz[static_cast<size_t>(index)]
+        output << "{\"frequencyHz\":" << state.bandFrequenciesHz[static_cast<size_t>(index)]
                << ",\"gainDb\":" << state.bandGainsDb[static_cast<size_t>(index)]
                << ",\"q\":1}";
     }
@@ -90,6 +90,16 @@ std::string EqMessageProtocol::handleJsonLine(const std::string& line, EqProcess
         return createStateMessage(processor);
     }
 
+    if (type == "eq:set-band-frequency")
+    {
+        const int band = getInt(*object, "band", -1);
+
+        if (! processor.setBandFrequencyHz(band, getNumber(*object, "frequencyHz", eqFrequenciesHz[0])))
+            return createErrorMessage(type, "invalid_band_index");
+
+        return createStateMessage(processor);
+    }
+
     if (type == "eq:set-preamp")
     {
         processor.setPreampDb(getNumber(*object, "preampDb", 0.0f));
@@ -117,6 +127,7 @@ std::string EqMessageProtocol::handleJsonLine(const std::string& line, EqProcess
             if (bandObject == nullptr)
                 return createErrorMessage(type, "invalid_preset_band");
 
+            processor.setBandFrequencyHz(index, getNumber(*bandObject, "frequencyHz", eqFrequenciesHz[static_cast<size_t>(index)]));
             processor.setBandGainDb(index, getNumber(*bandObject, "gainDb", 0.0f));
         }
 

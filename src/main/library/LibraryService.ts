@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import electron from 'electron';
+import { applyTagsToFile } from 'taglib-wasm';
 import { createDatabase } from '../database/createDatabase';
 import { AlbumService } from './AlbumService';
 import { LibraryStore } from './LibraryStore';
@@ -10,12 +11,14 @@ import type { MetadataService } from './MetadataService';
 import type {
   LibraryAlbum,
   LibraryDiagnostics,
+  EditableTrackTags,
   LibraryFolder,
   LibraryPage,
   LibraryPageQuery,
   LibraryScanStatus,
   LibrarySummary,
   LibraryTrack,
+  LibraryTrackTagUpdateRequest,
   CoverVariant,
 } from './libraryTypes';
 import type { CoverExtractor } from './workers/CoverExtractor';
@@ -39,6 +42,7 @@ export class LibraryService {
   constructor(
     private readonly store: LibraryStore,
     private readonly scanJobQueue: ScanJobQueue,
+    private readonly albumService: AlbumService,
     private readonly closeDatabase: () => void,
     private readonly databasePath: string | null = null,
     private readonly coverCacheDir: string | null = null,
@@ -110,6 +114,68 @@ export class LibraryService {
     return this.store.resolveCoverAsset(coverId, variant);
   }
 
+  getTrack(trackId: string): LibraryTrack | null {
+    return this.store.getTrack(trackId);
+  }
+
+  async updateTrackTags(request: LibraryTrackTagUpdateRequest): Promise<LibraryTrack> {
+    const currentTrack = this.store.getTrack(request.trackId);
+
+    if (!currentTrack) {
+      throw new Error(`Unknown track ${request.trackId}`);
+    }
+
+    if (!existsSync(currentTrack.path)) {
+      throw new Error(`Track file is missing: ${currentTrack.path}`);
+    }
+
+    const tags = normalizeEditableTags(request.tags, currentTrack);
+
+    await applyTagsToFile(currentTrack.path, {
+      title: tags.title,
+      artist: tags.artist,
+      album: tags.album,
+      albumArtist: tags.albumArtist,
+      track: tags.trackNo ?? 0,
+      discNumber: tags.discNo ?? 0,
+      year: tags.year ?? 0,
+      genre: tags.genre ?? '',
+    });
+
+    const fileStat = statSync(currentTrack.path);
+    const fieldSources = {
+      ...currentTrack.fieldSources,
+      title: 'manual',
+      artist: 'manual',
+      album: 'manual',
+      albumArtist: 'manual',
+      trackNo: 'manual',
+      discNo: 'manual',
+      year: 'manual',
+      genre: 'manual',
+    };
+
+    return this.store.transaction(() => {
+      const updated = this.store.updateTrackTags(request.trackId, {
+        ...tags,
+        sizeBytes: fileStat.size,
+        mtimeMs: fileStat.mtimeMs,
+        fieldSources,
+      });
+      this.store.refreshAlbums(this.albumService);
+      this.store.refreshArtists();
+      return updated;
+    });
+  }
+
+  deleteTrack(trackId: string): void {
+    this.store.transaction(() => {
+      this.store.deleteTrack(trackId);
+      this.store.refreshAlbums(this.albumService);
+      this.store.refreshArtists();
+    });
+  }
+
   async waitForScan(jobId: string): Promise<void> {
     await this.scanJobQueue.waitForIdle(jobId);
   }
@@ -150,7 +216,7 @@ export const createLibraryService = (
     coverConcurrency: dependencies.coverConcurrency,
   });
 
-  return new LibraryService(store, scanJobQueue, () => database.close(), databasePath, coverCacheDir);
+  return new LibraryService(store, scanJobQueue, albumService, () => database.close(), databasePath, coverCacheDir);
 };
 
 let defaultLibraryService: LibraryService | null = null;
@@ -175,6 +241,45 @@ const pathSize = (targetPath: string): number | null => {
   } catch {
     return null;
   }
+};
+
+const cleanText = (value: string, fallback = ''): string => {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+};
+
+const cleanNullableText = (value: string | null): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const cleanNullableNumber = (value: number | null): number | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+
+  const rounded = Math.round(value);
+  return rounded > 0 ? rounded : null;
+};
+
+const normalizeEditableTags = (tags: EditableTrackTags, previous: LibraryTrack): EditableTrackTags => {
+  const title = cleanText(tags.title, previous.title || 'Untitled');
+  const artist = cleanText(tags.artist, previous.artist || 'Unknown Artist');
+
+  return {
+    title,
+    artist,
+    album: cleanText(tags.album),
+    albumArtist: cleanText(tags.albumArtist, artist),
+    trackNo: cleanNullableNumber(tags.trackNo),
+    discNo: cleanNullableNumber(tags.discNo),
+    year: cleanNullableNumber(tags.year),
+    genre: cleanNullableText(tags.genre),
+  };
 };
 
 const directorySize = (targetPath: string): number | null => {

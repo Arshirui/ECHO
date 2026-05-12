@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ChevronDown,
-  Download,
-  FolderPlus,
-  RefreshCw,
-  RotateCw,
-  Search,
-  Trash2,
-} from 'lucide-react';
-import type { LibrarySort, LibraryTrack } from '../../shared/types/library';
+import { ChevronDown, Download, FolderPlus, RefreshCw, RotateCw, Search, Trash2 } from 'lucide-react';
+import type { EditableTrackTags, LibrarySort, LibraryTrack } from '../../shared/types/library';
+import { TrackContextMenu } from '../components/library/TrackContextMenu';
+import type { TrackMenuAction } from '../components/library/TrackContextMenu';
 import { TrackList } from '../components/library/TrackList';
+import { TrackTagEditorDrawer } from '../components/library/TrackTagEditorDrawer';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 const pageSize = 100;
+
+type TrackMenuState = {
+  track: LibraryTrack;
+  position: { x: number; y: number };
+};
 
 export const SongsPage = (): JSX.Element => {
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
@@ -24,8 +24,12 @@ export const SongsPage = (): JSX.Element => {
   const [sort, setSort] = useState<LibrarySort>('title');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [trackMenu, setTrackMenu] = useState<TrackMenuState | null>(null);
+  const [editingTrack, setEditingTrack] = useState<LibraryTrack | null>(null);
+  const [tagEditorError, setTagEditorError] = useState<string | null>(null);
+  const [isSavingTags, setIsSavingTags] = useState(false);
   const requestIdRef = useRef(0);
-  const { currentTrackId, playTrack, setQueue } = usePlaybackQueue();
+  const { currentTrackId, playTrack, setQueue, appendToQueue, playTrackNext, removeFromQueue } = usePlaybackQueue();
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -87,8 +91,6 @@ export const SongsPage = (): JSX.Element => {
   }, [loadTracks]);
 
   useEffect(() => {
-    // Phase 1.2: transport controls operate on the loaded SongsPage window only.
-    // Do not expand this into a full playback queue until Library Core owns queue state.
     setQueue(tracks);
   }, [setQueue, tracks]);
 
@@ -134,12 +136,111 @@ export const SongsPage = (): JSX.Element => {
     [playTrack],
   );
 
+  const handleOpenTrackMenu = useCallback((track: LibraryTrack, position: { x: number; y: number }): void => {
+    setTrackMenu({ track, position });
+  }, []);
+
+  const handleTrackMenuAction = useCallback(
+    async (action: TrackMenuAction, track: LibraryTrack): Promise<void> => {
+      const library = window.echo?.library;
+      setTrackMenu(null);
+
+      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags') {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.');
+        return;
+      }
+
+      try {
+        setError(null);
+
+        switch (action) {
+          case 'play-next':
+            playTrackNext(track);
+            return;
+          case 'add-to-queue':
+            appendToQueue(track);
+            return;
+          case 'remove-from-queue':
+            removeFromQueue(track.id);
+            return;
+          case 'edit-tags':
+            setTagEditorError(null);
+            setEditingTrack(track);
+            return;
+          case 'go-to-album':
+            setSearchInput(track.album);
+            setSort('album');
+            return;
+          case 'show-in-folder':
+            await library?.openTrackInFolder(track.id);
+            return;
+          case 'copy-path':
+            await library?.copyTrackPath(track.id);
+            return;
+          case 'open-system':
+            await library?.openTrackWithSystem(track.id);
+            return;
+          case 'copy-name-artist':
+            await library?.copyTrackNameArtist(track.id);
+            return;
+          case 'copy-cover':
+            if (!(await library?.copyTrackCover(track.id))) {
+              setError('这首歌没有可复制的歌曲卡片图片。');
+            }
+            return;
+          case 'save-cover':
+            if (!(await library?.saveTrackCover(track.id))) {
+              setError('没有保存歌曲卡片图片。');
+            }
+            return;
+          case 'delete-song':
+            if (!window.confirm(`删除歌曲文件？\n${track.title}`)) {
+              return;
+            }
+            await library?.deleteTrackFile(track.id);
+            setTracks((current) => current.filter((item) => item.id !== track.id));
+            window.dispatchEvent(new Event('library:changed'));
+            return;
+          case 'add-to-playlist':
+          default:
+            setError('歌单功能还在接入中。');
+        }
+      } catch (actionError) {
+        setError(actionError instanceof Error ? actionError.message : String(actionError));
+      }
+    },
+    [appendToQueue, playTrackNext, removeFromQueue],
+  );
+
+  const handleSaveTags = useCallback(async (track: LibraryTrack, tags: EditableTrackTags): Promise<void> => {
+    const library = window.echo?.library;
+
+    if (!library) {
+      setTagEditorError('Desktop bridge unavailable. Open ECHO Next in Electron to edit embedded tags.');
+      return;
+    }
+
+    setIsSavingTags(true);
+    setTagEditorError(null);
+
+    try {
+      const updatedTrack = await library.updateTrackTags({ trackId: track.id, tags });
+      setTracks((current) => current.map((item) => (item.id === updatedTrack.id ? updatedTrack : item)));
+      window.dispatchEvent(new Event('library:changed'));
+      setEditingTrack(null);
+    } catch (saveError) {
+      setTagEditorError(saveError instanceof Error ? saveError.message : String(saveError));
+    } finally {
+      setIsSavingTags(false);
+    }
+  }, []);
+
   return (
     <div className="songs-page">
       <header className="songs-header">
         <div className="songs-title-group">
-          <h1>我的歌曲</h1>
-          <span>{total} tracks</span>
+          <h1>歌曲</h1>
+          <span>{total} 首</span>
         </div>
 
         <div className="songs-tools" aria-label="歌曲工具">
@@ -166,7 +267,7 @@ export const SongsPage = (): JSX.Element => {
           <Search size={18} aria-hidden="true" />
           <input
             type="search"
-            placeholder="搜索歌曲 / 艺术家 / 专辑"
+            placeholder="搜索曲目 / 艺人 / 专辑..."
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
           />
@@ -188,6 +289,7 @@ export const SongsPage = (): JSX.Element => {
         currentTrackId={currentTrackId}
         canLoadMore={hasMore && !isLoading}
         onEndReached={handleLoadMore}
+        onOpenTrackMenu={handleOpenTrackMenu}
         onPlay={handlePlayTrack}
       />
 
@@ -196,6 +298,24 @@ export const SongsPage = (): JSX.Element => {
           <span>{error ?? '正在读取曲库...'}</span>
         </div>
       ) : null}
+
+      {trackMenu ? (
+        <TrackContextMenu
+          track={trackMenu.track}
+          position={trackMenu.position}
+          onAction={(action, track) => void handleTrackMenuAction(action, track)}
+          onClose={() => setTrackMenu(null)}
+        />
+      ) : null}
+
+      <TrackTagEditorDrawer
+        track={editingTrack}
+        isOpen={Boolean(editingTrack)}
+        isSaving={isSavingTags}
+        error={tagEditorError}
+        onClose={() => setEditingTrack(null)}
+        onSave={(track, tags) => void handleSaveTags(track, tags)}
+      />
     </div>
   );
 };

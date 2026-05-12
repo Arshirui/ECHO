@@ -14,6 +14,9 @@ body {
   overflow: hidden;
   color: var(--color-text);
   background: linear-gradient(180deg, #fbfcfe 0%, var(--color-bg) 100%);
+  font-family: var(--echo-font-family);
+  font-size: var(--echo-base-font-size);
+  line-height: var(--echo-ui-line-height);
 }
 
 button {

@@ -85,6 +85,72 @@ export const migrations: Migration[] = [
       addColumnIfMissing(database, 'covers', 'errors_json', "errors_json TEXT NOT NULL DEFAULT '[]'");
     },
   },
+  {
+    id: 5,
+    apply: (database) => {
+      addColumnIfMissing(database, 'tracks', 'embedded_metadata_status', "embedded_metadata_status TEXT NOT NULL DEFAULT 'pending'");
+      addColumnIfMissing(database, 'tracks', 'embedded_cover_status', "embedded_cover_status TEXT NOT NULL DEFAULT 'pending'");
+      addColumnIfMissing(database, 'tracks', 'network_metadata_status', "network_metadata_status TEXT NOT NULL DEFAULT 'none'");
+
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS network_metadata_candidates (
+          id TEXT PRIMARY KEY,
+          track_id TEXT NOT NULL,
+          album_id TEXT,
+          provider TEXT NOT NULL,
+          provider_item_id TEXT NOT NULL,
+          title TEXT,
+          artist TEXT,
+          album TEXT,
+          album_artist TEXT,
+          year INTEGER,
+          genre TEXT,
+          duration REAL,
+          track_no INTEGER,
+          disc_no INTEGER,
+          cover_url TEXT,
+          score REAL NOT NULL,
+          raw_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+          FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS network_metadata_decisions (
+          id TEXT PRIMARY KEY,
+          track_id TEXT NOT NULL,
+          candidate_id TEXT NOT NULL,
+          decision TEXT NOT NULL,
+          applied_fields_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+          FOREIGN KEY (candidate_id) REFERENCES network_metadata_candidates(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS network_cover_candidates (
+          id TEXT PRIMARY KEY,
+          track_id TEXT,
+          album_id TEXT,
+          provider TEXT NOT NULL,
+          cover_url TEXT NOT NULL,
+          width INTEGER,
+          height INTEGER,
+          mime_type TEXT,
+          score REAL NOT NULL,
+          cached_thumb_path TEXT,
+          cached_large_path TEXT,
+          raw_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+          FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_network_metadata_candidates_track_id ON network_metadata_candidates(track_id);
+        CREATE INDEX IF NOT EXISTS idx_network_metadata_decisions_track_id ON network_metadata_decisions(track_id);
+        CREATE INDEX IF NOT EXISTS idx_network_cover_candidates_track_id ON network_cover_candidates(track_id);
+      `);
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

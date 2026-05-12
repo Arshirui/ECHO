@@ -1,8 +1,10 @@
 import type { AudioDeviceInfo, AudioOutputSettings, AudioStatus } from '../shared/types/audio';
-import type { EqPreset, EqSavePresetRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
+import type { AppSettings } from '../shared/types/appSettings';
+import type { EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
 import type {
   LibraryAlbum,
   LibraryDiagnostics,
+  LibraryTrackTagUpdateRequest,
   LibraryFolder,
   LibraryPage,
   LibraryPageQuery,
@@ -18,6 +20,8 @@ export type EchoApi = {
     minimize: () => Promise<void>;
     toggleMaximize: () => Promise<void>;
     close: () => Promise<void>;
+    getSettings: () => Promise<AppSettings>;
+    setSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
   };
   library: {
     chooseFolder: () => Promise<string | null>;
@@ -35,6 +39,14 @@ export type EchoApi = {
     ) => Promise<LibraryPage<LibraryTrack>>;
     getSummary: () => Promise<LibrarySummary>;
     getDiagnostics: () => Promise<LibraryDiagnostics>;
+    updateTrackTags: (request: LibraryTrackTagUpdateRequest) => Promise<LibraryTrack>;
+    openTrackInFolder: (trackId: string) => Promise<void>;
+    openTrackWithSystem: (trackId: string) => Promise<void>;
+    copyTrackPath: (trackId: string) => Promise<void>;
+    copyTrackNameArtist: (trackId: string) => Promise<void>;
+    copyTrackCover: (trackId: string) => Promise<boolean>;
+    saveTrackCover: (trackId: string) => Promise<string | null>;
+    deleteTrackFile: (trackId: string) => Promise<void>;
   };
   playback: {
     getStatus: () => Promise<PlaybackStatus>;
@@ -54,6 +66,7 @@ export type EchoApi = {
     getState: () => Promise<EqState>;
     setEnabled: (enabled: boolean) => Promise<EqState>;
     setBandGain: (request: EqSetBandGainRequest) => Promise<EqState>;
+    setBandFrequency: (request: EqSetBandFrequencyRequest) => Promise<EqState>;
     setPreamp: (preampDb: number) => Promise<EqState>;
     setPreset: (presetId: string) => Promise<EqState>;
     reset: () => Promise<EqState>;

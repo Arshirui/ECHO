@@ -1,23 +1,27 @@
 import type {
   LibraryAlbum,
   LibraryDiagnostics,
+  EditableTrackTags,
   LibraryFolder,
   LibraryPage,
   LibraryPageQuery,
   LibraryScanStatus,
   LibrarySummary,
   LibraryTrack,
+  LibraryTrackTagUpdateRequest,
 } from '../../shared/types/library';
 
 export type {
   LibraryAlbum,
   LibraryDiagnostics,
+  EditableTrackTags,
   LibraryFolder,
   LibraryPage,
   LibraryPageQuery,
   LibraryScanStatus,
   LibrarySummary,
   LibraryTrack,
+  LibraryTrackTagUpdateRequest,
 };
 
 export type ScannedAudioFile = {
@@ -40,6 +44,9 @@ export type FieldSource =
   | 'unknown';
 
 export type FieldSources = Record<string, FieldSource>;
+
+export type EmbeddedReadinessStatus = 'pending' | 'reading' | 'present' | 'missing' | 'error';
+export type NetworkMetadataStatus = 'none' | 'pending' | 'candidate_found' | 'applied_missing_only' | 'rejected' | 'error';
 
 export type EmbeddedCoverData = {
   data: Uint8Array;
@@ -68,6 +75,8 @@ export type MetadataResult = {
   fields: MetadataFields;
   fieldSources: FieldSources;
   embeddedCover?: EmbeddedCoverData;
+  embeddedMetadataStatus: EmbeddedReadinessStatus;
+  embeddedCoverStatus: EmbeddedReadinessStatus;
   warnings: string[];
   errors: string[];
   status: MetadataStatus;
@@ -77,6 +86,8 @@ export type MetadataResult = {
 export type ParsedTrackMetadata = MetadataFields & {
   fieldSources: FieldSources;
   embeddedCover?: EmbeddedCoverData;
+  embeddedMetadataStatus?: EmbeddedReadinessStatus;
+  embeddedCoverStatus?: EmbeddedReadinessStatus;
   warnings?: string[];
   errors?: string[];
   metadataStatus?: MetadataStatus;
@@ -90,7 +101,7 @@ export type TrackWrite = ParsedTrackMetadata &
     updatedAt: string;
   };
 
-export type CoverSource = 'embedded' | 'folder' | 'default';
+export type CoverSource = 'manual' | 'embedded' | 'folder' | 'network' | 'default';
 export const COVER_CACHE_VERSION = 1;
 
 export type CoverResult = {

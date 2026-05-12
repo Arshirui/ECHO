@@ -71,6 +71,9 @@ beforeEach(() => {
       setBandGain: vi.fn().mockImplementation(({ band, gainDb }: { band: number; gainDb: number }) =>
         Promise.resolve(eqState({ presetId: 'custom', presetName: 'Custom', bands: bands.map((item, index) => (index === band ? { ...item, gainDb } : item)) })),
       ),
+      setBandFrequency: vi.fn().mockImplementation(({ band, frequencyHz }: { band: number; frequencyHz: number }) =>
+        Promise.resolve(eqState({ presetId: 'custom', presetName: 'Custom', bands: bands.map((item, index) => (index === band ? { ...item, frequencyHz } : item)) })),
+      ),
       setPreamp: vi.fn().mockImplementation((preampDb: number) => Promise.resolve(eqState({ preampDb }))),
       setPreset: vi.fn().mockImplementation((presetId: string) => Promise.resolve(eqState({ presetId, presetName: presetId }))),
       reset: vi.fn().mockResolvedValue(currentState),
@@ -86,31 +89,71 @@ afterEach(() => {
 });
 
 describe('EqPanel', () => {
-  it('renders the 10 EQ bands', async () => {
+  it('renders the parametric-style EQ editor', async () => {
     render(<EqPanel audioStatus={audioStatus} />);
 
-    await screen.findByRole('slider', { name: '31 Hz gain' });
-    expect(screen.getAllByLabelText(/Hz gain$/)).toHaveLength(10);
+    await screen.findByRole('img', { name: 'Draggable parametric EQ curve' });
+    expect(screen.getByText('参数化 EQ')).toBeTruthy();
+    expect(screen.getByText('Band 1')).toBeTruthy();
   });
 
   it('sends band gain changes to the EQ bridge', async () => {
     render(<EqPanel audioStatus={audioStatus} />);
 
-    const slider = await screen.findByRole('slider', { name: '125 Hz gain' });
-    fireEvent.change(slider, { target: { value: '3.5' } });
-    fireEvent.pointerUp(slider);
+    const node = await screen.findByTestId('eq-curve-node-2');
+    fireEvent.pointerDown(node, { clientY: 198, pointerId: 1 });
+    const gainInput = await screen.findByLabelText('Selected EQ band gain');
+    fireEvent.change(gainInput, { target: { value: '3.5' } });
+    fireEvent.blur(gainInput);
 
     await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+  });
+
+  it('lets the EQ curve nodes update band gain directly', async () => {
+    render(<EqPanel audioStatus={audioStatus} />);
+
+    const curve = await screen.findByRole('img', { name: 'Draggable parametric EQ curve' });
+    curve.getBoundingClientRect = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 1180,
+      bottom: 390,
+      width: 1180,
+      height: 390,
+      toJSON: () => undefined,
+    }));
+
+    const node = await screen.findByTestId('eq-curve-node-2');
+    fireEvent.pointerDown(node, { clientX: 392, clientY: 146, pointerId: 1 });
+    fireEvent.pointerMove(curve, { clientX: 392, clientY: 146, pointerId: 1 });
+    fireEvent.pointerUp(curve, { clientX: 392, clientY: 146, pointerId: 1 });
+
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 4 }));
+    await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: expect.any(Number) }));
+  });
+
+  it('edits the selected band frequency from the precision controls', async () => {
+    render(<EqPanel audioStatus={audioStatus} />);
+
+    const node = await screen.findByTestId('eq-curve-node-2');
+    fireEvent.pointerDown(node, { clientX: 392, clientY: 198, pointerId: 1 });
+    const frequencyInput = await screen.findByLabelText('Selected EQ band frequency');
+    fireEvent.change(frequencyInput, { target: { value: '410' } });
+    fireEvent.blur(frequencyInput);
+
+    await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: 410 }));
   });
 
   it('selects presets, resets to Flat, and shows the bit-perfect warning', async () => {
     render(<EqPanel audioStatus={audioStatus} />);
 
     fireEvent.change(await screen.findByLabelText('EQ preset'), { target: { value: 'rock' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Reset EQ' }));
+    fireEvent.click(screen.getByRole('button', { name: '重置 EQ' }));
 
     await waitFor(() => expect(window.echo.eq.setPreset).toHaveBeenCalledWith('rock'));
     expect(window.echo.eq.reset).toHaveBeenCalled();
-    expect(screen.getByText(/not bit-perfect/i)).toBeTruthy();
+    expect(screen.getByText(/不再是 bit-perfect/i)).toBeTruthy();
   });
 });

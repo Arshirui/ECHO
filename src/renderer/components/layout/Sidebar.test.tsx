@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { FilePlus2, FolderPlus, Music2, Settings } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import type { AppRoute } from '../../app/routes';
+import { I18nProvider } from '../../i18n/I18nProvider';
 
 const routes: AppRoute[] = [
   {
@@ -46,22 +47,32 @@ afterEach(() => {
 });
 
 describe('Sidebar direct import actions', () => {
+  const renderSidebar = (props: {
+    onRouteChange: (routeId: AppRoute['id']) => void;
+    onImportFolder: () => void;
+    onImportFile: () => void;
+  }): void => {
+    render(
+      <I18nProvider>
+        <Sidebar
+          routes={routes}
+          activeRouteId="songs"
+          onRouteChange={props.onRouteChange}
+          onImportFolder={props.onImportFolder}
+          onImportFile={props.onImportFile}
+        />
+      </I18nProvider>,
+    );
+  };
+
   it('opens the folder picker from Import Folder without navigating', async () => {
     const onRouteChange = vi.fn();
     const onImportFolder = vi.fn();
     const onImportFile = vi.fn();
 
-    render(
-      <Sidebar
-        routes={routes}
-        activeRouteId="songs"
-        onRouteChange={onRouteChange}
-        onImportFolder={onImportFolder}
-        onImportFile={onImportFile}
-      />,
-    );
+    renderSidebar({ onRouteChange, onImportFolder, onImportFile });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Import Folder' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Import Folder' })[1]);
 
     await waitFor(() => expect(onImportFolder).toHaveBeenCalledTimes(1));
     expect(onImportFile).not.toHaveBeenCalled();
@@ -73,15 +84,7 @@ describe('Sidebar direct import actions', () => {
     const onImportFolder = vi.fn();
     const onImportFile = vi.fn();
 
-    render(
-      <Sidebar
-        routes={routes}
-        activeRouteId="songs"
-        onRouteChange={onRouteChange}
-        onImportFolder={onImportFolder}
-        onImportFile={onImportFile}
-      />,
-    );
+    renderSidebar({ onRouteChange, onImportFolder, onImportFile });
 
     fireEvent.click(screen.getByRole('button', { name: 'Import File' }));
 

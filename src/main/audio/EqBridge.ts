@@ -3,12 +3,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { dirname, join } from 'node:path';
 import electron from 'electron';
-import type { EqBand, EqPreset, EqSavePresetRequest, EqSetBandGainRequest, EqState } from '../../shared/types/eq';
+import type { EqBand, EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../../shared/types/eq';
 import {
   eqBandCount,
   eqFrequenciesHz,
+  eqMaxFrequencyHz,
   eqMaxGainDb,
   eqMaxPreampDb,
+  eqMinFrequencyHz,
   eqMinGainDb,
   eqMinPreampDb,
 } from '../../shared/types/eq';
@@ -81,15 +83,24 @@ const validateBands = (bands: unknown): EqBand[] | null => {
 
   for (let index = 0; index < eqBandCount; index += 1) {
     const input = bands[index] as Partial<EqBand> | null;
+    const frequencyHz = Number(input?.frequencyHz ?? eqFrequenciesHz[index]);
     const gainDb = Number(input?.gainDb ?? 0);
     const q = Number(input?.q ?? 1);
 
-    if (!Number.isFinite(gainDb) || !Number.isFinite(q) || q <= 0 || q > 12) {
+    if (
+      !Number.isFinite(frequencyHz) ||
+      frequencyHz < eqMinFrequencyHz ||
+      frequencyHz > eqMaxFrequencyHz ||
+      !Number.isFinite(gainDb) ||
+      !Number.isFinite(q) ||
+      q <= 0 ||
+      q > 12
+    ) {
       return null;
     }
 
     nextBands.push({
-      frequencyHz: eqFrequenciesHz[index],
+      frequencyHz,
       gainDb: clamp(gainDb, eqMinGainDb, eqMaxGainDb),
       q,
     });
@@ -216,6 +227,23 @@ export class EqBridge extends EventEmitter {
     const bands = this.state.bands.map((band, index) => (index === request.band ? { ...band, gainDb } : band));
     this.state = { ...this.state, bands, presetId: 'custom', presetName: 'Custom' };
     await this.sendNative({ type: 'eq:set-band-gain', band: request.band, gainDb });
+    return this.emitState();
+  }
+
+  async setBandFrequency(request: EqSetBandFrequencyRequest): Promise<EqState> {
+    if (!Number.isInteger(request.band) || request.band < 0 || request.band >= eqBandCount) {
+      throw new Error('invalid_eq_band_index');
+    }
+
+    const frequencyHz = clamp(Number(request.frequencyHz), eqMinFrequencyHz, eqMaxFrequencyHz);
+
+    if (!Number.isFinite(frequencyHz)) {
+      throw new Error('invalid_eq_band_frequency');
+    }
+
+    const bands = this.state.bands.map((band, index) => (index === request.band ? { ...band, frequencyHz } : band));
+    this.state = { ...this.state, bands, presetId: 'custom', presetName: 'Custom' };
+    await this.sendNative({ type: 'eq:set-band-frequency', band: request.band, frequencyHz });
     return this.emitState();
   }
 

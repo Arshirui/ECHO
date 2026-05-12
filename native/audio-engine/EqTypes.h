@@ -11,6 +11,8 @@ constexpr float eqMinGainDb = -12.0f;
 constexpr float eqMaxGainDb = 12.0f;
 constexpr float eqMinPreampDb = -12.0f;
 constexpr float eqMaxPreampDb = 6.0f;
+constexpr float eqMinFrequencyHz = 20.0f;
+constexpr float eqMaxFrequencyHz = 20000.0f;
 
 using EqGainArray = std::array<float, eqBandCount>;
 using EqFrequencyArray = std::array<float, eqBandCount>;
@@ -40,6 +42,7 @@ struct EqState
     bool enabled = false;
     float preampDb = 0.0f;
     EqGainArray bandGainsDb {};
+    EqFrequencyArray bandFrequenciesHz = eqFrequenciesHz;
     std::string presetName = "Flat";
 };
 
@@ -72,6 +75,17 @@ inline float clampEqPreampDb(float value)
 
     if (value > eqMaxPreampDb)
         return eqMaxPreampDb;
+
+    return value;
+}
+
+inline float clampEqFrequencyHz(float value)
+{
+    if (value < eqMinFrequencyHz)
+        return eqMinFrequencyHz;
+
+    if (value > eqMaxFrequencyHz)
+        return eqMaxFrequencyHz;
 
     return value;
 }

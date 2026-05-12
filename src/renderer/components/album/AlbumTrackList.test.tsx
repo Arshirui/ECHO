@@ -61,10 +61,39 @@ describe('AlbumTrackList', () => {
     await waitFor(() => expect(getAlbumTracks).toHaveBeenCalledTimes(1));
     expect(getAlbumTracks).toHaveBeenNthCalledWith(1, 'album-1', { page: 1, pageSize: 100 });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
 
     await waitFor(() => expect(getAlbumTracks).toHaveBeenCalledTimes(2));
     expect(getAlbumTracks).toHaveBeenNthCalledWith(2, 'album-1', { page: 2, pageSize: 100 });
+  });
+
+  it('reports loaded tracks, total count, and loading state to the detail console', async () => {
+    const first = track('1', { genre: 'Future Bass' });
+    const second = track('2', { discNo: 2, genre: 'Future Bass' });
+    const getAlbumTracks = vi
+      .fn()
+      .mockResolvedValueOnce(page([first], { page: 1, total: 2, hasMore: true }))
+      .mockResolvedValueOnce(page([second], { page: 2, total: 2, hasMore: false }));
+    const onLoadedTracksChange = vi.fn();
+    const onFirstTrackChange = vi.fn();
+    installLibrary(getAlbumTracks);
+
+    render(
+      <AlbumTrackList
+        albumId="album-1"
+        currentTrackId={null}
+        onFirstTrackChange={onFirstTrackChange}
+        onLoadedTracksChange={onLoadedTracksChange}
+        onPlayTrack={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(onLoadedTracksChange).toHaveBeenLastCalledWith([first], 2, false));
+    expect(onFirstTrackChange).toHaveBeenLastCalledWith(first, false);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+
+    await waitFor(() => expect(onLoadedTracksChange).toHaveBeenLastCalledWith([first, second], 2, false));
   });
 
   it('plays a track once from row click', async () => {

@@ -24,6 +24,7 @@ public:
     void setEnabled(bool shouldBeEnabled);
     void setPreampDb(float value);
     bool setBandGainDb(int bandIndex, float value);
+    bool setBandFrequencyHz(int bandIndex, float value);
     void resetFlat();
     void setState(const EqState& state);
     EqState getState() const;
@@ -55,12 +56,16 @@ private:
     EqGainArray smoothedBandGains {};
     EqGainArray targetBandGains {};
     EqGainArray bandGainSteps {};
+    EqFrequencyArray smoothedBandFrequencies {};
+    EqFrequencyArray targetBandFrequencies {};
+    EqFrequencyArray bandFrequencySteps {};
     std::array<BiquadCoefficients, eqBandCount> coefficients;
     std::vector<ChannelState> channelStates;
 
     std::atomic<bool> targetEnabled { false };
     std::atomic<float> atomicPreampDb { 0.0f };
     std::array<std::atomic<float>, eqBandCount> atomicBandGainsDb;
+    std::array<std::atomic<float>, eqBandCount> atomicBandFrequenciesHz;
     std::atomic<bool> clippingRisk { false };
 };
 } // namespace echo

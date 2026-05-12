@@ -23,8 +23,11 @@ float moveTowards(float current, float target, float step)
 
 EqProcessor::EqProcessor()
 {
-    for (auto& gain : atomicBandGainsDb)
-        gain.store(0.0f, std::memory_order_relaxed);
+    for (int band = 0; band < eqBandCount; ++band)
+    {
+        atomicBandGainsDb[static_cast<size_t>(band)].store(0.0f, std::memory_order_relaxed);
+        atomicBandFrequenciesHz[static_cast<size_t>(band)].store(eqFrequenciesHz[static_cast<size_t>(band)], std::memory_order_relaxed);
+    }
 }
 
 void EqProcessor::prepare(double sampleRate, int maximumBlockSize, int channelCount)
@@ -49,14 +52,18 @@ void EqProcessor::reset()
     targetBypassMix = bypassMix;
     targetBandGains = {};
     smoothedBandGains = {};
+    targetBandFrequencies = eqFrequenciesHz;
+    smoothedBandFrequencies = eqFrequenciesHz;
 
     for (int band = 0; band < eqBandCount; ++band)
     {
         targetBandGains[band] = atomicBandGainsDb[band].load(std::memory_order_acquire);
         smoothedBandGains[band] = targetBandGains[band];
+        targetBandFrequencies[band] = atomicBandFrequenciesHz[band].load(std::memory_order_acquire);
+        smoothedBandFrequencies[band] = targetBandFrequencies[band];
         coefficients[band] = makePeakingCoefficients(
             currentSampleRate,
-            eqFrequenciesHz[band],
+            smoothedBandFrequencies[band],
             smoothedBandGains[band],
             1.0f);
     }
@@ -80,9 +87,10 @@ void EqProcessor::processBlock(juce::AudioBuffer<float>& buffer, int startSample
         for (int band = 0; band < eqBandCount; ++band)
         {
             smoothedBandGains[band] = moveTowards(smoothedBandGains[band], targetBandGains[band], bandGainSteps[band]);
+            smoothedBandFrequencies[band] = moveTowards(smoothedBandFrequencies[band], targetBandFrequencies[band], bandFrequencySteps[band]);
             coefficients[band] = makePeakingCoefficients(
                 currentSampleRate,
-                eqFrequenciesHz[band],
+                smoothedBandFrequencies[band],
                 smoothedBandGains[band],
                 1.0f);
         }
@@ -129,12 +137,24 @@ bool EqProcessor::setBandGainDb(int bandIndex, float value)
     return true;
 }
 
+bool EqProcessor::setBandFrequencyHz(int bandIndex, float value)
+{
+    if (bandIndex < 0 || bandIndex >= eqBandCount || ! std::isfinite(value))
+        return false;
+
+    atomicBandFrequenciesHz[static_cast<size_t>(bandIndex)].store(clampEqFrequencyHz(value), std::memory_order_release);
+    return true;
+}
+
 void EqProcessor::resetFlat()
 {
     setPreampDb(0.0f);
 
     for (int band = 0; band < eqBandCount; ++band)
+    {
         setBandGainDb(band, 0.0f);
+        setBandFrequencyHz(band, eqFrequenciesHz[static_cast<size_t>(band)]);
+    }
 }
 
 void EqProcessor::setState(const EqState& state)
@@ -143,7 +163,10 @@ void EqProcessor::setState(const EqState& state)
     setPreampDb(state.preampDb);
 
     for (int band = 0; band < eqBandCount; ++band)
+    {
         setBandGainDb(band, state.bandGainsDb[static_cast<size_t>(band)]);
+        setBandFrequencyHz(band, state.bandFrequenciesHz[static_cast<size_t>(band)]);
+    }
 }
 
 EqState EqProcessor::getState() const
@@ -153,7 +176,10 @@ EqState EqProcessor::getState() const
     state.preampDb = atomicPreampDb.load(std::memory_order_acquire);
 
     for (int band = 0; band < eqBandCount; ++band)
+    {
         state.bandGainsDb[static_cast<size_t>(band)] = atomicBandGainsDb[static_cast<size_t>(band)].load(std::memory_order_acquire);
+        state.bandFrequenciesHz[static_cast<size_t>(band)] = atomicBandFrequenciesHz[static_cast<size_t>(band)].load(std::memory_order_acquire);
+    }
 
     return state;
 }
@@ -186,6 +212,10 @@ void EqProcessor::updateTargetSnapshot()
         targetBandGains[static_cast<size_t>(band)] = atomicBandGainsDb[static_cast<size_t>(band)].load(std::memory_order_acquire);
         bandGainSteps[static_cast<size_t>(band)] =
             (targetBandGains[static_cast<size_t>(band)] - smoothedBandGains[static_cast<size_t>(band)])
+            / static_cast<float>(gainSmoothingSamples);
+        targetBandFrequencies[static_cast<size_t>(band)] = atomicBandFrequenciesHz[static_cast<size_t>(band)].load(std::memory_order_acquire);
+        bandFrequencySteps[static_cast<size_t>(band)] =
+            (targetBandFrequencies[static_cast<size_t>(band)] - smoothedBandFrequencies[static_cast<size_t>(band)])
             / static_cast<float>(gainSmoothingSamples);
     }
 }

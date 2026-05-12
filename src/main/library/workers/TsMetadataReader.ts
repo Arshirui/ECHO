@@ -112,6 +112,8 @@ const fallbackFields = (filePath: string): MetadataResult => {
       bitDepth: 'unknown',
       bitrate: 'unknown',
     },
+    embeddedMetadataStatus: 'missing',
+    embeddedCoverStatus: 'missing',
     warnings: [],
     errors: [],
     status: 'fallback',
@@ -188,6 +190,16 @@ export class TsMetadataReader implements MetadataReader {
     const bitrate = typeof format.bitrate === 'number' ? Math.round(format.bitrate) : null;
     fieldSources.bitrate = bitrate ? 'technical' : 'unknown';
     const picture = common.picture?.[0];
+    const hasEmbeddedMetadata = [
+      embeddedTitle,
+      embeddedArtist,
+      embeddedAlbum,
+      embeddedAlbumArtist,
+      embeddedGenre,
+      trackNo,
+      discNo,
+      year,
+    ].some((value) => value !== null && value !== undefined && value !== '');
 
     const fields: MetadataFields = {
       title,
@@ -214,6 +226,8 @@ export class TsMetadataReader implements MetadataReader {
             mimeType: cleanText(picture.format),
           }
         : undefined,
+      embeddedMetadataStatus: hasEmbeddedMetadata ? 'present' : 'missing',
+      embeddedCoverStatus: picture ? 'present' : 'missing',
       warnings: [],
       errors: [],
       status: 'ok',

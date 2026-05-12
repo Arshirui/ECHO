@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AlbumsPage } from './AlbumsPage';
 import type { LibraryAlbum, LibraryPage, LibraryTrack } from '../../shared/types/library';
-import { PlaybackQueueProvider } from '../stores/PlaybackQueueProvider';
+import { PlaybackQueueProvider, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 const album = (id: string, overrides: Partial<LibraryAlbum> = {}): LibraryAlbum => ({
   id,
@@ -102,6 +102,20 @@ const renderAlbumsPage = (): ReturnType<typeof render> =>
   render(
     <PlaybackQueueProvider>
       <AlbumsPage />
+    </PlaybackQueueProvider>,
+  );
+
+const QueueProbe = (): JSX.Element => {
+  const { currentTrackId, tracks } = usePlaybackQueue();
+
+  return <output aria-label="queue-state">{`${tracks.length}:${currentTrackId ?? ''}`}</output>;
+};
+
+const renderAlbumsPageWithQueueProbe = (): ReturnType<typeof render> =>
+  render(
+    <PlaybackQueueProvider>
+      <AlbumsPage />
+      <QueueProbe />
     </PlaybackQueueProvider>,
   );
 
@@ -246,5 +260,33 @@ describe('AlbumsPage', () => {
     expect((screen.getByPlaceholderText('Search albums / artists') as HTMLInputElement).value).toBe('kept search');
     expect(screen.getByDisplayValue('Artist')).toBeTruthy();
     expect(screen.getByText('Album 1')).toBeTruthy();
+  });
+
+  it('playing the album starts the first loaded track and queues the loaded album tracks', async () => {
+    const getAlbums = vi.fn().mockResolvedValue(
+      page([album('1', { coverId: 'cover-1', coverThumb: 'echo-cover://album/cover-1' })], { page: 1, total: 1, hasMore: false }),
+    );
+    const first = track('track-1', { coverThumb: null });
+    const second = track('track-2', { trackNo: 2 });
+    const getAlbumTracks = vi.fn().mockResolvedValue(trackPage([first, second], { total: 2 }));
+    installLibrary(getAlbums, vi.fn(), getAlbumTracks);
+
+    renderAlbumsPageWithQueueProbe();
+
+    await screen.findByText('Album 1');
+    fireEvent.click(screen.getByText('Album 1'));
+
+    const playButton = await screen.findByRole('button', { name: 'Play Album' });
+    await waitFor(() => expect(playButton.hasAttribute('disabled')).toBe(false));
+    fireEvent.click(playButton);
+
+    await waitFor(() => expect(window.echo.playback.playLocalFile).toHaveBeenCalledTimes(1));
+    expect(window.echo.playback.playLocalFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trackId: 'track-1',
+        filePath: 'D:\\Music\\track-1.flac',
+      }),
+    );
+    await waitFor(() => expect(screen.getByLabelText('queue-state').textContent).toBe('2:track-1'));
   });
 });

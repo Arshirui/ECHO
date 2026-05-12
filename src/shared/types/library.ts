@@ -102,7 +102,26 @@ export type LibraryTrack = {
   // Small list thumbnail: echo-cover://thumb/* resolves to thumb.webp (96x96).
   coverThumb: string | null;
   metadataStatus?: string;
+  embeddedMetadataStatus: 'pending' | 'reading' | 'present' | 'missing' | 'error';
+  embeddedCoverStatus: 'pending' | 'reading' | 'present' | 'missing' | 'error';
+  networkMetadataStatus: 'none' | 'pending' | 'candidate_found' | 'applied_missing_only' | 'rejected' | 'error';
   fieldSources: Record<string, string>;
+};
+
+export type EditableTrackTags = {
+  title: string;
+  artist: string;
+  album: string;
+  albumArtist: string;
+  trackNo: number | null;
+  discNo: number | null;
+  year: number | null;
+  genre: string | null;
+};
+
+export type LibraryTrackTagUpdateRequest = {
+  trackId: string;
+  tags: EditableTrackTags;
 };
 
 export type LibraryAlbum = {

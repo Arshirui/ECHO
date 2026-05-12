@@ -66,11 +66,13 @@ const parseErrors = (value: unknown): string[] => {
 const textOrNull = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 const coverSourceOrNull = (value: unknown): CoverSource | null =>
-  value === 'embedded' || value === 'folder' || value === 'default' ? value : null;
+  value === 'manual' || value === 'embedded' || value === 'folder' || value === 'network' || value === 'default' ? value : null;
 const coverSourceRank: Record<CoverSource, number> = {
   default: 0,
-  folder: 1,
-  embedded: 2,
+  network: 1,
+  folder: 2,
+  embedded: 3,
+  manual: 4,
 };
 
 const preferredCoverSource = (current: unknown, next: CoverSource): CoverSource => {
@@ -399,8 +401,9 @@ export class LibraryStore {
       `INSERT INTO tracks (
         id, path, folder_id, size_bytes, mtime_ms, title, artist, album, album_artist,
         track_no, disc_no, year, genre, duration, codec, sample_rate, bit_depth, bitrate,
-        cover_id, metadata_status, field_sources_json, missing, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        cover_id, metadata_status, embedded_metadata_status, embedded_cover_status, network_metadata_status,
+        field_sources_json, missing, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(path) DO UPDATE SET
         folder_id = excluded.folder_id,
         size_bytes = excluded.size_bytes,
@@ -420,6 +423,9 @@ export class LibraryStore {
         bitrate = excluded.bitrate,
         cover_id = excluded.cover_id,
         metadata_status = excluded.metadata_status,
+        embedded_metadata_status = excluded.embedded_metadata_status,
+        embedded_cover_status = excluded.embedded_cover_status,
+        network_metadata_status = excluded.network_metadata_status,
         field_sources_json = excluded.field_sources_json,
         missing = 0,
         updated_at = excluded.updated_at`,
@@ -443,6 +449,9 @@ export class LibraryStore {
       track.bitrate,
       track.coverId,
       track.metadataStatus ?? 'ok',
+      track.embeddedMetadataStatus ?? 'pending',
+      track.embeddedCoverStatus ?? 'pending',
+      'none',
       JSON.stringify(track.fieldSources),
       0,
       createdAt,
@@ -454,6 +463,83 @@ export class LibraryStore {
 
   updateTrackCover(trackId: string, coverId: string | null, timestamp = nowIso()): void {
     this.run('UPDATE tracks SET cover_id = ?, updated_at = ? WHERE id = ?', coverId, timestamp, trackId);
+  }
+
+  getTrack(trackId: string): LibraryTrack | null {
+    const row = this.getRow(
+      `SELECT
+        tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
+        tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
+        tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
+        tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
+        tracks.network_metadata_status, tracks.field_sources_json
+      FROM tracks
+      WHERE tracks.id = ? AND tracks.missing = 0`,
+      trackId,
+    );
+
+    return row ? this.mapTrack(row) : null;
+  }
+
+  updateTrackTags(
+    trackId: string,
+    update: {
+      title: string;
+      artist: string;
+      album: string;
+      albumArtist: string;
+      trackNo: number | null;
+      discNo: number | null;
+      year: number | null;
+      genre: string | null;
+      sizeBytes: number;
+      mtimeMs: number;
+      fieldSources: Record<string, string>;
+    },
+    timestamp = nowIso(),
+  ): LibraryTrack {
+    this.run(
+      `UPDATE tracks SET
+        size_bytes = ?,
+        mtime_ms = ?,
+        title = ?,
+        artist = ?,
+        album = ?,
+        album_artist = ?,
+        track_no = ?,
+        disc_no = ?,
+        year = ?,
+        genre = ?,
+        metadata_status = ?,
+        field_sources_json = ?,
+        updated_at = ?
+      WHERE id = ? AND missing = 0`,
+      update.sizeBytes,
+      update.mtimeMs,
+      update.title,
+      update.artist,
+      update.album,
+      update.albumArtist,
+      update.trackNo,
+      update.discNo,
+      update.year,
+      update.genre,
+      'ok',
+      JSON.stringify(update.fieldSources),
+      timestamp,
+      trackId,
+    );
+
+    const updated = this.getTrack(trackId);
+    if (!updated) {
+      throw new Error(`Unknown track ${trackId}`);
+    }
+
+    return updated;
+  }
+
+  deleteTrack(trackId: string): void {
+    this.run('DELETE FROM tracks WHERE id = ?', trackId);
   }
 
   refreshArtists(): void {
@@ -632,7 +718,8 @@ export class LibraryStore {
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
-        tracks.cover_id, tracks.metadata_status, tracks.field_sources_json
+        tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
+        tracks.network_metadata_status, tracks.field_sources_json
       FROM tracks
       ${whereSql}
       ${orderSql}
@@ -700,7 +787,8 @@ export class LibraryStore {
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
-        tracks.cover_id, tracks.metadata_status, tracks.field_sources_json
+        tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
+        tracks.network_metadata_status, tracks.field_sources_json
       FROM album_tracks
       INNER JOIN tracks ON tracks.id = album_tracks.track_id
       WHERE album_tracks.album_id = ? AND tracks.missing = 0
@@ -917,8 +1005,34 @@ export class LibraryStore {
       coverId: textOrNull(row.cover_id),
       coverThumb: this.toCoverUrl(row.cover_id, 'thumb'),
       metadataStatus: textOrNull(row.metadata_status) ?? 'ok',
+      embeddedMetadataStatus: this.mapEmbeddedStatus(row.embedded_metadata_status),
+      embeddedCoverStatus: this.mapEmbeddedStatus(row.embedded_cover_status),
+      networkMetadataStatus: this.mapNetworkStatus(row.network_metadata_status),
       fieldSources: parseJsonObject(row.field_sources_json),
     };
+  }
+
+  private mapEmbeddedStatus(value: unknown): LibraryTrack['embeddedMetadataStatus'] {
+    if (value === 'pending' || value === 'reading' || value === 'present' || value === 'missing' || value === 'error') {
+      return value;
+    }
+
+    return 'pending';
+  }
+
+  private mapNetworkStatus(value: unknown): LibraryTrack['networkMetadataStatus'] {
+    if (
+      value === 'none' ||
+      value === 'pending' ||
+      value === 'candidate_found' ||
+      value === 'applied_missing_only' ||
+      value === 'rejected' ||
+      value === 'error'
+    ) {
+      return value;
+    }
+
+    return 'none';
   }
 
   private mapAlbum(row: DbRow): LibraryAlbum {

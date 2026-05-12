@@ -11,6 +11,9 @@ type PlaybackQueueContextValue = {
   canGoPrevious: boolean;
   canGoNext: boolean;
   setQueue: (tracks: LibraryTrack[]) => void;
+  appendToQueue: (track: LibraryTrack) => void;
+  playTrackNext: (track: LibraryTrack) => void;
+  removeFromQueue: (trackId: string) => void;
   setCurrentTrackId: (trackId: string | null) => void;
   toggleShuffle: () => void;
   playTrack: (track: LibraryTrack) => Promise<PlaybackStatus>;
@@ -61,6 +64,32 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     setTracks(nextTracks);
   }, []);
 
+  const appendToQueue = useCallback((track: LibraryTrack): void => {
+    setTracks((current) => (current.some((item) => item.id === track.id) ? current : [...current, track]));
+  }, []);
+
+  const playTrackNext = useCallback(
+    (track: LibraryTrack): void => {
+      setTracks((current) => {
+        const withoutTrack = current.filter((item) => item.id !== track.id);
+        const anchorIndex = currentTrackId ? withoutTrack.findIndex((item) => item.id === currentTrackId) : -1;
+        const insertIndex = anchorIndex >= 0 ? anchorIndex + 1 : 0;
+        return [...withoutTrack.slice(0, insertIndex), track, ...withoutTrack.slice(insertIndex)];
+      });
+    },
+    [currentTrackId],
+  );
+
+  const removeFromQueue = useCallback(
+    (trackId: string): void => {
+      setTracks((current) => current.filter((track) => track.id !== trackId));
+      if (currentTrackId === trackId) {
+        setCurrentTrackId(null);
+      }
+    },
+    [currentTrackId],
+  );
+
   const playTrack = useCallback(async (track: LibraryTrack): Promise<PlaybackStatus> => {
     const playback = window.echo?.playback;
 
@@ -109,13 +138,16 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       canGoPrevious: tracks.length > 0,
       canGoNext: tracks.length > 0,
       setQueue,
+      appendToQueue,
+      playTrackNext,
+      removeFromQueue,
       setCurrentTrackId,
       toggleShuffle: () => setIsShuffleEnabled((enabled) => !enabled),
       playTrack,
       playPrevious,
       playNext,
     }),
-    [currentTrack, currentTrackId, isShuffleEnabled, playNext, playPrevious, playTrack, setQueue, tracks],
+    [appendToQueue, currentTrack, currentTrackId, isShuffleEnabled, playNext, playPrevious, playTrack, playTrackNext, removeFromQueue, setQueue, tracks],
   );
 
   return <PlaybackQueueContext.Provider value={value}>{children}</PlaybackQueueContext.Provider>;

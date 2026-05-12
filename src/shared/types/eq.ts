@@ -5,6 +5,8 @@ export const eqMinGainDb = -12;
 export const eqMaxGainDb = 12;
 export const eqMinPreampDb = -12;
 export const eqMaxPreampDb = 6;
+export const eqMinFrequencyHz = 20;
+export const eqMaxFrequencyHz = 20000;
 
 export type EqBand = {
   frequencyHz: number;
@@ -34,6 +36,11 @@ export type EqPreset = {
 export type EqSetBandGainRequest = {
   band: number;
   gainDb: number;
+};
+
+export type EqSetBandFrequencyRequest = {
+  band: number;
+  frequencyHz: number;
 };
 
 export type EqSavePresetRequest = {

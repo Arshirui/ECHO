@@ -57,6 +57,9 @@ CREATE TABLE IF NOT EXISTS tracks (
   bitrate INTEGER,
   cover_id TEXT,
   metadata_status TEXT NOT NULL DEFAULT 'ok',
+  embedded_metadata_status TEXT NOT NULL DEFAULT 'pending',
+  embedded_cover_status TEXT NOT NULL DEFAULT 'pending',
+  network_metadata_status TEXT NOT NULL DEFAULT 'none',
   field_sources_json TEXT NOT NULL,
   missing INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -127,6 +130,58 @@ CREATE TABLE IF NOT EXISTS scan_jobs (
   FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS network_metadata_candidates (
+  id TEXT PRIMARY KEY,
+  track_id TEXT NOT NULL,
+  album_id TEXT,
+  provider TEXT NOT NULL,
+  provider_item_id TEXT NOT NULL,
+  title TEXT,
+  artist TEXT,
+  album TEXT,
+  album_artist TEXT,
+  year INTEGER,
+  genre TEXT,
+  duration REAL,
+  track_no INTEGER,
+  disc_no INTEGER,
+  cover_url TEXT,
+  score REAL NOT NULL,
+  raw_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+  FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS network_metadata_decisions (
+  id TEXT PRIMARY KEY,
+  track_id TEXT NOT NULL,
+  candidate_id TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  applied_fields_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+  FOREIGN KEY (candidate_id) REFERENCES network_metadata_candidates(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS network_cover_candidates (
+  id TEXT PRIMARY KEY,
+  track_id TEXT,
+  album_id TEXT,
+  provider TEXT NOT NULL,
+  cover_url TEXT NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  mime_type TEXT,
+  score REAL NOT NULL,
+  cached_thumb_path TEXT,
+  cached_large_path TEXT,
+  raw_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+  FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE SET NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path);
 CREATE INDEX IF NOT EXISTS idx_tracks_folder_id ON tracks(folder_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
@@ -137,4 +192,7 @@ CREATE INDEX IF NOT EXISTS idx_album_tracks_album_id ON album_tracks(album_id);
 CREATE INDEX IF NOT EXISTS idx_album_tracks_track_id ON album_tracks(track_id);
 CREATE INDEX IF NOT EXISTS idx_folders_path ON folders(path);
 CREATE INDEX IF NOT EXISTS idx_covers_id ON covers(id);
+CREATE INDEX IF NOT EXISTS idx_network_metadata_candidates_track_id ON network_metadata_candidates(track_id);
+CREATE INDEX IF NOT EXISTS idx_network_metadata_decisions_track_id ON network_metadata_decisions(track_id);
+CREATE INDEX IF NOT EXISTS idx_network_cover_candidates_track_id ON network_cover_candidates(track_id);
 `;

@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AudioOutputMode, AudioOutputSettings, AudioStatus } from '../../shared/types/audio';
-import type { EqSavePresetRequest, EqSetBandGainRequest, EqState } from '../../shared/types/eq';
+import type { EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../../shared/types/eq';
 import { getAudioSession } from '../audio/AudioSession';
 import { getEqBridge } from '../audio/EqBridge';
 
@@ -54,6 +54,9 @@ export const registerAudioIpc = (): void => {
   );
   ipcMain.handle(IpcChannels.EqSetBandGain, async (_event, request: EqSetBandGainRequest): Promise<EqState> =>
     getEqBridge().setBandGain(request),
+  );
+  ipcMain.handle(IpcChannels.EqSetBandFrequency, async (_event, request: EqSetBandFrequencyRequest): Promise<EqState> =>
+    getEqBridge().setBandFrequency(request),
   );
   ipcMain.handle(IpcChannels.EqSetPreamp, async (_event, preampDb: unknown): Promise<EqState> =>
     getEqBridge().setPreamp(Number(preampDb)),

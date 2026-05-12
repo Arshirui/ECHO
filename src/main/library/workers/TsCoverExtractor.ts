@@ -303,7 +303,10 @@ export class TsCoverExtractor implements CoverExtractor {
       return {
         version: Number(parsed.version),
         sourceHash: typeof parsed.sourceHash === 'string' ? parsed.sourceHash : '',
-        source: parsed.source === 'embedded' || parsed.source === 'folder' || parsed.source === 'default' ? parsed.source : 'default',
+        source:
+          parsed.source === 'embedded' || parsed.source === 'folder' || parsed.source === 'network' || parsed.source === 'default'
+            ? parsed.source
+            : 'default',
         mimeType: typeof parsed.mimeType === 'string' ? parsed.mimeType : null,
       };
     } catch {

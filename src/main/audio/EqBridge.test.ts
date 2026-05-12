@@ -34,6 +34,14 @@ describe('EqBridge protocol validation', () => {
     expect(state.preampDb).toBe(-12);
   });
 
+  it('clamps editable band frequencies before updating state', async () => {
+    const bridge = createBridge();
+
+    await bridge.setBandFrequency({ band: 2, frequencyHz: 50000 });
+
+    expect(bridge.getState().bands[2].frequencyHz).toBe(20000);
+  });
+
   it('refuses malformed preset data', () => {
     const bridge = createBridge();
 

@@ -23,6 +23,7 @@ import { PlaylistsPage } from '../pages/PlaylistsPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { SongsPage } from '../pages/SongsPage';
 import { EmptyState } from '../components/ui/EmptyState';
+import type { TranslationKey } from '../i18n/locales';
 
 export type AppRouteId =
   | 'songs'
@@ -43,7 +44,9 @@ export type AppRouteId =
 export type AppRoute = {
   id: AppRouteId;
   label: string;
+  labelKey?: TranslationKey;
   description: string;
+  descriptionKey?: TranslationKey;
   icon: LucideIcon;
   placement: 'main' | 'utility';
   element: JSX.Element;
@@ -67,7 +70,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'songs',
     label: 'Songs',
+    labelKey: 'route.songs.label',
     description: 'Local library song list.',
+    descriptionKey: 'route.songs.description',
     icon: Music2,
     placement: 'main',
     element: <SongsPage />,
@@ -75,7 +80,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'albums',
     label: 'Albums',
+    labelKey: 'route.albums.label',
     description: 'Grouped album wall.',
+    descriptionKey: 'route.albums.description',
     icon: Disc3,
     placement: 'main',
     element: <AlbumsPage />,
@@ -83,7 +90,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'artists',
     label: 'Artists',
+    labelKey: 'route.artists.label',
     description: 'Browse by artist.',
+    descriptionKey: 'route.artists.description',
     icon: Mic2,
     placement: 'main',
     element: <ArtistsPage />,
@@ -91,7 +100,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'folders',
     label: 'Folders',
+    labelKey: 'route.folders.label',
     description: 'Local import roots.',
+    descriptionKey: 'route.folders.description',
     icon: Folder,
     placement: 'main',
     element: <FoldersPage />,
@@ -99,7 +110,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'remote',
     label: 'Cloud / Remote',
+    labelKey: 'route.remote.label',
     description: 'Remote sources.',
+    descriptionKey: 'route.remote.description',
     icon: Cloud,
     placement: 'main',
     element: <PlaceholderPage icon={Cloud} title="Cloud / Remote" description="Remote mounting and sync sources stay here." />,
@@ -107,7 +120,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'queue',
     label: 'Queue',
+    labelKey: 'route.queue.label',
     description: 'Playback queue.',
+    descriptionKey: 'route.queue.description',
     icon: ListMusic,
     placement: 'main',
     element: <PlaceholderPage icon={ListMusic} title="Queue" description="Queue UI stays separate from the song list." />,
@@ -115,7 +130,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'history',
     label: 'History',
+    labelKey: 'route.history.label',
     description: 'Playback history.',
+    descriptionKey: 'route.history.description',
     icon: History,
     placement: 'main',
     element: <PlaceholderPage icon={History} title="History" description="Recent plays and history will appear here." />,
@@ -123,7 +140,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'playlists',
     label: 'Playlists',
+    labelKey: 'route.playlists.label',
     description: 'User playlists.',
+    descriptionKey: 'route.playlists.description',
     icon: Library,
     placement: 'main',
     element: <PlaylistsPage />,
@@ -131,7 +150,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'liked',
     label: 'Liked',
+    labelKey: 'route.liked.label',
     description: 'Saved tracks.',
+    descriptionKey: 'route.liked.description',
     icon: Heart,
     placement: 'utility',
     element: <PlaceholderPage icon={Heart} title="Liked" description="Liked tracks will keep a compact list view." />,
@@ -139,7 +160,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'audio-settings',
     label: 'Audio Settings',
+    labelKey: 'route.audioSettings.label',
     description: 'Output and decoder settings.',
+    descriptionKey: 'route.audioSettings.description',
     icon: Headphones,
     placement: 'utility',
     element: <PlaceholderPage icon={Headphones} title="Audio Settings" description="Output device, sample rate, and decoder options live here." />,
@@ -147,7 +170,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'lyrics-settings',
     label: 'Lyrics Settings',
+    labelKey: 'route.lyricsSettings.label',
     description: 'Lyrics preferences.',
+    descriptionKey: 'route.lyricsSettings.description',
     icon: Captions,
     placement: 'utility',
     element: <PlaceholderPage icon={Captions} title="Lyrics Settings" description="Lyrics sources and timing settings are stored here." />,
@@ -155,7 +180,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'import-folder',
     label: 'Import Folder',
+    labelKey: 'route.importFolder.label',
     description: 'Choose a local music folder.',
+    descriptionKey: 'route.importFolder.description',
     icon: FolderPlus,
     placement: 'utility',
     element: <ImportFolderPage />,
@@ -163,7 +190,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'import-file',
     label: 'Import File',
+    labelKey: 'route.importFile.label',
     description: 'Import a single audio file.',
+    descriptionKey: 'route.importFile.description',
     icon: FilePlus2,
     placement: 'utility',
     element: <PlaceholderPage icon={FilePlus2} title="Import File" description="Single-file import will reuse the same metadata pipeline." />,
@@ -171,7 +200,9 @@ export const appRoutes: AppRoute[] = [
   {
     id: 'settings',
     label: 'Settings',
+    labelKey: 'route.settings.label',
     description: 'Application settings.',
+    descriptionKey: 'route.settings.description',
     icon: Settings,
     placement: 'utility',
     element: <SettingsPage />,

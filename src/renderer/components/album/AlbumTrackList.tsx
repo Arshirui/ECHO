@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Play } from 'lucide-react';
 import type { LibraryPage, LibraryTrack } from '../../../shared/types/library';
 
 type AlbumTrackListProps = {
   albumId: string;
   currentTrackId: string | null;
   onFirstTrackChange?: (track: LibraryTrack | null, isLoading: boolean) => void;
+  onLoadedTracksChange?: (tracks: LibraryTrack[], total: number, isLoading: boolean) => void;
   onPlayTrack: (track: LibraryTrack) => void | Promise<void>;
 };
 
@@ -40,6 +42,7 @@ export const AlbumTrackList = ({
   albumId,
   currentTrackId,
   onFirstTrackChange,
+  onLoadedTracksChange,
   onPlayTrack,
 }: AlbumTrackListProps): JSX.Element => {
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
@@ -112,7 +115,8 @@ export const AlbumTrackList = ({
 
   useEffect(() => {
     onFirstTrackChange?.(tracks[0] ?? null, isLoading && tracks.length === 0);
-  }, [isLoading, onFirstTrackChange, tracks]);
+    onLoadedTracksChange?.(tracks, total, isLoading);
+  }, [isLoading, onFirstTrackChange, onLoadedTracksChange, total, tracks]);
 
   const handleLoadMore = useCallback((): void => {
     if (!isLoadingRef.current && hasMore) {
@@ -123,10 +127,18 @@ export const AlbumTrackList = ({
   return (
     <section className="album-track-section" aria-label="Album tracks">
       <div className="album-track-toolbar">
-        <span>{total} tracks</span>
+        <span>{tracks.length === total ? `${total} tracks` : `${tracks.length} of ${total} tracks`}</span>
       </div>
 
       <div className="album-track-list" role="list">
+        {tracks.length > 0 ? (
+          <div className="album-track-header" aria-hidden="true">
+            <span>#</span>
+            <span>Title</span>
+            <span>Signal</span>
+            <span>Time</span>
+          </div>
+        ) : null}
         {tracks.map((track, index) => {
           const isPlaying = track.id === currentTrackId;
           const trackNumber = track.trackNo ?? index + 1;
@@ -141,7 +153,10 @@ export const AlbumTrackList = ({
               type="button"
               onClick={() => void onPlayTrack(track)}
             >
-              <span className="album-track-number">{trackNumber}</span>
+              <span className="album-track-number">
+                <span>{trackNumber}</span>
+                <Play className="album-track-row-play" size={13} fill="currentColor" aria-hidden="true" />
+              </span>
               <span className="album-track-copy">
                 <strong>{track.title}</strong>
                 <small>{track.artist}</small>
