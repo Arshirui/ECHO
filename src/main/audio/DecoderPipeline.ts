@@ -2,6 +2,7 @@ import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcessByStdio, SpawnOptionsWithStdioTuple } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import readline from 'node:readline';
+import ffmpegStatic from 'ffmpeg-static';
 import { parseFile } from 'music-metadata';
 import type { AudioProbeResult, DecoderRun, PcmDecodeRequest } from './audioTypes';
 
@@ -12,7 +13,10 @@ type DecoderSpawnOptions = SpawnOptionsWithStdioTuple<'ignore', 'pipe', 'pipe'> 
 type DecoderSpawner = (file: string, args: string[], options: DecoderSpawnOptions) => DecoderChildProcess;
 
 export type DecoderPipelineDependencies = {
-  ffmpegPath?: string;
+  ffmpegPath?: string | null;
+  env?: NodeJS.ProcessEnv;
+  staticFfmpegPath?: string | null;
+  systemFfmpegPath?: string | null;
   spawn?: DecoderSpawner;
   logger?: (message: string) => void;
 };
@@ -22,13 +26,45 @@ const normalizePositiveInteger = (value: unknown): number | null => {
   return Number.isFinite(numberValue) && numberValue > 0 ? Math.round(numberValue) : null;
 };
 
+const normalizePath = (value: unknown): string | null => {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+};
+
+export const resolveDecoderFfmpegPath = (dependencies: DecoderPipelineDependencies = {}): string => {
+  const explicitPath = normalizePath(dependencies.ffmpegPath);
+  if (explicitPath) {
+    return explicitPath;
+  }
+
+  const envPath = normalizePath(dependencies.env?.ECHO_FFMPEG_PATH ?? process.env.ECHO_FFMPEG_PATH);
+  if (envPath) {
+    return envPath;
+  }
+
+  const staticPath =
+    dependencies.staticFfmpegPath === undefined ? normalizePath(ffmpegStatic) : normalizePath(dependencies.staticFfmpegPath);
+  if (staticPath) {
+    return staticPath;
+  }
+
+  return normalizePath(dependencies.systemFfmpegPath) ?? 'ffmpeg';
+};
+
+const normalizeSpawnError = (error: Error & { code?: string }): Error => {
+  if (error.code === 'ENOENT' || error.message.includes('ENOENT')) {
+    return new Error('ffmpeg_missing');
+  }
+
+  return error;
+};
+
 export class DecoderPipeline {
   private readonly ffmpegPath: string;
   private readonly spawn: DecoderSpawner;
   private readonly logger: (message: string) => void;
 
   constructor(dependencies: DecoderPipelineDependencies = {}) {
-    this.ffmpegPath = dependencies.ffmpegPath ?? process.env.ECHO_FFMPEG_PATH ?? 'ffmpeg';
+    this.ffmpegPath = resolveDecoderFfmpegPath(dependencies);
     this.spawn = dependencies.spawn ?? (nodeSpawn as DecoderSpawner);
     this.logger = dependencies.logger ?? (() => undefined);
   }
@@ -70,10 +106,16 @@ export class DecoderPipeline {
       String(request.decoderOutputSampleRate),
       'pipe:1',
     ];
-    const proc = this.spawn(this.ffmpegPath, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    let proc: DecoderChildProcess;
+
+    try {
+      proc = this.spawn(this.ffmpegPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } catch (error) {
+      throw normalizeSpawnError(error instanceof Error ? error : new Error(String(error)));
+    }
     let stopped = false;
 
     const stderr = readline.createInterface({ input: proc.stderr });
@@ -82,13 +124,13 @@ export class DecoderPipeline {
     });
 
     const done = new Promise<void>((resolve, reject) => {
-      proc.on('error', (error) => {
+      proc.on('error', (error: Error & { code?: string }) => {
         if (stopped) {
           resolve();
           return;
         }
 
-        reject(error);
+        reject(normalizeSpawnError(error));
       });
 
       proc.on('exit', (code, signal) => {

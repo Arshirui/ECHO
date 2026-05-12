@@ -16,6 +16,7 @@ export const IpcChannels = {
   PlaybackPause: 'playback:pause',
   PlaybackStop: 'playback:stop',
   PlaybackSeek: 'playback:seek',
+  PlaybackOpenLocalAudioFile: 'playback:open-local-audio-file',
   AudioGetStatus: 'audio:get-status',
   AudioListDevices: 'audio:list-devices',
   AudioSetOutput: 'audio:set-output',

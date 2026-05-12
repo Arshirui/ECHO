@@ -36,6 +36,7 @@ export type EchoApi = {
     pause: () => Promise<PlaybackStatus>;
     stop: () => Promise<PlaybackStatus>;
     seek: (positionSeconds: number) => Promise<PlaybackStatus>;
+    openLocalAudioFile: () => Promise<string | null>;
   };
   audio: {
     getStatus: () => Promise<AudioStatus>;

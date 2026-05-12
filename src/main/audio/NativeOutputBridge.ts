@@ -29,6 +29,14 @@ export type NativeOutputBridgeDependencies = {
   logger?: (message: string) => void;
 };
 
+export type HostBinaryResolveOptions = {
+  cwd?: string;
+  appPath?: string | null;
+  resourcesPath?: string;
+  exists?: (path: string) => boolean;
+  includeMigrationFallback?: boolean;
+};
+
 const getElectronAppPath = (): string | null => {
   const electronApp = (electron as unknown as { app?: { getAppPath: () => string } }).app;
 
@@ -39,13 +47,17 @@ const getElectronAppPath = (): string | null => {
   }
 };
 
-export const resolveHostBinary = (): string | null => {
+export const resolveHostBinary = (options: HostBinaryResolveOptions = {}): string | null => {
   const exe = process.platform === 'win32' ? 'echo-audio-host.exe' : 'echo-audio-host';
-  const appPath = getElectronAppPath();
+  const appPath = options.appPath === undefined ? getElectronAppPath() : options.appPath;
+  const resourcesPath = options.resourcesPath ?? process.resourcesPath;
+  const cwd = options.cwd ?? process.cwd();
+  const exists = options.exists ?? existsSync;
+  const includeMigrationFallback = options.includeMigrationFallback ?? true;
   const candidates: string[] = [];
 
-  if (process.resourcesPath) {
-    candidates.push(join(process.resourcesPath, exe));
+  if (resourcesPath) {
+    candidates.push(join(resourcesPath, exe));
   }
 
   if (appPath) {
@@ -54,11 +66,16 @@ export const resolveHostBinary = (): string | null => {
     candidates.push(join(appPath, 'electron-app', 'build', exe));
   }
 
-  candidates.push(join(process.cwd(), 'electron-app', 'build', exe));
-  candidates.push(join(process.cwd(), 'build', exe));
-  candidates.push(join(process.cwd(), '..', 'ECHO', 'electron-app', 'build', exe));
+  candidates.push(join(cwd, 'electron-app', 'build', exe));
+  candidates.push(join(cwd, 'build', exe));
 
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+  if (includeMigrationFallback) {
+    // Local migration fallback only. Dev and production should use ECHO Next's
+    // own electron-app/build copy or the packaged resourcesPath binary.
+    candidates.push(join(cwd, '..', 'ECHO', 'electron-app', 'build', exe));
+  }
+
+  return candidates.find((candidate) => exists(candidate)) ?? null;
 };
 
 export const isNativeOutputBridgeAvailable = (): boolean => resolveHostBinary() !== null;

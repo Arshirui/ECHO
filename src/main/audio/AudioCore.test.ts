@@ -1,9 +1,12 @@
 import { EventEmitter } from 'node:events';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { AudioSession } from './AudioSession';
-import { NativeOutputBridge } from './NativeOutputBridge';
+import { DecoderPipeline, resolveDecoderFfmpegPath } from './DecoderPipeline';
+import type { DecoderPipelineDependencies } from './DecoderPipeline';
+import { NativeOutputBridge, resolveHostBinary } from './NativeOutputBridge';
 import type { HostSpawner } from './NativeOutputBridge';
 import type {
   AudioDeviceInfo,
@@ -55,6 +58,21 @@ class FakeDecoder {
       stream,
       stop,
       done: Promise.resolve(),
+    };
+  }
+}
+
+class FailingDecoder extends FakeDecoder {
+  override decodeLocalFile(request: PcmDecodeRequest): DecoderRun {
+    this.decodeRequests.push(request);
+    const stream = new PassThrough();
+
+    return {
+      stream,
+      stop: vi.fn(() => {
+        stream.destroy();
+      }),
+      done: Promise.reject(new Error('ffmpeg_missing')),
     };
   }
 }
@@ -220,6 +238,33 @@ describe('Audio Core sample-rate regression guard', () => {
 });
 
 describe('NativeOutputBridge host arguments', () => {
+  it('resolves the ECHO Next electron-app build host before migration fallbacks', () => {
+    const exe = process.platform === 'win32' ? 'echo-audio-host.exe' : 'echo-audio-host';
+    const cwd = join('tmp', 'echo-next');
+    const nextHost = join(cwd, 'electron-app', 'build', exe);
+
+    const resolved = resolveHostBinary({
+      cwd,
+      appPath: null,
+      resourcesPath: '',
+      exists: (candidate) => candidate === nextHost,
+    });
+
+    expect(resolved).toBe(nextHost);
+  });
+
+  it('returns null when the native host is unavailable', () => {
+    const resolved = resolveHostBinary({
+      cwd: join('tmp', 'empty-echo-next'),
+      appPath: null,
+      resourcesPath: '',
+      exists: () => false,
+      includeMigrationFallback: false,
+    });
+
+    expect(resolved).toBeNull();
+  });
+
   it.each([44100, 48000, 96000])(
     'spawns echo-audio-host with -sr %i and -exclusive',
     async (sampleRate) => {
@@ -259,4 +304,95 @@ describe('NativeOutputBridge host arguments', () => {
     }
     },
   );
+});
+
+describe('AudioSession host availability', () => {
+  it('reports unavailable when echo-audio-host is missing without throwing', () => {
+    const unavailableSession = new AudioSession({
+      decoder: new FakeDecoder(new Map()),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => new FakeBridge(),
+      isNativeHostAvailable: () => false,
+    });
+
+    expect(unavailableSession.getStatus().host).toBe('unavailable');
+  });
+});
+
+describe('DecoderPipeline ffmpeg resolution', () => {
+  it('prefers explicit ffmpegPath over env and ffmpeg-static', () => {
+    expect(
+      resolveDecoderFfmpegPath({
+        ffmpegPath: 'explicit-ffmpeg',
+        env: { ECHO_FFMPEG_PATH: 'env-ffmpeg' },
+        staticFfmpegPath: 'static-ffmpeg',
+      }),
+    ).toBe('explicit-ffmpeg');
+  });
+
+  it('prefers ECHO_FFMPEG_PATH over ffmpeg-static', () => {
+    expect(
+      resolveDecoderFfmpegPath({
+        env: { ECHO_FFMPEG_PATH: 'env-ffmpeg' },
+        staticFfmpegPath: 'static-ffmpeg',
+      }),
+    ).toBe('env-ffmpeg');
+  });
+
+  it('falls back to ffmpeg-static before system ffmpeg', () => {
+    expect(
+      resolveDecoderFfmpegPath({
+        env: {},
+        staticFfmpegPath: 'static-ffmpeg',
+        systemFfmpegPath: 'system-ffmpeg',
+      }),
+    ).toBe('static-ffmpeg');
+  });
+
+  it('normalizes missing spawn errors to ffmpeg_missing', async () => {
+    const spawn: NonNullable<DecoderPipelineDependencies['spawn']> = () => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: vi.fn(() => true),
+      });
+
+      queueMicrotask(() => {
+        child.emit('error', Object.assign(new Error('spawn missing ENOENT'), { code: 'ENOENT' }));
+      });
+
+      return child as unknown as ReturnType<NonNullable<DecoderPipelineDependencies['spawn']>>;
+    };
+    const decoder = new DecoderPipeline({
+      ffmpegPath: 'missing-ffmpeg',
+      spawn,
+    });
+    const run = decoder.decodeLocalFile({
+      filePath: 'song.flac',
+      startSeconds: 0,
+      channels: 2,
+      decoderOutputSampleRate: 44100,
+    });
+
+    await expect(run.done).rejects.toThrow('ffmpeg_missing');
+  });
+
+  it('surfaces decoder errors in AudioSession status', async () => {
+    const decoder = new FailingDecoder(new Map([['song.flac', probe('song.flac', 44100)]]));
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => new FakeBridge(),
+      isNativeHostAvailable: () => true,
+    });
+
+    await session.playLocalFile({
+      filePath: 'song.flac',
+      output: { outputMode: 'exclusive' },
+    });
+    await Promise.resolve();
+
+    expect(session.getStatus().state).toBe('error');
+    expect(session.getStatus().error).toBe('ffmpeg_missing');
+  });
 });

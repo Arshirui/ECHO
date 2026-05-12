@@ -25,6 +25,7 @@ const echoApi: EchoApi = {
     pause: () => ipcRenderer.invoke(IpcChannels.PlaybackPause),
     stop: () => ipcRenderer.invoke(IpcChannels.PlaybackStop),
     seek: (positionSeconds) => ipcRenderer.invoke(IpcChannels.PlaybackSeek, positionSeconds),
+    openLocalAudioFile: () => ipcRenderer.invoke(IpcChannels.PlaybackOpenLocalAudioFile),
   },
   audio: {
     getStatus: () => ipcRenderer.invoke(IpcChannels.AudioGetStatus),

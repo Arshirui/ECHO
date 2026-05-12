@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { dialog, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AudioOutputMode, AudioOutputSettings } from '../../shared/types/audio';
 import type { PlaybackStartRequest, PlaybackStatus } from '../../shared/types/playback';
@@ -110,5 +110,19 @@ export const registerPlaybackIpc = (): void => {
   ipcMain.handle(IpcChannels.PlaybackSeek, async (_event, positionSeconds: unknown): Promise<PlaybackStatus> => {
     await getAudioSession().seek(optionalNonNegativeNumber(positionSeconds) ?? 0);
     return toPlaybackStatus();
+  });
+  ipcMain.handle(IpcChannels.PlaybackOpenLocalAudioFile, async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Open local audio file',
+      properties: ['openFile'],
+      filters: [
+        {
+          name: 'Audio files',
+          extensions: ['flac', 'mp3', 'wav', 'm4a', 'ogg'],
+        },
+      ],
+    });
+
+    return result.canceled ? null : (result.filePaths[0] ?? null);
   });
 };

@@ -6,7 +6,9 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "predev": "node scripts/sync-audio-host.mjs --check",
     "dev": "electron-vite dev",
+    "sync:audio-host": "node scripts/sync-audio-host.mjs",
     "build": "npm run typecheck && electron-vite build",
     "lint": "eslint .",
     "test": "vitest run",
@@ -17,6 +19,7 @@
     "@tanstack/react-virtual": "^3.13.24",
     "@vitejs/plugin-react": "^5.1.4",
     "electron-vite": "^5.0.0",
+    "ffmpeg-static": "^5.3.0",
     "lucide-react": "^0.468.0",
     "music-metadata": "^11.12.3",
     "react": "^18.2.0",

@@ -32,6 +32,7 @@ export type AudioSessionDependencies = {
   decoder?: DecoderPipelineLike;
   deviceService?: DeviceServiceLike;
   createBridge?: () => OutputBridgeLike;
+  isNativeHostAvailable?: () => boolean;
   logger?: (message: string) => void;
 };
 
@@ -46,8 +47,8 @@ const normalizeOutputMode = (value: unknown): AudioOutputMode => {
   return value === 'exclusive' || value === 'asio' ? value : 'shared';
 };
 
-const defaultStatus = (): AudioStatus => ({
-  host: isNativeOutputBridgeAvailable() ? 'not-initialized' : 'unavailable',
+const defaultStatus = (nativeHostAvailable: boolean): AudioStatus => ({
+  host: nativeHostAvailable ? 'not-initialized' : 'unavailable',
   state: 'idle',
   outputDeviceId: null,
   outputMode: 'shared',
@@ -74,6 +75,7 @@ export class AudioSession extends EventEmitter {
   private readonly decoder: DecoderPipelineLike;
   private readonly deviceService: DeviceServiceLike;
   private readonly createBridge: () => OutputBridgeLike;
+  private readonly isNativeHostAvailable: () => boolean;
   private readonly logger: (message: string) => void;
   private readonly clock = new PlaybackClock();
   private outputSettings: Required<Pick<AudioOutputSettings, 'outputMode' | 'volume'>> &
@@ -82,7 +84,7 @@ export class AudioSession extends EventEmitter {
     volume: 1,
   };
   private state: AudioPlaybackState = 'idle';
-  private hostStatus: AudioStatus['host'] = defaultStatus().host;
+  private hostStatus: AudioStatus['host'] = isNativeOutputBridgeAvailable() ? 'not-initialized' : 'unavailable';
   private currentProbe: AudioProbeResult | null = null;
   private currentTrackId: string | null = null;
   private currentFilePath: string | null = null;
@@ -99,6 +101,8 @@ export class AudioSession extends EventEmitter {
     this.decoder = dependencies.decoder ?? new DecoderPipeline();
     this.deviceService = dependencies.deviceService ?? new DeviceService();
     this.createBridge = dependencies.createBridge ?? (() => new NativeOutputBridge());
+    this.isNativeHostAvailable = dependencies.isNativeHostAvailable ?? isNativeOutputBridgeAvailable;
+    this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
     this.logger = dependencies.logger ?? (() => undefined);
     this.on('error', () => undefined);
   }
@@ -223,7 +227,7 @@ export class AudioSession extends EventEmitter {
     this.runToken += 1;
     this.stopResources();
     this.state = 'stopped';
-    this.hostStatus = isNativeOutputBridgeAvailable() ? 'not-initialized' : 'unavailable';
+    this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
     this.currentProbe = null;
     this.currentTrackId = null;
     this.currentFilePath = null;
@@ -251,7 +255,7 @@ export class AudioSession extends EventEmitter {
   getStatus(): AudioStatus {
     this.updatePositionFromOutput();
 
-    const status = defaultStatus();
+    const status = defaultStatus(this.isNativeHostAvailable());
     const plan = this.currentPlan;
 
     return {
