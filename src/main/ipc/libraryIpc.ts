@@ -182,7 +182,7 @@ const normalizeCreatePlaylistRequest = (value: unknown): { name: string; descrip
 
 const normalizeUpdatePlaylistRequest = (
   value: unknown,
-): { playlistId: string; name?: string; description?: string | null; coverId?: string | null; sortMode?: PlaylistSortMode } => {
+): { playlistId: string; name?: string; description?: string | null; coverId?: string | null; coverPath?: string | null; sortMode?: PlaylistSortMode } => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('playlist update request must be an object');
   }
@@ -197,6 +197,7 @@ const normalizeUpdatePlaylistRequest = (
     name: typeof input.name === 'string' ? input.name : undefined,
     description: typeof input.description === 'string' || input.description === null ? (input.description as string | null) : undefined,
     coverId: typeof input.coverId === 'string' || input.coverId === null ? (input.coverId as string | null) : undefined,
+    coverPath: typeof input.coverPath === 'string' || input.coverPath === null ? (input.coverPath as string | null) : undefined,
     sortMode,
   };
 };
@@ -207,6 +208,14 @@ const normalizeTrackIds = (value: unknown): string[] => {
   }
 
   return value.map((item) => requireText(item, 'trackId'));
+};
+
+const normalizeAlbumIds = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    throw new Error('albumIds must be an array');
+  }
+
+  return value.map((item) => requireText(item, 'albumId'));
 };
 
 const normalizeTargetPosition = (value: unknown): number => {
@@ -488,7 +497,7 @@ export const registerLibraryIpc = (): void => {
     getLibraryService().createPlaylist(normalizeCreatePlaylistRequest(request)),
   );
   ipcMain.handle(IpcChannels.LibraryUpdatePlaylist, (_event, request: unknown) =>
-    getLibraryService().updatePlaylist(normalizeUpdatePlaylistRequest(request)),
+    getLibraryService().updatePlaylistArtwork(normalizeUpdatePlaylistRequest(request)),
   );
   ipcMain.handle(IpcChannels.LibraryDeletePlaylist, (_event, playlistId: unknown) =>
     getLibraryService().deletePlaylist(requireText(playlistId, 'playlistId')),
@@ -518,6 +527,46 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryClearPlaylist, (_event, playlistId: unknown) =>
     getLibraryService().clearPlaylist(requireText(playlistId, 'playlistId')),
   );
+  ipcMain.handle(IpcChannels.LibraryGetLikedSongsPlaylist, () => getLibraryService().getLikedSongsPlaylist());
+  ipcMain.handle(IpcChannels.LibraryGetLikedAlbumsPlaylist, () => getLibraryService().getLikedAlbumsPlaylist());
+  ipcMain.handle(IpcChannels.LibraryGetLikedTracks, (_event, query: unknown) =>
+    getLibraryService().getLikedTracks(normalizeQuery(query)),
+  );
+  ipcMain.handle(IpcChannels.LibraryGetLikedAlbums, (_event, query: unknown) =>
+    getLibraryService().getLikedAlbums(normalizeQuery(query)),
+  );
+  ipcMain.handle(IpcChannels.LibraryIsTrackLiked, (_event, trackId: unknown) =>
+    getLibraryService().isTrackLiked(requireText(trackId, 'trackId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryIsAlbumLiked, (_event, albumId: unknown) =>
+    getLibraryService().isAlbumLiked(requireText(albumId, 'albumId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryGetLikedTrackIds, (_event, trackIds: unknown) =>
+    getLibraryService().getLikedTrackIds(normalizeTrackIds(trackIds)),
+  );
+  ipcMain.handle(IpcChannels.LibraryGetLikedAlbumIds, (_event, albumIds: unknown) =>
+    getLibraryService().getLikedAlbumIds(normalizeAlbumIds(albumIds)),
+  );
+  ipcMain.handle(IpcChannels.LibraryLikeTrack, (_event, trackId: unknown) =>
+    getLibraryService().likeTrack(requireText(trackId, 'trackId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryUnlikeTrack, (_event, trackId: unknown) =>
+    getLibraryService().unlikeTrack(requireText(trackId, 'trackId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryToggleTrackLiked, (_event, trackId: unknown) =>
+    getLibraryService().toggleTrackLiked(requireText(trackId, 'trackId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryLikeAlbum, (_event, albumId: unknown) =>
+    getLibraryService().likeAlbum(requireText(albumId, 'albumId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryUnlikeAlbum, (_event, albumId: unknown) =>
+    getLibraryService().unlikeAlbum(requireText(albumId, 'albumId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryToggleAlbumLiked, (_event, albumId: unknown) =>
+    getLibraryService().toggleAlbumLiked(requireText(albumId, 'albumId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryClearLikedTracks, () => getLibraryService().clearLikedTracks());
+  ipcMain.handle(IpcChannels.LibraryClearLikedAlbums, () => getLibraryService().clearLikedAlbums());
   ipcMain.handle(IpcChannels.LibraryGetAlbums, (_event, query: unknown) =>
     getLibraryService().getAlbums(normalizeQuery(query)),
   );

@@ -212,13 +212,21 @@
   padding: 0;
 }
 
+.page-surface:has(.liked-page) {
+  padding: 26px 34px 28px;
+}
+
+.page-surface:has(.queue-page) {
+  padding: 20px 28px 24px;
+}
+
 .player-bar {
   position: relative;
   z-index: 10;
   display: grid;
   grid-row: 3;
   grid-column: 1 / 3;
-  grid-template-columns: minmax(320px, 0.95fr) minmax(410px, 1.22fr) minmax(150px, 0.45fr);
+  grid-template-columns: minmax(260px, 1fr) minmax(420px, 560px) minmax(260px, 1fr);
   align-items: center;
   gap: 16px;
   padding: 9px 24px;
@@ -268,7 +276,7 @@
   }
 
   .player-bar {
-    grid-template-columns: minmax(240px, 1fr) minmax(240px, 1.12fr);
+    grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1fr);
   }
 
   .output-status {

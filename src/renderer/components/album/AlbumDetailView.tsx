@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Disc3, Heart, MoreHorizontal, Play } from 'lucide-react';
 import type { LibraryAlbum, LibraryTrack } from '../../../shared/types/library';
+import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent } from '../../hooks/useLikedMedia';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { AlbumTrackList } from './AlbumTrackList';
 
@@ -71,6 +72,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
   const [coverLarge, setCoverLarge] = useState<string | null>(null);
   const [failedLargeCover, setFailedLargeCover] = useState(false);
   const [failedThumbCover, setFailedThumbCover] = useState(false);
+  const [isAlbumLiked, setIsAlbumLiked] = useState(false);
   const duration = formatDuration(album.duration);
   const formatSummary = formatTechnicalSummary(firstTrack);
   const albumMetadata = useMemo(
@@ -120,6 +122,15 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
   );
   const detailCoverSrc = coverLarge && !failedLargeCover ? coverLarge : failedThumbCover ? null : album.coverThumb;
 
+  const refreshAlbumLiked = useCallback(async (): Promise<void> => {
+    try {
+      const result = await window.echo?.library?.getLikedAlbumIds([album.id]);
+      setIsAlbumLiked(result?.[album.id] === true);
+    } catch {
+      setIsAlbumLiked(false);
+    }
+  }, [album.id]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -144,6 +155,12 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       isMounted = false;
     };
   }, [album.id]);
+
+  useEffect(() => {
+    void refreshAlbumLiked();
+    window.addEventListener(likedAlbumsChangedEvent, refreshAlbumLiked);
+    return () => window.removeEventListener(likedAlbumsChangedEvent, refreshAlbumLiked);
+  }, [refreshAlbumLiked]);
 
   const handleFirstTrackChange = useCallback((track: LibraryTrack | null, isLoading: boolean): void => {
     setFirstTrack(track);
@@ -188,6 +205,30 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     }
   }, [albumSource, firstTrack, loadedTracks, playTrack, replaceQueue, withAlbumCoverFallback]);
 
+  const handleToggleAlbumLiked = useCallback(async (): Promise<void> => {
+    try {
+      const previous = isAlbumLiked;
+      setIsAlbumLiked(!previous);
+      const result = await window.echo.library.toggleAlbumLiked(album.id);
+      setIsAlbumLiked(result.liked);
+      window.dispatchEvent(new Event(likedAlbumsChangedEvent));
+      window.dispatchEvent(new Event(likedChangedEvent));
+    } catch (error) {
+      setPlayError(error instanceof Error ? error.message : String(error));
+      void refreshAlbumLiked();
+    }
+  }, [album.id, isAlbumLiked, refreshAlbumLiked]);
+
+  const handleToggleTrackLiked = useCallback(async (track: LibraryTrack): Promise<void> => {
+    try {
+      await window.echo.library.toggleTrackLiked(track.id);
+      window.dispatchEvent(new Event(likedTracksChangedEvent));
+      window.dispatchEvent(new Event(likedChangedEvent));
+    } catch (error) {
+      setPlayError(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
   const handleDetailCoverError = useCallback((): void => {
     if (coverLarge && !failedLargeCover) {
       setFailedLargeCover(true);
@@ -231,8 +272,15 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
               <Play size={16} fill="currentColor" />
               {isLoadingFirstTrack ? 'Reading album' : 'Play Now'}
             </button>
-            <button className="album-icon-action" type="button" aria-label="Like album" title="Like album">
-              <Heart size={16} />
+            <button
+              className={`album-icon-action ${isAlbumLiked ? 'is-liked' : ''}`}
+              type="button"
+              aria-label={isAlbumLiked ? 'Unlike album' : 'Like album'}
+              aria-pressed={isAlbumLiked}
+              title={isAlbumLiked ? 'Unlike album' : 'Like album'}
+              onClick={() => void handleToggleAlbumLiked()}
+            >
+              <Heart size={16} fill={isAlbumLiked ? 'currentColor' : 'none'} />
             </button>
             <button className="album-icon-action" type="button" aria-label="More album actions" title="More album actions">
               <MoreHorizontal size={17} />
@@ -275,6 +323,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           onFirstTrackChange={handleFirstTrackChange}
           onLoadedTracksChange={handleLoadedTracksChange}
           onPlayTrack={handlePlayTrack}
+          onToggleTrackLiked={handleToggleTrackLiked}
         />
       </section>
     </div>

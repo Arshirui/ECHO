@@ -307,4 +307,6 @@ CREATE INDEX IF NOT EXISTS idx_playback_history_stats_last_started_at ON playbac
 CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist_position ON playlist_items(playlist_id, position);
 CREATE INDEX IF NOT EXISTS idx_playlist_items_media ON playlist_items(media_type, media_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_items_source ON playlist_items(source_provider, source_item_id);
+CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist_media ON playlist_items(playlist_id, media_type, media_id);
+CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist_added ON playlist_items(playlist_id, added_at DESC);
 `;

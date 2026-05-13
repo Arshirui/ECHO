@@ -161,6 +161,26 @@ export class LibraryService {
     return this.store.updatePlaylist(request);
   }
 
+  async updatePlaylistArtwork(request: UpdatePlaylistRequest): Promise<LibraryPlaylist> {
+    const coverPath = cleanNullableText(request.coverPath ?? null);
+
+    if (!coverPath) {
+      return this.updatePlaylist(request);
+    }
+
+    const coverData = readCoverImage(coverPath);
+    const coverResult = await this.coverExtractor.extract(coverPath, {
+      cacheRoot: this.coverCacheDir,
+      metadata: metadataWithEmbeddedCover(coverData.data, coverData.mimeType),
+    });
+    const coverId = this.store.upsertCover({ ...coverResult, source: 'manual' });
+
+    return this.store.updatePlaylist({
+      ...request,
+      coverId,
+    });
+  }
+
   deletePlaylist(playlistId: string): void {
     this.store.deletePlaylist(playlistId);
   }
@@ -191,6 +211,70 @@ export class LibraryService {
 
   clearPlaylist(playlistId: string): void {
     this.store.clearPlaylist(playlistId);
+  }
+
+  getLikedSongsPlaylist(): LibraryPlaylist {
+    return this.store.getLikedSongsPlaylist();
+  }
+
+  getLikedAlbumsPlaylist(): LibraryPlaylist {
+    return this.store.getLikedAlbumsPlaylist();
+  }
+
+  getLikedTracks(query?: LibraryPageQuery): LibraryPage<LibraryPlaylistItem> {
+    return this.store.getLikedTracks(query);
+  }
+
+  getLikedAlbums(query?: LibraryPageQuery): LibraryPage<LibraryPlaylistItem> {
+    return this.store.getLikedAlbums(query);
+  }
+
+  isTrackLiked(trackId: string): boolean {
+    return this.store.isTrackLiked(trackId);
+  }
+
+  isAlbumLiked(albumId: string): boolean {
+    return this.store.isAlbumLiked(albumId);
+  }
+
+  getLikedTrackIds(trackIds: string[]): Record<string, boolean> {
+    return this.store.getLikedTrackIds(trackIds);
+  }
+
+  getLikedAlbumIds(albumIds: string[]): Record<string, boolean> {
+    return this.store.getLikedAlbumIds(albumIds);
+  }
+
+  likeTrack(trackId: string): LibraryPlaylistItem {
+    return this.store.likeTrack(trackId);
+  }
+
+  unlikeTrack(trackId: string): void {
+    this.store.unlikeTrack(trackId);
+  }
+
+  toggleTrackLiked(trackId: string): { liked: boolean; item?: LibraryPlaylistItem } {
+    return this.store.toggleTrackLiked(trackId);
+  }
+
+  likeAlbum(albumId: string): LibraryPlaylistItem {
+    return this.store.likeAlbum(albumId);
+  }
+
+  unlikeAlbum(albumId: string): void {
+    this.store.unlikeAlbum(albumId);
+  }
+
+  toggleAlbumLiked(albumId: string): { liked: boolean; item?: LibraryPlaylistItem } {
+    return this.store.toggleAlbumLiked(albumId);
+  }
+
+  clearLikedTracks(): void {
+    this.store.clearLikedTracks();
+  }
+
+  clearLikedAlbums(): void {
+    this.store.clearLikedAlbums();
   }
 
   getAlbums(query?: LibraryPageQuery): LibraryPage<LibraryAlbum> {

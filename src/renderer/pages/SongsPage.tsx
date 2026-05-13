@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, Download, FolderPlus, RotateCw, Search, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, Download, FolderPlus, ListFilter, RotateCw, Search, Trash2 } from 'lucide-react';
 import type { EditableTrackTags, LibrarySort, LibraryTrack } from '../../shared/types/library';
 import { TrackContextMenu } from '../components/library/TrackContextMenu';
 import type { TrackMenuAction } from '../components/library/TrackContextMenu';
 import { TrackList } from '../components/library/TrackList';
 import { TrackTagEditorDrawer } from '../components/library/TrackTagEditorDrawer';
+import { likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../hooks/useLikedMedia';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 const pageSize = 100;
@@ -53,6 +54,8 @@ export const SongsPage = (): JSX.Element => {
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const { currentTrackId, playTrack, appendToQueue, playTrackNext, items: queueItems, removeQueueItem } = usePlaybackQueue();
+  const trackIds = useMemo(() => tracks.map((track) => track.id), [tracks]);
+  const likedTrackIds = useLikedTrackIds(trackIds);
   const queueSource = useMemo(
     () => ({ type: 'songs' as const, label: '歌曲列表', search: search || undefined, sort }),
     [search, sort],
@@ -244,6 +247,17 @@ export const SongsPage = (): JSX.Element => {
     [appendToQueue, queueSource],
   );
 
+  const handleToggleLiked = useCallback(async (track: LibraryTrack): Promise<void> => {
+    try {
+      setError(null);
+      await window.echo?.library?.toggleTrackLiked(track.id);
+      window.dispatchEvent(new Event(likedTracksChangedEvent));
+      window.dispatchEvent(new Event(likedChangedEvent));
+    } catch (likeError) {
+      setError(likeError instanceof Error ? likeError.message : String(likeError));
+    }
+  }, []);
+
   const handleTrackMenuAction = useCallback(
     async (action: TrackMenuAction, track: LibraryTrack): Promise<void> => {
       const library = window.echo?.library;
@@ -263,6 +277,9 @@ export const SongsPage = (): JSX.Element => {
             return;
           case 'add-to-queue':
             appendToQueue(track, queueSource);
+            return;
+          case 'toggle-liked':
+            await handleToggleLiked(track);
             return;
           case 'remove-from-queue':
             {
@@ -351,7 +368,7 @@ export const SongsPage = (): JSX.Element => {
         setError(actionError instanceof Error ? actionError.message : String(actionError));
       }
     },
-    [appendToQueue, playTrackNext, queueItems, queueSource, removeQueueItem],
+    [appendToQueue, handleToggleLiked, playTrackNext, queueItems, queueSource, removeQueueItem],
   );
 
   const closeTagEditor = useCallback((): void => {
@@ -454,8 +471,9 @@ export const SongsPage = (): JSX.Element => {
             aria-expanded={isSortOpen}
             onClick={() => setIsSortOpen((current) => !current)}
           >
-            <span>{sortOptions.find((option) => option.value === sort)?.label ?? '默认排序'}</span>
-            <ChevronDown size={15} />
+            <ListFilter className="sort-button-icon" size={16} aria-hidden="true" />
+            <span className="sort-button-label">{sortOptions.find((option) => option.value === sort)?.label ?? '默认排序'}</span>
+            <ChevronDown className="sort-button-chevron" size={15} aria-hidden="true" />
           </button>
           {isSortOpen ? (
             <div className="sort-menu" role="listbox" aria-label="歌曲排序">
@@ -493,6 +511,8 @@ export const SongsPage = (): JSX.Element => {
         canLoadMore={hasMore && !isLoading}
         onEndReached={handleLoadMore}
         onAddToQueue={handleAddTrackToQueue}
+        likedTrackIds={likedTrackIds}
+        onToggleLiked={(track) => void handleToggleLiked(track)}
         onOpenTrackMenu={handleOpenTrackMenu}
         onPlay={handlePlayTrack}
       />
@@ -507,6 +527,7 @@ export const SongsPage = (): JSX.Element => {
         <TrackContextMenu
           track={trackMenu.track}
           position={trackMenu.position}
+          liked={likedTrackIds[trackMenu.track.id] === true}
           onAction={(action, track) => void handleTrackMenuAction(action, track)}
           onClose={() => setTrackMenu(null)}
         />

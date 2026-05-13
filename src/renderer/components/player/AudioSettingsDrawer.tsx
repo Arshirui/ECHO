@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioStatus } from '../../../shared/types/audio';
+import { useI18n } from '../../i18n/I18nProvider';
 import { createOutputSettings, readRememberedAudioOutput, writeRememberedAudioOutput } from './audioOutputMemory';
 
 type AudioSettingsDrawerProps = {
@@ -36,7 +37,35 @@ type HiddenDeviceMenu = {
   y: number;
 } | null;
 
+type AudioDrawerCopy = {
+  asioDriver: string;
+  balanceDsp: string;
+  bitPerfect: string;
+  bitPerfectReady: string;
+  close: string;
+  desktopBridgeUnavailable: string;
+  dspActive: string;
+  dspOn: string;
+  eqOff: string;
+  eqOn: string;
+  exclusive: string;
+  nativeRate: string;
+  noActiveSource: string;
+  noTrack: string;
+  pending: string;
+  processed: string;
+  ratePending: string;
+  resampling: string;
+  shared: string;
+  sharedMixer: string;
+  speedUp: string;
+  standardPath: string;
+  systemAudio: string;
+  systemDefaultOutput: string;
+};
+
 const hiddenDeviceStorageKey = 'echo-next.hidden-audio-devices';
+const drawerExitAnimationMs = 320;
 
 const getDeviceStorageKey = (device: AudioDeviceInfo): string => `${device.outputMode}:${device.id || device.index}:${device.name}`;
 
@@ -75,21 +104,21 @@ const formatBitrate = (value: number | null | undefined): string | null => {
   return `${Math.round(value / 1000)} kbps`;
 };
 
-const formatMode = (mode: AudioOutputMode | null | undefined): string => {
+const formatMode = (mode: AudioOutputMode | null | undefined, copy: AudioDrawerCopy): string => {
   if (mode === 'asio') {
     return 'ASIO';
   }
 
   if (mode === 'exclusive') {
-    return 'Exclusive';
+    return copy.exclusive;
   }
 
-  return 'Shared';
+  return copy.shared;
 };
 
-const formatCodecLine = (status: AudioStatus | null): string => {
+const formatCodecLine = (status: AudioStatus | null, copy: AudioDrawerCopy): string => {
   const bitrate = formatBitrate(status?.bitrate);
-  const codec = status?.codec?.toUpperCase() ?? 'No track';
+  const codec = status?.codec?.toUpperCase() ?? copy.noTrack;
 
   return [codec, bitrate].filter(Boolean).join(' / ');
 };
@@ -103,14 +132,14 @@ const isLosslessCodec = (status: AudioStatus | null): boolean => {
   return Boolean(codec && ['flac', 'wav', 'wave', 'alac', 'aiff', 'ape'].some((losslessCodec) => codec.includes(losslessCodec)));
 };
 
-const formatSourceQuality = (status: AudioStatus | null): string => {
+const formatSourceQuality = (status: AudioStatus | null, copy: AudioDrawerCopy): string => {
   const parts = [
     status?.codec?.toUpperCase() ?? null,
     status?.bitDepth ? `${status.bitDepth} bit` : null,
     formatRate(status?.fileSampleRate) || null,
   ].filter(Boolean);
 
-  return parts.length ? parts.join(' / ') : 'No active source';
+  return parts.length ? parts.join(' / ') : copy.noActiveSource;
 };
 
 const getOutputSampleRate = (status: AudioStatus | null, deviceSampleRate?: number | null): number | null => {
@@ -128,7 +157,7 @@ const hasInferredRateMismatch = (status: AudioStatus | null, deviceSampleRate?: 
   return Boolean(fileSampleRate && outputSampleRate && fileSampleRate !== outputSampleRate);
 };
 
-const formatRatePath = (status: AudioStatus | null, deviceSampleRate?: number | null): string => {
+const formatRatePath = (status: AudioStatus | null, deviceSampleRate: number | null | undefined, copy: AudioDrawerCopy): string => {
   const sourceRate = formatRate(status?.fileSampleRate);
   const outputRate = formatRate(getOutputSampleRate(status, deviceSampleRate));
 
@@ -136,44 +165,44 @@ const formatRatePath = (status: AudioStatus | null, deviceSampleRate?: number | 
     return `${sourceRate} -> ${outputRate}`;
   }
 
-  return outputRate || sourceRate || 'Rate pending';
+  return outputRate || sourceRate || copy.ratePending;
 };
 
-const getEqSignalText = (status: AudioStatus | null): string => {
+const getEqSignalText = (status: AudioStatus | null, copy: AudioDrawerCopy): string => {
   if (status?.eqEnabled) {
-    return status.eqPresetName ? `EQ On / ${status.eqPresetName}` : 'EQ On';
+    return status.eqPresetName ? `${copy.eqOn} / ${status.eqPresetName}` : copy.eqOn;
   }
 
   if (status?.channelBalanceEnabled) {
-    return 'Balance DSP';
+    return copy.balanceDsp;
   }
 
   if (status?.dspActive) {
-    return 'DSP On';
+    return copy.dspOn;
   }
 
-  return 'EQ Off';
+  return copy.eqOff;
 };
 
-const getResampleSignalText = (status: AudioStatus | null, deviceSampleRate?: number | null): string => {
+const getResampleSignalText = (status: AudioStatus | null, deviceSampleRate: number | null | undefined, copy: AudioDrawerCopy): string => {
   if (status?.resampling || status?.sampleRateMismatch || hasInferredRateMismatch(status, deviceSampleRate)) {
-    return formatRatePath(status, deviceSampleRate);
+    return formatRatePath(status, deviceSampleRate, copy);
   }
 
   if (status?.outputMode === 'shared') {
-    return 'Shared Mixer';
+    return copy.sharedMixer;
   }
 
-  return 'Native Rate';
+  return copy.nativeRate;
 };
 
-const getDirectSignalText = (status: AudioStatus | null, deviceSampleRate?: number | null): string => {
+const getDirectSignalText = (status: AudioStatus | null, deviceSampleRate: number | null | undefined, copy: AudioDrawerCopy): string => {
   if (status?.outputMode === 'shared') {
-    return 'Shared Mixer';
+    return copy.sharedMixer;
   }
 
   if (status?.bitPerfectCandidate) {
-    return 'Bit-perfect';
+    return copy.bitPerfect;
   }
 
   if (status?.bitPerfectDisabledReason) {
@@ -188,10 +217,10 @@ const getDirectSignalText = (status: AudioStatus | null, deviceSampleRate?: numb
     status?.eqEnabled ||
     status?.channelBalanceEnabled
   ) {
-    return 'Processed';
+    return copy.processed;
   }
 
-  return 'Pending';
+  return copy.pending;
 };
 
 const deviceMatchesStatus = (device: AudioDeviceInfo, status: AudioStatus | null, mode: AudioOutputMode): boolean => {
@@ -243,9 +272,10 @@ const getDeviceIcon = (deviceName: string, outputMode: AudioOutputMode | AudioDe
   return Music2;
 };
 
-const getCurrentOutputName = (status: AudioStatus | null): string => status?.outputDeviceName || 'System default output';
+const getCurrentOutputName = (status: AudioStatus | null, fallbackDeviceName: string | null | undefined, copy: AudioDrawerCopy): string =>
+  status?.outputDeviceName || fallbackDeviceName || copy.systemDefaultOutput;
 
-const getCurrentBackend = (status: AudioStatus | null): string => status?.outputBackend || status?.outputDeviceType || 'System audio';
+const getCurrentBackend = (status: AudioStatus | null, copy: AudioDrawerCopy): string => status?.outputBackend || status?.outputDeviceType || copy.systemAudio;
 
 export const AudioSettingsDrawer = ({
   isOpen,
@@ -253,10 +283,41 @@ export const AudioSettingsDrawer = ({
   onClose,
   onStatusChange,
 }: AudioSettingsDrawerProps): JSX.Element | null => {
+  const { t } = useI18n();
+  const copy = useMemo<AudioDrawerCopy>(
+    () => ({
+      asioDriver: t('audioDrawer.device.asioDriver'),
+      balanceDsp: t('audioDrawer.signal.balanceDsp'),
+      bitPerfect: t('audioDrawer.signal.bitPerfect'),
+      bitPerfectReady: t('audioDrawer.badge.bitPerfectReady'),
+      close: t('audioDrawer.action.close'),
+      desktopBridgeUnavailable: t('audioDrawer.error.desktopBridgeUnavailable'),
+      dspActive: t('audioDrawer.badge.dspActive'),
+      dspOn: t('audioDrawer.signal.dspOn'),
+      eqOff: t('audioDrawer.signal.eqOff'),
+      eqOn: t('audioDrawer.signal.eqOn'),
+      exclusive: t('audioDrawer.mode.exclusive'),
+      nativeRate: t('audioDrawer.signal.nativeRate'),
+      noActiveSource: t('audioDrawer.signal.noActiveSource'),
+      noTrack: t('audioDrawer.status.noTrack'),
+      pending: t('audioDrawer.signal.pending'),
+      processed: t('audioDrawer.signal.processed'),
+      ratePending: t('audioDrawer.status.ratePending'),
+      resampling: t('audioDrawer.badge.resampling'),
+      shared: t('audioDrawer.mode.shared'),
+      sharedMixer: t('audioDrawer.signal.sharedMixer'),
+      speedUp: t('audioDrawer.badge.speedUp'),
+      standardPath: t('audioDrawer.signal.standardPath'),
+      systemAudio: t('audioDrawer.device.systemAudio'),
+      systemDefaultOutput: t('audioDrawer.device.systemDefaultOutput'),
+    }),
+    [t],
+  );
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [outputMode, setOutputMode] = useState<AudioOutputMode>(status?.outputMode ?? 'shared');
   const [rememberOutput, setRememberOutput] = useState(() => readRememberedAudioOutput().enabled);
   const [shouldRender, setShouldRender] = useState(isOpen);
+  const [isMotionOpen, setIsMotionOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [hiddenDeviceKeys, setHiddenDeviceKeys] = useState<string[]>(() => readHiddenDeviceKeys());
@@ -272,6 +333,7 @@ export const AudioSettingsDrawer = ({
     [devices, hiddenDeviceKeySet],
   );
   const allSharedDevices = useMemo(() => devices.filter((device) => device.outputMode === 'shared'), [devices]);
+  const defaultSharedDevice = useMemo(() => allSharedDevices.find((device) => device.isDefault) ?? null, [allSharedDevices]);
   const sharedDevices = useMemo(() => visibleDevices.filter((device) => device.outputMode === 'shared'), [visibleDevices]);
   const asioDevices = useMemo(() => visibleDevices.filter((device) => device.outputMode === 'asio'), [visibleDevices]);
   const wasapiExclusive = outputMode === 'exclusive';
@@ -292,7 +354,7 @@ export const AudioSettingsDrawer = ({
     const hasEq = status?.dspActive || status?.eqEnabled || status?.warnings.some((warning) => /eq|equalizer/i.test(warning));
 
     if (hasEq) {
-      badges.push({ label: 'DSP active', tone: 'neutral' });
+      badges.push({ label: copy.dspActive, tone: 'neutral' });
     }
 
     if (isHiResAudio(status)) {
@@ -301,51 +363,59 @@ export const AudioSettingsDrawer = ({
       badges.push({ label: 'Lossless', tone: 'gold' });
     }
 
+    if ((status?.playbackRate ?? 1) > 1.0001) {
+      badges.push({ label: copy.speedUp, tone: 'warning' });
+    }
+
     if (status?.bitPerfectCandidate) {
-      badges.push({ label: 'Bit-perfect ready', tone: 'ready' });
+      badges.push({ label: copy.bitPerfectReady, tone: 'ready' });
     }
 
     if (status?.resampling || status?.sampleRateMismatch) {
-      badges.push({ label: 'Resampling', tone: 'warning' });
+      badges.push({ label: copy.resampling, tone: 'warning' });
     }
 
-    if (hasInferredRateMismatch(status, effectiveSharedSampleRate) && !badges.some((badge) => badge.label === 'Resampling')) {
-      badges.push({ label: 'Resampling', tone: 'warning' });
+    if (hasInferredRateMismatch(status, effectiveSharedSampleRate) && !badges.some((badge) => badge.label === copy.resampling)) {
+      badges.push({ label: copy.resampling, tone: 'warning' });
     }
 
     return badges;
-  }, [effectiveSharedSampleRate, status]);
+  }, [copy, effectiveSharedSampleRate, status]);
 
   const engineSignalDetails = useMemo(
     () => [
-      { label: 'Source', value: formatSourceQuality(status) },
-      { label: 'EQ', value: getEqSignalText(status) },
-      { label: 'Resample', value: getResampleSignalText(status, effectiveSharedSampleRate) },
-      { label: 'Direct', value: getDirectSignalText(status, effectiveSharedSampleRate) },
+      { label: t('audioDrawer.meter.source'), value: formatSourceQuality(status, copy) },
+      { label: 'EQ', value: getEqSignalText(status, copy) },
+      { label: t('audioDrawer.meter.resample'), value: getResampleSignalText(status, effectiveSharedSampleRate, copy) },
+      { label: t('audioDrawer.meter.direct'), value: getDirectSignalText(status, effectiveSharedSampleRate, copy) },
     ],
-    [effectiveSharedSampleRate, status],
+    [copy, effectiveSharedSampleRate, status, t],
   );
-  const engineRatePath = useMemo(() => formatRatePath(status, effectiveSharedSampleRate), [effectiveSharedSampleRate, status]);
+  const engineRatePath = useMemo(() => formatRatePath(status, effectiveSharedSampleRate, copy), [copy, effectiveSharedSampleRate, status]);
+  const currentOutputName = useMemo(
+    () => getCurrentOutputName(status, statusDevice?.name ?? defaultSharedDevice?.name, copy),
+    [copy, defaultSharedDevice?.name, status, statusDevice?.name],
+  );
 
   const currentOutput = useMemo(() => {
     const currentMode = status?.outputMode ?? outputMode;
-    const name = getCurrentOutputName(status);
+    const name = currentOutputName;
 
     return {
       name,
       mode: currentMode,
-      backend: getCurrentBackend(status),
+      backend: getCurrentBackend(status, copy),
       sampleRate: formatRate(getOutputSampleRate(status, effectiveSharedSampleRate)),
-      bitPerfect: status?.bitPerfectCandidate ? 'Bit-perfect ready' : status?.bitPerfectDisabledReason ?? 'Standard path',
+      bitPerfect: status?.bitPerfectCandidate ? copy.bitPerfectReady : status?.bitPerfectDisabledReason ?? copy.standardPath,
       Icon: getDeviceIcon(name, currentMode),
     };
-  }, [effectiveSharedSampleRate, outputMode, status]);
+  }, [copy, currentOutputName, effectiveSharedSampleRate, outputMode, status]);
 
   const refresh = useCallback(async (): Promise<void> => {
     const audio = window.echo?.audio;
 
     if (!audio) {
-      setError('Desktop bridge unavailable');
+      setError(copy.desktopBridgeUnavailable);
       setDevices([]);
       return;
     }
@@ -359,17 +429,30 @@ export const AudioSettingsDrawer = ({
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
     }
-  }, [onStatusChange]);
+  }, [copy.desktopBridgeUnavailable, onStatusChange]);
 
   useEffect(() => {
     if (isOpen) {
       setShouldRender(true);
+      let secondFrame = 0;
+      const firstFrame = window.requestAnimationFrame(() => {
+        secondFrame = window.requestAnimationFrame(() => setIsMotionOpen(true));
+      });
+      return () => {
+        window.cancelAnimationFrame(firstFrame);
+        window.cancelAnimationFrame(secondFrame);
+      };
+    }
+
+    setIsMotionOpen(false);
+
+    if (!shouldRender) {
       return undefined;
     }
 
-    const timer = window.setTimeout(() => setShouldRender(false), 320);
+    const timer = window.setTimeout(() => setShouldRender(false), drawerExitAnimationMs);
     return () => window.clearTimeout(timer);
-  }, [isOpen]);
+  }, [isOpen, shouldRender]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -434,7 +517,7 @@ export const AudioSettingsDrawer = ({
       const audio = window.echo?.audio;
 
       if (!audio) {
-        setError('Desktop bridge unavailable');
+        setError(copy.desktopBridgeUnavailable);
         return;
       }
 
@@ -453,7 +536,7 @@ export const AudioSettingsDrawer = ({
         setIsBusy(false);
       }
     },
-    [onStatusChange, persistOutput, rememberOutput],
+    [copy.desktopBridgeUnavailable, onStatusChange, persistOutput, rememberOutput],
   );
 
   const applyDevice = (mode: AudioOutputMode, device: AudioDeviceInfo | null): void => {
@@ -518,15 +601,15 @@ export const AudioSettingsDrawer = ({
   }
 
   return (
-    <div className="audio-drawer-root no-drag" role="presentation" data-open={isOpen}>
-      <button className="audio-drawer-scrim" type="button" aria-label="Close audio settings" onClick={onClose} />
-      <aside className="audio-drawer" aria-label="Audio settings">
+    <div className="audio-drawer-root no-drag" role="presentation" data-open={isMotionOpen}>
+      <button className="audio-drawer-scrim" type="button" aria-label={copy.close} onClick={onClose} />
+      <aside className="audio-drawer" aria-label={t('audioDrawer.title')}>
         <header className="audio-drawer-header">
           <div>
             <SlidersHorizontal size={18} />
-            <h2>Audio Settings</h2>
+            <h2>{t('audioDrawer.title')}</h2>
           </div>
-          <button className="audio-drawer-close" type="button" aria-label="Close audio settings" title="Close" onClick={onClose}>
+          <button className="audio-drawer-close" type="button" aria-label={copy.close} title={copy.close} onClick={onClose}>
             <X size={20} />
           </button>
         </header>
@@ -538,21 +621,21 @@ export const AudioSettingsDrawer = ({
             </span>
             <div>
               <span>HiFi Engine</span>
-              <strong>{formatCodecLine(status)}</strong>
+              <strong>{formatCodecLine(status, copy)}</strong>
             </div>
             <RefreshCw size={15} />
           </div>
           <div className="audio-engine-meter__grid">
             <span>
-              <em>Output</em>
-              <strong title={getCurrentOutputName(status)}>{getCurrentOutputName(status)}</strong>
+              <em>{t('audioDrawer.meter.output')}</em>
+              <strong title={currentOutputName}>{currentOutputName}</strong>
             </span>
             <span>
-              <em>Mode</em>
-              <strong>{formatMode(status?.outputMode ?? outputMode)}</strong>
+              <em>{t('audioDrawer.meter.mode')}</em>
+              <strong>{formatMode(status?.outputMode ?? outputMode, copy)}</strong>
             </span>
             <span>
-              <em>Rate</em>
+              <em>{t('audioDrawer.meter.rate')}</em>
               <strong>{engineRatePath}</strong>
             </span>
           </div>
@@ -578,7 +661,7 @@ export const AudioSettingsDrawer = ({
         <section className="audio-drawer-section audio-current-output-section">
           <div className="audio-drawer-section-title">
             <Headphones size={17} />
-            <h3>Current Output</h3>
+            <h3>{t('audioDrawer.section.currentOutput')}</h3>
           </div>
           <div className="audio-current-output-card">
             <span className="audio-current-output-card__icon">
@@ -587,37 +670,37 @@ export const AudioSettingsDrawer = ({
             <div className="audio-current-output-card__body">
               <strong title={currentOutput.name}>{currentOutput.name}</strong>
               <span>
-                {formatMode(currentOutput.mode)} / {currentOutput.sampleRate || 'Rate pending'}
+                {formatMode(currentOutput.mode, copy)} / {currentOutput.sampleRate || copy.ratePending}
               </span>
               <span>
                 {currentOutput.backend} / {currentOutput.bitPerfect}
               </span>
             </div>
-            <em>Selected</em>
+            <em>{t('audioDrawer.device.selected')}</em>
           </div>
         </section>
 
         <section className="audio-drawer-section">
           <div className="audio-drawer-section-title">
             <Waves size={17} />
-            <h3>System Output Devices</h3>
+            <h3>{t('audioDrawer.section.systemDevices')}</h3>
           </div>
           <button
             className={`audio-device-pill ${!status?.outputDeviceName && outputMode !== 'asio' ? 'active' : ''}`}
             type="button"
-            title="System default output"
+            title={copy.systemDefaultOutput}
             disabled={isBusy}
             onClick={() => applyDevice(wasapiExclusive ? 'exclusive' : 'shared', null)}
           >
             <Waves size={15} />
             <span>
-              <strong>System default</strong>
-              <small>{wasapiExclusive ? 'Exclusive candidate' : 'Shared'} / System selected route</small>
+              <strong>{t('audioDrawer.device.systemDefault')}</strong>
+              <small>{wasapiExclusive ? t('audioDrawer.mode.exclusiveCandidate') : copy.shared} / {t('audioDrawer.device.systemSelectedRoute')}</small>
             </span>
-            <em>{wasapiExclusive ? 'Exclusive' : 'Shared'}</em>
+            <em>{wasapiExclusive ? copy.exclusive : copy.shared}</em>
             {outputMode !== 'asio' && !status?.outputDeviceName ? <Check size={15} /> : null}
           </button>
-          {sharedDevices.length === 0 ? <p className="audio-drawer-empty">No system output devices found.</p> : null}
+          {sharedDevices.length === 0 ? <p className="audio-drawer-empty">{t('audioDrawer.empty.systemDevices')}</p> : null}
           {sharedDevices.map((device) => {
             const isActive = deviceMatchesStatus(device, status, outputMode);
             const DeviceIcon = getDeviceIcon(device.name, wasapiExclusive ? 'exclusive' : 'shared');
@@ -637,9 +720,9 @@ export const AudioSettingsDrawer = ({
                 <DeviceIcon size={15} />
                 <span>
                   <strong>{device.name}</strong>
-                  <small>{wasapiExclusive ? 'Exclusive candidate' : 'Shared'} / {sampleRate || 'Sample rate pending'}</small>
+                  <small>{wasapiExclusive ? t('audioDrawer.mode.exclusiveCandidate') : copy.shared} / {sampleRate || t('audioDrawer.status.sampleRatePending')}</small>
                 </span>
-                <em>{sampleRate || (wasapiExclusive ? 'Exclusive' : 'Shared')}</em>
+                <em>{sampleRate || (wasapiExclusive ? copy.exclusive : copy.shared)}</em>
                 {isActive ? <Check size={15} /> : null}
               </button>
             );
@@ -649,10 +732,10 @@ export const AudioSettingsDrawer = ({
         <section className="audio-drawer-section">
           <div className="audio-drawer-section-title">
             <Zap size={17} />
-            <h3>ASIO Output Devices</h3>
+            <h3>{t('audioDrawer.section.asioDevices')}</h3>
           </div>
-          <p className="audio-section-note">低延迟专业音频接口，需要驱动支持。</p>
-          {asioDevices.length === 0 ? <p className="audio-drawer-empty">No ASIO output devices found.</p> : null}
+          <p className="audio-section-note">{t('audioDrawer.note.asio')}</p>
+          {asioDevices.length === 0 ? <p className="audio-drawer-empty">{t('audioDrawer.empty.asioDevices')}</p> : null}
           {asioDevices.map((device) => {
             const isActive = deviceMatchesStatus(device, status, 'asio');
             const DeviceIcon = getDeviceIcon(device.name, 'asio');
@@ -671,7 +754,7 @@ export const AudioSettingsDrawer = ({
                 <DeviceIcon size={15} />
                 <span>
                   <strong>{device.name}</strong>
-                  <small>ASIO driver / Low latency</small>
+                  <small>{copy.asioDriver} / {t('audioDrawer.device.lowLatency')}</small>
                 </span>
                 <em>ASIO</em>
                 {isActive ? <Check size={15} /> : null}
@@ -683,13 +766,13 @@ export const AudioSettingsDrawer = ({
         <section className="audio-drawer-section audio-drawer-options audio-drawer-options--open">
           <div className="audio-drawer-section-title">
             <Gauge size={17} />
-            <h3>Advanced Output</h3>
+            <h3>{t('audioDrawer.section.advancedOutput')}</h3>
           </div>
 
           <label className="audio-toggle-row">
             <span>
               <Lock size={17} />
-              <strong>WASAPI Exclusive Mode</strong>
+              <strong>{t('audioDrawer.option.wasapiExclusive')}</strong>
             </span>
             <input
               type="checkbox"
@@ -697,12 +780,12 @@ export const AudioSettingsDrawer = ({
               onChange={(event) => toggleExclusive(event.currentTarget.checked)}
             />
           </label>
-          <p>Shared is the everyday Windows path. Exclusive requests the same device without the shared mixer.</p>
+          <p>{t('audioDrawer.option.wasapiExclusiveDescription')}</p>
 
           <label className="audio-toggle-row">
             <span>
               <RefreshCw size={17} />
-              <strong>Remember Output Device</strong>
+              <strong>{t('audioDrawer.option.rememberOutput')}</strong>
             </span>
             <input
               type="checkbox"
@@ -710,11 +793,11 @@ export const AudioSettingsDrawer = ({
               onChange={(event) => toggleRememberOutput(event.currentTarget.checked)}
             />
           </label>
-          <p>Restores the selected output device and mode on the next launch.</p>
+          <p>{t('audioDrawer.option.rememberOutputDescription')}</p>
 
           <div className="audio-advanced-todo">
-            <strong>Target sample rate and buffer controls</strong>
-            <span>TODO: wire to real audio settings when DeviceService exposes safe controls.</span>
+            <strong>{t('audioDrawer.todo.outputControls')}</strong>
+            <span>{t('audioDrawer.todo.outputControlsDescription')}</span>
           </div>
         </section>
 
@@ -723,10 +806,10 @@ export const AudioSettingsDrawer = ({
         <details className="audio-drawer-section audio-hidden-devices">
           <summary>
             <EyeOff size={17} />
-            <span>Hidden Devices</span>
+            <span>{t('audioDrawer.section.hiddenDevices')}</span>
             <em>{hiddenDevices.length}</em>
           </summary>
-          {hiddenDevices.length === 0 ? <p className="audio-drawer-empty">No hidden devices.</p> : null}
+          {hiddenDevices.length === 0 ? <p className="audio-drawer-empty">{t('audioDrawer.empty.hiddenDevices')}</p> : null}
           {hiddenDevices.map((device) => {
             const DeviceIcon = getDeviceIcon(device.name, device.outputMode);
             const sampleRate = formatRate(device.sharedDeviceSampleRate ?? device.sampleRate);
@@ -736,10 +819,10 @@ export const AudioSettingsDrawer = ({
                 <DeviceIcon size={15} />
                 <span>
                   <strong title={device.name}>{device.name}</strong>
-                  <small>{device.outputMode === 'asio' ? 'ASIO driver' : 'System output'} / {sampleRate || 'Sample rate pending'}</small>
+                  <small>{device.outputMode === 'asio' ? copy.asioDriver : t('audioDrawer.device.systemOutput')} / {sampleRate || t('audioDrawer.status.sampleRatePending')}</small>
                 </span>
                 <button type="button" onClick={() => restoreDevice(device)}>
-                  Restore
+                  {t('audioDrawer.action.restore')}
                 </button>
               </div>
             );
@@ -757,7 +840,7 @@ export const AudioSettingsDrawer = ({
         >
           <button type="button" role="menuitem" onClick={() => hideDevice(hiddenDeviceMenu.device)}>
             <EyeOff size={14} />
-            <span>Hide device</span>
+            <span>{t('audioDrawer.action.hideDevice')}</span>
           </button>
         </div>
       ) : null}

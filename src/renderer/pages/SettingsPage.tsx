@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import {
   Check,
   Download,
+  ExternalLink,
   FolderOpen,
   Globe2,
   Headphones,
@@ -11,6 +12,7 @@ import {
   MessageSquare,
   Palette,
   Search,
+  Save,
   SlidersHorizontal,
   Trash2,
   X,
@@ -18,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioStatus, PlaybackSpeedMode } from '../../shared/types/audio';
+import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { CoverCacheMigrationResult } from '../../shared/types/coverCache';
 import type { LastCrashSummary } from '../../shared/types/diagnostics';
@@ -36,7 +39,15 @@ import {
   updateAppearancePreferences,
   type AppearancePreferences,
 } from '../preferences/appearancePreferences';
-import { getAppBridge, getAudioBridge, getDiagnosticsBridge, getDiscordPresenceBridge, getLastFmBridge, getLibraryBridge } from '../utils/echoBridge';
+import {
+  getAccountsBridge,
+  getAppBridge,
+  getAudioBridge,
+  getDiagnosticsBridge,
+  getDiscordPresenceBridge,
+  getLastFmBridge,
+  getLibraryBridge,
+} from '../utils/echoBridge';
 
 const isDevBuild = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 
@@ -65,6 +76,7 @@ type SettingsNavItem = {
 
 type FontPickerTarget = 'main' | 'chinese';
 type AlbumMergeStrategy = AppSettings['albumMergeStrategy'];
+type AccountBusyAction = 'save' | 'check' | 'clear' | 'browser' | 'login';
 
 type LocalFontData = {
   family: string;
@@ -93,6 +105,30 @@ const fallbackFontFamilies = [
   'Hiragino Sans',
   'Yu Gothic',
   'Meiryo',
+];
+
+const accountProviderLabels: Record<AccountProvider, string> = {
+  netease: '网易云音乐',
+  qqmusic: 'QQ 音乐',
+  bilibili: 'Bilibili',
+  youtube: 'YouTube',
+  soundcloud: 'SoundCloud',
+};
+
+const accountLoginUrls: Record<AccountProvider, string> = {
+  netease: 'https://music.163.com/',
+  qqmusic: 'https://y.qq.com/',
+  bilibili: 'https://www.bilibili.com/',
+  youtube: 'https://www.youtube.com/',
+  soundcloud: 'https://soundcloud.com/',
+};
+
+const cookieAccountProviders: AccountProvider[] = ['netease', 'qqmusic', 'bilibili', 'soundcloud'];
+const youtubeBrowserOptions: Array<{ value: YouTubeBrowser; label: string }> = [
+  { value: 'edge', label: 'Edge' },
+  { value: 'chrome', label: 'Chrome' },
+  { value: 'firefox', label: 'Firefox' },
+  { value: 'none', label: '不使用' },
 ];
 
 type SettingSectionProps = {
@@ -198,6 +234,154 @@ const ToggleButton = ({
   </button>
 );
 
+const getAccountStatusLabel = (status: AccountStatus | undefined): string => {
+  if (!status) {
+    return '检查中';
+  }
+
+  if (status.connected && status.error) {
+    return '登录失效';
+  }
+
+  return status.connected ? '已登录' : '未登录';
+};
+
+const getAccountBadgeClass = (status: AccountStatus | undefined): string => {
+  if (!status || !status.connected) {
+    return 'list-filter-chip';
+  }
+
+  return status.error ? 'list-filter-chip settings-account-badge-error active' : 'list-filter-chip active';
+};
+
+const AccountCookieCard = ({
+  busyAction,
+  cookieValue,
+  error,
+  message,
+  onChangeCookie,
+  onCheck,
+  onClear,
+  onOpenLogin,
+  onSave,
+  provider,
+  status,
+}: {
+  busyAction?: AccountBusyAction;
+  cookieValue: string;
+  error?: string | null;
+  message?: string | null;
+  onChangeCookie: (value: string) => void;
+  onCheck: () => void;
+  onClear: () => void;
+  onOpenLogin: () => void;
+  onSave: () => void;
+  provider: AccountProvider;
+  status?: AccountStatus;
+}): JSX.Element => (
+  <article className="settings-account-row" aria-label={accountProviderLabels[provider]}>
+    <div className="settings-account-summary">
+      <span className={getAccountBadgeClass(status)}>{getAccountStatusLabel(status)}</span>
+      <div>
+        <h3>{accountProviderLabels[provider]}</h3>
+        <p>{provider === 'bilibili' ? '用于 MV 解析和高清画质。' : '歌词、元数据和下载接入预留。'}</p>
+      </div>
+    </div>
+    <label className="settings-account-cookie-field">
+      <input
+        type="password"
+        value={cookieValue}
+        placeholder="粘贴 Cookie 后保存"
+        onChange={(event) => onChangeCookie(event.target.value)}
+        autoComplete="off"
+      />
+    </label>
+    <div className="settings-account-actions">
+      <button className="settings-action-button" type="button" disabled={busyAction === 'save' || cookieValue.trim().length === 0} onClick={onSave}>
+        <Save size={15} />
+        {busyAction === 'save' ? '保存中...' : '手动保存'}
+      </button>
+      <button className="settings-action-button" type="button" disabled={busyAction === 'check'} onClick={onCheck}>
+        {busyAction === 'check' ? '检查中...' : '检查'}
+      </button>
+      <button className="settings-action-button settings-account-login-button" type="button" disabled={busyAction === 'login'} onClick={onOpenLogin}>
+        <ExternalLink size={15} />
+        {busyAction === 'login' ? '等待登录...' : '登录并同步'}
+      </button>
+      <button className="settings-danger-button" type="button" disabled={busyAction === 'clear'} onClick={onClear}>
+        {busyAction === 'clear' ? '退出中...' : '退出'}
+      </button>
+    </div>
+    <div className="settings-account-meta">
+      <span>推荐点击“登录并同步”；手动粘贴 Cookie 作为备用方式。</span>
+      <span>登录 {status?.lastLoginAt ?? 'n/a'} · 检查 {status?.lastCheckedAt ?? 'n/a'}</span>
+    </div>
+    {provider === 'soundcloud' ? <p className="settings-inline-note settings-account-note">Cookie 检查第一阶段暂为 TODO，保存后只记录配置状态。</p> : null}
+    {message ? <p className="settings-inline-note settings-account-note">{message}</p> : null}
+    {error ? <p className="settings-inline-error settings-account-note">{error}</p> : null}
+  </article>
+);
+
+const YouTubeAccountCard = ({
+  browser,
+  busyAction,
+  error,
+  message,
+  onBrowserChange,
+  onCheck,
+  onClear,
+  onOpenLogin,
+  status,
+}: {
+  browser: YouTubeBrowser;
+  busyAction?: AccountBusyAction;
+  error?: string | null;
+  message?: string | null;
+  onBrowserChange: (browser: YouTubeBrowser) => void;
+  onCheck: () => void;
+  onClear: () => void;
+  onOpenLogin: () => void;
+  status?: AccountStatus;
+}): JSX.Element => (
+  <article className="settings-account-row" aria-label="YouTube">
+    <div className="settings-account-summary">
+      <span className={getAccountBadgeClass(status)}>{getAccountStatusLabel(status)}</span>
+      <div>
+        <h3>YouTube</h3>
+        <p>沿用系统浏览器登录逻辑，供后续解析/下载使用。</p>
+      </div>
+    </div>
+    <label className="settings-select-field settings-account-browser-field">
+      <span>浏览器</span>
+      <select value={browser} onChange={(event) => onBrowserChange(event.target.value as YouTubeBrowser)} disabled={busyAction === 'browser'}>
+        {youtubeBrowserOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+    <div className="settings-account-actions">
+      <button className="settings-action-button" type="button" disabled={busyAction === 'check'} onClick={onCheck}>
+        {busyAction === 'check' ? '检查中...' : '检查'}
+      </button>
+      <button className="settings-action-button settings-account-login-button" type="button" disabled={busyAction === 'login'} onClick={onOpenLogin}>
+        <ExternalLink size={15} />
+        {busyAction === 'login' ? '等待登录...' : '登录并同步'}
+      </button>
+      <button className="settings-danger-button" type="button" disabled={busyAction === 'clear'} onClick={onClear}>
+        {busyAction === 'clear' ? '退出中...' : '退出'}
+      </button>
+    </div>
+    <div className="settings-account-meta">
+      <span>{status?.displayName ?? '选择浏览器后会保存系统浏览器登录状态。'}</span>
+      <span>检查 {status?.lastCheckedAt ?? 'n/a'}</span>
+    </div>
+    {message ? <p className="settings-inline-note settings-account-note">{message}</p> : null}
+    {error ? <p className="settings-inline-error settings-account-note">{error}</p> : null}
+  </article>
+);
+
 const NumberRangeField = ({
   max,
   min,
@@ -292,6 +476,18 @@ export const SettingsPage = (): JSX.Element => {
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus | null>(null);
   const [lastFmStatus, setLastFmStatus] = useState<LastFmStatus | null>(null);
+  const [accountStatuses, setAccountStatuses] = useState<AccountStatus[]>([]);
+  const [accountCookies, setAccountCookies] = useState<Record<AccountProvider, string>>({
+    netease: '',
+    qqmusic: '',
+    bilibili: '',
+    youtube: '',
+    soundcloud: '',
+  });
+  const [accountBusy, setAccountBusy] = useState<Partial<Record<AccountProvider, AccountBusyAction>>>({});
+  const [accountErrors, setAccountErrors] = useState<Partial<Record<AccountProvider, string | null>>>({});
+  const [accountMessages, setAccountMessages] = useState<Partial<Record<AccountProvider, string | null>>>({});
+  const [youtubeBrowser, setYoutubeBrowser] = useState<YouTubeBrowser>('none');
   const [lastFmAuthToken, setLastFmAuthToken] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [lastCrashSummary, setLastCrashSummary] = useState<LastCrashSummary | null>(null);
@@ -325,6 +521,11 @@ export const SettingsPage = (): JSX.Element => {
   const compatibleDevices = useMemo(
     () => devices.filter((device) => (outputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')),
     [devices, outputMode],
+  );
+
+  const accountStatusByProvider = useMemo(
+    () => Object.fromEntries(accountStatuses.map((item) => [item.provider, item])) as Partial<Record<AccountProvider, AccountStatus>>,
+    [accountStatuses],
   );
 
   const refreshStatus = useCallback(async () => {
@@ -391,11 +592,32 @@ export const SettingsPage = (): JSX.Element => {
     }
   }, []);
 
+  const refreshAccountStatuses = useCallback(async () => {
+    try {
+      const accounts = getAccountsBridge();
+
+      if (!accounts) {
+        setAccountStatuses([]);
+        return;
+      }
+
+      setAccountStatuses(await accounts.getStatuses());
+      setAccountErrors({});
+      setAccountMessages({});
+    } catch (accountError) {
+      setAccountErrors((current) => ({
+        ...current,
+        netease: accountError instanceof Error ? accountError.message : String(accountError),
+      }));
+    }
+  }, []);
+
   useEffect(() => {
     void refreshStatus();
     void refreshDevices();
     void refreshDiscordPresenceStatus();
     void refreshLastFmStatus();
+    void refreshAccountStatuses();
     const app = getAppBridge();
     const diagnostics = getDiagnosticsBridge();
     void app?.getSettings().then(setAppSettings).catch(() => undefined);
@@ -407,7 +629,7 @@ export const SettingsPage = (): JSX.Element => {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [refreshDevices, refreshDiscordPresenceStatus, refreshLastFmStatus, refreshStatus]);
+  }, [refreshAccountStatuses, refreshDevices, refreshDiscordPresenceStatus, refreshLastFmStatus, refreshStatus]);
 
   useEffect(() => {
     setOutputMode(status?.outputMode ?? 'shared');
@@ -424,6 +646,14 @@ export const SettingsPage = (): JSX.Element => {
       setPendingAlbumMergeStrategy(appSettings.albumMergeStrategy);
     }
   }, [appSettings?.albumMergeStrategy]);
+
+  useEffect(() => {
+    const displayName = accountStatusByProvider.youtube?.displayName?.toLowerCase() ?? '';
+    const savedBrowser = youtubeBrowserOptions.find((option) => option.value !== 'none' && displayName.includes(option.value))?.value;
+    if (savedBrowser) {
+      setYoutubeBrowser(savedBrowser);
+    }
+  }, [accountStatusByProvider.youtube?.displayName]);
 
   useEffect(() => {
     if (compatibleDevices.length === 0) {
@@ -660,6 +890,150 @@ export const SettingsPage = (): JSX.Element => {
           }
         : current,
     );
+  };
+
+  const setAccountBusyFor = (provider: AccountProvider, action: AccountBusyAction | null): void => {
+    setAccountBusy((current) => ({ ...current, [provider]: action ?? undefined }));
+  };
+
+  const updateAccountStatus = (status: AccountStatus): void => {
+    setAccountStatuses((current) => {
+      const withoutProvider = current.filter((item) => item.provider !== status.provider);
+      return [...withoutProvider, status];
+    });
+  };
+
+  const handleAccountSaveCookie = async (provider: AccountProvider): Promise<void> => {
+    const accounts = getAccountsBridge();
+    const cookie = accountCookies[provider].trim();
+
+    if (!accounts) {
+      setAccountErrors((current) => ({ ...current, [provider]: 'Desktop bridge unavailable. Open ECHO Next in Electron to save accounts.' }));
+      return;
+    }
+
+    if (!cookie) {
+      setAccountErrors((current) => ({ ...current, [provider]: '请先粘贴 Cookie。网页登录不会自动同步到 ECHO Next。' }));
+      return;
+    }
+
+    try {
+      setAccountBusyFor(provider, 'save');
+      setAccountErrors((current) => ({ ...current, [provider]: null }));
+      setAccountMessages((current) => ({ ...current, [provider]: null }));
+      const status = await accounts.saveCookie(provider, cookie);
+      updateAccountStatus(status);
+      setAccountCookies((current) => ({ ...current, [provider]: '' }));
+      setAccountMessages((current) => ({ ...current, [provider]: 'Cookie 已保存，账号状态已更新。' }));
+    } catch (accountError) {
+      setAccountErrors((current) => ({ ...current, [provider]: accountError instanceof Error ? accountError.message : String(accountError) }));
+    } finally {
+      setAccountBusyFor(provider, null);
+    }
+  };
+
+  const handleAccountCheck = async (provider: AccountProvider): Promise<void> => {
+    const accounts = getAccountsBridge();
+
+    if (!accounts) {
+      return;
+    }
+
+    if (!accountStatusByProvider[provider]?.connected && accountCookies[provider].trim().length === 0) {
+      setAccountErrors((current) => ({ ...current, [provider]: '尚未保存 Cookie。请先打开登录页，在网页登录后复制 Cookie 并保存。' }));
+      return;
+    }
+
+    try {
+      setAccountBusyFor(provider, 'check');
+      setAccountErrors((current) => ({ ...current, [provider]: null }));
+      setAccountMessages((current) => ({ ...current, [provider]: null }));
+      updateAccountStatus(await accounts.check(provider));
+    } catch (accountError) {
+      setAccountErrors((current) => ({ ...current, [provider]: accountError instanceof Error ? accountError.message : String(accountError) }));
+    } finally {
+      setAccountBusyFor(provider, null);
+    }
+  };
+
+  const handleAccountClear = async (provider: AccountProvider): Promise<void> => {
+    const accounts = getAccountsBridge();
+
+    if (!accounts) {
+      return;
+    }
+
+    try {
+      setAccountBusyFor(provider, 'clear');
+      setAccountErrors((current) => ({ ...current, [provider]: null }));
+      setAccountMessages((current) => ({ ...current, [provider]: null }));
+      updateAccountStatus(await accounts.clear(provider));
+      if (provider === 'youtube') {
+        setYoutubeBrowser('none');
+      }
+    } catch (accountError) {
+      setAccountErrors((current) => ({ ...current, [provider]: accountError instanceof Error ? accountError.message : String(accountError) }));
+    } finally {
+      setAccountBusyFor(provider, null);
+    }
+  };
+
+  const handleYouTubeBrowserChange = async (browser: YouTubeBrowser): Promise<void> => {
+    const accounts = getAccountsBridge();
+    setYoutubeBrowser(browser);
+
+    if (!accounts) {
+      return;
+    }
+
+    try {
+      setAccountBusyFor('youtube', 'browser');
+      setAccountErrors((current) => ({ ...current, youtube: null }));
+      setAccountMessages((current) => ({ ...current, youtube: browser === 'none' ? null : `${browser} 浏览器登录状态已保存。` }));
+      updateAccountStatus(await accounts.setYouTubeBrowser(browser));
+    } catch (accountError) {
+      setAccountErrors((current) => ({ ...current, youtube: accountError instanceof Error ? accountError.message : String(accountError) }));
+    } finally {
+      setAccountBusyFor('youtube', null);
+    }
+  };
+
+  const handleAccountOpenLogin = async (provider: AccountProvider): Promise<void> => {
+    const accounts = getAccountsBridge();
+
+    if (!accounts) {
+      setAccountErrors((current) => ({ ...current, [provider]: 'Desktop bridge unavailable. Open ECHO Next in Electron to sign in.' }));
+      return;
+    }
+
+    if (typeof accounts.startLogin !== 'function') {
+      window.open(accountLoginUrls[provider], '_blank', 'noopener,noreferrer');
+      setAccountErrors((current) => ({
+        ...current,
+        [provider]: '当前桌面桥接还是旧版本，自动同步登录不可用。请重启 ECHO Next 后再点“登录并同步”。',
+      }));
+      setAccountMessages((current) => ({
+        ...current,
+        [provider]: '已先打开网页登录页；重启 ECHO 后会启用自动同步登录窗口。',
+      }));
+      return;
+    }
+
+    try {
+      setAccountBusyFor(provider, 'login');
+      setAccountErrors((current) => ({ ...current, [provider]: null }));
+      setAccountMessages((current) => ({ ...current, [provider]: '登录窗口已打开。登录完成后关闭窗口，ECHO 会自动同步。' }));
+      const result = await accounts.startLogin(provider);
+      updateAccountStatus(result.status);
+      setAccountMessages((current) => ({ ...current, [provider]: result.message }));
+      if (!result.saved) {
+        setAccountErrors((current) => ({ ...current, [provider]: result.message }));
+      }
+    } catch (accountError) {
+      setAccountErrors((current) => ({ ...current, [provider]: accountError instanceof Error ? accountError.message : String(accountError) }));
+    } finally {
+      setAccountBusyFor(provider, null);
+    }
   };
 
   const handleDiagnosticsExport = async (): Promise<void> => {
@@ -1232,6 +1606,46 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow title={t('settings.integrations.lastfm.scrobbling.title')} description={t('settings.integrations.lastfm.scrobbling.description')}>
                 <ToggleButton active={lastFmStatus?.scrobbleEnabled ?? true} disabled={!lastFmStatus} onClick={() => void handleLastFmScrobbleToggle()} />
               </SettingRow>
+              <div className="settings-account-panel">
+                <header className="settings-account-panel-header">
+                  <div>
+                    <h3>账号登录</h3>
+                    <p>保存平台登录状态，供后续歌词、元数据、MV、下载和流媒体接入使用。</p>
+                  </div>
+                  <button className="settings-action-button" type="button" onClick={() => void refreshAccountStatuses()}>
+                    刷新全部
+                  </button>
+                </header>
+                <div className="settings-account-list">
+                  {cookieAccountProviders.map((provider) => (
+                    <AccountCookieCard
+                      key={provider}
+                      provider={provider}
+                      status={accountStatusByProvider[provider]}
+                      cookieValue={accountCookies[provider]}
+                      busyAction={accountBusy[provider]}
+                      error={accountErrors[provider]}
+                      message={accountMessages[provider]}
+                      onChangeCookie={(value) => setAccountCookies((current) => ({ ...current, [provider]: value }))}
+                      onSave={() => void handleAccountSaveCookie(provider)}
+                      onCheck={() => void handleAccountCheck(provider)}
+                      onOpenLogin={() => void handleAccountOpenLogin(provider)}
+                      onClear={() => void handleAccountClear(provider)}
+                    />
+                  ))}
+                  <YouTubeAccountCard
+                    status={accountStatusByProvider.youtube}
+                    browser={youtubeBrowser}
+                    busyAction={accountBusy.youtube}
+                    error={accountErrors.youtube}
+                    message={accountMessages.youtube}
+                    onBrowserChange={(browser) => void handleYouTubeBrowserChange(browser)}
+                    onCheck={() => void handleAccountCheck('youtube')}
+                    onOpenLogin={() => void handleAccountOpenLogin('youtube')}
+                    onClear={() => void handleAccountClear('youtube')}
+                  />
+                </div>
+              </div>
               <SettingRow title={t('settings.integrations.mobile.title')} description={t('settings.integrations.mobile.description')}>
                 <ToggleButton />
               </SettingRow>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Play } from 'lucide-react';
+import { Heart, Play } from 'lucide-react';
 import type { LibraryPage, LibraryTrack } from '../../../shared/types/library';
+import { useLikedTrackIds } from '../../hooks/useLikedMedia';
 
 type AlbumTrackListProps = {
   albumId: string;
@@ -8,6 +9,7 @@ type AlbumTrackListProps = {
   onFirstTrackChange?: (track: LibraryTrack | null, isLoading: boolean) => void;
   onLoadedTracksChange?: (tracks: LibraryTrack[], total: number, isLoading: boolean) => void;
   onPlayTrack: (track: LibraryTrack) => void | Promise<void>;
+  onToggleTrackLiked?: (track: LibraryTrack) => void | Promise<void>;
   summary?: {
     duration: string;
     signal: string;
@@ -50,6 +52,7 @@ export const AlbumTrackList = ({
   onFirstTrackChange,
   onLoadedTracksChange,
   onPlayTrack,
+  onToggleTrackLiked,
   summary,
 }: AlbumTrackListProps): JSX.Element => {
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
@@ -60,6 +63,7 @@ export const AlbumTrackList = ({
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
+  const likedTrackIds = useLikedTrackIds(tracks.map((track) => track.id));
 
   const loadTracks = useCallback(
     async (nextPage: number, mode: 'replace' | 'append'): Promise<void> => {
@@ -179,6 +183,22 @@ export const AlbumTrackList = ({
                 ))}
               </span>
               <span className="album-track-duration">{formatDuration(track.duration)}</span>
+              <span className="album-track-actions">
+                <span
+                  className={`album-track-like ${likedTrackIds[track.id] ? 'is-liked' : ''}`}
+                  role="button"
+                  tabIndex={-1}
+                  aria-label={`${likedTrackIds[track.id] ? 'Unlike' : 'Like'} ${track.title}`}
+                  aria-pressed={likedTrackIds[track.id] === true}
+                  title={likedTrackIds[track.id] ? 'Unlike' : 'Like'}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void onToggleTrackLiked?.(track);
+                  }}
+                >
+                  <Heart size={14} fill={likedTrackIds[track.id] ? 'currentColor' : 'none'} />
+                </span>
+              </span>
             </button>
           );
         })}

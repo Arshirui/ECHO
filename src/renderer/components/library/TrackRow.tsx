@@ -15,6 +15,8 @@ type TrackRowProps = {
   isPlaying: boolean;
   onPlay?: (track: LibraryTrack) => void;
   onAddToQueue?: (track: LibraryTrack) => void;
+  liked?: boolean;
+  onToggleLiked?: (track: LibraryTrack) => void;
   onOpenMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
 };
 
@@ -74,7 +76,7 @@ const tagClassNameByKind: Record<HifiTagKind, string> = {
 };
 
 export const TrackRow = memo(
-  ({ track, isPlaying, onPlay, onAddToQueue, onOpenMenu }: TrackRowProps): JSX.Element => {
+  ({ track, isPlaying, onPlay, onAddToQueue, liked = false, onToggleLiked, onOpenMenu }: TrackRowProps): JSX.Element => {
     const tags = tagsFromTrack(track);
     const isUnavailable = track.unavailable === true;
     const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
@@ -124,6 +126,13 @@ export const TrackRow = memo(
         onAddToQueue?.(track);
       },
       [onAddToQueue, track],
+    );
+    const handleToggleLiked = useCallback(
+      (event: MouseEvent<HTMLButtonElement>): void => {
+        event.stopPropagation();
+        onToggleLiked?.(track);
+      },
+      [onToggleLiked, track],
     );
     const handleCoverError = useCallback((): void => {
       if (!track.coverThumb) {
@@ -182,8 +191,16 @@ export const TrackRow = memo(
         <div className="track-duration">{formatDuration(track.duration)}</div>
 
         <div className="track-actions" aria-label={`${track.title} actions`} onClick={stopActionPropagation} onDoubleClick={stopActionPropagation}>
-          <button className="row-action" type="button" aria-label={`Like ${track.title}`} title="Like">
-            <Heart size={16} />
+          <button
+            className={`row-action ${liked ? 'is-liked' : ''}`}
+            type="button"
+            aria-label={`${liked ? 'Unlike' : 'Like'} ${track.title}`}
+            aria-pressed={liked}
+            title={liked ? 'Unlike' : 'Like'}
+            disabled={isUnavailable}
+            onClick={handleToggleLiked}
+          >
+            <Heart size={16} fill={liked ? 'currentColor' : 'none'} />
           </button>
           <button className="row-action" type="button" aria-label={`Add to queue ${track.title}`} title="Add to queue" disabled={isUnavailable} onClick={handleAddToQueue}>
             <ListPlus size={16} />
@@ -198,8 +215,10 @@ export const TrackRow = memo(
   (previous, next) =>
     previous.track === next.track &&
     previous.isPlaying === next.isPlaying &&
+    previous.liked === next.liked &&
     previous.onPlay === next.onPlay &&
     previous.onAddToQueue === next.onAddToQueue &&
+    previous.onToggleLiked === next.onToggleLiked &&
     previous.onOpenMenu === next.onOpenMenu,
 );
 

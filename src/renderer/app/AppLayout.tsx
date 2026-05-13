@@ -247,6 +247,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     <div className={`app-shell ${isStandaloneRoute ? 'app-shell--standalone' : ''} ${isLyricsRoute ? 'app-shell--lyrics' : ''}`}>
       <AppTitleBar
         activeRouteId={activeRouteId}
+        isAudioSettingsOpen={isAudioDrawerOpen}
         onRouteChange={navigateRoute}
         onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
         onMinimize={() => void handleWindowAction('minimize')}

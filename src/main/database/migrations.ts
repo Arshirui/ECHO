@@ -376,6 +376,15 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 13,
+    apply: (database) => {
+      database.exec(`
+        CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist_media ON playlist_items(playlist_id, media_type, media_id);
+        CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist_added ON playlist_items(playlist_id, added_at DESC);
+      `);
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

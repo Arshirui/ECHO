@@ -88,6 +88,10 @@ vi.mock('./audioIpc', () => ({
   registerAudioIpc: vi.fn(),
 }));
 
+vi.mock('./accountIpc', () => ({
+  registerAccountIpc: vi.fn(),
+}));
+
 vi.mock('./diagnosticsIpc', () => ({
   registerDiagnosticsIpc: vi.fn(),
 }));

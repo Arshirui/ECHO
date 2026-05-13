@@ -2,6 +2,7 @@
 import { Import } from 'lucide-react';
 import type { AudioStatus } from '../../../shared/types/audio';
 import type { PlaybackStatus } from '../../../shared/types/playback';
+import { likedChangedEvent, likedTracksChangedEvent } from '../../hooks/useLikedMedia';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { PlayerProgress } from './PlayerProgress';
 import { PlayerSpeedControl } from './PlayerSpeedControl';
@@ -27,6 +28,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const [error, setError] = useState<string | null>(null);
   const [seekPreviewSeconds, setSeekPreviewSeconds] = useState<number | null>(null);
   const [openPopover, setOpenPopover] = useState<'volume' | 'speed' | null>(null);
+  const [isCurrentTrackLiked, setIsCurrentTrackLiked] = useState(false);
   const [isWindowVisible, setIsWindowVisible] = useState(() => document.visibilityState !== 'hidden');
   const handledEndedTrackRef = useRef<string | null>(null);
   const refreshRequestRef = useRef(0);
@@ -79,9 +81,32 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const title = currentTrack?.title ?? titleFromPath(filePath);
   const artist = currentTrack?.artist || currentTrack?.albumArtist || (filePath ? 'Local file' : 'Ready');
 
+  const refreshCurrentTrackLiked = useCallback(async (): Promise<void> => {
+    if (!trackId || !window.echo?.library) {
+      setIsCurrentTrackLiked(false);
+      return;
+    }
+
+    try {
+      const result = await window.echo.library.getLikedTrackIds([trackId]);
+      setIsCurrentTrackLiked(result[trackId] === true);
+    } catch {
+      setIsCurrentTrackLiked(false);
+    }
+  }, [trackId]);
+
   useEffect(() => {
     queue.syncPlaybackState(state);
   }, [queue, state]);
+
+  useEffect(() => {
+    void refreshCurrentTrackLiked();
+  }, [refreshCurrentTrackLiked]);
+
+  useEffect(() => {
+    window.addEventListener(likedTracksChangedEvent, refreshCurrentTrackLiked);
+    return () => window.removeEventListener(likedTracksChangedEvent, refreshCurrentTrackLiked);
+  }, [refreshCurrentTrackLiked]);
 
   useEffect(() => {
     const unsubscribe = window.echo?.audio?.onStatus?.((nextAudioStatus) => {
@@ -234,7 +259,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, [handleSmtcCommand]);
 
   const handleCycleRepeatMode = useCallback((): void => {
-    queue.setRepeatMode(queue.repeatMode === 'off' ? 'all' : queue.repeatMode === 'all' ? 'one' : 'off');
+    queue.setRepeatMode(queue.repeatMode === 'one' ? 'off' : 'one');
   }, [queue]);
 
   const handleOpenQueue = useCallback((): void => {
@@ -248,6 +273,24 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const handleOpenLyrics = useCallback((): void => {
     window.dispatchEvent(new Event('app:navigate:lyrics'));
   }, []);
+
+  const handleToggleCurrentTrackLiked = useCallback(async (): Promise<void> => {
+    if (!trackId || !window.echo?.library) {
+      return;
+    }
+
+    try {
+      const previous = isCurrentTrackLiked;
+      setIsCurrentTrackLiked(!previous);
+      const result = await window.echo.library.toggleTrackLiked(trackId);
+      setIsCurrentTrackLiked(result.liked);
+      window.dispatchEvent(new Event(likedTracksChangedEvent));
+      window.dispatchEvent(new Event(likedChangedEvent));
+    } catch (likeError) {
+      setError(likeError instanceof Error ? likeError.message : String(likeError));
+      void refreshCurrentTrackLiked();
+    }
+  }, [isCurrentTrackLiked, refreshCurrentTrackLiked, trackId]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -354,6 +397,9 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           onOpenQueue={handleOpenQueue}
           onOpenLyrics={handleOpenLyrics}
           onToggleShuffle={queue.toggleShuffle}
+          isCurrentTrackLiked={isCurrentTrackLiked}
+          canLikeCurrentTrack={Boolean(trackId)}
+          onToggleCurrentTrackLiked={() => void handleToggleCurrentTrackLiked()}
         />
         <PlayerProgress
           disabled={!filePath}

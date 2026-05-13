@@ -6,6 +6,7 @@ import {
   Download,
   FileImage,
   FolderOpen,
+  Heart,
   ListEnd,
   ListMusic,
   Minus,
@@ -22,6 +23,7 @@ export type TrackMenuAction =
   | 'add-to-playlist'
   | 'play-next'
   | 'add-to-queue'
+  | 'toggle-liked'
   | 'remove-from-queue'
   | 'edit-tags'
   | 'go-to-album'
@@ -36,6 +38,7 @@ export type TrackMenuAction =
 type TrackContextMenuProps = {
   track: LibraryTrack;
   position: { x: number; y: number };
+  liked?: boolean;
   onAction: (action: TrackMenuAction, track: LibraryTrack) => void;
   onClose: () => void;
 };
@@ -53,7 +56,7 @@ const pointerOffset = 6;
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(value, max));
 
-export const TrackContextMenu = ({ track, position, onAction, onClose }: TrackContextMenuProps): JSX.Element => {
+export const TrackContextMenu = ({ track, position, liked = false, onAction, onClose }: TrackContextMenuProps): JSX.Element => {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [menuPosition, setMenuPosition] = useState(() => ({
     x: position.x + pointerOffset,
@@ -95,7 +98,8 @@ export const TrackContextMenu = ({ track, position, onAction, onClose }: TrackCo
     { action: 'add-to-playlist', label: '加入歌单...', icon: Plus },
     { action: 'play-next', label: '下一首播放', icon: Play },
     { action: 'add-to-queue', label: '加入队列', icon: ListEnd },
-    { action: 'remove-from-queue', label: '从播放列表移除', icon: Minus },
+    { action: 'toggle-liked', label: liked ? '取消喜欢' : '喜欢', icon: Heart },
+    { action: 'remove-from-queue', label: '从播放队列移除', icon: Minus },
     { action: 'edit-tags', label: '编辑标签', icon: Tag },
     { action: 'go-to-album', label: '定位到专辑', icon: Disc3 },
     { action: 'show-in-folder', label: '在文件夹中显示', icon: FolderOpen },

@@ -6,6 +6,7 @@ import {
   FolderOpen,
   GripVertical,
   Heart,
+  History,
   MinusCircle,
   MoreHorizontal,
   Music2,
@@ -16,7 +17,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { LibraryTrack } from '../../shared/types/library';
+import type { LibraryTrack, PlaybackHistoryEntry } from '../../shared/types/library';
+import { likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../hooks/useLikedMedia';
 import type { QueueItem, RepeatMode } from '../stores/PlaybackQueueProvider';
 import { useI18n } from '../i18n/I18nProvider';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
@@ -59,11 +61,33 @@ const qualityTags = (track: LibraryTrack | null): string[] =>
       ].filter((tag): tag is string => Boolean(tag))
     : [];
 
+const trackFromHistory = (entry: PlaybackHistoryEntry): LibraryTrack => ({
+  id: entry.trackId ?? entry.id,
+  path: entry.trackPath,
+  title: entry.title,
+  artist: entry.artist,
+  album: entry.album,
+  albumArtist: entry.albumArtist,
+  trackNo: null,
+  discNo: null,
+  year: null,
+  genre: null,
+  duration: entry.durationSeconds,
+  codec: null,
+  sampleRate: null,
+  bitDepth: null,
+  bitrate: null,
+  coverId: entry.coverId,
+  coverThumb: entry.coverThumb,
+  fieldSources: {},
+});
+
 export const QueuePage = (): JSX.Element => {
   const { t } = useI18n();
   const queue = usePlaybackQueue();
   const [actionError, setActionError] = useState<string | null>(null);
   const [isGeneratingRandomQueue, setIsGeneratingRandomQueue] = useState(false);
+  const [isGeneratingHistoryQueue, setIsGeneratingHistoryQueue] = useState(false);
   const [draggedQueueId, setDraggedQueueId] = useState<string | null>(null);
   const [dropTargetQueueId, setDropTargetQueueId] = useState<string | null>(null);
   const queueListRef = useRef<HTMLDivElement | null>(null);
@@ -80,6 +104,9 @@ export const QueuePage = (): JSX.Element => {
   }, [currentIndex, queue.items]);
   const upNextCount = currentIndex >= 0 ? Math.max(0, queue.items.length - currentIndex - 1) : queue.items.length;
   const nowPlaying = queue.currentTrack;
+  const queueTrackIds = useMemo(() => queue.items.map((item) => item.track.id), [queue.items]);
+  const likedTrackIds = useLikedTrackIds(queueTrackIds);
+  const isNowPlayingLiked = nowPlaying ? likedTrackIds[nowPlaying.id] === true : false;
   const nowPlayingTags = qualityTags(nowPlaying);
   const sourceLabel = queue.currentItem?.source.label ?? t('queue.now.sourceFallback');
   const rowVirtualizer = useVirtualizer({
@@ -112,6 +139,18 @@ export const QueuePage = (): JSX.Element => {
     }
 
     void runQueueAction(() => window.echo?.library?.openTrackInFolder(nowPlaying.id));
+  }, [nowPlaying, runQueueAction]);
+
+  const handleToggleNowPlayingLiked = useCallback((): void => {
+    if (!nowPlaying) {
+      return;
+    }
+
+    void runQueueAction(async () => {
+      await window.echo?.library?.toggleTrackLiked(nowPlaying.id);
+      window.dispatchEvent(new Event(likedTracksChangedEvent));
+      window.dispatchEvent(new Event(likedChangedEvent));
+    });
   }, [nowPlaying, runQueueAction]);
 
   const handlePlayItemNext = useCallback(
@@ -162,6 +201,43 @@ export const QueuePage = (): JSX.Element => {
       setActionError(error instanceof Error ? error.message : String(error));
     } finally {
       setIsGeneratingRandomQueue(false);
+    }
+  }, [queue, t]);
+
+  const handleGenerateHistoryQueue = useCallback(async (): Promise<void> => {
+    const library = window.echo?.library;
+
+    if (!library) {
+      setActionError(t('queue.error.desktopBridge'));
+      return;
+    }
+
+    setIsGeneratingHistoryQueue(true);
+    setActionError(null);
+
+    try {
+      const result = await library.getPlaybackHistory({
+        page: 1,
+        pageSize: 500,
+      });
+      const tracks = result.items.map(trackFromHistory);
+
+      if (tracks.length === 0) {
+        setActionError(t('queue.error.noHistoryTracks'));
+        return;
+      }
+
+      queue.replaceQueue(tracks, {
+        source: { type: 'manual', label: t('queue.historySource') },
+      });
+      queue.setRepeatMode('off');
+      if (queue.isShuffleEnabled) {
+        queue.toggleShuffle();
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsGeneratingHistoryQueue(false);
     }
   }, [queue, t]);
 
@@ -237,8 +313,16 @@ export const QueuePage = (): JSX.Element => {
         </div>
 
         <div className="queue-now-actions" aria-label={t('queue.now.actions')}>
-          <button className="queue-icon-button" type="button" aria-label={t('queue.action.like')} title={t('queue.action.like')} disabled={!nowPlaying}>
-            <Heart size={17} />
+          <button
+            className={`queue-icon-button ${isNowPlayingLiked ? 'is-liked' : ''}`}
+            type="button"
+            aria-label={t('queue.action.like')}
+            aria-pressed={isNowPlayingLiked}
+            title={t('queue.action.like')}
+            disabled={!nowPlaying}
+            onClick={handleToggleNowPlayingLiked}
+          >
+            <Heart size={17} fill={isNowPlayingLiked ? 'currentColor' : 'none'} />
           </button>
           <button
             className="queue-icon-button"
@@ -264,6 +348,10 @@ export const QueuePage = (): JSX.Element => {
         <button className="queue-tool-button" type="button" disabled={isGeneratingRandomQueue} onClick={() => void handleGenerateRandomQueue()}>
           <Shuffle size={16} />
           {isGeneratingRandomQueue ? t('queue.action.generatingRandom') : t('queue.action.generateRandom')}
+        </button>
+        <button className="queue-tool-button" type="button" disabled={isGeneratingHistoryQueue} onClick={() => void handleGenerateHistoryQueue()}>
+          <History size={16} />
+          {isGeneratingHistoryQueue ? t('queue.action.generatingHistory') : t('queue.action.generateFromHistory')}
         </button>
         <div className="queue-repeat-group" aria-label={t('queue.repeat.mode')}>
           {(['off', 'one', 'all'] as RepeatMode[]).map((mode) => (

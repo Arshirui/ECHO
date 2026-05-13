@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ListPlus, MoreHorizontal, Music2, Play, Plus, Trash2, WifiOff } from 'lucide-react';
+import { ImagePlus, ListPlus, MoreHorizontal, Music2, Play, Plus, RotateCcw, Trash2, WifiOff } from 'lucide-react';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack } from '../../shared/types/library';
 import { TrackList } from '../components/library/TrackList';
+import { TrackContextMenu, type TrackMenuAction } from '../components/library/TrackContextMenu';
+import { likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../hooks/useLikedMedia';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 const pageSize = 100;
@@ -54,14 +56,16 @@ export const PlaylistsPage = (): JSX.Element => {
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [trackMenu, setTrackMenu] = useState<{ track: LibraryTrack; position: { x: number; y: number } } | null>(null);
   const requestIdRef = useRef(0);
-  const { currentTrackId, playTrack, appendToQueue } = usePlaybackQueue();
+  const { currentTrackId, items: queueItems, playTrack, appendToQueue, playTrackNext, removeQueueItem } = usePlaybackQueue();
   const selectedPlaylist = useMemo(
     () => playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? playlists[0] ?? null,
     [playlists, selectedPlaylistId],
   );
   const displayTracks = useMemo(() => itemsPage.items.map(itemToTrack), [itemsPage.items]);
   const playableTracks = useMemo(() => itemsPage.items.flatMap((item) => (item.track && !item.unavailable ? [item.track] : [])), [itemsPage.items]);
+  const likedTrackIds = useLikedTrackIds(playableTracks.map((track) => track.id));
   const queueSource = useMemo(
     () => ({ type: 'manual' as const, label: selectedPlaylist ? `Playlist: ${selectedPlaylist.name}` : 'Playlist' }),
     [selectedPlaylist],
@@ -198,6 +202,43 @@ export const PlaylistsPage = (): JSX.Element => {
     setStatusMessage(`已添加 ${playableTracks.length} 首可用歌曲到队列`);
   };
 
+  const handleChoosePlaylistCover = async (): Promise<void> => {
+    const library = window.echo?.library;
+    if (!library || !selectedPlaylist) {
+      return;
+    }
+
+    try {
+      const selection = await library.chooseTrackCover();
+      if (!selection) {
+        return;
+      }
+
+      await library.updatePlaylist({ playlistId: selectedPlaylist.id, coverPath: selection.path });
+      await refreshSelected();
+      setStatusMessage('歌单封面已更新');
+      window.dispatchEvent(new Event('library:playlists-changed'));
+    } catch (coverError) {
+      setError(coverError instanceof Error ? coverError.message : String(coverError));
+    }
+  };
+
+  const handleClearPlaylistCover = async (): Promise<void> => {
+    const library = window.echo?.library;
+    if (!library || !selectedPlaylist) {
+      return;
+    }
+
+    try {
+      await library.updatePlaylist({ playlistId: selectedPlaylist.id, coverId: null });
+      await refreshSelected();
+      setStatusMessage('已恢复为第一首歌的专辑封面');
+      window.dispatchEvent(new Event('library:playlists-changed'));
+    } catch (coverError) {
+      setError(coverError instanceof Error ? coverError.message : String(coverError));
+    }
+  };
+
   const handleLoadMore = (): void => {
     if (selectedPlaylist && itemsPage.hasMore && !isLoading) {
       void loadItems(selectedPlaylist.id, itemsPage.page + 1, 'append');
@@ -227,6 +268,102 @@ export const PlaylistsPage = (): JSX.Element => {
     }
   };
 
+  const handleOpenTrackMenu = useCallback((track: LibraryTrack, position: { x: number; y: number }): void => {
+    if (!track.unavailable) {
+      setTrackMenu({ track, position });
+    }
+  }, []);
+
+  const handleToggleLiked = useCallback(async (track: LibraryTrack): Promise<void> => {
+    const library = window.echo?.library;
+    if (!library || track.unavailable) {
+      return;
+    }
+
+    try {
+      setError(null);
+      await library.toggleTrackLiked(track.id);
+      window.dispatchEvent(new Event(likedTracksChangedEvent));
+      window.dispatchEvent(new Event(likedChangedEvent));
+    } catch (likeError) {
+      setError(likeError instanceof Error ? likeError.message : String(likeError));
+    }
+  }, []);
+
+  const handleTrackMenuAction = useCallback(
+    async (action: TrackMenuAction, track: LibraryTrack): Promise<void> => {
+      const library = window.echo?.library;
+      setTrackMenu(null);
+
+      if (track.unavailable) {
+        return;
+      }
+
+      try {
+        setError(null);
+
+        switch (action) {
+          case 'play-next':
+            playTrackNext(track, queueSource);
+            return;
+          case 'add-to-queue':
+            appendToQueue(track, queueSource);
+            setStatusMessage(`已添加到队列：${track.title}`);
+            return;
+          case 'toggle-liked':
+            await handleToggleLiked(track);
+            return;
+          case 'remove-from-queue':
+            {
+              const queuedItem = queueItems.find((item) => item.track.id === track.id);
+              if (queuedItem) {
+                removeQueueItem(queuedItem.queueId);
+              }
+            }
+            return;
+          case 'add-to-playlist':
+            {
+              if (!library) {
+                setError('Desktop bridge unavailable. Open ECHO Next in Electron to use playlists.');
+                return;
+              }
+
+              const playlists = await library.getPlaylists();
+              let playlist: (typeof playlists)[number] | null = playlists[0] ?? null;
+              if (playlists.length > 1) {
+                const names = playlists.map((item, index) => `${index + 1}. ${item.name}`).join('\n');
+                const choice = window.prompt(`选择歌单编号：\n${names}`, '1');
+                const index = Number(choice) - 1;
+                playlist = Number.isInteger(index) ? playlists[index] ?? null : null;
+              }
+
+              if (!playlist) {
+                const name = window.prompt('还没有歌单，输入名称创建后添加：');
+                if (!name?.trim()) {
+                  return;
+                }
+                playlist = await library.createPlaylist({ name });
+              }
+
+              if (!playlist) {
+                return;
+              }
+
+              await library.addTrackToPlaylist(playlist.id, track.id);
+              window.dispatchEvent(new Event('library:playlists-changed'));
+              setStatusMessage(`已加入歌单：${playlist.name}`);
+            }
+            return;
+          default:
+            setError('这个歌单操作还没有接入。');
+        }
+      } catch (actionError) {
+        setError(actionError instanceof Error ? actionError.message : String(actionError));
+      }
+    },
+    [appendToQueue, handleToggleLiked, playTrackNext, queueItems, queueSource, removeQueueItem],
+  );
+
   return (
     <div className="playlists-page">
       <aside className="playlist-sidebar" aria-label="Playlists">
@@ -250,7 +387,6 @@ export const PlaylistsPage = (): JSX.Element => {
                 <strong>{playlist.name}</strong>
                 <small>{playlist.itemCount} tracks</small>
               </span>
-              <em>{playlist.sourceProvider}</em>
             </button>
           ))}
           {playlists.length === 0 ? <p className="playlist-empty">还没有本地歌单。</p> : null}
@@ -275,9 +411,28 @@ export const PlaylistsPage = (): JSX.Element => {
             <header className="playlist-detail-header">
               <div className="playlist-cover" data-empty={!selectedPlaylist.coverThumb}>
                 {selectedPlaylist.coverThumb ? <img alt="" src={selectedPlaylist.coverThumb} /> : <Music2 size={34} />}
+                <button
+                  className="playlist-cover-button"
+                  type="button"
+                  aria-label="自定义歌单封面"
+                  title="自定义歌单封面"
+                  onClick={() => void handleChoosePlaylistCover()}
+                >
+                  <ImagePlus size={17} />
+                </button>
+                {selectedPlaylist.coverId ? (
+                  <button
+                    className="playlist-cover-reset"
+                    type="button"
+                    aria-label="使用第一首歌封面"
+                    title="使用第一首歌封面"
+                    onClick={() => void handleClearPlaylistCover()}
+                  >
+                    <RotateCcw size={15} />
+                  </button>
+                ) : null}
               </div>
               <div className="playlist-detail-copy">
-                <span className="playlist-badge">{selectedPlaylist.sourceProvider}</span>
                 <h2>{selectedPlaylist.name}</h2>
                 <p>{selectedPlaylist.description || 'Manual local playlist'}</p>
                 <small>{itemsPage.total} tracks</small>
@@ -306,6 +461,9 @@ export const PlaylistsPage = (): JSX.Element => {
               canLoadMore={itemsPage.hasMore && !isLoading}
               onEndReached={handleLoadMore}
               onAddToQueue={handleAddTrackToQueue}
+              likedTrackIds={likedTrackIds}
+              onToggleLiked={(track) => void handleToggleLiked(track)}
+              onOpenTrackMenu={handleOpenTrackMenu}
               onPlay={handleTrackPlay}
             />
           </>
@@ -329,6 +487,16 @@ export const PlaylistsPage = (): JSX.Element => {
               </button>
             ) : null}
           </div>
+        ) : null}
+
+        {trackMenu ? (
+          <TrackContextMenu
+            track={trackMenu.track}
+            position={trackMenu.position}
+            liked={likedTrackIds[trackMenu.track.id] === true}
+            onAction={(action, track) => void handleTrackMenuAction(action, track)}
+            onClose={() => setTrackMenu(null)}
+          />
         ) : null}
       </section>
     </div>

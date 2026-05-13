@@ -35,6 +35,8 @@ import {
   type ScanStatusByFolder,
 } from '../stores/libraryScanSession';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { useI18n } from '../i18n/I18nProvider';
+import type { TranslationKey } from '../i18n/locales';
 
 type FolderTarget = {
   folderId: string;
@@ -60,31 +62,31 @@ const maxBulkTracks = 1000;
 const terminalStatuses = new Set<LibraryScanStatus['status']>(['completed', 'failed', 'cancelled']);
 const runningStatuses = new Set<LibraryScanStatus['status']>(['queued', 'running']);
 
-const sortOptions: Array<{ value: LibrarySort; label: string }> = [
-  { value: 'default', label: 'Title' },
-  { value: 'artist', label: 'Artist' },
-  { value: 'album', label: 'Album' },
-  { value: 'recent', label: 'Recently updated' },
-  { value: 'durationDesc', label: 'Duration' },
-  { value: 'qualityDesc', label: 'Quality' },
-  { value: 'random', label: 'Random' },
+const sortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
+  { value: 'default', labelKey: 'folders.sort.title' },
+  { value: 'artist', labelKey: 'folders.sort.artist' },
+  { value: 'album', labelKey: 'folders.sort.album' },
+  { value: 'recent', labelKey: 'folders.sort.recent' },
+  { value: 'durationDesc', labelKey: 'folders.sort.duration' },
+  { value: 'qualityDesc', labelKey: 'folders.sort.quality' },
+  { value: 'random', labelKey: 'folders.sort.random' },
 ];
 
 const targetKey = (folderId: string, path: string): string => `${folderId}::${path}`;
 
-const formatDuration = (seconds: number): string => {
+const formatDuration = (seconds: number, t: (key: TranslationKey, options?: Record<string, string | number>) => string): string => {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return '--';
   }
 
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) {
-    return `${minutes} min`;
+    return t('folders.duration.minutes', { count: minutes });
   }
 
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest > 0 ? `${hours} hr ${rest} min` : `${hours} hr`;
+  return rest > 0 ? t('folders.duration.hoursMinutes', { hours, minutes: rest }) : t('folders.duration.hours', { count: hours });
 };
 
 const formatBytes = (bytes: number): string => {
@@ -104,61 +106,61 @@ const formatBytes = (bytes: number): string => {
   return `${value >= 10 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`;
 };
 
-const statusLabel = (status: LibraryScanStatus['status']): string => {
+const statusLabel = (status: LibraryScanStatus['status'], t: (key: TranslationKey) => string): string => {
   switch (status) {
     case 'queued':
-      return 'Queued';
+      return t('folders.status.queued');
     case 'running':
-      return 'Scanning';
+      return t('folders.status.running');
     case 'completed':
-      return 'Complete';
+      return t('folders.status.completed');
     case 'cancelled':
-      return 'Cancelled';
+      return t('folders.status.cancelled');
     case 'failed':
-      return 'Failed';
+      return t('folders.status.failed');
     default:
       return status;
   }
 };
 
-const phaseLabel = (phase: LibraryScanStatus['phase']): string => {
+const phaseLabel = (phase: LibraryScanStatus['phase'], t: (key: TranslationKey) => string): string => {
   switch (phase) {
     case 'discovering':
-      return 'Finding files';
+      return t('folders.phase.discovering');
     case 'checking_cache':
-      return 'Checking cache';
+      return t('folders.phase.checkingCache');
     case 'reading_metadata':
-      return 'Reading tags';
+      return t('folders.phase.readingMetadata');
     case 'extracting_covers':
-      return 'Covers';
+      return t('folders.phase.extractingCovers');
     case 'grouping_albums':
-      return 'Albums';
+      return t('folders.phase.groupingAlbums');
     case 'writing_database':
-      return 'Writing';
+      return t('folders.phase.writingDatabase');
     case 'finished':
-      return 'Finished';
+      return t('folders.phase.finished');
     default:
       return phase;
   }
 };
 
-const formatFolderError = (error: unknown): string => {
+const formatFolderError = (error: unknown, t: (key: TranslationKey) => string): string => {
   const message = error instanceof Error ? error.message : String(error);
   const upper = message.toUpperCase();
 
   if (upper.includes('ENOENT')) {
-    return 'Folder path does not exist.';
+    return t('folders.error.pathMissing');
   }
 
   if (upper.includes('ENOTDIR')) {
-    return 'The selected path is not a folder.';
+    return t('folders.error.notFolder');
   }
 
   if (upper.includes('EACCES') || upper.includes('EPERM')) {
-    return 'ECHO does not have permission to access this folder.';
+    return t('folders.error.permission');
   }
 
-  return message || 'Folder action failed.';
+  return message || t('folders.error.actionFailed');
 };
 
 const overviewToTarget = (overview: LibraryFolderOverview): FolderTarget => ({
@@ -188,6 +190,7 @@ const nodeToTarget = (node: LibraryFolderNode, root: LibraryFolderOverview): Fol
 });
 
 export const FoldersPage = (): JSX.Element => {
+  const { t } = useI18n();
   const [overviews, setOverviews] = useState<LibraryFolderOverview[]>([]);
   const [childrenByParent, setChildrenByParent] = useState<Record<string, LibraryFolderNode[]>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -228,13 +231,13 @@ export const FoldersPage = (): JSX.Element => {
       selected
         ? {
             type: 'folder' as const,
-            label: recursive ? `${selected.name} folder` : selected.name,
+            label: recursive ? t('folders.queueSource.recursive', { name: selected.name }) : selected.name,
             folderId: selected.folderId,
             path: selected.path,
             recursive,
           }
         : null,
-    [recursive, selected],
+    [recursive, selected, t],
   );
 
   useEffect(() => {
@@ -253,7 +256,7 @@ export const FoldersPage = (): JSX.Element => {
     if (!library?.getFolderOverviews) {
       setOverviews([]);
       setSelected(null);
-      setError('Desktop bridge unavailable. Open ECHO Next desktop to manage folders.');
+      setError(t('folders.error.desktopManage'));
       return;
     }
 
@@ -272,7 +275,7 @@ export const FoldersPage = (): JSX.Element => {
         return nextOverviews[0] ? overviewToTarget(nextOverviews[0]) : null;
       });
     } catch (refreshError) {
-      setError(formatFolderError(refreshError));
+      setError(formatFolderError(refreshError, t));
     } finally {
       setIsLoadingOverviews(false);
     }
@@ -298,7 +301,7 @@ export const FoldersPage = (): JSX.Element => {
         const children = await library.getFolderChildren({ folderId, parentPath });
         setChildrenByParent((current) => ({ ...current, [key]: children }));
       } catch (childrenError) {
-        setError(formatFolderError(childrenError));
+        setError(formatFolderError(childrenError, t));
       } finally {
         setLoadingChildren((current) => ({ ...current, [key]: false }));
       }
@@ -356,7 +359,7 @@ export const FoldersPage = (): JSX.Element => {
         setHasMore(result.hasMore);
       } catch (tracksError) {
         if (trackRequestIdRef.current === requestId) {
-          setError(formatFolderError(tracksError));
+          setError(formatFolderError(tracksError, t));
         }
       } finally {
         if (trackRequestIdRef.current === requestId) {
@@ -458,7 +461,7 @@ export const FoldersPage = (): JSX.Element => {
       try {
         const result = await fetchBulkTracks(action === 'shuffle' ? 'random' : sort);
         if (result.items.length === 0) {
-          setMessage('No playable tracks in this folder.');
+          setMessage(t('folders.message.noPlayableTracks'));
           return;
         }
 
@@ -473,23 +476,23 @@ export const FoldersPage = (): JSX.Element => {
 
         setMessage(
           result.total > result.items.length
-            ? `Loaded first ${result.items.length} of ${result.total} tracks to keep memory low.`
-            : `${action === 'append' ? 'Queued' : 'Loaded'} ${result.items.length} tracks.`,
+            ? t('folders.message.loadedPartial', { loaded: result.items.length, total: result.total })
+            : t(action === 'append' ? 'folders.message.queuedTracks' : 'folders.message.loadedTracks', { count: result.items.length }),
         );
       } catch (bulkError) {
-        setError(formatFolderError(bulkError));
+        setError(formatFolderError(bulkError, t));
       } finally {
         setIsBulkLoading(false);
       }
     },
-    [appendTracksToQueue, fetchBulkTracks, folderSource, playTrack, selected, sort],
+    [appendTracksToQueue, fetchBulkTracks, folderSource, playTrack, selected, sort, t],
   );
 
   const handleChooseFolder = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
 
     if (!library) {
-      setError('Desktop bridge unavailable. Open ECHO Next desktop to import folders.');
+      setError(t('folders.error.desktopImport'));
       return;
     }
 
@@ -502,13 +505,13 @@ export const FoldersPage = (): JSX.Element => {
       setFolderPath(chosenPath);
       const folder = await library.addFolder(chosenPath);
       rememberLibraryScanStatus(await library.scanFolder(folder.id));
-      setMessage('Folder added. Scan started in the background.');
+      setMessage(t('folders.message.folderAddedScanStarted'));
       await refreshOverviews();
       window.dispatchEvent(new Event('library:changed'));
     } catch (chooseError) {
-      setError(formatFolderError(chooseError));
+      setError(formatFolderError(chooseError, t));
     }
-  }, [refreshOverviews]);
+  }, [refreshOverviews, t]);
 
   const handleAddPath = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
@@ -521,13 +524,13 @@ export const FoldersPage = (): JSX.Element => {
     try {
       const folder = await library.addFolder(normalizedPath);
       rememberLibraryScanStatus(await library.scanFolder(folder.id));
-      setMessage('Folder added. Scan started in the background.');
+      setMessage(t('folders.message.folderAddedScanStarted'));
       await refreshOverviews();
       window.dispatchEvent(new Event('library:changed'));
     } catch (addError) {
-      setError(formatFolderError(addError));
+      setError(formatFolderError(addError, t));
     }
-  }, [folderPath, refreshOverviews]);
+  }, [folderPath, refreshOverviews, t]);
 
   const handleScanSelected = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
@@ -537,17 +540,17 @@ export const FoldersPage = (): JSX.Element => {
 
     const current = getLibraryScanStatuses()[selected.folderId];
     if (current && runningStatuses.has(current.status)) {
-      setMessage('This library root is already scanning.');
+      setMessage(t('folders.message.alreadyScanning'));
       return;
     }
 
     try {
       rememberLibraryScanStatus(await library.scanFolder(selected.folderId));
-      setMessage('Scan started.');
+      setMessage(t('folders.message.scanStarted'));
     } catch (scanError) {
-      setError(formatFolderError(scanError));
+      setError(formatFolderError(scanError, t));
     }
-  }, [selected]);
+  }, [selected, t]);
 
   const handleCancelScan = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
@@ -557,11 +560,11 @@ export const FoldersPage = (): JSX.Element => {
 
     try {
       rememberLibraryScanStatus(await library.cancelScan(selectedScan.id));
-      setMessage('Scan cancelled.');
+      setMessage(t('folders.message.scanCancelled'));
     } catch (cancelError) {
-      setError(formatFolderError(cancelError));
+      setError(formatFolderError(cancelError, t));
     }
-  }, [selectedScan]);
+  }, [selectedScan, t]);
 
   const handleRemoveRoot = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
@@ -569,7 +572,7 @@ export const FoldersPage = (): JSX.Element => {
       return;
     }
 
-    if (!window.confirm(`Remove "${selectedOverview.name}" from the library index? Music files stay on disk.`)) {
+    if (!window.confirm(t('folders.confirm.removeRoot', { name: selectedOverview.name }))) {
       return;
     }
 
@@ -579,13 +582,13 @@ export const FoldersPage = (): JSX.Element => {
       setChildrenByParent({});
       setExpanded({});
       setSelected(null);
-      setMessage('Folder removed from the library index.');
+      setMessage(t('folders.message.folderRemoved'));
       await refreshOverviews();
       window.dispatchEvent(new Event('library:changed'));
     } catch (removeError) {
-      setError(formatFolderError(removeError));
+      setError(formatFolderError(removeError, t));
     }
-  }, [refreshOverviews, selected, selectedOverview]);
+  }, [refreshOverviews, selected, selectedOverview, t]);
 
   const handleOpenSelectedPath = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
@@ -596,9 +599,9 @@ export const FoldersPage = (): JSX.Element => {
     try {
       await library.openLibraryFolderPath({ folderId: selected.folderId, path: selected.path });
     } catch (openError) {
-      setError(formatFolderError(openError));
+      setError(formatFolderError(openError, t));
     }
-  }, [selected]);
+  }, [selected, t]);
 
   const handleLoadMore = useCallback((): void => {
     if (!isLoadingTracks && hasMore) {
@@ -618,10 +621,10 @@ export const FoldersPage = (): JSX.Element => {
           source: folderSource,
         });
       } catch (playError) {
-        setError(formatFolderError(playError));
+        setError(formatFolderError(playError, t));
       }
     },
-    [folderSource, playTrack, tracks],
+    [folderSource, playTrack, t, tracks],
   );
 
   const handleOpenTrackMenu = useCallback((track: LibraryTrack, position: { x: number; y: number }): void => {
@@ -634,7 +637,7 @@ export const FoldersPage = (): JSX.Element => {
       setTrackMenu(null);
 
       if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags') {
-        setError('Desktop bridge unavailable. Open ECHO Next desktop to use file actions.');
+        setError(t('folders.error.desktopFileActions'));
         return;
       }
 
@@ -652,6 +655,11 @@ export const FoldersPage = (): JSX.Element => {
             if (folderSource) {
               appendToQueue(track, folderSource);
             }
+            return;
+          case 'toggle-liked':
+            await library?.toggleTrackLiked(track.id);
+            window.dispatchEvent(new Event('liked:tracks-changed'));
+            window.dispatchEvent(new Event('liked:changed'));
             return;
           case 'remove-from-queue':
             {
@@ -689,16 +697,16 @@ export const FoldersPage = (): JSX.Element => {
             return;
           case 'copy-cover':
             if (!(await library?.copyTrackCover(track.id))) {
-              setError('This track does not have cover art to copy.');
+              setError(t('folders.error.noCoverToCopy'));
             }
             return;
           case 'save-cover':
             if (!(await library?.saveTrackCover(track.id))) {
-              setError('No cover art was saved for this track.');
+              setError(t('folders.error.noCoverSaved'));
             }
             return;
           case 'delete-song':
-            if (!window.confirm(`Delete the music file?\n${track.title}`)) {
+            if (!window.confirm(t('folders.confirm.deleteTrack', { title: track.title }))) {
               return;
             }
             await library?.deleteTrackFile(track.id);
@@ -712,13 +720,13 @@ export const FoldersPage = (): JSX.Element => {
               let playlist: (typeof playlists)[number] | null = playlists[0] ?? null;
               if (playlists.length > 1) {
                 const names = playlists.map((item, index) => `${index + 1}. ${item.name}`).join('\n');
-                const choice = window.prompt(`Choose playlist number:\n${names}`, '1');
+                const choice = window.prompt(t('folders.prompt.choosePlaylist', { names }), '1');
                 const index = Number(choice) - 1;
                 playlist = Number.isInteger(index) ? playlists[index] ?? null : null;
               }
 
               if (!playlist) {
-                const name = window.prompt('No playlists yet. Enter a name to create one:');
+                const name = window.prompt(t('folders.prompt.createPlaylist'));
                 if (!name?.trim()) {
                   return;
                 }
@@ -731,17 +739,17 @@ export const FoldersPage = (): JSX.Element => {
 
               await library!.addTrackToPlaylist(playlist.id, track.id);
               window.dispatchEvent(new Event('library:playlists-changed'));
-              setMessage(`Added to playlist: ${playlist.name}`);
+              setMessage(t('folders.message.addedToPlaylist', { name: playlist.name }));
             }
             return;
           default:
-            setError('This track action is not available yet.');
+            setError(t('folders.error.trackActionUnavailable'));
         }
       } catch (actionError) {
-        setError(formatFolderError(actionError));
+        setError(formatFolderError(actionError, t));
       }
     },
-    [appendToQueue, folderSource, playTrackNext, queueItems, refreshOverviews, removeQueueItem],
+    [appendToQueue, folderSource, playTrackNext, queueItems, refreshOverviews, removeQueueItem, t],
   );
 
   const closeTagEditor = useCallback((): void => {
@@ -766,7 +774,7 @@ export const FoldersPage = (): JSX.Element => {
       const library = window.echo?.library;
 
       if (!library?.updateTrackTags) {
-        setTagEditorError('Desktop bridge unavailable. Open ECHO Next desktop to edit embedded tags.');
+        setTagEditorError(t('folders.error.desktopEditTags'));
         return;
       }
 
@@ -779,12 +787,12 @@ export const FoldersPage = (): JSX.Element => {
         window.dispatchEvent(new Event('library:changed'));
         closeTagEditor();
       } catch (saveError) {
-        setTagEditorError(formatFolderError(saveError));
+        setTagEditorError(formatFolderError(saveError, t));
       } finally {
         setIsSavingTags(false);
       }
     },
-    [closeTagEditor],
+    [closeTagEditor, t],
   );
 
   const renderChildNodes = (folderId: string, parentPath: string): JSX.Element | null => {
@@ -797,7 +805,7 @@ export const FoldersPage = (): JSX.Element => {
     }
 
     if (loadingChildren[key]) {
-      return <div className="folder-tree-loading">Loading...</div>;
+      return <div className="folder-tree-loading">{t('common.loading')}</div>;
     }
 
     if (!root || children.length === 0) {
@@ -847,17 +855,17 @@ export const FoldersPage = (): JSX.Element => {
       <aside className="folders-sidebar">
         <div className="folders-pane-header">
           <div>
-            <span className="panel-kicker">Library</span>
-            <h1>Folders</h1>
+            <span className="panel-kicker">{t('folders.sidebar.kicker')}</span>
+            <h1>{t('folders.sidebar.title')}</h1>
           </div>
-          <button className="tool-button" type="button" aria-label="Refresh folders" title="Refresh folders" onClick={() => void refreshOverviews()}>
+          <button className="tool-button" type="button" aria-label={t('folders.action.refresh')} title={t('folders.action.refresh')} onClick={() => void refreshOverviews()}>
             <RefreshCw className={isLoadingOverviews ? 'spinning-icon' : undefined} size={17} />
           </button>
         </div>
 
         <div className="folders-root-list">
           {overviews.length === 0 ? (
-            <p className="folders-empty">No library folders yet.</p>
+            <p className="folders-empty">{t('folders.empty.roots')}</p>
           ) : (
             overviews.map((overview) => {
               const rootKey = targetKey(overview.id, overview.path);
@@ -881,7 +889,7 @@ export const FoldersPage = (): JSX.Element => {
                     <FolderOpen size={17} />
                     <span>
                       <strong>{overview.name}</strong>
-                      <small>{scan ? statusLabel(scan.status) : `${overview.trackCount} tracks`}</small>
+                      <small>{scan ? statusLabel(scan.status, t) : t('folders.count.tracks', { count: overview.trackCount })}</small>
                     </span>
                     <em>{overview.childFolderCount}</em>
                   </button>
@@ -902,58 +910,62 @@ export const FoldersPage = (): JSX.Element => {
             {selected?.coverThumbs.length ? null : <FolderOpen size={34} />}
           </div>
           <div className="folder-detail-title">
-            <span>{selected ? `${selected.rootName} / ${selected.path === selected.rootPath ? 'Root' : 'Subfolder'}` : 'Library folders'}</span>
-            <h2>{selected?.name ?? 'Select a folder'}</h2>
-            <p>{selected?.path ?? 'Import a music folder to build a path-based library view.'}</p>
+            <span>
+              {selected
+                ? `${selected.rootName} / ${selected.path === selected.rootPath ? t('folders.detail.root') : t('folders.detail.subfolder')}`
+                : t('folders.detail.libraryFolders')}
+            </span>
+            <h2>{selected?.name ?? t('folders.detail.selectFolder')}</h2>
+            <p>{selected?.path ?? t('folders.detail.importHint')}</p>
           </div>
           <div className="folder-detail-actions">
             <button className="primary-action" type="button" disabled={!selected || isBulkLoading} onClick={() => void runBulkAction('play')}>
               <Play size={16} fill="currentColor" />
-              Play
+              {t('folders.action.play')}
             </button>
             <button className="secondary-action" type="button" disabled={!selected || isBulkLoading} onClick={() => void runBulkAction('shuffle')}>
               <Shuffle size={16} />
-              Random
+              {t('folders.action.random')}
             </button>
             <button className="secondary-action" type="button" disabled={!selected || isBulkLoading} onClick={() => void runBulkAction('append')}>
               <ListPlus size={16} />
-              Queue
+              {t('folders.action.queue')}
             </button>
           </div>
         </header>
 
-        <section className="folder-metrics" aria-label="Folder metrics">
+        <section className="folder-metrics" aria-label={t('folders.metrics.label')}>
           <span>
             <strong>{selected?.trackCount ?? 0}</strong>
-            Tracks
+            {t('folders.metrics.tracks')}
           </span>
           <span>
-            <strong>{formatDuration(selected?.totalDuration ?? 0)}</strong>
-            Duration
+            <strong>{formatDuration(selected?.totalDuration ?? 0, t)}</strong>
+            {t('folders.metrics.duration')}
           </span>
           <span>
             <strong>{formatBytes(selected?.totalSizeBytes ?? 0)}</strong>
-            Size
+            {t('folders.metrics.size')}
           </span>
           <span>
             <strong>{selected?.childFolderCount ?? 0}</strong>
-            Subfolders
+            {t('folders.metrics.subfolders')}
           </span>
         </section>
 
-        <section className="folder-track-toolbar" aria-label="Folder track filters">
+        <section className="folder-track-toolbar" aria-label={t('folders.filters.label')}>
           <label className="search-box">
             <Search size={18} aria-hidden="true" />
-            <input type="search" placeholder="Search this folder..." value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
+            <input type="search" placeholder={t('folders.filters.searchPlaceholder')} value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
           </label>
           <label className="folder-toggle">
             <input type="checkbox" checked={recursive} onChange={(event) => setRecursive(event.target.checked)} />
-            <span>Include subfolders</span>
+            <span>{t('folders.filters.includeSubfolders')}</span>
           </label>
           <select className="folder-sort-select" value={sort} onChange={(event) => setSort(event.target.value as LibrarySort)}>
             {sortOptions.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
@@ -971,7 +983,7 @@ export const FoldersPage = (): JSX.Element => {
 
         {error || message || isLoadingTracks || isBulkLoading ? (
           <div className="folders-status-line">
-            <span>{error ?? message ?? (isBulkLoading ? 'Preparing folder queue...' : 'Loading folder tracks...')}</span>
+            <span>{error ?? message ?? (isBulkLoading ? t('folders.statusLine.preparingQueue') : t('folders.statusLine.loadingTracks'))}</span>
           </div>
         ) : null}
       </main>
@@ -979,63 +991,67 @@ export const FoldersPage = (): JSX.Element => {
       <aside className="folders-actions-panel">
         <section>
           <div className="folders-panel-heading">
-            <span className="panel-kicker">Import</span>
-            <h2>Add folder</h2>
+            <span className="panel-kicker">{t('folders.panel.import')}</span>
+            <h2>{t('folders.panel.addFolder')}</h2>
           </div>
           <div className="folder-import-box">
             <input type="text" placeholder="D:\\Music" value={folderPath} onChange={(event) => setFolderPath(event.target.value)} />
             <button type="button" onClick={() => void handleChooseFolder()}>
               <FolderPlus size={16} />
-              Browse
+              {t('folders.action.browse')}
             </button>
             <button type="button" disabled={!folderPath.trim()} onClick={() => void handleAddPath()}>
               <RotateCw size={16} />
-              Add + scan
+              {t('folders.action.addScan')}
             </button>
           </div>
         </section>
 
         <section>
           <div className="folders-panel-heading">
-            <span className="panel-kicker">Manage</span>
-            <h2>Selected root</h2>
+            <span className="panel-kicker">{t('folders.panel.manage')}</span>
+            <h2>{t('folders.panel.selectedRoot')}</h2>
           </div>
           <div className="folder-action-grid">
             <button type="button" disabled={!selected} onClick={() => void handleOpenSelectedPath()}>
               <FolderOpen size={16} />
-              Open
+              {t('folders.action.open')}
             </button>
             <button type="button" disabled={!selected || isSelectedScanning} onClick={() => void handleScanSelected()}>
               <RotateCw size={16} />
-              Scan
+              {t('folders.action.scan')}
             </button>
             <button type="button" disabled={!isSelectedScanning} onClick={() => void handleCancelScan()}>
               <XCircle size={16} />
-              Cancel
+              {t('folders.action.cancel')}
             </button>
             <button className="danger" type="button" disabled={!selectedOverview} onClick={() => void handleRemoveRoot()}>
               <Trash2 size={16} />
-              Remove
+              {t('folders.action.remove')}
             </button>
           </div>
         </section>
 
         <section>
           <div className="folders-panel-heading">
-            <span className="panel-kicker">Scan</span>
-            <h2>Status</h2>
+            <span className="panel-kicker">{t('folders.panel.scan')}</span>
+            <h2>{t('folders.panel.status')}</h2>
           </div>
           {selectedScan ? (
             <div className="folder-scan-card" data-running={runningStatuses.has(selectedScan.status)}>
-              <strong>{statusLabel(selectedScan.status)}</strong>
-              <span>{phaseLabel(selectedScan.phase)}</span>
+              <strong>{statusLabel(selectedScan.status, t)}</strong>
+              <span>{phaseLabel(selectedScan.phase, t)}</span>
               <em>
-                {selectedScan.processedFiles}/{selectedScan.totalFiles} files, {selectedScan.errorCount} errors
+                {t('folders.scan.progress', {
+                  processed: selectedScan.processedFiles,
+                  total: selectedScan.totalFiles,
+                  errors: selectedScan.errorCount,
+                })}
               </em>
               {selectedScan.errors.length > 0 ? <p>{selectedScan.errors[0]}</p> : null}
             </div>
           ) : (
-            <p className="folders-empty">No scan has run for this root yet.</p>
+            <p className="folders-empty">{t('folders.empty.noScan')}</p>
           )}
         </section>
       </aside>

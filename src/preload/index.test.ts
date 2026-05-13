@@ -65,4 +65,15 @@ describe('preload SMTC API', () => {
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryClassifyImportPaths, ['D:\\Music']);
   });
+
+  it('exposes account status APIs without cookie readback helpers', async () => {
+    await exposedApi!.accounts.saveCookie('netease', 'MUSIC_U=secret');
+    await exposedApi!.accounts.startLogin?.('netease');
+    await exposedApi!.accounts.getStatuses();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountSaveCookie, 'netease', 'MUSIC_U=secret');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountStartLogin, 'netease');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountGetStatuses);
+    expect(Object.keys(exposedApi!.accounts)).not.toContain('getCookie');
+  });
 });

@@ -13,6 +13,7 @@ import { getLibraryService } from '../library/LibraryService';
 import { setDiscordPresenceEnabled } from '../integrations/discord/getDiscordPresenceService';
 import { getLastFmService } from '../integrations/lastfm/getLastFmService';
 import { registerAudioIpc } from './audioIpc';
+import { registerAccountIpc } from './accountIpc';
 import { registerDiagnosticsIpc } from './diagnosticsIpc';
 import { registerDiscordPresenceIpc } from './discordPresenceIpc';
 import { registerLastFmIpc } from './lastFmIpc';
@@ -177,6 +178,7 @@ export const registerIpc = (): void => {
   );
 
   registerDiagnosticsIpc();
+  registerAccountIpc();
   registerDiscordPresenceIpc();
   registerLastFmIpc();
   registerLibraryIpc();

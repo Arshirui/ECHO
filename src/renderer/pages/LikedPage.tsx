@@ -1,0 +1,360 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Disc3, Heart, ListFilter, Play, Search, Shuffle, Trash2 } from 'lucide-react';
+import type { LibraryAlbum, LibraryPage, LibraryPlaylistItem, LibrarySort, LibraryTrack } from '../../shared/types/library';
+import { AlbumDetailView } from '../components/album/AlbumDetailView';
+import { TrackList } from '../components/library/TrackList';
+import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent } from '../hooks/useLikedMedia';
+import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+
+const pageSize = 100;
+const sortOptions: Array<{ value: LibrarySort; label: string }> = [
+  { value: 'recent', label: '最近喜欢' },
+  { value: 'default', label: '手动排序' },
+  { value: 'titleAsc', label: '标题 A-Z' },
+  { value: 'titleDesc', label: '标题 Z-A' },
+  { value: 'artist', label: '艺人' },
+  { value: 'album', label: '专辑' },
+];
+
+type LikedTab = 'tracks' | 'albums';
+
+const itemToTrack = (item: LibraryPlaylistItem): LibraryTrack => {
+  if (item.track) {
+    return { ...item.track, unavailable: item.unavailable, playlistItemId: item.id };
+  }
+
+  return {
+    id: item.mediaId ?? item.id,
+    path: '',
+    title: item.titleSnapshot ?? '不可用歌曲',
+    artist: item.artistSnapshot ?? 'Unknown Artist',
+    album: item.albumSnapshot ?? '',
+    albumArtist: item.artistSnapshot ?? '',
+    trackNo: null,
+    discNo: null,
+    year: null,
+    genre: null,
+    duration: item.durationSnapshot ?? 0,
+    codec: null,
+    sampleRate: null,
+    bitDepth: null,
+    bitrate: null,
+    coverId: item.coverId,
+    coverThumb: item.coverThumb,
+    fieldSources: {},
+    unavailable: true,
+    playlistItemId: item.id,
+  };
+};
+
+const itemToAlbum = (item: LibraryPlaylistItem): LibraryAlbum => {
+  if (item.album) {
+    return item.album;
+  }
+
+  return {
+    id: item.mediaId ?? item.id,
+    albumKey: item.mediaId ?? item.id,
+    title: item.titleSnapshot ?? item.albumSnapshot ?? '不可用专辑',
+    albumArtist: item.artistSnapshot ?? 'Unknown Artist',
+    year: null,
+    trackCount: 0,
+    duration: item.durationSnapshot ?? 0,
+    coverId: item.coverId,
+    coverThumb: item.coverThumb,
+  };
+};
+
+export const LikedPage = (): JSX.Element => {
+  const [tab, setTab] = useState<LikedTab>('tracks');
+  const [trackItems, setTrackItems] = useState<LibraryPlaylistItem[]>([]);
+  const [albumItems, setAlbumItems] = useState<LibraryPlaylistItem[]>([]);
+  const [trackTotal, setTrackTotal] = useState(0);
+  const [albumTotal, setAlbumTotal] = useState(0);
+  const [trackPage, setTrackPage] = useState(1);
+  const [albumPage, setAlbumPage] = useState(1);
+  const [trackHasMore, setTrackHasMore] = useState(false);
+  const [albumHasMore, setAlbumHasMore] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<LibrarySort>('recent');
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(null);
+  const requestIdRef = useRef(0);
+  const { currentTrackId, playTrack, replaceQueue } = usePlaybackQueue();
+
+  const tracks = useMemo(() => trackItems.map(itemToTrack), [trackItems]);
+  const albums = useMemo(() => albumItems.map(itemToAlbum), [albumItems]);
+  const likedTrackMap = useMemo(() => Object.fromEntries(tracks.map((track) => [track.id, true])), [tracks]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  const loadTracks = useCallback(
+    async (nextPage: number, mode: 'replace' | 'append'): Promise<void> => {
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const library = window.echo?.library;
+        if (!library) {
+          setTrackItems([]);
+          setTrackPage(1);
+          setTrackTotal(0);
+          setTrackHasMore(false);
+          return;
+        }
+
+        const result: LibraryPage<LibraryPlaylistItem> = await library.getLikedTracks({
+          page: nextPage,
+          pageSize,
+          search,
+          sort,
+        });
+
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+
+        setTrackItems((current) => (mode === 'append' ? [...current, ...result.items] : result.items));
+        setTrackPage(result.page);
+        setTrackTotal(result.total);
+        setTrackHasMore(result.hasMore);
+      } catch (loadError) {
+        if (requestIdRef.current === requestId) {
+          setError(loadError instanceof Error ? loadError.message : String(loadError));
+        }
+      } finally {
+        if (requestIdRef.current === requestId) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [search, sort],
+  );
+
+  const loadAlbums = useCallback(
+    async (nextPage: number, mode: 'replace' | 'append'): Promise<void> => {
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const library = window.echo?.library;
+        if (!library) {
+          setAlbumItems([]);
+          setAlbumPage(1);
+          setAlbumTotal(0);
+          setAlbumHasMore(false);
+          return;
+        }
+
+        const result = await library.getLikedAlbums({
+          page: nextPage,
+          pageSize,
+          search,
+          sort,
+        });
+
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+
+        setAlbumItems((current) => (mode === 'append' ? [...current, ...result.items] : result.items));
+        setAlbumPage(result.page);
+        setAlbumTotal(result.total);
+        setAlbumHasMore(result.hasMore);
+      } catch (loadError) {
+        if (requestIdRef.current === requestId) {
+          setError(loadError instanceof Error ? loadError.message : String(loadError));
+        }
+      } finally {
+        if (requestIdRef.current === requestId) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [search, sort],
+  );
+
+  useEffect(() => {
+    void loadTracks(1, 'replace');
+    void loadAlbums(1, 'replace');
+  }, [loadAlbums, loadTracks]);
+
+  useEffect(() => {
+    const reloadTracks = (): void => void loadTracks(1, 'replace');
+    const reloadAlbums = (): void => void loadAlbums(1, 'replace');
+    window.addEventListener(likedTracksChangedEvent, reloadTracks);
+    window.addEventListener(likedAlbumsChangedEvent, reloadAlbums);
+    return () => {
+      window.removeEventListener(likedTracksChangedEvent, reloadTracks);
+      window.removeEventListener(likedAlbumsChangedEvent, reloadAlbums);
+    };
+  }, [loadAlbums, loadTracks]);
+
+  const handlePlayAll = useCallback(async (): Promise<void> => {
+    const playable = tracks.filter((track) => !track.unavailable && track.path);
+    if (playable.length === 0) {
+      setError('没有可播放的喜欢歌曲。');
+      return;
+    }
+
+    replaceQueue(playable, { startTrackId: playable[0].id, source: { type: 'manual', label: '喜欢的歌曲' } });
+    await playTrack(playable[0], { source: { type: 'manual', label: '喜欢的歌曲' } });
+    if (playable.length < tracks.length) {
+      setError('部分文件不可用，播放时已跳过。');
+    }
+  }, [playTrack, replaceQueue, tracks]);
+
+  const handleShuffleAll = useCallback(async (): Promise<void> => {
+    const playable = tracks.filter((track) => !track.unavailable && track.path).sort(() => Math.random() - 0.5);
+    if (playable.length === 0) {
+      setError('没有可播放的喜欢歌曲。');
+      return;
+    }
+
+    replaceQueue(playable, { startTrackId: playable[0].id, source: { type: 'manual', label: '喜欢的歌曲' } });
+    await playTrack(playable[0], { source: { type: 'manual', label: '喜欢的歌曲' } });
+  }, [playTrack, replaceQueue, tracks]);
+
+  const handleToggleTrackLiked = useCallback(async (track: LibraryTrack): Promise<void> => {
+    await window.echo.library.unlikeTrack(track.id);
+    setTrackItems((current) => current.filter((item) => (item.mediaId ?? item.id) !== track.id));
+    setTrackTotal((current) => Math.max(0, current - 1));
+    window.dispatchEvent(new Event(likedTracksChangedEvent));
+    window.dispatchEvent(new Event(likedChangedEvent));
+  }, []);
+
+  const handleToggleAlbumLiked = useCallback(async (album: LibraryAlbum): Promise<void> => {
+    await window.echo.library.unlikeAlbum(album.id);
+    setAlbumItems((current) => current.filter((item) => (item.mediaId ?? item.id) !== album.id));
+    setAlbumTotal((current) => Math.max(0, current - 1));
+    window.dispatchEvent(new Event(likedAlbumsChangedEvent));
+    window.dispatchEvent(new Event(likedChangedEvent));
+  }, []);
+
+  const handleClear = useCallback(async (): Promise<void> => {
+    if (tab === 'tracks') {
+      if (!window.confirm('清空喜欢的歌曲？')) {
+        return;
+      }
+      await window.echo.library.clearLikedTracks();
+      setTrackItems([]);
+      setTrackTotal(0);
+      window.dispatchEvent(new Event(likedTracksChangedEvent));
+    } else {
+      if (!window.confirm('清空喜欢的专辑？')) {
+        return;
+      }
+      await window.echo.library.clearLikedAlbums();
+      setAlbumItems([]);
+      setAlbumTotal(0);
+      window.dispatchEvent(new Event(likedAlbumsChangedEvent));
+    }
+    window.dispatchEvent(new Event(likedChangedEvent));
+  }, [tab]);
+
+  if (selectedAlbum) {
+    return <AlbumDetailView album={selectedAlbum} onBack={() => setSelectedAlbum(null)} />;
+  }
+
+  return (
+    <div className="liked-page">
+      <header className="liked-hero">
+        <div>
+          <span className="queue-kicker">Library</span>
+          <h1>喜欢</h1>
+          <p>{trackTotal} 首歌曲 · {albumTotal} 张专辑</p>
+        </div>
+      </header>
+
+      <div className="liked-tabs" role="tablist">
+        <button className={tab === 'tracks' ? 'is-active' : ''} type="button" role="tab" aria-selected={tab === 'tracks'} onClick={() => setTab('tracks')}>
+          喜欢的歌曲
+        </button>
+        <button className={tab === 'albums' ? 'is-active' : ''} type="button" role="tab" aria-selected={tab === 'albums'} onClick={() => setTab('albums')}>
+          喜欢的专辑
+        </button>
+      </div>
+
+      <div className="songs-control-row">
+        <label className="search-box">
+          <Search size={18} aria-hidden="true" />
+          <input type="search" placeholder="搜索喜欢的音乐" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
+        </label>
+
+        <label className="sort-button sort-select">
+          <ListFilter size={15} />
+          <select value={sort} onChange={(event) => setSort(event.target.value as LibrarySort)}>
+            {sortOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="liked-actions">
+        {tab === 'tracks' ? (
+          <>
+            <button className="queue-tool-button" type="button" disabled={tracks.length === 0} onClick={() => void handlePlayAll()}>
+              <Play size={16} fill="currentColor" /> 播放全部
+            </button>
+            <button className="queue-tool-button" type="button" disabled={tracks.length === 0} onClick={() => void handleShuffleAll()}>
+              <Shuffle size={16} /> 随机播放
+            </button>
+          </>
+        ) : null}
+        <button className="queue-tool-button danger" type="button" disabled={(tab === 'tracks' ? trackTotal : albumTotal) === 0} onClick={() => void handleClear()}>
+          <Trash2 size={16} /> 清空
+        </button>
+      </div>
+
+      {tab === 'tracks' ? (
+        tracks.length > 0 ? (
+          <TrackList
+            tracks={tracks}
+            currentTrackId={currentTrackId}
+            canLoadMore={trackHasMore && !isLoading}
+            likedTrackIds={likedTrackMap}
+            onEndReached={() => void loadTracks(trackPage + 1, 'append')}
+            onPlay={(track) => void playTrack(track, { replaceQueueWith: tracks.filter((item) => !item.unavailable), source: { type: 'manual', label: '喜欢的歌曲' } })}
+            onToggleLiked={(track) => void handleToggleTrackLiked(track)}
+          />
+        ) : (
+          <div className="queue-empty-state"><Heart size={24} /><strong>还没有喜欢的歌曲</strong><span>在歌曲或专辑页面点击爱心即可收藏到这里</span></div>
+        )
+      ) : (
+        <section className="album-wall liked-album-wall" aria-label="喜欢的专辑">
+          {albums.length > 0 ? albums.map((album) => {
+            const item = albumItems.find((candidate) => (candidate.mediaId ?? candidate.id) === album.id);
+            const unavailable = item?.unavailable === true || !item?.album;
+            return (
+              <article className="album-card" data-unavailable={unavailable ? 'true' : undefined} key={item?.id ?? album.id} role="button" tabIndex={0} onClick={() => !unavailable && setSelectedAlbum(album)}>
+                <div className="album-cover" data-empty={!album.coverThumb} aria-hidden="true">
+                  {album.coverThumb ? <img alt="" decoding="async" draggable={false} height={320} loading="lazy" src={album.coverThumb} width={320} /> : <Disc3 size={24} />}
+                </div>
+                <div className="album-copy">
+                  <strong>{album.title}</strong>
+                  <span>{album.albumArtist}</span>
+                  <small>{unavailable ? '专辑不可用' : `${album.trackCount} tracks`}</small>
+                </div>
+                <button className="album-card-like is-liked" type="button" aria-label={`Unlike ${album.title}`} aria-pressed="true" onClick={(event) => { event.stopPropagation(); void handleToggleAlbumLiked(album); }}>
+                  <Heart size={16} fill="currentColor" />
+                </button>
+              </article>
+            );
+          }) : <div className="queue-empty-state"><Heart size={24} /><strong>还没有喜欢的专辑</strong><span>在歌曲或专辑页面点击爱心即可收藏到这里</span></div>}
+        </section>
+      )}
+
+      {error || isLoading ? <div className="list-footer"><span>{error ?? '正在读取喜欢的音乐...'}</span></div> : null}
+    </div>
+  );
+};

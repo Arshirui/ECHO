@@ -47,6 +47,9 @@ type ArtistIndexStats = {
 
 const defaultPageSize = 100;
 const maxPageSize = 500;
+const likedSongsSourcePlaylistId = 'liked-tracks';
+const likedAlbumsSourcePlaylistId = 'liked-albums';
+const likedSystemPlaylistIds = new Set([likedSongsSourcePlaylistId, likedAlbumsSourcePlaylistId]);
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -1819,8 +1822,19 @@ export class LibraryStore {
     return this.allRows(
       `SELECT *
        FROM playlists
+       WHERE NOT (kind = 'system' AND source_provider = 'local' AND source_playlist_id IN (?, ?))
        ORDER BY updated_at DESC, name COLLATE NOCASE`,
+      likedSongsSourcePlaylistId,
+      likedAlbumsSourcePlaylistId,
     ).map((row) => this.mapPlaylist(row));
+  }
+
+  getLikedSongsPlaylist(): LibraryPlaylist {
+    return this.ensureSystemPlaylist(likedSongsSourcePlaylistId, 'Liked Songs', 'Tracks you liked in ECHO Next.');
+  }
+
+  getLikedAlbumsPlaylist(): LibraryPlaylist {
+    return this.ensureSystemPlaylist(likedAlbumsSourcePlaylistId, 'Liked Albums', 'Albums you liked in ECHO Next.');
   }
 
   createPlaylist(input: { name: string; description?: string | null }, timestamp = nowIso()): LibraryPlaylist {
@@ -1867,6 +1881,10 @@ export class LibraryStore {
       throw new Error(`Unknown playlist ${input.playlistId}`);
     }
 
+    if (this.isProtectedSystemPlaylist(current) && (input.name !== undefined || input.description !== undefined)) {
+      throw new Error('Liked system playlists cannot be renamed.');
+    }
+
     const name = input.name === undefined ? current.name : input.name.trim();
     if (!name) {
       throw new Error('Playlist name is required');
@@ -1902,6 +1920,11 @@ export class LibraryStore {
   }
 
   deletePlaylist(playlistId: string): void {
+    const playlist = this.getPlaylist(playlistId);
+    if (playlist && this.isProtectedSystemPlaylist(playlist)) {
+      throw new Error('Liked system playlists cannot be deleted.');
+    }
+
     this.run('DELETE FROM playlists WHERE id = ?', playlistId);
   }
 
@@ -1924,6 +1947,7 @@ export class LibraryStore {
       `SELECT COUNT(*) AS total
        FROM playlist_items
        LEFT JOIN tracks ON tracks.id = playlist_items.media_id
+       LEFT JOIN albums ON albums.id = playlist_items.media_id
        WHERE ${whereSql}`,
       ...params,
     );
@@ -1951,9 +1975,18 @@ export class LibraryStore {
         tracks.embedded_cover_status AS track_embedded_cover_status,
         tracks.network_metadata_status AS track_network_metadata_status,
         tracks.field_sources_json AS track_field_sources_json,
-        tracks.missing AS track_missing
+        tracks.missing AS track_missing,
+        albums.id AS album_id,
+        albums.album_key AS album_key,
+        albums.title AS album_title,
+        albums.album_artist AS album_artist,
+        albums.year AS album_year,
+        albums.track_count AS album_track_count,
+        albums.duration AS album_duration,
+        albums.cover_id AS album_cover_id
       FROM playlist_items
       LEFT JOIN tracks ON tracks.id = playlist_items.media_id
+      LEFT JOIN albums ON albums.id = playlist_items.media_id
       WHERE ${whereSql}
       ORDER BY playlist_items.position ASC, playlist_items.added_at ASC
       LIMIT ? OFFSET ?`,
@@ -2072,6 +2105,168 @@ export class LibraryStore {
       this.run('DELETE FROM playlist_items WHERE playlist_id = ?', playlistId);
       this.refreshPlaylistItemCount(playlistId);
     });
+  }
+
+  getLikedTracks(query?: LibraryPageQuery): LibraryPage<LibraryPlaylistItem> {
+    return this.getSystemPlaylistItems(this.getLikedSongsPlaylist().id, 'track', query);
+  }
+
+  getLikedAlbums(query?: LibraryPageQuery): LibraryPage<LibraryPlaylistItem> {
+    return this.getSystemPlaylistItems(this.getLikedAlbumsPlaylist().id, 'album', query);
+  }
+
+  isTrackLiked(trackId: string): boolean {
+    return this.getLikedTrackIds([trackId])[trackId] === true;
+  }
+
+  isAlbumLiked(albumId: string): boolean {
+    return this.getLikedAlbumIds([albumId])[albumId] === true;
+  }
+
+  getLikedTrackIds(trackIds: string[]): Record<string, boolean> {
+    return this.getLikedMediaIds(this.getLikedSongsPlaylist().id, 'track', trackIds);
+  }
+
+  getLikedAlbumIds(albumIds: string[]): Record<string, boolean> {
+    return this.getLikedMediaIds(this.getLikedAlbumsPlaylist().id, 'album', albumIds);
+  }
+
+  likeTrack(trackId: string, timestamp = nowIso()): LibraryPlaylistItem {
+    const track = this.getTrack(trackId);
+    if (!track) {
+      throw new Error(`Unknown track ${trackId}`);
+    }
+
+    return this.transaction(() => {
+      const playlist = this.getLikedSongsPlaylist();
+      const existing = this.getLikedMediaItem(playlist.id, 'track', track.id);
+      if (existing) {
+        return existing;
+      }
+
+      const itemId = randomUUID();
+      const nextPosition = Number(
+        this.getRow('SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM playlist_items WHERE playlist_id = ?', playlist.id)
+          ?.next_position ?? 0,
+      );
+
+      this.run(
+        `INSERT INTO playlist_items (
+          id, playlist_id, media_type, media_id, source_provider, source_item_id,
+          title_snapshot, artist_snapshot, album_snapshot, duration_snapshot,
+          cover_id, position, added_at, added_from, unavailable
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        itemId,
+        playlist.id,
+        'track',
+        track.id,
+        'local',
+        null,
+        track.title,
+        track.artist,
+        track.album,
+        track.duration,
+        track.coverId,
+        nextPosition,
+        timestamp,
+        'liked',
+        0,
+      );
+      this.refreshPlaylistItemCount(playlist.id, timestamp);
+
+      const item = this.getPlaylistItemRow(itemId);
+      if (!item) {
+        throw new Error(`Failed to like track ${trackId}`);
+      }
+
+      return this.mapPlaylistItem(item);
+    });
+  }
+
+  unlikeTrack(trackId: string): void {
+    this.unlikeMedia(this.getLikedSongsPlaylist().id, 'track', trackId);
+  }
+
+  toggleTrackLiked(trackId: string): { liked: boolean; item?: LibraryPlaylistItem } {
+    if (this.isTrackLiked(trackId)) {
+      this.unlikeTrack(trackId);
+      return { liked: false };
+    }
+
+    return { liked: true, item: this.likeTrack(trackId) };
+  }
+
+  clearLikedTracks(): void {
+    this.clearPlaylist(this.getLikedSongsPlaylist().id);
+  }
+
+  likeAlbum(albumId: string, timestamp = nowIso()): LibraryPlaylistItem {
+    const album = this.getAlbum(albumId);
+    if (!album) {
+      throw new Error(`Unknown album ${albumId}`);
+    }
+
+    return this.transaction(() => {
+      const playlist = this.getLikedAlbumsPlaylist();
+      const existing = this.getLikedMediaItem(playlist.id, 'album', album.id);
+      if (existing) {
+        return existing;
+      }
+
+      const itemId = randomUUID();
+      const nextPosition = Number(
+        this.getRow('SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM playlist_items WHERE playlist_id = ?', playlist.id)
+          ?.next_position ?? 0,
+      );
+
+      this.run(
+        `INSERT INTO playlist_items (
+          id, playlist_id, media_type, media_id, source_provider, source_item_id,
+          title_snapshot, artist_snapshot, album_snapshot, duration_snapshot,
+          cover_id, position, added_at, added_from, unavailable
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        itemId,
+        playlist.id,
+        'album',
+        album.id,
+        'local',
+        null,
+        album.title,
+        album.albumArtist,
+        album.title,
+        album.duration,
+        album.coverId,
+        nextPosition,
+        timestamp,
+        'liked',
+        0,
+      );
+      this.refreshPlaylistItemCount(playlist.id, timestamp);
+
+      const item = this.getPlaylistItemRow(itemId);
+      if (!item) {
+        throw new Error(`Failed to like album ${albumId}`);
+      }
+
+      return this.mapPlaylistItem(item);
+    });
+  }
+
+  unlikeAlbum(albumId: string): void {
+    this.unlikeMedia(this.getLikedAlbumsPlaylist().id, 'album', albumId);
+  }
+
+  toggleAlbumLiked(albumId: string): { liked: boolean; item?: LibraryPlaylistItem } {
+    if (this.isAlbumLiked(albumId)) {
+      this.unlikeAlbum(albumId);
+      return { liked: false };
+    }
+
+    return { liked: true, item: this.likeAlbum(albumId) };
+  }
+
+  clearLikedAlbums(): void {
+    this.clearPlaylist(this.getLikedAlbumsPlaylist().id);
   }
 
   getSummary(): LibrarySummary {
@@ -2223,6 +2418,220 @@ export class LibraryStore {
     return childNames.size;
   }
 
+  private ensureSystemPlaylist(sourcePlaylistId: string, name: string, description: string): LibraryPlaylist {
+    return this.transaction(() => {
+      const existing = this.getRow(
+        `SELECT *
+         FROM playlists
+         WHERE kind = 'system' AND source_provider = 'local' AND source_playlist_id = ?`,
+        sourcePlaylistId,
+      );
+
+      if (existing) {
+        const playlistId = String(existing.id);
+        const actualCount = Number(this.getRow('SELECT COUNT(*) AS total FROM playlist_items WHERE playlist_id = ?', playlistId)?.total ?? 0);
+        if (Number(existing.item_count ?? 0) !== actualCount) {
+          this.run('UPDATE playlists SET item_count = ? WHERE id = ?', actualCount, playlistId);
+        }
+        const playlist = this.getPlaylist(String(existing.id));
+        if (!playlist) {
+          throw new Error(`Failed to load system playlist ${sourcePlaylistId}`);
+        }
+        return playlist;
+      }
+
+      const id = randomUUID();
+      const timestamp = nowIso();
+      this.run(
+        `INSERT INTO playlists (
+          id, name, description, kind, source_provider, source_playlist_id,
+          cover_id, sort_mode, item_count, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id,
+        name,
+        description,
+        'system',
+        'local',
+        sourcePlaylistId,
+        null,
+        'manual',
+        0,
+        timestamp,
+        timestamp,
+      );
+
+      const playlist = this.getPlaylist(id);
+      if (!playlist) {
+        throw new Error(`Failed to create system playlist ${sourcePlaylistId}`);
+      }
+      return playlist;
+    });
+  }
+
+  private isProtectedSystemPlaylist(playlist: LibraryPlaylist): boolean {
+    return playlist.kind === 'system' && likedSystemPlaylistIds.has(playlist.sourcePlaylistId ?? '');
+  }
+
+  private getLikedMediaIds(
+    playlistId: string,
+    mediaType: LibraryPlaylistItem['mediaType'],
+    mediaIds: string[],
+  ): Record<string, boolean> {
+    const result: Record<string, boolean> = {};
+    const uniqueIds = Array.from(new Set(mediaIds.filter((id) => typeof id === 'string' && id.length > 0)));
+
+    for (const id of uniqueIds) {
+      result[id] = false;
+    }
+
+    if (uniqueIds.length === 0) {
+      return result;
+    }
+
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    const rows = this.allRows(
+      `SELECT media_id
+       FROM playlist_items
+       WHERE playlist_id = ?
+         AND media_type = ?
+         AND source_provider = 'local'
+         AND media_id IN (${placeholders})`,
+      playlistId,
+      mediaType,
+      ...uniqueIds,
+    );
+
+    for (const row of rows) {
+      const mediaId = textOrNull(row.media_id);
+      if (mediaId) {
+        result[mediaId] = true;
+      }
+    }
+
+    return result;
+  }
+
+  private getLikedMediaItem(
+    playlistId: string,
+    mediaType: LibraryPlaylistItem['mediaType'],
+    mediaId: string,
+  ): LibraryPlaylistItem | null {
+    const row = this.getRow(
+      `SELECT id
+       FROM playlist_items
+       WHERE playlist_id = ?
+         AND media_type = ?
+         AND media_id = ?
+         AND source_provider = 'local'
+       ORDER BY position ASC, added_at ASC
+       LIMIT 1`,
+      playlistId,
+      mediaType,
+      mediaId,
+    );
+
+    const itemRow = row ? this.getPlaylistItemRow(String(row.id)) : null;
+    return itemRow ? this.mapPlaylistItem(itemRow) : null;
+  }
+
+  private unlikeMedia(playlistId: string, mediaType: LibraryPlaylistItem['mediaType'], mediaId: string): void {
+    this.transaction(() => {
+      const result = this.run(
+        `DELETE FROM playlist_items
+         WHERE playlist_id = ?
+           AND media_type = ?
+           AND media_id = ?
+           AND source_provider = 'local'`,
+        playlistId,
+        mediaType,
+        mediaId,
+      );
+
+      if (result.changes > 0) {
+        this.resequencePlaylistItems(playlistId);
+        this.refreshPlaylistItemCount(playlistId);
+      }
+    });
+  }
+
+  private getSystemPlaylistItems(
+    playlistId: string,
+    mediaType: LibraryPlaylistItem['mediaType'],
+    query?: LibraryPageQuery,
+  ): LibraryPage<LibraryPlaylistItem> {
+    const { page, pageSize, search, sort } = pageFromQuery(query);
+    const offset = (page - 1) * pageSize;
+    const searchFilter = buildSearchFilter(search, [
+      likePredicate('COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, \'\')'),
+      likePredicate('COALESCE(playlist_items.artist_snapshot, tracks.artist, albums.album_artist, \'\')'),
+      likePredicate('COALESCE(playlist_items.album_snapshot, tracks.album, albums.title, \'\')'),
+    ]);
+    const whereSql = searchFilter.sql
+      ? `playlist_items.playlist_id = ? AND playlist_items.media_type = ? AND ${searchFilter.sql}`
+      : 'playlist_items.playlist_id = ? AND playlist_items.media_type = ?';
+    const params = [playlistId, mediaType, ...searchFilter.params];
+    const totalRow = this.getRow(
+      `SELECT COUNT(*) AS total
+       FROM playlist_items
+       LEFT JOIN tracks ON tracks.id = playlist_items.media_id
+       LEFT JOIN albums ON albums.id = playlist_items.media_id
+       WHERE ${whereSql}`,
+      ...params,
+    );
+    const rows = this.allRows(
+      `SELECT
+        playlist_items.*,
+        tracks.id AS track_id,
+        tracks.path AS track_path,
+        tracks.title AS track_title,
+        tracks.artist AS track_artist,
+        tracks.album AS track_album,
+        tracks.album_artist AS track_album_artist,
+        tracks.track_no AS track_track_no,
+        tracks.disc_no AS track_disc_no,
+        tracks.year AS track_year,
+        tracks.genre AS track_genre,
+        tracks.duration AS track_duration,
+        tracks.codec AS track_codec,
+        tracks.sample_rate AS track_sample_rate,
+        tracks.bit_depth AS track_bit_depth,
+        tracks.bitrate AS track_bitrate,
+        tracks.cover_id AS track_cover_id,
+        tracks.metadata_status AS track_metadata_status,
+        tracks.embedded_metadata_status AS track_embedded_metadata_status,
+        tracks.embedded_cover_status AS track_embedded_cover_status,
+        tracks.network_metadata_status AS track_network_metadata_status,
+        tracks.field_sources_json AS track_field_sources_json,
+        tracks.missing AS track_missing,
+        albums.id AS album_id,
+        albums.album_key AS album_key,
+        albums.title AS album_title,
+        albums.album_artist AS album_artist,
+        albums.year AS album_year,
+        albums.track_count AS album_track_count,
+        albums.duration AS album_duration,
+        albums.cover_id AS album_cover_id
+       FROM playlist_items
+       LEFT JOIN tracks ON tracks.id = playlist_items.media_id
+       LEFT JOIN albums ON albums.id = playlist_items.media_id
+       WHERE ${whereSql}
+       ${this.likedItemsOrderSql(sort)}
+       LIMIT ? OFFSET ?`,
+      ...params,
+      pageSize,
+      offset,
+    );
+    const total = Number(totalRow?.total ?? 0);
+
+    return {
+      items: rows.map((row) => this.mapPlaylistItem(row)),
+      page,
+      pageSize,
+      total,
+      hasMore: offset + rows.length < total,
+    };
+  }
+
   private refreshPlaylistItemCount(playlistId: string, timestamp = nowIso()): void {
     this.run(
       `UPDATE playlists SET
@@ -2267,9 +2676,18 @@ export class LibraryStore {
         tracks.embedded_cover_status AS track_embedded_cover_status,
         tracks.network_metadata_status AS track_network_metadata_status,
         tracks.field_sources_json AS track_field_sources_json,
-        tracks.missing AS track_missing
+        tracks.missing AS track_missing,
+        albums.id AS album_id,
+        albums.album_key AS album_key,
+        albums.title AS album_title,
+        albums.album_artist AS album_artist,
+        albums.year AS album_year,
+        albums.track_count AS album_track_count,
+        albums.duration AS album_duration,
+        albums.cover_id AS album_cover_id
       FROM playlist_items
       LEFT JOIN tracks ON tracks.id = playlist_items.media_id
+      LEFT JOIN albums ON albums.id = playlist_items.media_id
       WHERE playlist_items.id = ?`,
       itemId,
     );
@@ -2277,6 +2695,7 @@ export class LibraryStore {
 
   private mapPlaylist(row: DbRow): LibraryPlaylist {
     const coverId = textOrNull(row.cover_id);
+    const displayCoverId = coverId ?? this.getPlaylistFallbackCoverId(String(row.id));
 
     return {
       id: String(row.id),
@@ -2286,7 +2705,7 @@ export class LibraryStore {
       sourceProvider: this.mapPlaylistSourceProvider(row.source_provider),
       sourcePlaylistId: textOrNull(row.source_playlist_id),
       coverId,
-      coverThumb: coverId ? this.toCoverUrl(coverId, 'album') : null,
+      coverThumb: displayCoverId ? this.toCoverUrl(displayCoverId, 'album') : null,
       sortMode: this.mapPlaylistSortMode(row.sort_mode),
       itemCount: Number(row.item_count ?? 0),
       createdAt: String(row.created_at),
@@ -2294,11 +2713,31 @@ export class LibraryStore {
     };
   }
 
+  private getPlaylistFallbackCoverId(playlistId: string): string | null {
+    const row = this.getRow(
+      `SELECT COALESCE(playlist_items.cover_id, tracks.cover_id, albums.cover_id) AS cover_id
+       FROM playlist_items
+       LEFT JOIN tracks ON tracks.id = playlist_items.media_id AND tracks.missing = 0
+       LEFT JOIN albums ON albums.id = playlist_items.media_id
+       WHERE playlist_items.playlist_id = ?
+         AND COALESCE(playlist_items.cover_id, tracks.cover_id, albums.cover_id) IS NOT NULL
+       ORDER BY playlist_items.position ASC, playlist_items.added_at ASC
+       LIMIT 1`,
+      playlistId,
+    );
+
+    return textOrNull(row?.cover_id);
+  }
+
   private mapPlaylistItem(row: DbRow): LibraryPlaylistItem {
-    const coverId = textOrNull(row.cover_id) ?? textOrNull(row.track_cover_id);
+    const coverId = textOrNull(row.cover_id) ?? textOrNull(row.track_cover_id) ?? textOrNull(row.album_cover_id);
     const trackMissing = Number(row.track_missing ?? 1) !== 0;
     const hasTrack = textOrNull(row.track_id) !== null && !trackMissing;
-    const unavailable = Number(row.unavailable ?? 0) !== 0 || (row.media_type === 'track' && (!hasTrack || !textOrNull(row.media_id)));
+    const hasAlbum = textOrNull(row.album_id) !== null;
+    const unavailable =
+      Number(row.unavailable ?? 0) !== 0 ||
+      (row.media_type === 'track' && (!hasTrack || !textOrNull(row.media_id))) ||
+      (row.media_type === 'album' && (!hasAlbum || !textOrNull(row.media_id)));
 
     return {
       id: String(row.id),
@@ -2342,6 +2781,18 @@ export class LibraryStore {
             field_sources_json: row.track_field_sources_json,
           })
         : null,
+      album: hasAlbum
+        ? this.mapAlbum({
+            id: row.album_id,
+            album_key: row.album_key,
+            title: row.album_title,
+            album_artist: row.album_artist,
+            year: row.album_year,
+            track_count: row.album_track_count,
+            duration: row.album_duration,
+            cover_id: row.album_cover_id,
+          })
+        : null,
     };
   }
 
@@ -2358,7 +2809,7 @@ export class LibraryStore {
   }
 
   private mapPlaylistMediaType(value: unknown): LibraryPlaylistItem['mediaType'] {
-    return value === 'stream_track' || value === 'remote_file' ? value : 'track';
+    return value === 'album' || value === 'stream_track' || value === 'remote_file' ? value : 'track';
   }
 
   private getAverageAlbumPayloadBytes(): number | null {
@@ -2426,6 +2877,25 @@ export class LibraryStore {
       case 'title':
       default:
         return 'ORDER BY tracks.title COLLATE NOCASE, tracks.artist COLLATE NOCASE';
+    }
+  }
+
+  private likedItemsOrderSql(sort: string): string {
+    switch (sort) {
+      case 'recent':
+        return 'ORDER BY playlist_items.added_at DESC, playlist_items.position ASC';
+      case 'titleDesc':
+        return "ORDER BY COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE DESC";
+      case 'titleAsc':
+      case 'title':
+        return "ORDER BY COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE ASC";
+      case 'artist':
+        return "ORDER BY COALESCE(playlist_items.artist_snapshot, tracks.artist, albums.album_artist, '') COLLATE NOCASE ASC";
+      case 'album':
+        return "ORDER BY COALESCE(playlist_items.album_snapshot, tracks.album, albums.title, '') COLLATE NOCASE ASC";
+      case 'default':
+      default:
+        return 'ORDER BY playlist_items.position ASC, playlist_items.added_at ASC';
     }
   }
 

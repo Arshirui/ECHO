@@ -35,7 +35,7 @@
   grid-template-columns: minmax(260px, 360px) minmax(360px, 1fr) minmax(220px, 300px);
   align-items: center;
   gap: clamp(38px, 5.5vw, 76px);
-  width: 100%;
+  width: min(100%, 1760px);
   min-height: 328px;
   padding: 8px 0 22px;
 }
@@ -204,7 +204,7 @@
 .album-detail-track-console {
   display: grid;
   gap: 22px;
-  width: 100%;
+  width: min(100%, 1760px);
   padding-top: 4px;
   border-top: 1px solid rgba(37, 62, 92, 0.08);
 }
@@ -289,7 +289,7 @@
 .album-track-header,
 .album-track-row {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) minmax(230px, 0.34fr) 68px;
+  grid-template-columns: 46px minmax(0, 1fr) minmax(230px, 0.34fr) 68px 34px;
   align-items: center;
   gap: 18px;
 }
@@ -404,6 +404,11 @@
   text-align: right;
 }
 
+.album-track-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .album-load-more {
   width: fit-content;
   min-height: 34px;
@@ -477,7 +482,7 @@
 
   .album-track-header,
   .album-track-row {
-    grid-template-columns: 38px minmax(0, 1fr) 56px;
+    grid-template-columns: 38px minmax(0, 1fr) 56px 34px;
     gap: 12px;
   }
 

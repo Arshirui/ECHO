@@ -261,6 +261,11 @@ export const ArtistTrackList = ({
           case 'add-to-queue':
             onAppendToQueue(track);
             return;
+          case 'toggle-liked':
+            await library?.toggleTrackLiked(track.id);
+            window.dispatchEvent(new Event('liked:tracks-changed'));
+            window.dispatchEvent(new Event('liked:changed'));
+            return;
           case 'remove-from-queue':
             {
               const queuedItem = queueItems.find((item) => item.track.id === track.id);

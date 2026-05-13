@@ -15,6 +15,61 @@ export type TranslationKey =
   | 'app.window.minimize'
   | 'app.window.maximize'
   | 'app.window.close'
+  | 'audioDrawer.action.close'
+  | 'audioDrawer.action.hideDevice'
+  | 'audioDrawer.action.restore'
+  | 'audioDrawer.badge.bitPerfectReady'
+  | 'audioDrawer.badge.dspActive'
+  | 'audioDrawer.badge.resampling'
+  | 'audioDrawer.badge.speedUp'
+  | 'audioDrawer.device.asioDriver'
+  | 'audioDrawer.device.lowLatency'
+  | 'audioDrawer.device.selected'
+  | 'audioDrawer.device.systemAudio'
+  | 'audioDrawer.device.systemDefault'
+  | 'audioDrawer.device.systemDefaultOutput'
+  | 'audioDrawer.device.systemOutput'
+  | 'audioDrawer.device.systemSelectedRoute'
+  | 'audioDrawer.empty.asioDevices'
+  | 'audioDrawer.empty.hiddenDevices'
+  | 'audioDrawer.empty.systemDevices'
+  | 'audioDrawer.error.desktopBridgeUnavailable'
+  | 'audioDrawer.meter.direct'
+  | 'audioDrawer.meter.mode'
+  | 'audioDrawer.meter.output'
+  | 'audioDrawer.meter.rate'
+  | 'audioDrawer.meter.resample'
+  | 'audioDrawer.meter.source'
+  | 'audioDrawer.mode.exclusive'
+  | 'audioDrawer.mode.exclusiveCandidate'
+  | 'audioDrawer.mode.shared'
+  | 'audioDrawer.note.asio'
+  | 'audioDrawer.option.rememberOutput'
+  | 'audioDrawer.option.rememberOutputDescription'
+  | 'audioDrawer.option.wasapiExclusive'
+  | 'audioDrawer.option.wasapiExclusiveDescription'
+  | 'audioDrawer.section.advancedOutput'
+  | 'audioDrawer.section.asioDevices'
+  | 'audioDrawer.section.currentOutput'
+  | 'audioDrawer.section.hiddenDevices'
+  | 'audioDrawer.section.systemDevices'
+  | 'audioDrawer.signal.balanceDsp'
+  | 'audioDrawer.signal.bitPerfect'
+  | 'audioDrawer.signal.dspOn'
+  | 'audioDrawer.signal.eqOff'
+  | 'audioDrawer.signal.eqOn'
+  | 'audioDrawer.signal.nativeRate'
+  | 'audioDrawer.signal.noActiveSource'
+  | 'audioDrawer.signal.pending'
+  | 'audioDrawer.signal.processed'
+  | 'audioDrawer.signal.sharedMixer'
+  | 'audioDrawer.signal.standardPath'
+  | 'audioDrawer.status.noTrack'
+  | 'audioDrawer.status.ratePending'
+  | 'audioDrawer.status.sampleRatePending'
+  | 'audioDrawer.title'
+  | 'audioDrawer.todo.outputControls'
+  | 'audioDrawer.todo.outputControlsDescription'
   | 'common.available'
   | 'common.build'
   | 'common.checking'
@@ -27,6 +82,91 @@ export type TranslationKey =
   | 'common.ready'
   | 'common.unavailable'
   | 'common.yes'
+  | 'folders.action.addScan'
+  | 'folders.action.browse'
+  | 'folders.action.cancel'
+  | 'folders.action.open'
+  | 'folders.action.play'
+  | 'folders.action.queue'
+  | 'folders.action.random'
+  | 'folders.action.refresh'
+  | 'folders.action.remove'
+  | 'folders.action.scan'
+  | 'folders.confirm.deleteTrack'
+  | 'folders.confirm.removeRoot'
+  | 'folders.count.tracks'
+  | 'folders.detail.importHint'
+  | 'folders.detail.libraryFolders'
+  | 'folders.detail.root'
+  | 'folders.detail.selectFolder'
+  | 'folders.detail.subfolder'
+  | 'folders.duration.hours'
+  | 'folders.duration.hoursMinutes'
+  | 'folders.duration.minutes'
+  | 'folders.empty.noScan'
+  | 'folders.empty.roots'
+  | 'folders.error.actionFailed'
+  | 'folders.error.desktopEditTags'
+  | 'folders.error.desktopFileActions'
+  | 'folders.error.desktopImport'
+  | 'folders.error.desktopManage'
+  | 'folders.error.noCoverSaved'
+  | 'folders.error.noCoverToCopy'
+  | 'folders.error.notFolder'
+  | 'folders.error.pathMissing'
+  | 'folders.error.permission'
+  | 'folders.error.trackActionUnavailable'
+  | 'folders.filters.includeSubfolders'
+  | 'folders.filters.label'
+  | 'folders.filters.searchPlaceholder'
+  | 'folders.message.addedToPlaylist'
+  | 'folders.message.alreadyScanning'
+  | 'folders.message.folderAddedScanStarted'
+  | 'folders.message.folderRemoved'
+  | 'folders.message.loadedPartial'
+  | 'folders.message.loadedTracks'
+  | 'folders.message.noPlayableTracks'
+  | 'folders.message.queuedTracks'
+  | 'folders.message.scanCancelled'
+  | 'folders.message.scanStarted'
+  | 'folders.metrics.duration'
+  | 'folders.metrics.label'
+  | 'folders.metrics.size'
+  | 'folders.metrics.subfolders'
+  | 'folders.metrics.tracks'
+  | 'folders.panel.addFolder'
+  | 'folders.panel.import'
+  | 'folders.panel.manage'
+  | 'folders.panel.scan'
+  | 'folders.panel.selectedRoot'
+  | 'folders.panel.status'
+  | 'folders.phase.checkingCache'
+  | 'folders.phase.discovering'
+  | 'folders.phase.extractingCovers'
+  | 'folders.phase.finished'
+  | 'folders.phase.groupingAlbums'
+  | 'folders.phase.readingMetadata'
+  | 'folders.phase.writingDatabase'
+  | 'folders.prompt.choosePlaylist'
+  | 'folders.prompt.createPlaylist'
+  | 'folders.queueSource.recursive'
+  | 'folders.scan.progress'
+  | 'folders.sidebar.kicker'
+  | 'folders.sidebar.title'
+  | 'folders.sort.album'
+  | 'folders.sort.artist'
+  | 'folders.sort.duration'
+  | 'folders.sort.quality'
+  | 'folders.sort.random'
+  | 'folders.sort.recent'
+  | 'folders.sort.title'
+  | 'folders.status.cancelled'
+  | 'folders.status.completed'
+  | 'folders.status.failed'
+  | 'folders.status.queued'
+  | 'folders.status.running'
+  | 'folders.statusLine.loadingTracks'
+  | 'folders.statusLine.preparingQueue'
   | 'notice.browserFolderPicker'
   | 'notice.browserFilePicker'
   | 'notice.windowControlsDesktop'
@@ -34,6 +174,8 @@ export type TranslationKey =
   | 'queue.action.dragLabel'
   | 'queue.action.dragTitle'
   | 'queue.action.generateRandom'
+  | 'queue.action.generateFromHistory'
+  | 'queue.action.generatingHistory'
   | 'queue.action.generatingRandom'
   | 'queue.action.like'
   | 'queue.action.more'
@@ -46,9 +188,11 @@ export type TranslationKey =
   | 'queue.empty.description'
   | 'queue.empty.title'
   | 'queue.error.desktopBridge'
+  | 'queue.error.noHistoryTracks'
   | 'queue.error.noRandomTracks'
   | 'queue.header.kicker'
   | 'queue.header.title'
+  | 'queue.historySource'
   | 'queue.now.actions'
   | 'queue.now.emptyDescription'
   | 'queue.now.emptyTitle'
@@ -247,6 +391,61 @@ const zhCN: TranslationMap = {
   'app.window.minimize': '最小化',
   'app.window.maximize': '最大化',
   'app.window.close': '关闭',
+  'audioDrawer.action.close': '关闭音频设置',
+  'audioDrawer.action.hideDevice': '隐藏设备',
+  'audioDrawer.action.restore': '恢复',
+  'audioDrawer.badge.bitPerfectReady': 'Bit-perfect ready',
+  'audioDrawer.badge.dspActive': 'DSP active',
+  'audioDrawer.badge.resampling': 'Resampling',
+  'audioDrawer.badge.speedUp': 'Speed Up',
+  'audioDrawer.device.asioDriver': 'ASIO 驱动',
+  'audioDrawer.device.lowLatency': '低延迟',
+  'audioDrawer.device.selected': '已选择',
+  'audioDrawer.device.systemAudio': '系统音频',
+  'audioDrawer.device.systemDefault': '系统默认',
+  'audioDrawer.device.systemDefaultOutput': '系统默认输出',
+  'audioDrawer.device.systemOutput': '系统输出',
+  'audioDrawer.device.systemSelectedRoute': '系统选择的路径',
+  'audioDrawer.empty.asioDevices': '没有找到 ASIO 输出设备。',
+  'audioDrawer.empty.hiddenDevices': '没有隐藏设备。',
+  'audioDrawer.empty.systemDevices': '没有找到系统输出设备。',
+  'audioDrawer.error.desktopBridgeUnavailable': '桌面桥接不可用',
+  'audioDrawer.meter.direct': '直通',
+  'audioDrawer.meter.mode': '模式',
+  'audioDrawer.meter.output': '输出',
+  'audioDrawer.meter.rate': '采样率',
+  'audioDrawer.meter.resample': '重采样',
+  'audioDrawer.meter.source': '音源',
+  'audioDrawer.mode.exclusive': '独占',
+  'audioDrawer.mode.exclusiveCandidate': '独占候选',
+  'audioDrawer.mode.shared': '共享',
+  'audioDrawer.note.asio': '低延迟专业音频接口，需要驱动支持。',
+  'audioDrawer.option.rememberOutput': '记住输出设备',
+  'audioDrawer.option.rememberOutputDescription': '下次启动时恢复所选输出设备和模式。',
+  'audioDrawer.option.wasapiExclusive': 'WASAPI 独占模式',
+  'audioDrawer.option.wasapiExclusiveDescription': '共享是日常 Windows 输出路径。独占会请求同一设备但绕过共享混音器。',
+  'audioDrawer.section.advancedOutput': '高级输出',
+  'audioDrawer.section.asioDevices': 'ASIO 输出设备',
+  'audioDrawer.section.currentOutput': '当前输出',
+  'audioDrawer.section.hiddenDevices': '隐藏设备',
+  'audioDrawer.section.systemDevices': '系统输出设备',
+  'audioDrawer.signal.balanceDsp': 'Balance DSP',
+  'audioDrawer.signal.bitPerfect': 'Bit-perfect',
+  'audioDrawer.signal.dspOn': 'DSP On',
+  'audioDrawer.signal.eqOff': 'EQ Off',
+  'audioDrawer.signal.eqOn': 'EQ On',
+  'audioDrawer.signal.nativeRate': '原生采样率',
+  'audioDrawer.signal.noActiveSource': '没有活跃音源',
+  'audioDrawer.signal.pending': '等待中',
+  'audioDrawer.signal.processed': '已处理',
+  'audioDrawer.signal.sharedMixer': '共享混音器',
+  'audioDrawer.signal.standardPath': '标准路径',
+  'audioDrawer.status.noTrack': '没有曲目',
+  'audioDrawer.status.ratePending': '采样率待定',
+  'audioDrawer.status.sampleRatePending': '采样率待定',
+  'audioDrawer.title': '音频设置',
+  'audioDrawer.todo.outputControls': '目标采样率和缓冲控制',
+  'audioDrawer.todo.outputControlsDescription': 'TODO：等 DeviceService 暴露安全控制后接入真实音频设置。',
   'common.available': '可用',
   'common.build': '构建版',
   'common.checking': '检查中',
@@ -259,13 +458,100 @@ const zhCN: TranslationMap = {
   'common.ready': '就绪',
   'common.unavailable': '暂不可用',
   'common.yes': '是',
+  'folders.action.addScan': '添加并扫描',
+  'folders.action.browse': '浏览',
+  'folders.action.cancel': '取消',
+  'folders.action.open': '打开',
+  'folders.action.play': '播放',
+  'folders.action.queue': '加入队列',
+  'folders.action.random': '随机',
+  'folders.action.refresh': '刷新文件夹',
+  'folders.action.remove': '移除',
+  'folders.action.scan': '扫描',
+  'folders.confirm.deleteTrack': '删除这个音乐文件？\n{title}',
+  'folders.confirm.removeRoot': '从曲库索引中移除“{name}”？音乐文件会保留在磁盘上。',
+  'folders.count.tracks': '{count} 首',
+  'folders.detail.importHint': '导入音乐文件夹后，可以按路径浏览曲库。',
+  'folders.detail.libraryFolders': '曲库文件夹',
+  'folders.detail.root': '根目录',
+  'folders.detail.selectFolder': '选择文件夹',
+  'folders.detail.subfolder': '子文件夹',
+  'folders.duration.hours': '{count} 小时',
+  'folders.duration.hoursMinutes': '{hours} 小时 {minutes} 分钟',
+  'folders.duration.minutes': '{count} 分钟',
+  'folders.empty.noScan': '这个根目录还没有运行过扫描。',
+  'folders.empty.roots': '还没有曲库文件夹。',
+  'folders.error.actionFailed': '文件夹操作失败。',
+  'folders.error.desktopEditTags': '桌面桥接不可用。请在 ECHO Next 桌面端编辑内嵌标签。',
+  'folders.error.desktopFileActions': '桌面桥接不可用。请在 ECHO Next 桌面端使用文件操作。',
+  'folders.error.desktopImport': '桌面桥接不可用。请在 ECHO Next 桌面端导入文件夹。',
+  'folders.error.desktopManage': '桌面桥接不可用。请在 ECHO Next 桌面端管理文件夹。',
+  'folders.error.noCoverSaved': '没有保存任何封面。',
+  'folders.error.noCoverToCopy': '这首歌没有可复制的封面。',
+  'folders.error.notFolder': '选择的路径不是文件夹。',
+  'folders.error.pathMissing': '文件夹路径不存在。',
+  'folders.error.permission': 'ECHO 没有权限访问这个文件夹。',
+  'folders.error.trackActionUnavailable': '这个歌曲操作暂不可用。',
+  'folders.filters.includeSubfolders': '包含子文件夹',
+  'folders.filters.label': '文件夹歌曲筛选',
+  'folders.filters.searchPlaceholder': '搜索此文件夹...',
+  'folders.message.addedToPlaylist': '已添加到歌单：{name}',
+  'folders.message.alreadyScanning': '这个曲库根目录正在扫描。',
+  'folders.message.folderAddedScanStarted': '文件夹已添加，扫描已在后台开始。',
+  'folders.message.folderRemoved': '文件夹已从曲库索引中移除。',
+  'folders.message.loadedPartial': '已载入前 {loaded} / {total} 首，避免占用过多内存。',
+  'folders.message.loadedTracks': '已载入 {count} 首。',
+  'folders.message.noPlayableTracks': '这个文件夹里没有可播放歌曲。',
+  'folders.message.queuedTracks': '已加入队列 {count} 首。',
+  'folders.message.scanCancelled': '扫描已取消。',
+  'folders.message.scanStarted': '扫描已开始。',
+  'folders.metrics.duration': '时长',
+  'folders.metrics.label': '文件夹指标',
+  'folders.metrics.size': '大小',
+  'folders.metrics.subfolders': '子文件夹',
+  'folders.metrics.tracks': '歌曲',
+  'folders.panel.addFolder': '添加文件夹',
+  'folders.panel.import': '导入',
+  'folders.panel.manage': '管理',
+  'folders.panel.scan': '扫描',
+  'folders.panel.selectedRoot': '已选根目录',
+  'folders.panel.status': '状态',
+  'folders.phase.checkingCache': '检查缓存',
+  'folders.phase.discovering': '查找文件',
+  'folders.phase.extractingCovers': '提取封面',
+  'folders.phase.finished': '已完成',
+  'folders.phase.groupingAlbums': '整理专辑',
+  'folders.phase.readingMetadata': '读取标签',
+  'folders.phase.writingDatabase': '写入数据库',
+  'folders.prompt.choosePlaylist': '选择歌单编号：\n{names}',
+  'folders.prompt.createPlaylist': '还没有歌单。输入名称来创建一个：',
+  'folders.queueSource.recursive': '{name} 文件夹',
+  'folders.scan.progress': '{processed}/{total} 个文件，{errors} 个错误',
+  'folders.sidebar.kicker': '曲库',
+  'folders.sidebar.title': '文件夹',
+  'folders.sort.album': '专辑',
+  'folders.sort.artist': '艺术家',
+  'folders.sort.duration': '时长',
+  'folders.sort.quality': '音质',
+  'folders.sort.random': '随机',
+  'folders.sort.recent': '最近更新',
+  'folders.sort.title': '标题',
+  'folders.status.cancelled': '已取消',
+  'folders.status.completed': '完成',
+  'folders.status.failed': '失败',
+  'folders.status.queued': '排队中',
+  'folders.status.running': '扫描中',
+  'folders.statusLine.loadingTracks': '正在读取文件夹歌曲...',
+  'folders.statusLine.preparingQueue': '正在准备文件夹队列...',
   'notice.browserFolderPicker': '浏览器预览已打开文件夹选择器。真实曲库导入需要使用 Electron 桌面应用。',
   'notice.browserFilePicker': '浏览器预览已选择 {name}。请在 ECHO Next 桌面端通过 Audio Core 播放。',
   'notice.windowControlsDesktop': '窗口控制只在 Electron 桌面窗口中可用。',
   'queue.action.clear': '清空队列',
   'queue.action.dragLabel': '拖拽 {title}',
   'queue.action.dragTitle': '拖拽排序',
+  'queue.action.generateFromHistory': '按历史生成队列',
   'queue.action.generateRandom': '生成随机队列',
+  'queue.action.generatingHistory': '生成中',
   'queue.action.generatingRandom': '生成中',
   'queue.action.like': '喜欢',
   'queue.action.more': '更多',
@@ -278,9 +564,11 @@ const zhCN: TranslationMap = {
   'queue.empty.description': '播放歌曲、加入队列或选择下一首播放后，这里会出现队列内容。',
   'queue.empty.title': '还没有接下来播放的歌曲',
   'queue.error.desktopBridge': '桌面桥接不可用。请在 ECHO Next 桌面端读取曲库。',
+  'queue.error.noHistoryTracks': '还没有可用于生成队列的播放历史。',
   'queue.error.noRandomTracks': '曲库里还没有可加入随机队列的歌曲。',
   'queue.header.kicker': '播放队列',
   'queue.header.title': '队列',
+  'queue.historySource': '历史常听',
   'queue.now.actions': '当前曲目操作',
   'queue.now.emptyDescription': '从歌曲或专辑开始播放后，这里会显示当前曲目。',
   'queue.now.emptyTitle': '还没有正在播放的歌曲',
@@ -472,6 +760,137 @@ const zhCN: TranslationMap = {
 
 const zhTW: TranslationMap = {
   ...zhCN,
+  'audioDrawer.action.close': '關閉音訊設定',
+  'audioDrawer.action.hideDevice': '隱藏裝置',
+  'audioDrawer.action.restore': '復原',
+  'audioDrawer.device.asioDriver': 'ASIO 驅動',
+  'audioDrawer.device.lowLatency': '低延遲',
+  'audioDrawer.device.selected': '已選取',
+  'audioDrawer.device.systemAudio': '系統音訊',
+  'audioDrawer.device.systemDefault': '系統預設',
+  'audioDrawer.device.systemDefaultOutput': '系統預設輸出',
+  'audioDrawer.device.systemOutput': '系統輸出',
+  'audioDrawer.device.systemSelectedRoute': '系統選取路徑',
+  'audioDrawer.empty.asioDevices': '找不到 ASIO 輸出裝置。',
+  'audioDrawer.empty.hiddenDevices': '沒有隱藏裝置。',
+  'audioDrawer.empty.systemDevices': '找不到系統輸出裝置。',
+  'audioDrawer.error.desktopBridgeUnavailable': '桌面橋接不可用',
+  'audioDrawer.meter.direct': '直通',
+  'audioDrawer.meter.mode': '模式',
+  'audioDrawer.meter.output': '輸出',
+  'audioDrawer.meter.rate': '取樣率',
+  'audioDrawer.meter.resample': '重取樣',
+  'audioDrawer.meter.source': '音源',
+  'audioDrawer.mode.exclusive': '獨佔',
+  'audioDrawer.mode.exclusiveCandidate': '獨佔候選',
+  'audioDrawer.mode.shared': '共享',
+  'audioDrawer.note.asio': '低延遲專業音訊介面，需要驅動支援。',
+  'audioDrawer.option.rememberOutput': '記住輸出裝置',
+  'audioDrawer.option.rememberOutputDescription': '下次啟動時復原所選輸出裝置與模式。',
+  'audioDrawer.option.wasapiExclusive': 'WASAPI 獨佔模式',
+  'audioDrawer.option.wasapiExclusiveDescription': '共享是日常 Windows 輸出路徑。獨佔會要求同一裝置但略過共享混音器。',
+  'audioDrawer.section.advancedOutput': '進階輸出',
+  'audioDrawer.section.asioDevices': 'ASIO 輸出裝置',
+  'audioDrawer.section.currentOutput': '目前輸出',
+  'audioDrawer.section.hiddenDevices': '隱藏裝置',
+  'audioDrawer.section.systemDevices': '系統輸出裝置',
+  'audioDrawer.signal.nativeRate': '原生取樣率',
+  'audioDrawer.signal.noActiveSource': '沒有作用中的音源',
+  'audioDrawer.signal.pending': '等待中',
+  'audioDrawer.signal.processed': '已處理',
+  'audioDrawer.signal.sharedMixer': '共享混音器',
+  'audioDrawer.signal.standardPath': '標準路徑',
+  'audioDrawer.status.noTrack': '沒有曲目',
+  'audioDrawer.status.ratePending': '取樣率待定',
+  'audioDrawer.status.sampleRatePending': '取樣率待定',
+  'audioDrawer.title': '音訊設定',
+  'audioDrawer.todo.outputControls': '目標取樣率與緩衝控制',
+  'audioDrawer.todo.outputControlsDescription': 'TODO：等 DeviceService 暴露安全控制後接入真實音訊設定。',
+  'folders.action.addScan': '加入並掃描',
+  'folders.action.browse': '瀏覽',
+  'folders.action.cancel': '取消',
+  'folders.action.open': '打開',
+  'folders.action.play': '播放',
+  'folders.action.queue': '加入佇列',
+  'folders.action.random': '隨機',
+  'folders.action.refresh': '重新整理資料夾',
+  'folders.action.remove': '移除',
+  'folders.action.scan': '掃描',
+  'folders.confirm.deleteTrack': '刪除這個音樂檔？\n{title}',
+  'folders.confirm.removeRoot': '從曲庫索引中移除「{name}」？音樂檔會保留在磁碟上。',
+  'folders.count.tracks': '{count} 首',
+  'folders.detail.importHint': '匯入音樂資料夾後，可以依路徑瀏覽曲庫。',
+  'folders.detail.libraryFolders': '曲庫資料夾',
+  'folders.detail.root': '根目錄',
+  'folders.detail.selectFolder': '選擇資料夾',
+  'folders.detail.subfolder': '子資料夾',
+  'folders.duration.hours': '{count} 小時',
+  'folders.duration.hoursMinutes': '{hours} 小時 {minutes} 分鐘',
+  'folders.duration.minutes': '{count} 分鐘',
+  'folders.empty.noScan': '這個根目錄還沒有執行過掃描。',
+  'folders.empty.roots': '還沒有曲庫資料夾。',
+  'folders.error.actionFailed': '資料夾操作失敗。',
+  'folders.error.desktopEditTags': '桌面橋接不可用。請在 ECHO Next 桌面端編輯內嵌標籤。',
+  'folders.error.desktopFileActions': '桌面橋接不可用。請在 ECHO Next 桌面端使用檔案操作。',
+  'folders.error.desktopImport': '桌面橋接不可用。請在 ECHO Next 桌面端匯入資料夾。',
+  'folders.error.desktopManage': '桌面橋接不可用。請在 ECHO Next 桌面端管理資料夾。',
+  'folders.error.noCoverSaved': '沒有儲存任何封面。',
+  'folders.error.noCoverToCopy': '這首歌沒有可複製的封面。',
+  'folders.error.notFolder': '選取的路徑不是資料夾。',
+  'folders.error.pathMissing': '資料夾路徑不存在。',
+  'folders.error.permission': 'ECHO 沒有權限存取這個資料夾。',
+  'folders.error.trackActionUnavailable': '這個歌曲操作暫不可用。',
+  'folders.filters.includeSubfolders': '包含子資料夾',
+  'folders.filters.label': '資料夾歌曲篩選',
+  'folders.filters.searchPlaceholder': '搜尋此資料夾...',
+  'folders.message.addedToPlaylist': '已加入播放清單：{name}',
+  'folders.message.alreadyScanning': '這個曲庫根目錄正在掃描。',
+  'folders.message.folderAddedScanStarted': '資料夾已加入，掃描已在背景開始。',
+  'folders.message.folderRemoved': '資料夾已從曲庫索引中移除。',
+  'folders.message.loadedPartial': '已載入前 {loaded} / {total} 首，避免佔用過多記憶體。',
+  'folders.message.loadedTracks': '已載入 {count} 首。',
+  'folders.message.noPlayableTracks': '這個資料夾裡沒有可播放歌曲。',
+  'folders.message.queuedTracks': '已加入佇列 {count} 首。',
+  'folders.message.scanCancelled': '掃描已取消。',
+  'folders.message.scanStarted': '掃描已開始。',
+  'folders.metrics.duration': '長度',
+  'folders.metrics.label': '資料夾指標',
+  'folders.metrics.size': '大小',
+  'folders.metrics.subfolders': '子資料夾',
+  'folders.metrics.tracks': '歌曲',
+  'folders.panel.addFolder': '加入資料夾',
+  'folders.panel.import': '匯入',
+  'folders.panel.manage': '管理',
+  'folders.panel.scan': '掃描',
+  'folders.panel.selectedRoot': '已選根目錄',
+  'folders.panel.status': '狀態',
+  'folders.phase.checkingCache': '檢查快取',
+  'folders.phase.discovering': '尋找檔案',
+  'folders.phase.extractingCovers': '擷取封面',
+  'folders.phase.finished': '已完成',
+  'folders.phase.groupingAlbums': '整理專輯',
+  'folders.phase.readingMetadata': '讀取標籤',
+  'folders.phase.writingDatabase': '寫入資料庫',
+  'folders.prompt.choosePlaylist': '選擇播放清單編號：\n{names}',
+  'folders.prompt.createPlaylist': '還沒有播放清單。輸入名稱來建立一個：',
+  'folders.queueSource.recursive': '{name} 資料夾',
+  'folders.scan.progress': '{processed}/{total} 個檔案，{errors} 個錯誤',
+  'folders.sidebar.kicker': '曲庫',
+  'folders.sidebar.title': '資料夾',
+  'folders.sort.album': '專輯',
+  'folders.sort.artist': '演出者',
+  'folders.sort.duration': '長度',
+  'folders.sort.quality': '音質',
+  'folders.sort.random': '隨機',
+  'folders.sort.recent': '最近更新',
+  'folders.sort.title': '標題',
+  'folders.status.cancelled': '已取消',
+  'folders.status.completed': '完成',
+  'folders.status.failed': '失敗',
+  'folders.status.queued': '排隊中',
+  'folders.status.running': '掃描中',
+  'folders.statusLine.loadingTracks': '正在讀取資料夾歌曲...',
+  'folders.statusLine.preparingQueue': '正在準備資料夾佇列...',
   'route.albums.label': '專輯',
   'route.artists.label': '演出者',
   'route.audioSettings.label': '音訊設定',
@@ -489,7 +908,9 @@ const zhTW: TranslationMap = {
   'queue.action.clear': '清空佇列',
   'queue.action.dragLabel': '拖曳 {title}',
   'queue.action.dragTitle': '拖曳排序',
+  'queue.action.generateFromHistory': '依播放歷史產生佇列',
   'queue.action.generateRandom': '產生隨機佇列',
+  'queue.action.generatingHistory': '產生中',
   'queue.action.generatingRandom': '產生中',
   'queue.action.like': '喜歡',
   'queue.action.more': '更多',
@@ -502,9 +923,11 @@ const zhTW: TranslationMap = {
   'queue.empty.description': '播放歌曲、加入佇列或選擇下一首播放後，這裡會出現佇列內容。',
   'queue.empty.title': '還沒有接下來播放的歌曲',
   'queue.error.desktopBridge': '桌面橋接不可用。請在 ECHO Next 桌面端讀取曲庫。',
+  'queue.error.noHistoryTracks': '還沒有可用來產生佇列的播放歷史。',
   'queue.error.noRandomTracks': '曲庫裡還沒有可加入隨機佇列的歌曲。',
   'queue.header.kicker': '播放佇列',
   'queue.header.title': '佇列',
+  'queue.historySource': '歷史常聽',
   'queue.now.actions': '目前曲目操作',
   'queue.now.emptyDescription': '從歌曲或專輯開始播放後，這裡會顯示目前曲目。',
   'queue.now.emptyTitle': '還沒有正在播放的歌曲',
@@ -605,6 +1028,137 @@ const jaJP: TranslationMap = {
   'app.window.minimize': '最小化',
   'app.window.maximize': '最大化',
   'app.window.close': '閉じる',
+  'audioDrawer.action.close': '音声設定を閉じる',
+  'audioDrawer.action.hideDevice': 'デバイスを非表示',
+  'audioDrawer.action.restore': '戻す',
+  'audioDrawer.device.asioDriver': 'ASIO ドライバー',
+  'audioDrawer.device.lowLatency': '低遅延',
+  'audioDrawer.device.selected': '選択中',
+  'audioDrawer.device.systemAudio': 'システム音声',
+  'audioDrawer.device.systemDefault': 'システム既定',
+  'audioDrawer.device.systemDefaultOutput': 'システム既定出力',
+  'audioDrawer.device.systemOutput': 'システム出力',
+  'audioDrawer.device.systemSelectedRoute': 'システム選択ルート',
+  'audioDrawer.empty.asioDevices': 'ASIO 出力デバイスが見つかりません。',
+  'audioDrawer.empty.hiddenDevices': '非表示デバイスはありません。',
+  'audioDrawer.empty.systemDevices': 'システム出力デバイスが見つかりません。',
+  'audioDrawer.error.desktopBridgeUnavailable': 'デスクトップブリッジを利用できません',
+  'audioDrawer.meter.direct': 'ダイレクト',
+  'audioDrawer.meter.mode': 'モード',
+  'audioDrawer.meter.output': '出力',
+  'audioDrawer.meter.rate': 'レート',
+  'audioDrawer.meter.resample': 'リサンプル',
+  'audioDrawer.meter.source': 'ソース',
+  'audioDrawer.mode.exclusive': '排他',
+  'audioDrawer.mode.exclusiveCandidate': '排他候補',
+  'audioDrawer.mode.shared': '共有',
+  'audioDrawer.note.asio': '低遅延のプロ向け音声インターフェイスです。ドライバー対応が必要です。',
+  'audioDrawer.option.rememberOutput': '出力デバイスを記憶',
+  'audioDrawer.option.rememberOutputDescription': '次回起動時に選択した出力デバイスとモードを復元します。',
+  'audioDrawer.option.wasapiExclusive': 'WASAPI 排他モード',
+  'audioDrawer.option.wasapiExclusiveDescription': '共有は通常の Windows 出力経路です。排他は共有ミキサーを通さず同じデバイスを要求します。',
+  'audioDrawer.section.advancedOutput': '詳細出力',
+  'audioDrawer.section.asioDevices': 'ASIO 出力デバイス',
+  'audioDrawer.section.currentOutput': '現在の出力',
+  'audioDrawer.section.hiddenDevices': '非表示デバイス',
+  'audioDrawer.section.systemDevices': 'システム出力デバイス',
+  'audioDrawer.signal.nativeRate': 'ネイティブレート',
+  'audioDrawer.signal.noActiveSource': 'アクティブなソースなし',
+  'audioDrawer.signal.pending': '保留中',
+  'audioDrawer.signal.processed': '処理済み',
+  'audioDrawer.signal.sharedMixer': '共有ミキサー',
+  'audioDrawer.signal.standardPath': '標準経路',
+  'audioDrawer.status.noTrack': '曲なし',
+  'audioDrawer.status.ratePending': 'レート未確定',
+  'audioDrawer.status.sampleRatePending': 'サンプルレート未確定',
+  'audioDrawer.title': '音声設定',
+  'audioDrawer.todo.outputControls': 'ターゲットレートとバッファー制御',
+  'audioDrawer.todo.outputControlsDescription': 'TODO: DeviceService が安全な制御を公開したら実際の音声設定に接続します。',
+  'folders.action.addScan': '追加してスキャン',
+  'folders.action.browse': '参照',
+  'folders.action.cancel': 'キャンセル',
+  'folders.action.open': '開く',
+  'folders.action.play': '再生',
+  'folders.action.queue': 'キューに追加',
+  'folders.action.random': 'ランダム',
+  'folders.action.refresh': 'フォルダーを更新',
+  'folders.action.remove': '削除',
+  'folders.action.scan': 'スキャン',
+  'folders.confirm.deleteTrack': 'この音楽ファイルを削除しますか？\n{title}',
+  'folders.confirm.removeRoot': '「{name}」をライブラリインデックスから削除しますか？音楽ファイルはディスク上に残ります。',
+  'folders.count.tracks': '{count} 曲',
+  'folders.detail.importHint': '音楽フォルダーを取り込むと、パス別にライブラリを閲覧できます。',
+  'folders.detail.libraryFolders': 'ライブラリフォルダー',
+  'folders.detail.root': 'ルート',
+  'folders.detail.selectFolder': 'フォルダーを選択',
+  'folders.detail.subfolder': 'サブフォルダー',
+  'folders.duration.hours': '{count} 時間',
+  'folders.duration.hoursMinutes': '{hours} 時間 {minutes} 分',
+  'folders.duration.minutes': '{count} 分',
+  'folders.empty.noScan': 'このルートではまだスキャンが実行されていません。',
+  'folders.empty.roots': 'ライブラリフォルダーはまだありません。',
+  'folders.error.actionFailed': 'フォルダー操作に失敗しました。',
+  'folders.error.desktopEditTags': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で埋め込みタグを編集してください。',
+  'folders.error.desktopFileActions': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でファイル操作を使用してください。',
+  'folders.error.desktopImport': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でフォルダーを取り込んでください。',
+  'folders.error.desktopManage': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でフォルダーを管理してください。',
+  'folders.error.noCoverSaved': '保存されたカバーアートはありません。',
+  'folders.error.noCoverToCopy': 'この曲にはコピーできるカバーアートがありません。',
+  'folders.error.notFolder': '選択したパスはフォルダーではありません。',
+  'folders.error.pathMissing': 'フォルダーパスが存在しません。',
+  'folders.error.permission': 'ECHO にはこのフォルダーへアクセスする権限がありません。',
+  'folders.error.trackActionUnavailable': 'この曲の操作はまだ利用できません。',
+  'folders.filters.includeSubfolders': 'サブフォルダーを含める',
+  'folders.filters.label': 'フォルダー内の曲フィルター',
+  'folders.filters.searchPlaceholder': 'このフォルダーを検索...',
+  'folders.message.addedToPlaylist': 'プレイリストに追加しました: {name}',
+  'folders.message.alreadyScanning': 'このライブラリルートはすでにスキャン中です。',
+  'folders.message.folderAddedScanStarted': 'フォルダーを追加しました。スキャンはバックグラウンドで開始されました。',
+  'folders.message.folderRemoved': 'フォルダーをライブラリインデックスから削除しました。',
+  'folders.message.loadedPartial': 'メモリ使用量を抑えるため、{total} 曲中 {loaded} 曲を読み込みました。',
+  'folders.message.loadedTracks': '{count} 曲を読み込みました。',
+  'folders.message.noPlayableTracks': 'このフォルダーには再生可能な曲がありません。',
+  'folders.message.queuedTracks': '{count} 曲をキューに追加しました。',
+  'folders.message.scanCancelled': 'スキャンをキャンセルしました。',
+  'folders.message.scanStarted': 'スキャンを開始しました。',
+  'folders.metrics.duration': '再生時間',
+  'folders.metrics.label': 'フォルダー指標',
+  'folders.metrics.size': 'サイズ',
+  'folders.metrics.subfolders': 'サブフォルダー',
+  'folders.metrics.tracks': '曲',
+  'folders.panel.addFolder': 'フォルダーを追加',
+  'folders.panel.import': '取り込み',
+  'folders.panel.manage': '管理',
+  'folders.panel.scan': 'スキャン',
+  'folders.panel.selectedRoot': '選択中のルート',
+  'folders.panel.status': '状態',
+  'folders.phase.checkingCache': 'キャッシュ確認',
+  'folders.phase.discovering': 'ファイル検索',
+  'folders.phase.extractingCovers': 'カバー抽出',
+  'folders.phase.finished': '完了',
+  'folders.phase.groupingAlbums': 'アルバム整理',
+  'folders.phase.readingMetadata': 'タグ読み込み',
+  'folders.phase.writingDatabase': 'データベース書き込み',
+  'folders.prompt.choosePlaylist': 'プレイリスト番号を選択:\n{names}',
+  'folders.prompt.createPlaylist': 'プレイリストがまだありません。作成する名前を入力してください:',
+  'folders.queueSource.recursive': '{name} フォルダー',
+  'folders.scan.progress': '{processed}/{total} ファイル、エラー {errors} 件',
+  'folders.sidebar.kicker': 'ライブラリ',
+  'folders.sidebar.title': 'フォルダー',
+  'folders.sort.album': 'アルバム',
+  'folders.sort.artist': 'アーティスト',
+  'folders.sort.duration': '再生時間',
+  'folders.sort.quality': '音質',
+  'folders.sort.random': 'ランダム',
+  'folders.sort.recent': '最近更新',
+  'folders.sort.title': 'タイトル',
+  'folders.status.cancelled': 'キャンセル済み',
+  'folders.status.completed': '完了',
+  'folders.status.failed': '失敗',
+  'folders.status.queued': '待機中',
+  'folders.status.running': 'スキャン中',
+  'folders.statusLine.loadingTracks': 'フォルダー内の曲を読み込み中...',
+  'folders.statusLine.preparingQueue': 'フォルダーキューを準備中...',
   'common.available': '利用可能',
   'common.build': 'ビルド',
   'common.checking': '確認中',
@@ -649,7 +1203,9 @@ const jaJP: TranslationMap = {
   'queue.action.clear': 'キューを空にする',
   'queue.action.dragLabel': '{title} をドラッグ',
   'queue.action.dragTitle': 'ドラッグして並べ替え',
+  'queue.action.generateFromHistory': '履歴からキューを作成',
   'queue.action.generateRandom': 'ランダムキューを作成',
+  'queue.action.generatingHistory': '作成中',
   'queue.action.generatingRandom': '作成中',
   'queue.action.like': 'お気に入り',
   'queue.action.more': 'その他',
@@ -662,9 +1218,11 @@ const jaJP: TranslationMap = {
   'queue.empty.description': '曲を再生、キューに追加、または次に再生を選ぶとここに表示されます。',
   'queue.empty.title': '次に再生する曲はありません',
   'queue.error.desktopBridge': 'デスクトップブリッジが利用できません。ECHO Next デスクトップ版でライブラリを読み込んでください。',
+  'queue.error.noHistoryTracks': 'キュー作成に使える再生履歴がまだありません。',
   'queue.error.noRandomTracks': 'ランダムキューに追加できる曲がライブラリにありません。',
   'queue.header.kicker': '再生キュー',
   'queue.header.title': 'キュー',
+  'queue.historySource': 'よく聴く履歴',
   'queue.now.actions': '現在の曲の操作',
   'queue.now.emptyDescription': '曲またはアルバムを再生すると、現在の曲がここに表示されます。',
   'queue.now.emptyTitle': '再生中の曲はありません',
@@ -789,6 +1347,146 @@ const enUS: TranslationMap = {
   'app.window.minimize': 'Minimize',
   'app.window.maximize': 'Maximize',
   'app.window.close': 'Close',
+  'audioDrawer.action.close': 'Close audio settings',
+  'audioDrawer.action.hideDevice': 'Hide device',
+  'audioDrawer.action.restore': 'Restore',
+  'audioDrawer.badge.bitPerfectReady': 'Bit-perfect ready',
+  'audioDrawer.badge.dspActive': 'DSP active',
+  'audioDrawer.badge.resampling': 'Resampling',
+  'audioDrawer.badge.speedUp': 'Speed Up',
+  'audioDrawer.device.asioDriver': 'ASIO driver',
+  'audioDrawer.device.lowLatency': 'Low latency',
+  'audioDrawer.device.selected': 'Selected',
+  'audioDrawer.device.systemAudio': 'System audio',
+  'audioDrawer.device.systemDefault': 'System default',
+  'audioDrawer.device.systemDefaultOutput': 'System default output',
+  'audioDrawer.device.systemOutput': 'System output',
+  'audioDrawer.device.systemSelectedRoute': 'System selected route',
+  'audioDrawer.empty.asioDevices': 'No ASIO output devices found.',
+  'audioDrawer.empty.hiddenDevices': 'No hidden devices.',
+  'audioDrawer.empty.systemDevices': 'No system output devices found.',
+  'audioDrawer.error.desktopBridgeUnavailable': 'Desktop bridge unavailable',
+  'audioDrawer.meter.direct': 'Direct',
+  'audioDrawer.meter.mode': 'Mode',
+  'audioDrawer.meter.output': 'Output',
+  'audioDrawer.meter.rate': 'Rate',
+  'audioDrawer.meter.resample': 'Resample',
+  'audioDrawer.meter.source': 'Source',
+  'audioDrawer.mode.exclusive': 'Exclusive',
+  'audioDrawer.mode.exclusiveCandidate': 'Exclusive candidate',
+  'audioDrawer.mode.shared': 'Shared',
+  'audioDrawer.note.asio': 'Low-latency professional audio interface support requires a driver.',
+  'audioDrawer.option.rememberOutput': 'Remember Output Device',
+  'audioDrawer.option.rememberOutputDescription': 'Restores the selected output device and mode on the next launch.',
+  'audioDrawer.option.wasapiExclusive': 'WASAPI Exclusive Mode',
+  'audioDrawer.option.wasapiExclusiveDescription': 'Shared is the everyday Windows path. Exclusive requests the same device without the shared mixer.',
+  'audioDrawer.section.advancedOutput': 'Advanced Output',
+  'audioDrawer.section.asioDevices': 'ASIO Output Devices',
+  'audioDrawer.section.currentOutput': 'Current Output',
+  'audioDrawer.section.hiddenDevices': 'Hidden Devices',
+  'audioDrawer.section.systemDevices': 'System Output Devices',
+  'audioDrawer.signal.balanceDsp': 'Balance DSP',
+  'audioDrawer.signal.bitPerfect': 'Bit-perfect',
+  'audioDrawer.signal.dspOn': 'DSP On',
+  'audioDrawer.signal.eqOff': 'EQ Off',
+  'audioDrawer.signal.eqOn': 'EQ On',
+  'audioDrawer.signal.nativeRate': 'Native Rate',
+  'audioDrawer.signal.noActiveSource': 'No active source',
+  'audioDrawer.signal.pending': 'Pending',
+  'audioDrawer.signal.processed': 'Processed',
+  'audioDrawer.signal.sharedMixer': 'Shared Mixer',
+  'audioDrawer.signal.standardPath': 'Standard path',
+  'audioDrawer.status.noTrack': 'No track',
+  'audioDrawer.status.ratePending': 'Rate pending',
+  'audioDrawer.status.sampleRatePending': 'Sample rate pending',
+  'audioDrawer.title': 'Audio Settings',
+  'audioDrawer.todo.outputControls': 'Target sample rate and buffer controls',
+  'audioDrawer.todo.outputControlsDescription': 'TODO: wire to real audio settings when DeviceService exposes safe controls.',
+  'folders.action.addScan': 'Add + scan',
+  'folders.action.browse': 'Browse',
+  'folders.action.cancel': 'Cancel',
+  'folders.action.open': 'Open',
+  'folders.action.play': 'Play',
+  'folders.action.queue': 'Queue',
+  'folders.action.random': 'Random',
+  'folders.action.refresh': 'Refresh folders',
+  'folders.action.remove': 'Remove',
+  'folders.action.scan': 'Scan',
+  'folders.confirm.deleteTrack': 'Delete the music file?\n{title}',
+  'folders.confirm.removeRoot': 'Remove "{name}" from the library index? Music files stay on disk.',
+  'folders.count.tracks': '{count} tracks',
+  'folders.detail.importHint': 'Import a music folder to build a path-based library view.',
+  'folders.detail.libraryFolders': 'Library folders',
+  'folders.detail.root': 'Root',
+  'folders.detail.selectFolder': 'Select a folder',
+  'folders.detail.subfolder': 'Subfolder',
+  'folders.duration.hours': '{count} hr',
+  'folders.duration.hoursMinutes': '{hours} hr {minutes} min',
+  'folders.duration.minutes': '{count} min',
+  'folders.empty.noScan': 'No scan has run for this root yet.',
+  'folders.empty.roots': 'No library folders yet.',
+  'folders.error.actionFailed': 'Folder action failed.',
+  'folders.error.desktopEditTags': 'Desktop bridge unavailable. Open ECHO Next desktop to edit embedded tags.',
+  'folders.error.desktopFileActions': 'Desktop bridge unavailable. Open ECHO Next desktop to use file actions.',
+  'folders.error.desktopImport': 'Desktop bridge unavailable. Open ECHO Next desktop to import folders.',
+  'folders.error.desktopManage': 'Desktop bridge unavailable. Open ECHO Next desktop to manage folders.',
+  'folders.error.noCoverSaved': 'No cover art was saved for this track.',
+  'folders.error.noCoverToCopy': 'This track does not have cover art to copy.',
+  'folders.error.notFolder': 'The selected path is not a folder.',
+  'folders.error.pathMissing': 'Folder path does not exist.',
+  'folders.error.permission': 'ECHO does not have permission to access this folder.',
+  'folders.error.trackActionUnavailable': 'This track action is not available yet.',
+  'folders.filters.includeSubfolders': 'Include subfolders',
+  'folders.filters.label': 'Folder track filters',
+  'folders.filters.searchPlaceholder': 'Search this folder...',
+  'folders.message.addedToPlaylist': 'Added to playlist: {name}',
+  'folders.message.alreadyScanning': 'This library root is already scanning.',
+  'folders.message.folderAddedScanStarted': 'Folder added. Scan started in the background.',
+  'folders.message.folderRemoved': 'Folder removed from the library index.',
+  'folders.message.loadedPartial': 'Loaded first {loaded} of {total} tracks to keep memory low.',
+  'folders.message.loadedTracks': 'Loaded {count} tracks.',
+  'folders.message.noPlayableTracks': 'No playable tracks in this folder.',
+  'folders.message.queuedTracks': 'Queued {count} tracks.',
+  'folders.message.scanCancelled': 'Scan cancelled.',
+  'folders.message.scanStarted': 'Scan started.',
+  'folders.metrics.duration': 'Duration',
+  'folders.metrics.label': 'Folder metrics',
+  'folders.metrics.size': 'Size',
+  'folders.metrics.subfolders': 'Subfolders',
+  'folders.metrics.tracks': 'Tracks',
+  'folders.panel.addFolder': 'Add folder',
+  'folders.panel.import': 'Import',
+  'folders.panel.manage': 'Manage',
+  'folders.panel.scan': 'Scan',
+  'folders.panel.selectedRoot': 'Selected root',
+  'folders.panel.status': 'Status',
+  'folders.phase.checkingCache': 'Checking cache',
+  'folders.phase.discovering': 'Finding files',
+  'folders.phase.extractingCovers': 'Covers',
+  'folders.phase.finished': 'Finished',
+  'folders.phase.groupingAlbums': 'Albums',
+  'folders.phase.readingMetadata': 'Reading tags',
+  'folders.phase.writingDatabase': 'Writing',
+  'folders.prompt.choosePlaylist': 'Choose playlist number:\n{names}',
+  'folders.prompt.createPlaylist': 'No playlists yet. Enter a name to create one:',
+  'folders.queueSource.recursive': '{name} folder',
+  'folders.scan.progress': '{processed}/{total} files, {errors} errors',
+  'folders.sidebar.kicker': 'Library',
+  'folders.sidebar.title': 'Folders',
+  'folders.sort.album': 'Album',
+  'folders.sort.artist': 'Artist',
+  'folders.sort.duration': 'Duration',
+  'folders.sort.quality': 'Quality',
+  'folders.sort.random': 'Random',
+  'folders.sort.recent': 'Recently updated',
+  'folders.sort.title': 'Title',
+  'folders.status.cancelled': 'Cancelled',
+  'folders.status.completed': 'Complete',
+  'folders.status.failed': 'Failed',
+  'folders.status.queued': 'Queued',
+  'folders.status.running': 'Scanning',
+  'folders.statusLine.loadingTracks': 'Loading folder tracks...',
+  'folders.statusLine.preparingQueue': 'Preparing folder queue...',
   'common.available': 'Available',
   'common.build': 'Build',
   'common.checking': 'Checking',
@@ -833,7 +1531,9 @@ const enUS: TranslationMap = {
   'queue.action.clear': 'Clear queue',
   'queue.action.dragLabel': 'Drag {title}',
   'queue.action.dragTitle': 'Drag to reorder',
+  'queue.action.generateFromHistory': 'Generate from history',
   'queue.action.generateRandom': 'Generate random queue',
+  'queue.action.generatingHistory': 'Generating',
   'queue.action.generatingRandom': 'Generating',
   'queue.action.like': 'Like',
   'queue.action.more': 'More',
@@ -846,9 +1546,11 @@ const enUS: TranslationMap = {
   'queue.empty.description': 'Play a song, add to queue, or choose play next to fill this list.',
   'queue.empty.title': 'No upcoming tracks',
   'queue.error.desktopBridge': 'Desktop bridge unavailable. Open ECHO Next desktop to read the library.',
+  'queue.error.noHistoryTracks': 'No playback history is available to build a queue yet.',
   'queue.error.noRandomTracks': 'Your library does not have any tracks for a random queue yet.',
   'queue.header.kicker': 'Playback Queue',
   'queue.header.title': 'Queue',
+  'queue.historySource': 'Frequent history',
   'queue.now.actions': 'Current track actions',
   'queue.now.emptyDescription': 'Start a track or album to build the queue.',
   'queue.now.emptyTitle': 'Nothing is playing',

@@ -25,6 +25,9 @@ type PlayerTransportProps = {
   onCycleRepeatMode: () => void;
   onOpenQueue: () => void;
   onOpenLyrics: () => void;
+  isCurrentTrackLiked?: boolean;
+  canLikeCurrentTrack?: boolean;
+  onToggleCurrentTrackLiked?: () => void;
 };
 
 export const PlayerTransport = ({
@@ -40,6 +43,9 @@ export const PlayerTransport = ({
   onCycleRepeatMode,
   onOpenQueue,
   onOpenLyrics,
+  isCurrentTrackLiked = false,
+  canLikeCurrentTrack = false,
+  onToggleCurrentTrackLiked,
 }: PlayerTransportProps): JSX.Element => (
   <div className="transport">
     <button className="icon-button" type="button" aria-label="Playback queue" title="Playback queue" onClick={onOpenQueue}>
@@ -65,11 +71,11 @@ export const PlayerTransport = ({
       <SkipForward size={18} />
     </button>
     <button
-      className={`icon-button ${repeatMode !== 'off' ? 'is-soft-active' : ''}`}
+      className={`icon-button ${repeatMode === 'one' ? 'is-soft-active' : ''}`}
       type="button"
       aria-label="Repeat"
-      aria-pressed={repeatMode !== 'off'}
-      title={repeatMode === 'one' ? 'Repeat one' : repeatMode === 'all' ? 'Repeat queue' : 'Repeat off'}
+      aria-pressed={repeatMode === 'one'}
+      title={repeatMode === 'one' ? 'Repeat one' : 'Play in order'}
       onClick={onCycleRepeatMode}
     >
       {repeatMode === 'one' ? <Repeat1 size={17} /> : <Repeat2 size={17} />}
@@ -77,8 +83,16 @@ export const PlayerTransport = ({
     <button className="icon-button" type="button" aria-label="Lyrics" title="Lyrics" onClick={onOpenLyrics}>
       <Mic2 size={17} />
     </button>
-    <button className="icon-button" type="button" aria-label="Like" title="Like">
-      <Heart size={17} />
+    <button
+      className={`icon-button ${isCurrentTrackLiked ? 'is-soft-active' : ''}`}
+      type="button"
+      aria-label={isCurrentTrackLiked ? 'Unlike current track' : 'Like current track'}
+      aria-pressed={isCurrentTrackLiked}
+      title={isCurrentTrackLiked ? 'Unlike' : 'Like'}
+      disabled={!canLikeCurrentTrack}
+      onClick={onToggleCurrentTrackLiked}
+    >
+      <Heart size={17} fill={isCurrentTrackLiked ? 'currentColor' : 'none'} />
     </button>
   </div>
 );

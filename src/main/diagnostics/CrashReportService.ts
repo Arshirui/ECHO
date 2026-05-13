@@ -16,6 +16,7 @@ import { getAppSettings } from '../app/appSettings';
 import { getAudioSession } from '../audio/AudioSession';
 import { getLibraryService } from '../library/LibraryService';
 import { hashText, Logger, sanitizeLogPayload } from './Logger';
+import { getAccountService } from '../accounts/AccountService';
 
 type CrashRecord = {
   type: string;
@@ -286,6 +287,7 @@ export class CrashReportService {
     }
 
     entries.push({ name: 'app-settings.safe.json', content: this.toJsonBuffer(sanitizeLogPayload(getAppSettings())) });
+    entries.push({ name: 'accounts-status.safe.json', content: this.toJsonBuffer(this.getSafeAccountStatus()) });
     entries.push({ name: 'library-diagnostics.safe.json', content: this.toJsonBuffer(this.getSafeLibraryDiagnostics()) });
     entries.push({ name: 'playback-status.safe.json', content: this.toJsonBuffer(this.getSafePlaybackStatus()) });
     entries.push({ name: 'audio-status.safe.json', content: this.toJsonBuffer(this.getSafeAudioStatus()) });
@@ -307,6 +309,17 @@ export class CrashReportService {
         ...diagnostics,
         databasePath: safePathValue(diagnostics.databasePath),
         coverCachePath: safePathValue(diagnostics.coverCachePath),
+      };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  private getSafeAccountStatus(): unknown {
+    try {
+      return {
+        storagePath: safePathValue(getAccountService().getStoragePath()),
+        statuses: getAccountService().getStatuses(),
       };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };

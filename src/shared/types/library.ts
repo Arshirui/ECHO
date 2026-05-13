@@ -170,7 +170,7 @@ export type LibraryPageQuery = {
 export type PlaylistKind = 'manual' | 'smart' | 'synced' | 'system';
 export type PlaylistSourceProvider = 'local' | 'netease' | 'qqmusic' | 'remote';
 export type PlaylistSortMode = 'manual' | 'titleAsc' | 'titleDesc' | 'artistAsc' | 'addedDesc';
-export type PlaylistMediaType = 'track' | 'stream_track' | 'remote_file';
+export type PlaylistMediaType = 'track' | 'album' | 'stream_track' | 'remote_file';
 
 export type LibraryPlaylist = {
   id: string;
@@ -205,6 +205,7 @@ export type LibraryPlaylistItem = {
   addedFrom: string | null;
   unavailable: boolean;
   track: LibraryTrack | null;
+  album?: LibraryAlbum | null;
 };
 
 export type CreatePlaylistRequest = {
@@ -217,6 +218,7 @@ export type UpdatePlaylistRequest = {
   name?: string;
   description?: string | null;
   coverId?: string | null;
+  coverPath?: string | null;
   sortMode?: PlaylistSortMode;
 };
 

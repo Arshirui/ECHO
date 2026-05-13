@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RotateCcw, Save, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Headphones, RotateCcw, Save, ShieldCheck, Shuffle, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { AudioStatus, ChannelBalanceMonoMode, ChannelBalanceState } from '../../../shared/types/audio';
-import { channelBalanceMaxGainDb, channelBalanceMinGainDb } from '../../../shared/types/audio';
+import {
+  channelBalanceMaxGainDb,
+  channelBalanceMinGainDb,
+} from '../../../shared/types/audio';
 import type { EqPreset, EqState } from '../../../shared/types/eq';
-import { eqMaxFrequencyHz, eqMinFrequencyHz } from '../../../shared/types/eq';
+import { eqFrequenciesHz, eqMaxFrequencyHz, eqMaxPreampDb, eqMinFrequencyHz, eqMinPreampDb } from '../../../shared/types/eq';
 import { getEqBridge } from '../../utils/echoBridge';
 import { EqCurveView } from './EqCurveView';
 import { EqPresetSelector } from './EqPresetSelector';
+import { clampChannelBalancePatch, computeRecommendedPreamp, formatDb, formatFrequencyLabel } from './eqPanelUtils';
 
 type EqPanelProps = {
   audioStatus: AudioStatus | null;
@@ -19,18 +23,12 @@ const fallbackState: EqState = {
   presetId: 'flat',
   presetName: 'Flat',
   clippingRisk: false,
-  bands: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map((frequencyHz) => ({
+  bands: eqFrequenciesHz.map((frequencyHz) => ({
     frequencyHz,
     gainDb: 0,
     q: 1,
   })),
 };
-
-const formatFrequency = (frequencyHz: number): string =>
-  frequencyHz >= 1000 ? `${frequencyHz / 1000} kHz` : `${frequencyHz} Hz`;
-
-const formatGain = (gainDb: number): string => `${gainDb > 0 ? '+' : ''}${gainDb.toFixed(1)} dB`;
-const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 const fallbackChannelBalanceState: ChannelBalanceState = {
   enabled: false,
@@ -46,11 +44,13 @@ const fallbackChannelBalanceState: ChannelBalanceState = {
 };
 
 const monoModeOptions: Array<{ value: ChannelBalanceMonoMode; label: string }> = [
-  { value: 'off', label: '关闭' },
-  { value: 'sum', label: 'L+R 单声道' },
-  { value: 'left', label: '仅左声道' },
-  { value: 'right', label: '仅右声道' },
+  { value: 'off', label: 'Off' },
+  { value: 'sum', label: 'Sum' },
+  { value: 'left', label: 'Left' },
+  { value: 'right', label: 'Right' },
 ];
+
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 const calculateBalanceGains = (balance: number, constantPower: boolean): { left: number; right: number } => {
   const safeBalance = clamp(balance, -1, 1);
@@ -79,11 +79,17 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const [saveName, setSaveName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [selectedBandIndex, setSelectedBandIndex] = useState(0);
+  const [bypassSnapshot, setBypassSnapshot] = useState<boolean | null>(null);
   const debounceTimers = useRef<Record<number, number>>({});
   const frequencyDebounceTimers = useRef<Record<number, number>>({});
 
-  const selectedBand = state.bands[selectedBandIndex] ?? state.bands[0];
   const selectedPresetReadonly = presets.find((preset) => preset.id === state.presetId)?.readonly ?? true;
+  const clippingRisk = Boolean(state.clippingRisk || channelBalance.clippingRisk || audioStatus?.clippingRisk);
+  const eqOrBalanceEnabled = state.enabled || channelBalance.enabled;
+  const dspActive = Boolean(audioStatus?.dspActive || eqOrBalanceEnabled);
+  const recommendedPreampDb = computeRecommendedPreamp(state);
+  const canAutoPreamp = Math.abs(state.preampDb - recommendedPreampDb) > 0.05;
+  const selectedBand = state.bands[selectedBandIndex] ?? state.bands[0];
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -124,34 +130,6 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     },
     [onAudioStatusRefresh],
   );
-
-  const patchChannelBalance = (patch: Partial<ChannelBalanceState>): void => {
-    const eq = getEqBridge();
-    setChannelBalance((current) => ({ ...current, ...patch }));
-
-    if (!eq) {
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to control channel balance.');
-      return;
-    }
-
-    void eq.setChannelBalanceState(patch).then(commitChannelBalance).catch((balanceError: unknown) => {
-      setError(balanceError instanceof Error ? balanceError.message : String(balanceError));
-    });
-  };
-
-  const resetChannelBalance = (): void => {
-    const eq = getEqBridge();
-
-    if (!eq) {
-      setChannelBalance(fallbackChannelBalanceState);
-      setError('Desktop bridge unavailable. Open ECHO Next in Electron to control channel balance.');
-      return;
-    }
-
-    void eq.resetChannelBalance().then(commitChannelBalance).catch((balanceError: unknown) => {
-      setError(balanceError instanceof Error ? balanceError.message : String(balanceError));
-    });
-  };
 
   const setEnabled = (enabled: boolean): void => {
     const eq = getEqBridge();
@@ -219,7 +197,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   );
 
   const handleBandFrequencyChange = (band: number, frequencyHz: number): void => {
-    const safeFrequencyHz = clamp(Number(frequencyHz), eqMinFrequencyHz, eqMaxFrequencyHz);
+    const safeFrequencyHz = clamp(frequencyHz, eqMinFrequencyHz, eqMaxFrequencyHz);
     setSelectedBandIndex(band);
     setState((current) => ({
       ...current,
@@ -233,7 +211,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const handleBandFrequencyCommit = (band: number, frequencyHz: number): void => {
-    const safeFrequencyHz = clamp(Number(frequencyHz), eqMinFrequencyHz, eqMaxFrequencyHz);
+    const safeFrequencyHz = clamp(frequencyHz, eqMinFrequencyHz, eqMaxFrequencyHz);
     setSelectedBandIndex(band);
     window.clearTimeout(frequencyDebounceTimers.current[band]);
     sendBandFrequency(band, safeFrequencyHz);
@@ -282,7 +260,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
 
   const savePreset = async (): Promise<void> => {
     if (!saveName.trim()) {
-      setError('请输入预设名称');
+      setError('Enter a preset name before saving.');
       return;
     }
 
@@ -308,6 +286,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const deletePreset = async (): Promise<void> => {
+    if (selectedPresetReadonly) {
+      return;
+    }
+
     try {
       const eq = getEqBridge();
 
@@ -317,60 +299,133 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
       }
 
       setPresets(await eq.deletePreset(state.presetId));
-      await reset();
+      reset();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
     }
   };
 
-  const bitPerfectText =
-    state.enabled || channelBalance.enabled || audioStatus?.dspActive
-      ? 'DSP 已启用，当前输出不再是 bit-perfect。'
-      : 'DSP 已旁路，满足采样率与输出条件时可恢复 bit-perfect。';
+  const patchChannelBalance = (patch: Partial<ChannelBalanceState>): void => {
+    const safePatch = clampChannelBalancePatch(patch);
+    const eq = getEqBridge();
+    setChannelBalance((current) => ({ ...current, ...safePatch }));
+
+    if (!eq) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to control channel balance.');
+      return;
+    }
+
+    void eq.setChannelBalanceState(safePatch).then(commitChannelBalance).catch((balanceError: unknown) => {
+      setError(balanceError instanceof Error ? balanceError.message : String(balanceError));
+    });
+  };
+
+  const resetChannelBalance = (): void => {
+    const eq = getEqBridge();
+
+    if (!eq) {
+      setChannelBalance(fallbackChannelBalanceState);
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to control channel balance.');
+      return;
+    }
+
+    void eq.resetChannelBalance().then(commitChannelBalance).catch((balanceError: unknown) => {
+      setError(balanceError instanceof Error ? balanceError.message : String(balanceError));
+    });
+  };
+
+  const holdBypass = (): void => {
+    if (bypassSnapshot !== null) {
+      return;
+    }
+
+    setBypassSnapshot(state.enabled);
+    setEnabled(false);
+  };
+
+  const releaseBypass = (): void => {
+    if (bypassSnapshot === null) {
+      return;
+    }
+
+    setEnabled(bypassSnapshot);
+    setBypassSnapshot(null);
+  };
+
   const balanceGains = calculateBalanceGains(channelBalance.balance, channelBalance.constantPower);
   const leftTotalDb = channelBalance.leftGainDb + gainToDb(balanceGains.left);
   const rightTotalDb = channelBalance.rightGainDb + gainToDb(balanceGains.right);
   const channelBalanceRisk = leftTotalDb > 0 || rightTotalDb > 0 || Boolean(channelBalance.clippingRisk);
+  const bitPerfectText = dspActive
+    ? `DSP active: bit-perfect disabled${audioStatus?.bitPerfectDisabledReason ? ` (${audioStatus.bitPerfectDisabledReason.replaceAll('_', ' ')})` : ''}.`
+    : 'Bit-perfect path can be preserved.';
 
   return (
     <section className="eq-panel" aria-label="ECHO Next EQ panel" data-enabled={state.enabled}>
-      <header className="eq-compact-header">
+      <header className="eq-header">
         <div className="eq-title-block">
           <span className="eq-title-icon">
             <SlidersHorizontal size={18} />
           </span>
           <div>
-            <h2>参数化 EQ</h2>
-            <p>10-band graphic engine</p>
+            <h2>10-band Graphic EQ</h2>
+            <p>HiFi DSP panel</p>
           </div>
-          <strong>{state.enabled ? '已启用' : '旁路'}</strong>
         </div>
 
-        <div className="eq-compact-actions">
+        <div className="eq-header-actions">
           <label className="eq-enable-pill">
             <input type="checkbox" checked={state.enabled} onChange={(event) => setEnabled(event.currentTarget.checked)} />
-            <span>{state.enabled ? 'On' : 'Bypass'}</span>
+            <span>{state.enabled ? 'EQ Enabled' : 'EQ Disabled'}</span>
           </label>
           <EqPresetSelector presets={presets} value={state.presetId} onChange={setPreset} />
-          <button className="eq-icon-action" type="button" aria-label="重置 EQ" title="重置 EQ" onClick={reset}>
+          <button className="eq-icon-action" type="button" aria-label="Reset EQ" title="Reset EQ" onClick={reset}>
             <RotateCcw size={15} />
           </button>
         </div>
       </header>
 
-      <div className="eq-compact-editor">
-        <aside className="eq-preamp-strip">
+      <div className="eq-status-cards">
+        <div className="eq-status-card">
+          <span>EQ</span>
+          <strong>{state.enabled ? 'Enabled' : 'Disabled'}</strong>
+        </div>
+        <div className="eq-status-card">
+          <span>Preset</span>
+          <strong>{state.presetName}</strong>
+        </div>
+        <div className="eq-status-card">
           <span>Preamp</span>
-          <strong>{formatGain(state.preampDb)}</strong>
+          <strong>{formatDb(state.preampDb)}</strong>
+        </div>
+        <div className="eq-status-card" data-risk={clippingRisk}>
+          <span>{clippingRisk ? 'Clipping Risk' : 'Headroom'}</span>
+          <strong>{clippingRisk ? 'Warning' : 'Safe'}</strong>
+        </div>
+        <div className="eq-status-card" data-active={dspActive}>
+          <span>Bit-perfect</span>
+          <strong>{dspActive ? 'Disabled' : 'Ready'}</strong>
+        </div>
+      </div>
+
+      <div className="eq-workbench">
+        <aside className="eq-preamp-strip">
+          <div>
+            <span>Safe Headroom</span>
+            <strong>{formatDb(state.preampDb)}</strong>
+          </div>
           <input
             aria-label="EQ preamp"
             type="range"
-            min="-12"
-            max="6"
+            min={eqMinPreampDb}
+            max={eqMaxPreampDb}
             step="0.1"
             value={state.preampDb}
             onChange={(event) => handlePreampChange(Number(event.currentTarget.value))}
           />
+          <button className="eq-soft-button" type="button" disabled={!canAutoPreamp} onClick={() => handlePreampChange(recommendedPreampDb)}>
+            Auto {formatDb(recommendedPreampDb)}
+          </button>
         </aside>
 
         <div className="eq-curve-column">
@@ -384,65 +439,52 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             onBandFrequencyChange={handleBandFrequencyChange}
             onBandFrequencyCommit={handleBandFrequencyCommit}
           />
-
-          <div className="eq-band-compact">
-            <button className="eq-band-name" type="button">
-              Band {selectedBandIndex + 1}
-              <strong>{selectedBand ? formatFrequency(selectedBand.frequencyHz) : 'n/a'}</strong>
-            </button>
-            <label>
-              <span>Freq</span>
-              <input
-                aria-label="Selected EQ band frequency"
-                type="number"
-                min={eqMinFrequencyHz}
-                max={eqMaxFrequencyHz}
-                step="1"
-                value={Math.round(selectedBand?.frequencyHz ?? 0)}
-                onChange={(event) => handleBandFrequencyChange(selectedBandIndex, Number(event.currentTarget.value))}
-                onBlur={(event) => handleBandFrequencyCommit(selectedBandIndex, Number(event.currentTarget.value))}
-              />
-              <em>Hz</em>
-            </label>
-            <label>
-              <span>Gain</span>
-              <input
-                aria-label="Selected EQ band gain"
-                type="number"
-                min="-12"
-                max="12"
-                step="0.1"
-                value={selectedBand?.gainDb ?? 0}
-                onChange={(event) => handleBandChange(selectedBandIndex, Number(event.currentTarget.value))}
-                onBlur={(event) => handleBandCommit(selectedBandIndex, Number(event.currentTarget.value))}
-              />
-              <em>dB</em>
-            </label>
-            <label>
-              <span>Q</span>
-              <input value={selectedBand?.q.toFixed(2) ?? '1.00'} readOnly />
-            </label>
-            <span className="eq-param-chip">Bell</span>
-            <span className="eq-param-chip">L/R linked</span>
-            <span className="eq-param-chip">Minimum phase</span>
+          <div className="eq-band-strip" aria-label="10-band EQ draggable band readouts">
+            {state.bands.map((band, index) => (
+              <button
+                className="eq-band-chip"
+                data-selected={selectedBandIndex === index}
+                type="button"
+                key={`${band.frequencyHz}-${index}`}
+                onClick={() => setSelectedBandIndex(index)}
+                onDoubleClick={() => handleBandCommit(index, 0)}
+              >
+                <span>{formatFrequencyLabel(band.frequencyHz)}</span>
+                <strong>{formatDb(band.gainDb)}</strong>
+              </button>
+            ))}
             <button className="eq-soft-button" type="button" onClick={() => handleBandCommit(selectedBandIndex, 0)}>
-              归零
+              Reset {selectedBand ? formatFrequencyLabel(selectedBand.frequencyHz) : 'Band'}
             </button>
           </div>
         </div>
       </div>
 
-      <div className="eq-status-line" data-risk={state.clippingRisk || audioStatus?.clippingRisk}>
-        <strong>{state.clippingRisk || audioStatus?.clippingRisk ? 'Headroom' : 'Signal'}</strong>
-        <span>{state.clippingRisk || audioStatus?.clippingRisk ? '有削波风险，建议降低前级或减少提升频段。' : bitPerfectText}</span>
+      <div className="eq-compare-row">
+        <button
+          className="eq-soft-button"
+          type="button"
+          onPointerDown={holdBypass}
+          onPointerUp={releaseBypass}
+          onPointerCancel={releaseBypass}
+          onBlur={releaseBypass}
+        >
+          Hold to Bypass EQ
+        </button>
+        <span>{bitPerfectText}</span>
+        {clippingRisk ? <strong>Lower Preamp to avoid clipping.</strong> : <strong><ShieldCheck size={14} /> Safe headroom</strong>}
       </div>
-
 
       <section className="channel-balance-panel" aria-label="Channel balance panel" data-enabled={channelBalance.enabled}>
         <header className="channel-balance-header">
-          <div>
-            <h3>声道平衡</h3>
-            <p>用于修正耳机、音箱或听力造成的左右偏音。播放中调整会平滑生效。</p>
+          <div className="eq-title-block">
+            <span className="eq-title-icon">
+              <Headphones size={18} />
+            </span>
+            <div>
+              <h3>Channel Balance</h3>
+              <p>Balance shifts left/right. L/R Gain fine-tunes correction. Mono Sum checks mono. Invert checks phase.</p>
+            </div>
           </div>
           <div className="channel-balance-actions">
             <label className="eq-enable-pill">
@@ -451,9 +493,9 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                 checked={channelBalance.enabled}
                 onChange={(event) => patchChannelBalance({ enabled: event.currentTarget.checked })}
               />
-              <span>{channelBalance.enabled ? 'On' : 'Bypass'}</span>
+              <span>{channelBalance.enabled ? 'Enabled' : 'Bypass'}</span>
             </label>
-            <button className="eq-icon-action" type="button" aria-label="重置声道平衡" title="重置声道平衡" onClick={resetChannelBalance}>
+            <button className="eq-icon-action" type="button" aria-label="Reset channel balance" title="Reset channel balance" onClick={resetChannelBalance}>
               <RotateCcw size={15} />
             </button>
           </div>
@@ -462,6 +504,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         <div className="channel-balance-grid">
           <label className="channel-balance-wide">
             <span>Balance</span>
+            <em>L</em>
             <input
               aria-label="Channel balance"
               type="range"
@@ -471,13 +514,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               value={Math.round(channelBalance.balance * 100)}
               onChange={(event) => patchChannelBalance({ balance: Number(event.currentTarget.value) / 100 })}
             />
-            <strong>
-              {channelBalance.balance < 0 ? '左' : channelBalance.balance > 0 ? '右' : '中间'} {Math.round(Math.abs(channelBalance.balance) * 100)}
-            </strong>
+            <em>R</em>
+            <strong>{channelBalance.balance === 0 ? 'Center' : `${channelBalance.balance < 0 ? 'L' : 'R'} ${Math.round(Math.abs(channelBalance.balance) * 100)}%`}</strong>
           </label>
+
           <label>
             <span>Left Gain</span>
             <input
+              aria-label="Left gain"
               type="range"
               min={channelBalanceMinGainDb}
               max={channelBalanceMaxGainDb}
@@ -485,11 +529,12 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               value={channelBalance.leftGainDb}
               onChange={(event) => patchChannelBalance({ leftGainDb: Number(event.currentTarget.value) })}
             />
-            <strong>{formatGain(channelBalance.leftGainDb)}</strong>
+            <strong>{formatDb(channelBalance.leftGainDb)}</strong>
           </label>
           <label>
             <span>Right Gain</span>
             <input
+              aria-label="Right gain"
               type="range"
               min={channelBalanceMinGainDb}
               max={channelBalanceMaxGainDb}
@@ -497,83 +542,71 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               value={channelBalance.rightGainDb}
               onChange={(event) => patchChannelBalance({ rightGainDb: Number(event.currentTarget.value) })}
             />
-            <strong>{formatGain(channelBalance.rightGainDb)}</strong>
+            <strong>{formatDb(channelBalance.rightGainDb)}</strong>
           </label>
-          <label>
-            <span>Mono 模式</span>
-            <select
-              value={channelBalance.monoMode}
-              onChange={(event) => patchChannelBalance({ monoMode: event.currentTarget.value as ChannelBalanceMonoMode })}
-            >
-              {monoModeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+
+          <div className="channel-balance-segmented" role="group" aria-label="Mono mode">
+            {monoModeOptions.map((option) => (
+              <button
+                className="eq-soft-button"
+                data-active={channelBalance.monoMode === option.value}
+                type="button"
+                key={option.value}
+                onClick={() => patchChannelBalance({ monoMode: option.value })}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
           <div className="channel-balance-switches">
-            <button
-              className={`eq-soft-button ${channelBalance.swapLeftRight ? 'active' : ''}`}
-              type="button"
-              onClick={() => patchChannelBalance({ swapLeftRight: !channelBalance.swapLeftRight })}
-            >
+            <button className="eq-soft-button" data-active={channelBalance.swapLeftRight} type="button" onClick={() => patchChannelBalance({ swapLeftRight: !channelBalance.swapLeftRight })}>
+              <Shuffle size={14} />
               Swap L/R
             </button>
-            <button
-              className={`eq-soft-button ${channelBalance.invertLeft ? 'active' : ''}`}
-              type="button"
-              onClick={() => patchChannelBalance({ invertLeft: !channelBalance.invertLeft })}
-            >
+            <button className="eq-soft-button" data-active={channelBalance.invertLeft} type="button" onClick={() => patchChannelBalance({ invertLeft: !channelBalance.invertLeft })}>
               Invert Left
             </button>
-            <button
-              className={`eq-soft-button ${channelBalance.invertRight ? 'active' : ''}`}
-              type="button"
-              onClick={() => patchChannelBalance({ invertRight: !channelBalance.invertRight })}
-            >
+            <button className="eq-soft-button" data-active={channelBalance.invertRight} type="button" onClick={() => patchChannelBalance({ invertRight: !channelBalance.invertRight })}>
               Invert Right
             </button>
-            <button
-              className={`eq-soft-button ${channelBalance.constantPower ? 'active' : ''}`}
-              type="button"
-              onClick={() => patchChannelBalance({ constantPower: !channelBalance.constantPower })}
-            >
+            <button className="eq-soft-button" data-active={channelBalance.constantPower} type="button" onClick={() => patchChannelBalance({ constantPower: !channelBalance.constantPower })}>
               Constant Power
             </button>
           </div>
         </div>
 
-        <div className="channel-balance-readout" data-risk={channelBalanceRisk}>
+        <div className="channel-balance-readout" data-risk={channelBalanceRisk || clippingRisk}>
           <span>
-            <em>左声道总增益</em>
-            <strong>{Number.isFinite(leftTotalDb) ? formatGain(leftTotalDb) : '-inf dB'}</strong>
+            <em>Left total</em>
+            <strong>{Number.isFinite(leftTotalDb) ? formatDb(leftTotalDb) : '-inf dB'}</strong>
           </span>
           <span>
-            <em>右声道总增益</em>
-            <strong>{Number.isFinite(rightTotalDb) ? formatGain(rightTotalDb) : '-inf dB'}</strong>
+            <em>Right total</em>
+            <strong>{Number.isFinite(rightTotalDb) ? formatDb(rightTotalDb) : '-inf dB'}</strong>
           </span>
-          {channelBalanceRisk ? <p>增益高于 0 dB 时可能增加削波风险。</p> : null}
+          <span>
+            <em>DSP</em>
+            <strong>{channelBalance.enabled ? 'Active' : 'Bypassed'}</strong>
+          </span>
+          {channelBalanceRisk || clippingRisk ? <p>Clipping risk: lower gain or preamp for safer headroom.</p> : null}
+          {channelBalance.enabled ? <p>DSP active: bit-perfect disabled.</p> : null}
         </div>
       </section>
+
       <footer className="eq-preset-tools">
-        <input
-          aria-label="Preset name"
-          value={saveName}
-          onChange={(event) => setSaveName(event.currentTarget.value)}
-          placeholder="保存为新预设"
-        />
+        <input aria-label="Preset name" value={saveName} onChange={(event) => setSaveName(event.currentTarget.value)} placeholder="Save as user preset" />
         <button type="button" onClick={() => void savePreset()}>
           <Save size={15} />
-          保存
+          Save
         </button>
-        {!selectedPresetReadonly ? (
-          <button type="button" onClick={() => void deletePreset()}>
-            <Trash2 size={15} />
-            删除
-          </button>
-        ) : null}
+        <button type="button" disabled={selectedPresetReadonly} onClick={() => void deletePreset()}>
+          <Trash2 size={15} />
+          Delete
+        </button>
+        {selectedPresetReadonly ? <span>Built-in presets are read-only.</span> : null}
       </footer>
+
       {error ? <p className="eq-panel-error">{error}</p> : null}
     </section>
   );

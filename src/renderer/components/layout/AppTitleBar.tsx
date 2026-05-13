@@ -11,6 +11,7 @@ import { useI18n } from '../../i18n/I18nProvider';
 
 type AppTitleBarProps = {
   activeRouteId: AppRouteId;
+  isAudioSettingsOpen?: boolean;
   onRouteChange: (routeId: AppRouteId) => void;
   onOpenAudioSettings: () => void;
   onMinimize: () => void;
@@ -28,6 +29,7 @@ type TitleBarAction = {
 
 export const AppTitleBar = ({
   activeRouteId,
+  isAudioSettingsOpen = false,
   onRouteChange,
   onOpenAudioSettings,
   onMinimize,
@@ -47,6 +49,7 @@ export const AppTitleBar = ({
       id: 'audio-settings',
       label: t('route.audioSettings.label'),
       icon: Headphones,
+      active: isAudioSettingsOpen,
       onClick: onOpenAudioSettings,
     },
     {
@@ -73,6 +76,8 @@ export const AppTitleBar = ({
             <button
               className="titlebar-action"
               data-active={action.active ? 'true' : 'false'}
+              data-drawer-trigger={action.id === 'audio-settings' ? 'true' : 'false'}
+              data-drawer-open={action.id === 'audio-settings' && isAudioSettingsOpen ? 'true' : 'false'}
               key={action.id}
               type="button"
               aria-label={action.label}

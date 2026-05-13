@@ -5,7 +5,7 @@ import type { DiagnosticLevel, DiagnosticScope } from '../../shared/types/diagno
 
 const maxLogBytes = 2 * 1024 * 1024;
 const maxRotatedLogs = 5;
-const sensitiveKeyPattern = /token|cookie|password|authorization|auth|secret|session/i;
+const sensitiveKeyPattern = /token|cookie|password|authorization|auth|secret|session|csrf/i;
 const pathKeyPattern = /path|file|directory|folder/i;
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -32,8 +32,8 @@ export const sanitizeLogPayload = (value: unknown, keyHint = ''): unknown => {
       return value.replace(/bearer\s+[a-z0-9._~+/=-]+/gi, 'Bearer [redacted]');
     }
 
-    if (/(token|password|authorization|cookie)=([^&\s]+)/i.test(value)) {
-      return value.replace(/(token|password|authorization|cookie)=([^&\s]+)/gi, '$1=[redacted]');
+    if (/(token|password|authorization|cookie|session|csrf)=([^&\s]+)/i.test(value)) {
+      return value.replace(/(token|password|authorization|cookie|session|csrf)=([^&\s]+)/gi, '$1=[redacted]');
     }
 
     if (

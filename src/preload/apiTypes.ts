@@ -1,5 +1,6 @@
 import type { AudioDeviceInfo, AudioOutputSettings, AudioStatus, ChannelBalanceState } from '../shared/types/audio';
 import type { AppSettings } from '../shared/types/appSettings';
+import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
 import type { EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
 import type {
@@ -96,6 +97,22 @@ export type EchoApi = {
     removePlaylistItem: (itemId: string) => Promise<void>;
     movePlaylistItem: (playlistId: string, itemId: string, targetPosition: number) => Promise<void>;
     clearPlaylist: (playlistId: string) => Promise<void>;
+    getLikedSongsPlaylist: () => Promise<LibraryPlaylist>;
+    getLikedAlbumsPlaylist: () => Promise<LibraryPlaylist>;
+    getLikedTracks: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryPlaylistItem>>;
+    getLikedAlbums: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryPlaylistItem>>;
+    isTrackLiked: (trackId: string) => Promise<boolean>;
+    isAlbumLiked: (albumId: string) => Promise<boolean>;
+    getLikedTrackIds: (trackIds: string[]) => Promise<Record<string, boolean>>;
+    getLikedAlbumIds: (albumIds: string[]) => Promise<Record<string, boolean>>;
+    likeTrack: (trackId: string) => Promise<LibraryPlaylistItem>;
+    unlikeTrack: (trackId: string) => Promise<void>;
+    toggleTrackLiked: (trackId: string) => Promise<{ liked: boolean; item?: LibraryPlaylistItem }>;
+    likeAlbum: (albumId: string) => Promise<LibraryPlaylistItem>;
+    unlikeAlbum: (albumId: string) => Promise<void>;
+    toggleAlbumLiked: (albumId: string) => Promise<{ liked: boolean; item?: LibraryPlaylistItem }>;
+    clearLikedTracks: () => Promise<void>;
+    clearLikedAlbums: () => Promise<void>;
     getAlbums: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryAlbum>>;
     getAlbum: (albumId: string) => Promise<LibraryAlbumDetail | null>;
     getArtists: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryArtist>>;
@@ -181,6 +198,16 @@ export type EchoApi = {
     exportDiagnostics: () => Promise<string>;
     openDiagnosticsFolder: () => Promise<string>;
     reportRendererError: (payload: RendererErrorPayload) => Promise<void>;
+  };
+  accounts: {
+    getStatuses: () => Promise<AccountStatus[]>;
+    getStatus: (provider: AccountProvider) => Promise<AccountStatus>;
+    saveCookie: (provider: AccountProvider, cookie: string) => Promise<AccountStatus>;
+    startLogin?: (provider: AccountProvider) => Promise<AccountLoginStartResult>;
+    clear: (provider: AccountProvider) => Promise<AccountStatus>;
+    check: (provider: AccountProvider) => Promise<AccountStatus>;
+    checkAll: () => Promise<AccountStatus[]>;
+    setYouTubeBrowser: (browser: YouTubeBrowser) => Promise<AccountStatus>;
   };
   eq: {
     getState: () => Promise<EqState>;

@@ -66,6 +66,14 @@ vi.mock('../utils/echoBridge', () => ({
     listDevices: vi.fn().mockResolvedValue([]),
     setOutput: vi.fn().mockResolvedValue(null),
   }),
+  getAccountsBridge: () => ({
+    getStatuses: vi.fn().mockResolvedValue([]),
+    saveCookie: vi.fn(),
+    startLogin: vi.fn(),
+    clear: vi.fn(),
+    check: vi.fn(),
+    setYouTubeBrowser: vi.fn(),
+  }),
   getDiagnosticsBridge: () => ({
     clearLastCrashSummary: vi.fn(),
     exportDiagnostics: vi.fn().mockResolvedValue('D:\\Echo\\diagnostics.zip'),

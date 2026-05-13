@@ -26,6 +26,7 @@ import { QueuePage } from '../pages/QueuePage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { SongsPage } from '../pages/SongsPage';
 import { LyricsPage } from '../pages/LyricsPage';
+import { LikedPage } from '../pages/LikedPage';
 import { EmptyState } from '../components/ui/EmptyState';
 import type { TranslationKey } from '../i18n/locales';
 
@@ -183,7 +184,7 @@ export const appRoutes: AppRoute[] = [
     descriptionKey: 'route.liked.description',
     icon: Heart,
     placement: 'utility',
-    element: <PlaceholderPage icon={Heart} title="Liked" description="Liked tracks will keep a compact list view." />,
+    element: <LikedPage />,
   },
   {
     id: 'audio-settings',
