@@ -254,6 +254,11 @@ const createHarness = (
       hideToTrayOnClose: false,
       networkMetadataEnabled: false,
       networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
+      lyricsNetworkEnabled: true,
+      lyricsPreferredProvider: 'lrclib',
+      lyricsAutoSearch: true,
+      lyricsAutoAcceptScore: 0.82,
+      lyricsDefaultOffsetMs: 0,
       channelBalance: {
         enabled: false,
         balance: 0,
@@ -269,6 +274,9 @@ const createHarness = (
       playbackSpeed: 1,
       playbackSpeedMode: 'nightcore',
       scanPerformanceMode: 'balanced',
+      duplicateTracksEnabled: false,
+      duplicateTracksMode: 'strict',
+      duplicateTracksAutoRebuildAfterScan: false,
       discordRichPresenceEnabled: false,
       lastFmEnabled: false,
       lastFmUsername: null,
@@ -364,6 +372,13 @@ describe('Library Core', () => {
         'playback_history_stats',
         'playlists',
         'playlist_items',
+        'network_metadata_candidates',
+        'network_metadata_decisions',
+        'network_cover_candidates',
+        'lyrics_cache',
+        'lyrics_candidates',
+        'duplicate_track_groups',
+        'duplicate_track_members',
       ]),
     );
     expect(indexes).toEqual(
@@ -393,6 +408,16 @@ describe('Library Core', () => {
         'idx_playlist_items_playlist_position',
         'idx_playlist_items_media',
         'idx_playlist_items_source',
+        'idx_network_metadata_candidates_track_id',
+        'idx_network_metadata_decisions_track_id',
+        'idx_network_cover_candidates_track_id',
+        'idx_lyrics_cache_track_provider',
+        'idx_lyrics_cache_cache_key',
+        'idx_lyrics_candidates_track_provider_status',
+        'idx_duplicate_members_track_id',
+        'idx_duplicate_members_group_rank',
+        'idx_duplicate_groups_representative',
+        'idx_duplicate_members_hidden',
       ]),
     );
 
@@ -400,7 +425,7 @@ describe('Library Core', () => {
     const reopened = createDatabase(databasePath);
     const migrationRows = reopened.prepare<unknown[], { id: number }>('SELECT id FROM schema_migrations ORDER BY id').all();
 
-    expect(migrationRows.map((row) => Number(row.id))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(migrationRows.map((row) => Number(row.id))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
     reopened.close();
   });
 
@@ -633,6 +658,95 @@ describe('Library Core', () => {
     expect(harness.service.getPlaylistItems(playlist.id, { pageSize: 10 }).total).toBe(0);
     harness.cleanup();
   });
+
+  it('rebuilds duplicate index and hides lower quality duplicates only when requested', async () => {
+    const harness = createHarness();
+    const hiresPath = writeAudioFile(harness.folder, 'Song hires.flac');
+    const mp3Path = writeAudioFile(harness.folder, 'Song mp3.mp3');
+    const uniquePath = writeAudioFile(harness.folder, 'Unique.flac');
+    harness.metadataService.overrides.set(
+      hiresPath,
+      baseMetadata({
+        title: 'Duplicate Song',
+        artist: 'Duplicate Artist',
+        album: 'Hi-Res Album',
+        duration: 180,
+        codec: 'FLAC',
+        bitDepth: 24,
+        sampleRate: 192_000,
+        bitrate: 5_461_000,
+      }),
+    );
+    harness.metadataService.overrides.set(
+      mp3Path,
+      baseMetadata({
+        title: 'Duplicate Song',
+        artist: 'Duplicate Artist',
+        album: 'MP3 Album',
+        duration: 181,
+        codec: 'MP3',
+        bitDepth: null,
+        sampleRate: 44_100,
+        bitrate: 320_000,
+      }),
+    );
+    harness.metadataService.overrides.set(
+      uniquePath,
+      baseMetadata({
+        title: 'Unique Song',
+        artist: 'Duplicate Artist',
+        album: 'Unique Album',
+        duration: 200,
+        codec: 'FLAC',
+        bitDepth: 16,
+        sampleRate: 44_100,
+        bitrate: 1_013_000,
+      }),
+    );
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const before = harness.service.getTracks({ pageSize: 10, sort: 'titleAsc' });
+    const playlist = harness.service.createPlaylist({ name: 'Keep Links' });
+    harness.service.addTrackToPlaylist(playlist.id, before.items[0].id);
+    const summary = harness.service.refreshDuplicateTracks('strict');
+    const visible = harness.service.getTracks({ pageSize: 10, sort: 'titleAsc', hideDuplicates: true, duplicateMode: 'strict' });
+    const hiddenSearch = harness.service.getTracks({ pageSize: 10, search: 'MP3 Album', hideDuplicates: true, duplicateMode: 'strict' });
+    const firstPage = harness.service.getTracks({ page: 1, pageSize: 1, sort: 'titleAsc', hideDuplicates: true, duplicateMode: 'strict' });
+    const secondPage = harness.service.getTracks({ page: 2, pageSize: 1, sort: 'titleAsc', hideDuplicates: true, duplicateMode: 'strict' });
+    const representative = visible.items.find((track) => track.title === 'Duplicate Song');
+    const versions = representative ? harness.service.getDuplicateTrackVersions(representative.id) : [];
+
+    expect(summary).toMatchObject({
+      mode: 'strict',
+      totalTracksScanned: 3,
+      duplicateGroups: 1,
+      duplicateMembers: 2,
+      hiddenTracks: 1,
+    });
+    expect(before.total).toBe(3);
+    expect(harness.service.getTracks({ pageSize: 10, sort: 'titleAsc' }).total).toBe(3);
+    expect(visible.total).toBe(2);
+    expect(visible.items.map((track) => track.album).sort()).toEqual(['Hi-Res Album', 'Unique Album']);
+    expect(hiddenSearch.total).toBe(0);
+    expect(firstPage.items).toHaveLength(1);
+    expect(secondPage.items).toHaveLength(1);
+    expect(firstPage.items[0].id).not.toBe(secondPage.items[0].id);
+    expect(versions).toHaveLength(2);
+    expect(versions[0]).toMatchObject({ rank: 1, hidden: false });
+    expect(versions[0].track.album).toBe('Hi-Res Album');
+    expect(versions[1]).toMatchObject({ rank: 2, hidden: true });
+    expect(harness.service.getDuplicateTrackGroup(versions[1].track.id)?.hiddenCount).toBe(1);
+    expect(harness.service.getDuplicateIndexSummary('strict')).toMatchObject({
+      duplicateGroups: 1,
+      duplicateMembers: 2,
+      hiddenTracks: 1,
+    });
+    expect(harness.service.getPlaylistItems(playlist.id, { pageSize: 10 }).total).toBe(1);
+    expect(harness.service.getTracks({ pageSize: 10 }).items.every((track) => track.unavailable !== true)).toBe(true);
+
+    harness.cleanup();
+  }, 20000);
 
   it('path + size + mtime unchanged skips metadata parse', async () => {
     const harness = createHarness();

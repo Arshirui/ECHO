@@ -44,6 +44,10 @@ import type {
   FinishPlaybackHistoryRequest,
   CreatePlaylistRequest,
   UpdatePlaylistRequest,
+  DuplicateTrackGroup,
+  DuplicateTrackIndexSummary,
+  DuplicateTrackMember,
+  DuplicateTrackMode,
 } from './libraryTypes';
 import type {
   EmbeddedTrackTagsLoadResult,
@@ -147,6 +151,22 @@ export class LibraryService {
 
   getTracks(query?: LibraryPageQuery): LibraryPage<LibraryTrack> {
     return this.store.getTracks(query);
+  }
+
+  refreshDuplicateTracks(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {
+    return this.store.refreshDuplicateTracks(mode);
+  }
+
+  getDuplicateTrackGroup(trackId: string): DuplicateTrackGroup | null {
+    return this.store.getDuplicateTrackGroup(trackId);
+  }
+
+  getDuplicateTrackVersions(trackId: string): DuplicateTrackMember[] {
+    return this.store.getDuplicateTrackVersions(trackId);
+  }
+
+  getDuplicateIndexSummary(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {
+    return this.store.getDuplicateIndexSummary(mode);
   }
 
   getPlaylists(): LibraryPlaylist[] {

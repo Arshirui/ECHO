@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { LibraryFolderNode, LibraryFolderOverview, LibraryPage, LibraryTrack } from '../../shared/types/library';
+import { I18nProvider } from '../i18n/I18nProvider';
 import { PlaybackQueueProvider } from '../stores/PlaybackQueueProvider';
 import { FoldersPage } from './FoldersPage';
 
@@ -103,9 +104,11 @@ const page = (items: LibraryTrack[], total = items.length): LibraryPage<LibraryT
 
 const renderFoldersPage = () =>
   render(
-    <PlaybackQueueProvider>
-      <FoldersPage />
-    </PlaybackQueueProvider>,
+    <I18nProvider>
+      <PlaybackQueueProvider>
+        <FoldersPage />
+      </PlaybackQueueProvider>
+    </I18nProvider>,
   );
 
 let libraryMock: {

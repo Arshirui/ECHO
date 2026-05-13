@@ -18,6 +18,7 @@ import { registerDiagnosticsIpc } from './diagnosticsIpc';
 import { registerDiscordPresenceIpc } from './discordPresenceIpc';
 import { registerLastFmIpc } from './lastFmIpc';
 import { registerLibraryIpc } from './libraryIpc';
+import { registerLyricsIpc } from './lyricsIpc';
 import { registerPlaybackIpc } from './playbackIpc';
 
 const fontMimeTypes: Record<string, string> = {
@@ -182,6 +183,7 @@ export const registerIpc = (): void => {
   registerDiscordPresenceIpc();
   registerLastFmIpc();
   registerLibraryIpc();
+  registerLyricsIpc();
   registerPlaybackIpc();
   registerAudioIpc();
 };

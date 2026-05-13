@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AudioStatus, ChannelBalanceState } from '../../../shared/types/audio';
 import type { EqPreset, EqState } from '../../../shared/types/eq';
+import { I18nProvider } from '../../i18n/I18nProvider';
 import { EqPanel } from './EqPanel';
 
 const bands = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map((frequencyHz) => ({
@@ -24,6 +25,7 @@ const eqState = (overrides: Partial<EqState> = {}): EqState => ({
 const presets: EqPreset[] = [
   { id: 'flat', name: 'Flat', preampDb: 0, bands, createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
   { id: 'rock', name: 'Rock', preampDb: -3, bands, createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'harman-target', name: 'Harman Target', preampDb: -5, bands, createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
   { id: 'user-bright', name: 'User Bright', preampDb: -4, bands, createdAt: 'now', updatedAt: 'now', readonly: false },
 ];
 
@@ -79,7 +81,15 @@ const audioStatus: AudioStatus = {
   error: null,
 };
 
+const renderEqPanel = (status: AudioStatus | null = audioStatus): ReturnType<typeof render> =>
+  render(
+    <I18nProvider>
+      <EqPanel audioStatus={status} />
+    </I18nProvider>,
+  );
+
 beforeEach(() => {
+  window.localStorage.setItem('echo-next.locale', 'en-US');
   const currentState = eqState({
     bands: bands.map((band, index) => (index === 1 ? { ...band, gainDb: 6 } : band)),
   });
@@ -114,17 +124,17 @@ afterEach(() => {
 
 describe('EqPanel', () => {
   it('renders the HiFi graphic EQ panel with response curve and status cards', async () => {
-    render(<EqPanel audioStatus={audioStatus} />);
+    renderEqPanel();
 
     await screen.findByRole('img', { name: 'Draggable 10-band EQ frequency response' });
     expect(screen.getByText('10-band Graphic EQ')).toBeTruthy();
     expect(screen.getByText('HiFi DSP panel')).toBeTruthy();
-    expect(screen.getByText('Headroom')).toBeTruthy();
+    expect(screen.getAllByText('Headroom').length).toBeGreaterThan(0);
     expect(screen.getByText('Bit-perfect')).toBeTruthy();
   });
 
-  it('lets the EQ curve nodes update band gain and frequency directly', async () => {
-    render(<EqPanel audioStatus={audioStatus} />);
+  it('lets EQ curve nodes update gain while standard frequency snap is locked', async () => {
+    renderEqPanel();
 
     const curve = await screen.findByRole('img', { name: 'Draggable 10-band EQ frequency response' });
     curve.getBoundingClientRect = vi.fn(() => ({
@@ -144,23 +154,110 @@ describe('EqPanel', () => {
     fireEvent.pointerMove(curve, { clientX: 410, clientY: 94, pointerId: 1 });
     fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1 });
 
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.6 }));
-    await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: expect.any(Number) }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+    expect(window.echo.eq.setBandFrequency).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText(/^Reset \d/));
+    fireEvent.click(screen.getAllByText(/^Reset \d/)[0]);
     await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 0 }));
   });
 
-  it('auto preamp applies the recommended safe headroom', async () => {
-    render(<EqPanel audioStatus={audioStatus} />);
+  it('only edits band frequency when free-frequency mode is unlocked', async () => {
+    renderEqPanel();
 
-    fireEvent.click(await screen.findByRole('button', { name: /Auto -6.0 dB/i }));
+    const curve = await screen.findByRole('img', { name: 'Draggable 10-band EQ frequency response' });
+    curve.getBoundingClientRect = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 920,
+      bottom: 260,
+      width: 920,
+      height: 260,
+      toJSON: () => undefined,
+    }));
+
+    fireEvent.click(await screen.findByLabelText('Unlock frequency'));
+    const node = await screen.findByTestId('eq-curve-node-2');
+    fireEvent.pointerDown(node, { clientX: 410, clientY: 94, pointerId: 1, shiftKey: true });
+    fireEvent.pointerMove(curve, { clientX: 410, clientY: 94, pointerId: 1, shiftKey: true });
+    fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1, shiftKey: true });
+
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.6 }));
+    await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: expect.any(Number) }));
+  });
+
+  it('supports keyboard fine gain adjustment on selected EQ nodes', async () => {
+    renderEqPanel();
+
+    const node = await screen.findByTestId('eq-curve-node-2');
+    fireEvent.keyDown(node, { key: 'ArrowUp', shiftKey: true });
+
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 0.1 }));
+  });
+
+  it('apply safe preamp uses the recommended headroom when peak estimate is risky', async () => {
+    renderEqPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Apply safe preamp/i }));
 
     await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(-6));
   });
 
+  it('renders realtime input and estimated output meter values safely', async () => {
+    renderEqPanel({
+      ...audioStatus,
+      clippingRisk: true,
+      audioLevels: {
+        inputPeakDb: -5.2,
+        inputRmsDb: -18.4,
+        estimatedOutputPeakDb: 0.8,
+        estimatedOutputRmsDb: -12.4,
+        headroomDb: -0.8,
+        clipCount: 3,
+        lastClipAt: '2026-05-13T00:00:00.000Z',
+        meterSource: 'pre_native_estimated_post_dsp',
+      },
+    });
+
+    expect(await screen.findByText('Input peak')).toBeTruthy();
+    expect(screen.getByText('-5.2 dB')).toBeTruthy();
+    expect(screen.getByText('Est. output peak')).toBeTruthy();
+    expect(screen.getAllByText('Headroom').length).toBeGreaterThan(0);
+    expect(screen.getByText(/pre-native \+ DSP estimate/)).toBeTruthy();
+    expect(screen.getByText(/Clips 3/)).toBeTruthy();
+  });
+
+  it('undoes and redoes EQ curve edits through existing IPC calls', async () => {
+    renderEqPanel();
+
+    const curve = await screen.findByRole('img', { name: 'Draggable 10-band EQ frequency response' });
+    curve.getBoundingClientRect = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 920,
+      bottom: 260,
+      width: 920,
+      height: 260,
+      toJSON: () => undefined,
+    }));
+
+    const node = await screen.findByTestId('eq-curve-node-2');
+    fireEvent.pointerDown(node, { clientX: 410, clientY: 94, pointerId: 1 });
+    fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1 });
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 0 }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+  });
+
   it('temporarily disables EQ while holding the bypass button', async () => {
-    render(<EqPanel audioStatus={audioStatus} />);
+    renderEqPanel();
 
     const bypass = await screen.findByRole('button', { name: 'Hold to Bypass EQ' });
     fireEvent.pointerDown(bypass);
@@ -168,8 +265,31 @@ describe('EqPanel', () => {
     await waitFor(() => expect(window.echo.eq.setEnabled).toHaveBeenCalledWith(false));
   });
 
+  it('captures and restores local A/B EQ slots through existing IPC calls', async () => {
+    renderEqPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Store A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply A' }));
+
+    await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(0));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 1, gainDb: 6 }));
+  });
+
+  it('applies loudness-matched A/B restore through preamp compensation', async () => {
+    renderEqPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Store A' }));
+    fireEvent.click(screen.getByRole('button', { name: /Apply safe preamp/i }));
+    await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(-6));
+
+    fireEvent.click(screen.getByLabelText('Loudness matched'));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply A' }));
+
+    await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(-12));
+  });
+
   it('selects presets, resets to Flat, and prevents built-in preset deletion', async () => {
-    render(<EqPanel audioStatus={audioStatus} />);
+    renderEqPanel();
 
     fireEvent.change(await screen.findByLabelText('EQ preset'), { target: { value: 'rock' } });
     fireEvent.click(screen.getByRole('button', { name: 'Reset EQ' }));
@@ -177,17 +297,81 @@ describe('EqPanel', () => {
     await waitFor(() => expect(window.echo.eq.setPreset).toHaveBeenCalledWith('rock'));
     expect(window.echo.eq.reset).toHaveBeenCalled();
     expect((screen.getByRole('button', { name: /Delete/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Overwrite' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('allows overwriting current user presets without deleting built-ins', async () => {
+    renderEqPanel();
+
+    fireEvent.change(await screen.findByLabelText('EQ preset'), { target: { value: 'user-bright' } });
+
+    await waitFor(() => expect(window.echo.eq.setPreset).toHaveBeenCalledWith('user-bright'));
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Overwrite' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Overwrite' }));
+
+    await waitFor(() => expect(window.echo.eq.savePreset).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-bright', name: 'User Bright' })));
+  });
+
+  it('filters presets by search and target curve category', async () => {
+    renderEqPanel();
+
+    fireEvent.change(await screen.findByLabelText('Search presets'), { target: { value: 'Harman' } });
+    fireEvent.change(screen.getByLabelText('Preset filter'), { target: { value: 'target' } });
+
+    expect(screen.getByRole('option', { name: 'Harman Target' })).toBeTruthy();
   });
 
   it('shows channel balance controls and clamps channel balance patches', async () => {
-    render(<EqPanel audioStatus={audioStatus} />);
+    renderEqPanel();
 
-    fireEvent.change(await screen.findByLabelText('Channel balance'), { target: { value: '400' } });
-    fireEvent.change(screen.getByLabelText('Left gain'), { target: { value: '-50' } });
+    fireEvent.change(await screen.findByLabelText('Balance'), { target: { value: '400' } });
+    fireEvent.change(screen.getByLabelText('Left Gain'), { target: { value: '-50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sum' }));
 
     await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ balance: 1 }));
     await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ leftGainDb: -12 }));
     await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ monoMode: 'sum' }));
+  });
+
+  it('resets monitor tools without changing balance or gain trim', async () => {
+    renderEqPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset monitor tools' }));
+
+    await waitFor(() =>
+      expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({
+        monoMode: 'off',
+        swapLeftRight: false,
+        invertLeft: false,
+        invertRight: false,
+        constantPower: true,
+      }),
+    );
+  });
+
+  it('shows channel calibration effective gain and resets trims separately', async () => {
+    renderEqPanel();
+
+    fireEvent.click(await screen.findByLabelText('Calibration mode'));
+    expect(screen.getByText('Effective L')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset trims only' }));
+
+    await waitFor(() =>
+      expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({
+        balance: 0,
+        leftGainDb: 0,
+        rightGainDb: 0,
+      }),
+    );
+  });
+
+  it('renders EQ panel keys across supported locales', async () => {
+    for (const locale of ['en-US', 'zh-CN', 'zh-TW', 'ja-JP']) {
+      cleanup();
+      window.localStorage.setItem('echo-next.locale', locale);
+      renderEqPanel();
+      expect(await screen.findByRole('img')).toBeTruthy();
+      expect(screen.queryByText(/settings\.eq\./)).toBeNull();
+    }
   });
 });

@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { ChannelBalanceState } from '../../../shared/types/audio';
 import type { EqState } from '../../../shared/types/eq';
-import { clampChannelBalancePatch, computeEqCurvePoints, computeRecommendedPreamp, formatFrequencyLabel } from './eqPanelUtils';
+import {
+  captureEqSnapshot,
+  clampChannelBalancePatch,
+  computeEffectiveChannelGains,
+  computeEqCurvePoints,
+  computeEstimatedPeakGain,
+  computeLoudnessMatchedPreamp,
+  computeRecommendedPreamp,
+  describePreset,
+  formatFrequencyLabel,
+  resolveBandFrequency,
+} from './eqPanelUtils';
 
 const eqState = (gains: number[]): EqState => ({
   enabled: true,
@@ -54,5 +65,49 @@ describe('eqPanelUtils', () => {
       leftGainDb: -12,
       rightGainDb: 6,
     });
+  });
+
+  it('snaps dragged band frequency unless free-frequency mode is unlocked', () => {
+    expect(resolveBandFrequency(117, false)).toBe(125);
+    expect(resolveBandFrequency(117, true)).toBe(117);
+  });
+
+  it('captures independent A/B snapshots', () => {
+    const source = eqState([0, 3, -2]);
+    const snapshot = captureEqSnapshot(source);
+
+    expect(snapshot.preampDb).toBe(0);
+    snapshot.bands[1].gainDb = 9;
+    expect(snapshot.bands[1].gainDb).toBe(9);
+    expect(source.bands[1].gainDb).toBe(3);
+  });
+
+  it('estimates peak gain from preamp plus maximum positive boost', () => {
+    expect(computeEstimatedPeakGain({ preampDb: -4, bands: eqState([0, 6, -2]).bands })).toBe(2);
+    expect(computeEstimatedPeakGain({ preampDb: -3, bands: eqState([-6, -2, -1]).bands })).toBe(-3);
+  });
+
+  it('computes loudness-matched A/B preamp within range', () => {
+    const source = { preampDb: -5, bands: eqState([6, 0, 0]).bands };
+    const target = { preampDb: 0, bands: eqState([12, 0, 0]).bands };
+
+    expect(computeLoudnessMatchedPreamp(source, target)).toBe(-11);
+    expect(computeLoudnessMatchedPreamp({ preampDb: -12, bands: eqState([0]).bands }, target)).toBe(-12);
+  });
+
+  it('describes known built-in presets and safely ignores unknown presets', () => {
+    expect(describePreset('harman-target')).toMatchObject({ category: 'target', approximation: true });
+    expect(describePreset('missing-preset')).toBeNull();
+  });
+
+  it('computes effective channel gain with and without constant-power balance', () => {
+    expect(computeEffectiveChannelGains({ balance: 0, leftGainDb: 1, rightGainDb: -1, constantPower: true })).toEqual({
+      leftDb: 1,
+      rightDb: -1,
+    });
+
+    const hardRight = computeEffectiveChannelGains({ balance: 1, leftGainDb: 0, rightGainDb: 0, constantPower: false });
+    expect(hardRight.leftDb).toBe(-Infinity);
+    expect(hardRight.rightDb).toBe(0);
   });
 });

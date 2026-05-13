@@ -66,7 +66,6 @@ export const startAccountLoginWindow = async (
 
   const partition = `persist:echo-account-${provider}`;
   const loginSession = session.fromPartition(partition);
-  await loginSession.clearStorageData({ storages: ['cookies'] }).catch(() => undefined);
 
   const window = new BrowserWindow({
     width: 1120,
@@ -97,6 +96,11 @@ export const startAccountLoginWindow = async (
     }
   };
 
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    void window.loadURL(url).catch(() => undefined);
+    return { action: 'deny' };
+  });
+
   const poll = setInterval(() => {
     void collectCookies();
   }, 1500);
@@ -115,7 +119,8 @@ export const startAccountLoginWindow = async (
     });
   });
 
-  await window.loadURL(config.url);
+  await collectCookies();
+  await window.loadURL(config.url).catch(() => undefined);
   await closed;
   await collectCookies();
 

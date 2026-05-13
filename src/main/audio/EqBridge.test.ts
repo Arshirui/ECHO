@@ -70,6 +70,32 @@ describe('EqBridge protocol validation', () => {
     expect(reloaded.listPresets().some((preset) => preset.name === 'Desk Headphones')).toBe(true);
   });
 
+  it('includes professional target curves as read-only built-in presets', async () => {
+    const bridge = createBridge();
+    const presets = bridge.listPresets();
+    const harman = presets.find((preset) => preset.id === 'harman-target');
+    const classicSmiley = presets.find((preset) => preset.id === 'classic-smiley');
+
+    expect(harman).toMatchObject({
+      name: 'Harman Target',
+      preampDb: -5,
+      readonly: true,
+    });
+    expect(harman?.bands.map((band) => band.gainDb)).toEqual([5, 4.5, 3.2, 1.2, 0, 0, 1.2, 2.2, 1.2, 0.4]);
+    expect(classicSmiley).toMatchObject({
+      name: 'Classic Smiley',
+      readonly: true,
+    });
+
+    await bridge.setPreset('harman-target');
+
+    expect(bridge.getState()).toMatchObject({
+      presetId: 'harman-target',
+      presetName: 'Harman Target',
+      preampDb: -5,
+    });
+  });
+
   it('clamps channel balance parameters before updating state', async () => {
     const bridge = createBridge();
 

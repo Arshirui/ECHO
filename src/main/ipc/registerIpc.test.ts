@@ -49,6 +49,9 @@ vi.mock('../app/appSettings', () => ({
     playbackSpeed: 1,
     playbackSpeedMode: 'nightcore',
     scanPerformanceMode: 'balanced',
+    duplicateTracksEnabled: false,
+    duplicateTracksMode: 'strict',
+    duplicateTracksAutoRebuildAfterScan: false,
     discordRichPresenceEnabled: false,
     lastFmEnabled: false,
     lastFmUsername: null,
@@ -78,6 +81,10 @@ vi.mock('../library/LibraryService', () => ({
 
 vi.mock('./libraryIpc', () => ({
   registerLibraryIpc: vi.fn(),
+}));
+
+vi.mock('./lyricsIpc', () => ({
+  registerLyricsIpc: vi.fn(),
 }));
 
 vi.mock('./playbackIpc', () => ({

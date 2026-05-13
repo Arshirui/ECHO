@@ -194,12 +194,20 @@ export class AccountService {
     mkdirSync(dirname(this.storagePath), { recursive: true });
     const tmpPath = `${this.storagePath}.tmp`;
     if (existsSync(this.storagePath)) {
-      copyFileSync(this.storagePath, this.getBackupStoragePath());
+      this.copyPrimaryToBackup();
     }
     writeFileSync(tmpPath, `${JSON.stringify(records, null, 2)}\n`, 'utf8');
     renameSync(tmpPath, this.storagePath);
-    copyFileSync(this.storagePath, this.getBackupStoragePath());
+    this.copyPrimaryToBackup();
     this.records = records;
+  }
+
+  private copyPrimaryToBackup(): void {
+    try {
+      copyFileSync(this.storagePath, this.getBackupStoragePath());
+    } catch {
+      // The primary atomic write remains the source of truth if backup creation fails.
+    }
   }
 }
 

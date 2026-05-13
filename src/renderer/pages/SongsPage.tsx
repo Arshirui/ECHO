@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, Download, FolderPlus, ListFilter, RotateCw, Search, Trash2 } from 'lucide-react';
-import type { EditableTrackTags, LibrarySort, LibraryTrack } from '../../shared/types/library';
+import { Check, ChevronDown, Download, FolderPlus, ListFilter, Play, RotateCw, Search, Trash2, X } from 'lucide-react';
+import type { DuplicateTrackIndexSummary, DuplicateTrackMember, EditableTrackTags, LibrarySort, LibraryTrack } from '../../shared/types/library';
 import { TrackContextMenu } from '../components/library/TrackContextMenu';
 import type { TrackMenuAction } from '../components/library/TrackContextMenu';
 import { TrackList } from '../components/library/TrackList';
@@ -41,6 +41,14 @@ export const SongsPage = (): JSX.Element => {
   const [sort, setSort] = useState<LibrarySort>('default');
   const [isLoading, setIsLoading] = useState(false);
   const [isScanningMissing, setIsScanningMissing] = useState(false);
+  const [hideDuplicates, setHideDuplicates] = useState(false);
+  const [isAnalyzingDuplicates, setIsAnalyzingDuplicates] = useState(false);
+  const [duplicateSummary, setDuplicateSummary] = useState<DuplicateTrackIndexSummary | null>(null);
+  const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null);
+  const [duplicateHiddenCounts, setDuplicateHiddenCounts] = useState<Record<string, number>>({});
+  const [versionMembers, setVersionMembers] = useState<DuplicateTrackMember[]>([]);
+  const [versionTrack, setVersionTrack] = useState<LibraryTrack | null>(null);
+  const [versionsBusy, setVersionsBusy] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +117,8 @@ export const SongsPage = (): JSX.Element => {
           pageSize,
           search,
           sort,
+          hideDuplicates,
+          duplicateMode: 'strict',
         });
 
         if (requestIdRef.current !== requestId) {
@@ -129,12 +139,37 @@ export const SongsPage = (): JSX.Element => {
         }
       }
     },
-    [search, sort],
+    [hideDuplicates, search, sort],
   );
 
   useEffect(() => {
     void loadTracks(1, 'replace');
   }, [loadTracks]);
+
+  useEffect(() => {
+    const loadDuplicateSettings = async (): Promise<void> => {
+      const app = window.echo?.app;
+      const library = window.echo?.library;
+
+      if (!app || !library) {
+        return;
+      }
+
+      try {
+        const [settings, summary] = await Promise.all([app.getSettings(), library.getDuplicateIndexSummary('strict')]);
+        setHideDuplicates(settings.duplicateTracksEnabled);
+        setDuplicateSummary(summary);
+
+        if (settings.duplicateTracksEnabled && summary.duplicateGroups === 0) {
+          setDuplicateMessage('需要先分析重复歌曲');
+        }
+      } catch {
+        // Duplicate controls are optional around the core song list.
+      }
+    };
+
+    void loadDuplicateSettings();
+  }, []);
 
   useEffect(() => {
     const handleLibraryChanged = (): void => {
@@ -180,6 +215,51 @@ export const SongsPage = (): JSX.Element => {
       setError(scanError instanceof Error ? scanError.message : String(scanError));
     } finally {
       setIsScanningMissing(false);
+    }
+  };
+
+  const handleToggleHideDuplicates = async (): Promise<void> => {
+    const next = !hideDuplicates;
+    setHideDuplicates(next);
+    setDuplicateMessage(null);
+
+    try {
+      await window.echo?.app?.setSettings({
+        duplicateTracksEnabled: next,
+        duplicateTracksMode: 'strict',
+      });
+      const summary = await window.echo?.library?.getDuplicateIndexSummary('strict');
+      setDuplicateSummary(summary ?? null);
+
+      if (next && (!summary || summary.duplicateGroups === 0)) {
+        setDuplicateMessage('需要先分析重复歌曲');
+      }
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : String(toggleError));
+    }
+  };
+
+  const handleAnalyzeDuplicates = async (): Promise<void> => {
+    const library = window.echo?.library;
+
+    if (!library) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to analyze duplicate tracks.');
+      return;
+    }
+
+    setIsAnalyzingDuplicates(true);
+    setError(null);
+    setDuplicateMessage(null);
+
+    try {
+      const summary = await library.refreshDuplicateTracks('strict');
+      setDuplicateSummary(summary);
+      setDuplicateMessage(`发现 ${summary.duplicateGroups} 组重复歌曲，隐藏 ${summary.hiddenTracks} 个低音质版本`);
+      await loadTracks(1, 'replace');
+    } catch (duplicateError) {
+      setError(duplicateError instanceof Error ? duplicateError.message : String(duplicateError));
+    } finally {
+      setIsAnalyzingDuplicates(false);
     }
   };
 
@@ -235,6 +315,51 @@ export const SongsPage = (): JSX.Element => {
     },
     [playTrack, queueSource, tracks],
   );
+
+  useEffect(() => {
+    const loadDuplicateBadges = async (): Promise<void> => {
+      const library = window.echo?.library;
+
+      if (!library?.getDuplicateTrackVersions || tracks.length === 0) {
+        setDuplicateHiddenCounts({});
+        return;
+      }
+
+      const entries = await Promise.all(
+        tracks.map(async (track) => {
+          const members = await library.getDuplicateTrackVersions(track.id);
+          const hiddenCount = members.filter((member) => member.hidden).length;
+          return [track.id, hiddenCount] as const;
+        }),
+      );
+
+      setDuplicateHiddenCounts(Object.fromEntries(entries.filter(([, hiddenCount]) => hiddenCount > 0)));
+    };
+
+    void loadDuplicateBadges();
+  }, [tracks]);
+
+  const handleShowVersions = useCallback(async (track: LibraryTrack): Promise<void> => {
+    const library = window.echo?.library;
+
+    if (!library) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to inspect duplicate versions.');
+      return;
+    }
+
+    setVersionTrack(track);
+    setVersionsBusy(true);
+    setError(null);
+
+    try {
+      setVersionMembers(await library.getDuplicateTrackVersions(track.id));
+    } catch (versionsError) {
+      setVersionMembers([]);
+      setError(versionsError instanceof Error ? versionsError.message : String(versionsError));
+    } finally {
+      setVersionsBusy(false);
+    }
+  }, []);
 
   const handleOpenTrackMenu = useCallback((track: LibraryTrack, position: { x: number; y: number }): void => {
     setTrackMenu({ track, position });
@@ -449,6 +574,19 @@ export const SongsPage = (): JSX.Element => {
           >
             <Trash2 size={17} />
           </button>
+          <button
+            className={`duplicate-toggle ${hideDuplicates ? 'active' : ''}`}
+            type="button"
+            title="只在列表中隐藏低音质重复项，不会删除文件。"
+            aria-pressed={hideDuplicates}
+            onClick={() => void handleToggleHideDuplicates()}
+          >
+            隐藏重复歌曲
+          </button>
+          <button className="duplicate-analyze-button" type="button" disabled={isAnalyzingDuplicates} onClick={() => void handleAnalyzeDuplicates()}>
+            <RotateCw className={isAnalyzingDuplicates ? 'spinning-icon' : undefined} size={15} />
+            {isAnalyzingDuplicates ? '分析中...' : '分析重复歌曲'}
+          </button>
         </div>
       </header>
 
@@ -511,15 +649,17 @@ export const SongsPage = (): JSX.Element => {
         canLoadMore={hasMore && !isLoading}
         onEndReached={handleLoadMore}
         onAddToQueue={handleAddTrackToQueue}
+        duplicateHiddenCounts={duplicateHiddenCounts}
+        onShowVersions={(track) => void handleShowVersions(track)}
         likedTrackIds={likedTrackIds}
         onToggleLiked={(track) => void handleToggleLiked(track)}
         onOpenTrackMenu={handleOpenTrackMenu}
         onPlay={handlePlayTrack}
       />
 
-      {error || statusMessage || isLoading || isScanningMissing || isClearing ? (
+      {error || statusMessage || duplicateMessage || isLoading || isScanningMissing || isClearing || isAnalyzingDuplicates ? (
         <div className="list-footer">
-          <span>{error ?? statusMessage ?? (isScanningMissing ? '正在扫描失效歌曲...' : isClearing ? '正在清空列表...' : '正在读取曲库...')}</span>
+          <span>{error ?? statusMessage ?? duplicateMessage ?? (isAnalyzingDuplicates ? '正在分析重复歌曲...' : isScanningMissing ? '正在扫描失效歌曲...' : isClearing ? '正在清空列表...' : '正在读取曲库...')}</span>
         </div>
       ) : null}
 
@@ -541,6 +681,52 @@ export const SongsPage = (): JSX.Element => {
         onClose={closeTagEditor}
         onSave={(track, tags, coverPath, coverUrl, coverMimeType) => void handleSaveTags(track, tags, coverPath, coverUrl, coverMimeType)}
       />
+
+      {versionTrack ? (
+        <div className="duplicate-version-overlay" role="dialog" aria-modal="true" aria-label="重复歌曲版本">
+          <section className="duplicate-version-panel">
+            <header>
+              <div>
+                <span>Duplicate Track Merge View</span>
+                <h2>{versionTrack.title}</h2>
+                <p>{duplicateSummary ? `${duplicateSummary.duplicateGroups} 组 / 隐藏 ${duplicateSummary.hiddenTracks} 首` : 'strict 模式'}</p>
+              </div>
+              <button className="row-action" type="button" aria-label="关闭版本面板" onClick={() => setVersionTrack(null)}>
+                <X size={17} />
+              </button>
+            </header>
+            {versionsBusy ? <p className="duplicate-version-empty">读取版本中...</p> : null}
+            {!versionsBusy && versionMembers.length === 0 ? <p className="duplicate-version-empty">没有找到隐藏版本。需要先分析重复歌曲。</p> : null}
+            <div className="duplicate-version-list">
+              {versionMembers.map((member) => (
+                <article className="duplicate-version-row" key={member.track.id}>
+                  <div>
+                    <strong>{member.track.title}</strong>
+                    <span>{member.track.artist} - {member.track.album}</span>
+                    <small title={member.track.path}>{member.track.path}</small>
+                  </div>
+                  <div className="duplicate-version-specs">
+                    <span>{member.track.codec ?? 'unknown'}</span>
+                    <span>{member.track.bitDepth ? `${member.track.bitDepth}bit` : '--'}</span>
+                    <span>{member.track.sampleRate ? `${Math.round(member.track.sampleRate / 1000)}kHz` : '--'}</span>
+                    <span>{member.track.bitrate ? `${Math.round(member.track.bitrate / 1000)}kbps` : '--'}</span>
+                    <span>{Math.round(member.track.duration)}s</span>
+                  </div>
+                  <div className="duplicate-version-rank">
+                    <span>score {Math.round(member.qualityScore)}</span>
+                    <strong>#{member.rank}</strong>
+                    {member.hidden ? <em>hidden</em> : <em>当前显示版本</em>}
+                  </div>
+                  <button className="row-action" type="button" title="播放这个版本" onClick={() => void handlePlayTrack(member.track)}>
+                    <Play size={16} />
+                  </button>
+                </article>
+              ))}
+            </div>
+            <p className="duplicate-version-todo">TODO: 手动指定代表版本。</p>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 };

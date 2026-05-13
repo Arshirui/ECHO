@@ -30,6 +30,14 @@ const probe = (filePath: string, fileSampleRate: number): AudioProbeResult => ({
   bitrate: 1400000,
 });
 
+const pcmBuffer = (samples: number[]): Buffer => {
+  const buffer = Buffer.alloc(samples.length * 4);
+  samples.forEach((sample, index) => {
+    buffer.writeFloatLE(sample, index * 4);
+  });
+  return buffer;
+};
+
 class FakeDecoder {
   readonly decodeRequests: PcmDecodeRequest[] = [];
   readonly probeRequests: string[] = [];
@@ -64,6 +72,37 @@ class FakeDecoder {
       stream,
       stop,
       done: Promise.resolve(),
+    };
+  }
+}
+
+class PcmChunkDecoder extends FakeDecoder {
+  constructor(
+    probes: Map<string, AudioProbeResult>,
+    private readonly chunks: Buffer[],
+  ) {
+    super(probes);
+  }
+
+  override decodeLocalFile(request: PcmDecodeRequest): DecoderRun {
+    this.decodeRequests.push(request);
+    const stream = new PassThrough();
+    const stop = vi.fn(() => {
+      stream.destroy();
+    });
+
+    queueMicrotask(() => {
+      if (stream.destroyed) {
+        return;
+      }
+
+      this.chunks.forEach((chunk) => stream.write(chunk));
+    });
+
+    return {
+      stream,
+      stop,
+      done: new Promise(() => undefined),
     };
   }
 }
@@ -233,6 +272,65 @@ describe('Audio Core sample-rate regression guard', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(bridges[0].inputEnded).toBe(true);
+  });
+
+  it('exposes pre-native PCM level telemetry after volume is applied', async () => {
+    const decoder = new PcmChunkDecoder(new Map([['meter.flac', probe('meter.flac', 44100)]]), [pcmBuffer([1, -1])]);
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => new FakeBridge(),
+      logger: noopLogger,
+    });
+
+    await session.playLocalFile({ filePath: 'meter.flac', output: { outputMode: 'shared', volume: 0.5 } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const status = session.getStatus();
+
+    expect(status.audioLevels?.inputPeakDb).toBe(-6);
+    expect(status.audioLevels?.inputRmsDb).toBe(-6);
+    expect(status.audioLevels?.meterSource).toBe('pre_native_estimated_post_dsp');
+    session.stop();
+  });
+
+  it('raises realtime clipping risk from estimated output level and clip count', async () => {
+    const decoder = new PcmChunkDecoder(new Map([['hot.flac', probe('hot.flac', 44100)]]), [pcmBuffer([1, 0.5])]);
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => new FakeBridge(),
+      logger: noopLogger,
+    });
+
+    await session.playLocalFile({ filePath: 'hot.flac', output: { outputMode: 'shared' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const status = session.getStatus();
+
+    expect(status.audioLevels?.estimatedOutputPeakDb).toBe(0);
+    expect(status.audioLevels?.clipCount).toBe(1);
+    expect(status.clippingRisk).toBe(true);
+    expect(status.warnings).toContain('audio_level_clipping_risk');
+    expect(status.warnings).toContain('audio_level_clipped');
+    session.stop();
+  });
+
+  it('resets level telemetry on stop', async () => {
+    const decoder = new PcmChunkDecoder(new Map([['reset.flac', probe('reset.flac', 44100)]]), [pcmBuffer([0.5, -0.5])]);
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => new FakeBridge(),
+      logger: noopLogger,
+    });
+
+    await session.playLocalFile({ filePath: 'reset.flac', output: { outputMode: 'shared' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(session.getStatus().audioLevels?.inputPeakDb).toBe(-6);
+
+    const stopped = session.stop();
+
+    expect(stopped.audioLevels?.inputPeakDb).toBeNull();
+    expect(stopped.audioLevels?.clipCount).toBe(0);
   });
 
   it('96k file + exclusive requests 96000', async () => {

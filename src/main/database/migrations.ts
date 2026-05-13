@@ -385,6 +385,93 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 14,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS lyrics_cache (
+          id TEXT PRIMARY KEY,
+          cache_key TEXT NOT NULL UNIQUE,
+          track_id TEXT,
+          provider TEXT NOT NULL,
+          provider_lyrics_id TEXT,
+          title TEXT NOT NULL,
+          artist TEXT NOT NULL,
+          album TEXT,
+          duration_seconds REAL,
+          kind TEXT NOT NULL,
+          plain_lyrics TEXT,
+          synced_lyrics TEXT,
+          lines_json TEXT NOT NULL,
+          offset_ms INTEGER NOT NULL DEFAULT 0,
+          score REAL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS lyrics_candidates (
+          id TEXT PRIMARY KEY,
+          track_id TEXT,
+          provider TEXT NOT NULL,
+          provider_lyrics_id TEXT,
+          title TEXT NOT NULL,
+          artist TEXT NOT NULL,
+          album TEXT,
+          duration_seconds REAL,
+          instrumental INTEGER NOT NULL DEFAULT 0,
+          has_synced INTEGER NOT NULL DEFAULT 0,
+          has_plain INTEGER NOT NULL DEFAULT 0,
+          score REAL NOT NULL,
+          source_label TEXT NOT NULL,
+          raw_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_lyrics_cache_track_provider ON lyrics_cache(track_id, provider);
+        CREATE INDEX IF NOT EXISTS idx_lyrics_cache_cache_key ON lyrics_cache(cache_key);
+        CREATE INDEX IF NOT EXISTS idx_lyrics_candidates_track_provider_status ON lyrics_candidates(track_id, provider, status);
+      `);
+    },
+  },
+  {
+    id: 15,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS duplicate_track_groups (
+          id TEXT PRIMARY KEY,
+          mode TEXT NOT NULL,
+          duplicate_key TEXT NOT NULL,
+          representative_track_id TEXT NOT NULL,
+          track_count INTEGER NOT NULL,
+          hidden_count INTEGER NOT NULL DEFAULT 0,
+          confidence REAL NOT NULL DEFAULT 1.0,
+          reasons_json TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(mode, duplicate_key)
+        );
+
+        CREATE TABLE IF NOT EXISTS duplicate_track_members (
+          group_id TEXT NOT NULL,
+          track_id TEXT NOT NULL,
+          quality_score REAL NOT NULL,
+          rank INTEGER NOT NULL,
+          hidden INTEGER NOT NULL DEFAULT 0,
+          reasons_json TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(group_id, track_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_duplicate_members_track_id ON duplicate_track_members(track_id);
+        CREATE INDEX IF NOT EXISTS idx_duplicate_members_group_rank ON duplicate_track_members(group_id, rank);
+        CREATE INDEX IF NOT EXISTS idx_duplicate_groups_representative ON duplicate_track_groups(representative_track_id);
+        CREATE INDEX IF NOT EXISTS idx_duplicate_members_hidden ON duplicate_track_members(hidden);
+      `);
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

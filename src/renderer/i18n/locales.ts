@@ -347,6 +347,172 @@ export type TranslationKey =
   | 'settings.library.networkPanel.trackNotFound'
   | 'settings.library.networkPanel.unknownArtist'
   | 'settings.library.networkPanel.untitled'
+  | 'settings.eq.action.autoPreamp'
+  | 'settings.eq.action.bypass'
+  | 'settings.eq.action.delete'
+  | 'settings.eq.action.duplicatePreset'
+  | 'settings.eq.action.freqDown'
+  | 'settings.eq.action.freqFineDown'
+  | 'settings.eq.action.freqFineUp'
+  | 'settings.eq.action.freqUp'
+  | 'settings.eq.action.holdBypass'
+  | 'settings.eq.action.applyA'
+  | 'settings.eq.action.applyB'
+  | 'settings.eq.action.applySafePreamp'
+  | 'settings.eq.action.overwrite'
+  | 'settings.eq.action.redo'
+  | 'settings.eq.action.resetBand'
+  | 'settings.eq.action.resetAllGains'
+  | 'settings.eq.action.resetChannelBalance'
+  | 'settings.eq.action.resetEq'
+  | 'settings.eq.action.resetFrequencies'
+  | 'settings.eq.action.resetMonitorTools'
+  | 'settings.eq.action.resetSelected'
+  | 'settings.eq.action.resetTrimsOnly'
+  | 'settings.eq.action.revertUserPreset'
+  | 'settings.eq.action.save'
+  | 'settings.eq.action.saveAs'
+  | 'settings.eq.action.storeA'
+  | 'settings.eq.action.storeB'
+  | 'settings.eq.action.toggleBypassOff'
+  | 'settings.eq.action.toggleBypassOn'
+  | 'settings.eq.action.undo'
+  | 'settings.eq.action.unlockFrequency'
+  | 'settings.eq.ab.emptySlot'
+  | 'settings.eq.ab.loudnessMatched'
+  | 'settings.eq.ab.summary'
+  | 'settings.eq.ab.title'
+  | 'settings.eq.band.fallback'
+  | 'settings.eq.band.frequency'
+  | 'settings.eq.band.frequencyStepper'
+  | 'settings.eq.band.frequencySnapped'
+  | 'settings.eq.band.frequencyUnlocked'
+  | 'settings.eq.band.gain'
+  | 'settings.eq.band.gainStepper'
+  | 'settings.eq.band.inspector'
+  | 'settings.eq.band.readoutsAria'
+  | 'settings.eq.bitPerfect.channelDisabled'
+  | 'settings.eq.bitPerfect.disabled'
+  | 'settings.eq.bitPerfect.readyPath'
+  | 'settings.eq.bitPerfect.sourceBoth'
+  | 'settings.eq.bitPerfect.sourceChannel'
+  | 'settings.eq.bitPerfect.sourceEq'
+  | 'settings.eq.channel.active'
+  | 'settings.eq.channel.balance'
+  | 'settings.eq.channel.bypassed'
+  | 'settings.eq.channel.center'
+  | 'settings.eq.channel.calibrationMode'
+  | 'settings.eq.channel.constantPower'
+  | 'settings.eq.channel.description'
+  | 'settings.eq.channel.dsp'
+  | 'settings.eq.channel.effectiveLeft'
+  | 'settings.eq.channel.effectiveRight'
+  | 'settings.eq.channel.group.balance'
+  | 'settings.eq.channel.group.gainTrim'
+  | 'settings.eq.channel.group.monitorTools'
+  | 'settings.eq.channel.group.phaseTools'
+  | 'settings.eq.channel.invertLeft'
+  | 'settings.eq.channel.invertRight'
+  | 'settings.eq.channel.leftGain'
+  | 'settings.eq.channel.leftTotal'
+  | 'settings.eq.channel.mono.left'
+  | 'settings.eq.channel.mono.off'
+  | 'settings.eq.channel.mono.right'
+  | 'settings.eq.channel.mono.sum'
+  | 'settings.eq.channel.monoMode'
+  | 'settings.eq.channel.quick.leftSolo'
+  | 'settings.eq.channel.quick.monoCheck'
+  | 'settings.eq.channel.quick.phaseCheck'
+  | 'settings.eq.channel.quick.rightSolo'
+  | 'settings.eq.channel.quick.swapCheck'
+  | 'settings.eq.channel.quickTools'
+  | 'settings.eq.channel.rightGain'
+  | 'settings.eq.channel.rightTotal'
+  | 'settings.eq.channel.swap'
+  | 'settings.eq.channel.title'
+  | 'settings.eq.curve.aria'
+  | 'settings.eq.curve.dragBand'
+  | 'settings.eq.curve.fineEdit'
+  | 'settings.eq.curve.freeFrequency'
+  | 'settings.eq.curve.snapped'
+  | 'settings.eq.error.bridgeChannelBalance'
+  | 'settings.eq.error.bridgeControlEq'
+  | 'settings.eq.error.bridgeDeletePreset'
+  | 'settings.eq.error.bridgeSavePreset'
+  | 'settings.eq.error.presetName'
+  | 'settings.eq.level.clips'
+  | 'settings.eq.level.estimatedOutputPeak'
+  | 'settings.eq.level.headroom'
+  | 'settings.eq.level.inputPeak'
+  | 'settings.eq.level.inputRms'
+  | 'settings.eq.level.sourceEstimate'
+  | 'settings.eq.preamp.aria'
+  | 'settings.eq.preamp.inputSafety'
+  | 'settings.eq.preamp.maxBoost'
+  | 'settings.eq.preamp.metricsAria'
+  | 'settings.eq.preamp.recommended'
+  | 'settings.eq.preamp.safeHeadroom'
+  | 'settings.eq.preset.builtIn'
+  | 'settings.eq.preset.approximation'
+  | 'settings.eq.preset.copyName'
+  | 'settings.eq.preset.filter.all'
+  | 'settings.eq.preset.filter.builtIn'
+  | 'settings.eq.preset.filter.genre'
+  | 'settings.eq.preset.filter.target'
+  | 'settings.eq.preset.filter.user'
+  | 'settings.eq.preset.filter.utility'
+  | 'settings.eq.preset.filterAria'
+  | 'settings.eq.preset.meta.approximationCaution'
+  | 'settings.eq.preset.meta.genrePurpose'
+  | 'settings.eq.preset.meta.genreScenario'
+  | 'settings.eq.preset.meta.targetPurpose'
+  | 'settings.eq.preset.meta.targetScenario'
+  | 'settings.eq.preset.meta.tasteCaution'
+  | 'settings.eq.preset.meta.type.animeJpop'
+  | 'settings.eq.preset.meta.type.bassBoost'
+  | 'settings.eq.preset.meta.type.bkRoomCurve'
+  | 'settings.eq.preset.meta.type.broadcastVoice'
+  | 'settings.eq.preset.meta.type.classicSmiley'
+  | 'settings.eq.preset.meta.type.classical'
+  | 'settings.eq.preset.meta.type.diffuseField'
+  | 'settings.eq.preset.meta.type.flat'
+  | 'settings.eq.preset.meta.type.harmanInEar'
+  | 'settings.eq.preset.meta.type.harmanTarget'
+  | 'settings.eq.preset.meta.type.headphoneWarm'
+  | 'settings.eq.preset.meta.type.loudness'
+  | 'settings.eq.preset.meta.type.night'
+  | 'settings.eq.preset.meta.type.rock'
+  | 'settings.eq.preset.meta.type.studioNeutral'
+  | 'settings.eq.preset.meta.type.trebleSparkle'
+  | 'settings.eq.preset.meta.type.vinylWarmth'
+  | 'settings.eq.preset.meta.type.vocalClear'
+  | 'settings.eq.preset.meta.utilityCaution'
+  | 'settings.eq.preset.meta.utilityPurpose'
+  | 'settings.eq.preset.meta.utilityScenario'
+  | 'settings.eq.preset.modified'
+  | 'settings.eq.preset.nameAria'
+  | 'settings.eq.preset.readonly'
+  | 'settings.eq.preset.savePlaceholder'
+  | 'settings.eq.preset.searchAria'
+  | 'settings.eq.preset.searchPlaceholder'
+  | 'settings.eq.preset.selectorAria'
+  | 'settings.eq.preset.user'
+  | 'settings.eq.state.eqDisabled'
+  | 'settings.eq.state.eqEnabled'
+  | 'settings.eq.status.bitPerfect'
+  | 'settings.eq.status.clippingRisk'
+  | 'settings.eq.status.eq'
+  | 'settings.eq.status.estimatedPeak'
+  | 'settings.eq.status.headroom'
+  | 'settings.eq.status.preamp'
+  | 'settings.eq.status.preset'
+  | 'settings.eq.status.safe'
+  | 'settings.eq.status.safeHeadroomShort'
+  | 'settings.eq.status.warning'
+  | 'settings.eq.subtitle'
+  | 'settings.eq.title'
+  | 'settings.eq.warning.channelClipping'
+  | 'settings.eq.warning.lowerPreamp'
   | 'settings.nav.about.description'
   | 'settings.nav.about.label'
   | 'settings.nav.appearance.description'
@@ -723,6 +889,172 @@ const zhCN: TranslationMap = {
   'settings.library.networkPanel.trackNotFound': '找不到该曲目。请先播放一首歌，或输入曲目 ID。',
   'settings.library.networkPanel.unknownArtist': '未知歌手',
   'settings.library.networkPanel.untitled': '未命名',
+  'settings.eq.action.autoPreamp': '自动 {value}',
+  'settings.eq.action.bypass': '旁路',
+  'settings.eq.action.delete': '删除',
+  'settings.eq.action.duplicatePreset': '复制当前',
+  'settings.eq.action.freqDown': '频率 -',
+  'settings.eq.action.freqFineDown': '细 -',
+  'settings.eq.action.freqFineUp': '细 +',
+  'settings.eq.action.freqUp': '频率 +',
+  'settings.eq.action.holdBypass': '按住旁路 EQ',
+  'settings.eq.action.applyA': '应用 A',
+  'settings.eq.action.applyB': '应用 B',
+  'settings.eq.action.applySafePreamp': '应用安全前级',
+  'settings.eq.action.overwrite': '覆盖当前',
+  'settings.eq.action.redo': '重做',
+  'settings.eq.action.resetBand': '重置 {frequency}',
+  'settings.eq.action.resetAllGains': '重置全部增益',
+  'settings.eq.action.resetChannelBalance': '重置声道平衡',
+  'settings.eq.action.resetEq': '重置 EQ',
+  'settings.eq.action.resetFrequencies': '恢复标准频点',
+  'settings.eq.action.resetMonitorTools': '重置监听工具',
+  'settings.eq.action.resetSelected': '重置选中',
+  'settings.eq.action.resetTrimsOnly': '只重置校正',
+  'settings.eq.action.revertUserPreset': '还原用户预设',
+  'settings.eq.action.save': '保存',
+  'settings.eq.action.saveAs': '另存为',
+  'settings.eq.action.storeA': '存入 A',
+  'settings.eq.action.storeB': '存入 B',
+  'settings.eq.action.toggleBypassOff': '关闭旁路',
+  'settings.eq.action.toggleBypassOn': '切换旁路',
+  'settings.eq.action.undo': '撤销',
+  'settings.eq.action.unlockFrequency': '解锁频率',
+  'settings.eq.ab.emptySlot': '空槽',
+  'settings.eq.ab.loudnessMatched': '响度匹配',
+  'settings.eq.ab.summary': '{preset} / peak {peak} / out {output} / preamp {preamp}',
+  'settings.eq.ab.title': 'A/B 对比',
+  'settings.eq.band.fallback': '频段',
+  'settings.eq.band.frequency': '频率',
+  'settings.eq.band.frequencyStepper': '频率步进',
+  'settings.eq.band.frequencySnapped': '吸附到标准频点',
+  'settings.eq.band.frequencyUnlocked': '自由频率',
+  'settings.eq.band.gain': '增益',
+  'settings.eq.band.gainStepper': '增益步进',
+  'settings.eq.band.inspector': '选中频段',
+  'settings.eq.band.readoutsAria': '10 段 EQ 可拖动频段读数',
+  'settings.eq.bitPerfect.channelDisabled': 'DSP 已启用：bit-perfect 已关闭。',
+  'settings.eq.bitPerfect.disabled': 'DSP 已启用：bit-perfect 已关闭{reason}。',
+  'settings.eq.bitPerfect.readyPath': '可保留 bit-perfect 路径。',
+  'settings.eq.bitPerfect.sourceBoth': 'EQ + 声道平衡',
+  'settings.eq.bitPerfect.sourceChannel': '声道平衡',
+  'settings.eq.bitPerfect.sourceEq': 'EQ',
+  'settings.eq.channel.active': '启用',
+  'settings.eq.channel.balance': '平衡',
+  'settings.eq.channel.bypassed': '旁路',
+  'settings.eq.channel.calibrationMode': '校准模式',
+  'settings.eq.channel.center': '居中',
+  'settings.eq.channel.constantPower': '恒定功率',
+  'settings.eq.channel.description': 'Balance 用于左右偏移；L/R Gain 用于精细校正；Mono Sum 用于单声道检查；Invert 用于相位检查。',
+  'settings.eq.channel.dsp': 'DSP',
+  'settings.eq.channel.effectiveLeft': '左有效增益',
+  'settings.eq.channel.effectiveRight': '右有效增益',
+  'settings.eq.channel.group.balance': 'Balance',
+  'settings.eq.channel.group.gainTrim': 'Gain Trim',
+  'settings.eq.channel.group.monitorTools': '监听工具',
+  'settings.eq.channel.group.phaseTools': '相位工具',
+  'settings.eq.channel.invertLeft': '左声道反相',
+  'settings.eq.channel.invertRight': '右声道反相',
+  'settings.eq.channel.leftGain': '左增益',
+  'settings.eq.channel.leftTotal': '左总增益',
+  'settings.eq.channel.mono.left': '左',
+  'settings.eq.channel.mono.off': '关闭',
+  'settings.eq.channel.mono.right': '右',
+  'settings.eq.channel.mono.sum': '合并',
+  'settings.eq.channel.monoMode': '单声道模式',
+  'settings.eq.channel.quick.leftSolo': '左声道 Solo',
+  'settings.eq.channel.quick.monoCheck': '单声道检查',
+  'settings.eq.channel.quick.phaseCheck': '相位检查',
+  'settings.eq.channel.quick.rightSolo': '右声道 Solo',
+  'settings.eq.channel.quick.swapCheck': '交换检查',
+  'settings.eq.channel.quickTools': '快速监听工具',
+  'settings.eq.channel.rightGain': '右增益',
+  'settings.eq.channel.rightTotal': '右总增益',
+  'settings.eq.channel.swap': '交换 L/R',
+  'settings.eq.channel.title': '声道平衡',
+  'settings.eq.curve.aria': '可拖动 10 段 EQ 频响曲线',
+  'settings.eq.curve.dragBand': '拖动 {frequency} EQ 频段',
+  'settings.eq.curve.fineEdit': 'Shift 细调',
+  'settings.eq.curve.freeFrequency': '自由频率',
+  'settings.eq.curve.snapped': '标准吸附',
+  'settings.eq.error.bridgeChannelBalance': '桌面桥接不可用。请在 ECHO Next 桌面端控制声道平衡。',
+  'settings.eq.error.bridgeControlEq': '桌面桥接不可用。请在 ECHO Next 桌面端控制 EQ。',
+  'settings.eq.error.bridgeDeletePreset': '桌面桥接不可用。请在 ECHO Next 桌面端删除 EQ 预设。',
+  'settings.eq.error.bridgeSavePreset': '桌面桥接不可用。请在 ECHO Next 桌面端保存 EQ 预设。',
+  'settings.eq.error.presetName': '请输入预设名称。',
+  'settings.eq.level.clips': '削波 {count}',
+  'settings.eq.level.estimatedOutputPeak': '估算输出峰值',
+  'settings.eq.level.headroom': '余量',
+  'settings.eq.level.inputPeak': '输入峰值',
+  'settings.eq.level.inputRms': '输入 RMS',
+  'settings.eq.level.sourceEstimate': 'pre-native + DSP 估算',
+  'settings.eq.preamp.aria': 'EQ 前级增益',
+  'settings.eq.preamp.inputSafety': '输入安全估算',
+  'settings.eq.preamp.maxBoost': '最大提升',
+  'settings.eq.preamp.metricsAria': '安全余量指标',
+  'settings.eq.preamp.recommended': '建议',
+  'settings.eq.preamp.safeHeadroom': '安全余量',
+  'settings.eq.preset.approximation': '10 段近似',
+  'settings.eq.preset.builtIn': '内置预设',
+  'settings.eq.preset.copyName': '{name} 副本',
+  'settings.eq.preset.filter.all': '全部',
+  'settings.eq.preset.filter.builtIn': '内置',
+  'settings.eq.preset.filter.genre': '风格',
+  'settings.eq.preset.filter.target': '目标曲线',
+  'settings.eq.preset.filter.user': '用户',
+  'settings.eq.preset.filter.utility': '工具',
+  'settings.eq.preset.filterAria': '预设筛选',
+  'settings.eq.preset.meta.approximationCaution': '这是 10 段图示 EQ 近似，不是精确耳机校准。',
+  'settings.eq.preset.meta.genrePurpose': '用于快速塑造音乐风格取向。',
+  'settings.eq.preset.meta.genreScenario': '适合按曲风试听，再按设备微调。',
+  'settings.eq.preset.meta.targetPurpose': '用于接近常见听感目标曲线。',
+  'settings.eq.preset.meta.targetScenario': '适合耳机或近场系统的目标曲线对比。',
+  'settings.eq.preset.meta.tasteCaution': '这是听感取向，不是校准结果。',
+  'settings.eq.preset.meta.type.animeJpop': 'Anime / J-Pop',
+  'settings.eq.preset.meta.type.bassBoost': '低频增强',
+  'settings.eq.preset.meta.type.bkRoomCurve': 'B&K 房间曲线',
+  'settings.eq.preset.meta.type.broadcastVoice': '广播人声',
+  'settings.eq.preset.meta.type.classicSmiley': '经典微笑曲线',
+  'settings.eq.preset.meta.type.classical': '古典',
+  'settings.eq.preset.meta.type.diffuseField': 'Diffuse Field',
+  'settings.eq.preset.meta.type.flat': '平直',
+  'settings.eq.preset.meta.type.harmanInEar': 'Harman 入耳目标',
+  'settings.eq.preset.meta.type.harmanTarget': 'Harman 目标',
+  'settings.eq.preset.meta.type.headphoneWarm': '耳机暖声',
+  'settings.eq.preset.meta.type.loudness': '响度补偿',
+  'settings.eq.preset.meta.type.night': '夜间',
+  'settings.eq.preset.meta.type.rock': '摇滚',
+  'settings.eq.preset.meta.type.studioNeutral': '录音室中性',
+  'settings.eq.preset.meta.type.trebleSparkle': '高频空气感',
+  'settings.eq.preset.meta.type.vinylWarmth': '黑胶暖声',
+  'settings.eq.preset.meta.type.vocalClear': '人声清晰',
+  'settings.eq.preset.meta.utilityCaution': '工具型预设会改变监听判断，请确认后再保存。',
+  'settings.eq.preset.meta.utilityPurpose': '用于检查、补偿或更安全的监听。',
+  'settings.eq.preset.meta.utilityScenario': '适合定位问题、降低疲劳或做快速对比。',
+  'settings.eq.preset.modified': '已修改',
+  'settings.eq.preset.nameAria': '预设名称',
+  'settings.eq.preset.readonly': '内置预设为只读。',
+  'settings.eq.preset.savePlaceholder': '保存为用户预设',
+  'settings.eq.preset.searchAria': '搜索预设',
+  'settings.eq.preset.searchPlaceholder': '搜索预设',
+  'settings.eq.preset.selectorAria': 'EQ 预设',
+  'settings.eq.preset.user': '用户预设',
+  'settings.eq.state.eqDisabled': 'EQ 已关闭',
+  'settings.eq.state.eqEnabled': 'EQ 已启用',
+  'settings.eq.status.bitPerfect': 'Bit-perfect',
+  'settings.eq.status.clippingRisk': '削波风险',
+  'settings.eq.status.eq': 'EQ',
+  'settings.eq.status.estimatedPeak': '估算峰值',
+  'settings.eq.status.headroom': '余量',
+  'settings.eq.status.preamp': '前级',
+  'settings.eq.status.preset': '预设',
+  'settings.eq.status.safe': '安全',
+  'settings.eq.status.safeHeadroomShort': '安全余量',
+  'settings.eq.status.warning': '警告',
+  'settings.eq.subtitle': 'HiFi DSP 面板',
+  'settings.eq.title': '10 段图示 EQ',
+  'settings.eq.warning.channelClipping': '存在削波风险：降低增益或前级可获得更安全的余量。',
+  'settings.eq.warning.lowerPreamp': '降低前级可避免削波。',
   'settings.nav.about.description': '版本、更新与开发工具',
   'settings.nav.about.label': '关于 / 高级',
   'settings.nav.appearance.description': '主题、字体、背景',
@@ -963,6 +1295,38 @@ const zhTW: TranslationMap = {
   'settings.nav.library.label': '媒體庫',
   'settings.nav.about.label': '關於 / 進階',
   'settings.nav.danger.label': '危險操作',
+  'settings.eq.action.autoPreamp': '自動 {value}',
+  'settings.eq.action.delete': '刪除',
+  'settings.eq.action.holdBypass': '按住旁路 EQ',
+  'settings.eq.action.resetChannelBalance': '重置聲道平衡',
+  'settings.eq.action.save': '儲存',
+  'settings.eq.bitPerfect.channelDisabled': 'DSP 已啟用：bit-perfect 已關閉。',
+  'settings.eq.bitPerfect.disabled': 'DSP 已啟用：bit-perfect 已關閉{reason}。',
+  'settings.eq.channel.active': '啟用',
+  'settings.eq.channel.center': '置中',
+  'settings.eq.channel.constantPower': '恆定功率',
+  'settings.eq.channel.description': 'Balance 用於左右偏移；L/R Gain 用於精細校正；Mono Sum 用於單聲道檢查；Invert 用於相位檢查。',
+  'settings.eq.channel.invertLeft': '左聲道反相',
+  'settings.eq.channel.invertRight': '右聲道反相',
+  'settings.eq.channel.mono.off': '關閉',
+  'settings.eq.channel.mono.sum': '合併',
+  'settings.eq.channel.title': '聲道平衡',
+  'settings.eq.curve.aria': '可拖動 10 段 EQ 頻響曲線',
+  'settings.eq.curve.dragBand': '拖動 {frequency} EQ 頻段',
+  'settings.eq.error.bridgeChannelBalance': '桌面橋接不可用。請在 ECHO Next 桌面端控制聲道平衡。',
+  'settings.eq.error.bridgeControlEq': '桌面橋接不可用。請在 ECHO Next 桌面端控制 EQ。',
+  'settings.eq.error.bridgeDeletePreset': '桌面橋接不可用。請在 ECHO Next 桌面端刪除 EQ 預設。',
+  'settings.eq.error.bridgeSavePreset': '桌面橋接不可用。請在 ECHO Next 桌面端儲存 EQ 預設。',
+  'settings.eq.error.presetName': '請輸入預設名稱。',
+  'settings.eq.preamp.safeHeadroom': '安全餘量',
+  'settings.eq.preset.readonly': '內建預設為唯讀。',
+  'settings.eq.preset.savePlaceholder': '儲存為使用者預設',
+  'settings.eq.status.clippingRisk': '削波風險',
+  'settings.eq.status.headroom': '餘量',
+  'settings.eq.status.safeHeadroomShort': '安全餘量',
+  'settings.eq.title': '10 段圖示 EQ',
+  'settings.eq.warning.channelClipping': '存在削波風險：降低增益或前級可獲得更安全的餘量。',
+  'settings.eq.warning.lowerPreamp': '降低前級可避免削波。',
   'settings.general.closeToTray': '關閉時隱藏到系統匣',
   'settings.general.backup.title': '設定參數備份',
   'settings.general.backup.export': '匯出設定',
@@ -1002,6 +1366,13 @@ const zhTW: TranslationMap = {
   'settings.integrations.mobile.title': '手機遙控',
   'settings.remote.library.title': '遠端音樂庫',
   'settings.remote.library.description': '本階段禁止網路硬碟 / 遠端 / 串流，只保留設定分組佔位。',
+  'settings.eq.ab.summary': '{preset} / 峰值 {peak} / 輸出 {output} / 前級 {preamp}',
+  'settings.eq.level.clips': '削波 {count}',
+  'settings.eq.level.estimatedOutputPeak': '估算輸出峰值',
+  'settings.eq.level.headroom': '餘量',
+  'settings.eq.level.inputPeak': '輸入峰值',
+  'settings.eq.level.inputRms': '輸入 RMS',
+  'settings.eq.level.sourceEstimate': 'pre-native + DSP 估算',
   'settings.appearance.theme.title': '主題',
   'settings.appearance.theme.light': '淺色',
   'settings.appearance.theme.dark': '深色',
@@ -1259,6 +1630,73 @@ const jaJP: TranslationMap = {
   'settings.nav.remote.description': 'NAS、WebDAV、Subsonic',
   'settings.nav.eq.label': 'EQ',
   'settings.nav.eq.description': 'イコライザーと出力保護',
+  'settings.eq.action.autoPreamp': '自動 {value}',
+  'settings.eq.action.bypass': 'バイパス',
+  'settings.eq.action.delete': '削除',
+  'settings.eq.action.holdBypass': '押している間 EQ をバイパス',
+  'settings.eq.action.resetBand': '{frequency} をリセット',
+  'settings.eq.action.resetChannelBalance': 'チャンネルバランスをリセット',
+  'settings.eq.action.resetEq': 'EQ をリセット',
+  'settings.eq.action.save': '保存',
+  'settings.eq.band.fallback': 'バンド',
+  'settings.eq.band.readoutsAria': '10 バンド EQ のドラッグ可能なバンド表示',
+  'settings.eq.bitPerfect.channelDisabled': 'DSP 有効: bit-perfect は無効です。',
+  'settings.eq.bitPerfect.disabled': 'DSP 有効: bit-perfect は無効です{reason}。',
+  'settings.eq.bitPerfect.readyPath': 'bit-perfect 経路を維持できます。',
+  'settings.eq.channel.active': '有効',
+  'settings.eq.channel.balance': 'バランス',
+  'settings.eq.channel.bypassed': 'バイパス',
+  'settings.eq.channel.center': '中央',
+  'settings.eq.channel.constantPower': '定電力',
+  'settings.eq.channel.description': 'Balance は左右の定位補正、L/R Gain は細かな補正、Mono Sum はモノ確認、Invert は位相確認に使います。',
+  'settings.eq.channel.dsp': 'DSP',
+  'settings.eq.channel.invertLeft': '左を反転',
+  'settings.eq.channel.invertRight': '右を反転',
+  'settings.eq.channel.leftGain': '左ゲイン',
+  'settings.eq.channel.leftTotal': '左合計',
+  'settings.eq.channel.mono.left': '左',
+  'settings.eq.channel.mono.off': 'オフ',
+  'settings.eq.channel.mono.right': '右',
+  'settings.eq.channel.mono.sum': '合成',
+  'settings.eq.channel.monoMode': 'モノモード',
+  'settings.eq.channel.rightGain': '右ゲイン',
+  'settings.eq.channel.rightTotal': '右合計',
+  'settings.eq.channel.swap': 'L/R 交換',
+  'settings.eq.channel.title': 'チャンネルバランス',
+  'settings.eq.curve.aria': 'ドラッグ可能な 10 バンド EQ 周波数特性',
+  'settings.eq.curve.dragBand': '{frequency} EQ バンドをドラッグ',
+  'settings.eq.error.bridgeChannelBalance': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でチャンネルバランスを操作してください。',
+  'settings.eq.error.bridgeControlEq': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ を操作してください。',
+  'settings.eq.error.bridgeDeletePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを削除してください。',
+  'settings.eq.error.bridgeSavePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを保存してください。',
+  'settings.eq.error.presetName': 'プリセット名を入力してください。',
+  'settings.eq.ab.summary': '{preset} / peak {peak} / out {output} / preamp {preamp}',
+  'settings.eq.level.clips': 'クリップ {count}',
+  'settings.eq.level.estimatedOutputPeak': '推定出力ピーク',
+  'settings.eq.level.headroom': 'ヘッドルーム',
+  'settings.eq.level.inputPeak': '入力ピーク',
+  'settings.eq.level.inputRms': '入力 RMS',
+  'settings.eq.level.sourceEstimate': 'pre-native + DSP 推定',
+  'settings.eq.preamp.aria': 'EQ プリアンプ',
+  'settings.eq.preamp.safeHeadroom': '安全ヘッドルーム',
+  'settings.eq.preset.nameAria': 'プリセット名',
+  'settings.eq.preset.readonly': '内蔵プリセットは読み取り専用です。',
+  'settings.eq.preset.savePlaceholder': 'ユーザープリセットとして保存',
+  'settings.eq.state.eqDisabled': 'EQ 無効',
+  'settings.eq.state.eqEnabled': 'EQ 有効',
+  'settings.eq.status.bitPerfect': 'Bit-perfect',
+  'settings.eq.status.clippingRisk': 'クリップ危険',
+  'settings.eq.status.eq': 'EQ',
+  'settings.eq.status.headroom': 'ヘッドルーム',
+  'settings.eq.status.preamp': 'プリアンプ',
+  'settings.eq.status.preset': 'プリセット',
+  'settings.eq.status.safe': '安全',
+  'settings.eq.status.safeHeadroomShort': '安全ヘッドルーム',
+  'settings.eq.status.warning': '警告',
+  'settings.eq.subtitle': 'HiFi DSP パネル',
+  'settings.eq.title': '10 バンド グラフィック EQ',
+  'settings.eq.warning.channelClipping': 'クリップの危険があります。ゲインまたはプリアンプを下げると安全です。',
+  'settings.eq.warning.lowerPreamp': 'クリップを避けるにはプリアンプを下げてください。',
   'settings.nav.appearance.label': '外観',
   'settings.nav.appearance.description': 'テーマ、フォント、背景',
   'settings.nav.library.label': 'メディアライブラリ',
@@ -1587,6 +2025,172 @@ const enUS: TranslationMap = {
   'settings.nav.remote.description': 'NAS, WebDAV, Subsonic',
   'settings.nav.eq.label': 'EQ',
   'settings.nav.eq.description': 'Equalizer and output safety',
+  'settings.eq.action.autoPreamp': 'Auto {value}',
+  'settings.eq.action.bypass': 'Bypass',
+  'settings.eq.action.delete': 'Delete',
+  'settings.eq.action.duplicatePreset': 'Duplicate current',
+  'settings.eq.action.freqDown': 'Freq -',
+  'settings.eq.action.freqFineDown': 'Fine -',
+  'settings.eq.action.freqFineUp': 'Fine +',
+  'settings.eq.action.freqUp': 'Freq +',
+  'settings.eq.action.holdBypass': 'Hold to Bypass EQ',
+  'settings.eq.action.applyA': 'Apply A',
+  'settings.eq.action.applyB': 'Apply B',
+  'settings.eq.action.applySafePreamp': 'Apply safe preamp',
+  'settings.eq.action.overwrite': 'Overwrite',
+  'settings.eq.action.redo': 'Redo',
+  'settings.eq.action.resetBand': 'Reset {frequency}',
+  'settings.eq.action.resetAllGains': 'Reset all gains',
+  'settings.eq.action.resetChannelBalance': 'Reset channel balance',
+  'settings.eq.action.resetEq': 'Reset EQ',
+  'settings.eq.action.resetFrequencies': 'Standard bands',
+  'settings.eq.action.resetMonitorTools': 'Reset monitor tools',
+  'settings.eq.action.resetSelected': 'Reset selected',
+  'settings.eq.action.resetTrimsOnly': 'Reset trims only',
+  'settings.eq.action.revertUserPreset': 'Revert user preset',
+  'settings.eq.action.save': 'Save',
+  'settings.eq.action.saveAs': 'Save as',
+  'settings.eq.action.storeA': 'Store A',
+  'settings.eq.action.storeB': 'Store B',
+  'settings.eq.action.toggleBypassOff': 'Disable bypass',
+  'settings.eq.action.toggleBypassOn': 'Toggle Bypass',
+  'settings.eq.action.undo': 'Undo',
+  'settings.eq.action.unlockFrequency': 'Unlock frequency',
+  'settings.eq.ab.emptySlot': 'Empty slot',
+  'settings.eq.ab.loudnessMatched': 'Loudness matched',
+  'settings.eq.ab.summary': '{preset} / peak {peak} / out {output} / preamp {preamp}',
+  'settings.eq.ab.title': 'A/B Compare',
+  'settings.eq.band.fallback': 'Band',
+  'settings.eq.band.frequency': 'Frequency',
+  'settings.eq.band.frequencyStepper': 'Frequency stepper',
+  'settings.eq.band.frequencySnapped': 'Snapped to standard bands',
+  'settings.eq.band.frequencyUnlocked': 'Free frequency',
+  'settings.eq.band.gain': 'Gain',
+  'settings.eq.band.gainStepper': 'Gain stepper',
+  'settings.eq.band.inspector': 'Selected band',
+  'settings.eq.band.readoutsAria': '10-band EQ draggable band readouts',
+  'settings.eq.bitPerfect.channelDisabled': 'DSP active: bit-perfect disabled.',
+  'settings.eq.bitPerfect.disabled': 'DSP active: bit-perfect disabled{reason}.',
+  'settings.eq.bitPerfect.readyPath': 'Bit-perfect path can be preserved.',
+  'settings.eq.bitPerfect.sourceBoth': 'EQ + Channel Balance',
+  'settings.eq.bitPerfect.sourceChannel': 'Channel Balance',
+  'settings.eq.bitPerfect.sourceEq': 'EQ',
+  'settings.eq.channel.active': 'Active',
+  'settings.eq.channel.balance': 'Balance',
+  'settings.eq.channel.bypassed': 'Bypassed',
+  'settings.eq.channel.calibrationMode': 'Calibration mode',
+  'settings.eq.channel.center': 'Center',
+  'settings.eq.channel.constantPower': 'Constant Power',
+  'settings.eq.channel.description': 'Balance shifts left/right. L/R Gain fine-tunes correction. Mono Sum checks mono. Invert checks phase.',
+  'settings.eq.channel.dsp': 'DSP',
+  'settings.eq.channel.effectiveLeft': 'Effective L',
+  'settings.eq.channel.effectiveRight': 'Effective R',
+  'settings.eq.channel.group.balance': 'Balance',
+  'settings.eq.channel.group.gainTrim': 'Gain Trim',
+  'settings.eq.channel.group.monitorTools': 'Monitor Tools',
+  'settings.eq.channel.group.phaseTools': 'Phase Tools',
+  'settings.eq.channel.invertLeft': 'Invert Left',
+  'settings.eq.channel.invertRight': 'Invert Right',
+  'settings.eq.channel.leftGain': 'Left Gain',
+  'settings.eq.channel.leftTotal': 'Left total',
+  'settings.eq.channel.mono.left': 'Left',
+  'settings.eq.channel.mono.off': 'Off',
+  'settings.eq.channel.mono.right': 'Right',
+  'settings.eq.channel.mono.sum': 'Sum',
+  'settings.eq.channel.monoMode': 'Mono mode',
+  'settings.eq.channel.quick.leftSolo': 'Left Solo',
+  'settings.eq.channel.quick.monoCheck': 'Mono Check',
+  'settings.eq.channel.quick.phaseCheck': 'Phase Check',
+  'settings.eq.channel.quick.rightSolo': 'Right Solo',
+  'settings.eq.channel.quick.swapCheck': 'Swap Check',
+  'settings.eq.channel.quickTools': 'Quick monitor tools',
+  'settings.eq.channel.rightGain': 'Right Gain',
+  'settings.eq.channel.rightTotal': 'Right total',
+  'settings.eq.channel.swap': 'Swap L/R',
+  'settings.eq.channel.title': 'Channel Balance',
+  'settings.eq.curve.aria': 'Draggable 10-band EQ frequency response',
+  'settings.eq.curve.dragBand': 'Drag {frequency} EQ band',
+  'settings.eq.curve.fineEdit': 'Shift fine edit',
+  'settings.eq.curve.freeFrequency': 'Free frequency',
+  'settings.eq.curve.snapped': 'Snapped',
+  'settings.eq.error.bridgeChannelBalance': 'Desktop bridge unavailable. Open ECHO Next in Electron to control channel balance.',
+  'settings.eq.error.bridgeControlEq': 'Desktop bridge unavailable. Open ECHO Next in Electron to control EQ.',
+  'settings.eq.error.bridgeDeletePreset': 'Desktop bridge unavailable. Open ECHO Next in Electron to delete EQ presets.',
+  'settings.eq.error.bridgeSavePreset': 'Desktop bridge unavailable. Open ECHO Next in Electron to save EQ presets.',
+  'settings.eq.error.presetName': 'Enter a preset name before saving.',
+  'settings.eq.level.clips': 'Clips {count}',
+  'settings.eq.level.estimatedOutputPeak': 'Est. output peak',
+  'settings.eq.level.headroom': 'Headroom',
+  'settings.eq.level.inputPeak': 'Input peak',
+  'settings.eq.level.inputRms': 'Input RMS',
+  'settings.eq.level.sourceEstimate': 'pre-native + DSP estimate',
+  'settings.eq.preamp.aria': 'EQ preamp',
+  'settings.eq.preamp.inputSafety': 'Input safety estimate',
+  'settings.eq.preamp.maxBoost': 'Max boost',
+  'settings.eq.preamp.metricsAria': 'Headroom safety metrics',
+  'settings.eq.preamp.recommended': 'Recommended',
+  'settings.eq.preamp.safeHeadroom': 'Safe Headroom',
+  'settings.eq.preset.approximation': '10-band approximation',
+  'settings.eq.preset.builtIn': 'Built-in presets',
+  'settings.eq.preset.copyName': 'Copy of {name}',
+  'settings.eq.preset.filter.all': 'All',
+  'settings.eq.preset.filter.builtIn': 'Built-in',
+  'settings.eq.preset.filter.genre': 'Genre',
+  'settings.eq.preset.filter.target': 'Target curves',
+  'settings.eq.preset.filter.user': 'User',
+  'settings.eq.preset.filter.utility': 'Utility',
+  'settings.eq.preset.filterAria': 'Preset filter',
+  'settings.eq.preset.meta.approximationCaution': 'This is a 10-band graphic EQ approximation, not exact headphone calibration.',
+  'settings.eq.preset.meta.genrePurpose': 'Shapes the playback toward a familiar genre voicing.',
+  'settings.eq.preset.meta.genreScenario': 'Useful for quick listening by style before device-specific tweaks.',
+  'settings.eq.preset.meta.targetPurpose': 'Approximates a common listening target curve.',
+  'settings.eq.preset.meta.targetScenario': 'Useful for headphone or near-field target comparisons.',
+  'settings.eq.preset.meta.tasteCaution': 'This is a voicing choice, not a calibration result.',
+  'settings.eq.preset.meta.type.animeJpop': 'Anime / J-Pop',
+  'settings.eq.preset.meta.type.bassBoost': 'Bass Boost',
+  'settings.eq.preset.meta.type.bkRoomCurve': 'B&K Room Curve',
+  'settings.eq.preset.meta.type.broadcastVoice': 'Broadcast Voice',
+  'settings.eq.preset.meta.type.classicSmiley': 'Classic Smiley',
+  'settings.eq.preset.meta.type.classical': 'Classical',
+  'settings.eq.preset.meta.type.diffuseField': 'Diffuse Field',
+  'settings.eq.preset.meta.type.flat': 'Flat',
+  'settings.eq.preset.meta.type.harmanInEar': 'Harman In-Ear',
+  'settings.eq.preset.meta.type.harmanTarget': 'Harman Target',
+  'settings.eq.preset.meta.type.headphoneWarm': 'Headphone Warm',
+  'settings.eq.preset.meta.type.loudness': 'Loudness',
+  'settings.eq.preset.meta.type.night': 'Night',
+  'settings.eq.preset.meta.type.rock': 'Rock',
+  'settings.eq.preset.meta.type.studioNeutral': 'Studio Neutral',
+  'settings.eq.preset.meta.type.trebleSparkle': 'Treble Sparkle',
+  'settings.eq.preset.meta.type.vinylWarmth': 'Vinyl Warmth',
+  'settings.eq.preset.meta.type.vocalClear': 'Vocal Clear',
+  'settings.eq.preset.meta.utilityCaution': 'Utility presets can change monitoring judgment; confirm before saving.',
+  'settings.eq.preset.meta.utilityPurpose': 'Supports checks, compensation, or safer monitoring.',
+  'settings.eq.preset.meta.utilityScenario': 'Useful for finding issues, reducing fatigue, or quick comparisons.',
+  'settings.eq.preset.modified': 'Modified',
+  'settings.eq.preset.nameAria': 'Preset name',
+  'settings.eq.preset.readonly': 'Built-in presets are read-only.',
+  'settings.eq.preset.savePlaceholder': 'Save as user preset',
+  'settings.eq.preset.searchAria': 'Search presets',
+  'settings.eq.preset.searchPlaceholder': 'Search presets',
+  'settings.eq.preset.selectorAria': 'EQ preset',
+  'settings.eq.preset.user': 'User presets',
+  'settings.eq.state.eqDisabled': 'EQ Disabled',
+  'settings.eq.state.eqEnabled': 'EQ Enabled',
+  'settings.eq.status.bitPerfect': 'Bit-perfect',
+  'settings.eq.status.clippingRisk': 'Clipping Risk',
+  'settings.eq.status.eq': 'EQ',
+  'settings.eq.status.estimatedPeak': 'Estimated Peak',
+  'settings.eq.status.headroom': 'Headroom',
+  'settings.eq.status.preamp': 'Preamp',
+  'settings.eq.status.preset': 'Preset',
+  'settings.eq.status.safe': 'Safe',
+  'settings.eq.status.safeHeadroomShort': 'Safe headroom',
+  'settings.eq.status.warning': 'Warning',
+  'settings.eq.subtitle': 'HiFi DSP panel',
+  'settings.eq.title': '10-band Graphic EQ',
+  'settings.eq.warning.channelClipping': 'Clipping risk: lower gain or preamp for safer headroom.',
+  'settings.eq.warning.lowerPreamp': 'Lower Preamp to avoid clipping.',
   'settings.nav.appearance.label': 'Appearance',
   'settings.nav.appearance.description': 'Theme, font, background',
   'settings.nav.library.label': 'Media Library',

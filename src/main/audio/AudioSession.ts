@@ -4,6 +4,7 @@ import type { Writable } from 'node:stream';
 import { DeviceService } from './DeviceService';
 import { DecoderPipeline } from './DecoderPipeline';
 import { getEqBridge } from './EqBridge';
+import { PcmLevelMeterTransform, createAudioLevelTelemetry, type PcmLevelSnapshot } from './AudioLevelMeter';
 import { NativeOutputBridge, isNativeOutputBridgeAvailable } from './NativeOutputBridge';
 import { PlaybackClock } from './PlaybackClock';
 import type {
@@ -158,6 +159,16 @@ const defaultStatus = (nativeHostAvailable: boolean): AudioStatus => ({
   preampDb: 0,
   eqPresetName: 'Flat',
   clippingRisk: false,
+  audioLevels: {
+    inputPeakDb: null,
+    inputRmsDb: null,
+    estimatedOutputPeakDb: null,
+    estimatedOutputRmsDb: null,
+    headroomDb: null,
+    clipCount: 0,
+    lastClipAt: null,
+    meterSource: 'pre_native_estimated_post_dsp',
+  },
   bitPerfectDisabledReason: null,
   warnings: [],
   error: null,
@@ -290,6 +301,13 @@ export class AudioSession extends EventEmitter {
   private bridge: OutputBridgeLike | null = null;
   private decoderRun: DecoderRun | null = null;
   private gainTransform: PcmVolumeTransform | null = null;
+  private levelMeterTransform: PcmLevelMeterTransform | null = null;
+  private levelSnapshot: PcmLevelSnapshot = {
+    inputPeakDb: null,
+    inputRmsDb: null,
+    clipCount: 0,
+    lastClipAt: null,
+  };
   private errorMessage: string | null = null;
   private outputWarnings: string[] = [];
   private pausedPositionSeconds: number | null = null;
@@ -385,6 +403,7 @@ export class AudioSession extends EventEmitter {
     this.hostStatus = 'starting';
     this.errorMessage = null;
     this.outputWarnings = [];
+    this.resetLevelMeter();
     this.currentFilePath = request.filePath;
     this.currentTrackId = request.trackId ?? null;
     this.pausedPositionSeconds = null;
@@ -531,6 +550,7 @@ export class AudioSession extends EventEmitter {
   stop(): AudioStatus {
     this.runToken += 1;
     this.stopResources();
+    this.resetLevelMeter();
     this.state = 'stopped';
     this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
     this.currentProbe = null;
@@ -559,6 +579,7 @@ export class AudioSession extends EventEmitter {
         ? this.currentProbe.durationSeconds
         : Number.POSITIVE_INFINITY,
     );
+    this.resetLevelMeter();
 
     if (this.state === 'paused') {
       const sampleRate = this.currentPlan?.actualDeviceSampleRate ?? this.currentPlan?.requestedOutputSampleRate ?? null;
@@ -603,6 +624,9 @@ export class AudioSession extends EventEmitter {
     const plan = this.currentPlan;
     const eqState = getEqBridge().getState();
     const channelBalanceState = getEqBridge().getChannelBalanceState();
+    const audioLevels = createAudioLevelTelemetry(this.levelSnapshot, eqState, channelBalanceState);
+    const realtimeLevelClippingRisk = audioLevels.estimatedOutputPeakDb !== null && audioLevels.estimatedOutputPeakDb >= 0;
+    const realtimeLevelClipped = audioLevels.clipCount > 0;
     const dspActive = eqState.enabled || channelBalanceState.enabled;
     const bitPerfectDisabledReason = dspActive ? (eqState.enabled ? 'eq_enabled' : 'channel_balance_enabled') : null;
     const warnings = [...(plan?.warnings ?? [])];
@@ -618,6 +642,12 @@ export class AudioSession extends EventEmitter {
 
     if (eqState.clippingRisk || channelBalanceState.clippingRisk) {
       warnings.push(eqState.clippingRisk ? 'eq_clipping_risk' : 'channel_balance_clipping_risk');
+    }
+    if (realtimeLevelClippingRisk && !warnings.includes('audio_level_clipping_risk')) {
+      warnings.push('audio_level_clipping_risk');
+    }
+    if (realtimeLevelClipped && !warnings.includes('audio_level_clipped')) {
+      warnings.push('audio_level_clipped');
     }
 
     return {
@@ -653,7 +683,8 @@ export class AudioSession extends EventEmitter {
       dspActive,
       preampDb: eqState.preampDb,
       eqPresetName: eqState.presetName,
-      clippingRisk: eqState.clippingRisk || Boolean(channelBalanceState.clippingRisk),
+      clippingRisk: eqState.clippingRisk || Boolean(channelBalanceState.clippingRisk) || realtimeLevelClippingRisk || realtimeLevelClipped,
+      audioLevels,
       bitPerfectDisabledReason,
       warnings,
       error: this.errorMessage,
@@ -1068,6 +1099,7 @@ export class AudioSession extends EventEmitter {
       this.currentProbe?.channels ?? 2,
       this.currentOutputSettings?.playbackRate ?? this.outputSettings.playbackRate,
     );
+    const levelMeterTransform = new PcmLevelMeterTransform((snapshot) => this.handleLevelSnapshot(snapshot));
     let inputEnded = false;
     const signalNativeInputEnded = (): void => {
       if (inputEnded || this.runToken !== token || this.decoderRun !== run) {
@@ -1084,8 +1116,9 @@ export class AudioSession extends EventEmitter {
 
     this.decoderRun = run;
     this.gainTransform = gainTransform;
-    run.stream.pipe(gainTransform).pipe(speedTransform).pipe(writable, { end: false });
-    speedTransform.once('end', signalNativeInputEnded);
+    this.levelMeterTransform = levelMeterTransform;
+    run.stream.pipe(gainTransform).pipe(speedTransform).pipe(levelMeterTransform).pipe(writable, { end: false });
+    levelMeterTransform.once('end', signalNativeInputEnded);
     run.done.then(signalNativeInputEnded).catch((error: unknown) => {
       if (this.runToken === token) {
         this.handleError(error instanceof Error ? error : new Error(String(error)));
@@ -1111,6 +1144,32 @@ export class AudioSession extends EventEmitter {
         // Best-effort resource cleanup.
       }
       this.gainTransform = null;
+    }
+
+    if (this.levelMeterTransform) {
+      try {
+        this.levelMeterTransform.destroy();
+      } catch {
+        // Best-effort resource cleanup.
+      }
+      this.levelMeterTransform = null;
+    }
+  }
+
+  private resetLevelMeter(): void {
+    this.levelMeterTransform?.reset();
+    this.levelSnapshot = {
+      inputPeakDb: null,
+      inputRmsDb: null,
+      clipCount: 0,
+      lastClipAt: null,
+    };
+  }
+
+  private handleLevelSnapshot(snapshot: PcmLevelSnapshot): void {
+    this.levelSnapshot = snapshot;
+    if (this.state === 'playing') {
+      this.emitStatus();
     }
   }
 

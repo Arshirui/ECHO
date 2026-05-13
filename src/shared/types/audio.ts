@@ -18,6 +18,17 @@ export type ChannelBalanceState = {
   clippingRisk?: boolean;
 };
 
+export type AudioLevelTelemetry = {
+  inputPeakDb: number | null;
+  inputRmsDb: number | null;
+  estimatedOutputPeakDb: number | null;
+  estimatedOutputRmsDb: number | null;
+  headroomDb: number | null;
+  clipCount: number;
+  lastClipAt: string | null;
+  meterSource: 'pre_native_estimated_post_dsp';
+};
+
 export const channelBalanceMinBalance = -1;
 export const channelBalanceMaxBalance = 1;
 export const channelBalanceMinGainDb = -12;
@@ -76,6 +87,7 @@ export type AudioStatus = {
   preampDb: number;
   eqPresetName: string | null;
   clippingRisk: boolean;
+  audioLevels?: AudioLevelTelemetry;
   bitPerfectDisabledReason: string | null;
   warnings: string[];
   error: string | null;

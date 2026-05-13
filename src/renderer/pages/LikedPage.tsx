@@ -72,9 +72,9 @@ export const LikedPage = (): JSX.Element => {
   const [trackTotal, setTrackTotal] = useState(0);
   const [albumTotal, setAlbumTotal] = useState(0);
   const [trackPage, setTrackPage] = useState(1);
-  const [albumPage, setAlbumPage] = useState(1);
+  const [, setAlbumPage] = useState(1);
   const [trackHasMore, setTrackHasMore] = useState(false);
-  const [albumHasMore, setAlbumHasMore] = useState(false);
+  const [, setAlbumHasMore] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<LibrarySort>('recent');

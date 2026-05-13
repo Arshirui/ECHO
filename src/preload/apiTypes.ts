@@ -43,6 +43,9 @@ import type {
   FinishPlaybackHistoryRequest,
   TrackCoverSelection,
   CreatePlaylistRequest,
+  DuplicateTrackIndexSummary,
+  DuplicateTrackMember,
+  DuplicateTrackMode,
   UpdatePlaylistRequest,
 } from '../shared/types/library';
 import type { PlaybackStartRequest, PlaybackStatus } from '../shared/types/playback';
@@ -50,6 +53,7 @@ import type { LastCrashSummary, RendererErrorPayload } from '../shared/types/dia
 import type { DiscordPresenceStatus } from '../shared/types/discordPresence';
 import type { LastFmAuthStartResult, LastFmStatus } from '../shared/types/lastfm';
 import type { SmtcCommand } from '../shared/types/smtc';
+import type { LyricsSearchCandidate, TrackLyrics } from '../shared/types/lyrics';
 
 export type FontFileAsset = {
   path: string;
@@ -86,6 +90,9 @@ export type EchoApi = {
     getScanStatus: (jobId: string) => Promise<LibraryScanStatus>;
     cancelScan: (jobId: string) => Promise<LibraryScanStatus>;
     getTracks: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryTrack>>;
+    refreshDuplicateTracks: (mode?: DuplicateTrackMode) => Promise<DuplicateTrackIndexSummary>;
+    getDuplicateTrackVersions: (trackId: string) => Promise<DuplicateTrackMember[]>;
+    getDuplicateIndexSummary: (mode?: DuplicateTrackMode) => Promise<DuplicateTrackIndexSummary>;
     getPlaylists: () => Promise<LibraryPlaylist[]>;
     createPlaylist: (request: CreatePlaylistRequest) => Promise<LibraryPlaylist>;
     updatePlaylist: (request: UpdatePlaylistRequest) => Promise<LibraryPlaylist>;
@@ -167,6 +174,14 @@ export type EchoApi = {
     stop: () => Promise<PlaybackStatus>;
     seek: (positionSeconds: number) => Promise<PlaybackStatus>;
     openLocalAudioFile: () => Promise<string | null>;
+  };
+  lyrics: {
+    getForTrack: (trackId: string) => Promise<TrackLyrics | null>;
+    searchCandidates: (trackId: string) => Promise<LyricsSearchCandidate[]>;
+    applyCandidate: (trackId: string, candidateId: string) => Promise<TrackLyrics>;
+    rejectCandidate: (candidateId: string) => Promise<void>;
+    setOffset: (trackId: string, offsetMs: number) => Promise<TrackLyrics | null>;
+    clearCache: (trackId: string) => Promise<void>;
   };
   smtc: {
     onCommand: (handler: (command: SmtcCommand) => void) => () => void;

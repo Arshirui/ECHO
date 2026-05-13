@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Music2 } from 'lucide-react';
 import { LyricsLine } from './LyricsLine';
 import type { LyricsState } from './lyricsTypes';
@@ -10,15 +10,20 @@ type LyricsViewProps = {
 };
 
 export const getActiveLyricIndex = (lines: LyricsState['lines'], positionMs: number, offsetMs: number): number => {
-  if (lines.length === 0) {
+  if (lines.length === 0 || lines.every((line) => line.timeMs < 0)) {
     return -1;
   }
 
   const adjustedPositionMs = Math.max(0, positionMs + offsetMs);
-  let activeIndex = 0;
+  let activeIndex = -1;
 
   for (let index = 0; index < lines.length; index += 1) {
-    if (lines[index].timeMs > adjustedPositionMs) {
+    const timeMs = lines[index].timeMs;
+    if (timeMs < 0) {
+      continue;
+    }
+
+    if (timeMs > adjustedPositionMs) {
       break;
     }
 
@@ -29,33 +34,59 @@ export const getActiveLyricIndex = (lines: LyricsState['lines'], positionMs: num
 };
 
 export const LyricsView = ({ lyrics, onSeek, positionMs }: LyricsViewProps): JSX.Element => {
+  const scrollRef = useRef<HTMLElement | null>(null);
+  const isSynced = lyrics.kind === 'synced';
   const activeIndex = useMemo(
-    () => getActiveLyricIndex(lyrics.lines, positionMs, lyrics.offsetMs),
-    [lyrics.lines, lyrics.offsetMs, positionMs],
+    () => (isSynced ? getActiveLyricIndex(lyrics.lines, positionMs, lyrics.offsetMs) : -1),
+    [isSynced, lyrics.lines, lyrics.offsetMs, positionMs],
   );
+
+  useEffect(() => {
+    if (!isSynced || activeIndex < 0) {
+      return;
+    }
+
+    const scrollContainer = scrollRef.current;
+    const activeLine = scrollContainer?.querySelector<HTMLButtonElement>('.lyrics-line[data-active="true"]');
+    if (!scrollContainer || !activeLine) {
+      return;
+    }
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const activeRect = activeLine.getBoundingClientRect();
+    const activeCenter = activeRect.top - containerRect.top + scrollContainer.scrollTop + activeRect.height / 2;
+    const targetCenter = scrollContainer.clientHeight * 0.52;
+    const nextScrollTop = activeCenter - targetCenter;
+    const top = Math.max(0, nextScrollTop);
+    if (typeof scrollContainer.scrollTo === 'function') {
+      scrollContainer.scrollTo({ top, behavior: 'smooth' });
+    } else {
+      scrollContainer.scrollTop = top;
+    }
+  }, [activeIndex, isSynced]);
 
   if (lyrics.lines.length === 0) {
     return (
       <section className="lyrics-empty" aria-label="Lyrics">
         <Music2 size={26} />
-        <strong>{lyrics.source === 'none' ? '暂无歌词' : '纯音乐，请欣赏'}</strong>
-        <span>Lyrics services are not connected in this phase.</span>
+        <strong>{lyrics.kind === 'instrumental' ? '纯音乐，请欣赏' : '暂无歌词'}</strong>
+        <span>{lyrics.kind === 'instrumental' ? 'Instrumental track' : '未找到可用歌词，可尝试搜索或重新匹配。'}</span>
       </section>
     );
   }
 
   return (
-    <section className="lyrics-scroll" aria-label="Lyrics">
+    <section className="lyrics-scroll" aria-label="Lyrics" data-kind={lyrics.kind} ref={scrollRef}>
       {lyrics.lines.map((line, index) => (
         <LyricsLine
           active={index === activeIndex}
           key={`${line.timeMs}-${index}`}
           line={line}
-          past={index < activeIndex}
+          past={isSynced && index < activeIndex}
           onSeek={onSeek}
+          seekable={isSynced && line.timeMs >= 0}
         />
       ))}
     </section>
   );
 };
-

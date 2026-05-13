@@ -13,8 +13,10 @@ export type HifiTag = {
 type TrackRowProps = {
   track: LibraryTrack;
   isPlaying: boolean;
+  duplicateHiddenCount?: number;
   onPlay?: (track: LibraryTrack) => void;
   onAddToQueue?: (track: LibraryTrack) => void;
+  onShowVersions?: (track: LibraryTrack) => void;
   liked?: boolean;
   onToggleLiked?: (track: LibraryTrack) => void;
   onOpenMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
@@ -76,7 +78,7 @@ const tagClassNameByKind: Record<HifiTagKind, string> = {
 };
 
 export const TrackRow = memo(
-  ({ track, isPlaying, onPlay, onAddToQueue, liked = false, onToggleLiked, onOpenMenu }: TrackRowProps): JSX.Element => {
+  ({ track, isPlaying, duplicateHiddenCount = 0, onPlay, onAddToQueue, onShowVersions, liked = false, onToggleLiked, onOpenMenu }: TrackRowProps): JSX.Element => {
     const tags = tagsFromTrack(track);
     const isUnavailable = track.unavailable === true;
     const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
@@ -134,6 +136,13 @@ export const TrackRow = memo(
       },
       [onToggleLiked, track],
     );
+    const handleShowVersions = useCallback(
+      (event: MouseEvent<HTMLButtonElement>): void => {
+        event.stopPropagation();
+        onShowVersions?.(track);
+      },
+      [onShowVersions, track],
+    );
     const handleCoverError = useCallback((): void => {
       if (!track.coverThumb) {
         return;
@@ -175,6 +184,11 @@ export const TrackRow = memo(
             <strong className="track-title">{track.title}</strong>
             {isPlaying ? <span className="playing-pill">Playing</span> : null}
             {isUnavailable ? <span className="playing-pill unavailable-pill">Unavailable</span> : null}
+            {duplicateHiddenCount > 0 ? (
+              <button className="duplicate-version-badge" type="button" title="查看重复歌曲版本" onClick={handleShowVersions}>
+                有 {duplicateHiddenCount + 1} 个版本
+              </button>
+            ) : null}
           </div>
           <div className="track-subtitle">
             {track.artist} - {track.album}
@@ -215,9 +229,11 @@ export const TrackRow = memo(
   (previous, next) =>
     previous.track === next.track &&
     previous.isPlaying === next.isPlaying &&
+    previous.duplicateHiddenCount === next.duplicateHiddenCount &&
     previous.liked === next.liked &&
     previous.onPlay === next.onPlay &&
     previous.onAddToQueue === next.onAddToQueue &&
+    previous.onShowVersions === next.onShowVersions &&
     previous.onToggleLiked === next.onToggleLiked &&
     previous.onOpenMenu === next.onOpenMenu,
 );

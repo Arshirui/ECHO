@@ -56,6 +56,16 @@ describe('AccountService', () => {
 
     expect(status.connected).toBe(false);
     expect(readFileSync(storagePath, 'utf8')).not.toContain('uin=secret');
+    expect(readFileSync(`${storagePath}.bak`, 'utf8')).not.toContain('uin=secret');
+  });
+
+  it('keeps account state after service restart', () => {
+    const { service, storagePath } = createService();
+    service.saveCookie('netease', 'MUSIC_U=secret');
+
+    const restarted = new AccountService(storagePath);
+
+    expect(restarted.getStatus('netease')).toEqual(expect.objectContaining({ provider: 'netease', connected: true }));
   });
 
   it('persists YouTube browser auth state', () => {

@@ -32,11 +32,19 @@ export const defaultSettings: AppSettings = {
   hideToTrayOnClose: false,
   networkMetadataEnabled: false,
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
+  lyricsNetworkEnabled: true,
+  lyricsPreferredProvider: 'lrclib',
+  lyricsAutoSearch: true,
+  lyricsAutoAcceptScore: 0.82,
+  lyricsDefaultOffsetMs: 0,
   channelBalance: defaultChannelBalanceSettings,
   playerVolume: 1,
   playbackSpeed: 1,
   playbackSpeedMode: 'nightcore',
   scanPerformanceMode: 'balanced',
+  duplicateTracksEnabled: false,
+  duplicateTracksMode: 'strict',
+  duplicateTracksAutoRebuildAfterScan: false,
   discordRichPresenceEnabled: false,
   lastFmEnabled: false,
   lastFmUsername: null,
@@ -123,6 +131,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     settings.scanPerformanceMode === 'performance'
       ? settings.scanPerformanceMode
       : defaultSettings.scanPerformanceMode;
+  const duplicateTracksMode = settings.duplicateTracksMode === 'strict' ? settings.duplicateTracksMode : defaultSettings.duplicateTracksMode;
   const providers = Array.isArray(settings.networkMetadataProviders)
     ? settings.networkMetadataProviders.filter(
         (provider): provider is AppSettings['networkMetadataProviders'][number] =>
@@ -133,6 +142,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
           provider === 'qq-music',
       )
     : defaultSettings.networkMetadataProviders;
+  const lyricsAutoAcceptScore = Number(settings.lyricsAutoAcceptScore);
+  const lyricsDefaultOffsetMs = Number(settings.lyricsDefaultOffsetMs);
 
   return {
     albumMergeStrategy,
@@ -141,6 +152,15 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     hideToTrayOnClose: settings.hideToTrayOnClose === true,
     networkMetadataEnabled: settings.networkMetadataEnabled === true,
     networkMetadataProviders: providers.length ? providers : defaultSettings.networkMetadataProviders,
+    lyricsNetworkEnabled: settings.lyricsNetworkEnabled !== false,
+    lyricsPreferredProvider: 'lrclib',
+    lyricsAutoSearch: settings.lyricsAutoSearch !== false,
+    lyricsAutoAcceptScore: Number.isFinite(lyricsAutoAcceptScore)
+      ? clamp(lyricsAutoAcceptScore, 0.5, 1)
+      : defaultSettings.lyricsAutoAcceptScore,
+    lyricsDefaultOffsetMs: Number.isFinite(lyricsDefaultOffsetMs)
+      ? Math.round(clamp(lyricsDefaultOffsetMs, -10000, 10000))
+      : defaultSettings.lyricsDefaultOffsetMs,
     channelBalance: normalizeChannelBalanceSettings(settings.channelBalance),
     playerVolume: Number.isFinite(playerVolume) ? Math.max(0, Math.min(1, playerVolume)) : defaultSettings.playerVolume,
     playbackSpeed: Number.isFinite(playbackSpeed)
@@ -148,6 +168,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.playbackSpeed,
     playbackSpeedMode,
     scanPerformanceMode,
+    duplicateTracksEnabled: settings.duplicateTracksEnabled === true,
+    duplicateTracksMode,
+    duplicateTracksAutoRebuildAfterScan: settings.duplicateTracksAutoRebuildAfterScan === true,
     discordRichPresenceEnabled: settings.discordRichPresenceEnabled === true,
     lastFmEnabled: settings.lastFmEnabled === true,
     lastFmUsername: normalizeOptionalText(settings.lastFmUsername),

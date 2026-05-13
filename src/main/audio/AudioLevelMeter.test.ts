@@ -1,0 +1,107 @@
+import { once } from 'node:events';
+import { describe, expect, it } from 'vitest';
+import type { ChannelBalanceState } from '../../shared/types/audio';
+import type { EqState } from '../../shared/types/eq';
+import {
+  PcmLevelMeterTransform,
+  computeDspEstimatedGainDb,
+  createAudioLevelTelemetry,
+  type PcmLevelSnapshot,
+} from './AudioLevelMeter';
+
+const pcmBuffer = (samples: number[]): Buffer => {
+  const buffer = Buffer.alloc(samples.length * 4);
+  samples.forEach((sample, index) => {
+    buffer.writeFloatLE(sample, index * 4);
+  });
+  return buffer;
+};
+
+const runMeter = async (samples: number[]): Promise<{ snapshot: PcmLevelSnapshot; output: Buffer }> => {
+  let snapshot: PcmLevelSnapshot | null = null;
+  const meter = new PcmLevelMeterTransform((nextSnapshot) => {
+    snapshot = nextSnapshot;
+  }, 0);
+  const outputChunks: Buffer[] = [];
+  meter.on('data', (chunk: Buffer) => outputChunks.push(Buffer.from(chunk)));
+  const input = pcmBuffer(samples);
+
+  meter.end(input);
+  await once(meter, 'end');
+
+  return {
+    snapshot: snapshot ?? meter.getSnapshot(),
+    output: Buffer.concat(outputChunks),
+  };
+};
+
+const eqState = (overrides: Partial<EqState> = {}): EqState => ({
+  enabled: false,
+  preampDb: 0,
+  presetId: 'flat',
+  presetName: 'Flat',
+  clippingRisk: false,
+  bands: [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map((frequencyHz) => ({
+    frequencyHz,
+    gainDb: 0,
+    q: 1,
+  })),
+  ...overrides,
+});
+
+const channelBalanceState = (overrides: Partial<ChannelBalanceState> = {}): ChannelBalanceState => ({
+  enabled: false,
+  balance: 0,
+  leftGainDb: 0,
+  rightGainDb: 0,
+  swapLeftRight: false,
+  monoMode: 'off',
+  invertLeft: false,
+  invertRight: false,
+  constantPower: true,
+  clippingRisk: false,
+  ...overrides,
+});
+
+describe('AudioLevelMeter', () => {
+  it('computes peak and RMS for float32 PCM without changing bytes', async () => {
+    const input = pcmBuffer([0.5, -0.25]);
+    const result = await runMeter([0.5, -0.25]);
+
+    expect(result.snapshot.inputPeakDb).toBe(-6);
+    expect(result.snapshot.inputRmsDb).toBe(-8.1);
+    expect(result.snapshot.clipCount).toBe(0);
+    expect(result.output.equals(input)).toBe(true);
+  });
+
+  it('returns null levels for silence without throwing', async () => {
+    const result = await runMeter([0, 0, 0, 0]);
+
+    expect(result.snapshot.inputPeakDb).toBeNull();
+    expect(result.snapshot.inputRmsDb).toBeNull();
+    expect(result.snapshot.clipCount).toBe(0);
+  });
+
+  it('tracks clipping samples and last clip timestamp', async () => {
+    const result = await runMeter([1, -1.1, 0.2]);
+
+    expect(result.snapshot.clipCount).toBe(2);
+    expect(result.snapshot.lastClipAt).toEqual(expect.any(String));
+  });
+
+  it('adds conservative EQ and channel balance gain to the output estimate', () => {
+    const eq = eqState({
+      enabled: true,
+      preampDb: -4,
+      bands: eqState().bands.map((band, index) => (index === 5 ? { ...band, gainDb: 6 } : band)),
+    });
+    const channelBalance = channelBalanceState({ enabled: true, rightGainDb: 2 });
+
+    expect(computeDspEstimatedGainDb(eq, channelBalance)).toBe(4);
+    expect(createAudioLevelTelemetry({ inputPeakDb: -5, inputRmsDb: -18, clipCount: 0, lastClipAt: null }, eq, channelBalance)).toMatchObject({
+      estimatedOutputPeakDb: -1,
+      estimatedOutputRmsDb: -14,
+      headroomDb: 1,
+    });
+  });
+});

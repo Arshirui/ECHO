@@ -53,6 +53,14 @@ const builtInPresets: EqPreset[] = [
   { id: 'anime-jpop', name: 'Anime / J-Pop', preampDb: -3, bands: createBands([1.5, 1.2, 0.6, -0.5, -0.8, 0.8, 2, 2.6, 2.2, 1]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
   { id: 'rock', name: 'Rock', preampDb: -3, bands: createBands([2.5, 2, 1, -0.5, -1, 0, 1.2, 2.3, 2, 1.2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
   { id: 'classical', name: 'Classical', preampDb: -1, bands: createBands([0.5, 0.5, 0, 0, -0.3, -0.2, 0.4, 1, 1.2, 0.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'harman-target', name: 'Harman Target', preampDb: -5, bands: createBands([5, 4.5, 3.2, 1.2, 0, 0, 1.2, 2.2, 1.2, 0.4]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'harman-in-ear', name: 'Harman In-Ear', preampDb: -6, bands: createBands([6, 5.5, 4, 1.8, 0.2, 0, 1.5, 2.6, 1.8, 0.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'diffuse-field', name: 'Diffuse Field', preampDb: -4, bands: createBands([-3, -2.4, -1.2, 0, 0.6, 1.4, 3.2, 4, 2.2, 0.2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'bk-room-curve', name: 'B&K Room Curve', preampDb: -3, bands: createBands([3, 2.5, 1.7, 0.8, 0.1, -0.5, -1.1, -1.7, -2.3, -2.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'studio-neutral', name: 'Studio Neutral', preampDb: -1, bands: createBands([0, -0.4, -0.4, 0, 0, 0.4, 0.9, 0.8, 0.2, -0.4]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'classic-smiley', name: 'Classic Smiley', preampDb: -4, bands: createBands([4, 3.2, 1.4, -1.2, -2, -1.4, 0.5, 2, 3.4, 4]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'vinyl-warmth', name: 'Vinyl Warmth', preampDb: -2.5, bands: createBands([2.5, 2, 1.2, 0.5, 0, -0.3, -0.8, -1.2, -1.8, -2.5]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'broadcast-voice', name: 'Broadcast Voice', preampDb: -3, bands: createBands([-4, -3, -1.5, 0.8, 2, 3, 2.5, 1, -1, -2.5]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
 ];
 
 const defaultState = (): EqState => ({

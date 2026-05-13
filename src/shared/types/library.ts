@@ -165,6 +165,8 @@ export type LibraryPageQuery = {
   pageSize?: number;
   search?: string;
   sort?: LibrarySort;
+  hideDuplicates?: boolean;
+  duplicateMode?: DuplicateTrackMode;
 };
 
 export type PlaylistKind = 'manual' | 'smart' | 'synced' | 'system';
@@ -303,6 +305,37 @@ export type LibraryTrack = {
   fieldSources: Record<string, string>;
   unavailable?: boolean;
   playlistItemId?: string;
+};
+
+export type DuplicateTrackMode = 'strict' | 'balanced' | 'aggressive';
+
+export type DuplicateTrackGroup = {
+  id: string;
+  mode: DuplicateTrackMode;
+  duplicateKey: string;
+  representativeTrackId: string;
+  trackCount: number;
+  hiddenCount: number;
+  confidence: number;
+  reasons: string[];
+};
+
+export type DuplicateTrackMember = {
+  groupId: string;
+  track: LibraryTrack;
+  qualityScore: number;
+  rank: number;
+  hidden: boolean;
+  reasons: string[];
+};
+
+export type DuplicateTrackIndexSummary = {
+  mode: DuplicateTrackMode;
+  totalTracksScanned: number;
+  duplicateGroups: number;
+  duplicateMembers: number;
+  hiddenTracks: number;
+  updatedAt: string;
 };
 
 export type EditableTrackTags = {

@@ -3,6 +3,7 @@ import { clipboard, dialog, ipcMain, nativeImage, shell } from 'electron';
 import { isSupportedAudioExtension } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type {
+  DuplicateTrackMode,
   EditableTrackTags,
   FinishPlaybackHistoryRequest,
   ImportPathClassification,
@@ -115,8 +116,18 @@ const normalizeQuery = (value: unknown): LibraryPageQuery => {
     query.sort = input.sort as LibrarySort;
   }
 
+  if (typeof input.hideDuplicates === 'boolean') {
+    query.hideDuplicates = input.hideDuplicates;
+  }
+
+  if (input.duplicateMode === 'strict') {
+    query.duplicateMode = 'strict';
+  }
+
   return query;
 };
+
+const normalizeDuplicateMode = (value: unknown): DuplicateTrackMode => (value === 'strict' ? 'strict' : 'strict');
 
 const normalizeFolderChildrenQuery = (value: unknown): LibraryFolderChildrenQuery => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -491,6 +502,15 @@ export const registerLibraryIpc = (): void => {
   );
   ipcMain.handle(IpcChannels.LibraryGetTracks, (_event, query: unknown) =>
     getLibraryService().getTracks(normalizeQuery(query)),
+  );
+  ipcMain.handle(IpcChannels.LibraryRefreshDuplicateTracks, (_event, mode: unknown) =>
+    getLibraryService().refreshDuplicateTracks(normalizeDuplicateMode(mode)),
+  );
+  ipcMain.handle(IpcChannels.LibraryGetDuplicateTrackVersions, (_event, trackId: unknown) =>
+    getLibraryService().getDuplicateTrackVersions(requireText(trackId, 'trackId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryGetDuplicateIndexSummary, (_event, mode: unknown) =>
+    getLibraryService().getDuplicateIndexSummary(normalizeDuplicateMode(mode)),
   );
   ipcMain.handle(IpcChannels.LibraryGetPlaylists, () => getLibraryService().getPlaylists());
   ipcMain.handle(IpcChannels.LibraryCreatePlaylist, (_event, request: unknown) =>

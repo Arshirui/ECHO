@@ -3,6 +3,7 @@ import { basename, resolve } from 'node:path';
 import type { EchoDatabase } from '../database/createDatabase';
 import type { AlbumMergeStrategy, AlbumService } from './AlbumService';
 import { updateCoverPathsInDatabase } from './CoverCacheManager';
+import { DuplicateTrackService } from './duplicates/DuplicateTrackService';
 import type {
   CoverSource,
   CoverResult,
@@ -21,6 +22,10 @@ import type {
   LibraryPageQuery,
   LibraryPlaylist,
   LibraryPlaylistItem,
+  DuplicateTrackGroup,
+  DuplicateTrackIndexSummary,
+  DuplicateTrackMember,
+  DuplicateTrackMode,
   PlaybackHistoryEntry,
   PlaybackHistoryQuery,
   PlaybackHistorySummary,
@@ -1532,6 +1537,8 @@ export class LibraryStore {
     const startedAt = performance.now();
     const { page, pageSize, search, sort } = pageFromQuery(query);
     const offset = (page - 1) * pageSize;
+    const hideDuplicates = query?.hideDuplicates === true;
+    const duplicateMode = query?.duplicateMode === 'strict' ? query.duplicateMode : 'strict';
     const searchFilter = buildSearchFilter(search, [
       likePredicate('tracks.title'),
       likePredicate('tracks.artist'),
@@ -1540,9 +1547,20 @@ export class LibraryStore {
       likePredicate('COALESCE(tracks.genre, \'\')'),
       likePredicate('tracks.path'),
     ]);
-    const whereSql = searchFilter.sql ? `WHERE tracks.missing = 0 AND ${searchFilter.sql}` : 'WHERE tracks.missing = 0';
+    const duplicateJoinSql = hideDuplicates
+      ? `LEFT JOIN duplicate_track_members AS duplicate_members
+          ON duplicate_members.track_id = tracks.id
+          AND duplicate_members.group_id IN (
+            SELECT id FROM duplicate_track_groups WHERE mode = ?
+          )`
+      : '';
+    const duplicateFilterSql = hideDuplicates ? ' AND COALESCE(duplicate_members.hidden, 0) = 0' : '';
+    const whereSql = searchFilter.sql
+      ? `WHERE tracks.missing = 0${duplicateFilterSql} AND ${searchFilter.sql}`
+      : `WHERE tracks.missing = 0${duplicateFilterSql}`;
+    const baseParams = hideDuplicates ? [duplicateMode, ...searchFilter.params] : searchFilter.params;
     const orderSql = this.trackOrderSql(sort);
-    const totalRow = this.getRow(`SELECT COUNT(*) AS total FROM tracks ${whereSql}`, ...searchFilter.params);
+    const totalRow = this.getRow(`SELECT COUNT(*) AS total FROM tracks ${duplicateJoinSql} ${whereSql}`, ...baseParams);
     const rows = this.allRows(
       `SELECT
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
@@ -1551,10 +1569,11 @@ export class LibraryStore {
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
       FROM tracks
+      ${duplicateJoinSql}
       ${whereSql}
       ${orderSql}
       LIMIT ? OFFSET ?`,
-      ...searchFilter.params,
+      ...baseParams,
       pageSize,
       offset,
     );
@@ -1571,6 +1590,22 @@ export class LibraryStore {
     } finally {
       this.lastTracksQueryMs = performance.now() - startedAt;
     }
+  }
+
+  refreshDuplicateTracks(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {
+    return this.createDuplicateTrackService().rebuildDuplicateTrackIndex(mode);
+  }
+
+  getDuplicateTrackGroup(trackId: string): DuplicateTrackGroup | null {
+    return this.createDuplicateTrackService().getDuplicateGroupForTrack(trackId);
+  }
+
+  getDuplicateTrackVersions(trackId: string): DuplicateTrackMember[] {
+    return this.createDuplicateTrackService().getDuplicateMembersForTrack(trackId);
+  }
+
+  getDuplicateIndexSummary(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {
+    return this.createDuplicateTrackService().getDuplicateIndexSummary(mode);
   }
 
   getAlbums(query?: LibraryPageQuery): LibraryPage<LibraryAlbum> {
@@ -3216,6 +3251,10 @@ export class LibraryStore {
 
   private allRows(sql: string, ...params: unknown[]): DbRow[] {
     return this.database.prepare<unknown[], DbRow>(sql).all(...params);
+  }
+
+  private createDuplicateTrackService(): DuplicateTrackService {
+    return new DuplicateTrackService(this.database, (coverId, variant) => this.toCoverUrl(coverId, variant));
   }
 
   private run(sql: string, ...params: unknown[]): { changes: number } {

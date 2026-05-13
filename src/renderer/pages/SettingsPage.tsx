@@ -11,6 +11,7 @@ import {
   Link2,
   MessageSquare,
   Palette,
+  RotateCw,
   Search,
   Save,
   SlidersHorizontal,
@@ -39,6 +40,7 @@ import {
   updateAppearancePreferences,
   type AppearancePreferences,
 } from '../preferences/appearancePreferences';
+import { rememberLibraryScanStatus } from '../stores/libraryScanSession';
 import {
   getAccountsBridge,
   getAppBridge,
@@ -219,6 +221,14 @@ const ChipButton = ({
     {active ? <Check size={13} /> : null}
   </button>
 );
+
+const StatusText = ({
+  children,
+  tone = 'neutral',
+}: {
+  children: string;
+  tone?: 'neutral' | 'good' | 'muted';
+}): JSX.Element => <span className={`settings-status-text settings-status-text--${tone}`}>{children}</span>;
 
 const ToggleButton = ({
   active,
@@ -501,6 +511,8 @@ export const SettingsPage = (): JSX.Element => {
   const [pendingAlbumMergeStrategy, setPendingAlbumMergeStrategy] = useState<AlbumMergeStrategy | null>(null);
   const [albumGroupingBusy, setAlbumGroupingBusy] = useState(false);
   const [albumGroupingMessage, setAlbumGroupingMessage] = useState<string | null>(null);
+  const [libraryScanBusy, setLibraryScanBusy] = useState(false);
+  const [libraryScanMessage, setLibraryScanMessage] = useState<string | null>(null);
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackFontFamilies);
   const [fontPickerTarget, setFontPickerTarget] = useState<FontPickerTarget | null>(null);
   const [fontPickerQuery, setFontPickerQuery] = useState('');
@@ -1219,6 +1231,36 @@ export const SettingsPage = (): JSX.Element => {
     }
   };
 
+  const handleScanLibraryFolders = async (): Promise<void> => {
+    const library = getLibraryBridge();
+
+    if (!library) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to scan library folders.');
+      return;
+    }
+
+    try {
+      setLibraryScanBusy(true);
+      setLibraryScanMessage(null);
+      setError(null);
+      const folders = await library.getFolders();
+
+      if (folders.length === 0) {
+        setLibraryScanMessage('还没有导入曲库文件夹。');
+        return;
+      }
+
+      const scans = await Promise.all(folders.map((folder) => library.scanFolder(folder.id)));
+      scans.forEach(rememberLibraryScanStatus);
+      setLibraryScanMessage(`已开始扫描 ${scans.length} 个曲库文件夹。`);
+    } catch (scanError) {
+      setLibraryScanMessage(null);
+      setError(scanError instanceof Error ? scanError.message : String(scanError));
+    } finally {
+      setLibraryScanBusy(false);
+    }
+  };
+
   const toggleNetworkProvider = (provider: AppSettings['networkMetadataProviders'][number]): void => {
     const current = appSettings?.networkMetadataProviders ?? ['mock'];
     const next = current.includes(provider) ? current.filter((item) => item !== provider) : [...current, provider];
@@ -1547,7 +1589,7 @@ export const SettingsPage = (): JSX.Element => {
             <SettingSection activeKey={activeSection} icon={Link2} id="integrations" title={t('settings.nav.integrations.label')}>
               <SettingRow title={t('settings.integrations.discord.title')} description={t('settings.integrations.discord.description')}>
                 <div className="settings-chip-row">
-                  <ChipButton active>{discordPresenceLabel}</ChipButton>
+                  <StatusText tone={discordPresenceStatus?.enabled ? 'good' : 'muted'}>{discordPresenceLabel}</StatusText>
                   <button className="settings-action-button" type="button" onClick={() => void refreshDiscordPresenceStatus()}>
                     {t('settings.integrations.discord.action.refresh')}
                   </button>
@@ -1560,7 +1602,7 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow title={t('settings.integrations.lastfm.title')} description={t('settings.integrations.lastfm.description')}>
                 <div className="settings-chip-row">
-                  <ChipButton active>{lastFmLabel}</ChipButton>
+                  <StatusText tone={lastFmStatus?.enabled ? 'good' : 'muted'}>{lastFmLabel}</StatusText>
                   <ToggleButton active={lastFmStatus?.enabled ?? appSettings?.lastFmEnabled ?? false} disabled={!appSettings} onClick={() => void handleLastFmToggle()} />
                 </div>
               </SettingRow>
@@ -1653,7 +1695,7 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={Globe2} id="remote" title={t('settings.nav.remote.label')}>
               <SettingRow title={t('settings.remote.library.title')} description={t('settings.remote.library.description')}>
-                <ChipButton active>{t('common.disabled')}</ChipButton>
+                <StatusText tone="muted">{t('common.disabled')}</StatusText>
               </SettingRow>
             </SettingSection>
 
@@ -1732,11 +1774,11 @@ export const SettingsPage = (): JSX.Element => {
             <SettingSection activeKey={activeSection} icon={Download} id="library" title={t('settings.nav.library.label')}>
               <LibraryFoldersPanel />
               <SettingRow
-                className="setting-row--full"
+                className="setting-row--full setting-row--compact-panel"
                 title="专辑合并策略"
                 description="选择专辑列表如何把歌曲整理成专辑，不会改变歌曲 artist 显示或元数据。"
               >
-                <div className="settings-cache-panel">
+                <div className="settings-cache-panel settings-cache-panel--album">
                   <div className="settings-chip-row settings-chip-row--left">
                     <ChipButton
                       active={(pendingAlbumMergeStrategy ?? appSettings?.albumMergeStrategy ?? 'standard') === 'standard'}
@@ -1761,23 +1803,35 @@ export const SettingsPage = (): JSX.Element => {
                       <strong>专辑名一致且封面一致时合并，适合合集、角色曲、手游专辑、Vocaloid 合集。</strong>
                     </span>
                   </div>
-                  <button
-                    className="settings-action-button"
-                    type="button"
-                    onClick={() => void handleAlbumMergeStrategyApply()}
-                    disabled={!appSettings || albumGroupingBusy}
-                  >
-                    {albumGroupingBusy ? '重新整理中...' : '应用并重新整理专辑'}
-                  </button>
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      onClick={() => void handleAlbumMergeStrategyApply()}
+                      disabled={!appSettings || albumGroupingBusy}
+                    >
+                      {albumGroupingBusy ? '重新整理中...' : '应用并重新整理专辑'}
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      onClick={() => void handleScanLibraryFolders()}
+                      disabled={libraryScanBusy}
+                    >
+                      <RotateCw className={libraryScanBusy ? 'spinning-icon' : undefined} size={15} />
+                      {libraryScanBusy ? '扫描中...' : '扫描曲库'}
+                    </button>
+                  </div>
                   {albumGroupingMessage ? <p className="settings-inline-note">{albumGroupingMessage}</p> : null}
+                  {libraryScanMessage ? <p className="settings-inline-note">{libraryScanMessage}</p> : null}
                 </div>
               </SettingRow>
               <SettingRow
-                className="setting-row--full"
+                className="setting-row--full setting-row--compact-panel"
                 title="封面缓存目录"
                 description="迁移只会复制缓存，不会移动或删除你的音乐文件。"
               >
-                <div className="settings-cache-panel">
+                <div className="settings-cache-panel settings-cache-panel--cover">
                   <div className="settings-cache-path">
                     <em>当前缓存目录</em>
                     <strong title={currentCacheDirectoryLabel}>{currentCacheDirectoryLabel}</strong>
@@ -1913,14 +1967,14 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={Info} id="about" title={t('settings.nav.about.label')}>
               <SettingRow title="版本号" description="当前安装的 ECHO Next 版本。">
-                <ChipButton active>{appVersion ?? t('common.checking')}</ChipButton>
+                <StatusText tone={appVersion ? 'neutral' : 'muted'}>{appVersion ?? t('common.checking')}</StatusText>
               </SettingRow>
               <SettingRow
-                className="setting-row--full"
+                className="setting-row--full setting-row--compact-panel"
                 title="Diagnostics / 崩溃报告"
                 description="本地生成诊断包用于排查闪退、白屏、扫描失败和播放异常；不会自动上传。"
               >
-                <div className="settings-cache-panel">
+                <div className="settings-cache-panel settings-cache-panel--diagnostics">
                   <div className="settings-status-grid">
                     <span>
                       <em>上次异常退出</em>
@@ -1961,13 +2015,13 @@ export const SettingsPage = (): JSX.Element => {
                 </div>
               </SettingRow>
               <SettingRow title={t('settings.about.devMode.title')} description={t('settings.about.devMode.description')}>
-                <ChipButton active>{isDevBuild ? t('common.dev') : t('common.build')}</ChipButton>
+                <StatusText>{isDevBuild ? t('common.dev') : t('common.build')}</StatusText>
               </SettingRow>
               <SettingRow title={t('settings.about.nativeSqlite.title')} description={t('settings.about.nativeSqlite.description')}>
-                <ChipButton active>{t('common.ready')}</ChipButton>
+                <StatusText tone="good">{t('common.ready')}</StatusText>
               </SettingRow>
               <SettingRow title={t('settings.about.audioHost.title')} description={t('settings.about.audioHost.description')}>
-                <ChipButton active>{status?.host ?? t('common.checking')}</ChipButton>
+                <StatusText tone={status?.host ? 'neutral' : 'muted'}>{status?.host ?? t('common.checking')}</StatusText>
               </SettingRow>
             </SettingSection>
 

@@ -38,6 +38,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .tool-button {
@@ -70,6 +71,43 @@
 .tool-button:disabled:hover {
   color: #526174;
   background: rgba(255, 255, 255, 0.82);
+}
+
+.duplicate-toggle,
+.duplicate-analyze-button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: #526174;
+  border: 1px solid rgba(33, 49, 70, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 20px rgba(40, 59, 84, 0.07);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
+.duplicate-toggle:hover,
+.duplicate-analyze-button:hover {
+  color: #23476e;
+  background: #f0f6fd;
+}
+
+.duplicate-toggle.active {
+  color: #ffffff;
+  border-color: rgba(48, 92, 128, 0.2);
+  background: #55799f;
+}
+
+.duplicate-analyze-button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .spinning-icon {
@@ -477,6 +515,25 @@
   line-height: 18px;
 }
 
+.duplicate-version-badge {
+  flex: 0 0 auto;
+  min-height: 22px;
+  padding: 0 8px;
+  color: #4f6f91;
+  border: 1px solid rgba(78, 109, 142, 0.14);
+  border-radius: 999px;
+  background: #eef5fb;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 820;
+}
+
+.duplicate-version-badge:hover {
+  color: #245a94;
+  background: #e4f0fb;
+}
+
 .track-subtitle {
   overflow: hidden;
   color: #536276;
@@ -542,6 +599,124 @@
   color: #7d8591;
   border-color: rgba(35, 55, 80, 0.08);
   background: rgba(255, 255, 255, 0.78);
+}
+
+.duplicate-version-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 25, 38, 0.24);
+  backdrop-filter: blur(10px);
+}
+
+.duplicate-version-panel {
+  display: grid;
+  width: min(920px, calc(100vw - 48px));
+  max-height: min(720px, calc(100vh - 96px));
+  gap: 12px;
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(33, 49, 70, 0.12);
+  border-radius: 10px;
+  background: rgba(248, 251, 254, 0.96);
+  box-shadow: 0 24px 70px rgba(20, 36, 56, 0.22);
+}
+
+.duplicate-version-panel header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.duplicate-version-panel h2,
+.duplicate-version-panel p {
+  margin: 0;
+}
+
+.duplicate-version-panel header span,
+.duplicate-version-empty,
+.duplicate-version-todo {
+  color: #6f7e91;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.duplicate-version-panel h2 {
+  color: #172235;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.duplicate-version-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.duplicate-version-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, auto) minmax(112px, auto) 38px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid rgba(33, 49, 70, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.duplicate-version-row > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.duplicate-version-row strong,
+.duplicate-version-row span,
+.duplicate-version-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duplicate-version-row strong {
+  color: #172235;
+  font-size: 13px;
+  font-weight: 840;
+}
+
+.duplicate-version-row span,
+.duplicate-version-row small {
+  color: #64758a;
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.duplicate-version-specs {
+  display: flex !important;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.duplicate-version-specs span,
+.duplicate-version-rank em {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #eef4fa;
+}
+
+.duplicate-version-rank {
+  justify-items: end;
+}
+
+.duplicate-version-rank em {
+  color: #55799f;
+  font-style: normal;
+  font-weight: 820;
 }
 
 .playlists-page {

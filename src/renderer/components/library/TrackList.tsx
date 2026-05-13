@@ -10,12 +10,14 @@ type TrackListProps = {
   onEndReached?: () => void;
   onPlay?: (track: LibraryTrack) => void;
   onAddToQueue?: (track: LibraryTrack) => void;
+  duplicateHiddenCounts?: Record<string, number>;
+  onShowVersions?: (track: LibraryTrack) => void;
   likedTrackIds?: Record<string, boolean>;
   onToggleLiked?: (track: LibraryTrack) => void;
   onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
 };
 
-export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, onEndReached, onPlay, onAddToQueue, likedTrackIds = {}, onToggleLiked, onOpenTrackMenu }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, onEndReached, onPlay, onAddToQueue, duplicateHiddenCounts = {}, onShowVersions, likedTrackIds = {}, onToggleLiked, onOpenTrackMenu }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const rowVirtualizer = useVirtualizer({
     count: tracks.length,
@@ -58,10 +60,12 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, on
                 >
                   <TrackRow
                     isPlaying={track.id === currentTrackId}
+                    duplicateHiddenCount={duplicateHiddenCounts[track.id] ?? 0}
                     liked={likedTrackIds[track.id] === true}
                     track={track}
                     onPlay={onPlay}
                     onAddToQueue={onAddToQueue}
+                    onShowVersions={onShowVersions}
                     onToggleLiked={onToggleLiked}
                     onOpenMenu={onOpenTrackMenu}
                   />

@@ -1,4 +1,5 @@
 import {
+  Captions,
   Headphones,
   Library,
   Minus,
@@ -12,8 +13,10 @@ import { useI18n } from '../../i18n/I18nProvider';
 type AppTitleBarProps = {
   activeRouteId: AppRouteId;
   isAudioSettingsOpen?: boolean;
+  isLyricsSettingsOpen?: boolean;
   onRouteChange: (routeId: AppRouteId) => void;
   onOpenAudioSettings: () => void;
+  onOpenLyricsSettings?: () => void;
   onMinimize: () => void;
   onToggleMaximize: () => void;
   onClose: () => void;
@@ -30,8 +33,10 @@ type TitleBarAction = {
 export const AppTitleBar = ({
   activeRouteId,
   isAudioSettingsOpen = false,
+  isLyricsSettingsOpen = false,
   onRouteChange,
   onOpenAudioSettings,
+  onOpenLyricsSettings = () => undefined,
   onMinimize,
   onToggleMaximize,
   onClose,
@@ -51,6 +56,13 @@ export const AppTitleBar = ({
       icon: Headphones,
       active: isAudioSettingsOpen,
       onClick: onOpenAudioSettings,
+    },
+    {
+      id: 'lyrics-settings',
+      label: t('route.lyricsSettings.label'),
+      icon: Captions,
+      active: isLyricsSettingsOpen,
+      onClick: onOpenLyricsSettings,
     },
     {
       id: 'settings',
@@ -76,8 +88,12 @@ export const AppTitleBar = ({
             <button
               className="titlebar-action"
               data-active={action.active ? 'true' : 'false'}
-              data-drawer-trigger={action.id === 'audio-settings' ? 'true' : 'false'}
-              data-drawer-open={action.id === 'audio-settings' && isAudioSettingsOpen ? 'true' : 'false'}
+              data-drawer-trigger={action.id === 'audio-settings' || action.id === 'lyrics-settings' ? 'true' : 'false'}
+              data-drawer-open={
+                (action.id === 'audio-settings' && isAudioSettingsOpen) || (action.id === 'lyrics-settings' && isLyricsSettingsOpen)
+                  ? 'true'
+                  : 'false'
+              }
               key={action.id}
               type="button"
               aria-label={action.label}

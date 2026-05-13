@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { LibraryTrack } from '../../shared/types/library';
+import type { TrackLyrics } from '../../shared/types/lyrics';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { LyricsPage } from './LyricsPage';
 import type { LyricLine } from '../components/lyrics/lyricsTypes';
@@ -76,6 +77,26 @@ const lyrics: LyricLine[] = [
   { timeMs: 10000, text: 'Second line' },
   { timeMs: 20000, text: 'Third line' },
 ];
+
+const makeTrackLyrics = (overrides: Partial<TrackLyrics> = {}): TrackLyrics => ({
+  id: 'lyrics-1',
+  trackId: 'track-1',
+  provider: 'lrclib',
+  providerLyricsId: 'lrclib-1',
+  kind: 'synced',
+  title: 'Test Song',
+  artist: 'Test Artist',
+  album: 'Test Album',
+  durationSeconds: 180,
+  lines: lyrics,
+  plainText: 'First line\nSecond line\nThird line',
+  syncedText: '[00:00.00]First line\n[00:10.00]Second line\n[00:20.00]Third line',
+  offsetMs: 0,
+  score: 0.99,
+  cachedAt: '2026-05-13T00:00:00.000Z',
+  updatedAt: '2026-05-13T00:00:00.000Z',
+  ...overrides,
+});
 
 const QueueSeed = ({ children, track }: { children: JSX.Element; track: LibraryTrack }): JSX.Element => {
   const { replaceQueue, setCurrentTrackId } = usePlaybackQueue();
@@ -232,5 +253,60 @@ describe('LyricsPage', () => {
     await screen.findByRole('heading', { name: 'Test Song' });
     expect(container.querySelector('.lyrics-track-cover img')?.getAttribute('src')).toBe('echo-cover://original/cover%201');
     expect(container.querySelector('.lyrics-mv-card[data-cover="true"] img')?.getAttribute('src')).toBe('echo-cover://large/cover%201');
+  });
+
+  it('loads lyrics through the lyrics bridge when trackId changes', async () => {
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics({ lines: [{ timeMs: 5000, text: 'Loaded from service' }] })),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText('Loaded from service')).toBeTruthy();
+    expect(window.echo.lyrics.getForTrack).toHaveBeenCalledWith('track-1');
+  });
+
+  it('does not highlight plain lyrics as the active timed line', async () => {
+    const track = makeTrack();
+    mockEcho(track, 120);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics({
+        kind: 'plain',
+        lines: [
+          { timeMs: -1, text: 'Plain first' },
+          { timeMs: -1, text: 'Plain second' },
+        ],
+        syncedText: null,
+        plainText: 'Plain first\nPlain second',
+      })),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Plain second');
+    expect(container.querySelector('.lyrics-line[data-active="true"]')).toBeNull();
   });
 });

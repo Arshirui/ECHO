@@ -25,6 +25,10 @@ describe('app settings normalization', () => {
     expect(settings.scanPerformanceMode).toBe('balanced');
     expect(settings.hideToTrayOnClose).toBe(true);
     expect(settings.networkMetadataProviders).toEqual(['qq-music']);
+    expect(settings.lyricsNetworkEnabled).toBe(true);
+    expect(settings.lyricsAutoSearch).toBe(true);
+    expect(settings.lyricsAutoAcceptScore).toBe(0.82);
+    expect(settings.lyricsDefaultOffsetMs).toBe(0);
   });
 
   it('normalizes an empty coverCacheDir to null', async () => {
@@ -103,6 +107,34 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ scanPerformanceMode: 'low' }).scanPerformanceMode).toBe('low');
     expect(normalizeSettings({ scanPerformanceMode: 'performance' }).scanPerformanceMode).toBe('performance');
     expect(normalizeSettings({ scanPerformanceMode: 'turbo' as never }).scanPerformanceMode).toBe('balanced');
+  });
+
+  it('normalizes duplicate track settings conservatively', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).duplicateTracksEnabled).toBe(false);
+    expect(normalizeSettings({ duplicateTracksEnabled: true }).duplicateTracksEnabled).toBe(true);
+    expect(normalizeSettings({ duplicateTracksMode: 'aggressive' }).duplicateTracksMode).toBe('strict');
+    expect(normalizeSettings({ duplicateTracksAutoRebuildAfterScan: true }).duplicateTracksAutoRebuildAfterScan).toBe(true);
+  });
+
+  it('normalizes lyrics settings', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(
+      normalizeSettings({
+        lyricsNetworkEnabled: false,
+        lyricsAutoSearch: false,
+        lyricsAutoAcceptScore: 2,
+        lyricsDefaultOffsetMs: -24000,
+      }),
+    ).toMatchObject({
+      lyricsNetworkEnabled: false,
+      lyricsPreferredProvider: 'lrclib',
+      lyricsAutoSearch: false,
+      lyricsAutoAcceptScore: 1,
+      lyricsDefaultOffsetMs: -10000,
+    });
   });
 
   it('normalizes channel balance settings for old and malformed settings files', async () => {

@@ -17,8 +17,8 @@ export const resolvePreloadPath = (baseDir = __dirname): string => {
 
 export const createMainWindow = (): BrowserWindow => {
   const window = new BrowserWindow({
-    width: 1440,
-    height: 920,
+    width: 1600,
+    height: 1000,
     minWidth: 1120,
     minHeight: 760,
     title: 'ECHO Next',

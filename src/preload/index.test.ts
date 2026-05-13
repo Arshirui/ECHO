@@ -66,6 +66,16 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryClassifyImportPaths, ['D:\\Music']);
   });
 
+  it('exposes duplicate track APIs through IPC', async () => {
+    await exposedApi!.library.refreshDuplicateTracks('strict');
+    await exposedApi!.library.getDuplicateTrackVersions('track-1');
+    await exposedApi!.library.getDuplicateIndexSummary('strict');
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryRefreshDuplicateTracks, 'strict');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetDuplicateTrackVersions, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryGetDuplicateIndexSummary, 'strict');
+  });
+
   it('exposes account status APIs without cookie readback helpers', async () => {
     await exposedApi!.accounts.saveCookie('netease', 'MUSIC_U=secret');
     await exposedApi!.accounts.startLogin?.('netease');
@@ -75,5 +85,21 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountStartLogin, 'netease');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountGetStatuses);
     expect(Object.keys(exposedApi!.accounts)).not.toContain('getCookie');
+  });
+
+  it('exposes lyrics APIs through IPC', async () => {
+    await exposedApi!.lyrics.getForTrack('track-1');
+    await exposedApi!.lyrics.searchCandidates('track-1');
+    await exposedApi!.lyrics.applyCandidate('track-1', 'candidate-1');
+    await exposedApi!.lyrics.rejectCandidate('candidate-1');
+    await exposedApi!.lyrics.setOffset('track-1', 500);
+    await exposedApi!.lyrics.clearCache('track-1');
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LyricsGetForTrack, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LyricsSearchCandidates, 'track-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LyricsApplyCandidate, 'track-1', 'candidate-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LyricsRejectCandidate, 'candidate-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LyricsSetOffset, 'track-1', 500);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LyricsClearCache, 'track-1');
   });
 });

@@ -7,18 +7,29 @@ vi.mock('../components/library/TrackList', () => ({
   TrackList: ({
     tracks,
     currentTrackId,
+    duplicateHiddenCounts,
     onPlay,
+    onShowVersions,
   }: {
     tracks: LibraryTrack[];
     currentTrackId: string | null;
+    duplicateHiddenCounts?: Record<string, number>;
     onPlay?: (track: LibraryTrack) => void;
+    onShowVersions?: (track: LibraryTrack) => void;
   }) => (
     <div>
       <span data-testid="current-track-id">{currentTrackId ?? 'none'}</span>
       {tracks.map((track) => (
-        <button key={track.id} type="button" onClick={() => onPlay?.(track)}>
-          {track.title}
-        </button>
+        <div key={track.id}>
+          <button type="button" onClick={() => onPlay?.(track)}>
+            {track.title}
+          </button>
+          {duplicateHiddenCounts?.[track.id] ? (
+            <button type="button" onClick={() => onShowVersions?.(track)}>
+              有 {duplicateHiddenCounts[track.id] + 1} 个版本
+            </button>
+          ) : null}
+        </div>
       ))}
     </div>
   ),
@@ -93,6 +104,23 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
       cancelScan: vi.fn(),
       getDiagnostics: vi.fn(),
       recordTrackPlayback: vi.fn(),
+      refreshDuplicateTracks: vi.fn().mockResolvedValue({
+        mode: 'strict',
+        totalTracksScanned: tracks.length,
+        duplicateGroups: 1,
+        duplicateMembers: 2,
+        hiddenTracks: 1,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+      getDuplicateTrackVersions: vi.fn().mockResolvedValue([]),
+      getDuplicateIndexSummary: vi.fn().mockResolvedValue({
+        mode: 'strict',
+        totalTracksScanned: tracks.length,
+        duplicateGroups: 0,
+        duplicateMembers: 0,
+        hiddenTracks: 0,
+        updatedAt: '',
+      }),
       pruneMissingTracks: vi.fn().mockResolvedValue({ scannedCount: tracks.length, removedCount: 0 }),
       clearTracks: vi.fn().mockResolvedValue({ scannedCount: tracks.length, removedCount: tracks.length }),
     },
@@ -113,6 +141,14 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
     },
     app: {
       getVersion: vi.fn(),
+      getSettings: vi.fn().mockResolvedValue({
+        duplicateTracksEnabled: false,
+        duplicateTracksMode: 'strict',
+      }),
+      setSettings: vi.fn().mockResolvedValue({
+        duplicateTracksEnabled: true,
+        duplicateTracksMode: 'strict',
+      }),
       minimize: vi.fn(),
       toggleMaximize: vi.fn(),
       close: vi.fn(),
