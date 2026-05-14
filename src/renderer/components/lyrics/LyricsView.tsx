@@ -10,6 +10,7 @@ type LyricsViewProps = {
   onSeek: (timeMs: number) => void;
   hideEmptyState?: boolean;
   showRomanization?: boolean;
+  showTranslation?: boolean;
 };
 
 export const getActiveLyricIndex = (lines: LyricsState['lines'], positionMs: number, offsetMs: number): number => {
@@ -56,7 +57,8 @@ export const LyricsView = ({
   onSeek,
   positionMs,
   showRomanization = true,
-}: LyricsViewProps): JSX.Element => {
+  showTranslation = true,
+}: LyricsViewProps): JSX.Element | null => {
   const scrollRef = useRef<HTMLElement | null>(null);
   const isSynced = lyrics.kind === 'synced';
   const isPlain = lyrics.kind === 'plain';
@@ -96,7 +98,7 @@ export const LyricsView = ({
 
   if (lyrics.lines.length === 0) {
     if (hideEmptyState) {
-      return <section className="lyrics-empty lyrics-empty--hidden" aria-label="Lyrics" />;
+      return null;
     }
 
     return (
@@ -117,6 +119,7 @@ export const LyricsView = ({
           line={line}
           past={activeIndex >= 0 && index < activeIndex}
           showRomanization={showRomanization}
+          showTranslation={showTranslation}
           onSeek={onSeek}
           seekable={isSynced && line.timeMs >= 0}
         />

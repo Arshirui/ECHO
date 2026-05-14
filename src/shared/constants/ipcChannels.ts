@@ -24,6 +24,7 @@ export const IpcChannels = {
   DownloadsGetSettings: 'downloads:get-settings',
   DownloadsSetSettings: 'downloads:set-settings',
   DownloadsChooseOutputDirectory: 'downloads:choose-output-directory',
+  DownloadsSearch: 'downloads:search',
   DownloadsCheckTools: 'downloads:check-tools',
   DownloadsJobsUpdated: 'downloads:jobs-updated',
   AccountGetStatuses: 'account:get-statuses',

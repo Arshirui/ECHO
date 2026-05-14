@@ -322,9 +322,31 @@ int getDeviceBufferSize(const Options& options)
         return options.bufferSize;
 
     if (options.exclusive || options.asio)
-        return 8192;
+        return 2048;
 
     return 512;
+}
+
+std::vector<int> buildBufferSizeAttempts(const Options& options)
+{
+    std::vector<int> buffers;
+
+    const auto add = [&] (int size)
+    {
+        if (size > 0 && std::find(buffers.begin(), buffers.end(), size) == buffers.end())
+            buffers.push_back(size);
+    };
+
+    add(getDeviceBufferSize(options));
+
+    if (options.exclusive || options.asio)
+    {
+        add(2048);
+        add(4096);
+        add(8192);
+    }
+
+    return buffers;
 }
 
 int framesForMilliseconds(int sampleRate, int milliseconds)
@@ -967,7 +989,9 @@ std::unique_ptr<juce::AudioIODevice> openDevice(
     juce::AudioIODeviceType& type,
     const DeviceDescriptor& descriptor,
     const Options& options,
-    int& actualSampleRate)
+    int& actualSampleRate,
+    int& openedBufferFrames,
+    int& actualBufferFrames)
 {
     const auto createStarted = std::chrono::steady_clock::now();
     std::unique_ptr<juce::AudioIODevice> device(type.createDevice(descriptor.name, {}));
@@ -986,44 +1010,49 @@ std::unique_ptr<juce::AudioIODevice> openDevice(
 
     juce::String lastError;
     const auto attempts = buildSampleRateAttempts(options, descriptor);
-    const int bufferSize = getDeviceBufferSize(options);
+    const auto bufferAttempts = buildBufferSizeAttempts(options);
 
-    for (const auto rate : attempts)
+    for (const auto bufferSize : bufferAttempts)
     {
-        const auto openStarted = std::chrono::steady_clock::now();
-        lastError = device->open({}, outputChannels, static_cast<double>(rate), bufferSize);
-        logLine(
-            "device->open(" + std::to_string(rate)
-            + " Hz, " + std::to_string(channelCount)
-            + " ch, buffer=" + std::to_string(bufferSize)
-            + ") completed in " + std::to_string(elapsedMs(openStarted)) + " ms");
-
-        if (lastError.isEmpty())
+        for (const auto rate : attempts)
         {
-            actualSampleRate = static_cast<int>(std::round(device->getCurrentSampleRate()));
-            if (options.exclusive && actualSampleRate != options.sampleRate)
-            {
-                device->close();
-                throw std::runtime_error(
-                    "output sample rate mismatch: requested "
-                    + std::to_string(options.sampleRate)
-                    + " Hz, opened "
-                    + std::to_string(actualSampleRate)
-                    + " Hz");
-            }
-            if (options.asio && actualSampleRate != options.sampleRate)
-            {
-                logLine(
-                    "ASIO opened at hardware sample rate "
-                    + std::to_string(actualSampleRate)
-                    + " Hz instead of requested "
-                    + std::to_string(options.sampleRate)
-                    + " Hz; decoder-side resampling will be required");
-            }
-            return device;
-        }
+            const auto openStarted = std::chrono::steady_clock::now();
+            lastError = device->open({}, outputChannels, static_cast<double>(rate), bufferSize);
+            logLine(
+                "device->open(" + std::to_string(rate)
+                + " Hz, " + std::to_string(channelCount)
+                + " ch, buffer=" + std::to_string(bufferSize)
+                + ") completed in " + std::to_string(elapsedMs(openStarted)) + " ms");
 
-        logLine("Open failed at " + std::to_string(rate) + " Hz: " + lastError.toStdString());
+            if (lastError.isEmpty())
+            {
+                actualSampleRate = static_cast<int>(std::round(device->getCurrentSampleRate()));
+                openedBufferFrames = bufferSize;
+                actualBufferFrames = std::max(1, device->getCurrentBufferSizeSamples());
+                if (options.exclusive && actualSampleRate != options.sampleRate)
+                {
+                    device->close();
+                    throw std::runtime_error(
+                        "output sample rate mismatch: requested "
+                        + std::to_string(options.sampleRate)
+                        + " Hz, opened "
+                        + std::to_string(actualSampleRate)
+                        + " Hz");
+                }
+                if (options.asio && actualSampleRate != options.sampleRate)
+                {
+                    logLine(
+                        "ASIO opened at hardware sample rate "
+                        + std::to_string(actualSampleRate)
+                        + " Hz instead of requested "
+                        + std::to_string(options.sampleRate)
+                        + " Hz; decoder-side resampling will be required");
+                }
+                return device;
+            }
+
+            logLine("Open failed at " + std::to_string(rate) + " Hz, buffer=" + std::to_string(bufferSize) + ": " + lastError.toStdString());
+        }
     }
 
     throw std::runtime_error(lastError.isNotEmpty() ? lastError.toStdString() : "failed to open output device");
@@ -1034,7 +1063,9 @@ std::unique_ptr<juce::AudioIODevice> openSelectedDevice(
     const DeviceDescriptor& selected,
     juce::OwnedArray<juce::AudioIODeviceType>& types,
     DeviceDescriptor& openedDescriptor,
-    int& actualSampleRate)
+    int& actualSampleRate,
+    int& openedBufferFrames,
+    int& actualBufferFrames)
 {
     const auto candidates = buildOpenCandidates(options, selected);
     std::string lastError;
@@ -1058,13 +1089,25 @@ std::unique_ptr<juce::AudioIODevice> openSelectedDevice(
         try
         {
             int openedSampleRate = options.sampleRate;
-            auto device = openDevice(*type, candidate, options, openedSampleRate);
+            int openedBufferSizeFrames = getDeviceBufferSize(options);
+            int actualBufferSizeFrames = openedBufferSizeFrames;
+            auto device = openDevice(
+                *type,
+                candidate,
+                options,
+                openedSampleRate,
+                openedBufferSizeFrames,
+                actualBufferSizeFrames);
             openedDescriptor = candidate;
             actualSampleRate = openedSampleRate;
+            openedBufferFrames = openedBufferSizeFrames;
+            actualBufferFrames = actualBufferSizeFrames;
             logLine(
                 "Opened output with " + candidate.typeName.toStdString()
                 + " at " + std::to_string(actualSampleRate) + " Hz"
-                + " buffer=" + std::to_string(getDeviceBufferSize(options)) + " frames");
+                + " requestedBuffer=" + std::to_string(getDeviceBufferSize(options)) + " frames"
+                + " openedBuffer=" + std::to_string(openedBufferFrames) + " frames"
+                + " actualBuffer=" + std::to_string(actualBufferFrames) + " frames");
             return device;
         }
         catch (const std::exception& error)
@@ -1101,14 +1144,23 @@ int runHost(const Options& options)
     createDeviceTypes(types);
 
     int actualSampleRate = options.sampleRate;
+    const int requestedDeviceBufferFrames = getDeviceBufferSize(options);
+    int openedDeviceBufferFrames = requestedDeviceBufferFrames;
+    int actualDeviceBufferFrames = requestedDeviceBufferFrames;
     auto openedDescriptor = descriptor;
-    auto device = openSelectedDevice(options, descriptor, types, openedDescriptor, actualSampleRate);
+    auto device = openSelectedDevice(
+        options,
+        descriptor,
+        types,
+        openedDescriptor,
+        actualSampleRate,
+        openedDeviceBufferFrames,
+        actualDeviceBufferFrames);
 
     echo::EqProcessor eqProcessor;
     echo::ChannelBalanceProcessor channelBalanceProcessor;
     EqControlServer eqControlServer(options.eqControlPort, eqProcessor, channelBalanceProcessor);
     const bool eqControlReady = eqControlServer.start();
-    const int deviceBufferFrames = getDeviceBufferSize(options);
     const int fifoCapacityFrames = getFifoCapacityFrames(options, actualSampleRate);
     const int startupPrebufferFrames = getStartupPrebufferFrames(options, actualSampleRate);
     const int startupPrebufferTimeoutMs = getStartupPrebufferTimeoutMs(options);
@@ -1132,7 +1184,12 @@ int runHost(const Options& options)
         + ",\"channels\":" + std::to_string(options.channels)
         + ",\"exclusive\":" + std::string(openedExclusive ? "true" : "false")
         + ",\"eqControlPort\":" + std::to_string(eqControlReady ? options.eqControlPort : 0)
-        + ",\"deviceBufferFrames\":" + std::to_string(deviceBufferFrames)
+        + ",\"deviceBufferFrames\":" + std::to_string(actualDeviceBufferFrames)
+        + ",\"nativeActualBufferFrames\":" + std::to_string(actualDeviceBufferFrames)
+        + ",\"actualBufferFrames\":" + std::to_string(actualDeviceBufferFrames)
+        + ",\"requestedDeviceBufferFrames\":" + std::to_string(requestedDeviceBufferFrames)
+        + ",\"openedDeviceBufferFrames\":" + std::to_string(openedDeviceBufferFrames)
+        + ",\"bufferSizeFallback\":" + std::string(openedDeviceBufferFrames != requestedDeviceBufferFrames ? "true" : "false")
         + ",\"fifoCapacityFrames\":" + std::to_string(fifoCapacityFrames)
         + ",\"startupPrebufferFrames\":" + std::to_string(startupPrebufferFrames)
         + ",\"startupPrebufferTimeoutMs\":" + std::to_string(startupPrebufferTimeoutMs)
@@ -1164,7 +1221,7 @@ int runHost(const Options& options)
             lastReported = frames;
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(33));
     }
 
     if (reader.joinable())

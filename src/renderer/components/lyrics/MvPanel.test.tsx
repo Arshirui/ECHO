@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import type { MvSettings, TrackVideo } from '../../../shared/types/mv';
-import { MvPanel } from './MvPanel';
+import { MvPanel, type MvAudioClock } from './MvPanel';
 
 const makeVideo = (overrides: Partial<TrackVideo> = {}): TrackVideo => ({
   id: 'video-1',
@@ -43,7 +43,26 @@ const defaultMvSettings: MvSettings = {
   allow60fps: true,
 };
 
-const renderPanel = (selected: TrackVideo | null, isAudioPlaying = true, settings: MvSettings = defaultMvSettings) => {
+const makeAudioClock = (
+  positionSeconds = 0,
+  playbackRate = 1,
+  overrides: Partial<MvAudioClock> = {},
+): MvAudioClock => ({
+  positionSeconds,
+  updatedAtMs: performance.now(),
+  playbackRate,
+  durationSeconds: 180,
+  state: 'playing',
+  ...overrides,
+});
+
+const renderPanel = (
+  selected: TrackVideo | null,
+  isAudioPlaying = true,
+  settings: MvSettings = defaultMvSettings,
+  clockPositionSeconds = 0,
+  clockPlaybackRate = 1,
+) => {
   window.echo = {
     playback: {
       seek: vi.fn(),
@@ -72,9 +91,17 @@ const renderPanel = (selected: TrackVideo | null, isAudioPlaying = true, setting
       artist="Test Artist"
       coverUrl="echo-cover://thumb/test"
       isAudioPlaying={isAudioPlaying}
+      audioClock={makeAudioClock(clockPositionSeconds, clockPlaybackRate, {
+        state: isAudioPlaying ? 'playing' : 'paused',
+      })}
     />,
   );
 };
+
+beforeEach(() => {
+  vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+  vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+});
 
 afterEach(() => {
   cleanup();
@@ -125,6 +152,7 @@ describe('MvPanel', () => {
         artist="Test Artist"
         coverUrl="echo-cover://thumb/test"
         isAudioPlaying
+        audioClock={makeAudioClock(0)}
       />,
     );
 
@@ -177,6 +205,7 @@ describe('MvPanel', () => {
         artist="Test Artist"
         coverUrl="echo-cover://thumb/test"
         isAudioPlaying
+        audioClock={makeAudioClock(0)}
       />,
     );
 
@@ -189,6 +218,7 @@ describe('MvPanel', () => {
         artist="Next Artist"
         coverUrl="echo-cover://thumb/next"
         isAudioPlaying
+        audioClock={makeAudioClock(0)}
       />,
     );
 
@@ -213,6 +243,7 @@ describe('MvPanel', () => {
         artist="Test Artist"
         coverUrl="echo-cover://thumb/test"
         isAudioPlaying={false}
+        audioClock={makeAudioClock(0, 1, { state: 'paused' })}
       />,
     );
 
@@ -220,8 +251,9 @@ describe('MvPanel', () => {
     expect(playSpy).toHaveBeenCalled();
   });
 
-  it('restarts audio once when MV video metadata loads and sync restart is enabled', async () => {
-    const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true });
+  it('syncs MV video to the audio position when metadata loads without restarting audio', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 42);
 
     const video = await waitFor(() => {
       const element = container.querySelector('video') as HTMLVideoElement | null;
@@ -229,11 +261,258 @@ describe('MvPanel', () => {
       return element!;
     });
 
-    video.dispatchEvent(new Event('loadedmetadata'));
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
     video.dispatchEvent(new Event('loadedmetadata'));
 
-    await waitFor(() => expect(window.echo.playback.seek).toHaveBeenCalledWith(0));
-    expect(window.echo.playback.seek).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(42, 3));
+    expect(window.echo.playback.seek).not.toHaveBeenCalled();
+  });
+
+  it('corrects drift conservatively while allowing obvious audio position jumps through', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const { container, rerender } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 10);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(10, 3));
+
+    video.currentTime = 10.4;
+    nowSpy.mockReturnValue(1500);
+    rerender(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(10.9)}
+      />,
+    );
+
+    expect(video.currentTime).toBeCloseTo(10.4, 3);
+
+    video.currentTime = 20;
+    nowSpy.mockReturnValue(1600);
+    rerender(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(10.9)}
+      />,
+    );
+
+    expect(video.currentTime).toBeCloseTo(20, 3);
+
+    video.currentTime = 10.4;
+    nowSpy.mockReturnValue(1700);
+    rerender(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(45)}
+      />,
+    );
+
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(45, 3));
+  });
+
+  it('does not write video time for frequent clock anchors within the drift threshold', async () => {
+    const performanceNow = vi.spyOn(performance, 'now').mockReturnValue(0);
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const { container, rerender } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 10);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(10, 3));
+
+    video.currentTime = 10.2;
+    performanceNow.mockReturnValue(100);
+    nowSpy.mockReturnValue(1100);
+    rerender(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(10.25, 1, { updatedAtMs: 100 })}
+      />,
+    );
+
+    expect(video.currentTime).toBeCloseTo(10.2, 3);
+  });
+
+  it('force-syncs MV when audio resumes from pause', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const { container, rerender } = renderPanel(makeVideo(), false, { ...defaultMvSettings, restartAudioOnLoad: true }, 12);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(12, 3));
+
+    video.currentTime = 0;
+    rerender(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(40)}
+      />,
+    );
+
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(40, 3));
+  });
+
+  it('does not adjust video time when MV progress following is disabled', async () => {
+    const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: false }, 30);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.currentTime = 0;
+    video.dispatchEvent(new Event('loadedmetadata'));
+
+    expect(video.currentTime).toBe(0);
+    expect(window.echo.playback.seek).not.toHaveBeenCalled();
+  });
+
+  it('force-syncs MV when playback seek commits from the progress bar', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 8);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(8, 3));
+
+    video.currentTime = 8.2;
+    window.dispatchEvent(new CustomEvent('playback:seeked', { detail: { trackId: 'track-1', positionSeconds: 64 } }));
+
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(64, 3));
+  });
+
+  it('ignores playback seek sync events for other tracks', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 8);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(8, 3));
+
+    video.currentTime = 8.2;
+    window.dispatchEvent(new CustomEvent('playback:seeked', { detail: { trackId: 'track-2', positionSeconds: 64 } }));
+
+    expect(video.currentTime).toBeCloseTo(8.2, 3);
+  });
+
+  it('syncs MV playback rate to the audio playback rate', async () => {
+    const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 0, 1.25);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    video.dispatchEvent(new Event('loadedmetadata'));
+
+    expect(video.playbackRate).toBeCloseTo(1.25, 3);
+  });
+
+  it('wraps the target time for shorter looping MV videos', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 125);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 30 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(5, 3));
+  });
+
+  it('uses loop-aware drift around MV loop boundaries', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const { container, rerender } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 29.7);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 30 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(29.7, 3));
+
+    video.currentTime = 29.8;
+    nowSpy.mockReturnValue(2500);
+    rerender(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(30.2, 1, { state: 'paused' })}
+      />,
+    );
+
+    expect(video.currentTime).toBeCloseTo(29.8, 3);
+  });
+
+  it('advances the MV sync target from the audio clock anchor and playback rate', async () => {
+    const performanceNow = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 10, 1.5);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    performanceNow.mockReturnValue(2000);
+    video.dispatchEvent(new Event('loadedmetadata'));
+
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(11.5, 3));
   });
 
   it('shows fallback for selected MV that cannot play in app', async () => {

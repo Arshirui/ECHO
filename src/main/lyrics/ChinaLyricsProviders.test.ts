@@ -30,32 +30,33 @@ afterEach(() => {
 
 describe('China lyrics providers', () => {
   it('maps NetEase search and lyric responses', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          result: {
+            songs: [
+              {
+                id: 123,
+                name: 'Echo Song',
+                duration: 120000,
+                artists: [{ name: 'Echo Artist' }],
+                album: { name: 'Echo Album' },
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          lrc: { lyric: '[00:01.00]Line' },
+          tlyric: { lyric: '[00:01.00]Translated' },
+          romalrc: { lyric: '[00:01.00]Romanized' },
+        }),
+      );
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          mockJsonResponse({
-            result: {
-              songs: [
-                {
-                  id: 123,
-                  name: 'Echo Song',
-                  duration: 120000,
-                  artists: [{ name: 'Echo Artist' }],
-                  album: { name: 'Echo Album' },
-                },
-              ],
-            },
-          }),
-        )
-        .mockResolvedValueOnce(
-          mockJsonResponse({
-            lrc: { lyric: '[00:01.00]Line' },
-            tlyric: { lyric: '[00:01.00]Translated' },
-            romalrc: { lyric: '[00:01.00]Romanized' },
-          }),
-        ),
+      fetchMock,
     );
 
     const [candidate] = await new NeteaseLyricsProvider().search(request);
@@ -72,6 +73,7 @@ describe('China lyrics providers', () => {
       romanizationLyrics: '[00:01.00]Romanized',
       sourceLabel: 'NetEase',
     });
+    expect(String(fetchMock.mock.calls[1][0])).toContain('rv=-1');
   });
 
   it('maps NetEase nolyric responses to instrumental results', async () => {

@@ -42,6 +42,11 @@ const getWallpaperHandler = (): ((request: Request) => Promise<Response>) => {
   return call?.[1] as (request: Request) => Promise<Response>;
 };
 
+const getImageHandler = (): ((request: Request) => Promise<Response>) => {
+  const call = handleMock.mock.calls.find(([scheme]) => scheme === 'echo-image');
+  return call?.[1] as (request: Request) => Promise<Response>;
+};
+
 afterEach(() => {
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
@@ -79,5 +84,31 @@ describe('echo-wallpaper protocol', () => {
     const response = await getWallpaperHandler()(new Request('echo-wallpaper://lyrics/custom'));
 
     expect(response.status).toBe(404);
+  });
+
+  it('proxies allowed Bilibili images with a referer header', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('image', {
+        headers: {
+          'Content-Type': 'image/jpeg',
+        },
+      }),
+    );
+    const imageUrl = 'https://i0.hdslb.com/bfs/archive/cover.jpg';
+
+    const response = await getImageHandler()(new Request(`echo-image://remote/${encodeURIComponent(imageUrl)}?referer=${encodeURIComponent('https://www.bilibili.com/')}`));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('image/jpeg');
+    expect(await response.text()).toBe('image');
+    expect(fetchMock).toHaveBeenCalledWith(
+      imageUrl,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          referer: 'https://www.bilibili.com/',
+        }),
+        redirect: 'follow',
+      }),
+    );
   });
 });

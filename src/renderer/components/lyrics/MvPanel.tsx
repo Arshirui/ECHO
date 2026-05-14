@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Film, Music2 } from 'lucide-react';
+import type { AudioPlaybackState } from '../../../shared/types/audio';
 import type { MvSettings, TrackVideo } from '../../../shared/types/mv';
+
+export type MvAudioClock = {
+  positionSeconds: number;
+  updatedAtMs: number;
+  playbackRate: number;
+  durationSeconds: number | null;
+  state: AudioPlaybackState;
+};
 
 type MvPanelProps = {
   trackId: string | null;
@@ -8,6 +17,7 @@ type MvPanelProps = {
   artist: string;
   coverUrl: string | null;
   isAudioPlaying: boolean;
+  audioClock: MvAudioClock;
 };
 
 type BrowserShaka = {
@@ -40,10 +50,76 @@ const isAdaptiveStream = (video: TrackVideo | null): boolean =>
         video.mimeType.includes('application/vnd.apple.mpegurl')),
   );
 
+const mvSyncDriftThresholdSeconds = 0.8;
+const mvSyncCorrectionCooldownMs = 1000;
+const playbackSeekedEvent = 'playback:seeked';
+
+type PlaybackSeekedDetail = {
+  positionSeconds?: unknown;
+  trackId?: unknown;
+};
+
+const normalizeAudioPosition = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0);
+
+const normalizePlaybackRate = (value: number | undefined): number => {
+  const rate = Number(value);
+  return Number.isFinite(rate) ? Math.max(0.5, Math.min(2, rate)) : 1;
+};
+
+const normalizeAudioClock = (clock: MvAudioClock): MvAudioClock => ({
+  positionSeconds: normalizeAudioPosition(clock.positionSeconds),
+  updatedAtMs: Number.isFinite(clock.updatedAtMs) ? clock.updatedAtMs : performance.now(),
+  playbackRate: normalizePlaybackRate(clock.playbackRate),
+  durationSeconds:
+    clock.durationSeconds && Number.isFinite(clock.durationSeconds) && clock.durationSeconds > 0
+      ? clock.durationSeconds
+      : null,
+  state: clock.state,
+});
+
+const estimateAudioClockPositionSeconds = (clock: MvAudioClock, nowMs = performance.now()): number => {
+  const normalizedClock = normalizeAudioClock(clock);
+  const elapsedSeconds =
+    normalizedClock.state === 'playing'
+      ? Math.max(0, (nowMs - normalizedClock.updatedAtMs) / 1000) * normalizedClock.playbackRate
+      : 0;
+  const positionSeconds = normalizedClock.positionSeconds + elapsedSeconds;
+
+  return normalizedClock.durationSeconds
+    ? Math.min(positionSeconds, normalizedClock.durationSeconds)
+    : positionSeconds;
+};
+
+const targetVideoTimeForAudio = (video: HTMLVideoElement, audioClock: MvAudioClock): number => {
+  const position = normalizeAudioPosition(estimateAudioClockPositionSeconds(audioClock));
+  const duration = Number(video.duration);
+  if (video.loop && Number.isFinite(duration) && duration > 0) {
+    return position % duration;
+  }
+
+  return position;
+};
+
+const getVideoDriftSeconds = (video: HTMLVideoElement, targetTime: number): number => {
+  const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+  const rawDrift = Math.abs(currentTime - targetTime);
+  const duration = Number(video.duration);
+
+  if (video.loop && Number.isFinite(duration) && duration > 0) {
+    return Math.min(rawDrift, Math.abs(duration - rawDrift));
+  }
+
+  return rawDrift;
+};
+
 const playVideo = (video: HTMLVideoElement): void => {
-  const result = video.play();
-  if (result && typeof result.catch === 'function') {
-    void result.catch(() => undefined);
+  try {
+    const result = video.play();
+    if (result && typeof result.catch === 'function') {
+      void result.catch(() => undefined);
+    }
+  } catch {
+    // Autoplay or provider failures should degrade only the MV surface.
   }
 };
 
@@ -82,7 +158,14 @@ const CoverFallback = ({
   </div>
 );
 
-export const MvPanel = ({ artist, coverUrl, isAudioPlaying, title, trackId }: MvPanelProps): JSX.Element => {
+export const MvPanel = ({
+  artist,
+  audioClock,
+  coverUrl,
+  isAudioPlaying,
+  title,
+  trackId,
+}: MvPanelProps): JSX.Element => {
   const [selectedVideo, setSelectedVideo] = useState<TrackVideo | null>(null);
   const [settings, setSettings] = useState<MvSettings>(fallbackMvSettings);
   const [isLoading, setIsLoading] = useState(false);
@@ -90,15 +173,38 @@ export const MvPanel = ({ artist, coverUrl, isAudioPlaying, title, trackId }: Mv
   const [videoError, setVideoError] = useState(false);
   const requestRef = useRef(0);
   const preloadAttemptRef = useRef<string | null>(null);
-  const restartedForVideoRef = useRef<string | null>(null);
+  const lastVideoSyncAtRef = useRef(0);
+  const videoSeekingRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const isAudioPlayingRef = useRef(isAudioPlaying);
   const previousAudioPlayingRef = useRef(isAudioPlaying);
+  const previousAudioSyncPlayingRef = useRef(isAudioPlaying);
+  const audioClockRef = useRef(normalizeAudioClock(audioClock));
+  const previousAudioClockRef = useRef(normalizeAudioClock(audioClock));
   const settingsRef = useRef(settings);
 
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    audioClockRef.current = normalizeAudioClock(audioClock);
+  }, [audioClock]);
+
+  const applyVideoPlaybackRate = useCallback((video: HTMLVideoElement): void => {
+    try {
+      video.playbackRate = audioClockRef.current.playbackRate;
+    } catch {
+      // Video rate support varies by stream/provider; MV failures must not interrupt audio.
+    }
+  }, []);
+
+  useEffect(() => {
+    audioClockRef.current = normalizeAudioClock(audioClock);
+    if (videoRef.current) {
+      applyVideoPlaybackRate(videoRef.current);
+    }
+  }, [applyVideoPlaybackRate, audioClock]);
 
   const loadSettings = useCallback(async (): Promise<MvSettings> => {
     if (!window.echo?.mv?.getSettings) {
@@ -213,30 +319,109 @@ export const MvPanel = ({ artist, coverUrl, isAudioPlaying, title, trackId }: Mv
 
   useEffect(() => {
     preloadAttemptRef.current = null;
-    restartedForVideoRef.current = null;
+    lastVideoSyncAtRef.current = 0;
+    videoSeekingRef.current = false;
+    previousAudioClockRef.current = normalizeAudioClock(audioClockRef.current);
   }, [trackId]);
 
-  const restartAudioForMvSync = useCallback((videoId: string): void => {
-    if (!settingsRef.current.restartAudioOnLoad || !isAudioPlayingRef.current || restartedForVideoRef.current === videoId) {
-      return;
+  const syncVideoToAudio = useCallback((options: { force?: boolean; bypassCooldown?: boolean } = {}): boolean => {
+    const video = videoRef.current;
+    const followMusicProgress = settingsRef.current.restartAudioOnLoad;
+    if (!followMusicProgress || !video || videoSeekingRef.current) {
+      return false;
     }
 
-    restartedForVideoRef.current = videoId;
-    void window.echo?.playback?.seek?.(0)?.catch(() => undefined);
+    const targetTime = targetVideoTimeForAudio(video, audioClockRef.current);
+    const drift = getVideoDriftSeconds(video, targetTime);
+    const now = Date.now();
+
+    if (!options.force && drift <= mvSyncDriftThresholdSeconds) {
+      return false;
+    }
+
+    if (!options.force && !options.bypassCooldown && now - lastVideoSyncAtRef.current < mvSyncCorrectionCooldownMs) {
+      return false;
+    }
+
+    try {
+      video.currentTime = targetTime;
+      lastVideoSyncAtRef.current = now;
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
+
+  useEffect(() => {
+    const wasAudioPlaying = previousAudioSyncPlayingRef.current;
+    previousAudioSyncPlayingRef.current = isAudioPlaying;
+
+    if (showVideo && isAudioPlaying && !wasAudioPlaying) {
+      syncVideoToAudio({ force: true, bypassCooldown: true });
+    }
+  }, [isAudioPlaying, showVideo, syncVideoToAudio]);
 
   useEffect(() => {
     if (!showVideo || !videoRef.current) {
       return;
     }
 
+    applyVideoPlaybackRate(videoRef.current);
+
     if (isAudioPlaying) {
+      syncVideoToAudio({ force: true, bypassCooldown: true });
       playVideo(videoRef.current);
       return;
     }
 
     videoRef.current.pause();
-  }, [isAudioPlaying, showVideo, videoMediaUrl]);
+  }, [applyVideoPlaybackRate, isAudioPlaying, showVideo, syncVideoToAudio, videoMediaUrl]);
+
+  useEffect(() => {
+    const nextClock = normalizeAudioClock(audioClock);
+    const positionJumped = Math.abs(nextClock.positionSeconds - previousAudioClockRef.current.positionSeconds) > 2;
+    audioClockRef.current = nextClock;
+    previousAudioClockRef.current = nextClock;
+
+    if (!showVideo) {
+      return;
+    }
+
+    syncVideoToAudio({ bypassCooldown: positionJumped });
+  }, [audioClock, showVideo, syncVideoToAudio]);
+
+  useEffect(() => {
+    const handlePlaybackSeeked = (event: Event): void => {
+      const detail = event instanceof CustomEvent ? (event.detail as PlaybackSeekedDetail | null) : null;
+      const eventTrackId = typeof detail?.trackId === 'string' && detail.trackId.trim() ? detail.trackId : null;
+      if (eventTrackId && eventTrackId !== trackId) {
+        return;
+      }
+
+      const positionSeconds = Number(detail?.positionSeconds);
+      if (!Number.isFinite(positionSeconds)) {
+        return;
+      }
+
+      const nextPosition = normalizeAudioPosition(positionSeconds);
+      const nextClock = normalizeAudioClock({
+        ...audioClockRef.current,
+        positionSeconds: nextPosition,
+        updatedAtMs: performance.now(),
+      });
+      audioClockRef.current = nextClock;
+      previousAudioClockRef.current = nextClock;
+      syncVideoToAudio({ force: true, bypassCooldown: true });
+    };
+
+    window.addEventListener(playbackSeekedEvent, handlePlaybackSeeked);
+    return () => window.removeEventListener(playbackSeekedEvent, handlePlaybackSeeked);
+  }, [syncVideoToAudio, trackId]);
+
+  useEffect(() => {
+    lastVideoSyncAtRef.current = 0;
+    videoSeekingRef.current = false;
+  }, [videoMediaUrl]);
 
   useEffect(() => {
     if (!showVideo || !adaptiveStream || !videoMediaUrl || !videoRef.current) {
@@ -256,9 +441,8 @@ export const MvPanel = ({ artist, coverUrl, isAudioPlaying, title, trackId }: Mv
 
         player = new shaka.Player(videoElement);
         return player.load(videoMediaUrl).then(() => {
-          if (selectedVideo) {
-            restartAudioForMvSync(selectedVideo.id);
-          }
+          applyVideoPlaybackRate(videoElement);
+          syncVideoToAudio({ force: true, bypassCooldown: true });
           if (isAudioPlayingRef.current) {
             playVideo(videoElement);
             return undefined;
@@ -276,7 +460,7 @@ export const MvPanel = ({ artist, coverUrl, isAudioPlaying, title, trackId }: Mv
         void player.destroy();
       }
     };
-  }, [adaptiveStream, restartAudioForMvSync, selectedVideo, showVideo, videoMediaUrl]);
+  }, [adaptiveStream, applyVideoPlaybackRate, showVideo, syncVideoToAudio, videoMediaUrl]);
 
   return (
     <section className="lyrics-mv-panel" aria-label="MV">
@@ -293,15 +477,20 @@ export const MvPanel = ({ artist, coverUrl, isAudioPlaying, title, trackId }: Mv
             muted
             onError={() => setVideoError(true)}
             onLoadedMetadata={(event) => {
-              if (selectedVideo) {
-                restartAudioForMvSync(selectedVideo.id);
-              }
+              applyVideoPlaybackRate(event.currentTarget);
+              syncVideoToAudio({ force: true, bypassCooldown: true });
               if (isAudioPlayingRef.current) {
                 playVideo(event.currentTarget);
                 return;
               }
 
               event.currentTarget.pause();
+            }}
+            onSeeking={() => {
+              videoSeekingRef.current = true;
+            }}
+            onSeeked={() => {
+              videoSeekingRef.current = false;
             }}
             playsInline
           />

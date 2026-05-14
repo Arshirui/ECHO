@@ -19,9 +19,14 @@ type PlayerBarProps = {
 const idlePollingStates = new Set(['paused', 'stopped', 'idle', 'error']);
 const activePollingIntervalMs = 500;
 const idlePollingIntervalMs = 2000;
+const playbackSeekedEvent = 'playback:seeked';
 
 const playerArtworkUrl = (track: { coverId: string | null; coverThumb: string | null } | null): string | null =>
   track?.coverId ? `echo-cover://album/${encodeURIComponent(track.coverId)}` : (track?.coverThumb ?? null);
+
+const dispatchPlaybackSeeked = (positionSeconds: number, trackId: string | null): void => {
+  window.dispatchEvent(new CustomEvent(playbackSeekedEvent, { detail: { positionSeconds, trackId } }));
+};
 
 export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element => {
   const queue = usePlaybackQueue();
@@ -468,7 +473,9 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
 
       try {
         setSeekPreviewSeconds(safePositionSeconds);
-        setPlaybackStatus(await playback.seek(safePositionSeconds));
+        const status = await playback.seek(safePositionSeconds);
+        setPlaybackStatus(status);
+        dispatchPlaybackSeeked(status.positionMs / 1000, status.currentTrackId ?? trackId ?? null);
         await refreshStatus();
       } catch (seekError) {
         setError(seekError instanceof Error ? seekError.message : String(seekError));

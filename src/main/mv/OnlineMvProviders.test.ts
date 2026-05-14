@@ -109,7 +109,12 @@ describe('BilibiliMvProvider', () => {
     expect(fetchImpl).toHaveBeenCalledWith(
       expect.stringContaining('api.bilibili.com/x/web-interface/search/type'),
       expect.objectContaining({
-        headers: expect.objectContaining({ Cookie: 'SESSDATA=secret' }),
+        headers: expect.objectContaining({
+          Cookie: 'SESSDATA=secret',
+          Referer: 'https://search.bilibili.com/video?keyword=Echo%20Song%20Echo%20Artist%20MV',
+          Origin: 'https://search.bilibili.com',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7',
+        }),
       }),
     );
     expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('order=click'), expect.anything());

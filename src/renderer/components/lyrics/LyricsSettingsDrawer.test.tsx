@@ -19,10 +19,12 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.7,
   lyricsDefaultOffsetMs: 0,
+  lyricsGlobalSyncOffsetMs: 0,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
   lyricsRomanizationEnabled: true,
+  lyricsTranslationEnabled: true,
   lyricsFontSizePx: 36,
   lyricsColor: '#314054',
   lyricsBackgroundMode: 'theme',
@@ -86,7 +88,10 @@ describe('LyricsSettingsDrawer', () => {
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
     await waitFor(() => expect(container.querySelectorAll('input[type="range"]').length).toBeGreaterThan(0));
-    const fontSizeSlider = container.querySelector('input[type="range"]') as HTMLInputElement;
+    const fontSizeSlider = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]')).find((input) => {
+      const labelText = input.closest('label')?.textContent ?? '';
+      return labelText.includes('歌词字号') && !labelText.includes('辅歌词字号');
+    }) as HTMLInputElement;
 
     fireEvent.change(fontSizeSlider, { target: { value: '44' } });
 
@@ -137,8 +142,8 @@ describe('LyricsSettingsDrawer', () => {
     await waitFor(() => expect(container.querySelectorAll('input[type="range"]').length).toBeGreaterThan(4));
     vi.useFakeTimers();
     const ranges = container.querySelectorAll<HTMLInputElement>('input[type="range"]');
-    const backgroundScaleSlider = ranges[1];
-    const backgroundOpacitySlider = ranges[2];
+    const backgroundScaleSlider = ranges[2];
+    const backgroundOpacitySlider = ranges[3];
 
     fireEvent.change(backgroundScaleSlider, { target: { value: '120' } });
     fireEvent.change(backgroundOpacitySlider, { target: { value: '40' } });
@@ -180,6 +185,50 @@ describe('LyricsSettingsDrawer', () => {
     fireEvent.click(toggle);
 
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsRomanizationEnabled: false }));
+  });
+
+  it('lets users toggle translation display', async () => {
+    const setSettings = vi.fn().mockResolvedValue(makeSettings({ lyricsTranslationEnabled: false }));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    const toggle = (await screen.findByRole('checkbox', { name: /显示中文翻译/ })) as HTMLInputElement;
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsTranslationEnabled: false }));
+  });
+
+  it('expands secondary lyric font size while romanization or translation is enabled', async () => {
+    const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsRomanizationEnabled: false, lyricsTranslationEnabled: false })),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(screen.queryByText('辅歌词字号')).toBeNull());
+    fireEvent.click(await screen.findByRole('checkbox', { name: /显示罗马音/ }));
+
+    expect(await screen.findByText('辅歌词字号')).toBeTruthy();
+    const secondarySizeSlider = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]')).find((input) =>
+      input.closest('label')?.textContent?.includes('辅歌词字号'),
+    ) as HTMLInputElement;
+    fireEvent.change(secondarySizeSlider, { target: { value: '24' } });
+
+    expect(secondarySizeSlider.value).toBe('24');
+    expect(setSettings).toHaveBeenCalledWith({ lyricsRomanizationEnabled: true });
+    expect(setSettings).toHaveBeenCalledWith({ lyricsSecondaryFontSizePx: 24 });
   });
 
   it('shows the current track lyrics provider instead of enabled sources', async () => {

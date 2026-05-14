@@ -21,7 +21,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { AudioDeviceInfo, AudioDiagnostics, AudioOutputMode, AudioOutputSettings, AudioStatus } from '../../../shared/types/audio';
+import type { AudioDeviceInfo, AudioDiagnostics, AudioLatencyProfile, AudioOutputMode, AudioOutputSettings, AudioStatus } from '../../../shared/types/audio';
 import { useI18n } from '../../i18n/I18nProvider';
 import { createOutputSettings, readRememberedAudioOutput, writeRememberedAudioOutput } from './audioOutputMemory';
 
@@ -69,6 +69,11 @@ type AudioDrawerCopy = {
 
 const hiddenDeviceStorageKey = 'echo-next.hidden-audio-devices';
 const drawerExitAnimationMs = 320;
+const latencyProfileOptions: Array<{ id: AudioLatencyProfile; label: string; detail: string }> = [
+  { id: 'lowLatency', label: 'Low latency', detail: '1024 frames' },
+  { id: 'balanced', label: 'Balanced', detail: '2048 frames' },
+  { id: 'stable', label: 'Stable', detail: '8192 frames' },
+];
 
 const getDeviceStorageKey = (device: AudioDeviceInfo): string => `${device.outputMode}:${device.id || device.index}:${device.name}`;
 
@@ -237,6 +242,18 @@ const getSharedStabilityText = (status: AudioStatus | null, unknownValue: string
   return `${tier} / ${buffered} / ${recovery}`;
 };
 
+const getNativeLatencyText = (status: AudioStatus | null, unknownValue: string): string => {
+  const profile = status?.latencyProfile ?? 'balanced';
+  const latency = status?.nativeOutputLatencyMs !== null && status?.nativeOutputLatencyMs !== undefined
+    ? `${status.nativeOutputLatencyMs} ms`
+    : unknownValue;
+  const stale = status?.nativePositionStalenessMs !== null && status?.nativePositionStalenessMs !== undefined
+    ? `stale ${status.nativePositionStalenessMs} ms`
+    : `stale ${unknownValue}`;
+
+  return `${profile} / ${latency} / ${stale}`;
+};
+
 const deviceMatchesStatus = (device: AudioDeviceInfo, status: AudioStatus | null, mode: AudioOutputMode): boolean => {
   if (!status || status.outputMode !== mode) {
     return false;
@@ -308,6 +325,7 @@ const formatAudioDiagnostics = (diagnostics: AudioDiagnostics): string => {
     ['state', diagnostics.state],
     ['host', diagnostics.host],
     ['outputMode', diagnostics.outputMode],
+    ['latencyProfile', diagnostics.latencyProfile],
     ['outputBackend', diagnostics.outputBackend],
     ['outputDeviceName', diagnostics.outputDeviceName],
     ['currentFilePath', diagnostics.currentFilePath],
@@ -324,6 +342,9 @@ const formatAudioDiagnostics = (diagnostics: AudioDiagnostics): string => {
     ['sampleRateMismatch', diagnostics.sampleRateMismatch],
     ['sharedStabilityTier', diagnostics.sharedStabilityTier],
     ['nativeDeviceBufferFrames', diagnostics.nativeDeviceBufferFrames],
+    ['nativeActualBufferFrames', diagnostics.nativeActualBufferFrames],
+    ['nativeOutputLatencyMs', diagnostics.nativeOutputLatencyMs],
+    ['nativePositionStalenessMs', diagnostics.nativePositionStalenessMs],
     ['nativeFifoCapacityFrames', diagnostics.nativeFifoCapacityFrames],
     ['nativeStartupPrebufferFrames', diagnostics.nativeStartupPrebufferFrames],
     ['nativeBufferedFrames', diagnostics.nativeBufferedFrames],
@@ -455,6 +476,7 @@ export const AudioSettingsDrawer = ({
       { label: 'EQ', value: getEqSignalText(status, copy) },
       { label: t('audioDrawer.meter.resample'), value: getResampleSignalText(status, effectiveSharedSampleRate, copy) },
       { label: t('audioDrawer.meter.direct'), value: getDirectSignalText(status, effectiveSharedSampleRate, copy) },
+      { label: 'Latency', value: getNativeLatencyText(status, t('settings.playback.stability.value.unknown')) },
       { label: t('settings.playback.stability.field.sharedStabilityTier'), value: getSharedStabilityText(status, t('settings.playback.stability.value.unknown')) },
     ],
     [copy, effectiveSharedSampleRate, status, t],
@@ -478,6 +500,7 @@ export const AudioSettingsDrawer = ({
       Icon: getDeviceIcon(name, currentMode),
     };
   }, [copy, currentOutputName, effectiveSharedSampleRate, outputMode, status]);
+  const currentLatencyProfile = status?.latencyProfile ?? readRememberedAudioOutput().latencyProfile ?? 'balanced';
 
   const refresh = useCallback(async (): Promise<void> => {
     const audio = window.echo?.audio;
@@ -570,14 +593,17 @@ export const AudioSettingsDrawer = ({
 
   const persistOutput = useCallback(
     (settings: AudioOutputSettings, enabled = rememberOutput): void => {
+      const remembered = readRememberedAudioOutput();
+      const isDeviceSelection = settings.outputMode !== undefined;
       writeRememberedAudioOutput({
         enabled,
-        outputMode: settings.outputMode ?? 'shared',
-        deviceIndex: settings.deviceIndex,
-        deviceName: settings.deviceName,
+        outputMode: settings.outputMode ?? remembered.outputMode ?? status?.outputMode ?? outputMode ?? 'shared',
+        latencyProfile: settings.latencyProfile ?? remembered.latencyProfile ?? status?.latencyProfile ?? 'balanced',
+        deviceIndex: isDeviceSelection ? settings.deviceIndex : remembered.deviceIndex,
+        deviceName: isDeviceSelection ? settings.deviceName : remembered.deviceName,
       });
     },
-    [rememberOutput],
+    [outputMode, rememberOutput, status?.latencyProfile, status?.outputMode],
   );
 
   const applyOutput = useCallback(
@@ -608,7 +634,7 @@ export const AudioSettingsDrawer = ({
   );
 
   const applyDevice = (mode: AudioOutputMode, device: AudioDeviceInfo | null): void => {
-    const settings = createOutputSettings(mode, device);
+    const settings = createOutputSettings(mode, device, status?.latencyProfile ?? readRememberedAudioOutput().latencyProfile ?? 'balanced');
     setOutputMode(mode);
     void applyOutput(settings);
   };
@@ -621,11 +647,12 @@ export const AudioSettingsDrawer = ({
 
   const toggleRememberOutput = (enabled: boolean): void => {
     setRememberOutput(enabled);
-    writeRememberedAudioOutput({
-      enabled,
-      outputMode: status?.outputMode ?? outputMode,
-      deviceName: status?.outputDeviceName ?? undefined,
-    });
+      writeRememberedAudioOutput({
+        enabled,
+        outputMode: status?.outputMode ?? outputMode,
+        latencyProfile: status?.latencyProfile ?? 'balanced',
+        deviceName: status?.outputDeviceName ?? undefined,
+      });
   };
 
   const hideDevice = (device: AudioDeviceInfo): void => {
@@ -868,6 +895,25 @@ export const AudioSettingsDrawer = ({
             />
           </label>
           <p>{t('audioDrawer.option.wasapiExclusiveDescription')}</p>
+
+          <div className="audio-drawer-mini-grid" aria-label="Latency profile">
+            {latencyProfileOptions.map((option) => (
+              <button
+                className={`audio-device-pill ${currentLatencyProfile === option.id ? 'active' : ''}`}
+                type="button"
+                key={option.id}
+                disabled={isBusy}
+                onClick={() => void applyOutput({ latencyProfile: option.id })}
+              >
+                <Gauge size={15} />
+                <span>
+                  <strong>{option.label}</strong>
+                  <small>{option.detail}</small>
+                </span>
+                <em>{currentLatencyProfile === option.id ? 'On' : 'Set'}</em>
+              </button>
+            ))}
+          </div>
 
           <label className="audio-toggle-row">
             <span>

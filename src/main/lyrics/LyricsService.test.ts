@@ -40,10 +40,12 @@ const settings = (patch: Partial<AppSettings> = {}): AppSettings => ({
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.7,
   lyricsDefaultOffsetMs: 0,
+  lyricsGlobalSyncOffsetMs: 0,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
   lyricsRomanizationEnabled: true,
+  lyricsTranslationEnabled: true,
   lyricsFontSizePx: 36,
   lyricsColor: '#314054',
   lyricsBackgroundMode: 'theme',
@@ -237,6 +239,43 @@ describe('LyricsService', () => {
     ]);
   });
 
+  it('keeps cached local line romanization and translation', async () => {
+    const { database, service } = createHarness();
+    database
+      .prepare(
+        `INSERT INTO lyrics_cache (
+          id, cache_key, track_id, provider, provider_lyrics_id, title, artist, album,
+          duration_seconds, kind, plain_lyrics, synced_lyrics, lines_json, offset_ms, score,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'cached-local-secondary-1',
+        'local|echo song|echo artist|echo album|120',
+        'track-1',
+        'local',
+        'local-1',
+        'Echo Song',
+        'Echo Artist',
+        'Echo Album',
+        120,
+        'synced',
+        null,
+        '[00:01.00]Original',
+        JSON.stringify([{ timeMs: 1000, text: 'Original', romanization: 'orijinaru', translation: '原文' }]),
+        0,
+        1,
+        new Date().toISOString(),
+        new Date().toISOString(),
+      );
+
+    const lyrics = await service.getLyricsForTrack('track-1');
+
+    expect(lyrics?.lines).toEqual([
+      { timeMs: 1000, text: 'Original', romanization: 'orijinaru', translation: '原文' },
+    ]);
+  });
+
   it('prefers local lrc over network', async () => {
     const root = makeTempRoot();
     const audioPath = join(root, 'Echo Song.flac');
@@ -265,6 +304,32 @@ describe('LyricsService', () => {
 
     expect(lyrics?.kind).toBe('synced');
     expect(lyrics?.lines).toEqual([{ timeMs: 1000, text: 'Line' }]);
+  });
+
+  it('auto-applies a high scoring provider candidate during track lookup', async () => {
+    const { service } = createHarness({
+      onlineProvider: {
+        getLyrics: vi.fn(async () => null),
+        searchCandidates: vi.fn(async () => [{
+          ...candidate({ score: 0.97 }),
+          raw: {
+            id: 'lrclib-97',
+            trackName: 'Echo Song',
+            artistName: 'Echo Artist',
+            albumName: 'Echo Album',
+            duration: 120,
+            syncedLyrics: '[00:01.00]Auto applied',
+            plainLyrics: 'Auto applied',
+            instrumental: false,
+          },
+        }]),
+      },
+    });
+
+    const lyrics = await service.getLyricsForTrack('track-1');
+
+    expect(lyrics?.kind).toBe('synced');
+    expect(lyrics?.lines[0].text).toBe('Auto applied');
   });
 
   it('fills missing romanization for Japanese provider lyrics before caching', async () => {

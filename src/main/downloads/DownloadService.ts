@@ -1,18 +1,28 @@
 import { EventEmitter } from 'node:events';
-import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { dirname, join, relative, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { app } from 'electron';
 import ffmpegStaticPath from 'ffmpeg-static';
 import type {
   CreateDownloadUrlJobOptions,
   DownloadJob,
+  DownloadSearchProvider,
+  DownloadSearchProviderError,
+  DownloadSearchRequest,
+  DownloadSearchResponse,
+  DownloadSearchResult,
+  DownloadSearchScope,
   DownloadJobStatus,
   DownloadSettings,
   DownloadSourceProvider,
   DownloadToolsStatus,
 } from '../../shared/types/downloads';
+import type { AccountCredentials, AccountProvider } from '../../shared/types/accounts';
 import { isSupportedAudioExtension } from '../../shared/constants/audioExtensions';
+import { getAccountService } from '../accounts/AccountService';
 import { getLibraryService } from '../library/LibraryService';
 import { getMvService } from '../mv/MvService';
 
@@ -29,6 +39,14 @@ const progressEmitIntervalMs = 500;
 const maxCommandOutputBytes = 1024 * 1024 * 4;
 const ytDlpFileName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
 const outputTemplate = '%(title).180B [%(id)s].%(ext)s';
+
+const searchProvidersForScope = (scope: DownloadSearchScope | undefined): DownloadSearchProvider[] => {
+  if (scope === 'youtube' || scope === 'bilibili') {
+    return [scope];
+  }
+
+  return ['youtube', 'bilibili'];
+};
 
 const inferProvider = (url: string): DownloadSourceProvider => {
   const normalized = url.toLowerCase();
@@ -82,6 +100,50 @@ type DownloadServiceDependencies = {
   importAudioFile?: (filePath: string, options?: { folderPath?: string }) => Promise<{ id: string }>;
   bindMvUrl?: (trackId: string, url: string) => unknown;
   streamingCommandRunner?: StreamingCommandRunner;
+  fetch?: typeof fetch;
+  loadSettings?: () => Partial<DownloadSettings> | null;
+  saveSettings?: (settings: DownloadSettings) => void;
+  getAccountCredentials?: (provider: AccountProvider) => AccountCredentials;
+};
+
+type YtDlpSearchEntry = {
+  id?: unknown;
+  title?: unknown;
+  url?: unknown;
+  webpage_url?: unknown;
+  uploader?: unknown;
+  channel?: unknown;
+  duration?: unknown;
+  thumbnail?: unknown;
+  thumbnails?: unknown;
+  view_count?: unknown;
+  timestamp?: unknown;
+  upload_date?: unknown;
+  release_timestamp?: unknown;
+};
+
+type YtDlpSearchResult = {
+  entries?: unknown;
+};
+
+type BilibiliSearchApiEntry = {
+  bvid?: unknown;
+  aid?: unknown;
+  title?: unknown;
+  author?: unknown;
+  duration?: unknown;
+  pic?: unknown;
+  arcurl?: unknown;
+  play?: unknown;
+  pubdate?: unknown;
+};
+
+type BilibiliSearchApiResponse = {
+  code?: unknown;
+  message?: unknown;
+  data?: {
+    result?: unknown;
+  };
 };
 
 const getProcessResourcesPath = (): string | null => {
@@ -107,6 +169,49 @@ const normalizeStaticFfmpegPath = (value: unknown): string | null => {
   }
 
   return value.replace(`${join('app.asar', 'node_modules')}`, `${join('app.asar.unpacked', 'node_modules')}`);
+};
+
+const sanitizeSettings = (value: Partial<DownloadSettings> | null | undefined, fallback: DownloadSettings): DownloadSettings => ({
+  audioStrategy: 'best_available',
+  importToLibrary: typeof value?.importToLibrary === 'boolean' ? value.importToLibrary : fallback.importToLibrary,
+  bindMvAfterImport: typeof value?.bindMvAfterImport === 'boolean' ? value.bindMvAfterImport : fallback.bindMvAfterImport,
+  outputDirectory:
+    typeof value?.outputDirectory === 'string' && value.outputDirectory.trim().length > 0
+      ? resolve(value.outputDirectory.trim())
+      : value?.outputDirectory === null
+        ? null
+        : fallback.outputDirectory,
+});
+
+const getDownloadsSettingsPath = (): string | null => {
+  try {
+    return join(app.getPath('userData'), 'echo-download-settings.json');
+  } catch {
+    return null;
+  }
+};
+
+const loadDownloadSettings = (): Partial<DownloadSettings> | null => {
+  const settingsPath = getDownloadsSettingsPath();
+  if (!settingsPath || !existsSync(settingsPath)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(readFileSync(settingsPath, 'utf8')) as Partial<DownloadSettings>;
+  } catch {
+    return null;
+  }
+};
+
+const saveDownloadSettings = (settings: DownloadSettings): void => {
+  const settingsPath = getDownloadsSettingsPath();
+  if (!settingsPath) {
+    return;
+  }
+
+  mkdirSync(dirname(settingsPath), { recursive: true });
+  writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
 };
 
 const runCommand: CommandRunner = (command, args) => runStreamingCommand(command, args, {});
@@ -205,6 +310,7 @@ export class DownloadService extends EventEmitter {
     private readonly dependencies: DownloadServiceDependencies = {},
   ) {
     super();
+    this.settings = sanitizeSettings(this.dependencies.loadSettings?.() ?? loadDownloadSettings(), defaultSettings);
   }
 
   getJobs(): DownloadJob[] {
@@ -306,25 +412,14 @@ export class DownloadService extends EventEmitter {
   }
 
   setSettings(patch: Partial<DownloadSettings>): DownloadSettings {
-    const nextSettings: DownloadSettings = {
-      ...this.settings,
-      ...patch,
-      audioStrategy: 'best_available',
-      outputDirectory:
-        typeof patch.outputDirectory === 'string'
-          ? resolve(patch.outputDirectory.trim())
-          : patch.outputDirectory === null
-            ? null
-            : this.settings.outputDirectory,
-      importToLibrary: typeof patch.importToLibrary === 'boolean' ? patch.importToLibrary : this.settings.importToLibrary,
-      bindMvAfterImport: typeof patch.bindMvAfterImport === 'boolean' ? patch.bindMvAfterImport : this.settings.bindMvAfterImport,
-    };
+    const nextSettings = sanitizeSettings(patch, this.settings);
 
     if (nextSettings.outputDirectory && (!existsSync(nextSettings.outputDirectory) || !statSync(nextSettings.outputDirectory).isDirectory())) {
       throw new Error(`下载文件夹不可用: ${nextSettings.outputDirectory}`);
     }
 
     this.settings = nextSettings;
+    (this.dependencies.saveSettings ?? saveDownloadSettings)(this.settings);
     return this.getSettings();
   }
 
@@ -349,6 +444,46 @@ export class DownloadService extends EventEmitter {
     };
   }
 
+  async search(request: string | DownloadSearchRequest): Promise<DownloadSearchResponse> {
+    const query = (typeof request === 'string' ? request : request.query).trim();
+    if (!query) {
+      throw new Error('search query must be a non-empty string');
+    }
+
+    const rawLimit = typeof request === 'string' ? undefined : request.limitPerProvider;
+    const limitPerProvider = Number.isFinite(rawLimit) ? Math.max(1, Math.min(20, Math.floor(Number(rawLimit)))) : 10;
+    const ytDlpPath = this.ytDlpPathResolver();
+    if (!ytDlpPath || !existsSync(ytDlpPath)) {
+      throw new Error('yt-dlp is not installed with the application');
+    }
+
+    const providers = searchProvidersForScope(typeof request === 'string' ? undefined : request.provider);
+    const settled = await Promise.all(
+      providers.map(async (provider) => {
+        try {
+          return {
+            provider,
+            results: await this.searchProvider(ytDlpPath, provider, query, limitPerProvider),
+            error: null,
+          };
+        } catch (error) {
+          return {
+            provider,
+            results: [],
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }),
+    );
+
+    return {
+      results: settled.flatMap((item) => item.results),
+      errors: settled
+        .filter((item) => item.error !== null)
+        .map((item) => ({ provider: item.provider, error: item.error ?? 'search failed' }) satisfies DownloadSearchProviderError),
+    };
+  }
+
   dispose(): void {
     for (const command of this.runningCommands.values()) {
       command.kill();
@@ -356,6 +491,353 @@ export class DownloadService extends EventEmitter {
     this.runningCommands.clear();
     this.queuedJobIds = [];
     this.activeJobId = null;
+  }
+
+  private async searchProvider(
+    ytDlpPath: string,
+    provider: DownloadSearchProvider,
+    query: string,
+    limitPerProvider: number,
+  ): Promise<DownloadSearchResult[]> {
+    const searchUrl = `${provider === 'youtube' ? 'ytsearch' : 'bilisearch'}${limitPerProvider}:${query}`;
+    const tempCookiePath = this.writeCookieFile(provider);
+    const authArgs = this.accountArgs(provider, tempCookiePath);
+
+    try {
+      const result = await this.runSearchCommand(ytDlpPath, searchUrl, limitPerProvider, authArgs);
+      if (result.exitCode === 0) {
+        const results = this.parseSearchResults(provider, result.stdout).slice(0, limitPerProvider);
+        if (results.length > 0 || provider !== 'bilibili') {
+          return results;
+        }
+
+        return this.searchBilibiliApi(query, limitPerProvider);
+      }
+
+      if (authArgs.length > 0) {
+        const fallbackResult = await this.runSearchCommand(ytDlpPath, searchUrl, limitPerProvider, []);
+        if (fallbackResult.exitCode === 0) {
+          return this.parseSearchResults(provider, fallbackResult.stdout).slice(0, limitPerProvider);
+        }
+      }
+
+      if (provider === 'bilibili') {
+        const apiResults = await this.searchBilibiliApi(query, limitPerProvider);
+        if (apiResults.length > 0) {
+          return apiResults;
+        }
+      }
+
+      throw new Error(this.formatSearchError(provider, result));
+    } finally {
+      if (tempCookiePath) {
+        this.deleteTempFile(tempCookiePath);
+      }
+    }
+  }
+
+  private runSearchCommand(ytDlpPath: string, searchUrl: string, limitPerProvider: number, accountArgs: string[]): Promise<CommandResult> {
+    return this.commandRunner(ytDlpPath, [
+      '--simulate',
+      '--flat-playlist',
+      '--dump-single-json',
+      '--playlist-end',
+      String(limitPerProvider),
+      ...accountArgs,
+      searchUrl,
+    ]).promise;
+  }
+
+  private accountArgs(provider: DownloadSearchProvider, tempCookiePath: string | null): string[] {
+    if (tempCookiePath) {
+      return ['--cookies', tempCookiePath];
+    }
+
+    if (provider !== 'youtube') {
+      return [];
+    }
+
+    const credentials = this.getCredentials('youtube');
+    const browser = credentials.browser;
+    return browser && browser !== 'none' ? ['--cookies-from-browser', browser] : [];
+  }
+
+  private writeCookieFile(provider: DownloadSearchProvider): string | null {
+    const credentials = this.getCredentials(provider);
+    const cookie = credentials.cookie?.trim();
+    if (!cookie) {
+      return null;
+    }
+
+    const cookieFilePath = join(tmpdir(), `echo-download-${provider}-${randomUUID()}.cookies.txt`);
+    writeFileSync(cookieFilePath, this.toNetscapeCookieFile(provider, cookie), 'utf8');
+    return cookieFilePath;
+  }
+
+  private getCredentials(provider: AccountProvider): AccountCredentials {
+    return this.dependencies.getAccountCredentials?.(provider) ?? getAccountService().getCredentials(provider);
+  }
+
+  private toNetscapeCookieFile(provider: DownloadSearchProvider, cookieHeader: string): string {
+    const domain = provider === 'youtube' ? '.youtube.com' : '.bilibili.com';
+    const lines = ['# Netscape HTTP Cookie File'];
+    for (const part of cookieHeader.split(';')) {
+      const [rawName, ...rawValueParts] = part.trim().split('=');
+      const name = rawName?.trim();
+      const value = rawValueParts.join('=').trim();
+      if (!name || !value) {
+        continue;
+      }
+
+      lines.push([domain, 'TRUE', '/', 'TRUE', '0', name, value].join('\t'));
+    }
+
+    return `${lines.join('\n')}\n`;
+  }
+
+  private deleteTempFile(filePath: string): void {
+    try {
+      unlinkSync(filePath);
+    } catch {
+      // Best-effort cleanup for temporary cookie files.
+    }
+  }
+
+  private formatSearchError(provider: DownloadSearchProvider, result: CommandResult): string {
+    const rawMessage = result.stderr.trim() || result.stdout.trim() || `${provider} search failed`;
+    const singleLineMessage = rawMessage.replace(/\s+/gu, ' ').trim();
+    if (/could not copy .*cookie database/iu.test(singleLineMessage)) {
+      return '无法读取浏览器 Cookie，已尝试不使用登录状态搜索。';
+    }
+
+    return singleLineMessage.length > 220 ? `${singleLineMessage.slice(0, 217)}...` : singleLineMessage;
+  }
+
+  private async searchBilibiliApi(query: string, limitPerProvider: number): Promise<DownloadSearchResult[]> {
+    const fetchRunner = this.dependencies.fetch ?? globalThis.fetch;
+    if (!fetchRunner) {
+      return [];
+    }
+
+    const url = new URL('https://api.bilibili.com/x/web-interface/search/type');
+    url.searchParams.set('search_type', 'video');
+    url.searchParams.set('keyword', query);
+    url.searchParams.set('page', '1');
+    url.searchParams.set('page_size', String(limitPerProvider));
+
+    const cookie = this.getCredentials('bilibili').cookie?.trim();
+    try {
+      const response = await fetchRunner(url.toString(), {
+        headers: {
+          accept: 'application/json, text/plain, */*',
+          referer: 'https://www.bilibili.com/',
+          origin: 'https://www.bilibili.com',
+          'user-agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          ...(cookie ? { cookie } : {}),
+        },
+      });
+      if (!response.ok) {
+        return [];
+      }
+
+      const payload = (await response.json()) as BilibiliSearchApiResponse;
+      if (payload.code !== 0 || !payload.data || !Array.isArray(payload.data.result)) {
+        return [];
+      }
+
+      return payload.data.result
+        .map((entry) => this.mapBilibiliApiEntry(entry))
+        .filter((entry): entry is DownloadSearchResult => Boolean(entry))
+        .slice(0, limitPerProvider);
+    } catch {
+      return [];
+    }
+  }
+
+  private mapBilibiliApiEntry(entry: unknown): DownloadSearchResult | null {
+    if (!entry || typeof entry !== 'object') {
+      return null;
+    }
+
+    const item = entry as BilibiliSearchApiEntry;
+    const bvid = this.cleanText(item.bvid);
+    const aid = this.cleanPositiveNumber(item.aid);
+    const id = bvid ?? (aid ? `av${aid}` : null);
+    const title = this.cleanSearchText(item.title);
+    const webpageUrl = this.normalizeBilibiliUrl(item.arcurl, id);
+    if (!id || !title || !webpageUrl) {
+      return null;
+    }
+
+    const pubdate = this.cleanPositiveNumber(item.pubdate);
+    return {
+      id,
+      provider: 'bilibili',
+      title,
+      uploader: this.cleanSearchText(item.author),
+      durationSeconds: this.parseBilibiliDuration(item.duration),
+      thumbnailUrl: this.normalizeBilibiliImageUrl(item.pic),
+      webpageUrl,
+      viewCount: this.cleanPositiveNumber(item.play),
+      publishedAt: pubdate ? new Date(pubdate * 1000).toISOString() : null,
+    };
+  }
+
+  private cleanSearchText(value: unknown): string | null {
+    const text = this.cleanText(value);
+    if (!text) {
+      return null;
+    }
+
+    return text
+      .replace(/<[^>]*>/gu, '')
+      .replace(/&quot;/gu, '"')
+      .replace(/&#39;/gu, "'")
+      .replace(/&amp;/gu, '&')
+      .trim();
+  }
+
+  private parseBilibiliDuration(value: unknown): number | null {
+    if (typeof value === 'number') {
+      return this.cleanPositiveNumber(value);
+    }
+
+    const text = this.cleanText(value);
+    if (!text) {
+      return null;
+    }
+
+    const parts = text.split(':').map((part) => Number(part));
+    if (parts.length === 2 && parts.every(Number.isFinite)) {
+      return parts[0] * 60 + parts[1];
+    }
+    if (parts.length === 3 && parts.every(Number.isFinite)) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+
+    return null;
+  }
+
+  private normalizeBilibiliUrl(value: unknown, id: string | null): string | null {
+    const directUrl = this.cleanText(value);
+    if (directUrl?.startsWith('//')) {
+      return `https:${directUrl}`;
+    }
+    if (directUrl?.startsWith('http://') || directUrl?.startsWith('https://')) {
+      return directUrl;
+    }
+
+    return id ? `https://www.bilibili.com/video/${encodeURIComponent(id)}` : null;
+  }
+
+  private normalizeBilibiliImageUrl(value: unknown): string | null {
+    const rawUrl = this.cleanText(value);
+    const url = rawUrl?.startsWith('//') ? `https:${rawUrl}` : rawUrl;
+    if (!url) {
+      return null;
+    }
+
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:') {
+        parsed.protocol = 'https:';
+      }
+      if (parsed.protocol === 'https:' && /(^|\.)hdslb\.com$/u.test(parsed.hostname)) {
+        return `echo-image://remote/${encodeURIComponent(parsed.toString())}?referer=${encodeURIComponent('https://www.bilibili.com/')}`;
+      }
+
+      return parsed.toString();
+    } catch {
+      return url;
+    }
+  }
+
+  private parseSearchResults(provider: DownloadSearchProvider, stdout: string): DownloadSearchResult[] {
+    const parsed = JSON.parse(stdout) as YtDlpSearchResult;
+    const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
+
+    return entries
+      .map((entry) => this.mapSearchEntry(provider, entry))
+      .filter((entry): entry is DownloadSearchResult => Boolean(entry));
+  }
+
+  private mapSearchEntry(provider: DownloadSearchProvider, entry: unknown): DownloadSearchResult | null {
+    if (!entry || typeof entry !== 'object') {
+      return null;
+    }
+
+    const item = entry as YtDlpSearchEntry;
+    const id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : null;
+    const title = typeof item.title === 'string' && item.title.trim() ? item.title.trim() : null;
+    const webpageUrl = this.normalizeSearchResultUrl(provider, item.webpage_url, item.url, id);
+    if (!id || !title || !webpageUrl) {
+      return null;
+    }
+
+    return {
+      id,
+      provider,
+      title,
+      uploader: this.cleanText(item.uploader) ?? this.cleanText(item.channel),
+      durationSeconds: this.cleanPositiveNumber(item.duration),
+      thumbnailUrl: provider === 'bilibili' ? this.normalizeBilibiliImageUrl(this.thumbnailFromEntry(item)) : this.thumbnailFromEntry(item),
+      webpageUrl,
+      viewCount: this.cleanPositiveNumber(item.view_count),
+      publishedAt: this.dateFromSearchEntry(item),
+    };
+  }
+
+  private normalizeSearchResultUrl(provider: DownloadSearchProvider, webpageUrl: unknown, url: unknown, id: string | null): string | null {
+    const directUrl = this.cleanText(webpageUrl) ?? this.cleanText(url);
+    if (directUrl?.startsWith('http://') || directUrl?.startsWith('https://')) {
+      return directUrl;
+    }
+
+    if (!id) {
+      return null;
+    }
+
+    return provider === 'youtube' ? `https://www.youtube.com/watch?v=${encodeURIComponent(id)}` : `https://www.bilibili.com/video/${encodeURIComponent(id)}`;
+  }
+
+  private thumbnailFromEntry(entry: YtDlpSearchEntry): string | null {
+    const direct = this.cleanText(entry.thumbnail);
+    if (direct) {
+      return direct;
+    }
+
+    if (!Array.isArray(entry.thumbnails)) {
+      return null;
+    }
+
+    const thumbnails = entry.thumbnails.filter((thumbnail): thumbnail is { url: string } =>
+      Boolean(thumbnail && typeof thumbnail === 'object' && typeof (thumbnail as { url?: unknown }).url === 'string'),
+    );
+    return thumbnails.at(-1)?.url ?? null;
+  }
+
+  private dateFromSearchEntry(entry: YtDlpSearchEntry): string | null {
+    const timestamp = this.cleanPositiveNumber(entry.timestamp) ?? this.cleanPositiveNumber(entry.release_timestamp);
+    if (timestamp) {
+      return new Date(timestamp * 1000).toISOString();
+    }
+
+    const uploadDate = this.cleanText(entry.upload_date);
+    if (!uploadDate || !/^\d{8}$/u.test(uploadDate)) {
+      return null;
+    }
+
+    return `${uploadDate.slice(0, 4)}-${uploadDate.slice(4, 6)}-${uploadDate.slice(6, 8)}`;
+  }
+
+  private cleanText(value: unknown): string | null {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private cleanPositiveNumber(value: unknown): number | null {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : null;
   }
 
   private startNextJob(): void {

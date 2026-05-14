@@ -6,6 +6,10 @@ const scriptPath = fileURLToPath(import.meta.url);
 const projectRoot = resolve(dirname(scriptPath), '..');
 
 export default function setup() {
+  if (process.env.ECHO_SKIP_NATIVE_ABI === '1') {
+    return;
+  }
+
   const result = spawnSync(process.execPath, [join(projectRoot, 'scripts', 'ensure-native-abi.mjs'), 'node'], {
     cwd: projectRoot,
     stdio: 'inherit',

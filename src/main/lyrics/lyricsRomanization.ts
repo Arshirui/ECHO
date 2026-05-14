@@ -4,6 +4,9 @@ type KuroshiroInstance = {
   convert: (text: string, options: { to: 'romaji'; mode: 'spaced'; romajiSystem: 'hepburn' }) => Promise<string>;
 };
 
+type KuroshiroConstructor = new () => { init: (analyzer: unknown) => Promise<void> } & KuroshiroInstance;
+type KuromojiAnalyzerConstructor = new () => unknown;
+
 const japanesePattern = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u;
 let kuroshiroPromise: Promise<KuroshiroInstance | null> | null = null;
 
@@ -21,10 +24,16 @@ const getKuroshiro = async (): Promise<KuroshiroInstance | null> => {
   if (!kuroshiroPromise) {
     kuroshiroPromise = (async () => {
       try {
-        const [{ default: Kuroshiro }, { default: KuromojiAnalyzer }] = await Promise.all([
+        const [kuroshiroModule, kuromojiModule] = await Promise.all([
           import('kuroshiro'),
           import('kuroshiro-analyzer-kuromoji'),
         ]);
+        const Kuroshiro = resolveDefaultExport<KuroshiroConstructor>(kuroshiroModule);
+        const KuromojiAnalyzer = resolveDefaultExport<KuromojiAnalyzerConstructor>(kuromojiModule);
+        if (!Kuroshiro || !KuromojiAnalyzer) {
+          return null;
+        }
+
         const kuroshiro = new Kuroshiro();
         await kuroshiro.init(new KuromojiAnalyzer());
         return kuroshiro;
@@ -35,6 +44,19 @@ const getKuroshiro = async (): Promise<KuroshiroInstance | null> => {
   }
 
   return kuroshiroPromise;
+};
+
+const resolveDefaultExport = <T>(moduleValue: unknown): T | null => {
+  const firstDefault =
+    moduleValue && typeof moduleValue === 'object' && 'default' in moduleValue
+      ? (moduleValue as { default?: unknown }).default
+      : moduleValue;
+  const nestedDefault =
+    firstDefault && typeof firstDefault === 'object' && 'default' in firstDefault
+      ? (firstDefault as { default?: unknown }).default
+      : firstDefault;
+
+  return typeof nestedDefault === 'function' ? (nestedDefault as T) : null;
 };
 
 export const fillMissingRomanization = async (lines: LyricLine[]): Promise<LyricLine[]> => {

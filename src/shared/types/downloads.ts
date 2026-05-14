@@ -11,6 +11,10 @@ export type DownloadJobStatus =
 
 export type DownloadSourceProvider = 'youtube' | 'bilibili' | 'unknown';
 
+export type DownloadSearchProvider = 'youtube' | 'bilibili';
+
+export type DownloadSearchScope = DownloadSearchProvider | 'all';
+
 export type DownloadAudioStrategy = 'best_available';
 
 export type DownloadSettings = {
@@ -44,6 +48,34 @@ export type DownloadJob = {
 };
 
 export type CreateDownloadUrlJobOptions = Partial<Pick<DownloadSettings, 'importToLibrary' | 'bindMvAfterImport'>>;
+
+export type DownloadSearchRequest = {
+  query: string;
+  limitPerProvider?: number;
+  provider?: DownloadSearchScope;
+};
+
+export type DownloadSearchResult = {
+  id: string;
+  provider: DownloadSearchProvider;
+  title: string;
+  uploader: string | null;
+  durationSeconds: number | null;
+  thumbnailUrl: string | null;
+  webpageUrl: string;
+  viewCount: number | null;
+  publishedAt: string | null;
+};
+
+export type DownloadSearchProviderError = {
+  provider: DownloadSearchProvider;
+  error: string;
+};
+
+export type DownloadSearchResponse = {
+  results: DownloadSearchResult[];
+  errors: DownloadSearchProviderError[];
+};
 
 export type DownloadToolsStatus = {
   ytDlpAvailable: boolean;

@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -16,6 +17,7 @@ import type {
   LyricsSearchCandidate,
   TrackLyrics,
 } from "../../shared/types/lyrics";
+import type { MvSettings, TrackVideo } from "../../shared/types/mv";
 import {
   PlaybackQueueProvider,
   usePlaybackQueue,
@@ -106,10 +108,12 @@ const makeAppSettings = (
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.7,
   lyricsDefaultOffsetMs: 0,
+  lyricsGlobalSyncOffsetMs: 0,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
   lyricsRomanizationEnabled: true,
+  lyricsTranslationEnabled: true,
   lyricsFontSizePx: 36,
   lyricsColor: "#314054",
   lyricsBackgroundMode: "theme",
@@ -182,6 +186,71 @@ const makeTrackLyrics = (
   ...overrides,
 });
 
+const makeTrackVideo = (
+  overrides: Partial<TrackVideo> = {},
+): TrackVideo => ({
+  id: "video-1",
+  trackId: "track-1",
+  provider: "local",
+  sourceType: "manual",
+  sourceId: "local:1",
+  title: "Test Song MV",
+  artist: "Test Artist",
+  url: null,
+  providerUrl: null,
+  thumbnailUrl: null,
+  filePath: null,
+  mediaUrl: "echo-video://mv/video-1",
+  mimeType: "video/mp4",
+  durationSeconds: null,
+  width: null,
+  height: null,
+  selectedQualityId: null,
+  qualityLabel: null,
+  fps: null,
+  score: 1,
+  selected: true,
+  playableInApp: true,
+  rawProviderJson: null,
+  createdAt: "2026-05-13T00:00:00.000Z",
+  updatedAt: "2026-05-13T00:00:00.000Z",
+  ...overrides,
+});
+
+const defaultMvSettings: MvSettings = {
+  autoSearch: true,
+  autoPreload: true,
+  restartAudioOnLoad: true,
+  enabledProviders: ["bilibili", "youtube"],
+  providerOrder: ["bilibili", "youtube"],
+  maxQuality: "1080p",
+  allow60fps: true,
+};
+
+const attachMvBridge = (
+  selected: TrackVideo | null,
+  settings: MvSettings = defaultMvSettings,
+): void => {
+  window.echo = {
+    ...window.echo,
+    mv: {
+      getSelected: vi.fn().mockResolvedValue(selected),
+      getSettings: vi.fn().mockResolvedValue(settings),
+      setSettings: vi.fn(),
+      findLocalCandidates: vi.fn().mockResolvedValue([]),
+      searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+      getCandidates: vi.fn().mockResolvedValue([]),
+      resolveStreams: vi.fn().mockResolvedValue({ video: selected, variants: [] }),
+      setQuality: vi.fn(),
+      chooseLocalVideo: vi.fn().mockResolvedValue(null),
+      bindLocalVideo: vi.fn(),
+      selectVideo: vi.fn(),
+      clearSelected: vi.fn(),
+      openExternal: vi.fn(),
+    },
+  } as unknown as Window["echo"];
+};
+
 const makeLyricsCandidate = (
   overrides: Partial<LyricsSearchCandidate> = {},
 ): LyricsSearchCandidate => ({
@@ -223,7 +292,8 @@ const mockEcho = (
   track: LibraryTrack | null,
   positionSeconds = 0,
   settingsOverrides: Partial<AppSettings> = {},
-): { seek: ReturnType<typeof vi.fn> } => {
+): { emitAudioStatus: (status: AudioStatus) => void; seek: ReturnType<typeof vi.fn> } => {
+  let audioStatusHandler: ((status: AudioStatus) => void) | null = null;
   const seek = vi.fn().mockResolvedValue({
     state: "playing",
     currentTrackId: track?.id ?? null,
@@ -263,14 +333,28 @@ const mockEcho = (
       setOutput: vi
         .fn()
         .mockResolvedValue(makeAudioStatus(track, positionSeconds)),
+      onStatus: vi.fn((handler: (status: AudioStatus) => void) => {
+        audioStatusHandler = handler;
+        return () => {
+          if (audioStatusHandler === handler) {
+            audioStatusHandler = null;
+          }
+        };
+      }),
     },
   } as unknown as Window["echo"];
 
-  return { seek };
+  return {
+    emitAudioStatus: (status: AudioStatus): void => {
+      audioStatusHandler?.(status);
+    },
+    seek,
+  };
 };
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -339,6 +423,207 @@ describe("LyricsPage", () => {
     expect(
       container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
     ).toContain("Second line");
+  });
+
+  it("updates active lyrics from audio status pushes", async () => {
+    const track = makeTrack();
+    const { emitAudioStatus } = mockEcho(track, 0);
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText("First line");
+    act(() => {
+      emitAudioStatus(makeAudioStatus(track, 12));
+    });
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("Second line"),
+    );
+  });
+
+  it("advances active lyrics with RAF interpolation between status updates", async () => {
+    const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
+    let rafCallback: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      rafCallback = callback;
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+    const track = makeTrack();
+    mockEcho(track, 9.2);
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText("First line");
+    expect(
+      container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+    ).toContain("First line");
+
+    performanceNow.mockReturnValue(900);
+    act(() => {
+      rafCallback?.(900);
+    });
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("Second line"),
+    );
+  });
+
+  it("applies global lyrics sync offset without changing lyric files", async () => {
+    const track = makeTrack();
+    mockEcho(track, 9.2, { lyricsGlobalSyncOffsetMs: 1000 });
+    const { container, unmount } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("Second line"),
+    );
+
+    unmount();
+    mockEcho(track, 10.2, { lyricsGlobalSyncOffsetMs: -1000 });
+    const secondRender = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        secondRender.container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("First line"),
+    );
+  });
+
+  it("keeps MV progress following on raw audio time when global lyrics offset shifts lyrics", async () => {
+    vi.spyOn(performance, "now").mockReturnValue(0);
+    vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const track = makeTrack();
+    mockEcho(track, 9.2, { lyricsGlobalSyncOffsetMs: 1000 });
+    attachMvBridge(makeTrackVideo());
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("Second line"),
+    );
+
+    const video = await waitFor(() => {
+      const element = container.querySelector("video") as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    video.dispatchEvent(new Event("loadedmetadata"));
+
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(9.2, 3));
+  });
+
+  it("updates the MV audio clock anchor from audio status pushes", async () => {
+    vi.spyOn(performance, "now").mockReturnValue(0);
+    vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const track = makeTrack();
+    const { emitAudioStatus } = mockEcho(track, 8);
+    attachMvBridge(makeTrackVideo());
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    const video = await waitFor(() => {
+      const element = container.querySelector("video") as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    video.dispatchEvent(new Event("loadedmetadata"));
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(8, 3));
+
+    act(() => {
+      emitAudioStatus(makeAudioStatus(track, 30));
+    });
+
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(30, 3));
+  });
+
+  it("does not feed lyrics RAF interpolation into the MV sync clock", async () => {
+    const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
+    vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    let rafCallback: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      rafCallback = callback;
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+    const track = makeTrack();
+    mockEcho(track, 9.2);
+    attachMvBridge(makeTrackVideo());
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("First line"),
+    );
+
+    const video = await waitFor(() => {
+      const element = container.querySelector("video") as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    video.dispatchEvent(new Event("loadedmetadata"));
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(9.2, 3));
+
+    performanceNow.mockReturnValue(900);
+    act(() => {
+      rafCallback?.(900);
+    });
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("Second line"),
+    );
+    expect(video.currentTime).toBeCloseTo(9.2, 3);
   });
 
   it("seeks when a synced lyric line is clicked", async () => {
@@ -456,6 +741,86 @@ describe("LyricsPage", () => {
     expect(window.echo.lyrics.getForTrack).toHaveBeenCalledWith("track-1");
   });
 
+  it("auto-applies a high scoring candidate when the initial lyrics lookup misses", async () => {
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(null),
+      searchCandidates: vi.fn().mockResolvedValue([
+        makeLyricsCandidate({ id: "candidate-97", score: 0.97 }),
+      ]),
+      applyCandidate: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: [{ timeMs: 0, text: "Auto applied line" }],
+          syncedText: "[00:00.00]Auto applied line",
+          plainText: "Auto applied line",
+        }),
+      ),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Auto applied line")).toBeTruthy();
+    expect(window.echo.lyrics.applyCandidate).toHaveBeenCalledWith(
+      "track-1",
+      "candidate-97",
+    );
+  });
+
+  it("auto-applies a high scoring candidate after rematching lyrics", async () => {
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: [{ timeMs: 0, text: "Current line" }],
+          syncedText: "[00:00.00]Current line",
+          plainText: "Current line",
+        }),
+      ),
+      searchCandidates: vi.fn().mockResolvedValue([
+        makeLyricsCandidate({ id: "candidate-94", score: 0.94 }),
+      ]),
+      applyCandidate: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: [{ timeMs: 0, text: "Rematched applied line" }],
+          syncedText: "[00:00.00]Rematched applied line",
+          plainText: "Rematched applied line",
+        }),
+      ),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn().mockResolvedValue(undefined),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Current line")).toBeTruthy();
+    window.dispatchEvent(new Event("lyrics:rematch-requested"));
+
+    expect(await screen.findByText("Rematched applied line")).toBeTruthy();
+    expect(window.echo.lyrics.clearCache).toHaveBeenCalledWith("track-1");
+    expect(window.echo.lyrics.applyCandidate).toHaveBeenCalledWith(
+      "track-1",
+      "candidate-94",
+    );
+  });
+
   it("clears the previous lyrics immediately when the track changes", async () => {
     const firstTrack = makeTrack({
       id: "track-1",
@@ -497,6 +862,7 @@ describe("LyricsPage", () => {
         getStatus: vi.fn().mockImplementation(() => Promise.resolve(makeAudioStatus(activeTrack))),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
+        onStatus: vi.fn(() => vi.fn()),
       },
       lyrics: {
         getForTrack: vi.fn().mockImplementation((trackId: string) => {
@@ -559,14 +925,14 @@ describe("LyricsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "switch" }));
 
     await waitFor(() => expect(screen.queryByText("First track lyric")).toBeNull());
-    expect(container.querySelector(".lyrics-empty")).toBeTruthy();
+    expect(container.querySelector(".lyrics-empty")).toBeNull();
 
     resolveSecondLyrics(null);
   });
 
   it("uses only the centered empty lyrics state when no lyrics are found", async () => {
     const track = makeTrack();
-    mockEcho(track);
+    mockEcho(track, 0, { lyricsEmptyStateHidden: false });
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(null),
       searchCandidates: vi.fn().mockResolvedValue([]),
@@ -590,7 +956,42 @@ describe("LyricsPage", () => {
     await waitFor(() =>
       expect(container.querySelector(".lyrics-empty")).toBeTruthy(),
     );
+    expect(screen.getByText("暂无歌词")).toBeTruthy();
     expect(container.querySelector(".lyrics-match-panel")).toBeNull();
+  });
+
+  it("hides the instrumental empty-state prompt when configured", async () => {
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          kind: "instrumental",
+          lines: [],
+          syncedText: null,
+          plainText: null,
+        }),
+      ),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(window.echo.lyrics.getForTrack).toHaveBeenCalledWith("track-1"),
+    );
+    expect(screen.queryByText("纯音乐，请欣赏")).toBeNull();
+    expect(container.querySelector(".lyrics-empty")).toBeNull();
   });
 
   it("lets users switch lyrics source without clearing the current lyrics first", async () => {
@@ -701,6 +1102,7 @@ describe("LyricsPage", () => {
       lyricsCoverBlurPx: 18,
       lyricsCoverBrightnessPercent: 120,
       lyricsBackgroundScalePercent: 132,
+      lyricsSecondaryFontSizePx: 24,
     });
 
     const { container } = render(
@@ -729,6 +1131,9 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-background-scale")).toBe(
       "1.32",
     );
+    expect(page.style.getPropertyValue("--lyrics-secondary-font-size")).toBe(
+      "24px",
+    );
   });
 
   it("applies lyrics display settings from settings change events immediately", async () => {
@@ -756,6 +1161,7 @@ describe("LyricsPage", () => {
           lyricsCoverBlurPx: 4,
           lyricsCoverBrightnessPercent: 72,
           lyricsBackgroundScalePercent: 86,
+          lyricsSecondaryFontSizePx: 22,
         },
       }),
     );
@@ -773,6 +1179,66 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-background-scale")).toBe(
       "0.86",
     );
+    expect(page.style.getPropertyValue("--lyrics-secondary-font-size")).toBe(
+      "22px",
+    );
+  });
+
+  it("hides romanization and translations immediately from settings change events", async () => {
+    const track = makeTrack();
+    mockEcho(track);
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage
+            initialLyrics={[
+              {
+                timeMs: 0,
+                text: "Original line",
+                romanization: "Romanized line",
+                translation: "Translated line",
+              },
+            ]}
+          />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Romanized line")).toBeTruthy();
+    expect(screen.getByText("Translated line")).toBeTruthy();
+
+    window.dispatchEvent(
+      new CustomEvent("settings:changed", {
+        detail: {
+          lyricsRomanizationEnabled: false,
+          lyricsTranslationEnabled: false,
+        },
+      }),
+    );
+
+    await waitFor(() => expect(screen.queryByText("Romanized line")).toBeNull());
+    expect(screen.queryByText("Translated line")).toBeNull();
+  });
+
+  it("hides line translations when configured", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, { lyricsTranslationEnabled: false });
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage
+            initialLyrics={[
+              { timeMs: 0, text: "Original line", translation: "Translated line" },
+            ]}
+          />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText("Original line");
+    expect(screen.queryByText("Translated line")).toBeNull();
   });
 
   it("shows plain lyrics in the centered karaoke layout", async () => {

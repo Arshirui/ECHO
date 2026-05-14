@@ -3,6 +3,7 @@ export type AudioOutputMode = 'shared' | 'exclusive' | 'asio';
 export type AudioPlaybackState = 'idle' | 'loading' | 'playing' | 'paused' | 'stopped' | 'ended' | 'error';
 
 export type PlaybackSpeedMode = 'nightcore' | 'daycore' | 'speed';
+export type AudioLatencyProfile = 'stable' | 'balanced' | 'lowLatency';
 export type ChannelBalanceMonoMode = 'off' | 'sum' | 'left' | 'right';
 export type SharedStabilityTier = 'standard' | 'recovery' | 'emergency';
 
@@ -50,6 +51,8 @@ export type AudioOutputSettings = {
   deviceIndex?: number;
   deviceName?: string;
   requestedOutputSampleRate?: number;
+  latencyProfile?: AudioLatencyProfile;
+  bufferSizeFrames?: number;
   volume?: number;
   playbackRate?: number;
   playbackSpeedMode?: PlaybackSpeedMode;
@@ -82,6 +85,7 @@ export type AudioStatus = {
   resampling: boolean;
   bitPerfectCandidate: boolean;
   sampleRateMismatch: boolean;
+  latencyProfile?: AudioLatencyProfile;
   eqEnabled: boolean;
   channelBalanceEnabled: boolean;
   dspActive: boolean;
@@ -92,6 +96,9 @@ export type AudioStatus = {
   bitPerfectDisabledReason: string | null;
   sharedStabilityTier?: SharedStabilityTier | null;
   nativeDeviceBufferFrames?: number | null;
+  nativeActualBufferFrames?: number | null;
+  nativeOutputLatencyMs?: number | null;
+  nativePositionStalenessMs?: number | null;
   nativeFifoCapacityFrames?: number | null;
   nativeStartupPrebufferFrames?: number | null;
   nativeBufferedFrames?: number | null;
@@ -122,8 +129,12 @@ export type AudioDiagnostics = Pick<
   | 'resampling'
   | 'bitPerfectCandidate'
   | 'sampleRateMismatch'
+  | 'latencyProfile'
   | 'sharedStabilityTier'
   | 'nativeDeviceBufferFrames'
+  | 'nativeActualBufferFrames'
+  | 'nativeOutputLatencyMs'
+  | 'nativePositionStalenessMs'
   | 'nativeFifoCapacityFrames'
   | 'nativeStartupPrebufferFrames'
   | 'nativeBufferedFrames'

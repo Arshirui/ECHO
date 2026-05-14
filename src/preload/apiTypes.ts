@@ -54,6 +54,8 @@ import type { DiscordPresenceStatus } from '../shared/types/discordPresence';
 import type {
   CreateDownloadUrlJobOptions,
   DownloadJob,
+  DownloadSearchRequest,
+  DownloadSearchResponse,
   DownloadSettings,
   DownloadToolsStatus,
 } from '../shared/types/downloads';
@@ -248,6 +250,7 @@ export type EchoApi = {
     getSettings: () => Promise<DownloadSettings>;
     setSettings: (patch: Partial<DownloadSettings>) => Promise<DownloadSettings>;
     chooseOutputDirectory: () => Promise<DownloadSettings | null>;
+    search: (request: string | DownloadSearchRequest) => Promise<DownloadSearchResponse>;
     checkTools: () => Promise<DownloadToolsStatus>;
     onJobsUpdated: (handler: (jobs: DownloadJob[]) => void) => () => void;
   };

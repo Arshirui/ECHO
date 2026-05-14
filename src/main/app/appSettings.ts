@@ -57,11 +57,14 @@ export const defaultSettings: AppSettings = {
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.7,
   lyricsDefaultOffsetMs: 0,
+  lyricsGlobalSyncOffsetMs: 0,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
   lyricsRomanizationEnabled: true,
+  lyricsTranslationEnabled: true,
   lyricsFontSizePx: 36,
+  lyricsSecondaryFontSizePx: 18,
   lyricsColor: defaultLyricsColor,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
@@ -236,7 +239,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const lyricsAutoAcceptScore = Number(settings.lyricsAutoAcceptScore);
   const lyricsCoverAutoAcceptScore = Number(settings.lyricsCoverAutoAcceptScore);
   const lyricsDefaultOffsetMs = Number(settings.lyricsDefaultOffsetMs);
+  const lyricsGlobalSyncOffsetMs = Number(settings.lyricsGlobalSyncOffsetMs);
   const lyricsFontSizePx = Number(settings.lyricsFontSizePx);
+  const lyricsSecondaryFontSizePx = Number(settings.lyricsSecondaryFontSizePx);
   const lyricsCoverOpacityPercent = Number(settings.lyricsCoverOpacityPercent);
   const lyricsCoverBlurPx = Number(settings.lyricsCoverBlurPx);
   const lyricsCoverBrightnessPercent = Number(settings.lyricsCoverBrightnessPercent);
@@ -281,13 +286,20 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsDefaultOffsetMs: Number.isFinite(lyricsDefaultOffsetMs)
       ? Math.round(clamp(lyricsDefaultOffsetMs, -10000, 10000))
       : defaultSettings.lyricsDefaultOffsetMs,
+    lyricsGlobalSyncOffsetMs: Number.isFinite(lyricsGlobalSyncOffsetMs)
+      ? Math.round(clamp(lyricsGlobalSyncOffsetMs, -1000, 1000))
+      : defaultSettings.lyricsGlobalSyncOffsetMs,
     lyricsEnabled: settings.lyricsEnabled !== false,
     lyricsHeaderHidden: settings.lyricsHeaderHidden === true,
     lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden !== false,
     lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled !== false,
+    lyricsTranslationEnabled: settings.lyricsTranslationEnabled !== false,
     lyricsFontSizePx: Number.isFinite(lyricsFontSizePx)
       ? Math.round(clamp(lyricsFontSizePx, 22, 56))
       : defaultSettings.lyricsFontSizePx,
+    lyricsSecondaryFontSizePx: Number.isFinite(lyricsSecondaryFontSizePx)
+      ? Math.round(clamp(lyricsSecondaryFontSizePx, 12, 32))
+      : defaultSettings.lyricsSecondaryFontSizePx,
     lyricsColor: normalizeLyricsColor(settings.lyricsColor),
     lyricsBackgroundMode: normalizeLyricsBackgroundMode(settings.lyricsBackgroundMode),
     lyricsCustomWallpaperPath: normalizeLyricsWallpaperPath(settings.lyricsCustomWallpaperPath),

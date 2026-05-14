@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DownloadService } from './DownloadService';
@@ -35,7 +35,7 @@ afterEach(() => {
 describe('DownloadService', () => {
   it('checks the bundled yt-dlp path with --version', async () => {
     const ytDlpPath = makeToolPath();
-    const commandRunner = vi.fn(() => ({
+    const commandRunner = vi.fn((_command: string, _args: string[]) => ({
       promise: Promise.resolve({ stdout: '2026.05.01\n', stderr: '', exitCode: 0 }),
       kill: vi.fn(),
     }));
@@ -53,6 +53,354 @@ describe('DownloadService', () => {
     const service = new DownloadService();
 
     expect(() => service.createUrlJob('https://www.youtube.com/watch?v=probe')).toThrow('请选择下载文件夹');
+  });
+
+  it('loads and saves download settings through the settings store', () => {
+    const outputDirectory = makeTempRoot();
+    const saveSettings = vi.fn();
+    const service = new DownloadService(undefined, undefined, {
+      loadSettings: () => ({ outputDirectory, importToLibrary: false, bindMvAfterImport: false }),
+      saveSettings,
+    });
+
+    expect(service.getSettings()).toMatchObject({
+      outputDirectory,
+      importToLibrary: false,
+      bindMvAfterImport: false,
+    });
+
+    const next = service.setSettings({ importToLibrary: true });
+
+    expect(next.importToLibrary).toBe(true);
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ outputDirectory, importToLibrary: true }));
+  });
+
+  it('searches YouTube and Bilibili with yt-dlp and maps results', async () => {
+    const ytDlpPath = makeToolPath();
+    const commandRunner = vi.fn((_command: string, args: string[]) => {
+      const searchUrl = args.at(-1);
+      const providerEntry =
+        typeof searchUrl === 'string' && searchUrl.startsWith('ytsearch')
+          ? {
+              id: 'yt-1',
+              title: 'YouTube Song',
+              url: 'https://www.youtube.com/watch?v=yt-1',
+              uploader: 'YT Artist',
+              duration: 123,
+              thumbnails: [{ url: 'https://img.youtube/thumb-small.jpg' }, { url: 'https://img.youtube/thumb.jpg' }],
+              view_count: 1000,
+              upload_date: '20260514',
+            }
+          : {
+              id: 'BV1ECHO',
+              title: 'Bilibili Song',
+              url: 'https://www.bilibili.com/video/BV1ECHO',
+              uploader: 'Bili Artist',
+              duration: 234,
+              thumbnail: 'https://img.bilibili/thumb.jpg',
+              view_count: 2000,
+            };
+
+      return {
+        promise: Promise.resolve({ stdout: JSON.stringify({ entries: [providerEntry] }), stderr: '', exitCode: 0 }),
+        kill: vi.fn(),
+      };
+    });
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      getAccountCredentials: (provider) => ({ provider }),
+    });
+
+    const response = await service.search({ query: 'echo', limitPerProvider: 1 });
+
+    expect(commandRunner).toHaveBeenCalledWith(ytDlpPath, expect.arrayContaining(['--playlist-end', '1', 'ytsearch1:echo']));
+    expect(commandRunner).toHaveBeenCalledWith(ytDlpPath, expect.arrayContaining(['--playlist-end', '1', 'bilisearch1:echo']));
+    expect(response.errors).toEqual([]);
+    expect(response.results).toEqual([
+      expect.objectContaining({
+        provider: 'youtube',
+        id: 'yt-1',
+        title: 'YouTube Song',
+        uploader: 'YT Artist',
+        webpageUrl: 'https://www.youtube.com/watch?v=yt-1',
+        thumbnailUrl: 'https://img.youtube/thumb.jpg',
+        publishedAt: '2026-05-14',
+      }),
+      expect.objectContaining({
+        provider: 'bilibili',
+        id: 'BV1ECHO',
+        title: 'Bilibili Song',
+        uploader: 'Bili Artist',
+        webpageUrl: 'https://www.bilibili.com/video/BV1ECHO',
+        thumbnailUrl: 'https://img.bilibili/thumb.jpg',
+      }),
+    ]);
+  });
+
+  it('searches only the selected provider when requested', async () => {
+    const ytDlpPath = makeToolPath();
+    const commandRunner = vi.fn((_command: string, args: string[]) => ({
+      promise: Promise.resolve({
+        stdout: JSON.stringify({
+          entries: [{ id: 'BV1ECHO', title: 'Bilibili Song', url: 'https://www.bilibili.com/video/BV1ECHO' }],
+        }),
+        stderr: '',
+        exitCode: 0,
+      }),
+      kill: vi.fn(),
+    }));
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      getAccountCredentials: (provider) => ({ provider }),
+    });
+
+    const response = await service.search({ query: 'echo', limitPerProvider: 1, provider: 'bilibili' });
+
+    expect(commandRunner).toHaveBeenCalledTimes(1);
+    expect(commandRunner).toHaveBeenCalledWith(ytDlpPath, expect.arrayContaining(['bilisearch1:echo']));
+    expect(commandRunner.mock.calls[0][1]).not.toContain('ytsearch1:echo');
+    expect(response.results).toEqual([expect.objectContaining({ provider: 'bilibili', title: 'Bilibili Song' })]);
+  });
+
+  it('uses account cookies for search and removes temporary cookie files', async () => {
+    const ytDlpPath = makeToolPath();
+    const cookiePaths: string[] = [];
+    const commandRunner = vi.fn((_command: string, args: string[]) => {
+      const cookieIndex = args.indexOf('--cookies');
+      if (cookieIndex >= 0) {
+        cookiePaths.push(args[cookieIndex + 1]);
+      }
+
+      return {
+        promise: Promise.resolve({ stdout: JSON.stringify({ entries: [] }), stderr: '', exitCode: 0 }),
+        kill: vi.fn(),
+      };
+    });
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      getAccountCredentials: (provider) => ({
+        provider,
+        cookie: provider === 'youtube' ? 'SID=abc; HSID=def' : 'SESSDATA=bili',
+      }),
+    });
+
+    await service.search('echo');
+
+    expect(cookiePaths).toHaveLength(2);
+    expect(cookiePaths.every((cookiePath) => !existsSync(cookiePath))).toBe(true);
+  });
+
+  it('uses YouTube browser cookies when no saved YouTube cookie exists', async () => {
+    const ytDlpPath = makeToolPath();
+    const commandRunner = vi.fn((_command: string, _args: string[]) => ({
+      promise: Promise.resolve({ stdout: JSON.stringify({ entries: [] }), stderr: '', exitCode: 0 }),
+      kill: vi.fn(),
+    }));
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      getAccountCredentials: (provider) => ({
+        provider,
+        browser: provider === 'youtube' ? 'edge' : undefined,
+      }),
+    });
+
+    await service.search({ query: 'echo', limitPerProvider: 1 });
+
+    const youtubeCall = commandRunner.mock.calls.find((call) => call[1].includes('ytsearch1:echo'));
+    expect(youtubeCall?.[1] ?? []).toEqual(expect.arrayContaining(['--cookies-from-browser', 'edge']));
+  });
+
+  it('retries search without account cookies when authenticated search fails', async () => {
+    const ytDlpPath = makeToolPath();
+    const commandRunner = vi.fn((_command: string, args: string[]) => {
+      const searchUrl = args.at(-1);
+      if (typeof searchUrl === 'string' && searchUrl.startsWith('ytsearch') && args.includes('--cookies-from-browser')) {
+        return {
+          promise: Promise.resolve({
+            stdout: '',
+            stderr: 'ERROR: Could not copy Chrome cookie database. See https://github.com/yt-dlp/yt-dlp/issues/7271 for more info',
+            exitCode: 1,
+          }),
+          kill: vi.fn(),
+        };
+      }
+
+      const entries =
+        typeof searchUrl === 'string' && searchUrl.startsWith('ytsearch')
+          ? [{ id: 'yt-fallback', title: 'Fallback Song', url: 'https://www.youtube.com/watch?v=yt-fallback' }]
+          : [];
+      return {
+        promise: Promise.resolve({ stdout: JSON.stringify({ entries }), stderr: '', exitCode: 0 }),
+        kill: vi.fn(),
+      };
+    });
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      fetch: vi.fn(async () => ({ ok: false })) as unknown as typeof fetch,
+      getAccountCredentials: (provider) => ({
+        provider,
+        browser: provider === 'youtube' ? 'chrome' : undefined,
+      }),
+    });
+
+    const response = await service.search({ query: 'echo', limitPerProvider: 1 });
+
+    const youtubeCalls = commandRunner.mock.calls.filter((call) => call[1].includes('ytsearch1:echo'));
+    expect(youtubeCalls).toHaveLength(2);
+    expect(youtubeCalls[0][1]).toEqual(expect.arrayContaining(['--cookies-from-browser', 'chrome']));
+    expect(youtubeCalls[1][1]).not.toContain('--cookies-from-browser');
+    expect(response.errors).toEqual([]);
+    expect(response.results).toEqual([
+      expect.objectContaining({
+        provider: 'youtube',
+        id: 'yt-fallback',
+        title: 'Fallback Song',
+      }),
+    ]);
+  });
+
+  it('falls back to the Bilibili web search API when yt-dlp bilisearch is blocked', async () => {
+    const ytDlpPath = makeToolPath();
+    const commandRunner = vi.fn((_command: string, args: string[]) => {
+      const searchUrl = args.at(-1);
+      return {
+        promise: Promise.resolve({
+          stdout: '',
+          stderr:
+            typeof searchUrl === 'string' && searchUrl.startsWith('bilisearch')
+              ? 'ERROR: Unable to download JSON metadata: HTTP Error 412: Precondition Failed'
+              : '',
+          exitCode: 1,
+        }),
+        kill: vi.fn(),
+      };
+    });
+    const fetchRunner = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: {
+          result: [
+            {
+              bvid: 'BV1ECHO',
+              title: '<em class="keyword">籽岷</em> Bilibili Song',
+              author: 'Bili Artist',
+              duration: '18:01',
+              pic: '//i0.hdslb.com/bfs/archive/cover.jpg',
+              arcurl: 'https://www.bilibili.com/video/BV1ECHO',
+              play: 33000,
+              pubdate: 1778729958,
+            },
+          ],
+        },
+      }),
+    })) as unknown as typeof fetch;
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      fetch: fetchRunner,
+      getAccountCredentials: (provider) => ({ provider, cookie: provider === 'bilibili' ? 'SESSDATA=bili' : undefined }),
+    });
+
+    const response = await service.search({ query: '籽岷', limitPerProvider: 1, provider: 'bilibili' });
+
+    expect(fetchRunner).toHaveBeenCalledWith(
+      expect.stringContaining('api.bilibili.com/x/web-interface/search/type'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          cookie: 'SESSDATA=bili',
+          referer: 'https://www.bilibili.com/',
+        }),
+      }),
+    );
+    expect(response.errors).toEqual([]);
+    expect(response.results).toEqual([
+      expect.objectContaining({
+        provider: 'bilibili',
+        id: 'BV1ECHO',
+        title: '籽岷 Bilibili Song',
+        durationSeconds: 1081,
+        thumbnailUrl: 'echo-image://remote/https%3A%2F%2Fi0.hdslb.com%2Fbfs%2Farchive%2Fcover.jpg?referer=https%3A%2F%2Fwww.bilibili.com%2F',
+        webpageUrl: 'https://www.bilibili.com/video/BV1ECHO',
+      }),
+    ]);
+  });
+
+  it('falls back to the Bilibili web search API when yt-dlp bilisearch returns no entries', async () => {
+    const ytDlpPath = makeToolPath();
+    const commandRunner = vi.fn((_command: string, _args: string[]) => ({
+      promise: Promise.resolve({ stdout: JSON.stringify({ entries: [] }), stderr: '', exitCode: 0 }),
+      kill: vi.fn(),
+    }));
+    const fetchRunner = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: {
+          result: [
+            {
+              bvid: 'BVEMPTY',
+              title: 'API Fallback Song',
+              author: 'Bili Artist',
+              duration: '03:54',
+              pic: '//i1.hdslb.com/bfs/archive/fallback.jpg',
+              arcurl: 'http://www.bilibili.com/video/av98648582',
+              play: 12570563,
+            },
+          ],
+        },
+      }),
+    })) as unknown as typeof fetch;
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      fetch: fetchRunner,
+      getAccountCredentials: (provider) => ({ provider }),
+    });
+
+    const response = await service.search({ query: '籽岷', limitPerProvider: 1, provider: 'bilibili' });
+
+    expect(commandRunner).toHaveBeenCalledWith(ytDlpPath, expect.arrayContaining(['bilisearch1:籽岷']));
+    expect(fetchRunner).toHaveBeenCalled();
+    expect(response.errors).toEqual([]);
+    expect(response.results).toEqual([
+      expect.objectContaining({
+        provider: 'bilibili',
+        id: 'BVEMPTY',
+        title: 'API Fallback Song',
+        durationSeconds: 234,
+        webpageUrl: 'http://www.bilibili.com/video/av98648582',
+      }),
+    ]);
+  });
+
+  it('keeps successful provider search results when another provider fails', async () => {
+    const ytDlpPath = makeToolPath();
+    const commandRunner = vi.fn((_command: string, args: string[]) => {
+      const searchUrl = args.at(-1);
+      if (typeof searchUrl === 'string' && searchUrl.startsWith('bilisearch')) {
+        return {
+          promise: Promise.resolve({ stdout: '', stderr: 'HTTP Error 412', exitCode: 1 }),
+          kill: vi.fn(),
+        };
+      }
+
+      return {
+        promise: Promise.resolve({
+          stdout: JSON.stringify({ entries: [{ id: 'yt-1', title: 'YouTube Song', url: 'https://www.youtube.com/watch?v=yt-1' }] }),
+          stderr: '',
+          exitCode: 0,
+        }),
+        kill: vi.fn(),
+      };
+    });
+    const service = new DownloadService(commandRunner, () => ytDlpPath, {
+      fetch: vi.fn(async () => ({ ok: false })) as unknown as typeof fetch,
+      getAccountCredentials: (provider) => ({ provider }),
+    });
+
+    const response = await service.search('echo');
+
+    expect(response.results).toHaveLength(1);
+    expect(response.results[0].provider).toBe('youtube');
+    expect(response.errors).toEqual([{ provider: 'bilibili', error: 'HTTP Error 412' }]);
+  });
+
+  it('rejects empty search queries', async () => {
+    const service = new DownloadService();
+
+    await expect(service.search('   ')).rejects.toThrow('search query must be a non-empty string');
   });
 
   it('probes URL metadata, downloads, and completes without importing when disabled', async () => {

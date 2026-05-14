@@ -31,6 +31,7 @@ type ProviderDependencies = {
 
 const userAgent =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ECHO-Next/1.0 Safari/537.36';
+const bilibiliAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7';
 const defaultExpiresMs = 45 * 60 * 1000;
 
 const qualityHeight: Record<Exclude<MvQualityTier, 'auto'>, number> = {
@@ -104,7 +105,7 @@ const normalizeSearchText = (value: string): string =>
     .normalize('NFKC')
     .toLowerCase()
     .replace(/<[^>]*>/g, ' ')
-    .replace(/[\[\]【】「」『』()（）"'“”‘’]/g, ' ')
+    .replace(/[[\]【】「」『』()（）"'“”‘’]/g, ' ')
     .replace(/[_\-~|/\\:：·・.,，。!?！？]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -205,26 +206,6 @@ const externalVariant = (
   rawProviderJson: null,
 });
 
-const qualityTierFromHeight = (height: number | null): MvQualityTier => {
-  if (!height) {
-    return 'auto';
-  }
-
-  if (height >= 2160) {
-    return '2160p';
-  }
-
-  if (height >= 1440) {
-    return '1440p';
-  }
-
-  if (height >= 1080) {
-    return '1080p';
-  }
-
-  return '720p';
-};
-
 const withTimeout = async (fetchImpl: FetchLike, url: string, headers: Record<string, string>): Promise<unknown> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 6500);
@@ -249,6 +230,23 @@ const withTimeout = async (fetchImpl: FetchLike, url: string, headers: Record<st
     clearTimeout(timer);
   }
 };
+
+const bilibiliSearchReferer = (query: string): string =>
+  `https://search.bilibili.com/video?keyword=${encodeURIComponent(query)}`;
+
+const bilibiliSearchHeaders = (query: string, credentials: Record<string, string>): Record<string, string> => ({
+  ...credentials,
+  Referer: bilibiliSearchReferer(query),
+  Origin: 'https://search.bilibili.com',
+  'Accept-Language': bilibiliAcceptLanguage,
+});
+
+const bilibiliVideoHeaders = (bvid: string, credentials: Record<string, string>): Record<string, string> => ({
+  ...credentials,
+  Referer: `https://www.bilibili.com/video/${bvid}`,
+  Origin: 'https://www.bilibili.com',
+  'Accept-Language': bilibiliAcceptLanguage,
+});
 
 class ProviderBase {
   protected readonly fetchImpl: FetchLike;
@@ -280,7 +278,7 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
     url.searchParams.set('page', '1');
     url.searchParams.set('order', 'click');
 
-    const payload = await withTimeout(this.fetchImpl, url.toString(), this.cookieHeaders(this.id));
+    const payload = await withTimeout(this.fetchImpl, url.toString(), bilibiliSearchHeaders(query, this.cookieHeaders(this.id)));
     const data = isRecord(payload) ? payload.data : null;
     const results = isRecord(data) ? asArray(data.result) : [];
 
@@ -337,7 +335,7 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
       return [externalVariant(this.id, video.providerUrl ?? video.url, 'Bilibili')];
     }
 
-    const headers = this.cookieHeaders(this.id);
+    const headers = bilibiliVideoHeaders(bvid, this.cookieHeaders(this.id));
     const viewPayload = await withTimeout(this.fetchImpl, `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`, headers);
     const viewData = isRecord(viewPayload) ? viewPayload.data : null;
     const cid = number(isRecord(viewData) ? viewData.cid : null);
@@ -430,7 +428,7 @@ export class YouTubeMvProvider extends ProviderBase implements MainMvOnlineProvi
     const payload = await withTimeout(this.fetchImpl, url.toString(), {});
     const items = asArray(isRecord(payload) ? payload.items : null);
 
-    return items.slice(0, 8).flatMap((item, index): MvMatchCandidate[] => {
+    return items.slice(0, 8).flatMap((item): MvMatchCandidate[] => {
       if (!isRecord(item) || !isRecord(item.id) || !isRecord(item.snippet)) {
         return [];
       }

@@ -1,13 +1,14 @@
 import { dialog, ipcMain } from 'electron';
 import { SUPPORTED_AUDIO_DIALOG_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import type { AudioOutputMode, AudioOutputSettings, PlaybackSpeedMode } from '../../shared/types/audio';
+import type { AudioLatencyProfile, AudioOutputMode, AudioOutputSettings, PlaybackSpeedMode } from '../../shared/types/audio';
 import type { PlaybackProbeHint, PlaybackStartRequest, PlaybackStatus } from '../../shared/types/playback';
 import { getAudioSession } from '../audio/AudioSession';
 import { getPlaybackMemoryStore } from '../audio/PlaybackMemoryStore';
 import { syncSmtcStatus } from '../integrations/smtc/SmtcStatusSync';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
+const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
 const playbackSpeedModes = new Set<PlaybackSpeedMode>(['nightcore', 'daycore', 'speed']);
 
 const requireText = (value: unknown, name: string): string => {
@@ -57,6 +58,15 @@ const normalizeOutputSettings = (value: unknown): AudioOutputSettings | undefine
   const requestedOutputSampleRate = optionalPositiveNumber(input.requestedOutputSampleRate);
   if (requestedOutputSampleRate) {
     output.requestedOutputSampleRate = Math.round(requestedOutputSampleRate);
+  }
+
+  if (typeof input.latencyProfile === 'string' && latencyProfiles.has(input.latencyProfile as AudioLatencyProfile)) {
+    output.latencyProfile = input.latencyProfile as AudioLatencyProfile;
+  }
+
+  const bufferSizeFrames = optionalPositiveNumber(input.bufferSizeFrames);
+  if (bufferSizeFrames) {
+    output.bufferSizeFrames = Math.round(bufferSizeFrames);
   }
 
   if (typeof input.volume === 'number' && Number.isFinite(input.volume)) {

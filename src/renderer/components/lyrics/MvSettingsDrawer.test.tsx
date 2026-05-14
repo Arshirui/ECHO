@@ -183,7 +183,7 @@ describe('MvSettingsDrawer', () => {
     renderDrawer();
 
     fireEvent.click(await screen.findByRole('button', { name: /Preload MV/ }));
-    fireEvent.click(await screen.findByRole('button', { name: /Restart music after MV loads/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Follow music progress/ }));
 
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ autoPreload: false }));
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ restartAudioOnLoad: true }));

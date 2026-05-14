@@ -56,36 +56,133 @@ const normalizeSecondaryText = (value: string): string | null => {
   return normalized.length > 0 ? normalized : null;
 };
 
-const mergeRomanizationLines = (lines: LyricLine[], romanizationLyrics?: string | null): LyricLine[] => {
-  if (!romanizationLyrics || lines.length === 0) {
-    return lines;
-  }
+const secondaryTimestampToleranceMs = 350;
+const looseSecondaryTimestampToleranceMs = 1500;
 
-  const syncedRomanization = parseSyncedLyrics(romanizationLyrics);
-  if (syncedRomanization.length > 0) {
-    const byTime = new Map<number, string>();
-    for (const line of syncedRomanization) {
-      const romanization = normalizeSecondaryText(line.text);
-      if (romanization) {
-        byTime.set(line.timeMs, romanization);
+const findSyncedSecondaryText = (
+  syncedLines: LyricLine[],
+  line: LyricLine,
+  usedIndexes: Set<number>,
+): string | null => {
+  if (line.timeMs >= 0) {
+    let closestIndex = -1;
+    let closestDelta = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < syncedLines.length; index += 1) {
+      if (usedIndexes.has(index)) {
+        continue;
+      }
+
+      const delta = Math.abs(syncedLines[index].timeMs - line.timeMs);
+      if (delta === 0) {
+        usedIndexes.add(index);
+        return syncedLines[index].text;
+      }
+
+      if (delta < closestDelta) {
+        closestDelta = delta;
+        closestIndex = index;
       }
     }
 
-    return lines.map((line) => {
-      const romanization = byTime.get(line.timeMs);
-      return romanization ? { ...line, romanization } : line;
-    });
+    if (closestIndex >= 0 && closestDelta <= secondaryTimestampToleranceMs) {
+      usedIndexes.add(closestIndex);
+      return syncedLines[closestIndex].text;
+    }
   }
 
-  const plainRomanization = parsePlainLyrics(romanizationLyrics);
-  if (plainRomanization.length === 0) {
+  return null;
+};
+
+const findSequentialSecondaryText = (
+  syncedLines: LyricLine[],
+  line: LyricLine,
+  usedIndexes: Set<number>,
+  searchStartIndex: number,
+): string | null => {
+  if (line.timeMs < 0) {
+    return null;
+  }
+
+  for (let index = Math.max(0, searchStartIndex); index < syncedLines.length; index += 1) {
+    if (usedIndexes.has(index)) {
+      continue;
+    }
+
+    const secondaryLine = syncedLines[index];
+    if (secondaryLine.timeMs + looseSecondaryTimestampToleranceMs < line.timeMs) {
+      continue;
+    }
+
+    if (Math.abs(secondaryLine.timeMs - line.timeMs) <= looseSecondaryTimestampToleranceMs) {
+      usedIndexes.add(index);
+      return secondaryLine.text;
+    }
+
+    if (secondaryLine.timeMs > line.timeMs + looseSecondaryTimestampToleranceMs) {
+      break;
+    }
+  }
+
+  return null;
+};
+
+const mergeSecondaryLines = (
+  lines: LyricLine[],
+  secondaryLyrics: string | null | undefined,
+  field: 'romanization' | 'translation',
+): LyricLine[] => {
+  if (!secondaryLyrics || lines.length === 0) {
     return lines;
   }
 
-  return lines.map((line, index) => {
-    const romanization = normalizeSecondaryText(plainRomanization[index]?.text ?? '');
-    return romanization ? { ...line, romanization } : line;
+  const syncedSecondary = parseSyncedLyrics(secondaryLyrics)
+    .map((line) => ({ ...line, text: normalizeSecondaryText(line.text) ?? '' }))
+    .filter((line) => line.text.length > 0);
+  if (syncedSecondary.length > 0) {
+    const usedIndexes = new Set<number>();
+    let changed = false;
+    const canFallbackByIndex = syncedSecondary.length === lines.length;
+    let fallbackSearchIndex = 0;
+
+    const nextLines = lines.map((line, index) => {
+      const syncedText = findSyncedSecondaryText(syncedSecondary, line, usedIndexes);
+      const secondaryText = syncedText ?? (
+        canFallbackByIndex && !usedIndexes.has(index) ? syncedSecondary[index]?.text : null
+      ) ?? findSequentialSecondaryText(syncedSecondary, line, usedIndexes, fallbackSearchIndex);
+      if (!secondaryText || line[field] === secondaryText) {
+        return line;
+      }
+
+      if (canFallbackByIndex && syncedText === null) {
+        usedIndexes.add(index);
+      }
+      fallbackSearchIndex = Math.max(fallbackSearchIndex, index + 1);
+
+      changed = true;
+      return { ...line, [field]: secondaryText };
+    });
+
+    return changed ? nextLines : lines;
+  }
+
+  const plainSecondary = parsePlainLyrics(secondaryLyrics);
+  if (plainSecondary.length === 0) {
+    return lines;
+  }
+
+  let changed = false;
+  const nextLines = lines.map((line, index) => {
+    const secondaryText = normalizeSecondaryText(plainSecondary[index]?.text ?? '');
+    if (!secondaryText || line[field] === secondaryText) {
+      return line;
+    }
+
+    changed = true;
+    return { ...line, [field]: secondaryText };
   });
+
+  return changed ? nextLines : lines;
 };
 
 export const providerResultToTrackLyrics = (
@@ -104,7 +201,8 @@ export const providerResultToTrackLyrics = (
       : kind === 'plain'
         ? parsePlainLyrics(result.plainLyrics ?? '')
         : [];
-  const linesWithRomanization = mergeRomanizationLines(lines, result.romanizationLyrics);
+  const linesWithRomanization = mergeSecondaryLines(lines, result.romanizationLyrics, 'romanization');
+  const linesWithSecondaryText = mergeSecondaryLines(linesWithRomanization, result.translationLyrics, 'translation');
 
   if (kind === 'empty') {
     return null;
@@ -121,7 +219,7 @@ export const providerResultToTrackLyrics = (
     artist: result.artist,
     album: result.album,
     durationSeconds: result.durationSeconds,
-    lines: linesWithRomanization,
+    lines: linesWithSecondaryText,
     plainText: result.plainLyrics,
     syncedText: result.syncedLyrics,
     offsetMs: 0,

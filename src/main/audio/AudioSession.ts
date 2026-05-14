@@ -10,6 +10,7 @@ import { PlaybackClock } from './PlaybackClock';
 import type {
   AudioDeviceInfo,
   AudioDiagnostics,
+  AudioLatencyProfile,
   AudioOutputMode,
   AudioOutputSettings,
   AudioPlaybackState,
@@ -32,6 +33,7 @@ type OutputBridgeLike = {
   start: (options: NativeOutputStartOptions) => Promise<NativeBridgeReadyResult>;
   stop: () => void;
   getPositionSeconds: () => number;
+  getPositionStalenessMs?: () => number | null;
   resetOutputClock?: (startSeconds?: number, playbackRate?: number) => void;
   on: (event: 'position' | 'ended' | 'error', listener: (...args: unknown[]) => void) => OutputBridgeLike;
 };
@@ -89,6 +91,18 @@ const sharedStabilityProfiles: Record<
   },
 };
 
+const latencyProfiles: Record<AudioLatencyProfile, Pick<NativeOutputStartOptions, 'bufferSizeFrames'>> = {
+  lowLatency: {
+    bufferSizeFrames: 1024,
+  },
+  balanced: {
+    bufferSizeFrames: 2048,
+  },
+  stable: {
+    bufferSizeFrames: 8192,
+  },
+};
+
 const defaultLogger = (message: string): void => {
   console.warn(message);
 };
@@ -100,6 +114,10 @@ const normalizePositiveInteger = (value: unknown): number | null => {
 
 const normalizeOutputMode = (value: unknown): AudioOutputMode => {
   return value === 'exclusive' || value === 'asio' ? value : 'shared';
+};
+
+const normalizeLatencyProfile = (value: unknown): AudioLatencyProfile => {
+  return value === 'stable' || value === 'lowLatency' ? value : 'balanced';
 };
 
 const normalizePlaybackRate = (value: unknown): number => {
@@ -179,6 +197,7 @@ const defaultStatus = (nativeHostAvailable: boolean): AudioStatus => ({
   outputDeviceType: null,
   outputBackend: null,
   outputMode: 'shared',
+  latencyProfile: 'balanced',
   volume: 1,
   playbackRate: 1,
   playbackSpeedMode: 'nightcore',
@@ -217,6 +236,9 @@ const defaultStatus = (nativeHostAvailable: boolean): AudioStatus => ({
   bitPerfectDisabledReason: null,
   sharedStabilityTier: null,
   nativeDeviceBufferFrames: null,
+  nativeActualBufferFrames: null,
+  nativeOutputLatencyMs: null,
+  nativePositionStalenessMs: null,
   nativeFifoCapacityFrames: null,
   nativeStartupPrebufferFrames: null,
   nativeBufferedFrames: null,
@@ -334,9 +356,10 @@ export class AudioSession extends EventEmitter {
   private readonly isNativeHostAvailable: () => boolean;
   private readonly logger: (message: string) => void;
   private readonly clock = new PlaybackClock();
-  private outputSettings: Required<Pick<AudioOutputSettings, 'outputMode' | 'volume' | 'playbackRate' | 'playbackSpeedMode'>> &
-    Omit<AudioOutputSettings, 'outputMode' | 'volume' | 'playbackRate' | 'playbackSpeedMode'> = {
+  private outputSettings: Required<Pick<AudioOutputSettings, 'outputMode' | 'latencyProfile' | 'volume' | 'playbackRate' | 'playbackSpeedMode'>> &
+    Omit<AudioOutputSettings, 'outputMode' | 'latencyProfile' | 'volume' | 'playbackRate' | 'playbackSpeedMode'> = {
     outputMode: 'shared',
+    latencyProfile: 'balanced',
     volume: 1,
     playbackRate: 1,
     playbackSpeedMode: 'nightcore',
@@ -382,6 +405,7 @@ export class AudioSession extends EventEmitter {
   private sharedStabilityRecovering = false;
   private lastSharedStabilityRecoveryAt: string | null = null;
   private nativeDeviceBufferFrames: number | null = null;
+  private nativeActualBufferFrames: number | null = null;
   private nativeFifoCapacityFrames: number | null = null;
   private nativeStartupPrebufferFrames: number | null = null;
   private nativeTelemetry: NativeOutputTelemetry = {
@@ -436,6 +460,8 @@ export class AudioSession extends EventEmitter {
       ...this.outputSettings,
       ...settings,
       outputMode: normalizeOutputMode(settings.outputMode ?? this.outputSettings.outputMode),
+      latencyProfile: normalizeLatencyProfile(settings.latencyProfile ?? this.outputSettings.latencyProfile),
+      bufferSizeFrames: normalizePositiveInteger(settings.bufferSizeFrames) ?? this.outputSettings.bufferSizeFrames,
       volume: Math.max(0, Math.min(1, Number(settings.volume ?? this.outputSettings.volume) || 0)),
       playbackRate: normalizePlaybackRate(settings.playbackRate ?? this.outputSettings.playbackRate),
       playbackSpeedMode: normalizePlaybackSpeedMode(settings.playbackSpeedMode ?? this.outputSettings.playbackSpeedMode),
@@ -521,6 +547,8 @@ export class AudioSession extends EventEmitter {
       ...this.outputSettings,
       ...request.output,
       outputMode: normalizeOutputMode(request.output?.outputMode ?? this.outputSettings.outputMode),
+      latencyProfile: normalizeLatencyProfile(request.output?.latencyProfile ?? this.outputSettings.latencyProfile),
+      bufferSizeFrames: normalizePositiveInteger(request.output?.bufferSizeFrames) ?? this.outputSettings.bufferSizeFrames,
       volume: Math.max(0, Math.min(1, Number(request.output?.volume ?? this.outputSettings.volume) || 0)),
       playbackRate: normalizePlaybackRate(request.output?.playbackRate ?? this.outputSettings.playbackRate),
       playbackSpeedMode: normalizePlaybackSpeedMode(request.output?.playbackSpeedMode ?? this.outputSettings.playbackSpeedMode),
@@ -675,11 +703,7 @@ export class AudioSession extends EventEmitter {
       const positionSeconds = this.state === 'playing' ? this.clock.getPositionSeconds() : this.pausedPositionSeconds ?? 0;
       const sampleRate = this.currentPlan?.actualDeviceSampleRate ?? this.currentPlan?.requestedOutputSampleRate ?? null;
       this.runToken += 1;
-      if (this.state === 'loading') {
-        this.stopResources();
-      } else {
-        this.stopDecoderRun();
-      }
+      this.stopResources();
       this.pausedPositionSeconds = positionSeconds;
       this.clock.reset(positionSeconds, sampleRate);
       this.state = 'paused';
@@ -803,6 +827,13 @@ export class AudioSession extends EventEmitter {
       nativeSampleRate && this.nativeTelemetry.bufferedFrames !== null
         ? Math.round((this.nativeTelemetry.bufferedFrames / nativeSampleRate) * 1000)
         : null;
+    const nativeActualBufferFrames = this.nativeActualBufferFrames ?? this.nativeDeviceBufferFrames;
+    const nativeOutputLatencyMs =
+      nativeSampleRate && nativeActualBufferFrames !== null
+        ? Math.round((nativeActualBufferFrames / nativeSampleRate) * 1000)
+        : null;
+    const nativePositionStalenessMs =
+      this.bridge?.getPositionStalenessMs?.() ?? this.nativeTelemetry.nativePositionStalenessMs ?? null;
 
     return {
       ...status,
@@ -813,6 +844,7 @@ export class AudioSession extends EventEmitter {
       outputDeviceType: this.currentOutputDeviceType,
       outputBackend: this.currentOutputBackend,
       outputMode: plan?.outputMode ?? this.outputSettings.outputMode,
+      latencyProfile: normalizeLatencyProfile(this.currentOutputSettings?.latencyProfile ?? this.outputSettings.latencyProfile),
       volume: this.outputSettings.volume,
       playbackRate: this.outputSettings.playbackRate,
       playbackSpeedMode: this.outputSettings.playbackSpeedMode,
@@ -842,6 +874,9 @@ export class AudioSession extends EventEmitter {
       bitPerfectDisabledReason,
       sharedStabilityTier: plan?.outputMode === 'shared' ? this.sharedStabilityTier : null,
       nativeDeviceBufferFrames: this.nativeDeviceBufferFrames,
+      nativeActualBufferFrames,
+      nativeOutputLatencyMs,
+      nativePositionStalenessMs,
       nativeFifoCapacityFrames: this.nativeFifoCapacityFrames,
       nativeStartupPrebufferFrames: this.nativeStartupPrebufferFrames,
       nativeBufferedFrames: this.nativeTelemetry.bufferedFrames,
@@ -861,6 +896,7 @@ export class AudioSession extends EventEmitter {
       state: status.state,
       host: status.host,
       outputMode: status.outputMode,
+      latencyProfile: status.latencyProfile,
       outputBackend: status.outputBackend,
       outputDeviceName: status.outputDeviceName,
       currentFilePath: status.currentFilePath,
@@ -877,6 +913,9 @@ export class AudioSession extends EventEmitter {
       sampleRateMismatch: status.sampleRateMismatch,
       sharedStabilityTier: status.sharedStabilityTier,
       nativeDeviceBufferFrames: status.nativeDeviceBufferFrames,
+      nativeActualBufferFrames: status.nativeActualBufferFrames,
+      nativeOutputLatencyMs: status.nativeOutputLatencyMs,
+      nativePositionStalenessMs: status.nativePositionStalenessMs,
       nativeFifoCapacityFrames: status.nativeFifoCapacityFrames,
       nativeStartupPrebufferFrames: status.nativeStartupPrebufferFrames,
       nativeBufferedFrames: status.nativeBufferedFrames,
@@ -1060,8 +1099,21 @@ export class AudioSession extends EventEmitter {
       ready.actualDeviceSampleRate,
     );
     this.nativeDeviceBufferFrames = numericReadyField(ready, 'deviceBufferFrames');
+    this.nativeActualBufferFrames =
+      numericReadyField(ready, 'nativeActualBufferFrames') ??
+      numericReadyField(ready, 'actualBufferFrames') ??
+      this.nativeDeviceBufferFrames;
     this.nativeFifoCapacityFrames = numericReadyField(ready, 'fifoCapacityFrames');
     this.nativeStartupPrebufferFrames = numericReadyField(ready, 'startupPrebufferFrames');
+    if (readyDevice.bufferSizeFallback === true) {
+      const requestedBufferFrames = numericReadyField(ready, 'requestedDeviceBufferFrames');
+      const openedBufferFrames = numericReadyField(ready, 'openedDeviceBufferFrames') ?? this.nativeActualBufferFrames;
+      this.addOutputWarning(
+        requestedBufferFrames && openedBufferFrames
+          ? `native_output_buffer_size_fell_back:${requestedBufferFrames}->${openedBufferFrames}`
+          : 'native_output_buffer_size_fell_back',
+      );
+    }
     this.clock.setSampleRate(ready.actualDeviceSampleRate ?? this.currentPlan.requestedOutputSampleRate);
   }
 
@@ -1138,13 +1190,26 @@ export class AudioSession extends EventEmitter {
   }
 
   private createNativeOutputStartOptions(options: NativeOutputStartOptions): NativeOutputStartOptions {
+    const latencyProfile = normalizeLatencyProfile(options.latencyProfile);
+    const latencyProfileOptions = latencyProfiles[latencyProfile];
+    const explicitBufferSizeFrames = normalizePositiveInteger(options.bufferSizeFrames);
+    const profileBufferSizeFrames = explicitBufferSizeFrames ?? latencyProfileOptions.bufferSizeFrames ?? 2048;
+
     if (options.exclusive || options.asio) {
-      return options;
+      return {
+        ...options,
+        latencyProfile,
+        bufferSizeFrames: profileBufferSizeFrames,
+      };
     }
+
+    const sharedProfile = sharedStabilityProfiles[this.sharedStabilityTier];
 
     return {
       ...options,
-      ...sharedStabilityProfiles[this.sharedStabilityTier],
+      latencyProfile,
+      ...sharedProfile,
+      bufferSizeFrames: explicitBufferSizeFrames ?? Math.max(profileBufferSizeFrames, sharedProfile.bufferSizeFrames ?? 0),
     };
   }
 
@@ -1189,10 +1254,13 @@ export class AudioSession extends EventEmitter {
           deviceName: candidate?.name ?? (usingDefaultSharedFallback ? undefined : this.currentOutputSettings.deviceName),
           asio: outputMode === 'asio',
           exclusive: outputMode === 'exclusive',
+          latencyProfile: this.currentOutputSettings.latencyProfile,
+          bufferSizeFrames: this.currentOutputSettings.bufferSizeFrames,
           volume: this.currentOutputSettings.volume,
           startSeconds,
           playbackRate: this.currentOutputSettings.playbackRate,
           playbackSpeedMode: this.currentOutputSettings.playbackSpeedMode,
+          durationSeconds: probe.durationSeconds,
         }));
 
         if (usingDefaultSharedFallback && !this.outputWarnings.includes('shared_output_fell_back_to_default_device')) {
@@ -1230,18 +1298,21 @@ export class AudioSession extends EventEmitter {
       this.attachBridgeEvents(bridge, token);
 
       try {
-        const ready = await bridge.start({
+        const ready = await bridge.start(this.createNativeOutputStartOptions({
           requestedOutputSampleRate: this.currentPlan.requestedOutputSampleRate,
           channels: probe.channels,
           deviceIndex: fallbackDevice?.index ?? fallbackSettings.deviceIndex,
           deviceName: fallbackDevice?.name ?? fallbackSettings.deviceName,
           asio: false,
           exclusive: false,
+          latencyProfile: fallbackSettings.latencyProfile,
+          bufferSizeFrames: fallbackSettings.bufferSizeFrames,
           volume: fallbackSettings.volume,
           startSeconds,
           playbackRate: fallbackSettings.playbackRate,
           playbackSpeedMode: fallbackSettings.playbackSpeedMode,
-        });
+          durationSeconds: probe.durationSeconds,
+        }));
 
         return { bridge, plan: this.currentPlan, ready };
       } catch (error) {
@@ -1293,10 +1364,13 @@ export class AudioSession extends EventEmitter {
         deviceName: fallbackDevice?.name ?? fallbackSettings.deviceName,
         asio: false,
         exclusive: false,
+        latencyProfile: fallbackSettings.latencyProfile,
+        bufferSizeFrames: fallbackSettings.bufferSizeFrames,
         volume: fallbackSettings.volume,
         startSeconds,
         playbackRate: fallbackSettings.playbackRate,
         playbackSpeedMode: fallbackSettings.playbackSpeedMode,
+        durationSeconds: probe.durationSeconds,
       }));
 
       return { bridge, plan: this.currentPlan, ready };
@@ -1395,6 +1469,14 @@ export class AudioSession extends EventEmitter {
           : Math.max(0, Math.round(Number(telemetry.bufferedFrames) || 0)),
       underrunCallbacks: Math.max(0, Math.round(Number(telemetry.underrunCallbacks) || 0)),
       underrunFrames: Math.max(0, Math.round(Number(telemetry.underrunFrames) || 0)),
+      reportedAtMs:
+        telemetry.reportedAtMs === null || telemetry.reportedAtMs === undefined
+          ? null
+          : Math.max(0, Number(telemetry.reportedAtMs) || 0),
+      nativePositionStalenessMs:
+        telemetry.nativePositionStalenessMs === null || telemetry.nativePositionStalenessMs === undefined
+          ? null
+          : Math.max(0, Math.round(Number(telemetry.nativePositionStalenessMs) || 0)),
     };
 
     if (this.state === 'playing') {
@@ -1480,6 +1562,7 @@ export class AudioSession extends EventEmitter {
 
   private resetNativeTelemetry(): void {
     this.nativeDeviceBufferFrames = null;
+    this.nativeActualBufferFrames = null;
     this.nativeFifoCapacityFrames = null;
     this.nativeStartupPrebufferFrames = null;
     this.nativeTelemetry = {
@@ -1487,6 +1570,8 @@ export class AudioSession extends EventEmitter {
       bufferedFrames: null,
       underrunCallbacks: 0,
       underrunFrames: 0,
+      reportedAtMs: null,
+      nativePositionStalenessMs: null,
     };
     this.sharedUnderrunWindow = null;
   }

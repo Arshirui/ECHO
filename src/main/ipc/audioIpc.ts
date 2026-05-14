@@ -1,11 +1,20 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import type { AudioDiagnostics, AudioOutputMode, AudioOutputSettings, AudioStatus, ChannelBalanceState, PlaybackSpeedMode } from '../../shared/types/audio';
+import type {
+  AudioDiagnostics,
+  AudioLatencyProfile,
+  AudioOutputMode,
+  AudioOutputSettings,
+  AudioStatus,
+  ChannelBalanceState,
+  PlaybackSpeedMode,
+} from '../../shared/types/audio';
 import type { EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../../shared/types/eq';
 import { getAudioSession } from '../audio/AudioSession';
 import { getEqBridge } from '../audio/EqBridge';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
+const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
 const playbackSpeedModes = new Set<PlaybackSpeedMode>(['nightcore', 'daycore', 'speed']);
 
 const normalizeOutputSettings = (value: unknown): AudioOutputSettings => {
@@ -34,6 +43,14 @@ const normalizeOutputSettings = (value: unknown): AudioOutputSettings => {
     input.requestedOutputSampleRate > 0
   ) {
     output.requestedOutputSampleRate = Math.round(input.requestedOutputSampleRate);
+  }
+
+  if (typeof input.latencyProfile === 'string' && latencyProfiles.has(input.latencyProfile as AudioLatencyProfile)) {
+    output.latencyProfile = input.latencyProfile as AudioLatencyProfile;
+  }
+
+  if (typeof input.bufferSizeFrames === 'number' && Number.isFinite(input.bufferSizeFrames) && input.bufferSizeFrames > 0) {
+    output.bufferSizeFrames = Math.round(input.bufferSizeFrames);
   }
 
   if (typeof input.volume === 'number' && Number.isFinite(input.volume)) {

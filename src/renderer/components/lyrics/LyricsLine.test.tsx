@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 describe('LyricsLine', () => {
-  const line = { timeMs: 1000, text: 'さくら', romanization: 'sakura' };
+  const line = { timeMs: 1000, text: 'さくら', romanization: 'sakura', translation: '樱花' };
 
   it('shows romanization when enabled', () => {
     render(<LyricsLine active={false} line={line} past={false} onSeek={vi.fn()} />);
@@ -21,5 +21,17 @@ describe('LyricsLine', () => {
 
     expect(screen.queryByText('sakura')).toBeNull();
     expect(screen.getByText('さくら')).toBeTruthy();
+  });
+
+  it('shows translation when enabled', () => {
+    render(<LyricsLine active={false} line={line} past={false} onSeek={vi.fn()} />);
+
+    expect(screen.getByText('樱花')).toBeTruthy();
+  });
+
+  it('hides translation when disabled', () => {
+    render(<LyricsLine active={false} line={line} past={false} showTranslation={false} onSeek={vi.fn()} />);
+
+    expect(screen.queryByText('樱花')).toBeNull();
   });
 });

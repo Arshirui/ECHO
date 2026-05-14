@@ -7,11 +7,18 @@ type LyricsLineProps = {
   onSeek: (timeMs: number) => void;
   seekable?: boolean;
   showRomanization?: boolean;
+  showTranslation?: boolean;
 };
 
-const getLyricDensity = (line: LyricLineType): 'short' | 'medium' | 'long' | 'dense' => {
+const getLyricDensity = (
+  line: LyricLineType,
+  showRomanization: boolean,
+  showTranslation: boolean,
+): 'short' | 'medium' | 'long' | 'dense' => {
   const textLength = Array.from(line.text.replace(/\s+/g, ' ').trim()).length;
-  const secondaryLength = Array.from(`${line.romanization ?? ''}${line.translation ?? ''}`.replace(/\s+/g, ' ').trim()).length;
+  const secondaryLength = Array.from(
+    `${showRomanization ? (line.romanization ?? '') : ''}${showTranslation ? (line.translation ?? '') : ''}`.replace(/\s+/g, ' ').trim(),
+  ).length;
   const weightedLength = textLength + Math.round(secondaryLength * 0.45);
 
   if (weightedLength >= 86) {
@@ -29,8 +36,16 @@ const getLyricDensity = (line: LyricLineType): 'short' | 'medium' | 'long' | 'de
   return 'short';
 };
 
-export const LyricsLine = ({ active, line, onSeek, past, seekable = true, showRomanization = true }: LyricsLineProps): JSX.Element => {
-  const density = getLyricDensity(line);
+export const LyricsLine = ({
+  active,
+  line,
+  onSeek,
+  past,
+  seekable = true,
+  showRomanization = true,
+  showTranslation = true,
+}: LyricsLineProps): JSX.Element => {
+  const density = getLyricDensity(line, showRomanization, showTranslation);
 
   return (
     <button
@@ -48,7 +63,7 @@ export const LyricsLine = ({ active, line, onSeek, past, seekable = true, showRo
     >
       <span>{line.text}</span>
       {showRomanization && line.romanization ? <small>{line.romanization}</small> : null}
-      {line.translation ? <em>{line.translation}</em> : null}
+      {showTranslation && line.translation ? <em>{line.translation}</em> : null}
     </button>
   );
 };

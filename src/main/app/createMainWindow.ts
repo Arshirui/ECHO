@@ -5,7 +5,9 @@ import { getAppSettings } from './appSettings';
 import { ensureTray, isAppQuitRequested } from './tray';
 import { clearMainWindow, setMainWindow } from './windowManager';
 
-export const resolvePreloadPath = (baseDir = __dirname): string => {
+const mainOutputDir = import.meta.dirname;
+
+export const resolvePreloadPath = (baseDir = mainOutputDir): string => {
   const mjsPreload = join(baseDir, '../preload/index.mjs');
 
   if (existsSync(mjsPreload)) {
@@ -52,7 +54,7 @@ export const createMainWindow = (): BrowserWindow => {
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    void window.loadFile(join(__dirname, '../renderer/index.html'));
+    void window.loadFile(join(mainOutputDir, '../renderer/index.html'));
   }
 
   setMainWindow(window);

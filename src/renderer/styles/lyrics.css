@@ -8,6 +8,7 @@
   --lyrics-cover: none;
   --lyrics-wallpaper: none;
   --lyrics-font-size: 36px;
+  --lyrics-secondary-font-size: 18px;
   --lyrics-color: #314054;
   --lyrics-cover-opacity: 1;
   --lyrics-cover-blur: 10px;
@@ -99,10 +100,6 @@
 .lyrics-error {
   position: relative;
   z-index: 1;
-}
-
-.lyrics-empty--hidden {
-  display: none;
 }
 
 .lyrics-drawer-range {
@@ -741,13 +738,13 @@
 }
 
 .lyrics-line small {
-  font-size: calc(var(--lyrics-font-size) * 0.44);
+  font-size: var(--lyrics-secondary-font-size);
   font-weight: 800;
   opacity: 0.58;
 }
 
 .lyrics-line em {
-  font-size: calc(var(--lyrics-font-size) * 0.39);
+  font-size: calc(var(--lyrics-secondary-font-size) * 0.9);
   font-weight: 760;
   opacity: 0.52;
 }
@@ -756,7 +753,7 @@
 .lyrics-line[data-density="dense"] small,
 .lyrics-line[data-density="long"] em,
 .lyrics-line[data-density="dense"] em {
-  font-size: calc(var(--lyrics-font-size) * 0.34);
+  font-size: calc(var(--lyrics-secondary-font-size) * 0.82);
   line-height: 1.32;
 }
 

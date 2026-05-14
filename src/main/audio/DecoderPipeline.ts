@@ -170,6 +170,10 @@ export class DecoderPipeline {
 
     const stderr = readline.createInterface({ input: proc.stderr });
     stderr.on('line', (line) => {
+      if (stopped) {
+        return;
+      }
+
       appendTailLine(stderrLines, line);
       this.logger(`[ffmpeg] ${line}`);
     });

@@ -14,7 +14,7 @@ import type {
 } from "../../shared/types/lyrics";
 import type { PlaybackStatus } from "../../shared/types/playback";
 import { LyricsView } from "../components/lyrics/LyricsView";
-import { MvPanel } from "../components/lyrics/MvPanel";
+import { MvPanel, type MvAudioClock } from "../components/lyrics/MvPanel";
 import type { LyricLine, LyricsState } from "../components/lyrics/lyricsTypes";
 import { titleFromPath } from "../components/player/playerFormat";
 import { usePlaybackQueue } from "../stores/PlaybackQueueProvider";
@@ -39,6 +39,11 @@ type LyricsDisplaySettings = Pick<
   | "lyricsBackgroundMode"
   | "lyricsCustomWallpaperPath"
   | "lyricsRomanizationEnabled"
+  | "lyricsTranslationEnabled"
+  | "lyricsAutoSearch"
+  | "lyricsAutoAcceptScore"
+  | "lyricsGlobalSyncOffsetMs"
+  | "lyricsSecondaryFontSizePx"
   | "lyricsCoverOpacityPercent"
   | "lyricsCoverBlurPx"
   | "lyricsCoverBrightnessPercent"
@@ -46,6 +51,7 @@ type LyricsDisplaySettings = Pick<
 >;
 
 const idlePollingStates = new Set(["paused", "stopped", "idle", "error"]);
+const playbackSeekedEvent = "playback:seeked";
 
 const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsEnabled: true,
@@ -56,6 +62,11 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsBackgroundMode: "theme",
   lyricsCustomWallpaperPath: null,
   lyricsRomanizationEnabled: true,
+  lyricsTranslationEnabled: true,
+  lyricsAutoSearch: true,
+  lyricsAutoAcceptScore: 0.7,
+  lyricsGlobalSyncOffsetMs: 0,
+  lyricsSecondaryFontSizePx: 18,
   lyricsCoverOpacityPercent: 100,
   lyricsCoverBlurPx: 10,
   lyricsCoverBrightnessPercent: 100,
@@ -99,6 +110,10 @@ const trackLyricsToState = (
 
 const dispatchCurrentLyricsProviderChanged = (lyrics: TrackLyrics | null): void => {
   window.dispatchEvent(new CustomEvent("lyrics:current-provider-changed", { detail: { provider: lyrics?.provider ?? null } }));
+};
+
+const dispatchPlaybackSeeked = (positionSeconds: number, trackId: string | null): void => {
+  window.dispatchEvent(new CustomEvent(playbackSeekedEvent, { detail: { positionSeconds, trackId } }));
 };
 
 const isWindowApproximatelyMaximized = (): boolean => {
@@ -149,6 +164,26 @@ const visibleReasons = (candidate: LyricsSearchCandidate): string[] =>
 const sourceFilterKey = (candidate: LyricsSearchCandidate): string =>
   `${candidate.provider}:${candidate.sourceLabel}`;
 
+const selectAutoApplyCandidate = (
+  candidates: LyricsSearchCandidate[],
+  settings: LyricsDisplaySettings,
+): LyricsSearchCandidate | null => {
+  if (!settings.lyricsAutoSearch) {
+    return null;
+  }
+
+  const threshold = Number.isFinite(settings.lyricsAutoAcceptScore)
+    ? Math.max(0.5, Math.min(1, settings.lyricsAutoAcceptScore))
+    : fallbackLyricsDisplaySettings.lyricsAutoAcceptScore;
+
+  return candidates.find(
+    (candidate) =>
+      candidate.score >= threshold &&
+      candidate.risk !== "high" &&
+      (candidate.hasSynced || candidate.hasPlain || candidate.instrumental),
+  ) ?? null;
+};
+
 const safeCoverUrl = (track: LibraryTrack | null): string | null => {
   const coverLarge = (track as TrackWithLargeCover | null)?.coverLarge ?? null;
   const coverUrl =
@@ -179,6 +214,11 @@ const selectLyricsDisplaySettings = (
   lyricsBackgroundMode: settings.lyricsBackgroundMode,
   lyricsCustomWallpaperPath: settings.lyricsCustomWallpaperPath,
   lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled,
+  lyricsTranslationEnabled: settings.lyricsTranslationEnabled,
+  lyricsAutoSearch: settings.lyricsAutoSearch,
+  lyricsAutoAcceptScore: settings.lyricsAutoAcceptScore,
+  lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
+  lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackLyricsDisplaySettings.lyricsSecondaryFontSizePx,
   lyricsCoverOpacityPercent: settings.lyricsCoverOpacityPercent,
   lyricsCoverBlurPx: settings.lyricsCoverBlurPx,
   lyricsCoverBrightnessPercent: settings.lyricsCoverBrightnessPercent,
@@ -196,6 +236,11 @@ const lyricsDisplaySettingsKeys = [
   "lyricsBackgroundMode",
   "lyricsCustomWallpaperPath",
   "lyricsRomanizationEnabled",
+  "lyricsTranslationEnabled",
+  "lyricsAutoSearch",
+  "lyricsAutoAcceptScore",
+  "lyricsGlobalSyncOffsetMs",
+  "lyricsSecondaryFontSizePx",
   "lyricsCoverOpacityPercent",
   "lyricsCoverBlurPx",
   "lyricsCoverBrightnessPercent",
@@ -220,6 +265,114 @@ const pickLyricsDisplaySettingsPatch = (
   return patch;
 };
 
+const clampPlaybackPosition = (
+  positionSeconds: number,
+  durationSeconds: number | null,
+): number => {
+  const safePositionSeconds = Number.isFinite(positionSeconds)
+    ? Math.max(0, positionSeconds)
+    : 0;
+
+  return durationSeconds && durationSeconds > 0
+    ? Math.min(safePositionSeconds, durationSeconds)
+    : safePositionSeconds;
+};
+
+const useLyricsDisplayPosition = (
+  audioStatus: AudioStatus | null,
+  playbackStatus: PlaybackStatus | null,
+): { audioClock: MvAudioClock; displayPositionSeconds: number } => {
+  const sourcePositionSeconds =
+    audioStatus?.positionSeconds ?? (playbackStatus?.positionMs ?? 0) / 1000;
+  const sourceDurationSeconds =
+    audioStatus?.durationSeconds ?? (playbackStatus?.durationMs ?? 0) / 1000;
+  const state = audioStatus?.state ?? playbackStatus?.state ?? "idle";
+  const playbackRate = audioStatus?.playbackRate ?? 1;
+  const currentTrackId =
+    audioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? null;
+  const currentFilePath =
+    audioStatus?.currentFilePath ?? playbackStatus?.filePath ?? null;
+  const [positionSeconds, setPositionSeconds] = useState(() =>
+    clampPlaybackPosition(sourcePositionSeconds, sourceDurationSeconds),
+  );
+  const [audioClock, setAudioClock] = useState<MvAudioClock>(() => ({
+    durationSeconds: sourceDurationSeconds,
+    playbackRate,
+    positionSeconds: clampPlaybackPosition(
+      sourcePositionSeconds,
+      sourceDurationSeconds,
+    ),
+    state,
+    updatedAtMs: performance.now(),
+  }));
+  const clockRef = useRef({
+    durationSeconds: sourceDurationSeconds,
+    playbackRate,
+    positionSeconds: clampPlaybackPosition(
+      sourcePositionSeconds,
+      sourceDurationSeconds,
+    ),
+    state,
+    updatedAtMs: performance.now(),
+  });
+
+  useEffect(() => {
+    const nextPositionSeconds = clampPlaybackPosition(
+      sourcePositionSeconds,
+      sourceDurationSeconds,
+    );
+    const updatedAtMs = performance.now();
+    clockRef.current = {
+      durationSeconds: sourceDurationSeconds,
+      playbackRate,
+      positionSeconds: nextPositionSeconds,
+      state,
+      updatedAtMs,
+    };
+    setAudioClock({
+      durationSeconds: sourceDurationSeconds,
+      playbackRate,
+      positionSeconds: nextPositionSeconds,
+      state,
+      updatedAtMs,
+    });
+    setPositionSeconds(nextPositionSeconds);
+  }, [
+    currentFilePath,
+    currentTrackId,
+    playbackRate,
+    sourceDurationSeconds,
+    sourcePositionSeconds,
+    state,
+  ]);
+
+  useEffect(() => {
+    if (state !== "playing") {
+      return undefined;
+    }
+
+    let frame = 0;
+    const tick = (): void => {
+      const clock = clockRef.current;
+      const elapsedSeconds = Math.max(
+        0,
+        (performance.now() - clock.updatedAtMs) / 1000,
+      );
+      const nextPositionSeconds = clampPlaybackPosition(
+        clock.positionSeconds + elapsedSeconds * clock.playbackRate,
+        clock.durationSeconds,
+      );
+      setPositionSeconds(nextPositionSeconds);
+      frame = window.requestAnimationFrame(tick);
+    };
+
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [state]);
+
+  return { audioClock, displayPositionSeconds: positionSeconds };
+};
+
 export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   const queue = usePlaybackQueue();
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(
@@ -239,6 +392,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     useState<LyricsDisplaySettings>(fallbackLyricsDisplaySettings);
   const [isLyricsDisplaySettingsReady, setIsLyricsDisplaySettingsReady] =
     useState(false);
+  const lyricsDisplaySettingsLoadVersionRef = useRef(0);
   const [isWindowMaximized, setIsWindowMaximized] = useState(isWindowApproximatelyMaximized);
   const [lyricsStatus, setLyricsStatus] = useState<string | null>(null);
   const [isLyricsLoading, setIsLyricsLoading] = useState(false);
@@ -252,7 +406,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   const lyricsRequestRef = useRef(0);
   const state = audioStatus?.state ?? playbackStatus?.state ?? "idle";
   const pollIntervalMs =
-    idlePollingStates.has(state) && seekPreviewSeconds === null ? 1800 : 180;
+    idlePollingStates.has(state) && seekPreviewSeconds === null ? 1800 : 1000;
   const statusTrackId =
     playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
   const trackId = queue.currentTrackId ?? statusTrackId;
@@ -295,6 +449,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
           ? cssUrl(lyricsWallpaperUrl)
           : "none",
         "--lyrics-font-size": `${lyricsDisplaySettings.lyricsFontSizePx}px`,
+        "--lyrics-secondary-font-size": `${lyricsDisplaySettings.lyricsSecondaryFontSizePx}px`,
         "--lyrics-color": lyricsDisplaySettings.lyricsColor,
         "--lyrics-cover-opacity": (
           lyricsDisplaySettings.lyricsCoverOpacityPercent / 100
@@ -312,13 +467,15 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       lyricsDisplaySettings.lyricsCoverOpacityPercent,
       lyricsDisplaySettings.lyricsBackgroundScalePercent,
       lyricsDisplaySettings.lyricsFontSizePx,
+      lyricsDisplaySettings.lyricsSecondaryFontSizePx,
       lyricsWallpaperUrl,
     ],
   );
-  const positionSeconds =
-    seekPreviewSeconds ??
-    audioStatus?.positionSeconds ??
-    (playbackStatus?.positionMs ?? 0) / 1000;
+  const { audioClock: mvAudioClock, displayPositionSeconds } = useLyricsDisplayPosition(
+    audioStatus,
+    playbackStatus,
+  );
+  const lyricsPositionSeconds = seekPreviewSeconds ?? displayPositionSeconds;
   const candidateSourceOptions = useMemo(() => {
     const order = new Map<LyricsSearchCandidate["provider"], number>([
       ["local", 0],
@@ -402,8 +559,12 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
   const loadLyricsDisplaySettings = useCallback(async (): Promise<void> => {
     const app = window.echo?.app;
+    const loadVersion = lyricsDisplaySettingsLoadVersionRef.current;
 
     if (!app?.getSettings) {
+      if (loadVersion !== lyricsDisplaySettingsLoadVersionRef.current) {
+        return;
+      }
       setLyricsDisplaySettings(fallbackLyricsDisplaySettings);
       setIsLyricsDisplaySettingsReady(true);
       return;
@@ -411,10 +572,19 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
     try {
       const nextSettings = await app.getSettings();
+      if (loadVersion !== lyricsDisplaySettingsLoadVersionRef.current) {
+        return;
+      }
       setLyricsDisplaySettings(selectLyricsDisplaySettings(nextSettings));
     } catch {
+      if (loadVersion !== lyricsDisplaySettingsLoadVersionRef.current) {
+        return;
+      }
       setLyricsDisplaySettings(fallbackLyricsDisplaySettings);
     } finally {
+      if (loadVersion !== lyricsDisplaySettingsLoadVersionRef.current) {
+        return;
+      }
       setIsLyricsDisplaySettingsReady(true);
     }
   }, []);
@@ -429,16 +599,33 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   }, [pollIntervalMs, refreshStatus]);
 
   useEffect(() => {
+    const audio = window.echo?.audio;
+    if (!audio?.onStatus) {
+      return undefined;
+    }
+
+    return audio.onStatus((nextAudioStatus) => {
+      setAudioStatus(nextAudioStatus);
+      if (nextAudioStatus.currentTrackId) {
+        queue.setCurrentTrackId(nextAudioStatus.currentTrackId);
+      }
+      setError(nextAudioStatus.error);
+    });
+  }, [queue]);
+
+  useEffect(() => {
     const handleSettingsChanged = (event: Event): void => {
       const patch = pickLyricsDisplaySettingsPatch(
         event instanceof CustomEvent ? event.detail : null,
       );
       if (Object.keys(patch).length > 0) {
+        lyricsDisplaySettingsLoadVersionRef.current += 1;
         setLyricsDisplaySettings((current) => ({ ...current, ...patch }));
         setIsLyricsDisplaySettingsReady(true);
         return;
       }
 
+      lyricsDisplaySettingsLoadVersionRef.current += 1;
       void loadLyricsDisplaySettings();
     };
 
@@ -470,6 +657,59 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     window.addEventListener("resize", updateWindowState);
     return () => window.removeEventListener("resize", updateWindowState);
   }, []);
+
+  const tryAutoApplyCandidate = useCallback(
+    async (
+      nextCandidates: LyricsSearchCandidate[],
+      shouldApplyResult?: () => boolean,
+    ): Promise<boolean> => {
+      const autoCandidate = selectAutoApplyCandidate(
+        nextCandidates,
+        lyricsDisplaySettings,
+      );
+      const lyricsApi = window.echo?.lyrics;
+      if (!autoCandidate || !trackId || !lyricsApi) {
+        return false;
+      }
+
+      if (shouldApplyResult && !shouldApplyResult()) {
+        return false;
+      }
+
+      setApplyingCandidateId(autoCandidate.id);
+      try {
+        const trackLyrics = await lyricsApi.applyCandidate(
+          trackId,
+          autoCandidate.id,
+        );
+        if (shouldApplyResult && !shouldApplyResult()) {
+          return true;
+        }
+
+        setLyrics(trackLyricsToState(trackLyrics));
+        dispatchCurrentLyricsProviderChanged(trackLyrics);
+        setCandidates([]);
+        setActiveCandidateSource("all");
+        setLyricsStatus(null);
+        setError(null);
+        return true;
+      } catch (applyError) {
+        setError(
+          applyError instanceof Error ? applyError.message : String(applyError),
+        );
+        return false;
+      } finally {
+        if (!shouldApplyResult || shouldApplyResult()) {
+          setApplyingCandidateId(null);
+        }
+      }
+    },
+    [
+      lyricsDisplaySettings.lyricsAutoAcceptScore,
+      lyricsDisplaySettings.lyricsAutoSearch,
+      trackId,
+    ],
+  );
 
   useEffect(() => {
     if (!isLyricsDisplaySettingsReady) {
@@ -525,8 +765,29 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
     void lyricsApi
       .getForTrack(trackId)
-      .then((trackLyrics) => {
+      .then(async (trackLyrics) => {
         if (lyricsRequestRef.current !== requestId) {
+          return;
+        }
+
+        if (!trackLyrics && lyricsDisplaySettings.lyricsAutoSearch) {
+          setIsCandidateLoading(true);
+          const nextCandidates = await lyricsApi.searchCandidates(trackId);
+          if (lyricsRequestRef.current !== requestId) {
+            return;
+          }
+
+          const autoApplied = await tryAutoApplyCandidate(
+            nextCandidates,
+            () => lyricsRequestRef.current === requestId,
+          );
+          if (lyricsRequestRef.current !== requestId || autoApplied) {
+            return;
+          }
+
+          setCandidates(nextCandidates);
+          setActiveCandidateSource("all");
+          setLyricsStatus(nextCandidates.length ? null : "未找到歌词");
           return;
         }
 
@@ -551,13 +812,16 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       .finally(() => {
         if (lyricsRequestRef.current === requestId) {
           setIsLyricsLoading(false);
+          setIsCandidateLoading(false);
         }
       });
   }, [
     initialLyrics,
     isLyricsDisplaySettingsReady,
+    lyricsDisplaySettings.lyricsAutoSearch,
     lyricsDisplaySettings.lyricsEnabled,
     trackId,
+    tryAutoApplyCandidate,
   ]);
 
   const handleSearchLyrics = useCallback(async (searchText?: string): Promise<void> => {
@@ -577,6 +841,13 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       const nextCandidates = searchText
         ? await window.echo.lyrics.searchCandidates(trackId, searchText)
         : await window.echo.lyrics.searchCandidates(trackId);
+      const shouldAutoApplySearchResult = lyrics.kind === "empty" || lyrics.lines.length === 0;
+      if (shouldAutoApplySearchResult) {
+        const autoApplied = await tryAutoApplyCandidate(nextCandidates);
+        if (autoApplied) {
+          return;
+        }
+      }
       setCandidates(nextCandidates);
       setActiveCandidateSource("all");
       setLyricsStatus(nextCandidates.length ? null : "未找到歌词");
@@ -591,7 +862,13 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     } finally {
       setIsCandidateLoading(false);
     }
-  }, [lyricsDisplaySettings.lyricsEnabled, trackId]);
+  }, [
+    lyrics.kind,
+    lyrics.lines.length,
+    lyricsDisplaySettings.lyricsEnabled,
+    trackId,
+    tryAutoApplyCandidate,
+  ]);
 
   const handleRematchLyrics = useCallback(async (): Promise<void> => {
     if (!lyricsDisplaySettings.lyricsEnabled) {
@@ -612,6 +889,10 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     try {
       await window.echo.lyrics.clearCache(trackId);
       const nextCandidates = await window.echo.lyrics.searchCandidates(trackId);
+      const autoApplied = await tryAutoApplyCandidate(nextCandidates);
+      if (autoApplied) {
+        return;
+      }
       setCandidates(nextCandidates);
       setActiveCandidateSource("all");
       setLyricsStatus(nextCandidates.length ? null : "未找到歌词");
@@ -626,7 +907,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     } finally {
       setIsCandidateLoading(false);
     }
-  }, [lyrics.offsetMs, lyricsDisplaySettings.lyricsEnabled, trackId]);
+  }, [lyrics.offsetMs, lyricsDisplaySettings.lyricsEnabled, trackId, tryAutoApplyCandidate]);
 
   useEffect(() => {
     const handleSearchRequested = (event: Event): void => {
@@ -692,7 +973,9 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       const nextSeconds = Math.max(0, timeMs / 1000);
       try {
         setSeekPreviewSeconds(nextSeconds);
-        setPlaybackStatus(await playback.seek(nextSeconds));
+        const status = await playback.seek(nextSeconds);
+        setPlaybackStatus(status);
+        dispatchPlaybackSeeked(status.positionMs / 1000, status.currentTrackId ?? trackId ?? null);
         await refreshStatus();
       } catch (seekError) {
         setError(
@@ -702,7 +985,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         setSeekPreviewSeconds(null);
       }
     },
-    [refreshStatus],
+    [refreshStatus, trackId],
   );
 
   const lyricsControls = useMemo(() => {
@@ -885,8 +1168,9 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
             durationMs={(audioStatus?.durationSeconds ?? currentTrack?.duration ?? 0) * 1000}
             hideEmptyState={lyricsDisplaySettings.lyricsEmptyStateHidden}
             lyrics={lyrics}
-            positionMs={positionSeconds * 1000}
+            positionMs={lyricsPositionSeconds * 1000 + lyricsDisplaySettings.lyricsGlobalSyncOffsetMs}
             showRomanization={lyricsDisplaySettings.lyricsRomanizationEnabled}
+            showTranslation={lyricsDisplaySettings.lyricsTranslationEnabled}
             onSeek={(timeMs) => void handleLyricSeek(timeMs)}
           />
         ) : null}
@@ -898,6 +1182,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         artist={artist}
         coverUrl={coverUrl}
         isAudioPlaying={state === "playing"}
+        audioClock={mvAudioClock}
       />
 
       {error ? (

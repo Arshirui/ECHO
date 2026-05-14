@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { DownloadsPage } from './DownloadsPage';
 import type {
   CreateDownloadUrlJobOptions,
   DownloadJob,
   DownloadJobStatus,
+  DownloadSearchRequest,
+  DownloadSearchResponse,
   DownloadSettings,
   DownloadToolsStatus,
 } from '../../shared/types/downloads';
@@ -27,9 +29,38 @@ const toolsStatus: DownloadToolsStatus = {
   ffmpegPath: 'D:\\Project\\ECHONext\\node_modules\\ffmpeg-static\\ffmpeg.exe',
 };
 
+const searchResponse: DownloadSearchResponse = {
+  results: [
+    {
+      id: 'yt-1',
+      provider: 'youtube',
+      title: 'YouTube Echo Song',
+      uploader: 'YT Artist',
+      durationSeconds: 123,
+      thumbnailUrl: 'https://img.example/youtube.jpg',
+      webpageUrl: 'https://www.youtube.com/watch?v=yt-1',
+      viewCount: 12000,
+      publishedAt: '2026-05-14',
+    },
+    {
+      id: 'BV1ECHO',
+      provider: 'bilibili',
+      title: 'Bilibili Echo Song',
+      uploader: 'Bili Artist',
+      durationSeconds: 234,
+      thumbnailUrl: null,
+      webpageUrl: 'https://www.bilibili.com/video/BV1ECHO',
+      viewCount: null,
+      publishedAt: null,
+    },
+  ],
+  errors: [],
+};
+
 let jobs: DownloadJob[] = [];
 let settings: DownloadSettings = { ...defaultSettings };
 let jobCounter = 0;
+let nextSearchResponse: DownloadSearchResponse = searchResponse;
 
 const emitJobs = (): void => {
   for (const listener of listeners) {
@@ -134,6 +165,7 @@ const downloadsBridge = {
     settings = { ...settings, outputDirectory: 'D:\\Downloads' };
     return settings;
   }),
+  search: vi.fn(async (_request: string | DownloadSearchRequest) => nextSearchResponse),
   checkTools: vi.fn(async () => toolsStatus),
   onJobsUpdated: vi.fn((handler: (nextJobs: DownloadJob[]) => void) => {
     listeners.add(handler);
@@ -160,6 +192,7 @@ beforeEach(() => {
   listeners.clear();
   jobs = [];
   settings = { ...defaultSettings };
+  nextSearchResponse = searchResponse;
   jobCounter = 0;
   vi.clearAllMocks();
 });
@@ -188,7 +221,102 @@ describe('DownloadsPage', () => {
     expect(screen.getByText('https://www.youtube.com/watch?v=echo')).toBeTruthy();
   });
 
-  it('blocks creation until a download folder is selected', async () => {
+  it('searches and renders merged YouTube and Bilibili results', async () => {
+    render(<DownloadsPage />);
+    await act(async () => {});
+
+    fireEvent.change(screen.getByPlaceholderText('搜索歌曲、艺人或视频标题'), { target: { value: 'echo' } });
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+
+    await screen.findByText('YouTube Echo Song');
+    expect(downloadsBridge.search).toHaveBeenCalledWith({ query: 'echo', limitPerProvider: 10, provider: 'all' });
+    expect(screen.getByText('Bilibili Echo Song')).toBeTruthy();
+    expect(screen.getByText('1.2 万次播放 · 2026-05-14')).toBeTruthy();
+  });
+
+  it('searches with the selected provider scope', async () => {
+    render(<DownloadsPage />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bilibili' }));
+    fireEvent.change(screen.getByPlaceholderText('搜索歌曲、艺人或视频标题'), { target: { value: 'echo' } });
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+
+    await screen.findByText('Bilibili Echo Song');
+    expect(downloadsBridge.search).toHaveBeenCalledWith({ query: 'echo', limitPerProvider: 10, provider: 'bilibili' });
+    expect(screen.queryByText('YouTube Echo Song')).toBeNull();
+  });
+
+  it('downloads a single search result into the queue', async () => {
+    render(<DownloadsPage />);
+    await act(async () => {});
+
+    fireEvent.change(screen.getByPlaceholderText('搜索歌曲、艺人或视频标题'), { target: { value: 'echo' } });
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+    await screen.findByText('YouTube Echo Song');
+    fireEvent.click(screen.getAllByRole('button', { name: '下载音频' })[0]);
+
+    await waitFor(() =>
+      expect(downloadsBridge.createUrlJob).toHaveBeenCalledWith(
+        'https://www.youtube.com/watch?v=yt-1',
+        expect.objectContaining({ importToLibrary: true, bindMvAfterImport: true }),
+      ),
+    );
+    expect(await screen.findByText('已加入队列')).toBeTruthy();
+  });
+
+  it('shows provider search errors while keeping successful results', async () => {
+    nextSearchResponse = {
+      results: [searchResponse.results[0]],
+      errors: [{ provider: 'bilibili', error: 'HTTP Error 412' }],
+    };
+    render(<DownloadsPage />);
+    await act(async () => {});
+
+    fireEvent.change(screen.getByPlaceholderText('搜索歌曲、艺人或视频标题'), { target: { value: 'echo' } });
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+
+    expect(await screen.findByText('YouTube Echo Song')).toBeTruthy();
+    expect(screen.getByText('部分平台搜索失败：Bilibili：HTTP Error 412')).toBeTruthy();
+  });
+
+  it('summarizes browser cookie search errors instead of showing raw yt-dlp output', async () => {
+    nextSearchResponse = {
+      results: [],
+      errors: [
+        {
+          provider: 'youtube',
+          error:
+            'ERROR: Could not copy Chrome cookie database. See https://github.com/yt-dlp/yt-dlp/issues/7271 for more info ERROR: Could not copy Chrome cookie database.',
+        },
+      ],
+    };
+    render(<DownloadsPage />);
+    await act(async () => {});
+
+    fireEvent.change(screen.getByPlaceholderText('搜索歌曲、艺人或视频标题'), { target: { value: 'echo' } });
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+
+    expect(await screen.findByText('部分平台搜索失败：YouTube：无法读取浏览器 Cookie，已自动尝试不使用登录状态搜索。')).toBeTruthy();
+    expect(screen.queryByText(/github\.com\/yt-dlp/u)).toBeNull();
+  });
+
+  it('blocks search-result downloads until a download folder is selected', async () => {
+    settings = { ...settings, outputDirectory: null };
+    render(<DownloadsPage />);
+    await act(async () => {});
+
+    fireEvent.change(screen.getByPlaceholderText('搜索歌曲、艺人或视频标题'), { target: { value: 'echo' } });
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+    await screen.findByText('YouTube Echo Song');
+    fireEvent.click(screen.getAllByRole('button', { name: '下载音频' })[0]);
+    await act(async () => {});
+
+    expect(downloadsBridge.createUrlJob).not.toHaveBeenCalled();
+    expect(screen.getAllByText('请选择下载文件夹').length).toBeGreaterThan(0);
+  });
+
+  it('blocks URL creation until a download folder is selected', async () => {
     settings = { ...settings, outputDirectory: null };
     render(<DownloadsPage />);
     await act(async () => {});

@@ -3,6 +3,7 @@ import type { ChildProcessWithoutNullStreams, SpawnOptionsWithStdioTuple } from 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
+import { performance } from 'node:perf_hooks';
 import readline from 'node:readline';
 import { Writable } from 'node:stream';
 import electron from 'electron';
@@ -54,6 +55,7 @@ const defaultLogger = (message: string): void => {
 };
 
 const slowNativeModeReadyTimeoutMs = 45_000;
+const maxPositionExtrapolationMs = 250;
 
 const appendTailLine = (lines: string[], line: string): void => {
   const trimmed = line.trim();
@@ -178,11 +180,15 @@ export class NativeOutputBridge extends EventEmitter {
   private frameOffset = 0;
   private requestedOutputSampleRate = 44100;
   private actualDeviceSampleRate: number | null = null;
+  private durationSeconds: number | null = null;
+  private lastPositionReportedAtMs: number | null = null;
   private telemetry: NativeOutputTelemetry = {
     positionFrames: 0,
     bufferedFrames: null,
     underrunCallbacks: 0,
     underrunFrames: 0,
+    reportedAtMs: null,
+    nativePositionStalenessMs: null,
   };
   private startSeconds = 0;
   private playbackRate = 1;
@@ -238,11 +244,18 @@ export class NativeOutputBridge extends EventEmitter {
       this.hostBinary = bin;
       this.requestedOutputSampleRate = options.requestedOutputSampleRate;
       this.actualDeviceSampleRate = null;
+      this.durationSeconds =
+        typeof options.durationSeconds === 'number' && Number.isFinite(options.durationSeconds) && options.durationSeconds > 0
+          ? options.durationSeconds
+          : null;
+      this.lastPositionReportedAtMs = null;
       this.telemetry = {
         positionFrames: 0,
         bufferedFrames: null,
         underrunCallbacks: 0,
         underrunFrames: 0,
+        reportedAtMs: null,
+        nativePositionStalenessMs: null,
       };
       this.startSeconds = options.startSeconds ?? 0;
       this.playbackRate = options.playbackRate ?? 1;
@@ -346,13 +359,30 @@ export class NativeOutputBridge extends EventEmitter {
     }
 
     const localFrames = Math.max(0, this.framesConsumed - this.frameOffset);
-    return this.startSeconds + (localFrames / sampleRate) * this.playbackRate;
+    let positionSeconds = this.startSeconds + (localFrames / sampleRate) * this.playbackRate;
+
+    if (this.ready && !this.ended && this.lastPositionReportedAtMs !== null) {
+      const elapsedMs = Math.max(0, performance.now() - this.lastPositionReportedAtMs);
+      const extrapolatedMs = Math.min(elapsedMs, maxPositionExtrapolationMs);
+      positionSeconds += (extrapolatedMs / 1000) * this.playbackRate;
+    }
+
+    return this.durationSeconds !== null ? Math.min(positionSeconds, this.durationSeconds) : positionSeconds;
+  }
+
+  getPositionStalenessMs(): number | null {
+    if (this.lastPositionReportedAtMs === null) {
+      return null;
+    }
+
+    return Math.max(0, Math.round(performance.now() - this.lastPositionReportedAtMs));
   }
 
   resetOutputClock(startSeconds = 0, playbackRate = 1): void {
     this.frameOffset = this.framesConsumed;
     this.startSeconds = startSeconds;
     this.playbackRate = playbackRate;
+    this.lastPositionReportedAtMs = null;
     this.ended = false;
   }
 
@@ -388,6 +418,7 @@ export class NativeOutputBridge extends EventEmitter {
     getEqBridge().disconnect();
     this.eqControlPort = null;
     this.ready = false;
+    this.lastPositionReportedAtMs = null;
   }
 
   private createSpawnArgs(options: NativeOutputStartOptions): string[] {
@@ -416,7 +447,7 @@ export class NativeOutputBridge extends EventEmitter {
     }
 
     const bufferSizeFrames = Number(options.bufferSizeFrames);
-    if (!options.exclusive && !options.asio && Number.isFinite(bufferSizeFrames) && bufferSizeFrames > 0) {
+    if (Number.isFinite(bufferSizeFrames) && bufferSizeFrames > 0) {
       args.push('-buffer', String(Math.round(bufferSizeFrames)));
     }
 
@@ -482,7 +513,9 @@ export class NativeOutputBridge extends EventEmitter {
     }
 
     if (typeof message.pos === 'number') {
+      const reportedAtMs = performance.now();
       this.framesConsumed = Math.max(0, message.pos);
+      this.lastPositionReportedAtMs = reportedAtMs;
       this.telemetry = {
         positionFrames: this.framesConsumed,
         bufferedFrames:
@@ -497,6 +530,8 @@ export class NativeOutputBridge extends EventEmitter {
           typeof message.underrunFrames === 'number' && Number.isFinite(message.underrunFrames)
             ? Math.max(0, Math.round(message.underrunFrames))
             : this.telemetry.underrunFrames,
+        reportedAtMs,
+        nativePositionStalenessMs: 0,
       };
       this.emit('position', this.framesConsumed, this.telemetry);
     }

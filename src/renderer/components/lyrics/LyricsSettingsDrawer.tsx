@@ -35,6 +35,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsAutoSearch'
   | 'lyricsAutoAcceptScore'
   | 'lyricsDefaultOffsetMs'
+  | 'lyricsGlobalSyncOffsetMs'
   | 'lyricsPreferredProvider'
   | 'lyricsEnabledProviders'
   | 'lyricsProviderOrder'
@@ -43,7 +44,9 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsHeaderHidden'
   | 'lyricsEmptyStateHidden'
   | 'lyricsRomanizationEnabled'
+  | 'lyricsTranslationEnabled'
   | 'lyricsFontSizePx'
+  | 'lyricsSecondaryFontSizePx'
   | 'lyricsColor'
   | 'lyricsBackgroundMode'
   | 'lyricsCustomWallpaperPath'
@@ -58,6 +61,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.7,
   lyricsDefaultOffsetMs: 0,
+  lyricsGlobalSyncOffsetMs: 0,
   lyricsPreferredProvider: 'lrclib',
   lyricsEnabledProviders: ['local', 'lrclib', 'netease', 'qqmusic'],
   lyricsProviderOrder: ['local', 'lrclib', 'netease', 'qqmusic'],
@@ -66,7 +70,9 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
   lyricsRomanizationEnabled: true,
+  lyricsTranslationEnabled: true,
   lyricsFontSizePx: 36,
+  lyricsSecondaryFontSizePx: 18,
   lyricsColor: '#314054',
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
@@ -123,6 +129,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsAutoSearch: settings.lyricsAutoSearch,
   lyricsAutoAcceptScore: settings.lyricsAutoAcceptScore,
   lyricsDefaultOffsetMs: settings.lyricsDefaultOffsetMs,
+  lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
   lyricsPreferredProvider: settings.lyricsPreferredProvider,
   lyricsEnabledProviders: settings.lyricsEnabledProviders?.length ? settings.lyricsEnabledProviders : defaultLyricsEnabledProviders,
   lyricsProviderOrder: settings.lyricsProviderOrder?.length ? settings.lyricsProviderOrder : defaultLyricsProviderOrder,
@@ -131,7 +138,9 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsHeaderHidden: settings.lyricsHeaderHidden,
   lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden,
   lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled,
+  lyricsTranslationEnabled: settings.lyricsTranslationEnabled,
   lyricsFontSizePx: settings.lyricsFontSizePx,
+  lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackSettings.lyricsSecondaryFontSizePx,
   lyricsColor: settings.lyricsColor,
   lyricsBackgroundMode: settings.lyricsBackgroundMode,
   lyricsCustomWallpaperPath: settings.lyricsCustomWallpaperPath,
@@ -171,6 +180,13 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
   const orderedOnlineProviderIds = useMemo<LyricsProviderId[]>(() => orderedLyricsSourceOptions.map((source) => source.id), [orderedLyricsSourceOptions]);
   const thresholdPercent = Math.round(effectiveSettings.lyricsAutoAcceptScore * 100);
   const offsetSeconds = useMemo(() => (effectiveSettings.lyricsDefaultOffsetMs / 1000).toFixed(1), [effectiveSettings.lyricsDefaultOffsetMs]);
+  const isSecondaryLyricsSizeOpen =
+    effectiveSettings.lyricsEnabled &&
+    (effectiveSettings.lyricsRomanizationEnabled || effectiveSettings.lyricsTranslationEnabled);
+  const globalSyncOffsetSeconds = useMemo(
+    () => (effectiveSettings.lyricsGlobalSyncOffsetMs / 1000).toFixed(2),
+    [effectiveSettings.lyricsGlobalSyncOffsetMs],
+  );
 
   const loadCurrentLyricsProvider = useCallback(async (): Promise<void> => {
     const playback = window.echo?.playback;
@@ -587,6 +603,40 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
           </label>
           <p>优先使用歌词源提供的罗马音；没有时会为日文歌词本地生成。</p>
 
+          <label className="audio-toggle-row">
+            <span>
+              <Captions size={17} />
+              <strong>显示中文翻译</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsTranslationEnabled}
+              disabled={isBusy || !effectiveSettings.lyricsEnabled}
+              onChange={(event) => void patchSettings({ lyricsTranslationEnabled: event.currentTarget.checked })}
+            />
+          </label>
+          <p>优先显示歌词源提供的中文翻译；没有翻译时不显示额外文本。</p>
+
+          {isSecondaryLyricsSizeOpen ? (
+            <label className="lyrics-drawer-range lyrics-secondary-size-range">
+              <span>
+                <strong>
+                  <Type size={15} />
+                  辅歌词字号
+                </strong>
+                <em>{effectiveSettings.lyricsSecondaryFontSizePx}px</em>
+              </span>
+              <input
+                type="range"
+                min={12}
+                max={32}
+                step={1}
+                value={effectiveSettings.lyricsSecondaryFontSizePx}
+                onChange={(event) => void patchSettings({ lyricsSecondaryFontSizePx: Number(event.currentTarget.value) })}
+              />
+            </label>
+          ) : null}
+
           <label className="lyrics-drawer-range">
             <span>
               <strong>
@@ -932,11 +982,27 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
             />
           </label>
 
+          <label className="lyrics-drawer-range">
+            <span>
+              <strong>Global sync offset</strong>
+              <em>{globalSyncOffsetSeconds}s</em>
+            </span>
+            <input
+              type="range"
+              min={-1000}
+              max={1000}
+              step={25}
+              value={effectiveSettings.lyricsGlobalSyncOffsetMs}
+              onChange={(event) => void patchSettings({ lyricsGlobalSyncOffsetMs: Number(event.currentTarget.value) })}
+            />
+          </label>
+          <p>Positive values make every lyric line appear earlier without changing saved lyric files.</p>
+
           <button
             className="audio-device-pill"
             type="button"
             disabled={isBusy}
-            onClick={() => void patchSettings({ lyricsAutoAcceptScore: 0.7, lyricsDefaultOffsetMs: 0 })}
+            onClick={() => void patchSettings({ lyricsAutoAcceptScore: 0.7, lyricsDefaultOffsetMs: 0, lyricsGlobalSyncOffsetMs: 0 })}
           >
             <RotateCcw size={15} />
             <span>

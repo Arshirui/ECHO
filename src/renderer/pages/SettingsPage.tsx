@@ -724,6 +724,7 @@ export const SettingsPage = (): JSX.Element => {
         devices.find((device) => device.id === nextDeviceId && (nextOutputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')) ?? null;
       const output: AudioOutputSettings = {
         outputMode: nextOutputMode,
+        latencyProfile: 'balanced',
       };
 
       if (nextDevice) {

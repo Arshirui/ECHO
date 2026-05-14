@@ -110,7 +110,7 @@ export class NeteaseLyricsProvider implements LyricsProvider {
 
   private async fetchLyrics(song: NeteaseSong, request: LyricsProviderSearchRequest): Promise<LyricsProviderResult | null> {
     try {
-      const params = new URLSearchParams({ id: song.id, lv: '1', kv: '1', tv: '-1' });
+      const params = new URLSearchParams({ id: song.id, lv: '1', kv: '1', tv: '-1', rv: '-1' });
       const data = asRecord(
         await fetchJsonWithTimeout(`https://music.163.com/api/song/lyric?${params.toString()}`, request.signal, neteaseHeaders, request.timeoutMs),
       );

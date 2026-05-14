@@ -32,10 +32,12 @@ describe('app settings normalization', () => {
     expect(settings.lyricsAutoSearch).toBe(true);
     expect(settings.lyricsAutoAcceptScore).toBe(0.7);
     expect(settings.lyricsDefaultOffsetMs).toBe(0);
+    expect(settings.lyricsGlobalSyncOffsetMs).toBe(0);
     expect(settings.lyricsEnabled).toBe(true);
     expect(settings.lyricsHeaderHidden).toBe(false);
     expect(settings.lyricsEmptyStateHidden).toBe(true);
     expect(settings.lyricsRomanizationEnabled).toBe(true);
+    expect(settings.lyricsTranslationEnabled).toBe(true);
     expect(settings.lyricsFontSizePx).toBe(36);
     expect(settings.lyricsColor).toBe('#314054');
     expect(settings.lyricsBackgroundMode).toBe('theme');
@@ -153,10 +155,12 @@ describe('app settings normalization', () => {
         lyricsAutoSearch: false,
         lyricsAutoAcceptScore: 2,
         lyricsDefaultOffsetMs: -24000,
+        lyricsGlobalSyncOffsetMs: 24000,
         lyricsEnabled: false,
         lyricsHeaderHidden: true,
         lyricsEmptyStateHidden: false,
         lyricsRomanizationEnabled: false,
+        lyricsTranslationEnabled: false,
         lyricsFontSizePx: 999,
         lyricsColor: 'red',
         lyricsBackgroundMode: 'album' as never,
@@ -178,10 +182,12 @@ describe('app settings normalization', () => {
       lyricsAutoSearch: false,
       lyricsAutoAcceptScore: 0.7,
       lyricsDefaultOffsetMs: -10000,
+      lyricsGlobalSyncOffsetMs: 1000,
       lyricsEnabled: false,
       lyricsHeaderHidden: true,
       lyricsEmptyStateHidden: false,
       lyricsRomanizationEnabled: false,
+      lyricsTranslationEnabled: false,
       lyricsFontSizePx: 56,
       lyricsColor: '#314054',
       lyricsBackgroundMode: 'theme',
@@ -211,6 +217,7 @@ describe('app settings normalization', () => {
       lyricsCoverBrightnessPercent: 119,
       lyricsBackgroundScalePercent: 70,
       lyricsRomanizationEnabled: true,
+      lyricsTranslationEnabled: true,
     });
   });
 

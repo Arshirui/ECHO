@@ -111,6 +111,15 @@ const assertNoSharedFallback = (label, result) => {
 
 const hasAdvancedPosition = (events) => events.some((event) => typeof event.pos === 'number' && event.pos > 0);
 
+const hasReadyBufferTelemetry = (event) =>
+  event &&
+  typeof event.deviceBufferFrames === 'number' &&
+  typeof event.nativeActualBufferFrames === 'number' &&
+  typeof event.actualBufferFrames === 'number' &&
+  typeof event.requestedDeviceBufferFrames === 'number' &&
+  typeof event.openedDeviceBufferFrames === 'number' &&
+  typeof event.bufferSizeFallback === 'boolean';
+
 const listResult = runList(['-list']);
 
 if (listResult.status !== 0) {
@@ -135,7 +144,8 @@ if (sharedResult.exitCode !== 0) {
   fail(`shared host exited with ${sharedResult.exitCode}; stdin=${sharedResult.stdinError || 'ok'}; stderr=${sharedResult.stderr}; stdout=${sharedResult.stdout}`);
 }
 
-let ready = sharedResult.events.some((event) => event.ready === true);
+const sharedReady = sharedResult.events.find((event) => event.ready === true);
+let ready = Boolean(sharedReady);
 let position = sharedResult.events.some((event) => typeof event.pos === 'number');
 let ended = sharedResult.events.some((event) => event.event === 'ended');
 let telemetry = sharedResult.events.some((event) =>
@@ -145,8 +155,8 @@ let telemetry = sharedResult.events.some((event) =>
   typeof event.underrunFrames === 'number'
 );
 
-if (!ready || !position || !telemetry || !ended) {
-  fail(`missing expected shared events ready=${ready} position=${position} telemetry=${telemetry} ended=${ended}; stderr=${sharedResult.stderr}; stdout=${sharedResult.stdout}`);
+if (!ready || !position || !telemetry || !ended || !hasReadyBufferTelemetry(sharedReady)) {
+  fail(`missing expected shared events ready=${ready} bufferTelemetry=${hasReadyBufferTelemetry(sharedReady)} position=${position} telemetry=${telemetry} ended=${ended}; stderr=${sharedResult.stderr}; stdout=${sharedResult.stdout}`);
 }
 
 console.log('[smoke:audio-host] shared ready/position/telemetry/ended OK');
@@ -176,6 +186,9 @@ if (exclusiveResult.exitCode === 0) {
   if (!exclusiveReady || exclusiveReady.exclusive !== true || exclusiveReady.backend !== 'wasapi-exclusive') {
     fail(`exclusive ready metadata invalid; stderr=${exclusiveResult.stderr}; stdout=${exclusiveResult.stdout}`);
   }
+  if (!hasReadyBufferTelemetry(exclusiveReady)) {
+    fail(`exclusive ready buffer telemetry invalid; stderr=${exclusiveResult.stderr}; stdout=${exclusiveResult.stdout}`);
+  }
   if (!hasAdvancedPosition(exclusiveResult.events)) {
     fail(`exclusive did not consume PCM frames; stderr=${exclusiveResult.stderr}; stdout=${exclusiveResult.stdout}`);
   }
@@ -198,6 +211,9 @@ if (asioListResult.status === 0 && asioDevices.length > 0) {
   if (asioResult.exitCode === 0) {
     if (!asioReady || asioReady.backend !== 'asio' || asioReady.exclusive !== false) {
       fail(`ASIO ready metadata invalid; stderr=${asioResult.stderr}; stdout=${asioResult.stdout}`);
+    }
+    if (!hasReadyBufferTelemetry(asioReady)) {
+      fail(`ASIO ready buffer telemetry invalid; stderr=${asioResult.stderr}; stdout=${asioResult.stdout}`);
     }
     if (!hasAdvancedPosition(asioResult.events)) {
       fail(`ASIO did not consume PCM frames; stderr=${asioResult.stderr}; stdout=${asioResult.stdout}`);

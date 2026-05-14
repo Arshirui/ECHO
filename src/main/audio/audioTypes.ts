@@ -2,6 +2,7 @@ import type { Readable } from 'node:stream';
 import type {
   AudioDeviceInfo,
   AudioDiagnostics,
+  AudioLatencyProfile,
   AudioOutputMode,
   AudioOutputSettings,
   AudioPlaybackState,
@@ -12,6 +13,7 @@ import type { PlaybackProbeHint } from '../../shared/types/playback';
 export type {
   AudioDeviceInfo,
   AudioDiagnostics,
+  AudioLatencyProfile,
   AudioOutputMode,
   AudioOutputSettings,
   AudioPlaybackState,
@@ -66,6 +68,7 @@ export type NativeOutputStartOptions = {
   deviceName?: string;
   asio?: boolean;
   exclusive?: boolean;
+  latencyProfile?: AudioOutputSettings['latencyProfile'];
   bufferSizeFrames?: number;
   fifoCapacityMs?: number;
   startupPrebufferMs?: number;
@@ -74,6 +77,7 @@ export type NativeOutputStartOptions = {
   startSeconds?: number;
   playbackRate?: number;
   playbackSpeedMode?: AudioOutputSettings['playbackSpeedMode'];
+  durationSeconds?: number;
 };
 
 export type NativeOutputTelemetry = {
@@ -81,6 +85,8 @@ export type NativeOutputTelemetry = {
   bufferedFrames: number | null;
   underrunCallbacks: number;
   underrunFrames: number;
+  reportedAtMs?: number | null;
+  nativePositionStalenessMs?: number | null;
 };
 
 export type NativeBridgeReadyMessage = Record<string, unknown> & {
@@ -95,6 +101,11 @@ export type NativeBridgeReadyMessage = Record<string, unknown> & {
   deviceName?: string;
   eqControlPort?: number;
   deviceBufferFrames?: number;
+  nativeActualBufferFrames?: number;
+  actualBufferFrames?: number;
+  requestedDeviceBufferFrames?: number;
+  openedDeviceBufferFrames?: number;
+  bufferSizeFallback?: boolean;
   fifoCapacityFrames?: number;
   startupPrebufferFrames?: number;
   startupPrebufferTimeoutMs?: number;

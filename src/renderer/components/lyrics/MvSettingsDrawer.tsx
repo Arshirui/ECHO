@@ -172,6 +172,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
   );
 
   const enabledProviders = new Set(settings.enabledProviders);
+  const followMusicProgress = settings.restartAudioOnLoad;
 
   const notifyMvChanged = useCallback((trackId: string): void => {
     window.dispatchEvent(new CustomEvent('mv:changed', { detail: { trackId } }));
@@ -792,7 +793,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
               <em>{t('mvSettings.network.autoPreloadDescription')}</em>
             </span>
           </button>
-          <button type="button" className="mv-source-toggle mv-auto-apply-toggle" aria-pressed={settings.restartAudioOnLoad} onClick={() => void patchSettings({ restartAudioOnLoad: !settings.restartAudioOnLoad })}>
+          <button type="button" className="mv-source-toggle mv-auto-apply-toggle" aria-pressed={followMusicProgress} onClick={() => void patchSettings({ restartAudioOnLoad: !followMusicProgress })}>
             <span className="mv-switch-track" aria-hidden="true">
               <span />
             </span>

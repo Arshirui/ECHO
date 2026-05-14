@@ -193,6 +193,7 @@ const echoApi: EchoApi = {
     getSettings: () => ipcRenderer.invoke(IpcChannels.DownloadsGetSettings),
     setSettings: (patch) => ipcRenderer.invoke(IpcChannels.DownloadsSetSettings, patch),
     chooseOutputDirectory: () => ipcRenderer.invoke(IpcChannels.DownloadsChooseOutputDirectory),
+    search: (request) => ipcRenderer.invoke(IpcChannels.DownloadsSearch, request),
     checkTools: () => ipcRenderer.invoke(IpcChannels.DownloadsCheckTools),
     onJobsUpdated: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, jobs: unknown): void => {

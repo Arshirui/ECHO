@@ -200,6 +200,29 @@ const parseRawJson = (value: string): unknown => {
   }
 };
 
+const lyricTimestamp = (timeMs: number): string => {
+  const safeTimeMs = Math.max(0, Math.round(timeMs));
+  const minutes = Math.floor(safeTimeMs / 60000);
+  const seconds = Math.floor((safeTimeMs % 60000) / 1000);
+  const centiseconds = Math.floor((safeTimeMs % 1000) / 10);
+  return `[${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(centiseconds).padStart(2, '0')}]`;
+};
+
+const secondaryLinesToText = (lyrics: TrackLyrics, field: 'romanization' | 'translation'): string | null => {
+  const lines = lyrics.lines
+    .map((line) => {
+      const text = line[field]?.trim();
+      if (!text) {
+        return null;
+      }
+
+      return lyrics.kind === 'synced' && line.timeMs >= 0 ? `${lyricTimestamp(line.timeMs)}${text}` : text;
+    })
+    .filter((line): line is string => Boolean(line));
+
+  return lines.length ? lines.join('\n') : null;
+};
+
 const trackLyricsToProviderResult = (lyrics: TrackLyrics): LyricsProviderResult => ({
   provider: lyrics.provider === 'cached' || lyrics.provider === 'none' ? 'manual' : lyrics.provider,
   providerLyricsId: lyrics.providerLyricsId ?? null,
@@ -210,6 +233,8 @@ const trackLyricsToProviderResult = (lyrics: TrackLyrics): LyricsProviderResult 
   instrumental: lyrics.kind === 'instrumental',
   plainLyrics: lyrics.plainText ?? null,
   syncedLyrics: lyrics.syncedText ?? null,
+  translationLyrics: secondaryLinesToText(lyrics, 'translation'),
+  romanizationLyrics: secondaryLinesToText(lyrics, 'romanization'),
   raw: lyrics,
 });
 
@@ -814,10 +839,12 @@ export class LyricsService {
   private mapCacheRow(row: LyricsCacheRow): TrackLyrics {
     const provider = providerName(row.provider);
     const kind = lyricsKind(row.kind);
+    const cachedLines = deserializeLyricLines(row.lines_json);
+    const hasCachedLineEnhancements = cachedLines.some((line) => line.romanization || line.translation);
     const lines =
-      provider === 'local' && kind === 'synced' && row.synced_lyrics
+      provider === 'local' && kind === 'synced' && row.synced_lyrics && !hasCachedLineEnhancements
         ? parseSyncedLyrics(row.synced_lyrics)
-        : deserializeLyricLines(row.lines_json);
+        : cachedLines;
 
     return {
       id: row.id,

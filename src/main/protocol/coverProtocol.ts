@@ -8,6 +8,8 @@ import { defaultCoverSvg } from '../library/workers/TsCoverExtractor';
 
 const cacheControlHeader = 'public, max-age=31536000, immutable';
 const wallpaperCacheControlHeader = 'no-store';
+const remoteImageCacheControlHeader = 'public, max-age=86400';
+const allowedRemoteImageHosts = new Set(['i0.hdslb.com', 'i1.hdslb.com', 'i2.hdslb.com', 'archive.biliimg.com']);
 
 const isCoverVariant = (value: string): value is CoverVariant =>
   value === 'thumb' || value === 'album' || value === 'large' || value === 'original';
@@ -42,6 +44,18 @@ const defaultSvgResponse = (): Response =>
 
 const missingCoverResponse = (): Response => new Response('', { status: 404 });
 
+const passthroughImageHeaders = (response: Response): Headers => {
+  const headers = new Headers({
+    'Cache-Control': remoteImageCacheControlHeader,
+  });
+  const contentType = response.headers.get('content-type');
+  if (contentType?.startsWith('image/')) {
+    headers.set('Content-Type', contentType);
+  }
+
+  return headers;
+};
+
 export const registerCoverProtocolScheme = (): void => {
   protocol.registerSchemesAsPrivileged([
     {
@@ -73,6 +87,15 @@ export const registerCoverProtocolScheme = (): void => {
     },
     {
       scheme: 'echo-wallpaper',
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        stream: true,
+      },
+    },
+    {
+      scheme: 'echo-image',
       privileges: {
         standard: true,
         secure: true,
@@ -128,6 +151,39 @@ export const registerCoverProtocolHandler = (): void => {
           'Content-Type': contentTypeForPath(wallpaperPath, null),
           'Cache-Control': wallpaperCacheControlHeader,
         },
+      });
+    } catch {
+      return missingCoverResponse();
+    }
+  });
+  protocol.handle('echo-image', async (request) => {
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== 'remote') {
+        return missingCoverResponse();
+      }
+
+      const targetUrl = new URL(decodeURIComponent(url.pathname.replace(/^\/+/, '')));
+      if (targetUrl.protocol !== 'https:' || !allowedRemoteImageHosts.has(targetUrl.hostname)) {
+        return missingCoverResponse();
+      }
+
+      const upstream = await fetch(targetUrl.toString(), {
+        headers: {
+          accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          referer: url.searchParams.get('referer') ?? 'https://www.bilibili.com/',
+          'user-agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        },
+        redirect: 'follow',
+      });
+      if (!upstream.ok) {
+        return missingCoverResponse();
+      }
+
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: passthroughImageHeaders(upstream),
       });
     } catch {
       return missingCoverResponse();

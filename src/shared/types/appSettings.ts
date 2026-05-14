@@ -24,11 +24,14 @@ export type AppSettings = {
   lyricsAutoSearch: boolean;
   lyricsAutoAcceptScore: number;
   lyricsDefaultOffsetMs: number;
+  lyricsGlobalSyncOffsetMs: number;
   lyricsEnabled: boolean;
   lyricsHeaderHidden: boolean;
   lyricsEmptyStateHidden: boolean;
   lyricsRomanizationEnabled: boolean;
+  lyricsTranslationEnabled: boolean;
   lyricsFontSizePx: number;
+  lyricsSecondaryFontSizePx?: number;
   lyricsColor: string;
   lyricsBackgroundMode: LyricsBackgroundMode;
   lyricsCustomWallpaperPath: string | null;

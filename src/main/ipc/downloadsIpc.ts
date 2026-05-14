@@ -1,6 +1,13 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import type { CreateDownloadUrlJobOptions, DownloadJob, DownloadSettings, DownloadToolsStatus } from '../../shared/types/downloads';
+import type {
+  CreateDownloadUrlJobOptions,
+  DownloadJob,
+  DownloadSearchRequest,
+  DownloadSearchResponse,
+  DownloadSettings,
+  DownloadToolsStatus,
+} from '../../shared/types/downloads';
 import { getDownloadService } from '../downloads/DownloadService';
 
 export const registerDownloadsIpc = (): void => {
@@ -36,5 +43,6 @@ export const registerDownloadsIpc = (): void => {
 
     return service.setSettings({ outputDirectory: result.filePaths[0] });
   });
+  ipcMain.handle(IpcChannels.DownloadsSearch, (_event, request: string | DownloadSearchRequest): Promise<DownloadSearchResponse> => service.search(request));
   ipcMain.handle(IpcChannels.DownloadsCheckTools, (): Promise<DownloadToolsStatus> => service.checkTools());
 };
