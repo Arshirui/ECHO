@@ -155,7 +155,9 @@
   gap: 10px;
   min-height: 42px;
   max-width: 520px;
+  padding: 0 14px;
   color: #677587;
+  border-radius: 14px;
 }
 
 .search-box input {
@@ -2418,6 +2420,11 @@ html[data-theme="dark"] .artist-card {
   border-color: var(--color-border);
   background: rgba(27, 33, 42, 0.78);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+}
+
+html[data-theme="dark"] .search-box {
+  border-radius: 16px;
+  background: var(--theme-field-bg);
 }
 
 html[data-theme="dark"] .tool-button:hover,

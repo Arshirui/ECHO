@@ -41,6 +41,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsAutoAcceptScore'
   | 'lyricsDefaultOffsetMs'
   | 'lyricsGlobalSyncOffsetMs'
+  | 'lyricsOffsetControlsEnabled'
   | 'lyricsPreferredProvider'
   | 'lyricsEnabledProviders'
   | 'lyricsProviderOrder'
@@ -70,6 +71,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
+  lyricsOffsetControlsEnabled: false,
   lyricsPreferredProvider: 'lrclib',
   lyricsEnabledProviders: ['local', 'lrclib', 'netease', 'qqmusic'],
   lyricsProviderOrder: ['local', 'lrclib', 'netease', 'qqmusic'],
@@ -166,6 +168,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsAutoAcceptScore: settings.lyricsAutoAcceptScore,
   lyricsDefaultOffsetMs: settings.lyricsDefaultOffsetMs,
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
+  lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
   lyricsPreferredProvider: settings.lyricsPreferredProvider,
   lyricsEnabledProviders: settings.lyricsEnabledProviders?.length ? settings.lyricsEnabledProviders : defaultLyricsEnabledProviders,
   lyricsProviderOrder: settings.lyricsProviderOrder?.length ? settings.lyricsProviderOrder : defaultLyricsProviderOrder,
@@ -1287,6 +1290,19 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             />
           </label>
           <p>Positive values make every lyric line appear earlier without changing saved lyric files.</p>
+
+          <label className="audio-toggle-row">
+            <span>
+              <TimerReset size={17} />
+              <strong>显示歌词校准条</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsOffsetControlsEnabled === true}
+              disabled={isBusy}
+              onChange={(event) => void patchSettings({ lyricsOffsetControlsEnabled: event.currentTarget.checked })}
+            />
+          </label>
 
           <button
             className="audio-device-pill"

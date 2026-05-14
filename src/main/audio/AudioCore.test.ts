@@ -236,6 +236,29 @@ class FakeBridge extends EventEmitter {
   }
 }
 
+class DelayedReadyBridge extends FakeBridge {
+  private resolveStarted: (() => void) | null = null;
+  private resolveReady: (() => void) | null = null;
+
+  readonly started = new Promise<void>((resolve) => {
+    this.resolveStarted = resolve;
+  });
+
+  releaseReady(): void {
+    this.resolveReady?.();
+  }
+
+  override async start(options: NativeOutputStartOptions) {
+    this.startOptions = options;
+    this.positionSeconds = options.startSeconds ?? 0;
+    this.resolveStarted?.();
+    await new Promise<void>((resolve) => {
+      this.resolveReady = resolve;
+    });
+    return super.start(options);
+  }
+}
+
 class StartupFailingBridge extends EventEmitter {
   readonly writable = null;
   readonly stop = vi.fn();
@@ -1063,6 +1086,8 @@ describe('Audio Core sample-rate regression guard', () => {
     await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
     bridges[0].positionSeconds = 18.25;
     session.pause();
+    await Promise.resolve();
+    await Promise.resolve();
     const status = await session.play();
 
     expect(status.state).toBe('playing');
@@ -1071,6 +1096,37 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges[1].positionSeconds).toBe(18.25);
     expect(decoder.probeRequests).toEqual(['song.flac']);
     expect(decoder.decodeRequests.at(-1)).toMatchObject({ startSeconds: 18.25 });
+  });
+
+  it('does not resume from a paused prewarm bridge before its actual sample rate is ready', async () => {
+    const decoder = new FakeDecoder(new Map([['song.flac', probe('song.flac', 192000)]]));
+    const initialBridge = new FakeBridge(48000);
+    const delayedPrewarmBridge = new DelayedReadyBridge(48000);
+    const resumedBridge = new FakeBridge(48000);
+    const bridges = [initialBridge, delayedPrewarmBridge, resumedBridge];
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridges.shift() as FakeBridge,
+      logger: noopLogger,
+    });
+
+    await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+    initialBridge.positionSeconds = 18.25;
+    session.pause();
+    await delayedPrewarmBridge.started;
+
+    const status = await session.play();
+    delayedPrewarmBridge.releaseReady();
+
+    expect(status.state).toBe('playing');
+    expect(delayedPrewarmBridge.stop).toHaveBeenCalledTimes(1);
+    expect(resumedBridge.startOptions).toMatchObject({ startSeconds: 18.25 });
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({
+      startSeconds: 18.25,
+      decoderOutputSampleRate: 48000,
+    });
+    expect(decoder.decodeRequests.some((request) => request.decoderOutputSampleRate === 192000)).toBe(false);
   });
 
   it('seek while paused moves the stored position without starting playback', async () => {
@@ -1088,6 +1144,8 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges[1].stop).toHaveBeenCalledTimes(1);
     expect(bridges[2].startOptions).toMatchObject({ startSeconds: 33 });
 
+    await Promise.resolve();
+    await Promise.resolve();
     await session.play();
     expect(bridges).toHaveLength(3);
     expect(session.getStatus().positionSeconds).toBe(33);

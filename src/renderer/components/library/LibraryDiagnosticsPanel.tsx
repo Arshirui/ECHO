@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { LibraryDiagnostics } from '../../../shared/types/library';
+import { readSongsStartupLoadDiagnostics, type SongsStartupLoadDiagnostics } from '../../stores/songsFirstPageSnapshot';
 import { getLibraryBridge } from '../../utils/echoBridge';
 
 const formatBytes = (value: number | null): string => {
@@ -23,6 +24,9 @@ const formatMs = (value: number | null): string => (value === null ? 'n/a' : `${
 
 export const LibraryDiagnosticsPanel = (): JSX.Element => {
   const [diagnostics, setDiagnostics] = useState<LibraryDiagnostics | null>(null);
+  const [songsStartupDiagnostics, setSongsStartupDiagnostics] = useState<SongsStartupLoadDiagnostics | null>(() =>
+    readSongsStartupLoadDiagnostics(),
+  );
   const [error, setError] = useState<string | null>(null);
 
   const refreshDiagnostics = useCallback(async (): Promise<void> => {
@@ -36,6 +40,7 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
       }
 
       setDiagnostics(await library.getDiagnostics());
+      setSongsStartupDiagnostics(readSongsStartupLoadDiagnostics());
       setError(null);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
@@ -58,6 +63,8 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
     { label: 'skipped count', value: String(diagnostics?.lastScan?.skippedCount ?? 0) },
     { label: 'cover count', value: String(diagnostics?.lastScan?.coverCount ?? 0) },
     { label: 'error count', value: String(diagnostics?.lastScan?.errorCount ?? 0) },
+    { label: 'songs startup source', value: songsStartupDiagnostics?.source ?? 'n/a' },
+    { label: 'songs startup sqlite query time', value: formatMs(songsStartupDiagnostics?.sqliteQueryMs ?? null) },
     { label: 'getTracks last query time', value: formatMs(diagnostics?.lastQueryMs.getTracks ?? null) },
     { label: 'getAlbums last query time', value: formatMs(diagnostics?.lastQueryMs.getAlbums ?? null) },
     { label: 'average album payload', value: formatBytes(diagnostics?.averageAlbumPayloadBytes ?? null) },

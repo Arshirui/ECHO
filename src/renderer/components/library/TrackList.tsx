@@ -19,12 +19,13 @@ type TrackListProps = {
   onToggleLiked?: (track: LibraryTrack) => void;
   onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
   onVisibleTrackIdsChange?: (trackIds: string[]) => void;
+  followCurrentTrack?: boolean;
 };
 
 const rowHeight = 76;
 const loadAheadRows = 12;
 
-export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, totalCount, loadedCount = tracks.length, isLoadingMore = false, onEndReached, onPlay, onAddToQueue, duplicateHiddenCounts = {}, onShowVersions, likedTrackIds = {}, onToggleLiked, onOpenTrackMenu, onVisibleTrackIdsChange }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, totalCount, loadedCount = tracks.length, isLoadingMore = false, onEndReached, onPlay, onAddToQueue, duplicateHiddenCounts = {}, onShowVersions, likedTrackIds = {}, onToggleLiked, onOpenTrackMenu, onVisibleTrackIdsChange, followCurrentTrack = false }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const loadRequestedRef = useRef(false);
   const visibleTrackIdsKeyRef = useRef('');
@@ -71,6 +72,20 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, to
   useEffect(() => {
     requestLoadMore(lastVirtualIndex);
   }, [lastVirtualIndex, requestLoadMore]);
+
+  useEffect(() => {
+    if (!followCurrentTrack || !currentTrackId) {
+      return;
+    }
+
+    const currentTrackIndex = tracks.findIndex((track) => track.id === currentTrackId);
+
+    if (currentTrackIndex < 0) {
+      return;
+    }
+
+    rowVirtualizer.scrollToIndex(currentTrackIndex, { align: 'center', behavior: 'smooth' });
+  }, [currentTrackId, followCurrentTrack, rowVirtualizer, tracks]);
 
   useEffect(() => {
     if (!onVisibleTrackIdsChange) {

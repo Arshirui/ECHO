@@ -1972,7 +1972,11 @@ export const SettingsPage = (): JSX.Element => {
                 <ToggleButton />
               </SettingRow>
               <SettingRow title={t('settings.playback.followCurrent.title')} description={t('settings.playback.followCurrent.description')}>
-                <ToggleButton />
+                <ToggleButton
+                  active={appSettings?.playbackFollowCurrentTrack ?? false}
+                  disabled={!appSettings}
+                  onClick={() => patchAppSettings({ playbackFollowCurrentTrack: !(appSettings?.playbackFollowCurrentTrack ?? false) })}
+                />
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--audio-status"

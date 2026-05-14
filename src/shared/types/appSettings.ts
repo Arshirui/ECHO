@@ -62,6 +62,7 @@ export type AppSettings = {
   lyricsAutoAcceptScore: number;
   lyricsDefaultOffsetMs: number;
   lyricsGlobalSyncOffsetMs: number;
+  lyricsOffsetControlsEnabled?: boolean;
   lyricsEnabled: boolean;
   lyricsHeaderHidden: boolean;
   lyricsEmptyStateHidden: boolean;
@@ -98,6 +99,7 @@ export type AppSettings = {
   mvAllow60fps: boolean;
   channelBalance: ChannelBalanceState;
   playerVolume: number;
+  playbackFollowCurrentTrack?: boolean;
   playbackSpeed: number;
   playbackSpeedMode: PlaybackSpeedMode;
   scanPerformanceMode: ScanPerformanceMode;

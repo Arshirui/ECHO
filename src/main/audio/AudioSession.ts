@@ -775,25 +775,36 @@ export class AudioSession extends EventEmitter {
 
   async play(): Promise<AudioStatus> {
     if (this.state === 'paused' && this.currentFilePath && this.currentOutputSettings) {
-      if (this.bridge && isWritableUsable(this.bridge.writable) && this.currentProbe && this.currentPlan) {
+      const bridge = this.bridge;
+      const currentProbe = this.currentProbe;
+      const currentPlan = this.currentPlan;
+      const canResumePreparedBridge =
+        bridge &&
+        isWritableUsable(bridge.writable) &&
+        currentProbe &&
+        currentPlan &&
+        this.currentReadyResult &&
+        this.hostStatus === 'ready';
+
+      if (canResumePreparedBridge && bridge && currentProbe && currentPlan) {
         const token = this.runToken;
         const startSeconds = this.pausedPositionSeconds ?? this.clock.getPositionSeconds();
         this.pausedPositionSeconds = null;
-        const sessionId = this.bridge.beginSession?.({
+        const sessionId = bridge.beginSession?.({
           startSeconds,
           playbackRate: this.currentOutputSettings.playbackRate ?? 1,
-          durationSeconds: this.currentProbe.durationSeconds,
+          durationSeconds: currentProbe.durationSeconds,
         });
-        this.bridge.resetOutputClock?.(startSeconds, this.currentOutputSettings.playbackRate ?? 1);
-        this.clock.reset(startSeconds, this.currentPlan.actualDeviceSampleRate ?? this.currentPlan.requestedOutputSampleRate);
+        bridge.resetOutputClock?.(startSeconds, this.currentOutputSettings.playbackRate ?? 1);
+        this.clock.reset(startSeconds, currentPlan.actualDeviceSampleRate ?? currentPlan.requestedOutputSampleRate);
 
         const run = this.decoder.decodeLocalFile({
           filePath: this.currentFilePath,
           startSeconds,
-          channels: this.currentProbe.channels,
-          decoderOutputSampleRate: this.currentPlan.decoderOutputSampleRate,
+          channels: currentProbe.channels,
+          decoderOutputSampleRate: currentPlan.decoderOutputSampleRate,
         });
-        const writable = this.bridge.createSessionWritable?.(sessionId) ?? this.bridge.writable;
+        const writable = bridge.createSessionWritable?.(sessionId) ?? bridge.writable;
         if (!writable) {
           throw new Error('native output bridge did not expose a writable PCM stream');
         }

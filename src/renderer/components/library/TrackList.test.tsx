@@ -100,4 +100,14 @@ describe('TrackList', () => {
 
     expect(onEndReached).toHaveBeenCalledTimes(2);
   });
+
+  it('scrolls the virtual list to the current track when follow current is enabled', async () => {
+    const scrollTo = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    const tracks = Array.from({ length: 12 }, (_, index) => track(index + 1));
+
+    render(<TrackList currentTrackId="track-8" followCurrentTrack tracks={tracks} />);
+
+    await vi.waitFor(() => expect(scrollTo).toHaveBeenCalled());
+  });
 });

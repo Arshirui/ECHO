@@ -28,6 +28,7 @@ const settings: AppSettings = {
   lyricsAutoAcceptScore: 0.7,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
+  lyricsOffsetControlsEnabled: false,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
@@ -62,6 +63,7 @@ const settings: AppSettings = {
     constantPower: true,
   },
   playerVolume: 1,
+  playbackFollowCurrentTrack: false,
   playbackSpeed: 1,
   playbackSpeedMode: 'nightcore',
   scanPerformanceMode: 'balanced',
@@ -305,6 +307,23 @@ describe('SettingsPage', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: /底栏抽屉/ }));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ lyricsPlayerBarDrawerEnabled: true }));
+  });
+
+  it('saves the follow current playback setting from Settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue({ ...settings, playbackFollowCurrentTrack: true });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
+    const row = screen.getByText('settings.playback.followCurrent.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ playbackFollowCurrentTrack: true }));
   });
 
   it('shows app wallpaper controls only after choosing a custom wallpaper', async () => {

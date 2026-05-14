@@ -24,6 +24,8 @@ const idlePollingIntervalMs = 2000;
 const progressRenderIntervalMs = 250;
 const bpmAnalysisStatusPollMs = 1500;
 const playbackSeekedEvent = 'playback:seeked';
+const maxInterpolatedStatusGapSeconds = 1.6;
+const seekAnchorMaxAgeSeconds = 3;
 const isStreamingProviderName = (provider: string | null | undefined): provider is StreamingProviderName =>
   streamingProviderNames.includes(provider as StreamingProviderName);
 
@@ -160,6 +162,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     const trackKey = trackId ?? filePath ?? null;
     const previous = progressClockRef.current;
     const samePlayback = previous.trackKey === trackKey;
+    const stateChanged = previous.state !== state;
     const playbackRate = audioStatus?.playbackRate ?? 1;
     const durationLimit = durationSeconds > 0 ? durationSeconds : Number.POSITIVE_INFINITY;
     const boundedSourcePosition = Math.min(Math.max(0, sourcePositionSeconds), durationLimit);
@@ -175,7 +178,8 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           seekAnchor.positionSeconds + (state === 'playing' ? elapsedSeconds * playbackRate : 0),
           durationLimit,
         );
-        const isStaleStatusAfterSeek = elapsedSeconds < 1.5 && Math.abs(boundedSourcePosition - expectedSeekPosition) > 2;
+        const isStaleStatusAfterSeek =
+          elapsedSeconds < seekAnchorMaxAgeSeconds && Math.abs(boundedSourcePosition - expectedSeekPosition) > 2;
 
         if (isStaleStatusAfterSeek) {
           nextPositionSeconds = expectedSeekPosition;
@@ -185,14 +189,15 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       }
     }
 
-    if (!seekAnchorRef.current && samePlayback && state === 'playing') {
+    if (!seekAnchorRef.current && samePlayback && !stateChanged && state === 'playing') {
       const elapsedSeconds = Math.max(0, (now - previous.updatedAtMs) / 1000) * previous.playbackRate;
       const estimatedPositionSeconds = Math.min(previous.positionSeconds + elapsedSeconds, durationLimit);
       const sourceJumpedBackward = boundedSourcePosition + 1 < previous.sourcePositionSeconds;
       const sourceCaughtUp = boundedSourcePosition + 0.35 >= estimatedPositionSeconds;
       const sourceJumpedForward = boundedSourcePosition > estimatedPositionSeconds + 0.35;
+      const canBridgeSourceLag = elapsedSeconds <= maxInterpolatedStatusGapSeconds;
 
-      if (!sourceJumpedBackward && !sourceCaughtUp && !sourceJumpedForward && estimatedPositionSeconds > boundedSourcePosition) {
+      if (canBridgeSourceLag && !sourceJumpedBackward && !sourceCaughtUp && !sourceJumpedForward && estimatedPositionSeconds > boundedSourcePosition) {
         nextPositionSeconds = estimatedPositionSeconds;
       }
     }
@@ -786,7 +791,11 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           current
             ? {
                 ...current,
+                state: status.state,
+                currentTrackId: status.currentTrackId,
+                currentFilePath: status.filePath,
                 positionSeconds: safePositionSeconds,
+                durationSeconds: status.durationMs / 1000,
               }
             : current,
         );

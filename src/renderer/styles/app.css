@@ -5596,6 +5596,20 @@ html[data-theme="dark"] .page-surface:has(.settings-page) {
     var(--color-bg);
 }
 
+html[data-theme="dark"] .empty-state,
+html[data-theme="dark"] .audio-dev-panel {
+  color: var(--color-text);
+  border-color: var(--theme-panel-border);
+  border-radius: var(--radius-lg);
+  background: var(--theme-panel-bg);
+  box-shadow: var(--shadow-panel);
+}
+
+html[data-theme="dark"] .empty-icon {
+  border-color: var(--theme-panel-border-strong);
+  background: var(--color-accent-soft);
+}
+
 html[data-theme="dark"] .settings-search,
 html[data-theme="dark"] .settings-font-picker-button,
 html[data-theme="dark"] .settings-select-field select,
@@ -5615,6 +5629,10 @@ html[data-theme="dark"] .library-folder-row,
 html[data-theme="dark"] .settings-account-row,
 html[data-theme="dark"] .settings-account-cookie-field input,
 html[data-theme="dark"] .settings-account-browser-field select,
+html[data-theme="dark"] .audio-field input,
+html[data-theme="dark"] .audio-field select,
+html[data-theme="dark"] .audio-command-button,
+html[data-theme="dark"] .audio-icon-command,
 html[data-theme="dark"] .settings-page .audio-field input,
 html[data-theme="dark"] .settings-page .audio-field select,
 html[data-theme="dark"] .settings-page .audio-command-button,
@@ -5631,6 +5649,30 @@ html[data-theme="dark"] .chrome-notice-actions button {
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] .audio-field input,
+html[data-theme="dark"] .audio-field select,
+html[data-theme="dark"] .audio-command-button,
+html[data-theme="dark"] .audio-icon-command {
+  border-radius: var(--radius-md);
+}
+
+html[data-theme="dark"] .audio-field input,
+html[data-theme="dark"] .audio-field select {
+  background: var(--theme-field-bg);
+}
+
+html[data-theme="dark"] .audio-command-button,
+html[data-theme="dark"] .audio-icon-command {
+  background: var(--theme-button-bg);
+}
+
+html[data-theme="dark"] .audio-command-button:hover:not(:disabled),
+html[data-theme="dark"] .audio-icon-command:hover:not(:disabled) {
+  color: var(--echo-heading-text);
+  border-color: var(--theme-panel-border-strong);
+  background: var(--theme-button-bg-hover);
 }
 
 html[data-theme="dark"] .settings-wallpaper-control > span {

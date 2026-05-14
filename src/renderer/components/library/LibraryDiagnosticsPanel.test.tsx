@@ -2,9 +2,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { LibraryDiagnosticsPanel } from './LibraryDiagnosticsPanel';
+import {
+  beginSongsStartupLoadDiagnostics,
+  finishSongsStartupSqliteLoadDiagnostics,
+} from '../../stores/songsFirstPageSnapshot';
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -50,6 +55,8 @@ describe('LibraryDiagnosticsPanel', () => {
         scanFolder,
       },
     } as unknown as Window['echo'];
+    beginSongsStartupLoadDiagnostics({ source: 'renderer-snapshot', itemCount: 100, total: 10000 });
+    finishSongsStartupSqliteLoadDiagnostics({ sqliteQueryMs: 3.7, itemCount: 100, total: 10000 });
 
     render(<LibraryDiagnosticsPanel />);
 
@@ -58,6 +65,8 @@ describe('LibraryDiagnosticsPanel', () => {
     expect(screen.getAllByText('3000')).toHaveLength(2);
     expect(screen.getByText('completed')).toBeTruthy();
     expect(screen.getByText('192 B')).toBeTruthy();
+    expect(screen.getByText('renderer-snapshot')).toBeTruthy();
+    expect(screen.getByText('3.70 ms')).toBeTruthy();
     expect(screen.getAllByText('1').length).toBeGreaterThan(0);
   });
 });

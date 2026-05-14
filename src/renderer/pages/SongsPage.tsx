@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Download, FolderPlus, ListFilter, Play, RotateCw, Search, Trash2, X } from 'lucide-react';
+import type { AppSettings } from '../../shared/types/appSettings';
 import type { DuplicateTrackIndexSummary, DuplicateTrackMember, EditableTrackTags, LibrarySort, LibraryTrack } from '../../shared/types/library';
 import { TrackContextMenu } from '../components/library/TrackContextMenu';
 import type { TrackMenuAction } from '../components/library/TrackContextMenu';
 import { TrackList } from '../components/library/TrackList';
 import { TrackTagEditorDrawer } from '../components/library/TrackTagEditorDrawer';
 import { likedChangedEvent, likedTracksChangedEvent } from '../hooks/useLikedMedia';
+import {
+  beginSongsStartupLoadDiagnostics,
+  canUseSongsFirstPageSnapshot,
+  clearSongsFirstPageSnapshot,
+  createSongsFirstPageSnapshotQueryKey,
+  finishSongsStartupSqliteLoadDiagnostics,
+  readSongsFirstPageSnapshot,
+  writeSongsFirstPageSnapshot,
+  type SongsFirstPageSnapshot,
+} from '../stores/songsFirstPageSnapshot';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 const pageSize = 100;
@@ -27,6 +38,7 @@ const sortOptions: Array<{ value: LibrarySort; label: string }> = [
 ];
 
 const songsSortStorageKey = 'echo-next.songs.sort';
+const songsHideDuplicatesStorageKey = 'echo-next.songs.hide-duplicates';
 const validSortValues = new Set<LibrarySort>(sortOptions.map((option) => option.value));
 
 const readStoredSort = (): LibrarySort => {
@@ -48,7 +60,48 @@ const writeStoredSort = (sort: LibrarySort): void => {
   void window.echo?.app.setSettings({ songsSort: sort }).catch(() => undefined);
 };
 
+const readStoredHideDuplicates = (): boolean => {
+  try {
+    return window.localStorage.getItem(songsHideDuplicatesStorageKey) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const writeStoredHideDuplicates = (hideDuplicates: boolean): void => {
+  try {
+    window.localStorage.setItem(songsHideDuplicatesStorageKey, hideDuplicates ? 'true' : 'false');
+  } catch {
+    // Duplicate visibility memory is only a startup hint.
+  }
+};
+
 const uniqueIds = (ids: string[]): string[] => Array.from(new Set(ids.filter(Boolean)));
+
+type InitialSongsState = {
+  hideDuplicates: boolean;
+  snapshot: SongsFirstPageSnapshot | null;
+  sort: LibrarySort;
+};
+
+const readInitialSongsState = (): InitialSongsState => {
+  const sort = readStoredSort();
+  const hideDuplicates = readStoredHideDuplicates();
+  const query = {
+    pageSize,
+    search: '',
+    sort,
+    hideDuplicates,
+    duplicateMode: 'strict' as const,
+  };
+  const queryKey = createSongsFirstPageSnapshotQueryKey(query);
+
+  return {
+    hideDuplicates,
+    sort,
+    snapshot: canUseSongsFirstPageSnapshot(query) ? readSongsFirstPageSnapshot(queryKey) : null,
+  };
+};
 
 type TrackMenuState = {
   track: LibraryTrack;
@@ -56,21 +109,29 @@ type TrackMenuState = {
 };
 
 export const SongsPage = (): JSX.Element => {
-  const [tracks, setTracks] = useState<LibraryTrack[]>([]);
+  const initialSongsStateRef = useRef<InitialSongsState | null>(null);
+  if (!initialSongsStateRef.current) {
+    initialSongsStateRef.current = readInitialSongsState();
+  }
+
+  const initialSongsState = initialSongsStateRef.current;
+  const initialSnapshot = initialSongsState.snapshot;
+  const [tracks, setTracks] = useState<LibraryTrack[]>(() => initialSnapshot?.items ?? []);
   const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(() => initialSnapshot?.total ?? 0);
+  const [hasMore, setHasMore] = useState(() => (initialSnapshot ? initialSnapshot.items.length < initialSnapshot.total : false));
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<LibrarySort>(() => readStoredSort());
+  const [sort, setSort] = useState<LibrarySort>(() => initialSongsState.sort);
   const [isLoading, setIsLoading] = useState(false);
   const [isScanningMissing, setIsScanningMissing] = useState(false);
-  const [hideDuplicates, setHideDuplicates] = useState(false);
+  const [hideDuplicates, setHideDuplicates] = useState(() => initialSongsState.hideDuplicates);
   const [duplicateSummary, setDuplicateSummary] = useState<DuplicateTrackIndexSummary | null>(null);
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null);
   const [duplicateHiddenCounts, setDuplicateHiddenCounts] = useState<Record<string, number>>({});
   const [likedTrackIds, setLikedTrackIds] = useState<Record<string, boolean>>({});
   const [visibleTrackIds, setVisibleTrackIds] = useState<string[]>([]);
+  const [followCurrentTrack, setFollowCurrentTrack] = useState(false);
   const [likedRefreshVersion, setLikedRefreshVersion] = useState(0);
   const [versionMembers, setVersionMembers] = useState<DuplicateTrackMember[]>([]);
   const [versionTrack, setVersionTrack] = useState<LibraryTrack | null>(null);
@@ -121,6 +182,14 @@ export const SongsPage = (): JSX.Element => {
   }, []);
 
   useEffect(() => {
+    beginSongsStartupLoadDiagnostics({
+      source: initialSnapshot ? 'renderer-snapshot' : 'sqlite',
+      itemCount: initialSnapshot?.items.length ?? 0,
+      total: initialSnapshot?.total ?? 0,
+    });
+  }, [initialSnapshot]);
+
+  useEffect(() => {
     let isMounted = true;
     const appBridge = window.echo?.app;
 
@@ -139,6 +208,8 @@ export const SongsPage = (): JSX.Element => {
 
         const localSort = readStoredSort();
         const nextSort = (settings.appMemoryVersion ?? 0) < 1 && localSort !== 'default' ? localSort : (settings.songsSort ?? 'default');
+
+        setFollowCurrentTrack(settings.playbackFollowCurrentTrack === true);
 
         if (validSortValues.has(nextSort)) {
           setSort(nextSort);
@@ -205,14 +276,19 @@ export const SongsPage = (): JSX.Element => {
           return;
         }
 
-        const result = await library.getTracks({
+        const query = {
           page: nextPage,
           pageSize,
           search,
           sort,
           hideDuplicates,
           duplicateMode: 'strict',
-        });
+        } as const;
+        const queryKey = createSongsFirstPageSnapshotQueryKey(query);
+        const shouldUseFirstPageSnapshot = mode === 'replace' && nextPage === 1 && canUseSongsFirstPageSnapshot(query);
+        const queryStartedAt = performance.now();
+        const result = await library.getTracks(query);
+        const queryMs = performance.now() - queryStartedAt;
 
         if (requestIdRef.current !== requestId) {
           return;
@@ -222,6 +298,14 @@ export const SongsPage = (): JSX.Element => {
         setPage(result.page);
         setTotal(result.total);
         setHasMore(result.hasMore);
+        if (shouldUseFirstPageSnapshot) {
+          finishSongsStartupSqliteLoadDiagnostics({
+            sqliteQueryMs: queryMs,
+            itemCount: result.items.length,
+            total: result.total,
+          });
+          writeSongsFirstPageSnapshot(queryKey, result);
+        }
       } catch (loadError) {
         if (requestIdRef.current === requestId) {
           setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -254,6 +338,7 @@ export const SongsPage = (): JSX.Element => {
 
     try {
       const [settings, summary] = await Promise.all([app.getSettings(), library.getDuplicateIndexSummary('strict')]);
+      writeStoredHideDuplicates(settings.duplicateTracksEnabled);
       setHideDuplicates(settings.duplicateTracksEnabled);
       setDuplicateSummary(summary);
 
@@ -271,6 +356,7 @@ export const SongsPage = (): JSX.Element => {
 
   useEffect(() => {
     const handleLibraryChanged = (): void => {
+      clearSongsFirstPageSnapshot();
       clearListMetadataCache();
       void loadTracks(1, 'replace');
     };
@@ -287,6 +373,24 @@ export const SongsPage = (): JSX.Element => {
     window.addEventListener('settings:changed', handleSettingsChanged);
     return () => window.removeEventListener('settings:changed', handleSettingsChanged);
   }, [loadDuplicateSettings]);
+
+  useEffect(() => {
+    const handleSettingsChanged = (event: Event): void => {
+      const patch = (event as CustomEvent<Partial<AppSettings>>).detail;
+
+      if (patch && typeof patch === 'object' && 'playbackFollowCurrentTrack' in patch) {
+        setFollowCurrentTrack(patch.playbackFollowCurrentTrack === true);
+        return;
+      }
+
+      void window.echo?.app?.getSettings?.().then((settings) => {
+        setFollowCurrentTrack(settings.playbackFollowCurrentTrack === true);
+      }).catch(() => undefined);
+    };
+
+    window.addEventListener('settings:changed', handleSettingsChanged);
+    return () => window.removeEventListener('settings:changed', handleSettingsChanged);
+  }, []);
 
   const handleLoadMore = useCallback((): void => {
     if (!isLoading && hasMore) {
@@ -674,6 +778,8 @@ export const SongsPage = (): JSX.Element => {
     [closeTagEditor],
   );
 
+  const showIndexLoading = isLoading && tracks.length === 0;
+
   return (
     <div className="songs-page">
       <header className="songs-header">
@@ -782,11 +888,12 @@ export const SongsPage = (): JSX.Element => {
         onOpenTrackMenu={handleOpenTrackMenu}
         onVisibleTrackIdsChange={setVisibleTrackIds}
         onPlay={handlePlayTrack}
+        followCurrentTrack={followCurrentTrack}
       />
 
-      {error || statusMessage || duplicateMessage || isLoading || isScanningMissing || isClearing ? (
+      {error || statusMessage || duplicateMessage || showIndexLoading || isScanningMissing || isClearing ? (
         <div className="list-footer">
-          <span>{error ?? statusMessage ?? duplicateMessage ?? (isScanningMissing ? '正在扫描失效歌曲...' : isClearing ? '正在清空列表...' : '正在读取曲库...')}</span>
+          <span>{error ?? statusMessage ?? duplicateMessage ?? (isScanningMissing ? '正在扫描失效歌曲...' : isClearing ? '正在清空列表...' : '正在读取本地索引...')}</span>
         </div>
       ) : null}
 

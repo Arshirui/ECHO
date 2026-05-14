@@ -117,6 +117,7 @@ const makeAppSettings = (
   lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
+  lyricsOffsetControlsEnabled: false,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
@@ -504,6 +505,75 @@ describe("LyricsPage", () => {
     ).toContain("Third line");
   });
 
+  it("keeps a committed seek anchored when delayed audio status is still stale", async () => {
+    const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
+    const track = makeTrack();
+    const { emitAudioStatus } = mockEcho(track, 0);
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText("First line");
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("playback:seeked", {
+          detail: { trackId: "track-1", positionSeconds: 21 },
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("Third line"),
+    );
+
+    performanceNow.mockReturnValue(2000);
+    act(() => {
+      emitAudioStatus(makeAudioStatus(track, 0));
+    });
+
+    expect(
+      container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+    ).toContain("Third line");
+  });
+
+  it("trusts real playback time after a missed pause instead of carrying old interpolation", async () => {
+    const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
+    const track = makeTrack();
+    const pauseSensitiveLyrics: LyricLine[] = [
+      { timeMs: 0, text: "Before pause line" },
+      { timeMs: 8000, text: "Should not be active yet" },
+    ];
+    const { emitAudioStatus } = mockEcho(track, 7);
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={pauseSensitiveLyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText("Before pause line");
+    expect(
+      container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+    ).toContain("Before pause line");
+
+    performanceNow.mockReturnValue(5000);
+    act(() => {
+      emitAudioStatus(makeAudioStatus(track, 7.2));
+    });
+
+    expect(
+      container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+    ).toContain("Before pause line");
+  });
+
   it("advances active lyrics with RAF interpolation between status updates", async () => {
     const performanceNow = vi.spyOn(performance, "now").mockReturnValue(0);
     let rafCallback: FrameRequestCallback | null = null;
@@ -797,9 +867,38 @@ describe("LyricsPage", () => {
     expect(window.echo.lyrics.getForTrack).toHaveBeenCalledWith("track-1");
   });
 
-  it("saves per-track lyrics offset from the lyrics page controls", async () => {
+  it("hides per-track lyrics offset controls by default", async () => {
     const track = makeTrack();
     mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: lyrics,
+          offsetMs: 0,
+        }),
+      ),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("First line")).toBeTruthy();
+    expect(container.querySelector(".lyrics-offset-controls")).toBeNull();
+  });
+
+  it("saves per-track lyrics offset from the lyrics page controls when enabled", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, { lyricsOffsetControlsEnabled: true });
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(
         makeTrackLyrics({

@@ -2,6 +2,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { LibraryPage, LibraryTrack } from '../../shared/types/library';
+import {
+  createSongsFirstPageSnapshotQueryKey,
+  readSongsStartupLoadDiagnostics,
+  writeSongsFirstPageSnapshot,
+} from '../stores/songsFirstPageSnapshot';
 
 vi.mock('../components/library/TrackList', () => ({
   TrackList: ({
@@ -137,6 +142,7 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
       cancelScan: vi.fn(),
       getDiagnostics: vi.fn(),
       recordTrackPlayback: vi.fn(),
+      refreshAlbumGrouping: vi.fn(),
       refreshDuplicateTracks: vi.fn().mockResolvedValue({
         mode: 'strict',
         totalTracksScanned: tracks.length,
@@ -158,6 +164,8 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
       getLikedTrackIds: vi.fn().mockResolvedValue({}),
       pruneMissingTracks: vi.fn().mockResolvedValue({ scannedCount: tracks.length, removedCount: 0 }),
       clearTracks: vi.fn().mockResolvedValue({ scannedCount: tracks.length, removedCount: tracks.length }),
+      clearCache: vi.fn(),
+      startBpmAnalysis: vi.fn(),
     },
     playback: {
       getStatus: vi.fn().mockResolvedValue({
@@ -179,6 +187,7 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
       getSettings: vi.fn().mockResolvedValue({
         duplicateTracksEnabled: false,
         duplicateTracksMode: 'strict',
+        playbackFollowCurrentTrack: false,
       }),
       setSettings: vi.fn().mockResolvedValue({
         duplicateTracksEnabled: true,
@@ -205,6 +214,60 @@ afterEach(() => {
 });
 
 describe('SongsPage', () => {
+  it('renders a renderer first-page snapshot before SQLite returns the fresh page', async () => {
+    const cachedTrack = makeTrack({ id: 'cached-track', title: 'Cached Song' });
+    const freshTrack = makeTrack({ id: 'fresh-track', title: 'Fresh Song' });
+    installEcho();
+    const queryKey = createSongsFirstPageSnapshotQueryKey({
+      pageSize: 100,
+      search: '',
+      sort: 'default',
+      hideDuplicates: false,
+      duplicateMode: 'strict',
+    });
+    writeSongsFirstPageSnapshot(queryKey, makePagedResult([cachedTrack], { total: 10000, hasMore: true }));
+
+    let resolveTracks!: (page: LibraryPage<LibraryTrack>) => void;
+    vi.mocked(window.echo.library.getTracks).mockReturnValue(
+      new Promise<LibraryPage<LibraryTrack>>((resolve) => {
+        resolveTracks = resolve;
+      }),
+    );
+
+    await renderSongsPage();
+
+    expect(screen.getByText('Cached Song')).toBeTruthy();
+    expect(screen.getByTestId('track-list').getAttribute('data-total-count')).toBe('10000');
+
+    await waitFor(() =>
+      expect(readSongsStartupLoadDiagnostics()).toMatchObject({
+        source: 'renderer-snapshot',
+        itemCount: 1,
+        total: 10000,
+      }),
+    );
+
+    resolveTracks(makePagedResult([freshTrack], { total: 1 }));
+
+    await screen.findByText('Fresh Song');
+    expect(screen.queryByText('Cached Song')).toBeNull();
+    const diagnostics = readSongsStartupLoadDiagnostics();
+    expect(diagnostics?.source).toBe('renderer-snapshot');
+    expect(diagnostics?.sqliteQueryMs).toEqual(expect.any(Number));
+    expect(diagnostics?.total).toBe(1);
+  });
+
+  it('does not scan or start heavy library jobs while loading the startup song list', async () => {
+    installEcho([makeTrack()]);
+
+    await renderSongsPage();
+
+    await screen.findByText('Song One');
+    expect(window.echo.library.scanFolder).not.toHaveBeenCalled();
+    expect(window.echo.library.refreshAlbumGrouping).not.toHaveBeenCalled();
+    expect(window.echo.library.startBpmAnalysis).not.toHaveBeenCalled();
+  });
+
   it('restores the remembered song sort mode', async () => {
     window.localStorage.setItem('echo-next.songs.sort', 'recent');
     installEcho([makeTrack()]);

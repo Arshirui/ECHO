@@ -118,6 +118,7 @@ export const defaultSettings: AppSettings = {
   lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
+  lyricsOffsetControlsEnabled: false,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
@@ -154,6 +155,7 @@ export const defaultSettings: AppSettings = {
   mvAllow60fps: true,
   channelBalance: defaultChannelBalanceSettings,
   playerVolume: 1,
+  playbackFollowCurrentTrack: false,
   playbackSpeed: 1,
   playbackSpeedMode: 'nightcore',
   scanPerformanceMode: 'balanced',
@@ -493,6 +495,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsGlobalSyncOffsetMs: Number.isFinite(lyricsGlobalSyncOffsetMs)
       ? Math.round(clamp(lyricsGlobalSyncOffsetMs, -1000, 1000))
       : defaultSettings.lyricsGlobalSyncOffsetMs,
+    lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
     lyricsEnabled: settings.lyricsEnabled !== false,
     lyricsHeaderHidden: settings.lyricsHeaderHidden === true,
     lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden !== false,
@@ -562,6 +565,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     mvAllow60fps: settings.mvAllow60fps !== false,
     channelBalance: normalizeChannelBalanceSettings(settings.channelBalance),
     playerVolume: Number.isFinite(playerVolume) ? Math.max(0, Math.min(1, playerVolume)) : defaultSettings.playerVolume,
+    playbackFollowCurrentTrack: settings.playbackFollowCurrentTrack === true,
     playbackSpeed: Number.isFinite(playbackSpeed)
       ? Math.max(0.5, Math.min(2, playbackSpeed))
       : defaultSettings.playbackSpeed,

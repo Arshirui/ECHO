@@ -30,6 +30,7 @@ describe('app settings normalization', () => {
     expect(settings.appWallpaperUiOpacityPercent).toBe(100);
     expect(settings.appWallpaperUnifiedOpacityEnabled).toBe(false);
     expect(settings.scanPerformanceMode).toBe('balanced');
+    expect(settings.playbackFollowCurrentTrack).toBe(false);
     expect(settings.hideToTrayOnClose).toBe(true);
     expect(settings.networkMetadataProviders).toEqual(['qq-music']);
     expect(settings.audioAnalysisEnabled).toBe(true);
@@ -41,6 +42,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsAutoAcceptScore).toBe(0.5);
     expect(settings.lyricsDefaultOffsetMs).toBe(0);
     expect(settings.lyricsGlobalSyncOffsetMs).toBe(0);
+    expect(settings.lyricsOffsetControlsEnabled).toBe(false);
     expect(settings.lyricsEnabled).toBe(true);
     expect(settings.lyricsHeaderHidden).toBe(false);
     expect(settings.lyricsEmptyStateHidden).toBe(true);
@@ -200,6 +202,14 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ scanPerformanceMode: 'turbo' as never }).scanPerformanceMode).toBe('balanced');
   });
 
+  it('normalizes the playback follow-current-track setting as opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).playbackFollowCurrentTrack).toBe(false);
+    expect(normalizeSettings({ playbackFollowCurrentTrack: true }).playbackFollowCurrentTrack).toBe(true);
+    expect(normalizeSettings({ playbackFollowCurrentTrack: 'yes' as never }).playbackFollowCurrentTrack).toBe(false);
+  });
+
   it('migrates remembered audio output to low latency unless Stable was explicit', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -258,6 +268,7 @@ describe('app settings normalization', () => {
         lyricsAutoAcceptScore: 2,
         lyricsDefaultOffsetMs: -24000,
         lyricsGlobalSyncOffsetMs: 24000,
+        lyricsOffsetControlsEnabled: true,
         lyricsEnabled: false,
         lyricsHeaderHidden: true,
         lyricsEmptyStateHidden: false,
@@ -288,6 +299,7 @@ describe('app settings normalization', () => {
       lyricsAutoAcceptScore: 1,
       lyricsDefaultOffsetMs: -10000,
       lyricsGlobalSyncOffsetMs: 1000,
+      lyricsOffsetControlsEnabled: true,
       lyricsEnabled: false,
       lyricsHeaderHidden: true,
       lyricsEmptyStateHidden: false,

@@ -28,6 +28,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
+  lyricsOffsetControlsEnabled: false,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
@@ -340,6 +341,33 @@ describe('LyricsSettingsDrawer', () => {
     fireEvent.click(toggle);
 
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsPlayerBarDrawerEnabled: true }));
+  });
+
+  it('lets users enable lyrics offset controls from the drawer', async () => {
+    const setSettings = vi.fn().mockResolvedValue(makeSettings({ lyricsOffsetControlsEnabled: true }));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsOffsetControlsEnabled: false })),
+        setSettings,
+      },
+      lyrics: {
+        getForTrack: vi.fn().mockResolvedValue(null),
+        searchCandidates: vi.fn().mockResolvedValue([]),
+        applyCandidate: vi.fn(),
+        rejectCandidate: vi.fn(),
+        setOffset: vi.fn(),
+        clearCache: vi.fn(),
+      },
+      playback: { getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }) },
+      audio: { getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }) },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    const toggle = await screen.findByLabelText(/显示歌词校准条/);
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsOffsetControlsEnabled: true }));
   });
 
   it('expands secondary lyric font size while romanization or translation is enabled', async () => {
