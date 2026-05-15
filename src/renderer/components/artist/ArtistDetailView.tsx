@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ListPlus, Play, Shuffle } from 'lucide-react';
 import type { LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
+import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { AlbumDetailView } from '../album/AlbumDetailView';
 import { readPageScrollTop, writePageScrollTop } from '../ui/InfiniteScrollSentinel';
@@ -30,6 +31,7 @@ const formatDuration = (tracks: LibraryTrack[]): string => {
 
 export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX.Element => {
   const { appendToQueue, currentTrackId, playTrack, playTrackNext, replaceQueue } = usePlaybackQueue();
+  const { isReturning, returnBack } = useAnimatedBackNavigation(onBack);
   const [verifiedArtist, setVerifiedArtist] = useState<LibraryArtist | null>(artist);
   const [isVerifyingArtist, setIsVerifyingArtist] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
@@ -43,6 +45,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
   const shouldRestoreDetailScrollRef = useRef(false);
   const source = useMemo(() => ({ type: 'artist' as const, label: artist.name, artistId: artist.id }), [artist.id, artist.name]);
   const displayArtist = verifiedArtist ?? artist;
+  const displayedTrackCount = Math.max(displayArtist.trackCount, loadedTrackTotal);
 
   useEffect(() => {
     let isCancelled = false;
@@ -168,8 +171,8 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
 
   if (!isVerifyingArtist && !verifiedArtist) {
     return (
-      <div className="artist-detail-page">
-        <button className="artist-detail-back" type="button" onClick={onBack}>
+      <div className={`artist-detail-page ${isReturning ? 'is-returning' : ''}`}>
+        <button className="artist-detail-back" type="button" onClick={returnBack}>
           <ArrowLeft size={17} />
           Artists
         </button>
@@ -182,8 +185,8 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
   }
 
   return (
-    <div className="artist-detail-page" ref={detailRootRef}>
-      <button className="artist-detail-back" type="button" onClick={onBack}>
+    <div className={`artist-detail-page ${isReturning ? 'is-returning' : ''}`} ref={detailRootRef}>
+      <button className="artist-detail-back" type="button" onClick={returnBack}>
         <ArrowLeft size={17} />
         Artists
       </button>
@@ -197,7 +200,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
           <span className="artist-detail-kicker">Artist</span>
           <h1>{displayArtist.name}</h1>
           <div className="artist-hero-meta" aria-label="Artist metadata">
-            <span>{formatCount(displayArtist.trackCount, 'track')}</span>
+            <span>{formatCount(displayedTrackCount, 'track')}</span>
             <span>{formatCount(displayArtist.albumCount, 'album')}</span>
             <span>{loadedTracks.length > 0 ? `${loadedTracks.length}/${loadedTrackTotal} loaded` : 'Collected locally'}</span>
           </div>
@@ -225,7 +228,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
       <section className="artist-stat-grid" aria-label="Artist overview">
         <div>
           <span>Tracks</span>
-          <strong>{formatCount(displayArtist.trackCount, 'track')}</strong>
+          <strong>{formatCount(displayedTrackCount, 'track')}</strong>
         </div>
         <div>
           <span>Albums</span>

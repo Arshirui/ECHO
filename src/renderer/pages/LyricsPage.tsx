@@ -13,6 +13,7 @@ import type { AudioStatus } from "../../shared/types/audio";
 import type { AppSettings } from "../../shared/types/appSettings";
 import type { LibraryTrack } from "../../shared/types/library";
 import type {
+  LyricsProviderId,
   LyricsSearchCandidate,
   TrackLyrics,
 } from "../../shared/types/lyrics";
@@ -37,11 +38,14 @@ type TrackWithLargeCover = LibraryTrack & {
   coverLarge?: string | null;
 };
 
-type CandidateSourceFilter = "all" | string;
+type CandidateSourceFilter = "all" | LyricsProviderId;
 
 type LyricsDisplaySettings = Pick<
   AppSettings,
   | "lyricsEnabled"
+  | "lyricsNetworkEnabled"
+  | "lyricsEnabledProviders"
+  | "lyricsProviderOrder"
   | "lyricsHeaderHidden"
   | "lyricsMvAutoShowTrackInfoDisabled"
   | "lyricsEmptyStateHidden"
@@ -71,6 +75,9 @@ const seekAnchorMaxAgeSeconds = 3;
 
 const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsEnabled: true,
+  lyricsNetworkEnabled: true,
+  lyricsEnabledProviders: ["local", "lrclib", "netease", "qqmusic"],
+  lyricsProviderOrder: ["local", "lrclib", "netease", "qqmusic"],
   lyricsHeaderHidden: false,
   lyricsMvAutoShowTrackInfoDisabled: true,
   lyricsEmptyStateHidden: true,
@@ -237,8 +244,35 @@ const visibleReasons = (candidate: LyricsSearchCandidate): string[] =>
     .filter((reason): reason is string => Boolean(reason))
     .slice(0, 3);
 
-const sourceFilterKey = (candidate: LyricsSearchCandidate): string =>
-  `${candidate.provider}:${candidate.sourceLabel}`;
+const sourceFilterKey = (candidate: LyricsSearchCandidate): LyricsProviderId =>
+  candidate.provider;
+
+const searchableLyricsProviderIds: LyricsProviderId[] = ["local", "lrclib", "netease", "qqmusic"];
+const searchableLyricsProviderSet = new Set<string>(searchableLyricsProviderIds);
+const lyricsProviderLabels: Partial<Record<LyricsProviderId, string>> = {
+  local: "本地",
+  lrclib: "LRCLIB",
+  netease: "网易云音乐",
+  qqmusic: "QQ 音乐",
+  musixmatch: "Musixmatch",
+  genius: "Genius",
+};
+
+const mergeLyricsCandidates = (
+  current: LyricsSearchCandidate[],
+  next: LyricsSearchCandidate[],
+): LyricsSearchCandidate[] => {
+  const merged = new Map<string, LyricsSearchCandidate>();
+  for (const candidate of [...current, ...next]) {
+    const key = `${candidate.provider}:${candidate.providerLyricsId ?? candidate.id}`;
+    const existing = merged.get(key);
+    if (!existing || candidate.score > existing.score) {
+      merged.set(key, candidate);
+    }
+  }
+
+  return Array.from(merged.values()).sort((left, right) => right.score - left.score);
+};
 
 const isAudioStatusForPlayback = (
   audioStatus: AudioStatus,
@@ -308,6 +342,13 @@ const selectLyricsDisplaySettings = (
   settings: AppSettings,
 ): LyricsDisplaySettings => ({
   lyricsEnabled: settings.lyricsEnabled,
+  lyricsNetworkEnabled: settings.lyricsNetworkEnabled !== false,
+  lyricsEnabledProviders: settings.lyricsEnabledProviders?.length
+    ? settings.lyricsEnabledProviders
+    : fallbackLyricsDisplaySettings.lyricsEnabledProviders,
+  lyricsProviderOrder: settings.lyricsProviderOrder?.length
+    ? settings.lyricsProviderOrder
+    : fallbackLyricsDisplaySettings.lyricsProviderOrder,
   lyricsHeaderHidden: settings.lyricsHeaderHidden,
   lyricsMvAutoShowTrackInfoDisabled: settings.lyricsMvAutoShowTrackInfoDisabled !== false,
   lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden,
@@ -334,6 +375,9 @@ const cssUrl = (value: string): string =>
   `url("${value.replace(/["\\]/g, "\\$&")}")`;
 const lyricsDisplaySettingsKeys = [
   "lyricsEnabled",
+  "lyricsNetworkEnabled",
+  "lyricsEnabledProviders",
+  "lyricsProviderOrder",
   "lyricsHeaderHidden",
   "lyricsMvAutoShowTrackInfoDisabled",
   "lyricsEmptyStateHidden",
@@ -618,7 +662,6 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     null,
   );
   const [isLyricsOffsetSaving, setIsLyricsOffsetSaving] = useState(false);
-  const [isMarkingInstrumental, setIsMarkingInstrumental] = useState(false);
   const [isCustomLyricsApplying, setIsCustomLyricsApplying] = useState(false);
   const [isCustomLyricsDragging, setIsCustomLyricsDragging] = useState(false);
   const lyricsRequestRef = useRef(0);
@@ -710,7 +753,29 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     playbackStatus,
   );
   const lyricsPositionSeconds = seekPreviewSeconds ?? displayPositionSeconds;
-  const candidateSourceOptions = useMemo(() => {
+  const activeSearchProviders = useMemo<LyricsProviderId[]>(() => {
+    const enabled = (lyricsDisplaySettings.lyricsEnabledProviders?.length
+      ? lyricsDisplaySettings.lyricsEnabledProviders
+      : fallbackLyricsDisplaySettings.lyricsEnabledProviders) ?? searchableLyricsProviderIds;
+    const order = (lyricsDisplaySettings.lyricsProviderOrder?.length
+      ? lyricsDisplaySettings.lyricsProviderOrder
+      : fallbackLyricsDisplaySettings.lyricsProviderOrder) ?? searchableLyricsProviderIds;
+    const ordered = [
+      ...order.filter((provider) => enabled.includes(provider)),
+      ...enabled.filter((provider) => !order.includes(provider)),
+    ];
+
+    return ordered.filter(
+      (provider): provider is LyricsProviderId =>
+        searchableLyricsProviderSet.has(provider) &&
+        (provider === "local" || lyricsDisplaySettings.lyricsNetworkEnabled),
+    );
+  }, [
+    lyricsDisplaySettings.lyricsEnabledProviders,
+    lyricsDisplaySettings.lyricsNetworkEnabled,
+    lyricsDisplaySettings.lyricsProviderOrder,
+  ]);
+  const candidateSourceOptions = useMemo<Array<{ key: CandidateSourceFilter; label: string; count: number; order: number }>>(() => {
     const order = new Map<LyricsSearchCandidate["provider"], number>([
       ["local", 0],
       ["lrclib", 1],
@@ -721,19 +786,31 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       ["manual", 6],
     ]);
     const sourceMap = new Map<
-      string,
-      { key: string; label: string; count: number; order: number }
+      CandidateSourceFilter,
+      { key: CandidateSourceFilter; label: string; count: number; order: number }
     >();
+
+    activeSearchProviders.forEach((provider, index) => {
+      sourceMap.set(provider, {
+        key: provider,
+        label: lyricsProviderLabels[provider] ?? provider,
+        count: 0,
+        order: index,
+      });
+    });
 
     for (const candidate of candidates) {
       const key = sourceFilterKey(candidate);
       const existing = sourceMap.get(key);
       if (existing) {
         existing.count += 1;
+        if (!lyricsProviderLabels[candidate.provider] && candidate.sourceLabel) {
+          existing.label = candidate.sourceLabel;
+        }
       } else {
         sourceMap.set(key, {
           key,
-          label: candidate.sourceLabel,
+          label: lyricsProviderLabels[candidate.provider] ?? candidate.sourceLabel,
           count: 1,
           order: order.get(candidate.provider) ?? 99,
         });
@@ -747,7 +824,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
           left.order - right.order || left.label.localeCompare(right.label),
       ),
     ];
-  }, [candidates]);
+  }, [activeSearchProviders, candidates]);
   const visibleCandidates = useMemo(
     () =>
       activeCandidateSource === "all"
@@ -1045,7 +1122,20 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
         if (!trackLyrics && lyricsDisplaySettings.lyricsAutoSearch) {
           setIsCandidateLoading(true);
-          const nextCandidates = await lyricsApi.searchCandidates(trackId);
+          let nextCandidates: LyricsSearchCandidate[] = [];
+          const providers: LyricsProviderId[] = activeSearchProviders.length ? activeSearchProviders : ["local"];
+          await Promise.allSettled(
+            providers.map(async (provider) => {
+              const providerCandidates = await lyricsApi.searchCandidates(trackId, undefined, provider);
+              if (lyricsRequestRef.current !== requestId) {
+                return;
+              }
+
+              nextCandidates = mergeLyricsCandidates(nextCandidates, providerCandidates);
+              setCandidates(nextCandidates);
+              setActiveCandidateSource("all");
+            }),
+          );
           if (lyricsRequestRef.current !== requestId) {
             return;
           }
@@ -1089,6 +1179,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         }
       });
   }, [
+    activeSearchProviders,
     initialLyrics,
     isLyricsDisplaySettingsReady,
     lyricsDisplaySettings.lyricsAutoSearch,
@@ -1141,22 +1232,51 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       return;
     }
 
+    const lyricsApi = window.echo.lyrics;
+    const requestId = lyricsRequestRef.current + 1;
+    lyricsRequestRef.current = requestId;
+    let collectedCandidates: LyricsSearchCandidate[] = [];
+    const providers: LyricsProviderId[] = activeSearchProviders.length ? activeSearchProviders : ["local"];
     setIsCandidateLoading(true);
+    setCandidates([]);
+    setActiveCandidateSource("all");
     setLyricsStatus("正在搜索歌词候选...");
     try {
-      const nextCandidates = searchText
-        ? await window.echo.lyrics.searchCandidates(trackId, searchText)
-        : await window.echo.lyrics.searchCandidates(trackId);
+      await Promise.allSettled(
+        providers.map(async (provider) => {
+          const providerCandidates = searchText
+            ? await lyricsApi.searchCandidates(trackId, searchText, provider)
+            : await lyricsApi.searchCandidates(trackId, undefined, provider);
+          if (lyricsRequestRef.current !== requestId) {
+            return;
+          }
+
+          collectedCandidates = mergeLyricsCandidates(collectedCandidates, providerCandidates);
+          setCandidates(collectedCandidates);
+          setActiveCandidateSource("all");
+          if (collectedCandidates.length > 0) {
+            setLyricsStatus(null);
+          }
+        }),
+      );
+
+      if (lyricsRequestRef.current !== requestId) {
+        return;
+      }
+
       const shouldAutoApplySearchResult = lyrics.kind === "empty" || lyrics.lines.length === 0;
       if (shouldAutoApplySearchResult) {
-        const autoApplied = await tryAutoApplyCandidate(nextCandidates);
+        const autoApplied = await tryAutoApplyCandidate(
+          collectedCandidates,
+          () => lyricsRequestRef.current === requestId,
+        );
         if (autoApplied) {
           return;
         }
       }
-      setCandidates(nextCandidates);
+      setCandidates(collectedCandidates);
       setActiveCandidateSource("all");
-      setLyricsStatus(nextCandidates.length ? null : "未找到歌词");
+      setLyricsStatus(collectedCandidates.length ? null : "未找到歌词");
       setError(null);
     } catch (candidateError) {
       setLyricsStatus("未找到歌词");
@@ -1166,9 +1286,12 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
           : String(candidateError),
       );
     } finally {
-      setIsCandidateLoading(false);
+      if (lyricsRequestRef.current === requestId) {
+        setIsCandidateLoading(false);
+      }
     }
   }, [
+    activeSearchProviders,
     lyrics.kind,
     lyrics.lines.length,
     lyricsDisplaySettings.lyricsEnabled,
@@ -1194,21 +1317,49 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       return;
     }
 
+    const lyricsApi = window.echo.lyrics;
     setLyrics(emptyLyrics(lyrics.offsetMs));
     setCandidates([]);
     setActiveCandidateSource("all");
     setIsCandidateLoading(true);
     setLyricsStatus("正在重新匹配歌词...");
     try {
-      await window.echo.lyrics.clearCache(trackId);
-      const nextCandidates = await window.echo.lyrics.searchCandidates(trackId);
-      const autoApplied = await tryAutoApplyCandidate(nextCandidates);
+      const requestId = lyricsRequestRef.current + 1;
+      lyricsRequestRef.current = requestId;
+      let collectedCandidates: LyricsSearchCandidate[] = [];
+      const providers: LyricsProviderId[] = activeSearchProviders.length ? activeSearchProviders : ["local"];
+
+      await lyricsApi.clearCache(trackId);
+      await Promise.allSettled(
+        providers.map(async (provider) => {
+          const providerCandidates = await lyricsApi.searchCandidates(trackId, undefined, provider);
+          if (lyricsRequestRef.current !== requestId) {
+            return;
+          }
+
+          collectedCandidates = mergeLyricsCandidates(collectedCandidates, providerCandidates);
+          setCandidates(collectedCandidates);
+          setActiveCandidateSource("all");
+          if (collectedCandidates.length > 0) {
+            setLyricsStatus(null);
+          }
+        }),
+      );
+
+      if (lyricsRequestRef.current !== requestId) {
+        return;
+      }
+
+      const autoApplied = await tryAutoApplyCandidate(
+        collectedCandidates,
+        () => lyricsRequestRef.current === requestId,
+      );
       if (autoApplied) {
         return;
       }
-      setCandidates(nextCandidates);
+      setCandidates(collectedCandidates);
       setActiveCandidateSource("all");
-      setLyricsStatus(nextCandidates.length ? null : "未找到歌词");
+      setLyricsStatus(collectedCandidates.length ? null : "未找到歌词");
       setError(null);
     } catch (rematchError) {
       setLyricsStatus("未找到歌词");
@@ -1220,7 +1371,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     } finally {
       setIsCandidateLoading(false);
     }
-  }, [handleSearchLyrics, lyrics.offsetMs, lyricsDisplaySettings.lyricsEnabled, streamingTarget, trackId, tryAutoApplyCandidate]);
+  }, [activeSearchProviders, handleSearchLyrics, lyrics.offsetMs, lyricsDisplaySettings.lyricsEnabled, streamingTarget, trackId, tryAutoApplyCandidate]);
 
   useEffect(() => {
     const handleSearchRequested = (event: Event): void => {
@@ -1436,30 +1587,6 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     [lyrics.offsetMs, trackId],
   );
 
-  const handleMarkInstrumental = useCallback(async (): Promise<void> => {
-    const lyricsApi = window.echo?.lyrics;
-    if (!lyricsApi?.markInstrumental || !trackId) {
-      setError("Desktop bridge unavailable");
-      return;
-    }
-
-    try {
-      setIsMarkingInstrumental(true);
-      const trackLyrics = await lyricsApi.markInstrumental(trackId);
-      lyricsRequestRef.current += 1;
-      setLyrics(trackLyricsToState(trackLyrics));
-      dispatchCurrentLyricsProviderChanged(trackLyrics);
-      setCandidates([]);
-      setActiveCandidateSource("all");
-      setLyricsStatus(null);
-      setError(null);
-    } catch (markError) {
-      setError(markError instanceof Error ? markError.message : String(markError));
-    } finally {
-      setIsMarkingInstrumental(false);
-    }
-  }, [trackId]);
-
   const lyricsOffsetControls = useMemo(() => {
     if (!trackId || lyrics.kind !== "synced" || !lyricsDisplaySettings.lyricsOffsetControlsEnabled) {
       return null;
@@ -1512,32 +1639,6 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     lyricsDisplaySettings.lyricsOffsetControlsEnabled,
     trackId,
   ]);
-
-  const lyricsMemoryControls = useMemo(() => {
-    if (!trackId || !lyricsDisplaySettings.lyricsEnabled) {
-      return null;
-    }
-
-    const isInstrumental = lyrics.kind === "instrumental";
-    return (
-      <section className="lyrics-memory-panel" aria-label="歌词记忆">
-        <div className="lyrics-match-actions">
-          <button
-            type="button"
-            disabled={isMarkingInstrumental || isInstrumental}
-            onClick={() => void handleMarkInstrumental()}
-          >
-            <Music2 size={14} />
-            <span>{isInstrumental ? "已标记为纯音乐" : "标记为纯音乐"}</span>
-          </button>
-        </div>
-        <p className="lyrics-match-status">
-          标记后会跟随这首歌记忆，并取消这首歌的自动歌词匹配；需要恢复时使用重新匹配歌词。
-          全局延迟影响所有歌曲，本歌曲延迟只保存当前歌曲。
-        </p>
-      </section>
-    );
-  }, [handleMarkInstrumental, isMarkingInstrumental, lyrics.kind, lyricsDisplaySettings.lyricsEnabled, trackId]);
 
   const lyricsControls = useMemo(() => {
     if (!trackId) {
@@ -1724,7 +1825,6 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         )}
 
         {lyricsControls}
-        {lyricsMemoryControls}
         {lyricsOffsetControls}
         {lyricsDisplaySettings.lyricsEnabled ? (
           <LyricsView

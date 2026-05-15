@@ -23,10 +23,11 @@ export const registerLyricsIpc = (): void => {
   ipcMain.handle(IpcChannels.LyricsGetForTrack, (_event, trackId: unknown) =>
     getLyricsService().getLyricsForTrack(requireText(trackId, 'trackId')),
   );
-  ipcMain.handle(IpcChannels.LyricsSearchCandidates, (_event, trackId: unknown, searchText?: unknown) =>
+  ipcMain.handle(IpcChannels.LyricsSearchCandidates, (_event, trackId: unknown, searchText?: unknown, providerId?: unknown) =>
     getLyricsService().searchLyricsCandidates(
       requireText(trackId, 'trackId'),
       typeof searchText === 'string' ? searchText : null,
+      typeof providerId === 'string' ? providerId : null,
     ),
   );
   ipcMain.handle(IpcChannels.LyricsApplyCandidate, (_event, trackId: unknown, candidateId: unknown) =>

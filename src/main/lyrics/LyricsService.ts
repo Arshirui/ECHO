@@ -125,6 +125,14 @@ const providerName = (value: string): LyricsSource => {
   return 'cached';
 };
 
+const isSearchableLyricsProvider = (value: unknown): value is LyricsProviderId =>
+  value === 'local' ||
+  value === 'lrclib' ||
+  value === 'netease' ||
+  value === 'qqmusic' ||
+  value === 'musixmatch' ||
+  value === 'genius';
+
 const lyricsKind = (value: string): TrackLyrics['kind'] => {
   if (value === 'plain' || value === 'synced' || value === 'instrumental') {
     return value;
@@ -423,7 +431,7 @@ export class LyricsService {
         autoAcceptScore: settings.lyricsAutoAcceptScore,
         coverAutoAcceptScore: settings.lyricsCoverAutoAcceptScore,
         deepSearchEnabled: settings.lyricsDeepSearchEnabled,
-        collectAllCandidates: true,
+        collectAllCandidates: false,
         isRejected: (provider, providerLyricsId) => this.hasRejectedProviderLyrics(trackId, provider, providerLyricsId),
       });
 
@@ -444,7 +452,7 @@ export class LyricsService {
     return null;
   }
 
-  async searchLyricsCandidates(trackId: string, searchText?: string | null): Promise<LyricsSearchCandidate[]> {
+  async searchLyricsCandidates(trackId: string, searchText?: string | null, providerId?: string | null): Promise<LyricsSearchCandidate[]> {
     const track = this.library.getTrack(trackId);
     if (!track) {
       return [];
@@ -453,10 +461,11 @@ export class LyricsService {
     const settings = safeSettings(this.readAppSettings);
     const query = toManualSearchQuery(track, searchText);
     const storedCandidates: StoredCandidate[] = [];
+    const enabledProviders = isSearchableLyricsProvider(providerId) ? [providerId] : settings.lyricsEnabledProviders;
 
     try {
       const result = await this.matchEngine.match(query, {
-        enabledProviders: settings.lyricsEnabledProviders,
+        enabledProviders,
         networkEnabled: settings.lyricsNetworkEnabled,
         providerTimeoutMs: settings.lyricsProviderTimeoutMs,
         totalMatchTimeoutMs: settings.lyricsTotalMatchTimeoutMs,

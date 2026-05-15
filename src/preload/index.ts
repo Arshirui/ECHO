@@ -209,7 +209,7 @@ const echoApi: EchoApi = {
   },
   lyrics: {
     getForTrack: (trackId) => ipcRenderer.invoke(IpcChannels.LyricsGetForTrack, trackId),
-    searchCandidates: (trackId, searchText) => ipcRenderer.invoke(IpcChannels.LyricsSearchCandidates, trackId, searchText),
+    searchCandidates: (trackId, searchText, providerId) => ipcRenderer.invoke(IpcChannels.LyricsSearchCandidates, trackId, searchText, providerId),
     applyCandidate: (trackId, candidateId) => ipcRenderer.invoke(IpcChannels.LyricsApplyCandidate, trackId, candidateId),
     applyCustomLrc: (trackId, lrcText, fileName) => ipcRenderer.invoke(IpcChannels.LyricsApplyCustomLrc, trackId, lrcText, fileName),
     markInstrumental: (trackId) => ipcRenderer.invoke(IpcChannels.LyricsMarkInstrumental, trackId),

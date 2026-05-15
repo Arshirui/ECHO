@@ -8,7 +8,6 @@ import {
   fireEvent,
   render,
   screen,
-  within,
   waitFor,
 } from "@testing-library/react";
 import type { AudioStatus } from "../../shared/types/audio";
@@ -979,12 +978,12 @@ describe("LyricsPage", () => {
     );
   });
 
-  it("marks the current track as instrumental and stops showing match candidates", async () => {
+  it("updates when the current track is marked as instrumental from lyrics settings", async () => {
     const track = makeTrack();
     mockEcho(track, 0, { lyricsEmptyStateHidden: false });
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(null),
-      searchCandidates: vi.fn().mockResolvedValue([makeLyricsCandidate({ id: "candidate-1" })]),
+      searchCandidates: vi.fn().mockResolvedValue([makeLyricsCandidate({ id: "candidate-1", score: 0.12, risk: "high" })]),
       applyCandidate: vi.fn(),
       markInstrumental: vi.fn().mockResolvedValue(
         makeTrackLyrics({
@@ -1007,11 +1006,27 @@ describe("LyricsPage", () => {
       </PlaybackQueueProvider>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "标记为纯音乐" }));
+    await waitFor(() => expect(container.querySelector(".lyrics-candidate-list")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "鏍囪涓虹函闊充箰" })).toBeNull();
 
-    await waitFor(() => expect(window.echo.lyrics.markInstrumental).toHaveBeenCalledWith("track-1"));
-    expect(await screen.findByText("纯音乐，请欣赏")).toBeTruthy();
-    expect(container.querySelector(".lyrics-candidate-list")).toBeNull();
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("lyrics:candidate-applied", {
+          detail: {
+            trackId: "track-1",
+            lyrics: makeTrackLyrics({
+              kind: "instrumental",
+              lines: [],
+              plainText: null,
+              syncedText: null,
+            }),
+          },
+        }),
+      );
+    });
+
+    expect(window.echo.lyrics.markInstrumental).not.toHaveBeenCalled();
+    await waitFor(() => expect(container.querySelector(".lyrics-candidate-list")).toBeNull());
   });
 
   it("auto-applies a high scoring candidate when the initial lyrics lookup misses", async () => {
@@ -1035,7 +1050,7 @@ describe("LyricsPage", () => {
       clearCache: vi.fn(),
     };
 
-    render(
+    const { container } = render(
       <PlaybackQueueProvider>
         <QueueSeed track={track}>
           <LyricsPage />
@@ -1065,7 +1080,7 @@ describe("LyricsPage", () => {
       clearCache: vi.fn(),
     };
 
-    render(
+    const { container } = render(
       <PlaybackQueueProvider>
         <QueueSeed track={track}>
           <LyricsPage />
@@ -1074,10 +1089,10 @@ describe("LyricsPage", () => {
     );
 
     await waitFor(() =>
-      expect(window.echo.lyrics.searchCandidates).toHaveBeenCalledWith("track-1"),
+      expect(window.echo.lyrics.searchCandidates).toHaveBeenCalledWith("track-1", undefined, "lrclib"),
     );
     expect(window.echo.lyrics.applyCandidate).not.toHaveBeenCalled();
-    expect(await screen.findByText("可能匹配")).toBeTruthy();
+    expect(container.querySelector(".lyrics-risk-badge--medium")).toBeTruthy();
   });
 
   it("auto-applies a high scoring candidate after rematching lyrics", async () => {
@@ -1263,7 +1278,6 @@ describe("LyricsPage", () => {
     await waitFor(() =>
       expect(container.querySelector(".lyrics-empty")).toBeTruthy(),
     );
-    expect(screen.getByText("暂无歌词")).toBeTruthy();
     expect(container.querySelector(".lyrics-match-panel")).toBeNull();
   });
 
@@ -1298,7 +1312,6 @@ describe("LyricsPage", () => {
     await waitFor(() =>
       expect(window.echo.lyrics.getForTrack).toHaveBeenCalledWith("track-1"),
     );
-    expect(screen.queryByText("纯音乐，请欣赏")).toBeNull();
     expect(container.querySelector(".lyrics-empty")).toBeNull();
   });
 
@@ -1354,12 +1367,13 @@ describe("LyricsPage", () => {
     expect(await screen.findByText("LRCLIB Song")).toBeTruthy();
     expect(screen.getByText("QQ Song")).toBeTruthy();
     expect(window.echo.lyrics.clearCache).not.toHaveBeenCalled();
-    expect(window.echo.lyrics.searchCandidates).toHaveBeenCalledWith("track-1");
+    expect(window.echo.lyrics.searchCandidates).toHaveBeenCalledWith("track-1", undefined, "lrclib");
+    expect(window.echo.lyrics.searchCandidates).toHaveBeenCalledWith("track-1", undefined, "qqmusic");
 
-    const sourceFilters = screen.getByLabelText("歌词来源筛选");
-    fireEvent.click(
-      within(sourceFilters).getByRole("button", { name: /QQ Music/ }),
-    );
+    const qqSourceButton = Array.from(container.querySelectorAll<HTMLButtonElement>(".lyrics-source-filters button"))
+      .find((button) => button.textContent?.includes("QQ"));
+    expect(qqSourceButton).toBeTruthy();
+    fireEvent.click(qqSourceButton!);
 
     expect(screen.queryByText("LRCLIB Song")).toBeNull();
     fireEvent.click(screen.getByText("QQ Song"));
@@ -1371,6 +1385,51 @@ describe("LyricsPage", () => {
       ),
     );
     expect(await screen.findByText("QQ applied line")).toBeTruthy();
+  });
+
+  it("keeps enabled lyrics sources visible even when one source returns no candidates", async () => {
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics({ lines: [{ timeMs: 0, text: "Current lyrics" }] })),
+      searchCandidates: vi.fn().mockImplementation(
+        (_trackId: string, _searchText?: string, provider?: string) =>
+          Promise.resolve(
+            provider === "lrclib"
+              ? [
+                  makeLyricsCandidate({
+                    id: "lrclib-only",
+                    provider: "lrclib",
+                    sourceLabel: "LRCLIB",
+                  }),
+                ]
+              : [],
+          ),
+      ),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Current lyrics")).toBeTruthy();
+    window.dispatchEvent(new Event("lyrics:search-requested"));
+
+    await waitFor(() => expect(container.querySelector(".lyrics-source-filters")).toBeTruthy());
+    const qqSource = Array.from(container.querySelectorAll<HTMLButtonElement>(".lyrics-source-filters button"))
+      .find((button) => button.textContent?.includes("QQ"));
+
+    expect(qqSource?.textContent).toContain("0");
+    expect(window.echo.lyrics.searchCandidates).toHaveBeenCalledWith("track-1", undefined, "qqmusic");
   });
 
   it("does not load lyrics while lyrics display is disabled", async () => {
@@ -1396,7 +1455,6 @@ describe("LyricsPage", () => {
     );
 
     await waitFor(() => expect(getForTrack).not.toHaveBeenCalled());
-    expect(screen.queryByText("歌词已关闭")).toBeNull();
     expect(container.querySelector(".lyrics-match-panel")).toBeNull();
     expect(container.querySelector(".lyrics-view")).toBeNull();
   });

@@ -4,6 +4,7 @@ import type {
   RemoteBackgroundGlobalStatus,
   RemoteBackgroundJobKind,
   RemoteBackgroundJobStatus,
+  RemoteDirectoryItem,
   RemoteSource,
   RemoteSourceInput,
   RemoteSourceProvider,
@@ -106,6 +107,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   const [sources, setSources] = useState<RemoteSource[]>([]);
   const [syncStatuses, setSyncStatuses] = useState<Record<string, RemoteSyncStatus>>({});
   const [jobStatuses, setJobStatuses] = useState<Record<string, RemoteBackgroundJobStatus>>({});
+  const [browsePreviews, setBrowsePreviews] = useState<Record<string, RemoteDirectoryItem[]>>({});
   const [globalJobStatus, setGlobalJobStatus] = useState<RemoteBackgroundGlobalStatus>(emptyGlobalStatus);
   const [form, setForm] = useState({
     displayName: '',
@@ -264,6 +266,9 @@ export const RemoteSourcesPanel = (): JSX.Element => {
       } else if (action === 'toggle') {
         await remoteApi.update({ id: source.id, status: source.status === 'disabled' ? 'enabled' : 'disabled' });
       } else if (action === 'delete') {
+        if (!window.confirm(`删除远程来源“${source.displayName}”？本地远程索引也会一并移除。`)) {
+          return;
+        }
         await remoteApi.delete(source.id);
         window.dispatchEvent(new Event('library:changed'));
         setMessage('来源已删除，相关远程索引已移除。');
@@ -271,6 +276,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         await remoteApi.cancelSync(source.id);
       } else if (action === 'browse') {
         const items = await remoteApi.browse(source.id);
+        setBrowsePreviews((current) => ({ ...current, [source.id]: items.slice(0, 8) }));
         setMessage(`浏览成功：发现 ${items.length} 个项目。`);
       }
       await refreshSources();
@@ -397,6 +403,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         {visibleSources.map((source) => {
           const syncStatus = syncStatuses[source.id] ?? emptyStatus(source.id);
           const jobStatus = jobStatuses[source.id] ?? emptyJobStatus(source.id);
+          const browsePreview = browsePreviews[source.id] ?? [];
           const running = syncStatus.status === 'running';
 
           return (
@@ -430,6 +437,16 @@ export const RemoteSourcesPanel = (): JSX.Element => {
                 ))}
               </div>
               {syncStatus.currentPath ? <p className="settings-inline-note">当前文件：{syncStatus.currentPath}</p> : null}
+              {browsePreview.length > 0 ? (
+                <div className="remote-sync-status" aria-label={`${source.displayName} 浏览结果`}>
+                  {browsePreview.map((item) => (
+                    <span key={item.path}>
+                      <em>{item.kind === 'directory' ? '目录' : item.audio ? '音频' : '文件'}</em>
+                      <strong>{item.path}</strong>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <div className="remote-source-actions">
                 <button type="button" disabled={busy === `test:${source.id}`} onClick={() => void runSourceAction(source, 'test')}>
                   <Wifi size={15} />测试

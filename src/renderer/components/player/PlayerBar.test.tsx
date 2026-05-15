@@ -442,6 +442,86 @@ describe('PlayerBar', () => {
     expect(screen.queryByText('Song 1')).toBeNull();
   });
 
+  it('keeps the transport in playing view while a track switch is pending', async () => {
+    const firstTrack = makeTrack(1);
+    const secondTrack = makeTrack(2);
+    let audioStatusHandler: ((status: AudioStatus) => void) | null = null;
+    let resolveSecondPlay: (() => void) | null = null;
+    const playLocalFile = vi.fn().mockImplementation(({ filePath, trackId }: { filePath: string; trackId?: string }) =>
+      new Promise((resolve) => {
+        resolveSecondPlay = () =>
+          resolve({
+            state: 'playing',
+            currentTrackId: trackId ?? secondTrack.id,
+            positionMs: 0,
+            durationMs: secondTrack.duration * 1000,
+            filePath,
+          });
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: firstTrack.id,
+          positionMs: 4000,
+          durationMs: firstTrack.duration * 1000,
+          filePath: firstTrack.path,
+        }),
+        playLocalFile,
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(firstTrack)),
+        onStatus: vi.fn((handler) => {
+          audioStatusHandler = handler;
+          return () => undefined;
+        }),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [firstTrack.id]: false, [secondTrack.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[firstTrack, secondTrack]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole('button', { name: 'Pause' });
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: secondTrack.id })));
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
+
+    act(() => {
+      audioStatusHandler?.({
+        ...audioStatus(firstTrack),
+        state: 'paused',
+      });
+    });
+
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
+
+    const finishSecondPlay = resolveSecondPlay ?? (() => undefined);
+    act(() => {
+      finishSecondPlay();
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy());
+  });
+
   it('keeps volume and playback speed popovers mutually exclusive', async () => {
     const track = makeTrack(1);
 

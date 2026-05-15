@@ -5,10 +5,10 @@ import { getAppBridge } from '../../utils/echoBridge';
 const storageKey = 'echo-next.audio-output-memory';
 
 export const resolveSupportedLatencyProfile = (
-  outputMode: AudioOutputMode,
+  _outputMode: AudioOutputMode,
   latencyProfile: AudioLatencyProfile,
 ): AudioLatencyProfile => {
-  return outputMode === 'exclusive' && latencyProfile === 'lowLatency' ? 'balanced' : latencyProfile;
+  return latencyProfile;
 };
 
 export const readRememberedAudioOutput = (): RememberedAudioOutput => {

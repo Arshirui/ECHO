@@ -6,7 +6,7 @@ import type { LocalFileResolveResult, PlaybackStatus } from '../../shared/types/
 import type { PlayableTrack } from '../../shared/types/remoteSources';
 import { streamingProviderNames, streamingStableKey } from '../../shared/types/streaming';
 import type { StreamingProviderName } from '../../shared/types/streaming';
-import { setPlaybackStatusSnapshot } from './playbackStatusStore';
+import { beginPlaybackSwitchSnapshot, setPlaybackStatusSnapshot } from './playbackStatusStore';
 
 export type QueueSource =
   | { type: 'songs'; label: string; search?: string; sort?: string; hideDuplicates?: boolean }
@@ -669,15 +669,12 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     setCurrentQueueId(item.queueId);
     setCurrentTrackIdInternal(item.track.id);
     setLastPlayedTrack(item.track);
-    setPlaybackStatusSnapshot({
-      playbackStatus: {
-        state: 'loading',
-        currentTrackId: item.track.id,
-        positionMs: 0,
-        durationMs: Math.round(Math.max(0, item.track.duration) * 1000),
-        filePath: track.path,
-      },
-      error: null,
+    beginPlaybackSwitchSnapshot({
+      state: 'loading',
+      currentTrackId: item.track.id,
+      positionMs: 0,
+      durationMs: Math.round(Math.max(0, item.track.duration) * 1000),
+      filePath: track.path,
     });
     const rawStatus =
       (track.mediaType === 'remote' || track.mediaType === 'streaming') && playback.playMediaItem

@@ -46,6 +46,7 @@ describe('RemoteFileSystemAdapter', () => {
     await mkdir(join(root, 'Album'), { recursive: true });
     const songPath = join(root, 'Album', 'Echo Song.flac');
     await writeFile(songPath, Buffer.from('fake flac data'));
+    await writeFile(join(root, 'Album', 'Odd Track.wv'), Buffer.from('fake wavpack data'));
     await writeFile(join(root, 'Album', 'notes.txt'), 'not music');
     const adapter = new RemoteFileSystemAdapter('smb');
 
@@ -60,28 +61,29 @@ describe('RemoteFileSystemAdapter', () => {
       scanned.push(item);
     }
 
-    expect(scanned).toHaveLength(1);
-    expect(scanned[0]).toEqual(expect.objectContaining({
+    expect(scanned.map((item) => item.path).sort()).toEqual(['/Album/Echo Song.flac', '/Album/Odd Track.wv']);
+    const song = scanned.find((item) => item.path === '/Album/Echo Song.flac');
+    expect(song).toEqual(expect.objectContaining({
       path: '/Album/Echo Song.flac',
       audio: true,
       stableKey: expect.any(String),
     }));
-    const firstStableKey = scanned[0].stableKey;
+    const firstStableKey = song!.stableKey;
 
     const rescanned = [];
     for await (const item of adapter.scan({ source: source(root) })) {
       rescanned.push(item);
     }
-    expect(rescanned[0].stableKey).toBe(firstStableKey);
+    expect(rescanned.find((item) => item.path === '/Album/Echo Song.flac')?.stableKey).toBe(firstStableKey);
 
     await writeFile(songPath, Buffer.from('fake flac data changed'));
     const changed = [];
     for await (const item of adapter.scan({ source: source(root) })) {
       changed.push(item);
     }
-    expect(changed[0].stableKey).not.toBe(firstStableKey);
+    expect(changed.find((item) => item.path === '/Album/Echo Song.flac')?.stableKey).not.toBe(firstStableKey);
 
-    const metadata = await adapter.readMetadata({ source: source(root), item: scanned[0] });
+    const metadata = await adapter.readMetadata({ source: source(root), item: song! });
     expect(metadata.status).toBe('partial');
     expect(metadata.title).toBe('Echo Song');
   });

@@ -25,10 +25,11 @@ import {
   remoteUrlHashFor,
   stableKeyForFileSystem,
 } from '../remoteIdentity';
+import { SCANNABLE_AUDIO_EXTENSIONS } from '../../../../shared/constants/audioExtensions';
 
 type FileSystemProvider = Extract<RemoteSourceProvider, 'smb' | 'sshfs'>;
 
-const audioExtensions = new Set(['.mp3', '.flac', '.wav', '.m4a', '.aac', '.ogg', '.opus', '.aiff', '.aif', '.ape', '.dsf', '.dff']);
+const audioExtensions = SCANNABLE_AUDIO_EXTENSIONS;
 
 const nowIso = (): string => new Date().toISOString();
 const cleanText = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);

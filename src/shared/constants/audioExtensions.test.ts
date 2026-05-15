@@ -3,7 +3,27 @@ import { isCueFile, isScannableAudioExtension, isSupportedAudioExtension, SUPPOR
 
 describe('audio extension constants', () => {
   it('supports common, hifi, dsd, container, ncm, and cue formats for direct playback', () => {
-    const supported = ['.flac', '.mp3', '.m4a', '.alac', '.opus', '.cue', '.ncm', '.dsf', '.dff', '.ape', '.wv', '.mka', '.mkv', '.mp4', '.tta', '.tak'];
+    const supported = [
+      '.flac',
+      '.mp3',
+      '.wav',
+      '.m4a',
+      '.alac',
+      '.opus',
+      '.aiff',
+      '.aif',
+      '.cue',
+      '.ncm',
+      '.dsf',
+      '.dff',
+      '.ape',
+      '.wv',
+      '.mka',
+      '.mkv',
+      '.mp4',
+      '.tta',
+      '.tak',
+    ];
 
     for (const extension of supported) {
       expect(isSupportedAudioExtension(`D:\\Music\\Track${extension}`)).toBe(true);
@@ -18,7 +38,7 @@ describe('audio extension constants', () => {
   });
 
   it('does not treat artwork, lyrics, documents, or executables as audio', () => {
-    const unsupported = ['.jpg', '.png', '.txt', '.lrc', '.pdf', '.exe'];
+    const unsupported = ['.jpg', '.png', '.txt', '.lrc', '.pdf', '.exe', '.iso'];
 
     for (const extension of unsupported) {
       expect(isSupportedAudioExtension(`D:\\Music\\Track${extension}`)).toBe(false);

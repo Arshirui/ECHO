@@ -113,17 +113,21 @@ describe('China lyrics providers', () => {
         .fn()
         .mockResolvedValueOnce(
           mockJsonResponse({
-            data: {
-              song: {
-                list: [
-                  {
-                    mid: 'song-mid',
-                    name: 'Echo Song',
-                    interval: 120,
-                    singer: [{ name: 'Echo Artist' }],
-                    album: { name: 'Echo Album' },
+            req_1: {
+              data: {
+                body: {
+                  song: {
+                    list: [
+                      {
+                        mid: 'song-mid',
+                        name: 'Echo Song',
+                        interval: 120,
+                        singer: [{ name: 'Echo Artist' }],
+                        album: { name: 'Echo Album' },
+                      },
+                    ],
                   },
-                ],
+                },
               },
             },
           }),
@@ -160,17 +164,21 @@ describe('China lyrics providers', () => {
         .fn()
         .mockResolvedValueOnce(
           mockJsonResponse({
-            data: {
-              song: {
-                list: [
-                  {
-                    mid: 'song-mid',
-                    name: 'Echo Song',
-                    interval: 120,
-                    singer: [{ name: 'Echo Artist' }],
-                    album: { name: 'Echo Album' },
+            req_1: {
+              data: {
+                body: {
+                  song: {
+                    list: [
+                      {
+                        mid: 'song-mid',
+                        name: 'Echo Song',
+                        interval: 120,
+                        singer: [{ name: 'Echo Artist' }],
+                        album: { name: 'Echo Album' },
+                      },
+                    ],
                   },
-                ],
+                },
               },
             },
           }),
@@ -185,6 +193,57 @@ describe('China lyrics providers', () => {
     const [candidate] = await new QQMusicLyricsProvider().search(request);
 
     expect(candidate.plainLyrics).toBe('Plain line');
+  });
+
+  it('falls back to the legacy QQ Music search response shape', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockJsonResponse({
+            req_1: {
+              data: {
+                body: {
+                  song: {
+                    list: [],
+                  },
+                },
+              },
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockJsonResponse({
+            data: {
+              song: {
+                list: [
+                  {
+                    mid: 'legacy-song-mid',
+                    name: 'Echo Song',
+                    interval: 120,
+                    singer: [{ name: 'Echo Artist' }],
+                    album: { name: 'Echo Album' },
+                  },
+                ],
+              },
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockJsonResponse({
+            lyric: '[00:01.00]Legacy line',
+          }),
+        ),
+    );
+
+    const [candidate] = await new QQMusicLyricsProvider().search(request);
+
+    expect(candidate).toMatchObject({
+      provider: 'qqmusic',
+      providerLyricsId: 'qqmusic:legacy-song-mid',
+      syncedLyrics: '[00:01.00]Legacy line',
+    });
   });
 
   it('swallows provider network failures', async () => {

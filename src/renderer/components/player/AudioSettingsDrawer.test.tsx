@@ -117,7 +117,7 @@ afterEach(() => {
 });
 
 describe('AudioSettingsDrawer ASIO buffer controls', () => {
-  it('hides low latency while WASAPI exclusive mode is selected', () => {
+  it('shows low latency while WASAPI exclusive mode is selected', () => {
     renderDrawer({
       ...baseStatus,
       outputMode: 'exclusive',
@@ -125,8 +125,23 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
       latencyProfile: 'lowLatency',
     });
 
-    expect(screen.queryByRole('button', { name: /Low latency/ })).toBeNull();
-    expect(screen.getByRole('button', { name: /Balanced/ }).className).toContain('active');
+    expect(screen.getByRole('button', { name: /Low latency/ }).className).toContain('active');
+    expect(screen.getByRole('button', { name: /Balanced/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Stable/ })).toBeTruthy();
+  });
+
+  it('does not force low latency when switching WASAPI exclusive on', async () => {
+    const setOutput = vi.fn().mockResolvedValue({
+      ...baseStatus,
+      outputMode: 'exclusive',
+      outputBackend: 'wasapi-exclusive',
+      latencyProfile: 'balanced',
+    });
+    renderDrawer({ ...baseStatus, latencyProfile: 'balanced' }, setOutput);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /wasapiExclusive/ }));
+
+    await waitFor(() => expect(setOutput).toHaveBeenCalledWith({ outputMode: 'exclusive', latencyProfile: 'balanced' }));
   });
 
   it('shows ASIO buffer controls only in ASIO mode', () => {

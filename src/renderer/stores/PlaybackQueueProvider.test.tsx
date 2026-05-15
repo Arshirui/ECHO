@@ -562,6 +562,7 @@ describe('PlaybackQueueProvider playback history session', () => {
         <div>
           <output aria-label="queue-track">{queue.currentTrackId ?? ''}</output>
           <output aria-label="shared-track">{status.playbackStatus?.currentTrackId ?? ''}</output>
+          <output aria-label="visual-state">{status.playbackVisualIntent?.state ?? ''}</output>
           <button type="button" onClick={() => void queue.playNext()}>
             next
           </button>
@@ -580,9 +581,11 @@ describe('PlaybackQueueProvider playback history session', () => {
 
     await waitFor(() => expect(screen.getByLabelText('queue-track').textContent).toBe(second.id));
     await waitFor(() => expect(screen.getByLabelText('shared-track').textContent).toBe(second.id));
+    expect(screen.getByLabelText('visual-state').textContent).toBe('playing');
 
     const finishSecondPlay = resolveSecondPlay ?? (() => undefined);
     finishSecondPlay();
+    await waitFor(() => expect(screen.getByLabelText('visual-state').textContent).toBe(''));
   });
 });
 

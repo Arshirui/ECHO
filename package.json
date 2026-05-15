@@ -44,6 +44,7 @@
     "electron-updater": "^6.8.3",
     "electron-vite": "^5.0.0",
     "ffmpeg-static": "^5.3.0",
+    "iconv-lite": "^0.6.3",
     "kuroshiro": "^1.2.0",
     "kuroshiro-analyzer-kuromoji": "^1.1.0",
     "lucide-react": "^0.468.0",
@@ -105,7 +106,8 @@
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/build/Release/*.node",
-      "node_modules/sharp/**/*"
+      "node_modules/sharp/**/*",
+      "node_modules/taglib-wasm/dist/*.wasm"
     ],
     "win": {
       "icon": "software.ico",

@@ -6,6 +6,7 @@ import ffmpegStatic from 'ffmpeg-static';
 import { parseFile } from 'music-metadata';
 import type { AudioProbeResult, DecoderRun, PcmDecodeRequest } from './audioTypes';
 import { resolveCueTrack } from './CueSheet';
+import { isDsdProbe, readDsdNativeSampleRate, shouldProbeDsdNativeSampleRate } from './DsdProbe';
 
 type DecoderChildProcess = ChildProcessByStdio<null, Readable, Readable>;
 type DecoderSpawnOptions = SpawnOptionsWithStdioTuple<'ignore', 'pipe', 'pipe'> & {
@@ -145,6 +146,13 @@ export class DecoderPipeline {
       bitDepth: normalizePositiveInteger(format.bitsPerSample),
       bitrate: normalizePositiveInteger(format.bitrate),
     };
+    if (isDsdProbe(result) && shouldProbeDsdNativeSampleRate(result)) {
+      const nativeSampleRate = await readDsdNativeSampleRate(probePath);
+      if (nativeSampleRate) {
+        result.fileSampleRate = nativeSampleRate;
+        result.bitDepth = result.bitDepth ?? 1;
+      }
+    }
 
     this.logger(
       `[DecoderPipeline] probe: file="${redactUrlSecrets(filePath)}" codec=${result.codec ?? 'n/a'} sampleRate=${

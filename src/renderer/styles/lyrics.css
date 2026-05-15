@@ -1648,10 +1648,32 @@ html[data-theme="dark"] .lyrics-page[data-background="theme"] .lyrics-line[data-
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 8px;
+  min-height: auto;
+  padding: 10px 11px;
 }
 
 .lyrics-settings-drawer .lyrics-drawer-candidates .lyrics-candidate-badges {
   justify-content: flex-start;
+  width: 100%;
+  gap: 5px;
+  row-gap: 5px;
+}
+
+.lyrics-settings-drawer .lyrics-drawer-candidates .lyrics-candidate > span:first-child {
+  width: 100%;
+}
+
+.lyrics-settings-drawer .lyrics-drawer-candidates .lyrics-candidate strong,
+.lyrics-settings-drawer .lyrics-drawer-candidates .lyrics-candidate em {
+  display: block;
+  min-width: 0;
+}
+
+.lyrics-settings-drawer .lyrics-drawer-candidates .lyrics-candidate-badges small {
+  min-height: 19px;
+  padding: 0 7px;
+  font-size: 9px;
+  line-height: 19px;
 }
 
 .lyrics-empty,

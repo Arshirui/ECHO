@@ -5,7 +5,7 @@ import type { PlaybackStatus } from '../../../shared/types/playback';
 import { streamingProviderNames, type StreamingProviderName } from '../../../shared/types/streaming';
 import { likedChangedEvent, likedTracksChangedEvent } from '../../hooks/useLikedMedia';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
-import { refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
+import { getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
 import { PlayerProgress } from './PlayerProgress';
 import { PlayerSpeedControl } from './PlayerSpeedControl';
 import { PlayerStatusChips } from './PlayerStatusChips';
@@ -225,7 +225,12 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   }, [applySharedPlaybackStatus]);
 
   const state = audioStatus?.state ?? playbackStatus?.state ?? 'idle';
-  const isPlaying = state === 'playing';
+  const visualState = getVisualPlaybackState({
+    audioStatus,
+    playbackStatus,
+    playbackVisualIntent: sharedPlaybackStatus.playbackVisualIntent,
+  });
+  const isPlaying = visualState === 'playing';
   const statusTrackId = playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
   const trackId = queue.currentTrackId ?? statusTrackId;
   const currentTrack = queue.currentTrack ?? queue.tracks.find((track) => track.id === trackId) ?? null;
@@ -705,6 +710,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       } catch (actionError) {
         const message = actionError instanceof Error ? actionError.message : String(actionError);
         setError(formatAudioHostError(message));
+        setPlaybackStatusSnapshot({ error: message });
       }
     },
     [refreshStatus, setQueueCurrentTrackId],
@@ -739,7 +745,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       artist,
       album: currentTrack?.album ?? null,
       artworkUrl,
-      state,
+      state: visualState,
       positionSeconds,
       durationSeconds,
       playbackRate: audioStatus?.playbackRate ?? 1,
@@ -753,7 +759,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     artworkUrl,
     positionSeconds,
     smtcEnabled,
-    state,
+    visualState,
     title,
   ]);
 

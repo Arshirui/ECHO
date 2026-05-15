@@ -1,32 +1,71 @@
 import { open } from 'node:fs/promises';
 import { basename, dirname, extname } from 'node:path';
+import iconv from 'iconv-lite';
 import { parseFile } from 'music-metadata';
 import type { IAudioMetadata } from 'music-metadata';
 import { resolveCueTrack } from '../../audio/CueSheet';
-import type { FieldSource, FieldSources, MetadataFields, MetadataResult } from '../libraryTypes';
+import type { EmbeddedCoverData, FieldSource, FieldSources, MetadataFields, MetadataResult } from '../libraryTypes';
 import type { MetadataReader } from './MetadataReader';
 
 const unknownArtist = 'Unknown Artist';
 const unknownAlbum = '';
-const waveInfoTagIds = new Set(['IART', 'INAM', 'IPRD', 'IGNR']);
+const waveInfoTagIds = new Set(['IART', 'INAM', 'IPRD', 'IGNR', 'ICRD', 'ITRK']);
+const tagLibPreferredExtensions = new Set([
+  '.dsf',
+  '.dff',
+  '.wav',
+  '.aiff',
+  '.aif',
+  '.ape',
+  '.wv',
+  '.tta',
+  '.tak',
+  '.caf',
+  '.mka',
+  '.mkv',
+  '.mp4',
+  '.mov',
+  '.webm',
+  '.mpc',
+]);
+const replaceableMetadataSources = new Set<FieldSource>(['unknown', 'filename_fallback', 'folder_structure', 'artist_fallback']);
+const replaceableTechnicalSources = new Set<FieldSource>(['unknown', 'filename_fallback']);
+const mojibakeCandidateEncodings = ['latin1', 'win1252', 'gbk', 'big5', 'shift_jis'] as const;
+const suspiciousMojibakePattern = /(?:[\u00c0-\u00ff]{2,}|[\u00c2-\u00f4][\u0080-\u00bf]|[\u00c3\u00c2][\u0080-\u00ffA-Za-z]|[\u93c4\u71b7\u5a07\u9287\u958e\u59b5\u7d0b]{2,}|\u{fffd}|\?{2,})/u;
+const mojibakeFragments = [
+  '\u00c3',
+  '\u00c2',
+  '\u00d0',
+  '\u00d1',
+  '\u00d2',
+  '\u00d3',
+  '\u00c5',
+  '\u00c6',
+  '\u00c7',
+  '\u00c8',
+  '\u00c9',
+  '\u00ca',
+  '\u00cb',
+  '\u9287',
+  '\u9288',
+  '\u93c4',
+  '\u71b7',
+  '\u59b5',
+  '\u958e',
+  '\u7d0b',
+  '\u{fffd}',
+];
 
-type WaveInfoTags = Partial<Record<'IART' | 'INAM' | 'IPRD' | 'IGNR', string>>;
+type WaveInfoTags = Partial<Record<'IART' | 'INAM' | 'IPRD' | 'IGNR' | 'ICRD' | 'ITRK', string>>;
 
-const cleanText = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+type TagLibFallbackFields = {
+  [Key in keyof MetadataFields]?: MetadataFields[Key] | null;
 };
 
-const cleanTextList = (value: unknown): string | null => {
-  if (Array.isArray(value)) {
-    return cleanText(value.find((item) => cleanText(item)));
-  }
-
-  return cleanText(value);
+type TagLibFallbackMetadata = {
+  fields: TagLibFallbackFields;
+  embeddedCover?: EmbeddedCoverData;
+  warnings: string[];
 };
 
 const stripTrailingNulls = (buffer: Buffer): Buffer => {
@@ -36,6 +75,21 @@ const stripTrailingNulls = (buffer: Buffer): Buffer => {
   }
 
   return buffer.subarray(0, end);
+};
+
+const countMatches = (text: string, pattern: RegExp): number => Array.from(text.matchAll(pattern)).length;
+
+const countControlCharacters = (text: string): number => {
+  let count = 0;
+
+  for (const character of text) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if ((codePoint >= 0x00 && codePoint <= 0x1f) || (codePoint >= 0x7f && codePoint <= 0x9f)) {
+      count += 1;
+    }
+  }
+
+  return count;
 };
 
 const textQualityScore = (text: string): number => {
@@ -50,6 +104,11 @@ const textQualityScore = (text: string): number => {
 
     if ((codePoint >= 0 && codePoint < 32 && ![9, 10, 13].includes(codePoint)) || (codePoint >= 0x7f && codePoint <= 0x9f)) {
       score -= 25;
+      continue;
+    }
+
+    if (codePoint >= 0x2460 && codePoint <= 0x24ff) {
+      score -= 8;
       continue;
     }
 
@@ -70,7 +129,57 @@ const textQualityScore = (text: string): number => {
     score += 0.5;
   }
 
+  score -= countMatches(text, /[\uFFFD?]/gu) * 18;
+  score -= countControlCharacters(text) * 20;
+  score -= countMatches(text, /(?:[\u00c2-\u00f4][\u0080-\u00bf]|[\u00c3\u00c2][\u0080-\u00ffA-Za-z]|\u00e2[\u0080-\u00ff]{1,2})/gu) * 12;
+  for (const fragment of mojibakeFragments) {
+    score -= text.split(fragment).length - 1;
+  }
+
   return score;
+};
+
+export const repairMojibakeText = (value: string): string => {
+  const trimmed = value.trim();
+  if (!suspiciousMojibakePattern.test(trimmed)) {
+    return trimmed;
+  }
+
+  const candidates = mojibakeCandidateEncodings.flatMap((encoding) => {
+    try {
+      const decoded = iconv.decode(iconv.encode(trimmed, encoding), 'utf8').trim();
+      if (!decoded || decoded === trimmed) {
+        return [];
+      }
+
+      return [{ text: decoded, score: textQualityScore(decoded) }];
+    } catch {
+      return [];
+    }
+  });
+
+  const originalScore = textQualityScore(trimmed);
+  candidates.sort((left, right) => right.score - left.score);
+  const best = candidates[0];
+
+  return best && best.score >= originalScore + 4 ? best.text : trimmed;
+};
+
+const cleanText = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = repairMojibakeText(value);
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const cleanTextList = (value: unknown): string | null => {
+  if (Array.isArray(value)) {
+    return cleanText(value.find((item) => cleanText(item)));
+  }
+
+  return cleanText(value);
 };
 
 export const decodeWaveInfoText = (rawValue: Buffer): string | null => {
@@ -218,6 +327,100 @@ const yearFromMetadata = (value: unknown): number | null => {
   return null;
 };
 
+const firstText = (value: unknown): string | null => {
+  if (Array.isArray(value)) {
+    return cleanText(value.find((item) => cleanText(item)));
+  }
+
+  return cleanText(value);
+};
+
+const firstNumber = (value: unknown): number | null => {
+  if (Array.isArray(value)) {
+    return numberOrNull(value.find((item) => numberOrNull(item) !== null));
+  }
+
+  return numberOrNull(value);
+};
+
+const warningMessage = (prefix: string, error: unknown): string =>
+  `${prefix}: ${error instanceof Error ? error.message : String(error)}`;
+
+const hasTagLibFieldData = (metadata: TagLibFallbackMetadata): boolean =>
+  Object.values(metadata.fields).some((value) => value !== null && value !== undefined && value !== '') || Boolean(metadata.embeddedCover);
+
+const normalizeTagLibBitrate = (value: unknown): number | null => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return Math.round(parsed * 1000);
+};
+
+const normalizeTagLibCodec = (properties: Record<string, unknown> | undefined): string | null => {
+  const codec = cleanText(properties?.codec);
+  if (codec && codec.toLowerCase() !== 'unknown') {
+    return codec;
+  }
+
+  const container = cleanText(properties?.containerFormat);
+  return container && container.toLowerCase() !== 'unknown' ? container : null;
+};
+
+export const readTagLibFallbackMetadata = async (filePath: string): Promise<TagLibFallbackMetadata> => {
+  const warnings: string[] = [];
+
+  try {
+    const taglib = await import('taglib-wasm');
+    const metadata = await taglib.readMetadata(filePath);
+    const tags = (metadata.tags ?? {}) as Record<string, unknown>;
+    const properties = (metadata.properties ?? {}) as Record<string, unknown> | undefined;
+    let embeddedCover: EmbeddedCoverData | undefined;
+
+    if (metadata.hasCoverArt) {
+      try {
+        const pictures = await taglib.readPictures(filePath);
+        const picture = pictures.find((item) => item.type === 'FrontCover') ?? pictures[0];
+        if (picture?.data?.byteLength) {
+          embeddedCover = {
+            data: picture.data,
+            mimeType: cleanText(picture.mimeType),
+          };
+        }
+      } catch (error) {
+        warnings.push(warningMessage('taglib_cover_unavailable', error));
+      }
+    }
+
+    return {
+      fields: {
+        title: firstText(tags.title),
+        artist: firstText(tags.artist),
+        album: firstText(tags.album),
+        albumArtist: firstText(tags.albumArtist),
+        trackNo: firstNumber(tags.track),
+        discNo: firstNumber(tags.discNumber),
+        year: yearFromMetadata(tags.year ?? tags.originalDate),
+        genre: firstText(tags.genre),
+        duration: positiveFloatOrNull(properties?.duration),
+        codec: normalizeTagLibCodec(properties),
+        sampleRate: numberOrNull(properties?.sampleRate),
+        bitDepth: numberOrNull(properties?.bitsPerSample),
+        bitrate: normalizeTagLibBitrate(properties?.bitrate),
+        bpm: positiveFloatOrNull(tags.bpm),
+      },
+      embeddedCover,
+      warnings,
+    };
+  } catch (error) {
+    return {
+      fields: {},
+      warnings: [warningMessage('taglib_metadata_unavailable', error)],
+    };
+  }
+};
+
 const fallbackFields = (filePath: string): MetadataResult => {
   const filenameGuess = guessFromFilename(filePath);
   const folderAlbum = folderAlbumFallback(filePath);
@@ -268,9 +471,10 @@ const fallbackFields = (filePath: string): MetadataResult => {
 
 export class TsMetadataReader implements MetadataReader {
   async read(filePath: string): Promise<MetadataResult> {
+    const cueTrack = resolveCueTrack(filePath);
+    const metadataPath = cueTrack?.audioPath ?? filePath;
+
     try {
-      const cueTrack = resolveCueTrack(filePath);
-      const metadataPath = cueTrack?.audioPath ?? filePath;
       const metadata = await parseFile(metadataPath, {
         duration: true,
         skipCovers: false,
@@ -278,11 +482,11 @@ export class TsMetadataReader implements MetadataReader {
 
       if (!cueTrack) {
         const waveInfoTags = await readWaveInfoTags(filePath).catch(() => ({}));
-        return this.normalize(filePath, metadata, waveInfoTags);
+        return this.normalizeWithFallback(filePath, metadataPath, metadata, waveInfoTags);
       }
 
       const waveInfoTags = await readWaveInfoTags(metadataPath).catch(() => ({}));
-      const normalized = this.normalize(metadataPath, metadata, waveInfoTags);
+      const normalized = await this.normalizeWithFallback(metadataPath, metadataPath, metadata, waveInfoTags);
       const sourceDuration = normalized.fields.duration;
       const cueEndSeconds = cueTrack.endSeconds ?? (sourceDuration > 0 ? sourceDuration : null);
       const duration = cueEndSeconds !== null ? Math.max(0, cueEndSeconds - cueTrack.startSeconds) : 0;
@@ -319,7 +523,6 @@ export class TsMetadataReader implements MetadataReader {
         status: normalized.status,
       };
     } catch (error) {
-      const cueTrack = resolveCueTrack(filePath);
       if (cueTrack) {
         return {
           fields: {
@@ -363,12 +566,106 @@ export class TsMetadataReader implements MetadataReader {
       }
 
       const result = fallbackFields(filePath);
+      const tagLibMetadata = await readTagLibFallbackMetadata(filePath);
+      const merged = this.applyTagLibFallback(result, tagLibMetadata);
+      const recovered = hasTagLibFieldData(tagLibMetadata);
+
       return {
-        ...result,
-        status: 'error',
-        errors: [error instanceof Error ? error.message : String(error)],
+        ...merged,
+        status: recovered ? 'ok' : 'error',
+        warnings: [...merged.warnings, warningMessage('music_metadata_unavailable', error)],
+        errors: recovered ? [] : [error instanceof Error ? error.message : String(error)],
       };
     }
+  }
+
+  private async normalizeWithFallback(
+    filePath: string,
+    metadataPath: string,
+    metadata: IAudioMetadata,
+    waveInfoTags: WaveInfoTags = {},
+  ): Promise<MetadataResult> {
+    const normalized = this.normalize(filePath, metadata, waveInfoTags);
+
+    if (!this.shouldReadTagLibFallback(metadataPath, normalized)) {
+      return normalized;
+    }
+
+    return this.applyTagLibFallback(normalized, await readTagLibFallbackMetadata(metadataPath));
+  }
+
+  private shouldReadTagLibFallback(filePath: string, result: MetadataResult): boolean {
+    if (tagLibPreferredExtensions.has(extname(filePath).toLowerCase())) {
+      return true;
+    }
+
+    if (result.embeddedCoverStatus !== 'present') {
+      return true;
+    }
+
+    return ['title', 'artist', 'album', 'albumArtist', 'trackNo', 'discNo', 'year', 'genre', 'bpm'].some((field) =>
+      replaceableMetadataSources.has(result.fieldSources[field] ?? 'unknown'),
+    );
+  }
+
+  private applyTagLibFallback(result: MetadataResult, tagLibMetadata: TagLibFallbackMetadata): MetadataResult {
+    const fields: MetadataFields = { ...result.fields };
+    const fieldSources: FieldSources = { ...result.fieldSources };
+    let embeddedMetadataStatus = result.embeddedMetadataStatus;
+
+    const applyEmbedded = <Key extends keyof MetadataFields>(field: Key, value: MetadataFields[Key] | null | undefined): void => {
+      if (value === null || value === undefined || value === '') {
+        return;
+      }
+
+      if (!replaceableMetadataSources.has(fieldSources[field] ?? 'unknown')) {
+        return;
+      }
+
+      fields[field] = value;
+      fieldSources[field] = 'embedded';
+      embeddedMetadataStatus = 'present';
+    };
+
+    const applyTechnical = <Key extends keyof MetadataFields>(field: Key, value: MetadataFields[Key] | null | undefined): void => {
+      if (value === null || value === undefined || value === '') {
+        return;
+      }
+
+      if (!replaceableTechnicalSources.has(fieldSources[field] ?? 'unknown')) {
+        return;
+      }
+
+      fields[field] = value;
+      fieldSources[field] = 'technical';
+    };
+
+    applyEmbedded('title', tagLibMetadata.fields.title);
+    applyEmbedded('artist', tagLibMetadata.fields.artist);
+    applyEmbedded('album', tagLibMetadata.fields.album);
+    applyEmbedded('albumArtist', tagLibMetadata.fields.albumArtist);
+    applyEmbedded('trackNo', tagLibMetadata.fields.trackNo);
+    applyEmbedded('discNo', tagLibMetadata.fields.discNo);
+    applyEmbedded('year', tagLibMetadata.fields.year);
+    applyEmbedded('genre', tagLibMetadata.fields.genre);
+    applyEmbedded('bpm', tagLibMetadata.fields.bpm);
+    applyTechnical('duration', tagLibMetadata.fields.duration);
+    applyTechnical('codec', tagLibMetadata.fields.codec);
+    applyTechnical('sampleRate', tagLibMetadata.fields.sampleRate);
+    applyTechnical('bitDepth', tagLibMetadata.fields.bitDepth);
+    applyTechnical('bitrate', tagLibMetadata.fields.bitrate);
+
+    const embeddedCover = result.embeddedCover ?? tagLibMetadata.embeddedCover;
+
+    return {
+      ...result,
+      fields,
+      fieldSources,
+      embeddedCover,
+      embeddedMetadataStatus,
+      embeddedCoverStatus: embeddedCover ? 'present' : result.embeddedCoverStatus,
+      warnings: [...result.warnings, ...tagLibMetadata.warnings],
+    };
   }
 
   normalize(filePath: string, metadata: IAudioMetadata, waveInfoTags: WaveInfoTags = {}): MetadataResult {
@@ -400,15 +697,17 @@ export class TsMetadataReader implements MetadataReader {
     const embeddedAlbum = cleanText(waveInfoTags.IPRD) ?? cleanText(common.album);
     const embeddedAlbumArtist = cleanTextList(common.albumartist);
     const embeddedGenre = cleanText(waveInfoTags.IGNR) ?? cleanTextList(common.genre);
+    const embeddedTrackNo = numberOrNull(waveInfoTags.ITRK) ?? numberOrNull(common.track?.no);
+    const embeddedYear = yearFromMetadata(waveInfoTags.ICRD) ?? yearFromMetadata(common.year ?? common.date);
     const folderAlbum = folderAlbumFallback(filePath);
 
     const title = pickText('title', embeddedTitle, filenameGuess.title, 'filename_fallback');
     const artist = pickText('artist', embeddedArtist, filenameGuess.artist ?? unknownArtist, filenameGuess.artist ? 'filename_fallback' : 'unknown');
     const album = pickText('album', embeddedAlbum, folderAlbum ?? unknownAlbum, folderAlbum ? 'folder_structure' : 'unknown');
     const albumArtist = pickText('albumArtist', embeddedAlbumArtist, artist, 'artist_fallback');
-    const trackNo = pickNumber('trackNo', numberOrNull(common.track?.no));
+    const trackNo = pickNumber('trackNo', embeddedTrackNo);
     const discNo = pickNumber('discNo', numberOrNull(common.disk?.no));
-    const year = pickNumber('year', yearFromMetadata(common.year ?? common.date));
+    const year = pickNumber('year', embeddedYear);
     const genre = embeddedGenre;
     fieldSources.genre = genre ? 'embedded' : 'unknown';
     const duration = Math.max(0, Number(format.duration ?? 0));

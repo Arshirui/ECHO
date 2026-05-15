@@ -248,6 +248,53 @@ const parseErrors = (value: unknown): string[] => {
 
 const textOrNull = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+const titleCollator = new Intl.Collator(['zh-Hans-u-co-pinyin', 'zh-Hant', 'ja', 'ko', 'en'], {
+  numeric: true,
+  sensitivity: 'base',
+});
+const latinLeadingPattern = /^[\s\p{P}\p{S}]*[\dA-Za-z]/u;
+const cjkLeadingPattern = /^[\s\p{P}\p{S}]*[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/u;
+
+const titleSortGroup = (value: unknown): number => {
+  const text = typeof value === 'string' ? value : '';
+  if (latinLeadingPattern.test(text)) {
+    return 0;
+  }
+  if (cjkLeadingPattern.test(text)) {
+    return 1;
+  }
+  return 2;
+};
+
+const compareNaturalTitleRows = (left: DbRow, right: DbRow): number => {
+  const leftGroup = titleSortGroup(left.title);
+  const rightGroup = titleSortGroup(right.title);
+  if (leftGroup !== rightGroup) {
+    return leftGroup - rightGroup;
+  }
+
+  const titleCompare = titleCollator.compare(String(left.title ?? ''), String(right.title ?? ''));
+  if (titleCompare !== 0) {
+    return titleCompare;
+  }
+
+  const artistCompare = titleCollator.compare(String(left.artist ?? ''), String(right.artist ?? ''));
+  if (artistCompare !== 0) {
+    return artistCompare;
+  }
+
+  return String(left.id ?? left.path ?? '').localeCompare(String(right.id ?? right.path ?? ''));
+};
+
+const isNaturalTitleSort = (sort: string): sort is 'titleAsc' | 'titleDesc' => sort === 'titleAsc' || sort === 'titleDesc';
+
+const applyNaturalTitleSortPage = <T extends DbRow>(rows: T[], sort: 'titleAsc' | 'titleDesc', offset: number, pageSize: number): T[] => {
+  const direction = sort === 'titleDesc' ? -1 : 1;
+  return [...rows]
+    .sort((left, right) => compareNaturalTitleRows(left, right) * direction)
+    .slice(offset, offset + pageSize);
+};
+
 const mostCommonMapKey = (counts: Map<string, number>): string | null => {
   let selected: string | null = null;
   let selectedCount = 0;
@@ -592,10 +639,7 @@ export class LibraryStore {
     ], searchOptions);
     const whereSql = searchFilter.sql ? `WHERE ${scope.sql} AND ${searchFilter.sql}` : `WHERE ${scope.sql}`;
     const params = [...scope.params, ...searchFilter.params];
-    const orderSql = this.trackOrderSql(sort);
-    const totalRow = this.getRow(`SELECT COUNT(*) AS total FROM tracks ${whereSql}`, ...params);
-    const rows = this.allRows(
-      `SELECT
+    const selectSql = `SELECT
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
         tracks.duration, tracks.codec, tracks.sample_rate, tracks.bit_depth, tracks.bitrate,
@@ -603,13 +647,19 @@ export class LibraryStore {
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
        FROM tracks
-       ${whereSql}
+       ${whereSql}`;
+    const orderSql = this.trackOrderSql(sort);
+    const totalRow = this.getRow(`SELECT COUNT(*) AS total FROM tracks ${whereSql}`, ...params);
+    const rows = isNaturalTitleSort(sort)
+      ? applyNaturalTitleSortPage(this.allRows(selectSql, ...params), sort, offset, pageSize)
+      : this.allRows(
+          `${selectSql}
        ${orderSql}
        LIMIT ? OFFSET ?`,
-      ...params,
-      pageSize,
-      offset,
-    );
+          ...params,
+          pageSize,
+          offset,
+        );
     const total = Number(totalRow?.total ?? 0);
 
     try {
@@ -1689,20 +1739,38 @@ export class LibraryStore {
       });
 
       const albumRows = this.allRows(
-        `SELECT id, album_artist, cover_id
+        `SELECT
+          albums.id AS album_id,
+          albums.album_artist AS album_artist,
+          albums.cover_id AS cover_id,
+          album_tracks.track_id AS track_id,
+          album_tracks.position AS track_position
          FROM albums
-         WHERE album_artist IS NOT NULL AND TRIM(album_artist) != ''`,
+         LEFT JOIN album_tracks ON album_tracks.album_id = albums.id
+         WHERE albums.album_artist IS NOT NULL AND TRIM(albums.album_artist) != ''
+         ORDER BY albums.title COLLATE NOCASE, album_tracks.position ASC`,
       );
 
       for (const row of albumRows) {
-        const albumId = String(row.id);
+        const albumId = String(row.album_id);
         const sourceName = normalizeArtistDisplayName(row.album_artist);
         const coverId = textOrNull(row.cover_id);
+        const trackId = textOrNull(row.track_id);
+        const trackPosition = Number(row.track_position ?? trackLinks.size);
 
         for (const name of splitArtistNames(sourceName)) {
           const artist = ensureArtist(name);
           linkAlbum(artist, albumId, sourceName);
           considerCover(artist, albumId, coverId);
+          if (trackId) {
+            artist.trackIds.add(trackId);
+            trackLinks.set(`${artist.id}:${trackId}`, {
+              artistId: artist.id,
+              trackId,
+              sourceName,
+              position: Number.isFinite(trackPosition) ? trackPosition : trackLinks.size,
+            });
+          }
         }
       }
 
@@ -2067,16 +2135,28 @@ export class LibraryStore {
     )`;
     const orderSql = this.unifiedTrackOrderSql(sort);
     const totalRow = this.getRow(`${unifiedTracksSql} SELECT COUNT(*) AS total FROM library_tracks`, ...allParams);
-    const rows = this.allRows(
-      `${unifiedTracksSql}
+    const rows = isNaturalTitleSort(sort)
+      ? applyNaturalTitleSortPage(
+          this.allRows(
+            `${unifiedTracksSql}
+      SELECT *
+      FROM library_tracks`,
+            ...allParams,
+          ),
+          sort,
+          offset,
+          pageSize,
+        )
+      : this.allRows(
+          `${unifiedTracksSql}
       SELECT *
       FROM library_tracks
       ${orderSql}
       LIMIT ? OFFSET ?`,
-      ...allParams,
-      pageSize,
-      offset,
-    );
+          ...allParams,
+          pageSize,
+          offset,
+        );
     const total = Number(totalRow?.total ?? 0);
 
     try {
@@ -2293,10 +2373,21 @@ export class LibraryStore {
     const orderSql = this.artistTrackOrderSql(sort);
     const totalRow = this.getRow(
       `SELECT COUNT(*) AS total
-       FROM artist_tracks
-       INNER JOIN tracks ON tracks.id = artist_tracks.track_id
-       WHERE artist_tracks.artist_id = ?
-         AND tracks.missing = 0`,
+       FROM (
+         SELECT tracks.id
+         FROM artist_tracks
+         INNER JOIN tracks ON tracks.id = artist_tracks.track_id
+         WHERE artist_tracks.artist_id = ?
+           AND tracks.missing = 0
+         UNION
+         SELECT tracks.id
+         FROM artist_albums
+         INNER JOIN album_tracks ON album_tracks.album_id = artist_albums.album_id
+         INNER JOIN tracks ON tracks.id = album_tracks.track_id
+         WHERE artist_albums.artist_id = ?
+           AND tracks.missing = 0
+       ) AS artist_track_ids`,
+      artist.id,
       artist.id,
     );
     const rows = this.allRows(
@@ -2307,12 +2398,26 @@ export class LibraryStore {
         tracks.bpm, tracks.bpm_confidence, tracks.beat_offset_ms, tracks.analysis_status, tracks.analysis_updated_at,
         tracks.cover_id, tracks.metadata_status, tracks.embedded_metadata_status, tracks.embedded_cover_status,
         tracks.network_metadata_status, tracks.field_sources_json
-      FROM artist_tracks
-      INNER JOIN tracks ON tracks.id = artist_tracks.track_id
-      WHERE artist_tracks.artist_id = ?
+      FROM (
+        SELECT tracks.id
+        FROM artist_tracks
+        INNER JOIN tracks ON tracks.id = artist_tracks.track_id
+        WHERE artist_tracks.artist_id = ?
+          AND tracks.missing = 0
+        UNION
+        SELECT tracks.id
+        FROM artist_albums
+        INNER JOIN album_tracks ON album_tracks.album_id = artist_albums.album_id
+        INNER JOIN tracks ON tracks.id = album_tracks.track_id
+        WHERE artist_albums.artist_id = ?
+          AND tracks.missing = 0
+      ) AS artist_track_ids
+      INNER JOIN tracks ON tracks.id = artist_track_ids.id
+      WHERE 1 = 1
         AND tracks.missing = 0
       ${orderSql}
       LIMIT ? OFFSET ?`,
+      artist.id,
       artist.id,
       pageSize,
       offset,

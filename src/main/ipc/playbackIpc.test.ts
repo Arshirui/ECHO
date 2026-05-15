@@ -142,6 +142,101 @@ describe('playback media prepare IPC', () => {
     }));
   });
 
+  it('refreshes missing remote duration and reuses the prepared proxy URL for playback', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const playLocalFile = vi.fn().mockResolvedValue(undefined);
+    const setPlaybackActive = vi.fn();
+    const refreshTrackMetadata = vi.fn().mockResolvedValue({ duration: 188.5 });
+    const createStreamUrl = vi.fn().mockResolvedValue({
+      url: 'http://127.0.0.1:19000/remote-stream/token',
+      expiresAt: '2026-01-01T06:00:00.000Z',
+    });
+    const backfillDuration = vi.fn();
+
+    vi.doMock('electron', () => ({
+      dialog: { showOpenDialog: vi.fn() },
+      ipcMain: {
+        handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
+          handlers.set(channel, handler);
+        }),
+      },
+    }));
+    vi.doMock('../audio/AudioSession', () => ({
+      getAudioSession: () => ({
+        getStatus: () => ({
+          state: 'playing',
+          currentTrackId: 'remote-track',
+          positionSeconds: 0,
+          durationSeconds: 188.5,
+          currentFilePath: 'http://127.0.0.1:19000/remote-stream/token',
+        }),
+        on: vi.fn(),
+        restorePlaybackMemory: vi.fn(),
+        playLocalFile,
+      }),
+    }));
+    vi.doMock('../audio/PlaybackMemoryStore', () => ({
+      getPlaybackMemoryStore: () => ({
+        load: vi.fn(() => null),
+        save: vi.fn(),
+        clear: vi.fn(),
+      }),
+    }));
+    vi.doMock('../integrations/smtc/SmtcStatusSync', () => ({ syncSmtcStatus: vi.fn() }));
+    vi.doMock('../library/remote/RemoteSourceService', () => ({
+      getRemoteSourceService: () => ({
+        setPlaybackActive,
+        refreshTrackMetadata,
+        createStreamUrl,
+        backfillDuration,
+      }),
+    }));
+    vi.doMock('../streaming/StreamingService', () => ({
+      getStreamingService: () => ({
+        resolvePlayback: vi.fn(),
+        invalidatePlayback: vi.fn(),
+      }),
+    }));
+    vi.doMock('../app/localFileOpen', () => ({ resolveLocalAudioFiles: vi.fn() }));
+
+    const { IpcChannels } = await import('../../shared/constants/ipcChannels');
+    const { registerPlaybackIpc } = await import('./playbackIpc');
+    registerPlaybackIpc();
+
+    const request = {
+      item: {
+        mediaType: 'remote',
+        trackId: 'remote-track',
+        sourceId: 'source-1',
+        remotePath: '/音乐 Space/Echo Song.mp3',
+        stableKey: 'stable-1',
+        title: 'Echo Song',
+        artist: 'Echo Artist',
+        album: 'Echo Album',
+        duration: null,
+      },
+    };
+
+    await handlers.get(IpcChannels.PlaybackPrepareMediaItem)?.({}, request);
+    await handlers.get(IpcChannels.PlaybackPlayMediaItem)?.({}, request);
+
+    expect(setPlaybackActive).toHaveBeenCalledWith(true);
+    expect(refreshTrackMetadata).toHaveBeenCalledWith('remote-track');
+    expect(createStreamUrl).toHaveBeenCalledTimes(1);
+    expect(createStreamUrl).toHaveBeenCalledWith({
+      trackId: 'remote-track',
+      sourceId: 'source-1',
+      remotePath: '/音乐 Space/Echo Song.mp3',
+      stableKey: 'stable-1',
+    });
+    expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      filePath: 'http://127.0.0.1:19000/remote-stream/token',
+      trackId: 'remote-track',
+      probe: { durationSeconds: 188.5 },
+    }));
+    expect(backfillDuration).toHaveBeenCalledWith('remote-track', 188.5);
+  });
+
   it('forwards local file preparation failures without breaking the IPC call', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const prepareLocalFile = vi.fn().mockRejectedValue(new Error('probe failed'));

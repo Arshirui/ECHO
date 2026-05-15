@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { PlaybackStatus } from '../../../shared/types/playback';
 import type { SmtcCommand } from '../../../shared/types/smtc';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
-import { refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
+import { getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
 import { bindMediaSessionActions, clearMediaSession } from './mediaSession';
 
 const playbackSeekedEvent = 'playback:seeked';
@@ -18,7 +18,8 @@ export const PlaybackCommandController = (): null => {
   const playbackStatus = sharedPlaybackStatus.playbackStatus;
   const audioStatus = sharedPlaybackStatus.audioStatus;
   const state = audioStatus?.state ?? playbackStatus?.state ?? 'idle';
-  const isPlaying = state === 'playing';
+  const visualState = getVisualPlaybackState(sharedPlaybackStatus);
+  const isPlaying = visualState === 'playing';
   const positionSeconds = audioStatus?.positionSeconds ?? (playbackStatus?.positionMs ?? 0) / 1000;
   const durationSeconds = audioStatus?.durationSeconds ?? (playbackStatus?.durationMs ?? 0) / 1000;
 

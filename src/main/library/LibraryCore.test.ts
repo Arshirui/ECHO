@@ -1528,6 +1528,29 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('getTracks sorts mixed Chinese and Latin titles naturally before pagination', async () => {
+    const harness = createHarness();
+    const zFile = writeAudioFile(harness.folder, 'z.flac');
+    const aiFile = writeAudioFile(harness.folder, 'ai.flac');
+    const cFile = writeAudioFile(harness.folder, 'c.flac');
+    const buFile = writeAudioFile(harness.folder, 'bu.flac');
+    harness.metadataService.overrides.set(zFile, baseMetadata({ title: 'Zebra' }));
+    harness.metadataService.overrides.set(aiFile, baseMetadata({ title: '爱你' }));
+    harness.metadataService.overrides.set(cFile, baseMetadata({ title: 'Coffee' }));
+    harness.metadataService.overrides.set(buFile, baseMetadata({ title: '不如' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const ascending = harness.service.getTracks({ page: 1, pageSize: 3, sort: 'titleAsc' });
+    const descending = harness.service.getTracks({ page: 1, pageSize: 3, sort: 'titleDesc' });
+
+    expect(ascending.items.map((track) => track.title)).toEqual(['Coffee', 'Zebra', '爱你']);
+    expect(ascending.hasMore).toBe(true);
+    expect(descending.items.map((track) => track.title)).toEqual(['不如', '爱你', 'Zebra']);
+    expect(descending.hasMore).toBe(true);
+    harness.cleanup();
+  });
+
   it('getTracks sorts by file modified time', async () => {
     const harness = createHarness();
     const oldFile = writeAudioFile(harness.folder, 'Old.flac', new Date('2024-01-01T00:00:00.000Z'));
@@ -1847,6 +1870,24 @@ describe('Library Core', () => {
     expect(firstPage.hasMore).toBe(true);
     expect(secondPage.items).toHaveLength(1);
     expect(secondPage.items[0].title).toBe('Second Album');
+    harness.cleanup();
+  });
+
+  it('getArtistTracks includes tracks from albums credited to the artist', async () => {
+    const harness = createHarness();
+    const first = writeAudioFile(harness.folder, 'AlbumArtistA.flac');
+    const second = writeAudioFile(harness.folder, 'AlbumArtistB.flac');
+    harness.metadataService.overrides.set(first, baseMetadata({ title: 'Unit Song A', artist: 'Guest Singer A', album: 'Unit Album', albumArtist: '10 Jigen', trackNo: 1 }));
+    harness.metadataService.overrides.set(second, baseMetadata({ title: 'Unit Song B', artist: 'Guest Singer B', album: 'Unit Album', albumArtist: '10 Jigen', trackNo: 2 }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const [artist] = harness.service.getArtists({ search: '10 Jigen', pageSize: 1 }).items;
+    const tracks = harness.service.getArtistTracks(artist.id, { page: 1, pageSize: 10 });
+
+    expect(artist).toMatchObject({ name: '10 Jigen', trackCount: 2, albumCount: 1 });
+    expect(tracks.total).toBe(2);
+    expect(tracks.items.map((track) => track.title)).toEqual(['Unit Song A', 'Unit Song B']);
     harness.cleanup();
   });
 

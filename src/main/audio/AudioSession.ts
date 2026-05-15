@@ -8,6 +8,7 @@ import { getEqBridge } from './EqBridge';
 import { PcmLevelMeterTransform, createAudioLevelTelemetry, type PcmLevelSnapshot } from './AudioLevelMeter';
 import { NativeOutputBridge, isNativeOutputBridgeAvailable } from './NativeOutputBridge';
 import { PlaybackClock } from './PlaybackClock';
+import { resolveDsdPcmOutputSampleRate, shouldProbeDsdNativeSampleRate } from './DsdProbe';
 import type {
   AudioDeviceInfo,
   AudioDiagnostics,
@@ -105,7 +106,8 @@ const nativeUnderrunCallbackThreshold = 3;
 const nativeUnderrunFramesThresholdMs = 100;
 const nativeTelemetryStatusIntervalMs = 1000;
 const levelMeterStatusIntervalMs = 1000;
-const asioReplaceOutputGracefulStopTimeoutMs = 1_000;
+const asioFailedStartGracefulStopTimeoutMs = 1_000;
+const minReliableAsioSampleRate = 44_100;
 
 const sharedStabilityProfiles: Record<
   SharedStabilityTier,
@@ -153,8 +155,11 @@ const latencyProfiles: Record<AudioLatencyProfile, Pick<NativeOutputStartOptions
   },
 };
 
+const exclusiveLowLatencyMinimumBufferMs = 8;
+const exclusiveLowLatencyBufferStepFrames = 128;
+
 const defaultLatencyProfileForMode = (outputMode: AudioOutputMode): AudioLatencyProfile =>
-  outputMode === 'exclusive' || outputMode === 'shared' ? 'balanced' : 'lowLatency';
+  outputMode === 'asio' ? 'lowLatency' : 'balanced';
 
 const defaultLogger = (message: string): void => {
   console.warn(message);
@@ -203,10 +208,10 @@ const normalizeLatencyProfile = (value: unknown): AudioLatencyProfile => {
 };
 
 const resolveSupportedLatencyProfile = (
-  outputMode: AudioOutputMode,
+  _outputMode: AudioOutputMode,
   latencyProfile: AudioLatencyProfile,
 ): AudioLatencyProfile => {
-  return outputMode === 'exclusive' && latencyProfile === 'lowLatency' ? 'balanced' : latencyProfile;
+  return latencyProfile;
 };
 
 const resolveLatencyProfile = (
@@ -225,6 +230,25 @@ const resolveLatencyProfile = (
   }
 
   return resolveSupportedLatencyProfile(nextOutputMode, previousLatencyProfile ?? defaultLatencyProfileForMode(nextOutputMode));
+};
+
+const roundUpToExclusiveLowLatencyStep = (frames: number): number =>
+  Math.ceil(frames / exclusiveLowLatencyBufferStepFrames) * exclusiveLowLatencyBufferStepFrames;
+
+const getLatencyProfileBufferSizeFrames = (
+  outputMode: AudioOutputMode,
+  latencyProfile: AudioLatencyProfile,
+  requestedOutputSampleRate: number,
+): number => {
+  const baseBufferSizeFrames = latencyProfiles[latencyProfile].bufferSizeFrames ?? 2048;
+
+  if (outputMode !== 'exclusive' || latencyProfile !== 'lowLatency') {
+    return baseBufferSizeFrames;
+  }
+
+  const sampleRate = normalizePositiveInteger(requestedOutputSampleRate) ?? 48000;
+  const minimumFrames = Math.ceil((sampleRate * exclusiveLowLatencyMinimumBufferMs) / 1000);
+  return Math.max(baseBufferSizeFrames, roundUpToExclusiveLowLatencyStep(minimumFrames));
 };
 
 const normalizePlaybackRate = (value: unknown): number => {
@@ -629,7 +653,9 @@ export class AudioSession extends EventEmitter {
     const startedAt = performance.now();
     const context = this.createLocalPrepareContext(request.filePath, request.trackId, request.probe);
     const redactedFilePath = redactUrlSecrets(request.filePath);
-    const providedProbeComplete = isProbeHintCompleteEnough(request.probe);
+    const providedProbe = createProbeFromHint(request.filePath, request.probe);
+    const dsdNativeProbeRequired = providedProbe ? shouldProbeDsdNativeSampleRate(providedProbe) : false;
+    const providedProbeComplete = isProbeHintCompleteEnough(request.probe) && !dsdNativeProbeRequired;
 
     this.logger(JSON.stringify({
       event: 'local_prepare_started',
@@ -822,7 +848,11 @@ export class AudioSession extends EventEmitter {
         }));
       }
       const playbackProbeHint = preparedProbe?.probe ?? request.probe;
-      const probe = createProbeFromHint(request.filePath, playbackProbeHint) ?? await this.decoder.probeLocalFile(request.filePath);
+      let probe = createProbeFromHint(request.filePath, playbackProbeHint);
+      if (!probe || shouldProbeDsdNativeSampleRate(probe)) {
+        const probed = await this.decoder.probeLocalFile(request.filePath);
+        probe = createProbeFromHint(request.filePath, mergeProbeHints(createProbeHint(probed), playbackProbeHint)) ?? probed;
+      }
       this.assertCurrentRun(token);
       this.currentProbe = probe;
       let { bridge, plan, ready, hostReused, hostRestartReason } = await this.startOutputBridgeForProbe(
@@ -1463,6 +1493,8 @@ export class AudioSession extends EventEmitter {
     const outputMode = normalizeOutputMode(outputSettings.outputMode);
     const fileSampleRate = probe.fileSampleRate;
     const sourceSampleRate = fileSampleRate ?? fallbackSampleRate;
+    const dsdPcmOutputSampleRate = resolveDsdPcmOutputSampleRate(probe);
+    const sourceOutputSampleRate = dsdPcmOutputSampleRate ?? sourceSampleRate;
     const explicitRequestedSampleRate = normalizePositiveInteger(outputSettings.requestedOutputSampleRate);
     const residentOutputSampleRate =
       outputMode !== 'shared' ? normalizePositiveInteger(planOptions.residentOutputSampleRate) : null;
@@ -1475,7 +1507,7 @@ export class AudioSession extends EventEmitter {
       residentOutputSampleRate ??
       (outputMode === 'shared'
         ? explicitRequestedSampleRate ?? sharedDeviceSampleRate ?? currentReadySampleRate ?? fallbackSharedMixSampleRate
-        : explicitRequestedSampleRate ?? sourceSampleRate);
+        : dsdPcmOutputSampleRate ?? explicitRequestedSampleRate ?? sourceOutputSampleRate);
     const decoderOutputSampleRate =
       outputMode === 'shared'
         ? requestedOutputSampleRate
@@ -1488,11 +1520,16 @@ export class AudioSession extends EventEmitter {
       warnings.push('file_sample_rate_unknown_using_44100_fallback');
     }
 
+    if (dsdPcmOutputSampleRate && fileSampleRate !== null && fileSampleRate !== decoderOutputSampleRate) {
+      warnings.push(`dsd_source_decoded_to_pcm:${fileSampleRate}->${decoderOutputSampleRate}`);
+    }
+
     if (
       !residentOutputSampleRate &&
       outputMode !== 'shared' &&
+      !dsdPcmOutputSampleRate &&
       explicitRequestedSampleRate &&
-      explicitRequestedSampleRate !== sourceSampleRate
+      explicitRequestedSampleRate !== sourceOutputSampleRate
     ) {
       warnings.push('explicit_resampling_requested_for_exclusive_output');
     }
@@ -1500,7 +1537,7 @@ export class AudioSession extends EventEmitter {
     if (
       residentOutputSampleRate &&
       fileSampleRate !== null &&
-      fileSampleRate !== residentOutputSampleRate
+      sourceOutputSampleRate !== residentOutputSampleRate
     ) {
       warnings.push('resident_output_resampling_to_device_rate');
     }
@@ -1610,6 +1647,7 @@ export class AudioSession extends EventEmitter {
       ready.actualDeviceSampleRate,
       { residentOutputSampleRate: this.currentResidentOutputSampleRate },
     );
+    this.assertAsioSampleRateUsable();
     this.nativeDeviceBufferFrames = numericReadyField(ready, 'deviceBufferFrames');
     this.nativeRequestedBufferFrames = numericReadyField(ready, 'requestedDeviceBufferFrames');
     this.nativeActualBufferFrames =
@@ -1628,6 +1666,23 @@ export class AudioSession extends EventEmitter {
       );
     }
     this.clock.setSampleRate(ready.actualDeviceSampleRate ?? this.currentPlan.requestedOutputSampleRate);
+  }
+
+  private assertAsioSampleRateUsable(): void {
+    const plan = this.currentPlan;
+
+    if (!plan || plan.outputMode !== 'asio' || plan.actualDeviceSampleRate === null) {
+      return;
+    }
+
+    if (
+      plan.requestedOutputSampleRate >= minReliableAsioSampleRate &&
+      plan.actualDeviceSampleRate < minReliableAsioSampleRate
+    ) {
+      throw new Error(
+        `asio_output_sample_rate_unusable:${plan.requestedOutputSampleRate}->${plan.actualDeviceSampleRate}`,
+      );
+    }
   }
 
   private assertReadySampleRateConsistent(): void {
@@ -1740,9 +1795,10 @@ export class AudioSession extends EventEmitter {
   private createNativeOutputStartOptions(options: NativeOutputStartOptions): NativeOutputStartOptions {
     const outputMode = options.asio ? 'asio' : options.exclusive ? 'exclusive' : 'shared';
     const latencyProfile = resolveSupportedLatencyProfile(outputMode, normalizeLatencyProfile(options.latencyProfile));
-    const latencyProfileOptions = latencyProfiles[latencyProfile];
     const explicitBufferSizeFrames = normalizePositiveInteger(options.bufferSizeFrames);
-    const profileBufferSizeFrames = explicitBufferSizeFrames ?? latencyProfileOptions.bufferSizeFrames ?? 2048;
+    const profileBufferSizeFrames =
+      explicitBufferSizeFrames ??
+      getLatencyProfileBufferSizeFrames(outputMode, latencyProfile, options.requestedOutputSampleRate);
 
     if (options.asio) {
       return {
@@ -1758,8 +1814,8 @@ export class AudioSession extends EventEmitter {
       return {
         ...options,
         latencyProfile,
-        startupPrebufferMs: options.startupPrebufferMs ?? (latencyProfile === 'lowLatency' ? 0 : undefined),
-        startupPrebufferTimeoutMs: options.startupPrebufferTimeoutMs ?? (latencyProfile === 'lowLatency' ? 0 : undefined),
+        startupPrebufferMs: options.startupPrebufferMs,
+        startupPrebufferTimeoutMs: options.startupPrebufferTimeoutMs,
         bufferSizeFrames: profileBufferSizeFrames,
       };
     }
@@ -2408,12 +2464,12 @@ export class AudioSession extends EventEmitter {
         : reason === 'output-start-failed'
           ? this.currentPlan?.outputMode ?? normalizeOutputMode(this.currentOutputSettings?.outputMode)
           : null;
-    const nextOutputMode = normalizeOutputMode(this.currentOutputSettings?.outputMode);
-    if (reason === 'replace-output' && outputMode === 'asio' && nextOutputMode === 'asio') {
+
+    if (reason === 'replace-output' && outputMode === 'asio') {
       return undefined;
     }
 
-    return outputMode === 'asio' ? asioReplaceOutputGracefulStopTimeoutMs : undefined;
+    return outputMode === 'asio' ? asioFailedStartGracefulStopTimeoutMs : undefined;
   }
 
   private getGracefulStopWaitForExit(reason: string): boolean {
@@ -2421,7 +2477,7 @@ export class AudioSession extends EventEmitter {
       return false;
     }
 
-    return this.currentBridgeOutputMode === 'asio' && normalizeOutputMode(this.currentOutputSettings?.outputMode) === 'asio';
+    return this.currentBridgeOutputMode === 'asio';
   }
 
   private async stopBridgeWithOptions(

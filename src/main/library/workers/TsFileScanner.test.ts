@@ -29,7 +29,21 @@ describe('TsFileScanner', () => {
     const root = makeTempRoot();
     const nested = join(root, 'nested');
     mkdirSync(nested, { recursive: true });
-    const supported = ['track.alac', 'track.opus', 'track.dsf', 'track.dff', 'track.mka', 'track.mkv', 'track.mp4'];
+    const supported = [
+      'track.alac',
+      'track.opus',
+      'track.dsf',
+      'track.dff',
+      'track.aiff',
+      'track.aif',
+      'track.ape',
+      'track.wv',
+      'track.tta',
+      'track.tak',
+      'track.mka',
+      'track.mkv',
+      'track.mp4',
+    ];
 
     for (const fileName of ['album.cue', ...supported]) {
       writeFileSync(join(nested, fileName), 'audio');

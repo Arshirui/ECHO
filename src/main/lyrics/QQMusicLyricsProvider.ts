@@ -9,6 +9,43 @@ const qqHeaders = {
   Origin: 'https://y.qq.com',
 };
 
+const fetchJsonBodyWithTimeout = async (
+  url: string,
+  body: unknown,
+  signal: AbortSignal | undefined,
+  timeoutMs = 6000,
+): Promise<unknown> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json,text/plain,*/*',
+        'Content-Type': 'application/json',
+        'User-Agent': 'ECHO-Next/0.1',
+        ...qqHeaders,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      throw new Error(`request_failed:${response.status}`);
+    }
+
+    const textValue = await response.text();
+    const jsonText = textValue.trim().replace(/^[^(]*\((.*)\);?$/s, '$1');
+    return JSON.parse(jsonText) as unknown;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+  }
+};
+
 type QQSong = {
   mid: string;
   id: string | null;
@@ -93,6 +130,18 @@ export class QQMusicLyricsProvider implements LyricsProvider {
         continue;
       }
 
+      const nextSongs = await this.searchSongsWithMusicu(query, request);
+      for (const song of nextSongs) {
+        if (!seen.has(song.mid)) {
+          seen.add(song.mid);
+          songs.push(song);
+        }
+      }
+
+      if (nextSongs.length > 0) {
+        continue;
+      }
+
       const params = new URLSearchParams({
         ct: '24',
         qqmusic_ver: '1298',
@@ -116,30 +165,75 @@ export class QQMusicLyricsProvider implements LyricsProvider {
       const songValues = Array.isArray(songData.list) ? songData.list : [];
 
       for (const songValue of songValues) {
-        const song = asRecord(songValue);
-        const mid = text(song.mid) ?? text(song.songmid);
-        if (!mid || seen.has(mid)) {
+        const song = this.mapSong(songValue, request.query);
+        if (!song || seen.has(song.mid)) {
           continue;
         }
 
-        const singers = Array.isArray(song.singer) ? song.singer.map(asRecord) : [];
-        const artist = singers.map((singer) => text(singer.name)).filter(Boolean).join(' / ');
-        const album = asRecord(song.album);
-
-        seen.add(mid);
-        songs.push({
-          mid,
-          id: song.id == null ? null : String(song.id),
-          title: text(song.name) ?? text(song.title) ?? request.query.title,
-          artist: artist || request.query.artist,
-          album: text(album.name) ?? text(album.title),
-          durationSeconds: number(song.interval),
-          raw: songValue,
-        });
+        seen.add(song.mid);
+        songs.push(song);
       }
     }
 
     return songs;
+  }
+
+  private async searchSongsWithMusicu(query: string, request: LyricsProviderSearchRequest): Promise<QQSong[]> {
+    try {
+      const body = {
+        comm: {
+          ct: '19',
+          cv: '1859',
+          uin: '0',
+        },
+        req_1: {
+          module: 'music.search.SearchCgiService',
+          method: 'DoSearchForQQMusicDesktop',
+          param: {
+            query,
+            page_num: 1,
+            num_per_page: 5,
+            search_type: 0,
+          },
+        },
+      };
+      const data = asRecord(
+        await fetchJsonBodyWithTimeout('https://u.y.qq.com/cgi-bin/musicu.fcg', body, request.signal, request.timeoutMs),
+      );
+      const payload = asRecord(asRecord(data.req_1).data);
+      const bodyData = asRecord(payload.body);
+      const songData = asRecord(bodyData.song);
+      const songValues = Array.isArray(songData.list) ? songData.list : [];
+
+      return songValues
+        .map((songValue) => this.mapSong(songValue, request.query))
+        .filter((song): song is QQSong => Boolean(song));
+    } catch {
+      return [];
+    }
+  }
+
+  private mapSong(songValue: unknown, fallback: LyricsQuery): QQSong | null {
+    const song = asRecord(songValue);
+    const file = asRecord(song.file);
+    const mid = text(song.mid) ?? text(song.songmid) ?? text(file.media_mid);
+    if (!mid) {
+      return null;
+    }
+
+    const singers = Array.isArray(song.singer) ? song.singer.map(asRecord) : [];
+    const artist = singers.map((singer) => text(singer.name)).filter(Boolean).join(' / ');
+    const album = asRecord(song.album);
+
+    return {
+      mid,
+      id: song.id == null ? null : String(song.id),
+      title: text(song.name) ?? text(song.title) ?? text(song.songname) ?? text(song.songorig) ?? fallback.title,
+      artist: artist || fallback.artist,
+      album: text(album.name) ?? text(album.title) ?? text(song.albumname) ?? text(song.albumtitle),
+      durationSeconds: number(song.interval),
+      raw: songValue,
+    };
   }
 
   private async fetchLyrics(song: QQSong, request: LyricsProviderSearchRequest): Promise<LyricsProviderResult | null> {

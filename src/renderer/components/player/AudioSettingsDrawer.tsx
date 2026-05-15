@@ -71,7 +71,7 @@ const hiddenDeviceStorageKey = 'echo-next.hidden-audio-devices';
 const drawerExitAnimationMs = 320;
 const outputApplyTimeoutMs = 20_000;
 const latencyProfileOptions: Array<{ id: AudioLatencyProfile; label: string; detail: string }> = [
-  { id: 'lowLatency', label: 'Low latency', detail: '256 frames / adaptive' },
+  { id: 'lowLatency', label: 'Low latency', detail: '~8 ms / adaptive' },
   { id: 'balanced', label: 'Balanced', detail: '2048 frames' },
   { id: 'stable', label: 'Stable', detail: '8192 frames' },
 ];
@@ -757,7 +757,11 @@ export const AudioSettingsDrawer = ({
 
   const applyDevice = (mode: AudioOutputMode, device: AudioDeviceInfo | null): void => {
     const remembered = readRememberedAudioOutput();
-    const settings = createOutputSettings(mode, device, status?.latencyProfile ?? remembered.latencyProfile ?? 'lowLatency');
+    const settings = createOutputSettings(
+      mode,
+      device,
+      status?.latencyProfile ?? remembered.latencyProfile ?? 'balanced',
+    );
     if (mode === 'asio' && remembered.bufferSizeFrames) {
       settings.bufferSizeFrames = remembered.bufferSizeFrames;
     }
@@ -1033,7 +1037,7 @@ export const AudioSettingsDrawer = ({
           <p>{t('audioDrawer.option.wasapiExclusiveDescription')}</p>
 
           <div className="audio-drawer-mini-grid" aria-label="Latency profile">
-            {latencyProfileOptions.filter((option) => !wasapiExclusive || option.id !== 'lowLatency').map((option) => (
+            {latencyProfileOptions.map((option) => (
               <button
                 className={`audio-device-pill ${supportedLatencyProfile === option.id ? 'active' : ''}`}
                 type="button"

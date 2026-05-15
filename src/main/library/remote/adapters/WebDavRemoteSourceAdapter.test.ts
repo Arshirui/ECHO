@@ -36,7 +36,7 @@ const item = (href: string, collection = false, size = 123): string => `
     </d:propstat>
   </d:response>`;
 
-const makeSource = (port: number, config: Record<string, unknown> = {}): RemoteSourceSecret => ({
+const makeSource = (port: number, config: Record<string, unknown> = {}, overrides: Partial<RemoteSourceSecret> = {}): RemoteSourceSecret => ({
   id: 'source-1',
   provider: 'webdav',
   displayName: 'WebDAV',
@@ -53,10 +53,11 @@ const makeSource = (port: number, config: Record<string, unknown> = {}): RemoteS
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   secret: null,
+  ...overrides,
 });
 
 describe('WebDavRemoteSourceAdapter', () => {
-  let servers: Server[] = [];
+  const servers: Server[] = [];
 
   afterEach(async () => {
     for (const server of servers.splice(0)) {
@@ -68,7 +69,7 @@ describe('WebDavRemoteSourceAdapter', () => {
     const server = createServer((request, response) => {
       expect(request.method).toBe('PROPFIND');
       response.writeHead(207, { 'Content-Type': 'application/xml' });
-      response.end(xml([item('/dav/', true), item('/dav/Album/', true), item('/dav/Album/song.flac'), item('/dav/notes.txt')]));
+      response.end(xml([item('/dav/', true), item('/dav/Album/', true), item('/dav/Album/song.flac'), item('/dav/Album/odd.tak'), item('/dav/notes.txt')]));
     });
     servers.push(server);
     const port = await listen(server);
@@ -80,9 +81,90 @@ describe('WebDavRemoteSourceAdapter', () => {
       expect.arrayContaining([
         expect.objectContaining({ path: '/Album/', kind: 'directory', audio: false }),
         expect.objectContaining({ path: '/Album/song.flac', kind: 'file', audio: true }),
+        expect.objectContaining({ path: '/Album/odd.tak', kind: 'file', audio: true }),
         expect.objectContaining({ path: '/notes.txt', kind: 'file', audio: false }),
       ]),
     );
+  });
+
+  it('uses configured root paths and encodes spaces and non-ASCII path segments', async () => {
+    const requested: string[] = [];
+    const server = createServer((request, response) => {
+      requested.push(request.url ?? '');
+      response.writeHead(207, { 'Content-Type': 'application/xml' });
+      response.end(xml([item('/dav/%E9%9F%B3%E4%B9%90%20Space/', true), item('/dav/%E9%9F%B3%E4%B9%90%20Space/Echo%20Song.flac')]));
+    });
+    servers.push(server);
+    const port = await listen(server);
+
+    const adapter = new WebDavRemoteSourceAdapter();
+    const source = makeSource(port, { rootPath: '/音乐 Space' });
+    const test = await adapter.testConnection({ source });
+    const items = await adapter.browse({ source });
+
+    expect(test.ok).toBe(true);
+    expect(requested[0]).toBe('/dav/%E9%9F%B3%E4%B9%90%20Space');
+    expect(requested[1]).toBe('/dav/%E9%9F%B3%E4%B9%90%20Space');
+    expect(items).toEqual([
+      expect.objectContaining({ path: '/音乐 Space/Echo Song.flac', kind: 'file', audio: true }),
+    ]);
+  });
+
+  it('sends expected auth headers for Basic and token WebDAV sources', async () => {
+    const seenAuth: Array<string | undefined> = [];
+    const server = createServer((request, response) => {
+      seenAuth.push(request.headers.authorization);
+      response.writeHead(207, { 'Content-Type': 'application/xml' });
+      response.end(xml([item('/dav/', true)]));
+    });
+    servers.push(server);
+    const port = await listen(server);
+
+    const adapter = new WebDavRemoteSourceAdapter();
+    await adapter.testConnection({
+      source: makeSource(port, {}, { authType: 'basic', username: 'alice', secret: 'wonderland' }),
+    });
+    await adapter.testConnection({
+      source: makeSource(port, {}, { authType: 'token', secret: 'token-secret' }),
+    });
+    await adapter.testConnection({
+      source: makeSource(port, {}, { authType: 'none', username: null, secret: null }),
+    });
+
+    expect(seenAuth).toEqual([
+      `Basic ${Buffer.from('alice:wonderland', 'utf8').toString('base64')}`,
+      'Bearer token-secret',
+      undefined,
+    ]);
+  });
+
+  it('retries 429/503 responses and reports missing roots with a friendly error', async () => {
+    let retryAttempts = 0;
+    const server = createServer((request, response) => {
+      if (request.url?.includes('/missing')) {
+        response.writeHead(404, { 'Content-Type': 'text/plain' });
+        response.end('missing');
+        return;
+      }
+
+      retryAttempts += 1;
+      response.writeHead(retryAttempts < 3 ? (retryAttempts === 1 ? 429 : 503) : 207, { 'Content-Type': 'application/xml' });
+      response.end(retryAttempts < 3 ? 'busy' : xml([item('/dav/', true)]));
+    });
+    servers.push(server);
+    const port = await listen(server);
+
+    const adapter = new WebDavRemoteSourceAdapter();
+    const retryResult = await adapter.testConnection({ source: makeSource(port) });
+    const missingResult = await adapter.testConnection({ source: makeSource(port, { rootPath: '/missing' }) });
+
+    expect(retryResult.ok).toBe(true);
+    expect(retryAttempts).toBe(3);
+    expect(missingResult).toEqual(expect.objectContaining({
+      ok: false,
+      status: 'error',
+      message: expect.stringContaining('路径不存在'),
+    }));
   });
 
   it('scans directories concurrently and continues when one directory fails', async () => {

@@ -7,6 +7,7 @@ import {
   Globe2,
   GripVertical,
   Image as ImageIcon,
+  Music2,
   Palette,
   RefreshCw,
   RotateCcw,
@@ -159,6 +160,24 @@ const riskLabel = (risk: LyricsSearchCandidate['risk']): string => {
 };
 
 const sourceFilterKey = (candidate: LyricsSearchCandidate): string => `${candidate.provider}:${candidate.sourceLabel}`;
+const searchableLyricsProviderIds: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic'];
+const searchableLyricsProviderSet = new Set<string>(searchableLyricsProviderIds);
+
+const mergeLyricsCandidates = (
+  current: LyricsSearchCandidate[],
+  next: LyricsSearchCandidate[],
+): LyricsSearchCandidate[] => {
+  const merged = new Map<string, LyricsSearchCandidate>();
+  for (const candidate of [...current, ...next]) {
+    const key = `${candidate.provider}:${candidate.providerLyricsId ?? candidate.id}`;
+    const existing = merged.get(key);
+    if (!existing || candidate.score > existing.score) {
+      merged.set(key, candidate);
+    }
+  }
+
+  return Array.from(merged.values()).sort((left, right) => right.score - left.score);
+};
 
 const dispatchLyricsCandidateApplied = (trackId: string, lyrics: TrackLyrics): void => {
   window.dispatchEvent(new CustomEvent('lyrics:candidate-applied', { detail: { trackId, lyrics } }));
@@ -208,6 +227,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const [lyricsCandidateStatus, setLyricsCandidateStatus] = useState<string | null>(null);
   const [isLyricsCandidateLoading, setIsLyricsCandidateLoading] = useState(false);
   const [applyingLyricsCandidateId, setApplyingLyricsCandidateId] = useState<string | null>(null);
+  const [isMarkingInstrumental, setIsMarkingInstrumental] = useState(false);
+  const [currentLyricsKind, setCurrentLyricsKind] = useState<TrackLyrics['kind'] | null>(null);
   const saveRequestIdRef = useRef(0);
   const debouncedSaveRequestIdRef = useRef(0);
   const debouncedSaveTimerRef = useRef<number | null>(null);
@@ -229,6 +250,24 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       .filter((source): source is (typeof lyricsSourceOptions)[number] => Boolean(source));
   }, [effectiveSettings.lyricsProviderOrder]);
   const orderedOnlineProviderIds = useMemo<LyricsProviderId[]>(() => orderedLyricsSourceOptions.map((source) => source.id), [orderedLyricsSourceOptions]);
+  const activeSearchProviders = useMemo<LyricsProviderId[]>(() => {
+    const enabled = effectiveSettings.lyricsEnabledProviders?.length
+      ? effectiveSettings.lyricsEnabledProviders
+      : defaultLyricsEnabledProviders;
+    const order = effectiveSettings.lyricsProviderOrder?.length
+      ? effectiveSettings.lyricsProviderOrder
+      : defaultLyricsProviderOrder;
+    const ordered = [
+      ...order.filter((provider) => enabled.includes(provider)),
+      ...enabled.filter((provider) => !order.includes(provider)),
+    ];
+
+    return ordered.filter(
+      (provider): provider is LyricsProviderId =>
+        searchableLyricsProviderSet.has(provider) &&
+        (provider === 'local' || effectiveSettings.lyricsNetworkEnabled),
+    );
+  }, [effectiveSettings.lyricsEnabledProviders, effectiveSettings.lyricsNetworkEnabled, effectiveSettings.lyricsProviderOrder]);
   const thresholdPercent = Math.round(effectiveSettings.lyricsAutoAcceptScore * 100);
   const offsetSeconds = useMemo(() => (effectiveSettings.lyricsDefaultOffsetMs / 1000).toFixed(1), [effectiveSettings.lyricsDefaultOffsetMs]);
   const isSecondaryLyricsSizeOpen =
@@ -295,13 +334,16 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       const trackId = playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
       if (!trackId) {
         setCurrentLyricsProviderLabel('未播放歌曲');
+        setCurrentLyricsKind(null);
         return;
       }
 
       const trackLyrics = await lyrics.getForTrack(trackId);
       setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics?.provider));
+      setCurrentLyricsKind(trackLyrics?.kind ?? null);
     } catch {
       setCurrentLyricsProviderLabel(providerLabelFor(null));
+      setCurrentLyricsKind(null);
     }
   }, []);
 
@@ -548,14 +590,26 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           return;
         }
 
+        let collectedCandidates: LyricsSearchCandidate[] = [];
+        const providers: LyricsProviderId[] = activeSearchProviders.length ? activeSearchProviders : ['local'];
         const normalizedSearchText = searchText?.trim();
-        const nextCandidates = normalizedSearchText
-          ? await lyricsApi.searchCandidates(currentTrackId, normalizedSearchText)
-          : await lyricsApi.searchCandidates(currentTrackId);
+        await Promise.allSettled(
+          providers.map(async (provider) => {
+            const providerCandidates = normalizedSearchText
+              ? await lyricsApi.searchCandidates(currentTrackId, normalizedSearchText, provider)
+              : await lyricsApi.searchCandidates(currentTrackId, undefined, provider);
+            collectedCandidates = mergeLyricsCandidates(collectedCandidates, providerCandidates);
+            setLyricsCandidates(collectedCandidates);
+            setActiveLyricsCandidateSource('all');
+            if (collectedCandidates.length > 0) {
+              setLyricsCandidateStatus(null);
+            }
+          }),
+        );
 
-        setLyricsCandidates(nextCandidates);
+        setLyricsCandidates(collectedCandidates);
         setActiveLyricsCandidateSource('all');
-        setLyricsCandidateStatus(nextCandidates.length ? null : '未找到歌词候选');
+        setLyricsCandidateStatus(collectedCandidates.length ? null : '未找到歌词候选');
         setError(null);
       } catch (candidateError) {
         setLyricsCandidateStatus('未找到歌词候选');
@@ -592,10 +646,23 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       }
 
       await lyricsApi.clearCache?.(currentTrackId);
-      const nextCandidates = await lyricsApi.searchCandidates(currentTrackId);
-      setLyricsCandidates(nextCandidates);
+      let collectedCandidates: LyricsSearchCandidate[] = [];
+      const providers: LyricsProviderId[] = activeSearchProviders.length ? activeSearchProviders : ['local'];
+      await Promise.allSettled(
+        providers.map(async (provider) => {
+          const providerCandidates = await lyricsApi.searchCandidates(currentTrackId, undefined, provider);
+          collectedCandidates = mergeLyricsCandidates(collectedCandidates, providerCandidates);
+          setLyricsCandidates(collectedCandidates);
+          setActiveLyricsCandidateSource('all');
+          if (collectedCandidates.length > 0) {
+            setLyricsCandidateStatus(null);
+          }
+        }),
+      );
+
+      setLyricsCandidates(collectedCandidates);
       setActiveLyricsCandidateSource('all');
-      setLyricsCandidateStatus(nextCandidates.length ? null : '未找到歌词候选');
+      setLyricsCandidateStatus(collectedCandidates.length ? null : '未找到歌词候选');
       setError(null);
     } catch (candidateError) {
       setLyricsCandidateStatus('未找到歌词候选');
@@ -628,6 +695,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
         const trackLyrics = await lyricsApi.applyCandidate(currentTrackId, candidateId);
         setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider));
+        setCurrentLyricsKind(trackLyrics.kind);
         setLyricsCandidates([]);
         setActiveLyricsCandidateSource('all');
         setLyricsCandidateStatus('已应用歌词');
@@ -639,8 +707,43 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         setApplyingLyricsCandidateId(null);
       }
     },
-    [effectiveSettings.lyricsEnabled, resolveCurrentTrackId],
+    [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId],
   );
+
+  const markCurrentTrackInstrumental = useCallback(async (): Promise<void> => {
+    if (!effectiveSettings.lyricsEnabled) {
+      setLyricsCandidateStatus(null);
+      return;
+    }
+
+    const lyricsApi = window.echo?.lyrics;
+    if (!lyricsApi?.markInstrumental) {
+      setError('Desktop bridge unavailable');
+      return;
+    }
+
+    setIsMarkingInstrumental(true);
+    try {
+      const currentTrackId = await resolveCurrentTrackId();
+      if (!currentTrackId) {
+        setLyricsCandidateStatus('没有正在播放的歌曲');
+        return;
+      }
+
+      const trackLyrics = await lyricsApi.markInstrumental(currentTrackId);
+      setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider));
+      setCurrentLyricsKind(trackLyrics.kind);
+      setLyricsCandidates([]);
+      setActiveLyricsCandidateSource('all');
+      setLyricsCandidateStatus('已标记为纯音乐');
+      setError(null);
+      dispatchLyricsCandidateApplied(currentTrackId, trackLyrics);
+    } catch (markError) {
+      setError(markError instanceof Error ? markError.message : String(markError));
+    } finally {
+      setIsMarkingInstrumental(false);
+    }
+  }, [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId]);
 
   useEffect(() => {
     void refreshDrawerSummary();
@@ -796,6 +899,26 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               <small>清理当前缓存并重新查找</small>
             </span>
             <em>Match</em>
+          </button>
+
+          <button
+            className="audio-device-pill"
+            type="button"
+            disabled={
+              isBusy ||
+              isLyricsCandidateLoading ||
+              isMarkingInstrumental ||
+              !effectiveSettings.lyricsEnabled ||
+              currentLyricsKind === 'instrumental'
+            }
+            onClick={() => void markCurrentTrackInstrumental()}
+          >
+            <Music2 size={15} />
+            <span>
+              <strong>{currentLyricsKind === 'instrumental' ? '已标记为纯音乐' : '标记为纯音乐'}</strong>
+              <small>记忆当前歌曲并停止自动歌词匹配</small>
+            </span>
+            <em>Music</em>
           </button>
         </section>
       ) : null}

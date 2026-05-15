@@ -233,7 +233,7 @@ export const evaluateLyricsCandidate = (
   const hasStrongTitle = titleScore >= 0.98;
   const hasStrongVersionLabelMatch = titleScore >= 0.82 && artistScore >= 0.98 && hasCloseDuration && score >= 0.8;
   const hasInstrumentalMismatch =
-    (flags.instrumental || flags.karaoke || flags.offVocal) &&
+    (flags.karaoke || flags.offVocal) &&
     !(normalized.versionFlags.instrumental || normalized.versionFlags.karaoke || normalized.versionFlags.offVocal);
   const hasArtistMismatch = artistScore < 0.75 && !(hasStrongTitle && hasCloseDuration);
   const hasUnsafeVersionMismatch = versionConflict || versionScore < 0.9;

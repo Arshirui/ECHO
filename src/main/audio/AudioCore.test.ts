@@ -31,6 +31,16 @@ const probe = (filePath: string, fileSampleRate: number): AudioProbeResult => ({
   bitrate: 1400000,
 });
 
+const dsdProbe = (filePath: string, fileSampleRate = 2_822_400): AudioProbeResult => ({
+  filePath,
+  fileSampleRate,
+  durationSeconds: 120,
+  channels: 2,
+  codec: 'DSF',
+  bitDepth: 1,
+  bitrate: 5_645_000,
+});
+
 const pcmBuffer = (samples: number[]): Buffer => {
   const buffer = Buffer.alloc(samples.length * 4);
   samples.forEach((sample, index) => {
@@ -258,6 +268,7 @@ class FakeBridge extends EventEmitter {
   }
 
   endSession(_sessionId?: number): void {
+    void _sessionId;
     this.sessionEnds += 1;
     this.inputEnded = true;
   }
@@ -1350,6 +1361,149 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges[0].sessionBegins).toBe(2);
   });
 
+  it('decodes DSD sources to a PCM-rate ASIO plan instead of opening ASIO at the DSD bit clock', async () => {
+    const { bridges, decoder, session } = createSessionHarness([dsdProbe('native-dsd.dsf')]);
+
+    const status = await session.playLocalFile({
+      filePath: 'native-dsd.dsf',
+      output: { outputMode: 'asio' },
+    });
+
+    expect(bridges[0].startOptions).toMatchObject({
+      asio: true,
+      requestedOutputSampleRate: 176400,
+    });
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({
+      filePath: 'native-dsd.dsf',
+      decoderOutputSampleRate: 176400,
+    });
+    expect(status.fileSampleRate).toBe(2822400);
+    expect(status.requestedOutputSampleRate).toBe(176400);
+    expect(status.decoderOutputSampleRate).toBe(176400);
+    expect(status.resampling).toBe(true);
+    expect(status.bitPerfectCandidate).toBe(false);
+    expect(status.warnings).toContain('dsd_source_decoded_to_pcm:2822400->176400');
+  });
+
+  it('refreshes DSF probe hints that were reported as 44.1 kHz before planning output', async () => {
+    const { bridges, decoder, session } = createSessionHarness([dsdProbe('metadata-wrong.dsf')]);
+
+    const status = await session.playLocalFile({
+      filePath: 'metadata-wrong.dsf',
+      output: { outputMode: 'asio' },
+      probe: dsdProbe('metadata-wrong.dsf', 44100),
+    });
+
+    expect(decoder.probeRequests).toEqual(['metadata-wrong.dsf']);
+    expect(bridges[0].startOptions).toMatchObject({
+      asio: true,
+      requestedOutputSampleRate: 176400,
+    });
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({
+      filePath: 'metadata-wrong.dsf',
+      decoderOutputSampleRate: 176400,
+    });
+    expect(status.fileSampleRate).toBe(2822400);
+    expect(status.requestedOutputSampleRate).toBe(176400);
+    expect(status.decoderOutputSampleRate).toBe(176400);
+    expect(status.warnings).toContain('dsd_source_decoded_to_pcm:2822400->176400');
+  });
+
+  it('maps DSD128 sources to a capped 352.8 kHz PCM output plan', async () => {
+    const { bridges, decoder, session } = createSessionHarness([dsdProbe('dsd128.dsf', 5644800)]);
+
+    const status = await session.playLocalFile({
+      filePath: 'dsd128.dsf',
+      output: { outputMode: 'exclusive' },
+    });
+
+    expect(bridges[0].startOptions).toMatchObject({
+      exclusive: true,
+      requestedOutputSampleRate: 352800,
+    });
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({
+      filePath: 'dsd128.dsf',
+      decoderOutputSampleRate: 352800,
+    });
+    expect(status.fileSampleRate).toBe(5644800);
+    expect(status.requestedOutputSampleRate).toBe(352800);
+    expect(status.decoderOutputSampleRate).toBe(352800);
+    expect(status.warnings).toContain('dsd_source_decoded_to_pcm:5644800->352800');
+  });
+
+  it('lets the DSD PCM target override stale explicit 44.1 kHz output settings in resident modes', async () => {
+    for (const outputMode of ['asio', 'exclusive'] as const) {
+      const filePath = `${outputMode}-explicit-dsd.dsf`;
+      const { bridges, decoder, session } = createSessionHarness([dsdProbe(filePath)]);
+
+      const status = await session.playLocalFile({
+        filePath,
+        output: { outputMode, requestedOutputSampleRate: 44100 },
+      });
+
+      expect(bridges[0].startOptions).toMatchObject({
+        asio: outputMode === 'asio',
+        exclusive: outputMode === 'exclusive',
+        requestedOutputSampleRate: 176400,
+      });
+      expect(decoder.decodeRequests.at(-1)).toMatchObject({
+        filePath,
+        decoderOutputSampleRate: 176400,
+      });
+      expect(status.requestedOutputSampleRate).toBe(176400);
+      expect(status.decoderOutputSampleRate).toBe(176400);
+      expect(status.warnings).not.toContain('explicit_resampling_requested_for_exclusive_output');
+    }
+  });
+
+  it('keeps DSD in shared mode on the mixer rate and reports the resampling path', async () => {
+    const sharedDevice: AudioDeviceInfo = {
+      id: 'shared:0',
+      index: 0,
+      name: 'Speakers',
+      outputMode: 'shared',
+      sampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      isDefault: true,
+    };
+    const { bridges, decoder, session } = createSessionHarness([dsdProbe('shared-dsd.dsf')], [48000], [sharedDevice]);
+
+    const status = await session.playLocalFile({
+      filePath: 'shared-dsd.dsf',
+      output: { outputMode: 'shared' },
+    });
+
+    expect(bridges[0].startOptions).toMatchObject({
+      asio: false,
+      exclusive: false,
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+    });
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({
+      filePath: 'shared-dsd.dsf',
+      decoderOutputSampleRate: 48000,
+    });
+    expect(status.outputMode).toBe('shared');
+    expect(status.requestedOutputSampleRate).toBe(48000);
+    expect(status.decoderOutputSampleRate).toBe(48000);
+    expect(status.resampling).toBe(true);
+    expect(status.bitPerfectCandidate).toBe(false);
+    expect(status.warnings).toContain('dsd_source_decoded_to_pcm:2822400->48000');
+    expect(status.warnings).toContain('shared_output_resampling_or_mixer_rate_difference');
+  });
+
+  it('rejects ASIO ready states that fall back to an unusable 8 kHz device rate', async () => {
+    const { bridges, session } = createSessionHarness([probe('asio-low-rate.flac', 176400)], [8000]);
+
+    await expect(session.playLocalFile({
+      filePath: 'asio-low-rate.flac',
+      output: { outputMode: 'asio' },
+    })).rejects.toThrow('asio_output_sample_rate_unusable:176400->8000');
+
+    expect(bridges[0].stop).toHaveBeenCalledTimes(1);
+    expect(session.getStatus().state).toBe('error');
+  });
+
   it('reopens ASIO output across sample-rate changes instead of resampling to the resident rate', async () => {
     const { bridges, decoder, session } = createSessionHarness([probe('first-asio.flac', 48000), probe('second-asio.flac', 44100)]);
 
@@ -1544,7 +1698,7 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(startOptions?.startupPrebufferTimeoutMs).toBeUndefined();
   });
 
-  it('ignores low-latency requests for WASAPI exclusive output', async () => {
+  it('honors low-latency requests for WASAPI exclusive output', async () => {
     const { bridges, session } = createSessionHarness([probe('exclusive.flac', 44100)]);
 
     await session.playLocalFile({
@@ -1554,9 +1708,63 @@ describe('Audio Core sample-rate regression guard', () => {
 
     expect(bridges[0].startOptions).toMatchObject({
       exclusive: true,
+      bufferSizeFrames: 384,
+      latencyProfile: 'lowLatency',
+    });
+    expect(bridges[0].startOptions?.startupPrebufferMs).toBeUndefined();
+    expect(bridges[0].startOptions?.startupPrebufferTimeoutMs).toBeUndefined();
+  });
+
+  it('adapts WASAPI exclusive low-latency buffering at high sample rates', async () => {
+    const { bridges, session } = createSessionHarness([probe('exclusive.flac', 192000)]);
+
+    await session.playLocalFile({
+      filePath: 'exclusive.flac',
+      output: { outputMode: 'exclusive', latencyProfile: 'lowLatency' },
+    });
+
+    expect(bridges[0].startOptions).toMatchObject({
+      exclusive: true,
+      requestedOutputSampleRate: 192000,
+      bufferSizeFrames: 1536,
+      latencyProfile: 'lowLatency',
+    });
+    expect(bridges[0].startOptions?.startupPrebufferMs).toBeUndefined();
+    expect(bridges[0].startOptions?.startupPrebufferTimeoutMs).toBeUndefined();
+  });
+
+  it('keeps balanced buffering available for WASAPI exclusive output', async () => {
+    const { bridges, session } = createSessionHarness([probe('exclusive.flac', 44100)]);
+
+    await session.playLocalFile({
+      filePath: 'exclusive.flac',
+      output: { outputMode: 'exclusive', latencyProfile: 'balanced' },
+    });
+
+    expect(bridges[0].startOptions).toMatchObject({
+      exclusive: true,
       bufferSizeFrames: 2048,
       latencyProfile: 'balanced',
     });
+    expect(bridges[0].startOptions?.startupPrebufferMs).toBeUndefined();
+    expect(bridges[0].startOptions?.startupPrebufferTimeoutMs).toBeUndefined();
+  });
+
+  it('keeps stable buffering available for WASAPI exclusive output', async () => {
+    const { bridges, session } = createSessionHarness([probe('exclusive.flac', 44100)]);
+
+    await session.playLocalFile({
+      filePath: 'exclusive.flac',
+      output: { outputMode: 'exclusive', latencyProfile: 'stable' },
+    });
+
+    expect(bridges[0].startOptions).toMatchObject({
+      exclusive: true,
+      bufferSizeFrames: 8192,
+      latencyProfile: 'stable',
+    });
+    expect(bridges[0].startOptions?.startupPrebufferMs).toBeUndefined();
+    expect(bridges[0].startOptions?.startupPrebufferTimeoutMs).toBeUndefined();
   });
 
   it('uses low-latency buffering and no startup prebuffer for ASIO by default', async () => {
@@ -3046,7 +3254,39 @@ describe('AudioSession graceful output cleanup', () => {
     expect(order).toEqual(['create:0', 'stop:0', 'create:1']);
   });
 
-  it('uses a short graceful timeout when replacing a live ASIO output', async () => {
+  it('waits for ASIO host exit before switching to shared output', async () => {
+    const order: string[] = [];
+    let index = 0;
+    const bridges: GracefulFakeBridge[] = [];
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([
+        ['first.flac', probe('first.flac', 48000)],
+        ['second.flac', probe('second.flac', 48000)],
+      ])),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => {
+        const bridge = new GracefulFakeBridge();
+        const bridgeIndex = index;
+        index += 1;
+        order.push(`create:${bridgeIndex}`);
+        bridge.stopGracefully.mockImplementation(async () => {
+          order.push(`stop:${bridgeIndex}`);
+        });
+        bridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+
+    await session.playLocalFile({ filePath: 'first.flac', output: { outputMode: 'asio' } });
+    await session.playLocalFile({ filePath: 'second.flac', output: { outputMode: 'shared' } });
+
+    expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output', undefined, true);
+    expect(order).toEqual(['create:0', 'stop:0', 'create:1']);
+  });
+
+  it('waits for ASIO host exit before switching to WASAPI exclusive output', async () => {
     const bridges: GracefulFakeBridge[] = [];
     const session = new AudioSession({
       decoder: new FakeDecoder(new Map([
@@ -3064,9 +3304,13 @@ describe('AudioSession graceful output cleanup', () => {
     });
 
     await session.playLocalFile({ filePath: 'first.flac', output: { outputMode: 'asio' } });
-    await session.playLocalFile({ filePath: 'second.flac', output: { outputMode: 'shared' } });
+    await session.playLocalFile({ filePath: 'second.flac', output: { outputMode: 'exclusive' } });
 
-    expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output', 1000);
+    expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output', undefined, true);
+    expect(bridges[1].startOptions).toMatchObject({
+      exclusive: true,
+      asio: false,
+    });
   });
 
   it('does not shorten graceful stop when changing rate on the same ASIO output', async () => {

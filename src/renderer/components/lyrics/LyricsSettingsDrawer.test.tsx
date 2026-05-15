@@ -498,7 +498,57 @@ describe('LyricsSettingsDrawer', () => {
 
     expect(await screen.findByText('Low Match Song')).toBeTruthy();
     expect(screen.getByText('12%')).toBeTruthy();
-    expect(searchCandidates).toHaveBeenCalledWith('track-1', 'rough query');
+    expect(searchCandidates).toHaveBeenCalledWith('track-1', 'rough query', 'lrclib');
+    expect(searchCandidates).toHaveBeenCalledWith('track-1', 'rough query', 'netease');
+    expect(searchCandidates).toHaveBeenCalledWith('track-1', 'rough query', 'qqmusic');
+  });
+
+  it('marks the current track as instrumental from the drawer', async () => {
+    const appliedListener = vi.fn();
+    window.addEventListener('lyrics:candidate-applied', appliedListener);
+    const instrumentalLyrics = makeTrackLyrics({
+      kind: 'instrumental',
+      lines: [],
+      plainText: null,
+      syncedText: null,
+    });
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
+      },
+      lyrics: {
+        getForTrack: vi.fn().mockResolvedValue(null),
+        searchCandidates: vi.fn().mockResolvedValue([]),
+        applyCandidate: vi.fn(),
+        markInstrumental: vi.fn().mockResolvedValue(instrumentalLyrics),
+        clearCache: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /标记为纯音乐/ }));
+
+    await waitFor(() => expect(window.echo?.lyrics.markInstrumental).toHaveBeenCalledWith('track-1'));
+    expect(appliedListener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: {
+          trackId: 'track-1',
+          lyrics: instrumentalLyrics,
+        },
+      }),
+    );
+    expect((await screen.findByRole('button', { name: /已标记为纯音乐/ }) as HTMLButtonElement).disabled).toBe(true);
+
+    window.removeEventListener('lyrics:candidate-applied', appliedListener);
   });
 
   it('dispatches current-track lyric actions from settings', async () => {

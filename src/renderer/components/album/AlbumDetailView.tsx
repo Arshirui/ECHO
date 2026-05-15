@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Disc3, Heart, MoreHorizontal, Play } from 'lucide-react';
 import type { LibraryAlbum, LibraryTrack } from '../../../shared/types/library';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent } from '../../hooks/useLikedMedia';
+import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { AlbumTrackList } from './AlbumTrackList';
 
@@ -64,6 +65,7 @@ const formatTrackCount = (count: number): string => `${count} ${count === 1 ? 't
 
 export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.Element => {
   const { currentTrackId, playTrack, replaceQueue } = usePlaybackQueue();
+  const { isReturning, returnBack } = useAnimatedBackNavigation(onBack);
   const [firstTrack, setFirstTrack] = useState<LibraryTrack | null>(null);
   const [loadedTracks, setLoadedTracks] = useState<LibraryTrack[]>([]);
   const [loadedTotal, setLoadedTotal] = useState(0);
@@ -239,8 +241,8 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
   }, [coverLarge, failedLargeCover]);
 
   return (
-    <div className="album-detail-page">
-      <button className="album-back-button" type="button" onClick={onBack}>
+    <div className={`album-detail-page ${isReturning ? 'is-returning' : ''}`}>
+      <button className="album-back-button" type="button" onClick={returnBack}>
         <ArrowLeft size={17} />
         Albums
       </button>

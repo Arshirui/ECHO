@@ -1,10 +1,19 @@
 import { useSyncExternalStore } from 'react';
-import type { AudioStatus } from '../../shared/types/audio';
+import type { AudioPlaybackState, AudioStatus } from '../../shared/types/audio';
 import type { PlaybackStatus } from '../../shared/types/playback';
+
+type PlaybackVisualIntent = {
+  type: 'track-switch';
+  state: 'playing';
+  currentTrackId: string | null;
+  filePath: string | null;
+  startedAtMs: number;
+};
 
 type PlaybackStatusSnapshot = {
   audioStatus: AudioStatus | null;
   playbackStatus: PlaybackStatus | null;
+  playbackVisualIntent: PlaybackVisualIntent | null;
   error: string | null;
   version: number;
 };
@@ -16,6 +25,7 @@ const idlePollingIntervalMs = 2000;
 let snapshot: PlaybackStatusSnapshot = {
   audioStatus: null,
   playbackStatus: null,
+  playbackVisualIntent: null,
   error: null,
   version: 0,
 };
@@ -35,16 +45,60 @@ const emitChange = (): void => {
   }
 };
 
+const playbackMatchesIntent = (status: AudioStatus | PlaybackStatus, intent: PlaybackVisualIntent): boolean =>
+  Boolean(intent.currentTrackId && status.currentTrackId === intent.currentTrackId) ||
+  Boolean(intent.filePath && ('currentFilePath' in status ? status.currentFilePath : status.filePath) === intent.filePath);
+
+const playbackHasIdentity = (status: AudioStatus | PlaybackStatus): boolean =>
+  Boolean(status.currentTrackId || ('currentFilePath' in status ? status.currentFilePath : status.filePath));
+
+const isStaleStatusForVisualIntent = (status: AudioStatus | PlaybackStatus, intent: PlaybackVisualIntent | null): boolean =>
+  Boolean(intent && playbackHasIdentity(status) && !playbackMatchesIntent(status, intent));
+
+const getAuthoritativeState = (): AudioPlaybackState => snapshot.audioStatus?.state ?? snapshot.playbackStatus?.state ?? 'idle';
+
+const shouldClearVisualIntentForPatch = (
+  patch: Partial<Omit<PlaybackStatusSnapshot, 'version'>>,
+  shouldApplyPlaybackStatus: boolean,
+  shouldApplyAudioStatus: boolean,
+): boolean => {
+  const intent = snapshot.playbackVisualIntent;
+  if (!intent) {
+    return false;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'error') && patch.error) {
+    return true;
+  }
+
+  if (shouldApplyPlaybackStatus && patch.playbackStatus && patch.playbackStatus.state !== 'loading') {
+    return true;
+  }
+
+  if (shouldApplyAudioStatus && patch.audioStatus && playbackMatchesIntent(patch.audioStatus, intent) && patch.audioStatus.state !== 'loading') {
+    return true;
+  }
+
+  return false;
+};
+
 export const setPlaybackStatusSnapshot = (patch: Partial<Omit<PlaybackStatusSnapshot, 'version'>>): PlaybackStatusSnapshot => {
+  const shouldApplyPlaybackStatus = !patch.playbackStatus || !isStaleStatusForVisualIntent(patch.playbackStatus, snapshot.playbackVisualIntent);
+  const shouldApplyAudioStatus = !patch.audioStatus || !isStaleStatusForVisualIntent(patch.audioStatus, snapshot.playbackVisualIntent);
+
   if (Object.prototype.hasOwnProperty.call(patch, 'playbackStatus')) {
     refreshRequestId += 1;
   }
 
-  if (Object.prototype.hasOwnProperty.call(patch, 'audioStatus')) {
+  if (shouldClearVisualIntentForPatch(patch, shouldApplyPlaybackStatus, shouldApplyAudioStatus)) {
+    snapshot.playbackVisualIntent = null;
+  }
+
+  if (shouldApplyAudioStatus && Object.prototype.hasOwnProperty.call(patch, 'audioStatus')) {
     snapshot.audioStatus = patch.audioStatus ?? null;
   }
 
-  if (Object.prototype.hasOwnProperty.call(patch, 'playbackStatus')) {
+  if (shouldApplyPlaybackStatus && Object.prototype.hasOwnProperty.call(patch, 'playbackStatus')) {
     snapshot.playbackStatus = patch.playbackStatus ?? null;
   }
 
@@ -52,10 +106,36 @@ export const setPlaybackStatusSnapshot = (patch: Partial<Omit<PlaybackStatusSnap
     snapshot.error = patch.error ?? null;
   }
 
+  if (Object.prototype.hasOwnProperty.call(patch, 'playbackVisualIntent')) {
+    snapshot.playbackVisualIntent = patch.playbackVisualIntent ?? null;
+  }
+
   emitChange();
   schedulePolling();
   return snapshot;
 };
+
+export const beginPlaybackSwitchSnapshot = (playbackStatus: PlaybackStatus): PlaybackStatusSnapshot => {
+  const wasPlaying = getAuthoritativeState() === 'playing';
+
+  return setPlaybackStatusSnapshot({
+    playbackStatus,
+    playbackVisualIntent: wasPlaying
+      ? {
+          type: 'track-switch',
+          state: 'playing',
+          currentTrackId: playbackStatus.currentTrackId,
+          filePath: playbackStatus.filePath,
+          startedAtMs: Date.now(),
+        }
+      : null,
+    error: null,
+  });
+};
+
+export const getVisualPlaybackState = (
+  statusSnapshot: Pick<PlaybackStatusSnapshot, 'audioStatus' | 'playbackStatus' | 'playbackVisualIntent'>,
+): AudioPlaybackState => statusSnapshot.playbackVisualIntent?.state ?? statusSnapshot.audioStatus?.state ?? statusSnapshot.playbackStatus?.state ?? 'idle';
 
 export const refreshPlaybackStatus = async (): Promise<PlaybackStatusSnapshot> => {
   const echo = window.echo;
@@ -157,6 +237,7 @@ const stopIfUnused = (): void => {
   snapshot = {
     audioStatus: null,
     playbackStatus: null,
+    playbackVisualIntent: null,
     error: null,
     version: snapshot.version + 1,
   };

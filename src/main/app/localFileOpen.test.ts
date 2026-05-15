@@ -33,16 +33,21 @@ describe('local file open helpers', () => {
   it('parses argv as unique directly playable audio files only', () => {
     const root = makeTempRoot();
     const flac = join(root, 'song.flac');
+    const wavPack = join(root, 'song.wv');
     const cue = join(root, 'song.cue');
+    const sacdIso = join(root, 'album.iso');
     const jpg = join(root, 'cover.jpg');
     const folder = join(root, 'Album');
     mkdirSync(folder);
     writeFileSync(flac, 'not real audio');
+    writeFileSync(wavPack, 'not real audio');
     writeFileSync(cue, 'FILE "song.flac" WAVE');
+    writeFileSync(sacdIso, 'not audio for this phase');
     writeFileSync(jpg, 'image');
 
-    expect(parseLocalAudioFileArguments(['--flag', flac, flac.toUpperCase(), cue, jpg, folder, join(root, 'missing.mp3')])).toEqual([
+    expect(parseLocalAudioFileArguments(['--flag', flac, flac.toUpperCase(), wavPack, cue, sacdIso, jpg, folder, join(root, 'missing.mp3')])).toEqual([
       resolve(flac),
+      resolve(wavPack),
       resolve(cue),
     ]);
   });

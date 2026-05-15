@@ -24,8 +24,9 @@ import {
   remoteUrlHashFor,
   stableKeyForWebDav,
 } from '../remoteIdentity';
+import { SCANNABLE_AUDIO_EXTENSIONS } from '../../../../shared/constants/audioExtensions';
 
-const audioExtensions = new Set(['.mp3', '.flac', '.wav', '.m4a', '.aac', '.ogg', '.opus', '.aiff', '.ape', '.dsf', '.dff']);
+const audioExtensions = SCANNABLE_AUDIO_EXTENSIONS;
 const metadataReadBytes = 256 * 1024;
 const maxRangeFallbackBytes = metadataReadBytes * 2;
 const propfindRetryCount = 2;
@@ -39,6 +40,10 @@ const cleanText = (value: unknown): string | null => (typeof value === 'string' 
 const cleanNumber = (value: unknown): number | null => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+const configText = (config: Record<string, unknown>, key: string): string | null => {
+  const value = config[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 };
 
 const clampInt = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -68,6 +73,9 @@ const friendlyHttpError = (status: number): string => {
   }
   if (status === 403) {
     return '服务器拒绝访问，请检查 WebDAV 权限。';
+  }
+  if (status === 404) {
+    return 'WebDAV 路径不存在，请检查服务器 URL 或根目录。';
   }
   if (status === 429) {
     return '服务器正在限流，请稍后重试或降低扫描并发。';
@@ -156,7 +164,7 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
     const testedAt = nowIso();
 
     try {
-      const response = await this.propfind(input, '/', 0);
+      const response = await this.propfindWithRetry(input, this.rootPathFor(input), 0);
 
       if (!response.ok && response.status !== 207) {
         return { ok: false, status: 'error', message: friendlyHttpError(response.status), testedAt };
@@ -169,7 +177,7 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
   }
 
   async browse(input: RemoteBrowseInput): Promise<RemoteDirectoryItem[]> {
-    const requestedPath = normalizeRemoteDirectoryPath(input.path ?? '/');
+    const requestedPath = normalizeRemoteDirectoryPath(input.path ?? this.rootPathFor(input));
     const response = await this.propfindWithRetry(input, requestedPath, 1);
 
     if (!response.ok && response.status !== 207) {
@@ -184,7 +192,7 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
   }
 
   async *scan(input: RemoteScanInput): AsyncGenerator<RemoteScanItem> {
-    const rootPath = normalizeRemoteDirectoryPath(input.rootPath ?? String(input.source.config.rootPath ?? '/'));
+    const rootPath = normalizeRemoteDirectoryPath(input.rootPath ?? this.rootPathFor(input));
     const concurrency = clampInt(input.source.config.scanConcurrency, 3, 1, 6);
     const pendingDirectories = [rootPath];
     const readyFiles: RemoteScanItem[] = [];
@@ -423,6 +431,10 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
       },
       signal: timeoutSignal(8000, input.signal),
     });
+  }
+
+  private rootPathFor(input: RemoteAdapterInput): string {
+    return normalizeRemoteDirectoryPath(configText(input.source.config, 'rootPath') ?? '/');
   }
 
   private mapResponse(sourceId: string, entry: string, baseUrl: string): RemoteDirectoryItem | null {

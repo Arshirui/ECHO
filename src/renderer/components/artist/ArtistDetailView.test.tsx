@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ArtistDetailView } from './ArtistDetailView';
 import type { LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
 
@@ -115,6 +115,7 @@ const installLibrary = (getArtist = vi.fn().mockResolvedValue(artist())): void =
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   vi.restoreAllMocks();
   queueMock.appendToQueue.mockReset();
@@ -166,6 +167,25 @@ describe('ArtistDetailView', () => {
     expect(queueMock.playTrack).toHaveBeenCalledWith(first, {
       source: { type: 'artist', label: 'Echo Unit', artistId: 'artist-1' },
     });
+  });
+
+  it('returns from the artist detail after Escape plays the back animation', async () => {
+    installLibrary();
+    const onBack = vi.fn();
+
+    render(<ArtistDetailView artist={artist()} onBack={onBack} />);
+
+    await screen.findByText('Echo Unit');
+    vi.useFakeTimers();
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onBack).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(180);
+    });
+
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
   it('restores the page surface scroll position after returning from an artist album', async () => {

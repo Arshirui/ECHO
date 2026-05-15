@@ -73,7 +73,7 @@ import type {
 } from '../shared/types/downloads';
 import type { LastFmAuthStartResult, LastFmStatus } from '../shared/types/lastfm';
 import type { SmtcCommand } from '../shared/types/smtc';
-import type { LyricsSearchCandidate, TrackLyrics } from '../shared/types/lyrics';
+import type { LyricsProviderId, LyricsSearchCandidate, TrackLyrics } from '../shared/types/lyrics';
 import type { MvMatchCandidate, MvResolvedStreams, MvSettings, MvTrackSnapshotSearchRequest, TrackVideo } from '../shared/types/mv';
 import type {
   RemoteDirectoryItem,
@@ -277,7 +277,7 @@ export type EchoApi = {
   };
   lyrics: {
     getForTrack: (trackId: string) => Promise<TrackLyrics | null>;
-    searchCandidates: (trackId: string, searchText?: string) => Promise<LyricsSearchCandidate[]>;
+    searchCandidates: (trackId: string, searchText?: string, providerId?: LyricsProviderId) => Promise<LyricsSearchCandidate[]>;
     applyCandidate: (trackId: string, candidateId: string) => Promise<TrackLyrics>;
     applyCustomLrc?: (trackId: string, lrcText: string, fileName?: string) => Promise<TrackLyrics>;
     markInstrumental: (trackId: string) => Promise<TrackLyrics>;
