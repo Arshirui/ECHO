@@ -188,6 +188,48 @@ describe('RemoteSourcesPanel', () => {
     expect(remoteApiMocks.sync).toHaveBeenCalledWith('created-source');
   });
 
+  it('submits unauthenticated WebDAV when credentials are blank', async () => {
+    const { container } = render(<RemoteSourcesPanel />);
+    await waitFor(() => expect(remoteApiMocks.list).toHaveBeenCalled());
+
+    const inputs = container.querySelectorAll('input');
+    fireEvent.change(inputs[0], { target: { value: 'Open WebDAV' } });
+    fireEvent.change(inputs[1], { target: { value: 'http://127.0.0.1:18080/dav' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /测试连接/u }));
+    await waitFor(() => expect(remoteApiMocks.test).toHaveBeenCalled());
+
+    expect(remoteApiMocks.test).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'webdav',
+      displayName: 'Open WebDAV',
+      baseUrl: 'http://127.0.0.1:18080/dav',
+      username: null,
+      secret: null,
+      authType: 'none',
+    }));
+  });
+
+  it('keeps Basic WebDAV auth when username has an empty password', async () => {
+    const { container } = render(<RemoteSourcesPanel />);
+    await waitFor(() => expect(remoteApiMocks.list).toHaveBeenCalled());
+
+    const inputs = container.querySelectorAll('input');
+    fireEvent.change(inputs[0], { target: { value: 'Empty Password WebDAV' } });
+    fireEvent.change(inputs[1], { target: { value: 'http://127.0.0.1:18080/dav' } });
+    fireEvent.change(inputs[2], { target: { value: 'user-no-pass' } });
+    fireEvent.change(inputs[3], { target: { value: '' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /测试连接/u }));
+    await waitFor(() => expect(remoteApiMocks.test).toHaveBeenCalled());
+
+    expect(remoteApiMocks.test).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'webdav',
+      username: 'user-no-pass',
+      secret: '',
+      authType: 'basic',
+    }));
+  });
+
   it('shows browse previews and confirms before deleting an existing source', async () => {
     sources = [remoteSource()];
     vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);

@@ -9,6 +9,7 @@ const settings: AppSettings = {
   appearanceTheme: 'light',
   albumMergeStrategy: 'standard',
   artistWallAlbumArtwork: false,
+  autoAccountCheckOnStartup: true,
   coverCacheDir: null,
   hideToTrayOnClose: false,
   appCustomWallpaperPath: null,
@@ -93,6 +94,7 @@ const chooseDownloadOutputDirectoryMock = vi.fn();
 const audioGetStatusMock = vi.fn();
 const audioListDevicesMock = vi.fn();
 const audioSetOutputMock = vi.fn();
+const audioResetEngineMock = vi.fn();
 
 const downloadSettings: DownloadSettings = {
   audioStrategy: 'best_available',
@@ -125,6 +127,7 @@ vi.mock('../utils/echoBridge', () => ({
     getStatus: audioGetStatusMock,
     listDevices: audioListDevicesMock,
     setOutput: audioSetOutputMock,
+    resetEngine: audioResetEngineMock,
   }),
   getAccountsBridge: () => ({
     getStatuses: vi.fn().mockResolvedValue([]),
@@ -196,6 +199,7 @@ beforeEach(() => {
   audioGetStatusMock.mockResolvedValue(null);
   audioListDevicesMock.mockResolvedValue([]);
   audioSetOutputMock.mockResolvedValue(null);
+  audioResetEngineMock.mockResolvedValue({ state: 'stopped', warnings: [] });
   window.echo = {
     app: {
       getSettings: getSettingsMock,
@@ -367,6 +371,40 @@ describe('SettingsPage', () => {
     fireEvent.click(within(row).getByRole('button'));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ backgroundSpacePauseEnabled: true }));
+  });
+
+  it('resets the audio engine from playback settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
+    const resetButton = await screen.findByRole('button', { name: 'settings.playback.resetEngine.action' });
+    fireEvent.click(resetButton);
+
+    await waitFor(() => expect(audioResetEngineMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('settings.playback.resetEngine.done')).toBeTruthy();
+  });
+
+  it('saves the startup account check setting from Settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue({ ...settings, autoAccountCheckOnStartup: false });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.integrations.label')[0]);
+    const row = screen.getByText('启动时刷新账号登录状态').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ autoAccountCheckOnStartup: false }));
   });
 
   it('shows app wallpaper controls only after choosing a custom wallpaper', async () => {

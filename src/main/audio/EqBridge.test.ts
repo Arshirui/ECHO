@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EqBridge } from './EqBridge';
+import type { EqState } from '../../shared/types/eq';
 
 const tempDirs: string[] = [];
 
@@ -89,6 +90,26 @@ describe('EqBridge protocol validation', () => {
 
     const reloaded = new EqBridge(dir);
     expect(reloaded.listPresets().some((preset) => preset.name === 'Desk Headphones')).toBe(true);
+  });
+
+  it('selects a newly saved preset in the bridge state', () => {
+    const bridge = createBridge();
+    const stateChanges: EqState[] = [];
+    bridge.on('state', (nextState: EqState) => stateChanges.push(nextState));
+
+    const saved = bridge.savePreset({
+      name: 'Desk Headphones',
+      preampDb: -2,
+      bands: bridge.getState().bands.map((band, index) => (index === 1 ? { ...band, gainDb: 3 } : band)),
+    });
+
+    expect(bridge.getState()).toMatchObject({
+      presetId: saved.id,
+      presetName: 'Desk Headphones',
+      preampDb: -2,
+    });
+    expect(bridge.getState().bands[1].gainDb).toBe(3);
+    expect(stateChanges.at(-1)).toMatchObject({ presetId: saved.id, presetName: 'Desk Headphones' });
   });
 
   it('includes professional target curves as read-only built-in presets', async () => {

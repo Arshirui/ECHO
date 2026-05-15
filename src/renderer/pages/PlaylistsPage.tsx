@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, Download, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, WifiOff, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Download, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, WifiOff, X } from 'lucide-react';
 import type { DownloadJob, DownloadJobStatus } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack, PlaylistExportFormat, PlaylistSortMode } from '../../shared/types/library';
 import type { StreamingAudioQuality, StreamingProviderName } from '../../shared/types/streaming';
@@ -162,6 +162,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
   const [downloadJobIdsByTrackId, setDownloadJobIdsByTrackId] = useState<Record<string, string>>({});
   const [streamingQuality, setStreamingQuality] = useState<StreamingAudioQuality>('hires');
+  const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const [playlistMenuOpen, setPlaylistMenuOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +170,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const requestIdRef = useRef(0);
   const notifiedDownloadJobIdsRef = useRef<Set<string>>(new Set());
   const newPlaylistInputRef = useRef<HTMLInputElement>(null);
+  const qualityMenuRef = useRef<HTMLDivElement | null>(null);
   const playlistMenuRef = useRef<HTMLDivElement | null>(null);
   const { currentTrackId, items: queueItems, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeQueueItem } = usePlaybackQueue();
   const selectedPlaylist = useMemo(
@@ -180,6 +182,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const isSelectedPlaylistProtected = selectedPlaylist?.kind === 'system';
   const isSelectedPlaylistRemote = Boolean(selectedPlaylist && selectedPlaylist.sourceProvider !== 'local');
   const selectedStreamingPlaylistUrl = selectedPlaylist ? streamingPlaylistUrl(selectedPlaylist) : null;
+  const currentStreamingQuality = streamingQualityOptions.find((option) => option.value === streamingQuality) ?? streamingQualityOptions[0];
   const displayTracks = useMemo(
     () => itemsPage.items.map((item) => itemToTrack(item, isSelectedPlaylistRemote ? streamingQuality : undefined)),
     [isSelectedPlaylistRemote, itemsPage.items, streamingQuality],
@@ -318,6 +321,30 @@ export const PlaylistsPage = (): JSX.Element => {
       window.setTimeout(() => newPlaylistInputRef.current?.focus(), 0);
     }
   }, [showNewPlaylistForm]);
+
+  useEffect(() => {
+    if (!qualityMenuOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent): void => {
+      if (!qualityMenuRef.current?.contains(event.target as Node)) {
+        setQualityMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setQualityMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [qualityMenuOpen]);
 
   useEffect(() => {
     if (!playlistMenuOpen) {
@@ -996,21 +1023,39 @@ export const PlaylistsPage = (): JSX.Element => {
                   ) : null}
                 </form>
                 {isSelectedPlaylistRemote ? (
-                  <label className="playlist-quality-control" title="Streaming quality">
+                  <div className="playlist-quality-control" ref={qualityMenuRef} title="Streaming quality">
                     <SlidersHorizontal size={15} />
                     <span>音质</span>
-                    <select
-                      aria-label="流媒体音质"
-                      value={streamingQuality}
-                      onChange={(event) => setStreamingQuality(event.currentTarget.value as StreamingAudioQuality)}
+                    <button
+                      type="button"
+                      aria-label="Streaming quality"
+                      aria-haspopup="listbox"
+                      aria-expanded={qualityMenuOpen}
+                      onClick={() => setQualityMenuOpen((open) => !open)}
                     >
-                      {streamingQualityOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      <strong>{currentStreamingQuality.label}</strong>
+                      <ChevronDown size={14} aria-hidden="true" />
+                    </button>
+                    {qualityMenuOpen ? (
+                      <div className="playlist-quality-menu" role="listbox" aria-label="Streaming quality">
+                        {streamingQualityOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="option"
+                            aria-selected={option.value === streamingQuality}
+                            onClick={() => {
+                              setStreamingQuality(option.value);
+                              setQualityMenuOpen(false);
+                            }}
+                          >
+                            <span>{option.label}</span>
+                            {option.value === streamingQuality ? <Check size={14} /> : null}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
                 <button className="primary-action" type="button" disabled={playableTracks.length === 0} onClick={() => void handlePlayAll()}>
                   <Play size={16} />

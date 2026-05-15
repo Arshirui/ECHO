@@ -1,5 +1,7 @@
 import type { AccountStatus } from '../../../shared/types/accounts';
 import type {
+  StreamingAlbum,
+  StreamingArtist,
   StreamingArtistRef,
   StreamingLyricsResult,
   StreamingMvResult,
@@ -107,6 +109,55 @@ const qualityPrefix = (quality: StreamingPlaybackRequest['quality']): { prefix: 
   return { prefix: 'M800', extension: 'mp3', codec: 'mp3', mimeType: 'audio/mpeg', bitrate: 320000 };
 };
 
+const mapAlbum = (albumValue: unknown): StreamingAlbum => {
+  const album = asRecord(albumValue);
+  const albumMid = text(album.albumMID) ?? text(album.album_mid) ?? text(album.mid) ?? text(album.albumid);
+  const title = text(album.albumName) ?? text(album.albumname) ?? text(album.name) ?? 'Unknown Album';
+  const singerList = album.singer_list ?? album.singer ?? album.singers;
+  const artists = artistRefs(singerList);
+  const artist = artists.map((item) => item.name).join(' / ') || text(album.singerName) || text(album.singername) || 'Unknown Artist';
+
+  return {
+    id: streamingStableKey(provider, `album:${albumMid || title}`),
+    provider,
+    providerAlbumId: albumMid || title,
+    title,
+    artist,
+    artists,
+    coverUrl: albumCoverUrl(albumMid, 500),
+    coverThumb: albumCoverUrl(albumMid, 150),
+    releaseDate: text(album.publicTime) ?? text(album.publishDate) ?? text(album.pub_time),
+    trackCount: integer(album.song_count ?? album.songCount ?? album.total),
+  };
+};
+
+const mapArtist = (artistValue: unknown): StreamingArtist => {
+  const artist = asRecord(artistValue);
+  const artistMid = text(artist.singerMID) ?? text(artist.singermid) ?? text(artist.mid) ?? text(artist.singer_id);
+  const name = text(artist.singerName) ?? text(artist.singername) ?? text(artist.name) ?? 'Unknown Artist';
+  const avatar = text(artist.singerPic) ?? text(artist.pic) ?? (artistMid ? `https://y.gtimg.cn/music/photo_new/T001R500x500M000${artistMid}.jpg` : null);
+
+  return {
+    id: streamingStableKey(provider, `artist:${artistMid || name}`),
+    provider,
+    providerArtistId: artistMid || name,
+    name,
+    avatarUrl: avatar ? streamingImageProxyUrl(avatar, qqReferer) : null,
+    coverUrl: avatar ? streamingImageProxyUrl(avatar, qqReferer) : null,
+  };
+};
+
+const qqSearchType = (request: StreamingSearchRequest): number => {
+  const mediaType = request.mediaTypes?.[0] ?? 'track';
+  if (mediaType === 'album') {
+    return 8;
+  }
+  if (mediaType === 'artist') {
+    return 9;
+  }
+  return 0;
+};
+
 type QqPlaybackQuality = NonNullable<StreamingPlaybackRequest['quality']>;
 
 const qqPlaybackQualityFallbacks: Record<QqPlaybackQuality | 'fallback', QqPlaybackQuality[]> = {
@@ -142,6 +193,7 @@ export class QQMusicStreamingProvider implements StreamingProvider {
   async search(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
     const page = Math.max(1, Math.floor(request.page ?? 1));
     const pageSize = Math.min(50, Math.max(1, Math.floor(request.pageSize ?? 20)));
+    const searchType = qqSearchType(request);
     const body = {
       comm: {
         ct: '19',
@@ -155,7 +207,7 @@ export class QQMusicStreamingProvider implements StreamingProvider {
           query: request.query,
           page_num: page,
           num_per_page: pageSize,
-          search_type: 0,
+          search_type: searchType,
         },
       },
     };
@@ -169,9 +221,18 @@ export class QQMusicStreamingProvider implements StreamingProvider {
     const payload = asRecord(asRecord(data.req_1).data);
     const bodyData = asRecord(payload.body);
     const songData = asRecord(bodyData.song);
+    const albumData = asRecord(bodyData.album);
+    const singerData = asRecord(bodyData.singer);
     const meta = asRecord(payload.meta);
     const songs = Array.isArray(songData.list) ? songData.list : [];
-    const total = integer(songData.totalnum ?? songData.total ?? meta.sum ?? meta.estimate_sum);
+    const albums = Array.isArray(albumData.list) ? albumData.list : [];
+    const artists = Array.isArray(singerData.list) ? singerData.list : [];
+    const total =
+      searchType === 8
+        ? integer(albumData.totalnum ?? albumData.total ?? meta.sum ?? meta.estimate_sum)
+        : searchType === 9
+          ? integer(singerData.totalnum ?? singerData.total ?? meta.sum ?? meta.estimate_sum)
+          : integer(songData.totalnum ?? songData.total ?? meta.sum ?? meta.estimate_sum);
 
     return {
       provider,
@@ -179,10 +240,10 @@ export class QQMusicStreamingProvider implements StreamingProvider {
       page,
       pageSize,
       total,
-      hasMore: total ? page * pageSize < total : songs.length === pageSize,
+      hasMore: total ? page * pageSize < total : Math.max(songs.length, albums.length, artists.length) === pageSize,
       tracks: songs.map(mapSong),
-      albums: [],
-      artists: [],
+      albums: albums.map(mapAlbum),
+      artists: artists.map(mapArtist),
       playlists: [],
       mvs: [],
     };

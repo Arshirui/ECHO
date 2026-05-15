@@ -94,6 +94,8 @@ type LibraryServiceDependencies = {
 };
 
 export class LibraryService {
+  private artistsDirty = false;
+
   constructor(
     private readonly store: LibraryStore,
     private readonly scanJobQueue: ScanJobQueue,
@@ -360,7 +362,12 @@ export class LibraryService {
     return this.store.getAlbum(albumId);
   }
 
+  getAlbumForTrack(trackId: string): LibraryAlbum | null {
+    return this.store.getAlbumForTrack(trackId);
+  }
+
   getArtists(query?: LibraryPageQuery): LibraryPage<LibraryArtist> {
+    this.refreshArtistsIfDirty();
     return this.store.getArtists(query);
   }
 
@@ -980,10 +987,9 @@ export class LibraryService {
 
   deleteTrack(trackId: string): void {
     this.store.transaction(() => {
-      this.store.deleteTrack(trackId);
-      this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
-      this.store.refreshArtists();
+      this.store.deleteTrackAndCompactAlbums(trackId);
     });
+    this.artistsDirty = true;
   }
 
   deleteAlbumTracks(albumId: string): number {
@@ -1139,6 +1145,15 @@ export class LibraryService {
 
   private albumRefreshOptions(): { albumMergeStrategy: AlbumMergeStrategy } {
     return { albumMergeStrategy: this.readAppSettings().albumMergeStrategy };
+  }
+
+  private refreshArtistsIfDirty(): void {
+    if (!this.artistsDirty) {
+      return;
+    }
+
+    this.store.refreshArtists();
+    this.artistsDirty = false;
   }
 
   private backupPlaylist(playlistId: string, reason: PlaylistBackupReason): void {

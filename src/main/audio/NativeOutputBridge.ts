@@ -58,6 +58,7 @@ const sharedReadyTimeoutMs = 15_000;
 const slowNativeModeReadyTimeoutMs = 45_000;
 const sharedGracefulStopTimeoutMs = 2_500;
 const exclusiveGracefulStopTimeoutMs = 4_000;
+const forceKilledExitWaitMs = 1_000;
 const maxPositionExtrapolationMs = 250;
 
 const appendTailLine = (lines: string[], line: string): void => {
@@ -97,24 +98,31 @@ const getNativeCrashDetails = (reason: string): string[] => {
   return crashName ? [`exitCodeHex=${formatExitCodeHex(exitCode)}`, `nativeCrash=${crashName}`] : [];
 };
 
+const formatHostDetailValue = (value: string): string =>
+  value.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"');
+
 const createHostError = (
   reason: string,
   hostBinary: string,
   args: string[],
   stderrLines: string[],
-  metadata: { elapsedMs: number; mode: 'shared' | 'exclusive' | 'asio' },
+  metadata: { elapsedMs: number; mode: 'shared' | 'exclusive' | 'asio'; nativeMessage?: string | null },
 ): Error => {
   const stderr = stderrLines.join(' | ');
   const details = [
-    `host="${hostBinary}"`,
-    `args="${args.join(' ')}"`,
+    `host="${formatHostDetailValue(hostBinary)}"`,
+    `args="${formatHostDetailValue(args.join(' '))}"`,
     `mode="${metadata.mode}"`,
     `elapsedMs=${Math.max(0, Math.round(metadata.elapsedMs))}`,
     ...getNativeCrashDetails(reason),
   ];
 
+  if (metadata.nativeMessage) {
+    details.push(`nativeMessage="${formatHostDetailValue(metadata.nativeMessage)}"`);
+  }
+
   if (stderr) {
-    details.push(`stderrTail="${stderr}"`);
+    details.push(`stderrTail="${formatHostDetailValue(stderr)}"`);
   }
 
   return new Error(`echo-audio-host ${reason}; ${details.join('; ')}`);
@@ -209,6 +217,7 @@ const frameTypeBeginSession = 1;
 const frameTypePcmF32Le = 2;
 const frameTypeEndSession = 3;
 const frameTypeShutdown = 4;
+const frameTypeSetVolume = 5;
 
 const createFrameHeader = (type: number, sessionId: number, payloadBytes: number): Buffer => {
   const header = Buffer.alloc(16);
@@ -416,10 +425,11 @@ export class NativeOutputBridge extends EventEmitter {
       const startedAtMs = performance.now();
       const mode = options.asio ? 'asio' : options.exclusive ? 'exclusive' : 'shared';
       this.lastOutputMode = mode;
-      const createError = (reason: string): Error =>
+      const createError = (reason: string, nativeMessage?: string | null): Error =>
         createHostError(reason, bin, args, stderrLines, {
           elapsedMs: performance.now() - startedAtMs,
           mode,
+          nativeMessage,
         });
       let settled = false;
       const settleResolve = (value: NativeBridgeReadyResult): void => {
@@ -449,7 +459,7 @@ export class NativeOutputBridge extends EventEmitter {
 
       const stdout = readline.createInterface({ input: this.proc.stdout });
       stdout.on('line', (line) => {
-        this.handleStdoutLine(line, settleResolve, spawnedProc);
+        this.handleStdoutLine(line, settleResolve, settleReject, spawnedProc, createError);
       });
 
       const stderr = readline.createInterface({ input: this.proc.stderr });
@@ -461,7 +471,9 @@ export class NativeOutputBridge extends EventEmitter {
       this.proc.on('error', (error) => {
         const hostError = createError(`spawn_error:${error.message}`);
         settleReject(hostError);
-        this.emit('error', hostError);
+        if (this.ready) {
+          this.emit('error', hostError);
+        }
       });
 
       this.proc.on('exit', (code, signal) => {
@@ -608,6 +620,13 @@ export class NativeOutputBridge extends EventEmitter {
     }
 
     this.writeFrame(frameTypeEndSession, sessionId, Buffer.alloc(0), callback);
+  }
+
+  setVolume(volume: number): void {
+    const safeVolume = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 1;
+    const payload = Buffer.alloc(4);
+    payload.writeFloatLE(safeVolume, 0);
+    this.writeFrame(frameTypeSetVolume, 0, payload);
   }
 
   writePcmFrame(sessionId: number, chunk: Buffer, callback: (error?: Error | null) => void): void {
@@ -757,6 +776,18 @@ export class NativeOutputBridge extends EventEmitter {
         } catch {
           // Best-effort emergency cleanup.
         }
+        if (pendingGracefulStop.waitForExit) {
+          pendingGracefulStop.timeout = setTimeout(() => {
+            if (this.pendingGracefulStop?.proc !== proc) {
+              return;
+            }
+
+            this.logger('[NativeOutputBridge] killed host did not report exit; continuing shutdown');
+            this.resolvePendingGracefulStop();
+          }, forceKilledExitWaitMs);
+          pendingGracefulStop.timeout?.unref?.();
+          return;
+        }
         this.resolvePendingGracefulStop();
       }, Math.max(1, selectedTimeoutMs));
       pendingGracefulStop.timeout?.unref?.();
@@ -857,9 +888,11 @@ export class NativeOutputBridge extends EventEmitter {
   private handleStdoutLine(
     line: string,
     resolveReady: (value: NativeBridgeReadyResult) => void,
+    rejectReady: (error: Error) => void,
     sourceProc?: ChildProcessWithoutNullStreams,
+    createError?: (reason: string, nativeMessage?: string | null) => Error,
   ): void {
-    let message: NativeBridgeReadyMessage & { pos?: unknown; event?: unknown };
+    let message: NativeBridgeReadyMessage & { pos?: unknown; event?: unknown; message?: unknown; error?: unknown; reason?: unknown };
 
     try {
       message = JSON.parse(line) as NativeBridgeReadyMessage & { pos?: unknown; event?: unknown };
@@ -948,7 +981,23 @@ export class NativeOutputBridge extends EventEmitter {
     }
 
     if (message.event === 'error') {
-      this.emit('error', new Error('echo-audio-host error event'));
+      const nativeMessage =
+        typeof message.message === 'string'
+          ? message.message
+          : typeof message.error === 'string'
+            ? message.error
+            : null;
+      const nativeReason =
+        typeof message.reason === 'string' && /^[a-z0-9_.:-]+$/iu.test(message.reason)
+          ? message.reason
+          : 'error_event';
+      const error = createError?.(nativeReason, nativeMessage) ?? new Error('echo-audio-host error event');
+      if (!this.ready) {
+        rejectReady(error);
+        return;
+      }
+
+      this.emit('error', error);
     }
   }
 

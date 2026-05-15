@@ -66,6 +66,12 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AudioGetDiagnostics);
   });
 
+  it('exposes audio engine reset through IPC', async () => {
+    await exposedApi!.audio.resetEngine();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AudioResetEngine);
+  });
+
   it('exposes crash report file opening through IPC', async () => {
     await exposedApi!.diagnostics.openCrashReport();
 
@@ -164,13 +170,21 @@ describe('preload SMTC API', () => {
   });
 
   it('exposes account status APIs without cookie readback helpers', async () => {
+    const handler = vi.fn();
     await exposedApi!.accounts.saveCookie('netease', 'MUSIC_U=secret');
     await exposedApi!.accounts.startLogin?.('netease');
     await exposedApi!.accounts.getStatuses();
+    const unsubscribe = exposedApi!.accounts.onStatusesChanged(handler);
+    const listener = listeners.get(IpcChannels.AccountStatusesChanged);
+    const statuses = [{ provider: 'bilibili', connected: false, error: 'expired' }];
+    listener?.({}, statuses);
+    unsubscribe();
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountSaveCookie, 'netease', 'MUSIC_U=secret');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountStartLogin, 'netease');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountGetStatuses);
+    expect(handler).toHaveBeenCalledWith(statuses);
+    expect(listeners.has(IpcChannels.AccountStatusesChanged)).toBe(false);
     expect(Object.keys(exposedApi!.accounts)).not.toContain('getCookie');
   });
 

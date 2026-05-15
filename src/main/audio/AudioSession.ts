@@ -41,6 +41,7 @@ type OutputBridgeLike = {
   beginSession?: (options?: { startSeconds?: number; playbackRate?: number; durationSeconds?: number }) => number;
   createSessionWritable?: (sessionId?: number) => Writable;
   endSession?: (sessionId?: number) => void;
+  setVolume?: (volume: number) => void;
   getPositionSeconds: () => number;
   getPositionStalenessMs?: () => number | null;
   resetOutputClock?: (startSeconds?: number, playbackRate?: number) => void;
@@ -784,7 +785,9 @@ export class AudioSession extends EventEmitter {
       this.currentOutputSettings !== null;
 
     if (outputOnlyChangesVolume) {
-      this.gainTransform?.setVolume(this.outputSettings.volume);
+      this.bridge?.setVolume?.(this.outputSettings.volume);
+      this.gainTransform?.setVolume(this.bridge?.setVolume ? 1 : this.outputSettings.volume);
+      this.levelMeterTransform?.setGain(this.bridge?.setVolume ? this.outputSettings.volume : 1);
       this.emitStatus();
       return this.getStatus();
     }
@@ -1133,6 +1136,36 @@ export class AudioSession extends EventEmitter {
     this.pausedPositionSeconds = null;
     this.errorMessage = null;
     this.outputWarnings = [];
+    this.resetWatchdogProgress();
+    this.clock.reset(0, null);
+    this.emitStatus();
+    return this.getStatus();
+  }
+
+  async resetEngine(): Promise<AudioStatus> {
+    this.runToken += 1;
+    await this.stopResourcesGracefully('reset-audio-engine');
+    this.resetLevelMeter();
+    this.resetNativeTelemetry();
+    this.state = 'stopped';
+    this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
+    this.currentProbe = null;
+    this.currentTrackId = null;
+    this.currentFilePath = null;
+    this.currentPlan = null;
+    this.currentResidentOutputSampleRate = null;
+    this.currentDevice = null;
+    this.currentOutputBackend = null;
+    this.currentOutputBackendImpl = null;
+    this.currentOutputDeviceType = null;
+    this.currentOutputDeviceName = null;
+    this.currentUseJuceOutputRequested = false;
+    this.currentReadyResult = null;
+    this.currentBridgeOutputMode = null;
+    this.pausedPositionSeconds = null;
+    this.errorMessage = null;
+    this.outputWarnings = [];
+    this.pendingOutputWarnings = [];
     this.resetWatchdogProgress();
     this.clock.reset(0, null);
     this.emitStatus();
@@ -2373,12 +2406,15 @@ export class AudioSession extends EventEmitter {
   }
 
   private startDecoderRun(run: DecoderRun, writable: Writable, token: number): void {
-    const gainTransform = new PcmVolumeTransform(this.currentOutputSettings?.volume ?? this.outputSettings.volume);
+    const volume = this.currentOutputSettings?.volume ?? this.outputSettings.volume;
+    const nativeVolumeControl = typeof this.bridge?.setVolume === 'function';
+    const gainTransform = new PcmVolumeTransform(nativeVolumeControl ? 1 : volume);
     const speedTransform = new PcmPlaybackRateTransform(
       this.currentProbe?.channels ?? 2,
       this.currentOutputSettings?.playbackRate ?? this.outputSettings.playbackRate,
     );
     const levelMeterTransform = new PcmLevelMeterTransform((snapshot) => this.handleLevelSnapshot(snapshot));
+    levelMeterTransform.setGain(nativeVolumeControl ? volume : 1);
     let inputEnded = false;
     const signalNativeInputEnded = (): void => {
       if (inputEnded || this.runToken !== token || this.decoderRun !== run) {
@@ -2630,11 +2666,7 @@ export class AudioSession extends EventEmitter {
   }
 
   private getGracefulStopWaitForExit(reason: string): boolean {
-    if (reason !== 'replace-output') {
-      return false;
-    }
-
-    return this.currentBridgeOutputMode === 'asio';
+    return reason === 'replace-output';
   }
 
   private async stopBridgeWithOptions(

@@ -115,6 +115,7 @@ const echoApi: EchoApi = {
     clearLikedAlbums: () => ipcRenderer.invoke(IpcChannels.LibraryClearLikedAlbums),
     getAlbums: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbums, query),
     getAlbum: (albumId) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbum, albumId),
+    getAlbumForTrack: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbumForTrack, trackId),
     getArtists: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetArtists, query),
     getArtist: (artistId) => ipcRenderer.invoke(IpcChannels.LibraryGetArtist, artistId),
     getArtistTracks: (artistId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetArtistTracks, artistId, query),
@@ -283,6 +284,7 @@ const echoApi: EchoApi = {
     },
     listDevices: () => ipcRenderer.invoke(IpcChannels.AudioListDevices),
     setOutput: (settings) => ipcRenderer.invoke(IpcChannels.AudioSetOutput, settings),
+    resetEngine: () => ipcRenderer.invoke(IpcChannels.AudioResetEngine),
   },
   diagnostics: {
     getLastCrashSummary: () => ipcRenderer.invoke(IpcChannels.DiagnosticsGetLastCrashSummary),
@@ -320,6 +322,13 @@ const echoApi: EchoApi = {
     check: (provider) => ipcRenderer.invoke(IpcChannels.AccountCheck, provider),
     checkAll: () => ipcRenderer.invoke(IpcChannels.AccountCheckAll),
     setYouTubeBrowser: (browser) => ipcRenderer.invoke(IpcChannels.AccountSetYouTubeBrowser, browser),
+    onStatusesChanged: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, statuses: unknown): void => {
+        handler(Array.isArray(statuses) ? (statuses as Awaited<ReturnType<EchoApi['accounts']['getStatuses']>>) : []);
+      };
+      ipcRenderer.on(IpcChannels.AccountStatusesChanged, listener);
+      return () => ipcRenderer.off(IpcChannels.AccountStatusesChanged, listener);
+    },
   },
   eq: {
     getState: () => ipcRenderer.invoke(IpcChannels.EqGetState),
@@ -331,6 +340,7 @@ const echoApi: EchoApi = {
     reset: () => ipcRenderer.invoke(IpcChannels.EqReset),
     listPresets: () => ipcRenderer.invoke(IpcChannels.EqListPresets),
     savePreset: (request) => ipcRenderer.invoke(IpcChannels.EqSavePreset, request),
+    exportPreset: (request) => ipcRenderer.invoke(IpcChannels.EqExportPreset, request),
     deletePreset: (presetId) => ipcRenderer.invoke(IpcChannels.EqDeletePreset, presetId),
     getChannelBalanceState: () => ipcRenderer.invoke(IpcChannels.ChannelBalanceGetState),
     setChannelBalanceState: (patch) => ipcRenderer.invoke(IpcChannels.ChannelBalanceSetState, patch),

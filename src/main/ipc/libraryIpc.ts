@@ -1008,6 +1008,9 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetAlbum, (_event, albumId: unknown) =>
     getLibraryService().getAlbum(requireText(albumId, 'albumId')),
   );
+  ipcMain.handle(IpcChannels.LibraryGetAlbumForTrack, (_event, trackId: unknown) =>
+    getLibraryService().getAlbumForTrack(requireText(trackId, 'trackId')),
+  );
   ipcMain.handle(IpcChannels.LibraryGetArtists, (_event, query: unknown) =>
     getLibraryService().getArtists(normalizeQuery(query)),
   );

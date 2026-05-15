@@ -744,7 +744,13 @@ void wasapi_shared_stop(wasapi_shared_runtime* runtime) {
 
     if (runtime->stopEvent != NULL) SetEvent(runtime->stopEvent);
     if (runtime->thread != NULL) {
-        WaitForSingleObject(runtime->thread, 5000);
+        DWORD waitResult = WaitForSingleObject(runtime->thread, 5000);
+        if (waitResult != WAIT_OBJECT_0) {
+            fprintf(stderr,
+                "[echo-audio-host] WASAPI shared render thread did not stop in time; deferring resource release to process teardown\n");
+            CloseHandle(runtime->thread);
+            return;
+        }
         CloseHandle(runtime->thread);
     }
     if (runtime->audioClient != NULL) runtime->audioClient->Stop();

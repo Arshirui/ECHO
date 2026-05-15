@@ -1281,6 +1281,7 @@
 }
 
 .playlist-quality-control {
+  position: relative;
   display: inline-grid;
   grid-template-columns: 15px auto minmax(82px, auto);
   min-height: 36px;
@@ -1294,14 +1295,20 @@
   box-shadow: 0 8px 20px rgba(35, 52, 75, 0.06);
 }
 
-.playlist-quality-control span {
+.playlist-quality-control > span {
   color: #607086;
   font-size: 12px;
   font-weight: 850;
 }
 
-.playlist-quality-control select {
-  min-width: 0;
+.playlist-quality-control > button {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 78px;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 0;
   color: var(--echo-heading-text);
   border: 0;
   outline: 0;
@@ -1310,6 +1317,75 @@
   font-size: 12px;
   font-weight: 850;
   cursor: pointer;
+}
+
+.playlist-quality-control > button strong {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-quality-control > button svg {
+  color: #607086;
+}
+
+.playlist-quality-control > button[aria-expanded="true"] svg {
+  color: #2f6da8;
+}
+
+.playlist-quality-menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  width: 148px;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid rgba(28, 42, 61, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 44px rgba(28, 42, 61, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.playlist-quality-menu button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  color: #25364b;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  text-align: left;
+  cursor: pointer;
+}
+
+.playlist-quality-menu button:hover,
+.playlist-quality-menu button[aria-selected="true"] {
+  background: #edf6ff;
+}
+
+.playlist-quality-menu button span {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-quality-menu button svg {
+  color: #2f6da8;
 }
 
 .primary-action,
@@ -2733,6 +2809,7 @@ html[data-theme="dark"] .playlist-import-box label,
 html[data-theme="dark"] .playlist-import-box .secondary-action,
 html[data-theme="dark"] .playlist-search,
 html[data-theme="dark"] .playlist-quality-control,
+html[data-theme="dark"] .playlist-quality-menu,
 html[data-theme="dark"] .secondary-action,
 html[data-theme="dark"] .playlist-action-menu,
 html[data-theme="dark"] .playlist-action-menu-item,
@@ -2753,6 +2830,8 @@ html[data-theme="dark"] .playlist-import-box .secondary-action:hover:not(:disabl
 html[data-theme="dark"] .secondary-action:hover:not(:disabled),
 html[data-theme="dark"] .playlist-action-menu-item:hover,
 html[data-theme="dark"] .playlist-action-menu-item[aria-checked="true"],
+html[data-theme="dark"] .playlist-quality-menu button:hover,
+html[data-theme="dark"] .playlist-quality-menu button[aria-selected="true"],
 html[data-theme="dark"] .playlist-search button:hover,
 html[data-theme="dark"] .playlist-cover-button:hover,
 html[data-theme="dark"] .playlist-cover-reset:hover {
@@ -2775,7 +2854,8 @@ html[data-theme="dark"] .playlist-detail-copy h2,
 html[data-theme="dark"] .streaming-section span,
 html[data-theme="dark"] .playlist-import-box input,
 html[data-theme="dark"] .playlist-search input,
-html[data-theme="dark"] .playlist-quality-control select,
+html[data-theme="dark"] .playlist-quality-control > button strong,
+html[data-theme="dark"] .playlist-quality-menu button,
 html[data-theme="dark"] .playlist-action-menu-item {
   color: var(--echo-heading-text);
 }
@@ -2790,11 +2870,13 @@ html[data-theme="dark"] .playlist-detail-copy p,
 html[data-theme="dark"] .playlist-detail-copy small,
 html[data-theme="dark"] .playlist-quality-control,
 html[data-theme="dark"] .playlist-quality-control span,
+html[data-theme="dark"] .playlist-quality-control > button svg,
 html[data-theme="dark"] .playlist-import-box label svg,
 html[data-theme="dark"] .playlist-search,
 html[data-theme="dark"] .playlist-search button,
 html[data-theme="dark"] .playlist-action-menu-section > span,
-html[data-theme="dark"] .playlist-action-menu-item svg {
+html[data-theme="dark"] .playlist-action-menu-item svg,
+html[data-theme="dark"] .playlist-quality-menu button svg {
   color: var(--color-muted);
 }
 
@@ -3297,6 +3379,44 @@ html[data-theme="dark"] .unavailable-pill {
   object-fit: cover;
 }
 
+.streaming-cover--avatar {
+  border-radius: 50%;
+}
+
+.streaming-discovery-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 5px;
+  scrollbar-color: rgba(86, 105, 128, 0.38) transparent;
+  scrollbar-width: thin;
+}
+
+.streaming-discovery-card {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+  min-height: 76px;
+  padding: 9px 12px;
+  border: 1px solid rgba(38, 57, 82, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.streaming-discovery-card:hover {
+  border-color: rgba(70, 111, 151, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 22px rgba(35, 55, 80, 0.07);
+}
+
+.streaming-discovery-card .streaming-title-line svg {
+  flex: 0 0 auto;
+  color: #4f7195;
+}
+
 .streaming-main {
   display: grid;
   min-width: 0;
@@ -3487,6 +3607,7 @@ html[data-theme="dark"] .streaming-state,
 html[data-theme="dark"] .streaming-playlist-import,
 html[data-theme="dark"] .streaming-playlist-import label,
 html[data-theme="dark"] .streaming-row,
+html[data-theme="dark"] .streaming-discovery-card,
 html[data-theme="dark"] .streaming-actions button,
 html[data-theme="dark"] .streaming-lyrics,
 html[data-theme="dark"] .streaming-load-more {
@@ -3504,6 +3625,7 @@ html[data-theme="dark"] .streaming-state,
 html[data-theme="dark"] .streaming-playlist-import,
 html[data-theme="dark"] .streaming-playlist-import label,
 html[data-theme="dark"] .streaming-row,
+html[data-theme="dark"] .streaming-discovery-card,
 html[data-theme="dark"] .streaming-actions button,
 html[data-theme="dark"] .streaming-load-more {
   border-radius: var(--radius-md);
@@ -3522,6 +3644,7 @@ html[data-theme="dark"] .streaming-quality-menu button:hover,
 html[data-theme="dark"] .streaming-quality-menu button[aria-selected="true"],
 html[data-theme="dark"] .streaming-row:hover,
 html[data-theme="dark"] .streaming-row[data-playing="true"],
+html[data-theme="dark"] .streaming-discovery-card:hover,
 html[data-theme="dark"] .streaming-actions button:hover,
 html[data-theme="dark"] .streaming-load-more:hover {
   color: var(--theme-heading-text);

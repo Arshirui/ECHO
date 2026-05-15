@@ -18,6 +18,7 @@ import {
   type SongsFirstPageSnapshot,
 } from '../stores/songsFirstPageSnapshot';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { openAlbumDetailForTrack } from '../utils/albumNavigation';
 
 const pageSize = 100;
 const sortOptions: Array<{ value: LibrarySort; label: string }> = [
@@ -183,6 +184,7 @@ export const SongsPage = (): JSX.Element => {
   const isLoadingRef = useRef(false);
   const likedTrackIdsRef = useRef<Record<string, boolean>>({});
   const duplicateHiddenCountsRef = useRef<Record<string, number>>({});
+  const ignoreNextLibraryChangedRef = useRef(false);
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const sortMenuRef = useRef<HTMLDivElement | null>(null);
   const { currentTrackId, playTrack, appendToQueue, playTrackNext, items: queueItems, removeQueueItem } = usePlaybackQueue();
@@ -387,6 +389,12 @@ export const SongsPage = (): JSX.Element => {
 
   useEffect(() => {
     const handleLibraryChanged = (): void => {
+      if (ignoreNextLibraryChangedRef.current) {
+        ignoreNextLibraryChangedRef.current = false;
+        clearSongsFirstPageSnapshot();
+        return;
+      }
+
       clearSongsFirstPageSnapshot();
       clearListMetadataCache();
       void loadTracks(1, 'replace');
@@ -719,8 +727,9 @@ export const SongsPage = (): JSX.Element => {
             window.requestAnimationFrame(() => setIsTagEditorOpen(true));
             return;
           case 'go-to-album':
-            setSearchInput(track.album);
-            setSort('album');
+            if (!(await openAlbumDetailForTrack(track))) {
+              setError(`Album not found: ${track.album || 'Unknown Album'}`);
+            }
             return;
           case 'show-in-folder':
             await library?.openTrackInFolder(track.id);
@@ -750,6 +759,9 @@ export const SongsPage = (): JSX.Element => {
             }
             await library?.deleteTrackFile(track.id);
             setTracks((current) => current.filter((item) => item.id !== track.id));
+            setTotal((current) => Math.max(0, current - 1));
+            setHasMore((current) => current || tracks.length - 1 < total - 1);
+            ignoreNextLibraryChangedRef.current = true;
             window.dispatchEvent(new Event('library:changed'));
             return;
           case 'add-to-playlist':

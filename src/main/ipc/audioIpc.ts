@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { writeFileSync } from 'node:fs';
+import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import { normalizeAudioOutputModeForPlatform } from '../../shared/utils/audioPlatformCapabilities';
 import type {
@@ -19,6 +20,44 @@ import { getCrashReportService } from '../diagnostics/CrashReportService';
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
 const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
 const playbackSpeedModes = new Set<PlaybackSpeedMode>(['nightcore', 'daycore', 'speed']);
+
+const safeExportFileName = (value: string): string => {
+  const trimmed = value.trim().replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ');
+  return trimmed.length > 0 ? trimmed.slice(0, 96) : 'ECHO Next EQ Preset';
+};
+
+const exportEqPreset = async (request: EqSavePresetRequest): Promise<string | null> => {
+  const savedName = typeof request.name === 'string' && request.name.trim() ? request.name.trim() : 'ECHO Next EQ Preset';
+  const result = await dialog.showSaveDialog({
+    title: 'Export EQ Preset',
+    defaultPath: `${safeExportFileName(savedName)}.json`,
+    filters: [{ name: 'ECHO Next EQ Preset', extensions: ['json'] }],
+  });
+
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  writeFileSync(
+    result.filePath,
+    `${JSON.stringify(
+      {
+        type: 'echo-next-eq-preset',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        preset: {
+          name: savedName,
+          preampDb: request.preampDb,
+          bands: request.bands,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  return result.filePath;
+};
 
 const normalizeOutputSettings = (value: unknown): AudioOutputSettings => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -115,6 +154,14 @@ export const registerAudioIpc = (): void => {
       throw error;
     }
   });
+  ipcMain.handle(IpcChannels.AudioResetEngine, async (): Promise<AudioStatus> => {
+    try {
+      return await getAudioSession().resetEngine();
+    } catch (error) {
+      reportAudioIpcError(error, 'reset-engine-ipc');
+      throw error;
+    }
+  });
   ipcMain.handle(IpcChannels.EqGetState, (): EqState => getEqBridge().getState());
   ipcMain.handle(IpcChannels.EqSetEnabled, async (_event, enabled: unknown): Promise<EqState> =>
     getEqBridge().setEnabled(Boolean(enabled)),
@@ -134,6 +181,7 @@ export const registerAudioIpc = (): void => {
   ipcMain.handle(IpcChannels.EqReset, async (): Promise<EqState> => getEqBridge().reset());
   ipcMain.handle(IpcChannels.EqListPresets, () => getEqBridge().listPresets());
   ipcMain.handle(IpcChannels.EqSavePreset, (_event, request: EqSavePresetRequest) => getEqBridge().savePreset(request));
+  ipcMain.handle(IpcChannels.EqExportPreset, (_event, request: EqSavePresetRequest) => exportEqPreset(request));
   ipcMain.handle(IpcChannels.EqDeletePreset, (_event, presetId: unknown) => getEqBridge().deletePreset(String(presetId)));
   ipcMain.handle(IpcChannels.ChannelBalanceGetState, (): ChannelBalanceState => getEqBridge().getChannelBalanceState());
   ipcMain.handle(IpcChannels.ChannelBalanceSetState, async (_event, patch: Partial<ChannelBalanceState>): Promise<ChannelBalanceState> =>

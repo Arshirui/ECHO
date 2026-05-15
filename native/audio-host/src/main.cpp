@@ -164,6 +164,7 @@ enum class StdinFrameType : uint8_t
     PcmF32Le = 2,
     EndSession = 3,
     Shutdown = 4,
+    SetVolume = 5,
 };
 
 struct StdinFrameHeader
@@ -366,6 +367,13 @@ Options parseOptions(const std::vector<juce::String>& args)
     }
 
     return options;
+}
+
+void writeErrorEvent(const std::string& message, const std::string& reason = "runtime_error")
+{
+    writeJsonLine(
+        "{\"event\":\"error\",\"reason\":\"" + jsonEscape(juce::String(reason))
+        + "\",\"message\":\"" + jsonEscape(juce::String(message)) + "\"}");
 }
 
 bool isAsioType(const juce::String& typeName)
@@ -1168,7 +1176,7 @@ public:
         echo::EqProcessor& eqProcessorToUse,
         echo::ChannelBalanceProcessor& channelBalanceProcessorToUse)
         : channels(channelCount),
-          gain(static_cast<float>(gainToUse)),
+          gain(static_cast<float>(std::max(0.0, std::min(1.0, gainToUse)))),
           startupPrebufferFrames(std::max(0, startupPrebufferFramesToUse)),
           startupPrebufferTimeoutMs(std::max(0, startupPrebufferTimeoutMsToUse)),
           fifo(capacityFrames),
@@ -1357,6 +1365,14 @@ public:
         stopRequested.store(true, std::memory_order_release);
     }
 
+    void setGain(float nextGain)
+    {
+        if (! std::isfinite(nextGain))
+            return;
+
+        gain.store(std::max(0.0f, std::min(1.0f, nextGain)), std::memory_order_release);
+    }
+
     bool isDrained() const
     {
         std::lock_guard<std::mutex> lock(fifoMutex);
@@ -1407,6 +1423,7 @@ private:
             return;
 
         const float* source = buffer.data() + static_cast<size_t>(startFrame * channels);
+        const float outputGain = gain.load(std::memory_order_acquire);
         const int outputChannels = output.getNumChannels();
 
         for (int channel = 0; channel < outputChannels; ++channel)
@@ -1415,7 +1432,7 @@ private:
             const int sourceChannel = std::min(channel, channels - 1);
 
             for (int frame = 0; frame < frameCount; ++frame)
-                destination[frame] = source[frame * channels + sourceChannel] * gain;
+                destination[frame] = source[frame * channels + sourceChannel] * outputGain;
         }
     }
 
@@ -1444,7 +1461,7 @@ private:
     }
 
     const int channels;
-    const float gain;
+    std::atomic<float> gain;
     const int startupPrebufferFrames;
     const int startupPrebufferTimeoutMs;
     juce::AbstractFifo fifo;
@@ -1650,6 +1667,15 @@ uint32_t readLe32(const char* bytes)
         | (static_cast<uint32_t>(static_cast<unsigned char>(bytes[3])) << 24);
 }
 
+float readLeFloat32(const char* bytes)
+{
+    uint32_t value = readLe32(bytes);
+    float result = 1.0f;
+    static_assert(sizeof(result) == sizeof(value), "float32 size mismatch");
+    std::memcpy(&result, &value, sizeof(result));
+    return result;
+}
+
 bool readExact(char* target, size_t bytes)
 {
     size_t read = 0;
@@ -1749,6 +1775,13 @@ void handleFramedStdinPayload(
         shutdownRequested.store(true, std::memory_order_release);
         source.markInputEnded();
         source.requestStop();
+        return;
+    }
+
+    if (type == StdinFrameType::SetVolume)
+    {
+        if (payload.size() >= sizeof(float))
+            source.setGain(readLeFloat32(payload.data()));
     }
 }
 
@@ -2991,7 +3024,7 @@ int main(int argc, char* argv[])
     catch (const std::exception& error)
     {
         logLine(error.what());
-        writeJsonLine("{\"event\":\"error\"}");
+        writeErrorEvent(error.what());
         return 1;
     }
 }

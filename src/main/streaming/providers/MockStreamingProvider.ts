@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import electron from 'electron';
 import type {
+  StreamingAlbum,
+  StreamingArtist,
   StreamingLyricsResult,
   StreamingMvResult,
   StreamingPlaybackRequest,
@@ -106,6 +108,46 @@ const tracks: StreamingTrack[] = [
     : track,
 );
 
+const albums: StreamingAlbum[] = [
+  {
+    id: streamingStableKey(provider, 'album:mock-album-foundations'),
+    provider,
+    providerAlbumId: 'mock-album-foundations',
+    title: 'Streaming Foundations',
+    artist: 'ECHO Lab',
+    artists: [mockArtists.echoLab],
+    coverUrl: null,
+    coverThumb: tracks[0]?.coverThumb ?? null,
+    releaseDate: '2026-05-15',
+    trackCount: 1,
+  },
+  {
+    id: streamingStableKey(provider, 'album:mock-album-queue-safe'),
+    provider,
+    providerAlbumId: 'mock-album-queue-safe',
+    title: 'Queue Safe',
+    artist: 'Night Desk',
+    artists: [mockArtists.nightDesk],
+    coverUrl: null,
+    coverThumb: tracks[1]?.coverThumb ?? null,
+    releaseDate: '2026-05-15',
+    trackCount: 1,
+  },
+];
+
+const artists: StreamingArtist[] = [
+  {
+    ...mockArtists.echoLab,
+    avatarUrl: tracks[0]?.coverThumb ?? null,
+    coverUrl: tracks[0]?.coverThumb ?? null,
+  },
+  {
+    ...mockArtists.nightDesk,
+    avatarUrl: tracks[1]?.coverThumb ?? null,
+    coverUrl: tracks[1]?.coverThumb ?? null,
+  },
+];
+
 const normalizeQuery = (query: string): string => query.trim().toLocaleLowerCase();
 
 const getTrack = (providerTrackId: string): StreamingTrack => {
@@ -175,11 +217,17 @@ export class MockStreamingProvider implements StreamingProvider {
     const query = normalizeQuery(request.query);
     const page = Math.max(1, Math.floor(request.page ?? 1));
     const pageSize = Math.min(50, Math.max(1, Math.floor(request.pageSize ?? 20)));
-    const filtered = query
+    const mediaType = request.mediaTypes?.[0] ?? 'track';
+    const filteredTracks = query
       ? tracks.filter((track) =>
           [track.title, track.artist, track.album].some((field) => field.toLocaleLowerCase().includes(query)),
         )
       : tracks;
+    const filteredAlbums = query
+      ? albums.filter((album) => [album.title, album.artist].some((field) => field.toLocaleLowerCase().includes(query)))
+      : albums;
+    const filteredArtists = query ? artists.filter((artist) => artist.name.toLocaleLowerCase().includes(query)) : artists;
+    const filtered = mediaType === 'album' ? filteredAlbums : mediaType === 'artist' ? filteredArtists : filteredTracks;
     const offset = (page - 1) * pageSize;
     const pageItems = filtered.slice(offset, offset + pageSize);
 
@@ -194,9 +242,9 @@ export class MockStreamingProvider implements StreamingProvider {
       pageSize,
       total: filtered.length,
       hasMore: offset + pageItems.length < filtered.length,
-      tracks: pageItems,
-      albums: [],
-      artists: [],
+      tracks: mediaType === 'track' ? pageItems as StreamingTrack[] : [],
+      albums: mediaType === 'album' ? pageItems as StreamingAlbum[] : [],
+      artists: mediaType === 'artist' ? pageItems as StreamingArtist[] : [],
       playlists: [],
       mvs: [],
     };

@@ -1,6 +1,8 @@
 import { createRequire } from 'node:module';
 import type { AccountStatus } from '../../../shared/types/accounts';
 import type {
+  StreamingAlbum,
+  StreamingArtist,
   StreamingArtistRef,
   StreamingLyricsResult,
   StreamingMvResult,
@@ -238,6 +240,54 @@ const mapSong = (songValue: unknown, detailCoverUrl: string | null = null): Stre
   };
 };
 
+const mapAlbum = (albumValue: unknown): StreamingAlbum => {
+  const album = asRecord(albumValue);
+  const artists = artistRefs(album.artists ?? album.ar);
+  const providerAlbumId = String(album.id ?? text(album.name) ?? '').trim();
+  const title = text(album.name) ?? 'Unknown Album';
+  const artist = artists.map((item) => item.name).join(' / ') || text(asRecord(album.artist).name) || 'Unknown Artist';
+  const publishTime = number(album.publishTime);
+
+  return {
+    id: streamingStableKey(provider, `album:${providerAlbumId || title}`),
+    provider,
+    providerAlbumId: providerAlbumId || title,
+    title,
+    artist,
+    artists,
+    coverUrl: neteaseImageUrl(album.picUrl ?? album.blurPicUrl ?? album.pic, 600),
+    coverThumb: neteaseImageUrl(album.picUrl ?? album.blurPicUrl ?? album.pic, 160),
+    releaseDate: publishTime ? new Date(publishTime).toISOString().slice(0, 10) : text(album.publishTime),
+    trackCount: integer(album.size ?? album.trackCount),
+  };
+};
+
+const mapArtist = (artistValue: unknown): StreamingArtist => {
+  const artist = asRecord(artistValue);
+  const providerArtistId = String(artist.id ?? text(artist.name) ?? '').trim();
+  const name = text(artist.name) ?? 'Unknown Artist';
+
+  return {
+    id: streamingStableKey(provider, `artist:${providerArtistId || name}`),
+    provider,
+    providerArtistId: providerArtistId || name,
+    name,
+    avatarUrl: neteaseImageUrl(artist.picUrl ?? artist.img1v1Url ?? artist.avatar, 160),
+    coverUrl: neteaseImageUrl(artist.picUrl ?? artist.img1v1Url ?? artist.avatar, 600),
+  };
+};
+
+const neteaseSearchType = (request: StreamingSearchRequest): '1' | '10' | '100' => {
+  const mediaType = request.mediaTypes?.[0] ?? 'track';
+  if (mediaType === 'album') {
+    return '10';
+  }
+  if (mediaType === 'artist') {
+    return '100';
+  }
+  return '1';
+};
+
 const dailyRecommendSongs = (value: unknown): unknown[] => {
   const body = asRecord(value);
   const data = asRecord(body.data);
@@ -277,8 +327,9 @@ export class NeteaseStreamingProvider implements StreamingProvider {
   async search(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
     const page = Math.max(1, Math.floor(request.page ?? 1));
     const pageSize = Math.min(50, Math.max(1, Math.floor(request.pageSize ?? 20)));
+    const searchType = neteaseSearchType(request);
     const params = new URLSearchParams({
-      type: '1',
+      type: searchType,
       s: request.query,
       limit: String(pageSize),
       offset: String((page - 1) * pageSize),
@@ -286,21 +337,24 @@ export class NeteaseStreamingProvider implements StreamingProvider {
     const data = asRecord(await jsonFetch(`https://music.163.com/api/search/get/web?${params.toString()}`, { headers: neteaseHeaders(accountCookie()) }));
     const result = asRecord(data.result);
     const songs = Array.isArray(result.songs) ? result.songs : [];
+    const albums = Array.isArray(result.albums) ? result.albums : [];
+    const artists = Array.isArray(result.artists) ? result.artists : [];
     const total = integer(result.songCount);
     const detailCoverUrls = await this.findDetailCoverUrls(
       songs.map((songValue) => asRecord(songValue).id).filter((id) => id !== undefined && id !== null),
     );
+    const resultTotal = searchType === '10' ? integer(result.albumCount) : searchType === '100' ? integer(result.artistCount) : total;
 
     return {
       provider,
       query: request.query,
       page,
       pageSize,
-      total,
-      hasMore: total ? page * pageSize < total : songs.length === pageSize,
+      total: resultTotal,
+      hasMore: resultTotal ? page * pageSize < resultTotal : Math.max(songs.length, albums.length, artists.length) === pageSize,
       tracks: songs.map((song) => mapSong(song, detailCoverUrls.get(String(asRecord(song).id)) ?? null)),
-      albums: [],
-      artists: [],
+      albums: albums.map(mapAlbum),
+      artists: artists.map(mapArtist),
       playlists: [],
       mvs: [],
     };

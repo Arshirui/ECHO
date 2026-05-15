@@ -190,6 +190,7 @@ export type EchoApi = {
     clearLikedAlbums: () => Promise<void>;
     getAlbums: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryAlbum>>;
     getAlbum: (albumId: string) => Promise<LibraryAlbumDetail | null>;
+    getAlbumForTrack: (trackId: string) => Promise<LibraryAlbum | null>;
     getArtists: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryArtist>>;
     getArtist: (artistId: string) => Promise<LibraryArtist | null>;
     getArtistTracks: (artistId: string, query?: LibraryPageQuery) => Promise<LibraryPage<LibraryTrack>>;
@@ -340,6 +341,7 @@ export type EchoApi = {
     onStatus: (handler: (status: AudioStatus) => void) => () => void;
     listDevices: () => Promise<AudioDeviceInfo[]>;
     setOutput: (settings: AudioOutputSettings) => Promise<AudioStatus>;
+    resetEngine: () => Promise<AudioStatus>;
   };
   diagnostics: {
     getLastCrashSummary: () => Promise<LastCrashSummary | null>;
@@ -371,6 +373,7 @@ export type EchoApi = {
     check: (provider: AccountProvider) => Promise<AccountStatus>;
     checkAll: () => Promise<AccountStatus[]>;
     setYouTubeBrowser: (browser: YouTubeBrowser) => Promise<AccountStatus>;
+    onStatusesChanged: (handler: (statuses: AccountStatus[]) => void) => () => void;
   };
   eq: {
     getState: () => Promise<EqState>;
@@ -382,6 +385,7 @@ export type EchoApi = {
     reset: () => Promise<EqState>;
     listPresets: () => Promise<EqPreset[]>;
     savePreset: (request: EqSavePresetRequest) => Promise<EqPreset>;
+    exportPreset: (request: EqSavePresetRequest) => Promise<string | null>;
     deletePreset: (presetId: string) => Promise<EqPreset[]>;
     getChannelBalanceState: () => Promise<ChannelBalanceState>;
     setChannelBalanceState: (patch: Partial<ChannelBalanceState>) => Promise<ChannelBalanceState>;

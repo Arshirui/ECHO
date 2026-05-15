@@ -11,11 +11,13 @@ import { AppTitleBar } from '../components/layout/AppTitleBar';
 import { formatAudioHostError } from '../components/player/audioErrorFormat';
 import type { AppRoute, AppRouteId } from './routes';
 import type { AudioStatus } from '../../shared/types/audio';
+import type { AccountProvider, AccountStatus } from '../../shared/types/accounts';
 import type { AppSettings } from '../../shared/types/appSettings';
 import { useI18n } from '../i18n/I18nProvider';
 import { rememberLibraryScanStatus } from '../stores/libraryScanSession';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from '../stores/playbackStatusStore';
+import { albumDetailNavigationEvent } from '../utils/albumNavigation';
 
 type AppLayoutProps = {
   routes: AppRoute[];
@@ -42,6 +44,14 @@ const defaultAppWallpaperSettings: AppWallpaperSettings = {
 
 const persistentRouteIds = new Set<AppRouteId>(['songs']);
 
+const accountProviderLabels: Record<AccountProvider, string> = {
+  netease: '网易云音乐',
+  qqmusic: 'QQ 音乐',
+  bilibili: 'Bilibili',
+  youtube: 'YouTube',
+  soundcloud: 'SoundCloud',
+};
+
 const selectAppWallpaperSettings = (settings: AppSettings): AppWallpaperSettings => ({
   appCustomWallpaperPath: settings.appCustomWallpaperPath,
   appWallpaperScalePercent: settings.appWallpaperScalePercent,
@@ -57,6 +67,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const playbackStatusSnapshot = useSharedPlaybackStatus();
   const [activeRouteId, setActiveRouteId] = useState<AppRouteId>('songs');
   const [chromeNotice, setChromeNotice] = useState<string | null>(null);
+  const [accountNotice, setAccountNotice] = useState<string | null>(null);
   const [audioErrorNotice, setAudioErrorNotice] = useState<{ message: string } | null>(null);
   const [diagnosticsNotice, setDiagnosticsNotice] = useState(false);
   const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState(false);
@@ -214,6 +225,33 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, [chromeNotice]);
 
   useEffect(() => {
+    if (!accountNotice) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setAccountNotice(null);
+    }, 6200);
+
+    return () => window.clearTimeout(timer);
+  }, [accountNotice]);
+
+  useEffect(() => {
+    const unsubscribe = window.echo?.accounts?.onStatusesChanged?.((statuses: AccountStatus[]) => {
+      const disconnected = statuses.filter((status) => !status.connected && Boolean(status.error));
+
+      if (disconnected.length === 0) {
+        return;
+      }
+
+      const names = disconnected.map((status) => accountProviderLabels[status.provider] ?? status.provider);
+      setAccountNotice(`账号登录状态可能已失效：${names.join('、')}。请到设置 > 集成重新登录。`);
+    });
+
+    return () => unsubscribe?.();
+  }, []);
+
+  useEffect(() => {
     const rawError = playbackStatusSnapshot.audioStatus?.error ?? playbackStatusSnapshot.error;
 
     if (!rawError || rawError === 'Desktop bridge unavailable') {
@@ -337,18 +375,23 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const handleNavigateLyricsBack = (): void => {
       setActiveRouteId(previousRouteIdRef.current);
     };
+    const handleNavigateAlbumDetail = (): void => {
+      navigateRoute('albums');
+    };
 
     window.addEventListener('app:navigate:import-folder', handleNavigateImportFolder);
     window.addEventListener('app:navigate:queue', handleNavigateQueue);
     window.addEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
     window.addEventListener('app:navigate:lyrics', handleNavigateLyrics);
     window.addEventListener('app:navigate:lyrics-back', handleNavigateLyricsBack);
+    window.addEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
     return () => {
       window.removeEventListener('app:navigate:import-folder', handleNavigateImportFolder);
       window.removeEventListener('app:navigate:queue', handleNavigateQueue);
       window.removeEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
       window.removeEventListener('app:navigate:lyrics', handleNavigateLyrics);
       window.removeEventListener('app:navigate:lyrics-back', handleNavigateLyricsBack);
+      window.removeEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
     };
   }, [navigateRoute]);
 
@@ -627,6 +670,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
               Dismiss
             </button>
           </div>
+        </div>
+      ) : null}
+
+      {accountNotice ? (
+        <div className="chrome-notice chrome-notice--account" role="alert">
+          <strong>账号登录失效</strong>
+          <span>{accountNotice}</span>
         </div>
       ) : null}
 

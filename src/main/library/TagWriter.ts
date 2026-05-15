@@ -1,4 +1,6 @@
 import { Worker } from 'node:worker_threads';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 
 import type { EditableTrackTags } from './libraryTypes';
 
@@ -13,16 +15,22 @@ type TagWriteRequest = {
   coverData: EmbeddedCoverData | null;
 };
 
+type TagWriteWorkerData = TagWriteRequest & {
+  taglibWasmModuleUrl: string;
+};
+
+const require = createRequire(import.meta.url);
+const taglibWasmModuleUrl = pathToFileURL(require.resolve('taglib-wasm')).href;
+
 const workerSource = String.raw`
 const { parentPort, workerData } = module['require']('node:worker_threads');
 
 (async () => {
+  const { filePath, tags, coverData, taglibWasmModuleUrl } = workerData;
   const [{ applyCoverArt, applyTagsToFile }, fs] = await Promise.all([
-    import('taglib-wasm'),
+    import(taglibWasmModuleUrl),
     import('node:fs/promises'),
   ]);
-
-  const { filePath, tags, coverData } = workerData;
 
   await applyTagsToFile(filePath, {
     title: tags.title,
@@ -70,7 +78,10 @@ const runTagWriterWorker = (request: TagWriteRequest): Promise<void> =>
   new Promise((resolve, reject) => {
     const worker = new Worker(workerSource, {
       eval: true,
-      workerData: request,
+      workerData: {
+        ...request,
+        taglibWasmModuleUrl,
+      } satisfies TagWriteWorkerData,
     });
 
     worker.once('message', (message: { ok: boolean; message?: string }) => {

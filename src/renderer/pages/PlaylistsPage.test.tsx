@@ -222,8 +222,8 @@ describe('PlaylistsPage actions menu', () => {
 
     renderPlaylistsPage();
 
-    const qualitySelect = await screen.findByLabelText('流媒体音质');
-    expect(qualitySelect).toHaveProperty('value', 'hires');
+    const qualityButton = await screen.findByRole('button', { name: 'Streaming quality' });
+    expect(qualityButton.textContent).toContain('Hi-Res');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Remote Song' }));
     await waitFor(() =>
@@ -237,7 +237,9 @@ describe('PlaylistsPage actions menu', () => {
       }),
     );
 
-    fireEvent.change(qualitySelect, { target: { value: 'standard' } });
+    fireEvent.click(qualityButton);
+    fireEvent.click(screen.getByRole('option', { name: 'Standard' }));
+    expect(qualityButton.textContent).toContain('Standard');
     fireEvent.click(screen.getByRole('button', { name: 'Remote Song' }));
     await waitFor(() =>
       expect(playMediaItem).toHaveBeenLastCalledWith({
@@ -263,7 +265,7 @@ describe('PlaylistsPage actions menu', () => {
     renderPlaylistsPage();
 
     await screen.findByRole('button', { name: 'Song One' });
-    expect(screen.queryByLabelText('流媒体音质')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Streaming quality' })).toBeNull();
   });
 
   it('runs local file actions from the track context menu', async () => {

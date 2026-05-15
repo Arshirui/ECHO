@@ -8,6 +8,7 @@ import { TrackContextMenu } from '../library/TrackContextMenu';
 import type { TrackMenuAction } from '../library/TrackContextMenu';
 import { TrackTagEditorDrawer } from '../library/TrackTagEditorDrawer';
 import { getPageScrollContainer } from '../ui/InfiniteScrollSentinel';
+import { openAlbumDetailForTrack } from '../../utils/albumNavigation';
 
 type ArtistTrackListProps = {
   artistId: string;
@@ -61,7 +62,6 @@ export const ArtistTrackList = ({
   currentTrackId,
   onAppendToQueue,
   onLoadedTracksChange,
-  onOpenAlbum,
   onPlayNext,
   onPlayTrack,
 }: ArtistTrackListProps): JSX.Element => {
@@ -305,29 +305,13 @@ export const ArtistTrackList = ({
 
   const handleGoToAlbum = useCallback(
     async (track: LibraryTrack): Promise<void> => {
-      const library = window.echo?.library;
-
-      if (!library?.getArtistAlbums) {
-        setError('Desktop bridge unavailable. Open ECHO Next in Electron to locate this album.');
-        return;
-      }
-
-      const result = await library.getArtistAlbums(artistId, {
-        page: 1,
-        pageSize: 1000,
-        sort: 'default',
-      });
-      const trackAlbum = track.album.trim().toLocaleLowerCase();
-      const album = result.items.find((item) => item.title.trim().toLocaleLowerCase() === trackAlbum);
-
-      if (album) {
-        onOpenAlbum(album);
+      if (await openAlbumDetailForTrack(track)) {
         return;
       }
 
       setStatusMessage(`Album not found in this artist view: ${track.album || 'Unknown Album'}`);
     },
-    [artistId, onOpenAlbum],
+    [],
   );
 
   const handleTrackMenuAction = useCallback(

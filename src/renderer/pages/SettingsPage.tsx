@@ -628,6 +628,8 @@ export const SettingsPage = (): JSX.Element => {
   const [bpmAnalysisJob, setBpmAnalysisJob] = useState<BpmAnalysisJobStatus | null>(null);
   const [bpmAnalysisBusy, setBpmAnalysisBusy] = useState(false);
   const [bpmAnalysisMessage, setBpmAnalysisMessage] = useState<string | null>(null);
+  const [audioResetBusy, setAudioResetBusy] = useState(false);
+  const [audioResetMessage, setAudioResetMessage] = useState<string | null>(null);
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackFontFamilies);
   const [fontPickerTarget, setFontPickerTarget] = useState<FontPickerTarget | null>(null);
   const [fontPickerQuery, setFontPickerQuery] = useState('');
@@ -982,6 +984,28 @@ export const SettingsPage = (): JSX.Element => {
       setStatus(await audio.setOutput({ useJuceOutput: nextUseJuceOutput }));
     } catch (audioError) {
       setError(audioError instanceof Error ? audioError.message : String(audioError));
+    }
+  };
+
+  const handleAudioEngineReset = async (): Promise<void> => {
+    const audio = getAudioBridge();
+    if (!audio) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to reset the audio engine.');
+      return;
+    }
+
+    setAudioResetBusy(true);
+    setAudioResetMessage(null);
+    try {
+      const nextStatus = await audio.resetEngine();
+      setStatus(nextStatus);
+      setError(null);
+      setAudioResetMessage(t('settings.playback.resetEngine.done'));
+      void refreshDevices();
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : String(resetError));
+    } finally {
+      setAudioResetBusy(false);
     }
   };
 
@@ -2066,6 +2090,17 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={handleCloseToTrayToggle}
                 />
               </SettingRow>
+              <SettingRow title="记住窗口尺寸" description="开启后会记住你上次拖拽后的窗口宽高，下次启动自动恢复。">
+                <ToggleButton
+                  active={appSettings?.rememberWindowSizeEnabled ?? true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      rememberWindowSizeEnabled: !(appSettings?.rememberWindowSizeEnabled ?? true),
+                    })
+                  }
+                />
+              </SettingRow>
               <SettingRow title="简繁互搜" description="开启后，输入繁体可以搜到简体结果，输入简体也可以搜到繁体结果。">
                 <ToggleButton
                   active={appSettings?.chineseCrossScriptSearchEnabled ?? true}
@@ -2114,6 +2149,15 @@ export const SettingsPage = (): JSX.Element => {
                     )}
                   </select>
                 </label>
+              </SettingRow>
+              <SettingRow title={t('settings.playback.resetEngine.title')} description={t('settings.playback.resetEngine.description')}>
+                <div className="settings-chip-row">
+                  <button className="settings-action-button" type="button" disabled={audioResetBusy} onClick={() => void handleAudioEngineReset()}>
+                    <RotateCw size={15} />
+                    {audioResetBusy ? t('settings.playback.resetEngine.busy') : t('settings.playback.resetEngine.action')}
+                  </button>
+                  {audioResetMessage ? <StatusText tone="good">{audioResetMessage}</StatusText> : null}
+                </div>
               </SettingRow>
               <SettingRow title="使用JUCE输出" description="默认关闭。开启后才尝试 JUCE 接管输出；失败时会自动回退正常输出。">
                 <ToggleButton
@@ -2248,6 +2292,13 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow title={t('settings.integrations.lastfm.scrobbling.title')} description={t('settings.integrations.lastfm.scrobbling.description')}>
                 <ToggleButton active={lastFmStatus?.scrobbleEnabled ?? true} disabled={!lastFmStatus} onClick={() => void handleLastFmScrobbleToggle()} />
+              </SettingRow>
+              <SettingRow title="启动时刷新账号登录状态" description="仅检查以前登录过的账号，从未登录过的平台会保持静默。">
+                <ToggleButton
+                  active={appSettings?.autoAccountCheckOnStartup ?? true}
+                  disabled={!appSettings}
+                  onClick={() => patchAppSettings({ autoAccountCheckOnStartup: !(appSettings?.autoAccountCheckOnStartup ?? true) })}
+                />
               </SettingRow>
               <div className="settings-account-panel">
                 <header className="settings-account-panel-header">
@@ -2807,7 +2858,7 @@ export const SettingsPage = (): JSX.Element => {
                   ))}
                 </div>
               </SettingRow>
-              <NetworkMetadataPanel />
+              <NetworkMetadataPanel networkMetadataEnabled={appSettings?.networkMetadataEnabled ?? false} />
               {isDevBuild ? <LibraryDiagnosticsPanel /> : null}
             </SettingSection>
 

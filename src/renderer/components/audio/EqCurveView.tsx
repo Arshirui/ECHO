@@ -59,6 +59,39 @@ const xToFrequency = (x: number): number => {
   return frequencyHz < 1000 ? Math.round(frequencyHz) : Math.round(frequencyHz / 10) * 10;
 };
 
+const clientPointToSvgPoint = (
+  svg: SVGSVGElement | null,
+  clientX: number,
+  clientY: number,
+): { x: number; y: number } | null => {
+  if (!svg) {
+    return null;
+  }
+
+  const screenMatrix = svg.getScreenCTM?.();
+
+  if (!screenMatrix) {
+    return null;
+  }
+
+  const inverseMatrix = screenMatrix.inverse();
+  const svgPoint = svg.createSVGPoint?.();
+
+  if (svgPoint) {
+    svgPoint.x = clientX;
+    svgPoint.y = clientY;
+    const transformedPoint = svgPoint.matrixTransform(inverseMatrix);
+    return { x: transformedPoint.x, y: transformedPoint.y };
+  }
+
+  if (typeof DOMPoint === 'function') {
+    const transformedPoint = new DOMPoint(clientX, clientY).matrixTransform(inverseMatrix);
+    return { x: transformedPoint.x, y: transformedPoint.y };
+  }
+
+  return null;
+};
+
 const makeSmoothPath = (points: Array<{ x: number; y: number }>): string => {
   if (points.length === 0) {
     return '';
@@ -124,9 +157,10 @@ export const EqCurveView = ({
   };
 
   const pointFromEvent = (event: ReactPointerEvent<SVGElement>): DragPoint => {
+    const svgPoint = clientPointToSvgPoint(svgRef.current, event.clientX, event.clientY);
     const rect = svgRef.current?.getBoundingClientRect();
-    const x = rect && rect.width > 0 ? (event.clientX - rect.left) * (width / rect.width) : paddingLeft;
-    const y = rect && rect.height > 0 ? (event.clientY - rect.top) * (height / rect.height) : zeroY;
+    const x = svgPoint?.x ?? (rect && rect.width > 0 ? (event.clientX - rect.left) * (width / rect.width) : paddingLeft);
+    const y = svgPoint?.y ?? (rect && rect.height > 0 ? (event.clientY - rect.top) * (height / rect.height) : zeroY);
     const rawFrequencyHz = xToFrequency(x);
     setFineEdit(event.shiftKey);
     return {
@@ -156,7 +190,7 @@ export const EqCurveView = ({
 
   const handlePointerDown = (event: ReactPointerEvent<SVGGElement>, index: number): void => {
     event.preventDefault();
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    svgRef.current?.setPointerCapture?.(event.pointerId);
     setActiveBand(index);
     onBandSelect(index);
     updateBandFromEvent(event, index);
@@ -179,6 +213,10 @@ export const EqCurveView = ({
     onBandCommit(activeBand, point.gainDb);
     if (point.frequencyHz !== bands[activeBand]?.frequencyHz) {
       onBandFrequencyCommit(activeBand, point.frequencyHz);
+    }
+    const svg = svgRef.current;
+    if (svg?.hasPointerCapture?.(event.pointerId)) {
+      svg.releasePointerCapture(event.pointerId);
     }
     setActiveBand(null);
     setDragPreview(null);

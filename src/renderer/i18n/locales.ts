@@ -19,6 +19,9 @@ export type TranslationKey =
   | 'audioDrawer.action.copiedDiagnostics'
   | 'audioDrawer.action.copyDiagnostics'
   | 'audioDrawer.action.hideDevice'
+  | 'audioDrawer.action.resetEngine'
+  | 'audioDrawer.action.resetEngineBusy'
+  | 'audioDrawer.action.resetEngineDone'
   | 'audioDrawer.action.restore'
   | 'audioDrawer.asioLatency.description'
   | 'audioDrawer.asioLatency.recommended'
@@ -669,6 +672,11 @@ export type TranslationKey =
   | 'settings.playback.outputDevice.title'
   | 'settings.playback.outputMode.description'
   | 'settings.playback.outputMode.title'
+  | 'settings.playback.resetEngine.action'
+  | 'settings.playback.resetEngine.busy'
+  | 'settings.playback.resetEngine.description'
+  | 'settings.playback.resetEngine.done'
+  | 'settings.playback.resetEngine.title'
   | 'settings.playback.speedMode.description'
   | 'settings.playback.speedMode.title'
   | 'settings.playback.stability.action.copied'
@@ -708,6 +716,9 @@ const zhCN: TranslationMap = {
   'audioDrawer.action.copiedDiagnostics': '已复制播放诊断信息',
   'audioDrawer.action.copyDiagnostics': '复制播放诊断信息',
   'audioDrawer.action.hideDevice': '隐藏设备',
+  'audioDrawer.action.resetEngine': '重置音频引擎',
+  'audioDrawer.action.resetEngineBusy': '正在重置音频引擎',
+  'audioDrawer.action.resetEngineDone': '音频引擎已重置',
   'audioDrawer.action.restore': '恢复',
   'audioDrawer.asioLatency.description': '根据当前打开的缓冲估算输出端会多等多久再播放。数值越低越跟手，数值越高越稳、越不容易爆音。',
   'audioDrawer.asioLatency.recommended': '推荐延迟',
@@ -1358,6 +1369,11 @@ const zhCN: TranslationMap = {
   'settings.playback.outputDevice.title': '输出设备',
   'settings.playback.outputMode.description': 'Shared 适合日常使用，Exclusive / ASIO 用于采样率验收和后续 bit-perfect 路径。',
   'settings.playback.outputMode.title': '输出模式',
+  'settings.playback.resetEngine.action': '重置音频引擎',
+  'settings.playback.resetEngine.busy': '正在重置',
+  'settings.playback.resetEngine.description': '停止当前播放并释放 native 音频主机；设备/驱动卡住时可先试这个，不必重开软件。',
+  'settings.playback.resetEngine.done': '音频引擎已重置',
+  'settings.playback.resetEngine.title': '重置音频引擎',
   'settings.playback.speedMode.description': '选择播放器底部速度滑条使用的变速方式。',
   'settings.playback.speedMode.title': '变速模式',
   'settings.playback.stability.action.copied': '已复制',
@@ -1423,6 +1439,9 @@ const zhTW: TranslationMap = {
   'audioDrawer.action.copiedDiagnostics': '已複製播放診斷資訊',
   'audioDrawer.action.copyDiagnostics': '複製播放診斷資訊',
   'audioDrawer.action.hideDevice': '隱藏裝置',
+  'audioDrawer.action.resetEngine': '重置音訊引擎',
+  'audioDrawer.action.resetEngineBusy': '正在重置音訊引擎',
+  'audioDrawer.action.resetEngineDone': '音訊引擎已重置',
   'audioDrawer.action.restore': '復原',
   'audioDrawer.asioLatency.description': '根據目前開啟的緩衝估算輸出端會多等多久才播放。數值越低越即時，數值越高越穩、越不容易爆音。',
   'audioDrawer.asioLatency.recommended': '建議延遲',
@@ -1755,6 +1774,11 @@ const zhTW: TranslationMap = {
   'settings.playback.speedMode.title': '變速模式',
   'settings.playback.outputDevice.title': '輸出裝置',
   'settings.playback.outputDevice.empty': '沒有可用裝置',
+  'settings.playback.resetEngine.action': '重置音訊引擎',
+  'settings.playback.resetEngine.busy': '正在重置',
+  'settings.playback.resetEngine.description': '停止目前播放並釋放 native 音訊主機；裝置或驅動卡住時可先試這個，不必重開軟體。',
+  'settings.playback.resetEngine.done': '音訊引擎已重置',
+  'settings.playback.resetEngine.title': '重置音訊引擎',
   'settings.playback.wireless.title': '無線播放',
   'settings.playback.audioStatus.title': '音訊狀態',
   'settings.playback.audioStatus.description': '取樣率欄位必須分開顯示，避免舊 ECHO 獨占模式 48k 鎖死回歸。',
@@ -1879,6 +1903,9 @@ const jaJP: TranslationMap = {
   'audioDrawer.action.copiedDiagnostics': '再生診断情報をコピーしました',
   'audioDrawer.action.copyDiagnostics': '再生診断情報をコピー',
   'audioDrawer.action.hideDevice': 'デバイスを非表示',
+  'audioDrawer.action.resetEngine': '音声エンジンをリセット',
+  'audioDrawer.action.resetEngineBusy': '音声エンジンをリセット中',
+  'audioDrawer.action.resetEngineDone': '音声エンジンをリセットしました',
   'audioDrawer.action.restore': '戻す',
   'audioDrawer.asioLatency.description': '現在開いているバッファーから、出力側で再生までに待つ時間を見積もります。低いほど反応が速く、高いほど安定して音切れしにくくなります。',
   'audioDrawer.asioLatency.recommended': '推奨レイテンシ',
@@ -2289,6 +2316,11 @@ const jaJP: TranslationMap = {
   'settings.playback.outputDevice.title': '出力デバイス',
   'settings.playback.outputDevice.description': 'echo-audio-host から取得したデバイス一覧です。デバイスがない場合は既定出力を維持します。',
   'settings.playback.outputDevice.empty': '利用可能なデバイスなし',
+  'settings.playback.resetEngine.action': '音声エンジンをリセット',
+  'settings.playback.resetEngine.busy': 'リセット中',
+  'settings.playback.resetEngine.description': '現在の再生を停止して native 音声ホストを解放します。デバイスやドライバーが固まった時に、アプリ再起動の前に試せます。',
+  'settings.playback.resetEngine.done': '音声エンジンをリセットしました',
+  'settings.playback.resetEngine.title': '音声エンジンをリセット',
   'settings.playback.wireless.title': 'ワイヤレス再生',
   'settings.playback.wireless.description': '今後の HiFi エンジン段階で接続します。現段階では gapless / automix / ストリーミングは移行しません。',
   'settings.playback.followCurrent.title': '再生中の曲へ移動',
@@ -2412,6 +2444,9 @@ const enUS: TranslationMap = {
   'audioDrawer.action.copiedDiagnostics': 'Playback diagnostics copied',
   'audioDrawer.action.copyDiagnostics': 'Copy Playback Diagnostics',
   'audioDrawer.action.hideDevice': 'Hide device',
+  'audioDrawer.action.resetEngine': 'Reset Audio Engine',
+  'audioDrawer.action.resetEngineBusy': 'Resetting Audio Engine',
+  'audioDrawer.action.resetEngineDone': 'Audio engine reset',
   'audioDrawer.action.restore': 'Restore',
   'audioDrawer.asioLatency.description': 'Estimated extra wait before the output plays from the buffer that actually opened. Lower feels faster; higher is safer against crackles.',
   'audioDrawer.asioLatency.recommended': 'Recommended latency',
@@ -2930,6 +2965,11 @@ const enUS: TranslationMap = {
   'settings.playback.outputDevice.title': 'Output Device',
   'settings.playback.outputDevice.description': 'Device list from echo-audio-host. When no device is available, default output is kept.',
   'settings.playback.outputDevice.empty': 'No available devices',
+  'settings.playback.resetEngine.action': 'Reset Audio Engine',
+  'settings.playback.resetEngine.busy': 'Resetting',
+  'settings.playback.resetEngine.description': 'Stops current playback and releases the native audio host. Try this when a device or driver gets stuck before restarting the app.',
+  'settings.playback.resetEngine.done': 'Audio engine reset',
+  'settings.playback.resetEngine.title': 'Reset Audio Engine',
   'settings.playback.wireless.title': 'Wireless Playback',
   'settings.playback.wireless.description': 'This will connect in a later HiFi engine phase. The current phase does not migrate gapless / automix / streaming.',
   'settings.playback.followCurrent.title': 'Follow Current Track',

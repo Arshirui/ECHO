@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react';
 import {
   AudioLines,
   Check,
+  ChevronDown,
   Clipboard,
   EyeOff,
   Gauge,
@@ -507,6 +508,9 @@ export const AudioSettingsDrawer = ({
   const [hiddenDeviceKeys, setHiddenDeviceKeys] = useState<string[]>(() => readHiddenDeviceKeys());
   const [hiddenDeviceMenu, setHiddenDeviceMenu] = useState<HiddenDeviceMenu>(null);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [isBufferOptionsOpen, setIsBufferOptionsOpen] = useState(false);
 
   const hiddenDeviceKeySet = useMemo(() => new Set(hiddenDeviceKeys), [hiddenDeviceKeys]);
   const visibleDevices = useMemo(
@@ -877,6 +881,31 @@ export const AudioSettingsDrawer = ({
     }
   }, [copy.desktopBridgeUnavailable]);
 
+  const resetAudioEngine = useCallback(async (): Promise<void> => {
+    const audio = window.echo?.audio;
+
+    if (!audio) {
+      setError(copy.desktopBridgeUnavailable);
+      return;
+    }
+
+    setResetBusy(true);
+    setResetMessage(null);
+    try {
+      const nextStatus = await audio.resetEngine();
+      setOutputMode(nextStatus.outputMode);
+      onStatusChange(nextStatus);
+      setError(null);
+      setResetMessage(t('audioDrawer.action.resetEngineDone'));
+      window.setTimeout(() => setResetMessage(null), 2200);
+      void refresh();
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : String(resetError));
+    } finally {
+      setResetBusy(false);
+    }
+  }, [copy.desktopBridgeUnavailable, onStatusChange, refresh, t]);
+
   if (!shouldRender) {
     return null;
   }
@@ -1088,67 +1117,87 @@ export const AudioSettingsDrawer = ({
             </>
           ) : null}
 
-          <div className="audio-drawer-mini-grid" aria-label="Latency profile">
-            {latencyProfileOptions.map((option) => (
-              <button
-                className={`audio-device-pill ${supportedLatencyProfile === option.id ? 'active' : ''}`}
-                type="button"
-                key={option.id}
-                disabled={isBusy}
-                onClick={() => void applyOutput({ latencyProfile: option.id })}
-              >
-                <Gauge size={15} />
-                <span>
-                  <strong>{option.label}</strong>
-                  <small>{option.detail}</small>
-                </span>
-                <em>{supportedLatencyProfile === option.id ? 'On' : 'Set'}</em>
-              </button>
-            ))}
-          </div>
+          <div className={`audio-buffer-collapse${isBufferOptionsOpen ? ' audio-buffer-collapse--open' : ''}`}>
+            <button
+              className="audio-buffer-collapse-button"
+              type="button"
+              aria-expanded={isBufferOptionsOpen}
+              onClick={() => setIsBufferOptionsOpen((value) => !value)}
+            >
+              <span>
+                <Gauge size={17} />
+                <strong>缓冲设置</strong>
+                {!isBufferOptionsOpen ? <small>默认折叠，点击展开延迟与 ASIO 缓冲选项</small> : null}
+              </span>
+              <ChevronDown size={16} aria-hidden="true" />
+            </button>
 
-          {advancedNativeOutputAvailable && outputMode === 'asio' ? (
-            <>
-              <div className="audio-drawer-section-title audio-drawer-section-title--compact">
-                <Zap size={17} />
-                <h3>ASIO buffer</h3>
-              </div>
-              <div className="audio-drawer-mini-grid" aria-label="ASIO buffer">
-                {asioBufferOptions.map((option) => {
-                  const isActive = option.value === null
-                    ? currentAsioBufferFrames === null
-                    : currentAsioBufferFrames === option.value;
-
-                  return (
+            {isBufferOptionsOpen ? (
+              <div className="audio-buffer-collapse-body">
+                <div className="audio-drawer-mini-grid" aria-label="Latency profile">
+                  {latencyProfileOptions.map((option) => (
                     <button
-                      className={`audio-device-pill ${isActive ? 'active' : ''}`}
+                      className={`audio-device-pill ${supportedLatencyProfile === option.id ? 'active' : ''}`}
                       type="button"
-                      key={option.label}
+                      key={option.id}
                       disabled={isBusy}
-                      onClick={() => void applyOutput({ bufferSizeFrames: option.value })}
+                      onClick={() => void applyOutput({ latencyProfile: option.id })}
                     >
-                      <Zap size={15} />
+                      <Gauge size={15} />
                       <span>
                         <strong>{option.label}</strong>
                         <small>{option.detail}</small>
                       </span>
-                      <em>{isActive ? 'On' : 'Set'}</em>
+                      <em>{supportedLatencyProfile === option.id ? 'On' : 'Set'}</em>
                     </button>
-                  );
-                })}
-              </div>
-              <p>
-                {asioBufferStatusText}
-              </p>
-              <div className="audio-recommended-latency">
-                <div>
-                  <span>{t('audioDrawer.asioLatency.recommended')}</span>
-                  <strong>{recommendedLatencyText}</strong>
+                  ))}
                 </div>
-                <p>{t('audioDrawer.asioLatency.description')}</p>
+
+                {advancedNativeOutputAvailable && outputMode === 'asio' ? (
+                  <>
+                    <div className="audio-drawer-section-title audio-drawer-section-title--compact">
+                      <Zap size={17} />
+                      <h3>ASIO buffer</h3>
+                    </div>
+                    <div className="audio-drawer-mini-grid" aria-label="ASIO buffer">
+                      {asioBufferOptions.map((option) => {
+                        const isActive = option.value === null
+                          ? currentAsioBufferFrames === null
+                          : currentAsioBufferFrames === option.value;
+
+                        return (
+                          <button
+                            className={`audio-device-pill ${isActive ? 'active' : ''}`}
+                            type="button"
+                            key={option.label}
+                            disabled={isBusy}
+                            onClick={() => void applyOutput({ bufferSizeFrames: option.value })}
+                          >
+                            <Zap size={15} />
+                            <span>
+                              <strong>{option.label}</strong>
+                              <small>{option.detail}</small>
+                            </span>
+                            <em>{isActive ? 'On' : 'Set'}</em>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p>
+                      {asioBufferStatusText}
+                    </p>
+                    <div className="audio-recommended-latency">
+                      <div>
+                        <span>{t('audioDrawer.asioLatency.recommended')}</span>
+                        <strong>{recommendedLatencyText}</strong>
+                      </div>
+                      <p>{t('audioDrawer.asioLatency.description')}</p>
+                    </div>
+                  </>
+                ) : null}
               </div>
-            </>
-          ) : null}
+            ) : null}
+          </div>
 
           <label className="audio-toggle-row">
             <span>
@@ -1162,6 +1211,11 @@ export const AudioSettingsDrawer = ({
             />
           </label>
           <p>{t('audioDrawer.option.rememberOutputDescription')}</p>
+
+          <button className="audio-diagnostics-copy-button" type="button" disabled={resetBusy || isBusy} onClick={() => void resetAudioEngine()}>
+            <RefreshCw size={16} />
+            <span>{resetBusy ? t('audioDrawer.action.resetEngineBusy') : resetMessage ?? t('audioDrawer.action.resetEngine')}</span>
+          </button>
 
           <button className="audio-diagnostics-copy-button" type="button" onClick={() => void copyDiagnostics()}>
             <Clipboard size={16} />

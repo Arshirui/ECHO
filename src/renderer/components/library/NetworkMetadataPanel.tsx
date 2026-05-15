@@ -100,7 +100,13 @@ const scanLabel = (status: NetworkMetadataScanJobStatus, t: (key: TranslationKey
   return `${t('settings.library.networkPanel.scanRunning')} ${status.processedTracks}/${status.totalTracks}${currentTrack}`;
 };
 
-export const NetworkMetadataPanel = (): JSX.Element => {
+type NetworkMetadataPanelProps = {
+  networkMetadataEnabled?: boolean;
+};
+
+const networkDisabledMessage = 'Enable Network Metadata Completion above before scanning or repairing missing metadata.';
+
+export const NetworkMetadataPanel = ({ networkMetadataEnabled = true }: NetworkMetadataPanelProps): JSX.Element => {
   const { t } = useI18n();
   const [trackId, setTrackId] = useState('');
   const [track, setTrack] = useState<LibraryTrack | null>(null);
@@ -112,6 +118,17 @@ export const NetworkMetadataPanel = (): JSX.Element => {
   const [selectedMissingFields, setSelectedMissingFields] = useState<MissingMetadataField[]>(['cover']);
   const [scanProgress, setScanProgress] = useState<{ label: string; percent: number } | null>(null);
   const [candidateFeedback, setCandidateFeedback] = useState<Record<string, { tone: 'success' | 'info' | 'warning'; text: string }>>({});
+  const networkActionDisabled = busy || !networkMetadataEnabled;
+
+  const ensureNetworkMetadataEnabled = useCallback((): boolean => {
+    if (networkMetadataEnabled) {
+      return true;
+    }
+
+    setScanProgress(null);
+    setMessage(networkDisabledMessage);
+    return false;
+  }, [networkMetadataEnabled]);
 
   const toggleMissingField = useCallback((field: MissingMetadataField): void => {
     setSelectedMissingFields((current) =>
@@ -236,6 +253,10 @@ export const NetworkMetadataPanel = (): JSX.Element => {
   }, [loadTrack, t]);
 
   const repair = useCallback(async (): Promise<void> => {
+    if (!ensureNetworkMetadataEnabled()) {
+      return;
+    }
+
     setBusy(true);
     setScanProgress(null);
 
@@ -271,9 +292,13 @@ export const NetworkMetadataPanel = (): JSX.Element => {
     } finally {
       setBusy(false);
     }
-  }, [loadTrack, t]);
+  }, [ensureNetworkMetadataEnabled, loadTrack, t]);
 
   const scanMissing = useCallback(async (): Promise<void> => {
+    if (!ensureNetworkMetadataEnabled()) {
+      return;
+    }
+
     const scanFields = [...selectedMissingFields];
     const scanScope = selectedMissingFieldLabel(scanFields);
     setBusy(true);
@@ -325,7 +350,7 @@ export const NetworkMetadataPanel = (): JSX.Element => {
     } finally {
       setBusy(false);
     }
-  }, [selectedMissingFields, t]);
+  }, [ensureNetworkMetadataEnabled, selectedMissingFields, t]);
 
   const mutateCandidate = useCallback(
     async (candidateId: string, action: 'missing' | 'selected' | 'reject'): Promise<void> => {
@@ -396,6 +421,10 @@ export const NetworkMetadataPanel = (): JSX.Element => {
 
   const repairScanItem = useCallback(
     async (item: MissingMetadataScanItem): Promise<void> => {
+      if (!ensureNetworkMetadataEnabled()) {
+        return;
+      }
+
       setBusy(true);
 
       try {
@@ -422,7 +451,7 @@ export const NetworkMetadataPanel = (): JSX.Element => {
         setBusy(false);
       }
     },
-    [findTrackByExactId, t],
+    [ensureNetworkMetadataEnabled, findTrackByExactId, t],
   );
 
   const applyAllScanCandidates = useCallback(async (): Promise<void> => {
@@ -532,7 +561,7 @@ export const NetworkMetadataPanel = (): JSX.Element => {
         <div className="settings-chip-row settings-chip-row--left">
           <button
             className={`network-missing-filter-chip ${selectedMissingFields.length === 0 ? 'active' : ''}`}
-            disabled={busy}
+            disabled={networkActionDisabled}
             type="button"
             onClick={() => setSelectedMissingFields([])}
           >
@@ -541,7 +570,7 @@ export const NetworkMetadataPanel = (): JSX.Element => {
           {missingFilterOptions.map((option) => (
             <button
               className={`network-missing-filter-chip ${selectedMissingFields.includes(option.field) ? 'active' : ''}`}
-              disabled={busy}
+              disabled={networkActionDisabled}
               key={option.field}
               type="button"
               onClick={() => toggleMissingField(option.field)}
@@ -553,7 +582,7 @@ export const NetworkMetadataPanel = (): JSX.Element => {
       </div>
 
       <div className="settings-chip-row">
-        <button className="settings-action-button" type="button" disabled={busy} onClick={() => void scanMissing()}>
+        <button className="settings-action-button" type="button" disabled={networkActionDisabled} onClick={() => void scanMissing()}>
           <Wand2 size={15} />
           {busy ? '扫描中...' : t('settings.library.networkPanel.scanMissing')}
         </button>
@@ -566,13 +595,15 @@ export const NetworkMetadataPanel = (): JSX.Element => {
           <Wand2 size={15} />
           {bulkApplying ? '补全中...' : '一键全部补全'}
         </button>
-        <button className="settings-action-button" type="button" disabled={busy} onClick={() => void repair()}>
+        <button className="settings-action-button" type="button" disabled={networkActionDisabled} onClick={() => void repair()}>
           {t('settings.library.networkPanel.repairMissing')}
         </button>
         <button className="settings-action-button" type="button" disabled={busy} onClick={() => void refreshCandidates()}>
           {t('settings.library.networkPanel.showCandidates')}
         </button>
       </div>
+
+      {!networkMetadataEnabled ? <p className="settings-inline-note network-panel-message">{networkDisabledMessage}</p> : null}
 
       {scanProgress ? (
         <div className="network-scan-progress" role="status" aria-live="polite">
@@ -641,7 +672,7 @@ export const NetworkMetadataPanel = (): JSX.Element => {
                 </div>
                 <div className="network-missing-actions">
                   <em>{item.reasons.join(', ')}</em>
-                  <button className="settings-action-button" type="button" disabled={busy} onClick={() => void repairScanItem(item)}>
+                  <button className="settings-action-button" type="button" disabled={networkActionDisabled} onClick={() => void repairScanItem(item)}>
                     {t('settings.library.networkPanel.repairThisTrack')}
                   </button>
                 </div>

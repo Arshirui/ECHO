@@ -28,6 +28,11 @@ export type RememberedAudioOutput = {
   bufferSizeFrames?: number;
 };
 
+export type RememberedWindowSize = {
+  width: number;
+  height: number;
+};
+
 export type AppSettings = {
   appMemoryVersion?: number;
   locale?: AppLocale;
@@ -41,9 +46,12 @@ export type AppSettings = {
   chineseCrossScriptSearchEnabled?: boolean;
   artistWallAlbumArtwork: boolean;
   autoUpdateEnabled?: boolean;
+  autoAccountCheckOnStartup?: boolean;
   playlistBackupsEnabled?: boolean;
   coverCacheDir: string | null;
   hideToTrayOnClose: boolean;
+  rememberWindowSizeEnabled?: boolean;
+  rememberedWindowSize?: RememberedWindowSize | null;
   appCustomWallpaperPath: string | null;
   appWallpaperScalePercent: number;
   appWallpaperBlurPx: number;

@@ -12,6 +12,7 @@ import { likedAlbumsChangedEvent, likedChangedEvent } from '../hooks/useLikedMed
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { albumDetailNavigationEvent, consumePendingAlbumDetailNavigation } from '../utils/albumNavigation';
 
 const pageSize = 60;
 const albumSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
@@ -207,6 +208,23 @@ export const AlbumsPage = (): JSX.Element => {
     shouldRestorePageScrollRef.current = true;
     setSelectedAlbum(album);
   }, []);
+
+  useEffect(() => {
+    const pendingAlbum = consumePendingAlbumDetailNavigation();
+    if (pendingAlbum) {
+      openAlbumDetail(pendingAlbum);
+    }
+
+    const handleNavigateAlbumDetail = (event: Event): void => {
+      const album = (event as CustomEvent<{ album?: LibraryAlbum }>).detail?.album;
+      if (album) {
+        openAlbumDetail(album);
+      }
+    };
+
+    window.addEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
+    return () => window.removeEventListener(albumDetailNavigationEvent, handleNavigateAlbumDetail);
+  }, [openAlbumDetail]);
 
   const getAllAlbumTracks = useCallback(async (albumId: string): Promise<LibraryTrack[]> => {
     const library = window.echo?.library;

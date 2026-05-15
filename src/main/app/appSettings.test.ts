@@ -24,7 +24,10 @@ describe('app settings normalization', () => {
     expect(settings.albumMergeStrategy).toBe('standard');
     expect(settings.chineseCrossScriptSearchEnabled).toBe(true);
     expect(settings.artistWallAlbumArtwork).toBe(false);
+    expect(settings.autoAccountCheckOnStartup).toBe(true);
     expect(settings.playlistBackupsEnabled).toBe(true);
+    expect(settings.rememberWindowSizeEnabled).toBe(true);
+    expect(settings.rememberedWindowSize).toBeNull();
     expect(settings.appCustomWallpaperPath).toBeNull();
     expect(settings.appWallpaperScalePercent).toBe(100);
     expect(settings.appWallpaperBlurPx).toBe(0);
@@ -134,6 +137,32 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ playlistBackupsEnabled: true }).playlistBackupsEnabled).toBe(true);
     expect(normalizeSettings({ playlistBackupsEnabled: false }).playlistBackupsEnabled).toBe(false);
     expect(normalizeSettings({ playlistBackupsEnabled: 'no' as never }).playlistBackupsEnabled).toBe(true);
+  });
+
+  it('keeps startup account checks enabled unless explicitly disabled', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).autoAccountCheckOnStartup).toBe(true);
+    expect(normalizeSettings({ autoAccountCheckOnStartup: true }).autoAccountCheckOnStartup).toBe(true);
+    expect(normalizeSettings({ autoAccountCheckOnStartup: false }).autoAccountCheckOnStartup).toBe(false);
+    expect(normalizeSettings({ autoAccountCheckOnStartup: 'no' as never }).autoAccountCheckOnStartup).toBe(true);
+  });
+
+  it('normalizes remembered window size settings', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).rememberWindowSizeEnabled).toBe(true);
+    expect(normalizeSettings({ rememberWindowSizeEnabled: false }).rememberWindowSizeEnabled).toBe(false);
+    expect(normalizeSettings({ rememberWindowSizeEnabled: 'no' as never }).rememberWindowSizeEnabled).toBe(true);
+    expect(normalizeSettings({ rememberedWindowSize: { width: 1280.4, height: 720.6 } }).rememberedWindowSize).toEqual({
+      width: 1280,
+      height: 721,
+    });
+    expect(normalizeSettings({ rememberedWindowSize: { width: 100, height: 100 } }).rememberedWindowSize).toEqual({
+      width: 360,
+      height: 620,
+    });
+    expect(normalizeSettings({ rememberedWindowSize: { width: 'wide', height: 720 } as never }).rememberedWindowSize).toBeNull();
   });
 
   it('normalizes app wallpaper settings without accepting unsafe paths', async () => {

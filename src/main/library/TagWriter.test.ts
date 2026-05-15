@@ -45,6 +45,7 @@ describe('writeEmbeddedTrackTags', () => {
     expect(workerMockState.workers[0].options.eval).toBe(true);
     expect(workerMockState.workers[0].options.workerData).toMatchObject({
       filePath: 'D:/Music/song.wav',
+      taglibWasmModuleUrl: expect.stringMatching(/^file:\/\//),
       tags: {
         title: 'Title',
         albumArtist: 'Album Artist',
@@ -55,5 +56,7 @@ describe('writeEmbeddedTrackTags', () => {
     });
     expect(workerMockState.workers[0].source).toContain('applyTagsToFile');
     expect(workerMockState.workers[0].source).toContain('applyCoverArt');
+    expect(workerMockState.workers[0].source).toContain('import(taglibWasmModuleUrl)');
+    expect(workerMockState.workers[0].source).not.toContain("import('taglib-wasm')");
   });
 });

@@ -115,6 +115,7 @@ beforeEach(() => {
       setPreset: vi.fn().mockImplementation((presetId: string) => Promise.resolve(eqState({ presetId, presetName: presetId === 'rock' ? 'Rock' : 'User Bright' }))),
       reset: vi.fn().mockResolvedValue(eqState()),
       savePreset: vi.fn().mockResolvedValue(presets[2]),
+      exportPreset: vi.fn().mockResolvedValue('D:\\Exports\\Desk Headphones.json'),
       deletePreset: vi.fn().mockResolvedValue(presets.slice(0, 2)),
       getChannelBalanceState: vi.fn().mockResolvedValue(channelBalanceState()),
       setChannelBalanceState: vi.fn().mockImplementation((patch) => Promise.resolve(channelBalanceState(patch))),
@@ -178,6 +179,44 @@ describe('EqPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset selected' }));
     await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 0 }));
+  });
+
+  it('maps EQ drag coordinates through the SVG screen matrix when the chart is letterboxed', async () => {
+    renderEqPanel();
+
+    const curve = await screen.findByRole('img', { name: 'Draggable 10-band EQ frequency response' });
+    curve.getBoundingClientRect = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 1100,
+      bottom: 360,
+      width: 1100,
+      height: 360,
+      toJSON: () => undefined,
+    }));
+    const point = {
+      x: 0,
+      y: 0,
+      matrixTransform: vi.fn(() => ({ x: 410, y: 130 })),
+    };
+    Object.defineProperty(curve, 'getScreenCTM', {
+      value: vi.fn(() => ({ inverse: () => ({}) })),
+      configurable: true,
+    });
+    Object.defineProperty(curve, 'createSVGPoint', {
+      value: vi.fn(() => point),
+      configurable: true,
+    });
+
+    const node = await screen.findByTestId('eq-curve-node-2');
+    fireEvent.pointerDown(node, { clientX: 510, clientY: 94, pointerId: 1 });
+    fireEvent.pointerUp(curve, { clientX: 510, clientY: 94, pointerId: 1 });
+
+    expect(point.matrixTransform).toHaveBeenCalled();
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+    await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: 500 }));
   });
 
   it('only edits band frequency when free-frequency mode is unlocked', async () => {
@@ -336,6 +375,21 @@ describe('EqPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Overwrite' }));
 
     await waitFor(() => expect(window.echo.eq.savePreset).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-bright', name: 'User Bright' })));
+  });
+
+  it('exports the current EQ as a preset file from the Save as action', async () => {
+    renderEqPanel();
+
+    fireEvent.change(await screen.findByLabelText('Preset name'), { target: { value: 'Desk Headphones' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save as' }));
+
+    await waitFor(() =>
+      expect(window.echo.eq.exportPreset).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'Desk Headphones',
+        bands: expect.any(Array),
+      })),
+    );
+    expect(window.echo.eq.savePreset).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'Desk Headphones' }));
   });
 
   it('filters presets by search and target curve category', async () => {

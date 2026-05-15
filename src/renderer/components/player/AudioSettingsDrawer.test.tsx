@@ -76,7 +76,11 @@ const asioDevice: AudioDeviceInfo = {
   isDefault: true,
 };
 
-const renderDrawer = (status: AudioStatus, setOutput = vi.fn().mockResolvedValue(status)): void => {
+const renderDrawer = (
+  status: AudioStatus,
+  setOutput = vi.fn().mockResolvedValue(status),
+  resetEngine = vi.fn().mockResolvedValue({ ...status, state: 'stopped' }),
+): void => {
   window.echo = {
     app: {
       getSettings: vi.fn().mockResolvedValue({ rememberedAudioOutput: { enabled: false } }),
@@ -87,6 +91,7 @@ const renderDrawer = (status: AudioStatus, setOutput = vi.fn().mockResolvedValue
       getStatus: vi.fn().mockResolvedValue(status),
       getDiagnostics: vi.fn().mockResolvedValue(status),
       setOutput,
+      resetEngine,
     },
   } as unknown as Window['echo'];
 
@@ -262,6 +267,39 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     fireEvent.click(screen.getByRole('button', { name: /Auto/ }));
 
     await waitFor(() => expect(setOutput).toHaveBeenCalledWith({ bufferSizeFrames: null }));
+  });
+
+  it('resets the audio engine from the drawer controls', async () => {
+    const resetEngine = vi.fn().mockResolvedValue({ ...baseStatus, state: 'stopped' });
+    const onStatusChange = vi.fn();
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ rememberedAudioOutput: { enabled: false } }),
+        setSettings: vi.fn().mockResolvedValue({}),
+      },
+      audio: {
+        listDevices: vi.fn().mockResolvedValue([asioDevice]),
+        getStatus: vi.fn().mockResolvedValue(baseStatus),
+        getDiagnostics: vi.fn().mockResolvedValue(baseStatus),
+        setOutput: vi.fn().mockResolvedValue(baseStatus),
+        resetEngine,
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AudioSettingsDrawer
+        isOpen
+        status={baseStatus}
+        onClose={vi.fn()}
+        onStatusChange={onStatusChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'resetEngine' }));
+
+    await waitFor(() => expect(resetEngine).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({ state: 'stopped' })));
+    expect(screen.getByRole('button', { name: 'resetEngineDone' })).toBeTruthy();
   });
 
   it('saves current output mode and ASIO buffer when output settings are enabled', async () => {

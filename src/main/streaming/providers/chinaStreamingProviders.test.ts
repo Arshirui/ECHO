@@ -92,6 +92,70 @@ describe('China streaming providers', () => {
     });
   });
 
+  it('maps NetEase album search results', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          result: {
+            albumCount: 1,
+            albums: [
+              {
+                id: 456,
+                name: '测试专辑',
+                publishTime: 1767225600000,
+                size: 12,
+                picUrl: 'https://p.music.126.net/album.jpg',
+                artists: [{ id: 1, name: '测试歌手' }],
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const result = await new NeteaseStreamingProvider().search({ provider: 'netease', query: '测试', mediaTypes: ['album'], page: 1, pageSize: 10 });
+
+    expect(result.albums[0]).toMatchObject({
+      provider: 'netease',
+      providerAlbumId: '456',
+      title: '测试专辑',
+      artist: '测试歌手',
+      trackCount: 12,
+      releaseDate: '2026-01-01',
+      coverThumb: remoteImageUrl('https://p.music.126.net/album.jpg?param=160y160', 'https://music.163.com/'),
+    });
+  });
+
+  it('maps NetEase artist search results', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          result: {
+            artistCount: 1,
+            artists: [
+              {
+                id: 789,
+                name: '测试歌手',
+                picUrl: 'https://p.music.126.net/artist.jpg',
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const result = await new NeteaseStreamingProvider().search({ provider: 'netease', query: '测试', mediaTypes: ['artist'], page: 1, pageSize: 10 });
+
+    expect(result.artists[0]).toMatchObject({
+      provider: 'netease',
+      providerArtistId: '789',
+      name: '测试歌手',
+      avatarUrl: remoteImageUrl('https://p.music.126.net/artist.jpg?param=160y160', 'https://music.163.com/'),
+    });
+  });
+
   it('resolves NetEase playback without returning secret headers', async () => {
     setNeteaseApiForTests(null);
     const fetchRunner = vi.fn().mockResolvedValue(
@@ -234,6 +298,80 @@ describe('China streaming providers', () => {
       album: '测试专辑',
       duration: 180,
       coverThumb: remoteImageUrl('https://y.gtimg.cn/music/photo_new/T002R150x150M000album-mid.jpg', 'https://y.qq.com/'),
+    });
+  });
+
+  it('maps QQ Music album search results', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          req_1: {
+            data: {
+              body: {
+                album: {
+                  totalnum: 1,
+                  list: [
+                    {
+                      albumMID: 'album-mid',
+                      albumName: '测试专辑',
+                      singerName: '测试歌手',
+                      publicTime: '2026-01-01',
+                      song_count: 9,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+      ),
+    );
+
+    const result = await new QQMusicStreamingProvider().search({ provider: 'qqmusic', query: '测试', mediaTypes: ['album'], page: 1, pageSize: 10 });
+
+    expect(result.albums[0]).toMatchObject({
+      provider: 'qqmusic',
+      providerAlbumId: 'album-mid',
+      title: '测试专辑',
+      artist: '测试歌手',
+      releaseDate: '2026-01-01',
+      trackCount: 9,
+      coverThumb: remoteImageUrl('https://y.gtimg.cn/music/photo_new/T002R150x150M000album-mid.jpg', 'https://y.qq.com/'),
+    });
+  });
+
+  it('maps QQ Music artist search results', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          req_1: {
+            data: {
+              body: {
+                singer: {
+                  totalnum: 1,
+                  list: [
+                    {
+                      singerMID: 'artist-mid',
+                      singerName: '测试歌手',
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+      ),
+    );
+
+    const result = await new QQMusicStreamingProvider().search({ provider: 'qqmusic', query: '测试', mediaTypes: ['artist'], page: 1, pageSize: 10 });
+
+    expect(result.artists[0]).toMatchObject({
+      provider: 'qqmusic',
+      providerArtistId: 'artist-mid',
+      name: '测试歌手',
+      avatarUrl: remoteImageUrl('https://y.gtimg.cn/music/photo_new/T001R500x500M000artist-mid.jpg', 'https://y.qq.com/'),
     });
   });
 

@@ -2,7 +2,13 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createMainWindowWebPreferences, resolvePreloadPath } from './createMainWindow';
+import {
+  createMainWindowWebPreferences,
+  defaultMainWindowSize,
+  mainWindowMinimumSize,
+  resolveInitialMainWindowSize,
+  resolvePreloadPath,
+} from './createMainWindow';
 
 const tempDirs: string[] = [];
 
@@ -45,5 +51,38 @@ describe('createMainWindowWebPreferences', () => {
     expect(createMainWindowWebPreferences()).toMatchObject({
       backgroundThrottling: false,
     });
+  });
+});
+
+describe('mainWindowMinimumSize', () => {
+  it('allows portrait-sized app windows', () => {
+    expect(mainWindowMinimumSize).toEqual({
+      width: 360,
+      height: 620,
+    });
+  });
+});
+
+describe('resolveInitialMainWindowSize', () => {
+  it('uses the default desktop size when no remembered size exists', () => {
+    expect(resolveInitialMainWindowSize({ rememberWindowSizeEnabled: true, rememberedWindowSize: null } as never)).toEqual(defaultMainWindowSize);
+  });
+
+  it('restores a remembered size when the preference is enabled', () => {
+    expect(
+      resolveInitialMainWindowSize({
+        rememberWindowSizeEnabled: true,
+        rememberedWindowSize: { width: 900, height: 700 },
+      } as never),
+    ).toEqual({ width: 900, height: 700 });
+  });
+
+  it('ignores remembered size when the preference is disabled', () => {
+    expect(
+      resolveInitialMainWindowSize({
+        rememberWindowSizeEnabled: false,
+        rememberedWindowSize: { width: 900, height: 700 },
+      } as never),
+    ).toEqual(defaultMainWindowSize);
   });
 });

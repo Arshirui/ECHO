@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Check, ChevronDown, Download, Link, ListPlus, Loader2, Play, Radio, Search, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, Disc3, Download, Link, ListPlus, Loader2, Play, Radio, Search, UserRound } from 'lucide-react';
 import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type {
+  StreamingAlbum,
   StreamingAudioQuality,
-  StreamingLyricsResult,
+  StreamingArtist,
   StreamingMediaType,
   StreamingProviderDescriptor,
   StreamingProviderName,
@@ -27,7 +28,6 @@ const tabs: Array<{ key: StreamingMediaType; label: string }> = [
   { key: 'album', label: '专辑' },
   { key: 'artist', label: '歌手' },
   { key: 'playlist', label: '歌单' },
-  { key: 'mv', label: 'MV' },
 ];
 type QualityPreference = StreamingQualityPreference;
 
@@ -44,6 +44,9 @@ const defaultCover = `data:image/svg+xml;utf8,${encodeURIComponent(
 )}`;
 
 const providerPriority: StreamingProviderName[] = ['netease', 'qqmusic', 'mock'];
+const emptyTracks: StreamingTrack[] = [];
+const emptyAlbums: StreamingAlbum[] = [];
+const emptyArtists: StreamingArtist[] = [];
 
 const formatDuration = (duration: number | null): string => {
   if (!duration || !Number.isFinite(duration) || duration <= 0) {
@@ -135,8 +138,6 @@ export const StreamingSearchPage = (): JSX.Element => {
   const [query, setQuery] = useState(initialMemory.query);
   const [result, setResult] = useState<StreamingSearchResult | null>(initialMemory.result);
   const [playlistUrl, setPlaylistUrl] = useState('');
-  const [lyrics, setLyrics] = useState<StreamingLyricsResult | null>(null);
-  const [lyricsTrackKey, setLyricsTrackKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isImportingPlaylist, setIsImportingPlaylist] = useState(false);
   const [resolvingTrackKey, setResolvingTrackKey] = useState<string | null>(null);
@@ -159,7 +160,10 @@ export const StreamingSearchPage = (): JSX.Element => {
   const currentProvider = providerOptions.find((item) => item.name === provider) ?? providerOptions[0];
   const currentQuality = qualities.find((item) => item.key === quality) ?? qualities[0];
   const source = useMemo(() => ({ type: 'streaming' as const, label: `Streaming / ${currentProvider?.displayName ?? provider}`, provider }), [currentProvider?.displayName, provider]);
-  const tracks = result?.tracks ?? [];
+  const tracks = result?.tracks ?? emptyTracks;
+  const albums = result?.albums ?? emptyAlbums;
+  const artists = result?.artists ?? emptyArtists;
+  const resultCount = activeTab === 'album' ? albums.length : activeTab === 'artist' ? artists.length : tracks.length;
   const currentStableKey = queue.currentTrack?.mediaType === 'streaming' ? queue.currentTrack.stableKey ?? queue.currentTrack.id : null;
   const virtualizer = useVirtualizer({
     count: tracks.length,
@@ -167,6 +171,12 @@ export const StreamingSearchPage = (): JSX.Element => {
     estimateSize: () => 86,
     overscan: 8,
   });
+
+  useEffect(() => {
+    if (activeTab === 'mv') {
+      setActiveTab('track');
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     updateStreamingSearchMemory({
@@ -266,6 +276,10 @@ export const StreamingSearchPage = (): JSX.Element => {
             ? {
                 ...nextResult,
                 tracks: [...current.tracks, ...nextResult.tracks],
+                albums: [...current.albums, ...nextResult.albums],
+                artists: [...current.artists, ...nextResult.artists],
+                playlists: [...current.playlists, ...nextResult.playlists],
+                mvs: [...current.mvs, ...nextResult.mvs],
               }
             : nextResult,
         );
@@ -317,12 +331,12 @@ export const StreamingSearchPage = (): JSX.Element => {
     });
   }, [downloadJobIdsByTrackKey, tracks]);
 
-  const handleCoverError = useCallback((track: StreamingTrack, coverUrl: string): void => {
+  const handleCoverError = useCallback((stableKey: string, coverUrl: string): void => {
     if (coverUrl === defaultCover) {
       return;
     }
 
-    setFailedCoverUrls((current) => (current[track.stableKey] === coverUrl ? current : { ...current, [track.stableKey]: coverUrl }));
+    setFailedCoverUrls((current) => (current[stableKey] === coverUrl ? current : { ...current, [stableKey]: coverUrl }));
   }, []);
 
   const handlePlay = useCallback(
@@ -370,70 +384,6 @@ export const StreamingSearchPage = (): JSX.Element => {
     },
     [quality, queue, source],
   );
-
-  const handlePlayNext = useCallback(
-    (track: StreamingTrack): void => {
-      if (!track.playable) {
-        setActionError(track.unavailableReason ?? '这首歌暂时不可播放');
-        setActionMessage(null);
-        return;
-      }
-
-      setActionError(null);
-      setActionMessage('已加入下一首');
-      queue.playTrackNext(streamingTrackToLibraryTrack(track, quality), source);
-      setQueuedTrackKey(track.stableKey);
-      window.setTimeout(() => setQueuedTrackKey((current) => (current === track.stableKey ? null : current)), 1400);
-    },
-    [quality, queue, source],
-  );
-
-  const handleLyrics = useCallback(async (track: StreamingTrack): Promise<void> => {
-    const streaming = getStreamingBridge();
-    if (!streaming?.getLyrics) {
-      setActionError('桌面桥接不可用，无法加载流媒体歌词。');
-      setActionMessage(null);
-      return;
-    }
-
-    setActionError(null);
-    setActionMessage(null);
-    setLyricsTrackKey(track.stableKey);
-    setLyrics(null);
-    try {
-      setLyrics(
-        await streaming.getLyrics({
-          provider: track.provider,
-          providerTrackId: track.providerTrackId,
-        }),
-      );
-    } catch (lyricsError) {
-      setActionError(lyricsError instanceof Error ? lyricsError.message : '暂时找不到这首歌的歌词');
-      setActionMessage(null);
-    }
-  }, []);
-
-  const handleMv = useCallback(async (track: StreamingTrack): Promise<void> => {
-    const streaming = getStreamingBridge();
-    if (!streaming?.getMv) {
-      setActionError('桌面桥接不可用，无法加载流媒体 MV。');
-      setActionMessage(null);
-      return;
-    }
-
-    setActionError(null);
-    setActionMessage(null);
-    try {
-      const mv = await streaming.getMv({
-        provider: track.provider,
-        providerTrackId: track.providerTrackId,
-      });
-      setActionMessage(mv.items.length > 0 ? `已找到 ${mv.items.length} 个 MV 候选，MV 播放面板接入已预留。` : '这首歌暂时没有可用 MV。');
-    } catch (mvError) {
-      setActionError(mvError instanceof Error ? mvError.message : '暂时找不到这首歌的 MV');
-      setActionMessage(null);
-    }
-  }, []);
 
   const handleDownload = useCallback(async (track: StreamingTrack): Promise<void> => {
     const sourceUrl = streamingTrackWebUrl(track);
@@ -516,6 +466,69 @@ export const StreamingSearchPage = (): JSX.Element => {
     }
   }, [isImportingPlaylist, playlistUrl]);
 
+  const renderAlbumCard = (album: StreamingAlbum): JSX.Element => {
+    const rawCoverSrc = album.coverThumb ?? defaultCover;
+    const coverSrc = failedCoverUrls[album.id] === rawCoverSrc ? defaultCover : rawCoverSrc;
+
+    return (
+      <article key={album.id} className="streaming-discovery-card">
+        <div className="streaming-cover" data-empty={coverSrc === defaultCover}>
+          <img
+            src={coverSrc}
+            alt=""
+            decoding="async"
+            draggable={false}
+            height={56}
+            loading="lazy"
+            width={56}
+            onError={() => handleCoverError(album.id, coverSrc)}
+          />
+        </div>
+        <div className="streaming-main">
+          <div className="streaming-title-line">
+            <Disc3 size={15} />
+            <strong>{album.title}</strong>
+          </div>
+          <span>{album.artist}</span>
+          <small>
+            {album.provider} · {album.trackCount ? `${album.trackCount} 首` : '曲目数未知'}
+            {album.releaseDate ? ` · ${album.releaseDate}` : ''}
+          </small>
+        </div>
+      </article>
+    );
+  };
+
+  const renderArtistCard = (artist: StreamingArtist): JSX.Element => {
+    const rawCoverSrc = artist.avatarUrl ?? artist.coverUrl ?? defaultCover;
+    const coverSrc = failedCoverUrls[artist.id] === rawCoverSrc ? defaultCover : rawCoverSrc;
+
+    return (
+      <article key={artist.id} className="streaming-discovery-card">
+        <div className="streaming-cover streaming-cover--avatar" data-empty={coverSrc === defaultCover}>
+          <img
+            src={coverSrc}
+            alt=""
+            decoding="async"
+            draggable={false}
+            height={56}
+            loading="lazy"
+            width={56}
+            onError={() => handleCoverError(artist.id, coverSrc)}
+          />
+        </div>
+        <div className="streaming-main">
+          <div className="streaming-title-line">
+            <UserRound size={15} />
+            <strong>{artist.name}</strong>
+          </div>
+          <span>{artist.provider}</span>
+          <small>歌手 ID · {artist.providerArtistId}</small>
+        </div>
+      </article>
+    );
+  };
+
   return (
     <div className="streaming-page streaming-hub">
       <header className="streaming-hero">
@@ -525,7 +538,7 @@ export const StreamingSearchPage = (): JSX.Element => {
             Streaming Hub
           </span>
           <h1>发现、排队、播放流媒体音乐</h1>
-          <p>网易云音乐和 QQ 音乐通过主进程接入，播放地址只在播放前临时解析。</p>
+          <p>网易云音乐和 QQ 音乐通过主进程接入，播放地址只在播放前临时解析。ECHO 不提供任何跳过会员下载或播放音乐的服务；如果发现播放异常，请先检查会员状态。</p>
         </div>
       </header>
 
@@ -584,9 +597,9 @@ export const StreamingSearchPage = (): JSX.Element => {
       {error ? <div className="streaming-state streaming-state--error">{error}</div> : null}
       {actionError ? <div className="streaming-state streaming-state--error">{actionError}</div> : null}
       {actionMessage ? <div className="streaming-state streaming-state--success">{actionMessage}</div> : null}
-      {activeTab === 'track' && isLoading && tracks.length === 0 ? <div className="streaming-state">正在搜索...</div> : null}
-      {activeTab === 'track' && !isLoading && query && tracks.length === 0 && !error ? <div className="streaming-state">没有找到匹配的流媒体歌曲。</div> : null}
-      {activeTab === 'track' && !query ? <div className="streaming-state">输入关键词开始搜索。播放时才会解析真实地址，队列不会保存临时 URL。</div> : null}
+      {activeTab !== 'playlist' && isLoading && resultCount === 0 ? <div className="streaming-state">正在搜索...</div> : null}
+      {activeTab !== 'playlist' && !isLoading && query && resultCount === 0 && !error ? <div className="streaming-state">没有找到匹配的{activeTab === 'album' ? '专辑' : activeTab === 'artist' ? '歌手' : '流媒体歌曲'}。</div> : null}
+      {activeTab !== 'playlist' && !query ? <div className="streaming-state">输入关键词开始搜索。播放时才会解析真实地址，队列不会保存临时 URL。</div> : null}
 
       <div className="streaming-results-shell">
         {activeTab === 'playlist' ? (
@@ -618,10 +631,13 @@ export const StreamingSearchPage = (): JSX.Element => {
               <span>{isImportingPlaylist ? '正在添加' : '添加歌单'}</span>
             </button>
           </form>
-        ) : activeTab !== 'track' ? (
-          <div className="streaming-state streaming-state--quiet">
-            <Sparkles size={18} />
-            {activeTab === 'mv' ? 'MV 搜索入口已预留，首版先稳定单曲播放链路。' : '这个分类的正式视图已预留，首版先稳定单曲播放链路。'}
+        ) : activeTab === 'album' ? (
+          <div className="streaming-discovery-list" aria-label="专辑搜索结果">
+            {albums.map(renderAlbumCard)}
+          </div>
+        ) : activeTab === 'artist' ? (
+          <div className="streaming-discovery-list" aria-label="歌手搜索结果">
+            {artists.map(renderArtistCard)}
           </div>
         ) : (
           <div ref={listRef} className="streaming-results" aria-busy={isLoading}>
@@ -664,7 +680,7 @@ export const StreamingSearchPage = (): JSX.Element => {
                           height={56}
                           loading="lazy"
                           width={56}
-                          onError={() => handleCoverError(track, coverSrc)}
+                          onError={() => handleCoverError(track.stableKey, coverSrc)}
                         />
                       </div>
                       <div className="streaming-main">
@@ -709,9 +725,6 @@ export const StreamingSearchPage = (): JSX.Element => {
                           {downloadJob.status === 'failed' && downloadJob.error ? <small>{downloadJob.error}</small> : null}
                         </div>
                       ) : null}
-                      {lyricsTrackKey === track.stableKey && lyrics ? (
-                        <pre className="streaming-lyrics">{lyrics.plainLyrics ?? lyrics.syncedLyrics ?? (lyrics.lines.map((line) => line.text).join('\n') || '暂时没有歌词。')}</pre>
-                      ) : null}
                     </article>
                   </div>
                 );
@@ -721,7 +734,7 @@ export const StreamingSearchPage = (): JSX.Element => {
         )}
       </div>
 
-      {activeTab === 'track' && result?.hasMore ? (
+      {activeTab !== 'playlist' && result?.hasMore ? (
         <button className="streaming-load-more" type="button" onClick={() => void runSearch((result.page ?? 1) + 1, 'append')} disabled={isLoading}>
           {isLoading ? '加载中...' : '加载更多'}
         </button>

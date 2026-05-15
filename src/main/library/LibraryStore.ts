@@ -1691,7 +1691,7 @@ export class LibraryStore {
   }
 
   deleteTrack(trackId: string): void {
-    this.run('DELETE FROM tracks WHERE id = ?', trackId);
+    this.deleteTrackAndCompactAlbums(trackId);
   }
 
   deleteTracks(trackIds: string[]): number {
@@ -1702,6 +1702,65 @@ export class LibraryStore {
     }
 
     return changed;
+  }
+
+  deleteTrackAndCompactAlbums(trackId: string): number {
+    const albumRows = this.allRows(
+      `SELECT
+        album_tracks.album_id AS album_id,
+        tracks.duration AS duration
+       FROM album_tracks
+       INNER JOIN tracks ON tracks.id = album_tracks.track_id
+       WHERE album_tracks.track_id = ?`,
+      trackId,
+    );
+    const changed = Number(this.run('DELETE FROM tracks WHERE id = ?', trackId).changes ?? 0);
+
+    if (changed <= 0) {
+      return 0;
+    }
+
+    this.run('DELETE FROM album_tracks WHERE track_id = ?', trackId);
+
+    for (const row of albumRows) {
+      this.compactAlbumAfterTrackDelete(String(row.album_id), Number(row.duration ?? 0));
+    }
+
+    return changed;
+  }
+
+  private compactAlbumAfterTrackDelete(albumId: string, deletedDuration: number): void {
+    const remainingRow = this.getRow('SELECT COUNT(*) AS count FROM album_tracks WHERE album_id = ?', albumId);
+    const remainingCount = Number(remainingRow?.count ?? 0);
+
+    if (remainingCount <= 0) {
+      this.run('DELETE FROM albums WHERE id = ?', albumId);
+      return;
+    }
+
+    const coverRow = this.getRow(
+      `SELECT tracks.cover_id AS cover_id
+       FROM album_tracks
+       INNER JOIN tracks ON tracks.id = album_tracks.track_id
+       WHERE album_tracks.album_id = ? AND tracks.cover_id IS NOT NULL
+       ORDER BY album_tracks.position ASC
+       LIMIT 1`,
+      albumId,
+    );
+
+    this.run(
+      `UPDATE albums
+       SET track_count = ?,
+           duration = MAX(0, duration - ?),
+           cover_id = COALESCE(cover_id, ?),
+           updated_at = ?
+       WHERE id = ?`,
+      remainingCount,
+      Number.isFinite(deletedDuration) ? Math.max(0, deletedDuration) : 0,
+      textOrNull(coverRow?.cover_id),
+      nowIso(),
+      albumId,
+    );
   }
 
   deleteAllTracks(): number {

@@ -294,6 +294,43 @@ describe('AppLayout standalone routes', () => {
     await waitFor(() => expect(openAudioCrashReport).toHaveBeenCalledTimes(1));
   });
 
+  it('shows an upper-left notice when an account login expires', async () => {
+    let accountStatusHandler:
+      | ((statuses: Array<{ provider: 'bilibili'; connected: boolean; error: string | null }>) => void)
+      | undefined;
+    const accountsOnStatusesChanged = vi.fn((handler) => {
+      accountStatusHandler = handler as typeof accountStatusHandler;
+      return vi.fn();
+    });
+
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ lyricsPlayerBarDrawerEnabled: false, smtcEnabled: true }),
+      },
+      accounts: {
+        onStatusesChanged: accountsOnStatusesChanged,
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(accountStatusHandler).toBeTruthy());
+    const emitAccountStatuses = accountStatusHandler;
+    if (!emitAccountStatuses) {
+      throw new Error('account status handler was not registered');
+    }
+    emitAccountStatuses([{ provider: 'bilibili', connected: false, error: 'Bilibili login is invalid or expired.' }]);
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.getByText('账号登录失效')).toBeTruthy();
+    expect(screen.getByText(/Bilibili/)).toBeTruthy();
+    expect(screen.getByText(/设置 > 集成/)).toBeTruthy();
+  });
+
   it('does not apply the app wallpaper layer to the standalone lyrics and MV page', async () => {
     window.echo = {
       app: {

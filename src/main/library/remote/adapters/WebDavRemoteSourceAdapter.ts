@@ -301,22 +301,32 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
       }
 
       const buffers = chunks.tail ? [chunks.head, concatChunks([chunks.head, chunks.tail])] : [chunks.head];
+      let lastError: unknown = null;
       for (const buffer of buffers) {
-        const metadata = await parseBuffer(buffer, { path: input.item.path, size: input.item.sizeBytes ?? undefined }, { duration: false, skipCovers: false });
-        const picture = metadata.common.picture?.[0];
-        if (picture?.data?.byteLength) {
-          return {
-            status: 'ok',
-            data: picture.data,
-            mimeType: picture.format || null,
-            fieldSources: { cover: 'embedded' },
-            warnings: [],
-            errors: [],
-          };
+        try {
+          const metadata = await parseBuffer(buffer, { path: input.item.path, size: input.item.sizeBytes ?? undefined }, { duration: false, skipCovers: false });
+          const picture = metadata.common.picture?.[0];
+          if (picture?.data?.byteLength) {
+            return {
+              status: 'ok',
+              data: picture.data,
+              mimeType: picture.format || null,
+              fieldSources: { cover: 'embedded' },
+              warnings: [],
+              errors: [],
+            };
+          }
+        } catch (error) {
+          lastError = error;
         }
       }
 
-      return this.emptyCoverResult('cover_not_found');
+      return lastError
+        ? {
+            ...this.emptyCoverResult('cover_read_failed'),
+            errors: [lastError instanceof Error ? lastError.message : String(lastError)],
+          }
+        : this.emptyCoverResult('cover_not_found');
     } catch (error) {
       return {
         ...this.emptyCoverResult('cover_read_failed'),

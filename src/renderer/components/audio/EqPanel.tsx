@@ -516,7 +516,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     });
   };
 
-  const savePreset = async (): Promise<void> => {
+  const exportPreset = async (): Promise<void> => {
     if (!saveName.trim()) {
       setError(t('settings.eq.error.presetName'));
       return;
@@ -530,20 +530,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         return;
       }
 
-      const savedPreset = await eq.savePreset({
+      const exportedPath = await eq.exportPreset({
         name: saveName,
         preampDb: state.preampDb,
         bands: state.bands,
       });
-      setSaveName('');
-      setPresets(await eq.listPresets());
-      commitState({
-        ...state,
-        presetId: savedPreset.id,
-        presetName: savedPreset.name,
-        preampDb: savedPreset.preampDb,
-        bands: savedPreset.bands.map((band) => ({ ...band })),
-      });
+      if (exportedPath) {
+        setSaveName('');
+      }
       setError(null);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
@@ -1200,7 +1194,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
 
       <footer className="eq-preset-tools">
         <input aria-label={t('settings.eq.preset.nameAria')} value={saveName} onChange={(event) => setSaveName(event.currentTarget.value)} placeholder={t('settings.eq.preset.savePlaceholder')} />
-        <button type="button" onClick={() => void savePreset()}>
+        <button type="button" onClick={() => void exportPreset()}>
           <Save size={15} />
           {t('settings.eq.action.saveAs')}
         </button>

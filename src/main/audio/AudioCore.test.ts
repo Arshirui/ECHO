@@ -148,8 +148,12 @@ class FakeBridge extends EventEmitter {
     },
   });
   readonly stop = vi.fn();
+  readonly setVolume = vi.fn((volume: number) => {
+    this.volume = Math.max(0, Math.min(1, volume));
+  });
   startOptions: NativeOutputStartOptions | null = null;
   positionSeconds = 0;
+  volume = 1;
   private sessionId = 0;
 
   constructor(
@@ -2226,6 +2230,7 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.positionSeconds).toBe(21.75);
     expect(bridges).toHaveLength(1);
     expect(bridges[0].stop).not.toHaveBeenCalled();
+    expect(bridges[0].setVolume).toHaveBeenCalledWith(0.35);
   });
 
   it('switching output while playing restarts the current file on the new device', async () => {
@@ -2883,6 +2888,7 @@ describe('NativeOutputBridge host arguments', () => {
     const writable = bridge.createSessionWritable(sessionId);
     writable.end(pcmBuffer([0.25, -0.25]));
     await new Promise((resolve) => setTimeout(resolve, 0));
+    bridge.setVolume(0.25);
     bridge.stop();
 
     const framed = Buffer.concat(writes);
@@ -2894,6 +2900,9 @@ describe('NativeOutputBridge host arguments', () => {
     expect(framed.readUInt32LE(24)).toBe(sessionId);
     expect(framed.readUInt32LE(28)).toBe(8);
     expect(framed.readUInt8(45)).toBe(3);
+    expect(framed.readUInt8(61)).toBe(5);
+    expect(framed.readUInt32LE(64)).toBe(0);
+    expect(framed.readFloatLE(72)).toBeCloseTo(0.25);
   });
 
   it('treats framed native pos as per-session position when reusing a resident host', async () => {
@@ -3373,6 +3382,28 @@ describe('NativeOutputBridge graceful shutdown', () => {
     expect(child.kill).not.toHaveBeenCalled();
   });
 
+  it('stopGracefully waits for process exit after force-kill when requested', async () => {
+    const { bridge, child } = await createStartedBridge();
+    vi.useFakeTimers();
+    let resolved = false;
+
+    try {
+      const stopped = bridge.stopGracefully('test', 5, true).then(() => {
+        resolved = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(5);
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+      expect(resolved).toBe(false);
+
+      child.emit('exit', 0, null);
+      await stopped;
+      expect(resolved).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('stopGracefully resolves when the child process exits without ack', async () => {
     const { bridge, child } = await createStartedBridge();
     const stopped = bridge.stopGracefully('test', 100);
@@ -3468,6 +3499,26 @@ describe('AudioSession graceful output cleanup', () => {
     expect(bridge.stopGracefully).toHaveBeenCalledWith('test');
   });
 
+  it('resetEngine gracefully releases the active host and clears error state', async () => {
+    const bridge = new GracefulFakeBridge();
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([['song.flac', probe('song.flac', 44100)]])),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+
+    await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+    const status = await session.resetEngine();
+
+    expect(bridge.stopGracefully).toHaveBeenCalledWith('reset-audio-engine');
+    expect(status.state).toBe('stopped');
+    expect(status.host).toBe('not-initialized');
+    expect(status.currentFilePath).toBeNull();
+    expect(status.error).toBeNull();
+  });
+
   it('stops the old bridge gracefully before creating replacement output', async () => {
     const order: string[] = [];
     let index = 0;
@@ -3496,8 +3547,35 @@ describe('AudioSession graceful output cleanup', () => {
     await session.playLocalFile({ filePath: 'first.flac', output: { outputMode: 'exclusive' } });
     await session.playLocalFile({ filePath: 'second.flac', output: { outputMode: 'shared' } });
 
-    expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output');
+    expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output', undefined, true);
     expect(order).toEqual(['create:0', 'stop:0', 'create:1']);
+  });
+
+  it('waits for WASAPI shared host exit before switching to ASIO output', async () => {
+    const bridges: GracefulFakeBridge[] = [];
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([
+        ['first.flac', probe('first.flac', 48000)],
+        ['second.flac', probe('second.flac', 48000)],
+      ])),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => {
+        const bridge = new GracefulFakeBridge();
+        bridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+
+    await session.playLocalFile({ filePath: 'first.flac', output: { outputMode: 'shared' } });
+    await session.playLocalFile({ filePath: 'second.flac', output: { outputMode: 'asio' } });
+
+    expect(bridges[0].stopGracefully).toHaveBeenCalledWith('replace-output', undefined, true);
+    expect(bridges[1].startOptions).toMatchObject({
+      exclusive: false,
+      asio: true,
+    });
   });
 
   it('waits for ASIO host exit before switching to shared output', async () => {
@@ -4083,6 +4161,90 @@ describe('NativeOutputBridge diagnostics', () => {
     ).rejects.toThrow(
       'echo-audio-host exit_code_1; host="echo-audio-host.exe"; args="-sr 44100 -ch 2 -eq-port',
     );
+  });
+
+  it('rejects startup error events without emitting a runtime bridge error before ready', async () => {
+    const fakeSpawn = (): ChildProcessWithoutNullStreams => {
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stderr.write('[echo-audio-host] Backend ASIO failed for TEAC ASIO USB DRIVER: No device found.\n');
+        stdout.write('{"event":"error","reason":"runtime_error","message":"ASIO open failed: failed to open output device \\"TEAC ASIO USB DRIVER\\": No device found."}\n');
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+    const runtimeError = vi.fn();
+    bridge.on('error', runtimeError);
+
+    await expect(
+      bridge.start({
+        requestedOutputSampleRate: 44100,
+        channels: 2,
+        asio: true,
+        deviceIndex: 2,
+        deviceName: 'TEAC ASIO USB DRIVER',
+      }),
+    ).rejects.toThrow('nativeMessage="ASIO open failed: failed to open output device \\"TEAC ASIO USB DRIVER\\": No device found."');
+    expect(runtimeError).not.toHaveBeenCalled();
+  });
+
+  it('includes native error event messages and stderr tail after the host is ready', async () => {
+    let hostStdout!: PassThrough;
+    let hostStderr!: PassThrough;
+    const fakeSpawn = (): ChildProcessWithoutNullStreams => {
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      hostStdout = stdout;
+      hostStderr = stderr;
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stdout.write('{"ready":true,"sampleRate":48000,"backend":"wasapi-shared","deviceName":"TEAC USB"}\n');
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+    const errorPromise = new Promise<Error>((resolve) => {
+      bridge.once('error', (error) => resolve(error instanceof Error ? error : new Error(String(error))));
+    });
+
+    await bridge.start({
+      requestedOutputSampleRate: 48000,
+      channels: 2,
+    });
+
+    hostStderr.write('[echo-audio-host] WASAPI shared Initialize failed hr=0x8889000A\n');
+    hostStdout.write('{"event":"error","reason":"wasapi_shared_initialize_failed","message":"WASAPI shared open failed: Failed to initialize WASAPI shared client (hr=0x8889000a)"}\n');
+
+    const error = await errorPromise;
+    expect(error.message).toContain('echo-audio-host wasapi_shared_initialize_failed');
+    expect(error.message).toContain('nativeMessage="WASAPI shared open failed: Failed to initialize WASAPI shared client (hr=0x8889000a)"');
+    expect(error.message).toContain('stderrTail="[echo-audio-host] WASAPI shared Initialize failed hr=0x8889000A"');
   });
 
   it('propagates native host startup failures into AudioSession status', async () => {

@@ -8,6 +8,7 @@ import type {
   AppSettings,
   LyricsBackgroundMode,
   RememberedAudioOutput,
+  RememberedWindowSize,
 } from '../../shared/types/appSettings';
 import type { LyricsProviderId } from '../../shared/types/lyrics';
 import type { LibrarySort } from '../../shared/types/library';
@@ -64,6 +65,25 @@ const defaultRememberedAudioOutput: RememberedAudioOutput = {
   latencyProfile: 'balanced',
 };
 
+const normalizeRememberedWindowSize = (value: unknown): RememberedWindowSize | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const input = value as Partial<RememberedWindowSize>;
+  const width = Number(input.width);
+  const height = Number(input.height);
+
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    return null;
+  }
+
+  return {
+    width: Math.round(clamp(width, 360, 3840)),
+    height: Math.round(clamp(height, 620, 2160)),
+  };
+};
+
 export const getLyricsWallpaperDirectory = (): string => join(app.getPath('userData'), 'lyrics-wallpapers');
 export const getAppWallpaperDirectory = (): string => join(app.getPath('userData'), 'app-wallpapers');
 
@@ -97,9 +117,12 @@ export const defaultSettings: AppSettings = {
   chineseCrossScriptSearchEnabled: true,
   artistWallAlbumArtwork: false,
   autoUpdateEnabled: true,
+  autoAccountCheckOnStartup: true,
   playlistBackupsEnabled: true,
   coverCacheDir: null,
   hideToTrayOnClose: false,
+  rememberWindowSizeEnabled: true,
+  rememberedWindowSize: null,
   appCustomWallpaperPath: null,
   appWallpaperScalePercent: 100,
   appWallpaperBlurPx: 0,
@@ -460,9 +483,12 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     chineseCrossScriptSearchEnabled: settings.chineseCrossScriptSearchEnabled !== false,
     artistWallAlbumArtwork: settings.artistWallAlbumArtwork === true,
     autoUpdateEnabled: settings.autoUpdateEnabled !== false,
+    autoAccountCheckOnStartup: settings.autoAccountCheckOnStartup !== false,
     playlistBackupsEnabled: settings.playlistBackupsEnabled !== false,
     coverCacheDir: normalizeCoverCacheDir(settings.coverCacheDir),
     hideToTrayOnClose: settings.hideToTrayOnClose === true,
+    rememberWindowSizeEnabled: settings.rememberWindowSizeEnabled !== false,
+    rememberedWindowSize: normalizeRememberedWindowSize(settings.rememberedWindowSize),
     appCustomWallpaperPath: normalizeAppWallpaperPath(settings.appCustomWallpaperPath),
     appWallpaperScalePercent: Number.isFinite(appWallpaperScalePercent)
       ? Math.round(clamp(appWallpaperScalePercent, 100, 220))

@@ -408,6 +408,15 @@ export class EqBridge extends EventEmitter {
     }
 
     this.writeUserPresets(presets);
+    this.state = {
+      ...this.state,
+      preampDb: preset.preampDb,
+      bands: preset.bands.map((band) => ({ ...band })),
+      presetId: preset.id,
+      presetName: preset.name,
+      clippingRisk: false,
+    };
+    this.emitState();
     return preset;
   }
 

@@ -56,6 +56,11 @@ const normalizeStoredRecord = (value: unknown): StoredAccountRecord => {
   };
 };
 
+const hasRefreshableLoginRecord = (record: StoredAccountRecord | null | undefined): boolean =>
+  typeof record?.cookie === 'string' && record.cookie.trim().length > 0
+    ? true
+    : Boolean(record?.browser && record.browser !== 'none');
+
 export class AccountService {
   private records: StoredAccounts | null = null;
   private readonly providers: Record<AccountProvider, AccountProviderBase>;
@@ -135,6 +140,14 @@ export class AccountService {
 
   async checkAllAccounts(): Promise<AccountStatus[]> {
     await Promise.all(accountProviders.map((provider) => this.checkAccount(provider)));
+    return this.getStatuses();
+  }
+
+  async checkPreviouslyLoggedInAccounts(): Promise<AccountStatus[]> {
+    const records = this.readRecords();
+    const providersToCheck = accountProviders.filter((provider) => hasRefreshableLoginRecord(records[provider]));
+
+    await Promise.all(providersToCheck.map((provider) => this.checkAccount(provider)));
     return this.getStatuses();
   }
 

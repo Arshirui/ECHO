@@ -305,6 +305,45 @@ class BrowserEqBridge implements EqBridgeApi {
     return clonePreset(preset);
   }
 
+  async exportPreset(request: EqSavePresetRequest): Promise<string | null> {
+    const normalized = normalizePreset({
+      id: request.id ?? sanitizePresetId(request.name),
+      name: request.name,
+      preampDb: request.preampDb,
+      bands: request.bands,
+      readonly: false,
+    });
+
+    if (!normalized) {
+      throw new Error('invalid_eq_preset');
+    }
+
+    const fileName = `${sanitizePresetId(normalized.name) || 'echo-next-eq-preset'}.json`;
+    const content = `${JSON.stringify(
+      {
+        type: 'echo-next-eq-preset',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        preset: {
+          name: normalized.name,
+          preampDb: normalized.preampDb,
+          bands: normalized.bands,
+        },
+      },
+      null,
+      2,
+    )}\n`;
+
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    return fileName;
+  }
+
   async deletePreset(presetId: string): Promise<EqPreset[]> {
     if (browserBuiltInPresets.some((preset) => preset.id === presetId)) {
       throw new Error('cannot_delete_builtin_eq_preset');

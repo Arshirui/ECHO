@@ -160,6 +160,7 @@ const installLibraryService = () => {
     getDuplicateHiddenCounts: vi.fn(() => ({ 'track-1': 1, 'track-2': 0 })),
     getAlbums: vi.fn(),
     getAlbum: vi.fn(),
+    getAlbumForTrack: vi.fn(),
     getArtists: vi.fn(),
     getArtist: vi.fn(),
     getArtistTracks: vi.fn(),
@@ -443,6 +444,26 @@ describe('library IPC', () => {
 
     expect(service.getAlbum).toHaveBeenCalledWith('album-1');
     expect(result).toMatchObject({ coverLarge: 'echo-cover://large/cover-1' });
+  });
+
+  it('registers track album lookup IPC handler', async () => {
+    const service = installLibraryService();
+    service.getAlbumForTrack.mockReturnValue({
+      id: 'album-1',
+      albumKey: 'artist/album',
+      title: 'Album',
+      albumArtist: 'Artist',
+      year: 2026,
+      trackCount: 1,
+      duration: 120,
+      coverId: 'cover-1',
+      coverThumb: 'echo-cover://album/cover-1',
+    });
+
+    const result = await handlers[IpcChannels.LibraryGetAlbumForTrack]!(null, 'track-1');
+
+    expect(service.getAlbumForTrack).toHaveBeenCalledWith('track-1');
+    expect(result).toMatchObject({ id: 'album-1' });
   });
 });
 

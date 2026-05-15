@@ -37,6 +37,7 @@ import {
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
+import { openAlbumDetailForTrack } from '../utils/albumNavigation';
 
 type FolderTarget = {
   folderId: string;
@@ -680,8 +681,9 @@ export const FoldersPage = (): JSX.Element => {
             window.requestAnimationFrame(() => setIsTagEditorOpen(true));
             return;
           case 'go-to-album':
-            setSearchInput(track.album);
-            setSort('album');
+            if (!(await openAlbumDetailForTrack(track))) {
+              setError(`Album not found: ${track.album || 'Unknown Album'}`);
+            }
             return;
           case 'show-in-folder':
             await library?.openTrackInFolder(track.id);

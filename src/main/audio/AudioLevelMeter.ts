@@ -83,6 +83,7 @@ export class PcmLevelMeterTransform extends Transform {
   private readonly intervalMs: number;
   private readonly onSnapshot: (snapshot: PcmLevelSnapshot) => void;
   private remainder = Buffer.alloc(0);
+  private gain = 1;
   private peakAbs = 0;
   private sumSquares = 0;
   private sampleCount = 0;
@@ -94,6 +95,10 @@ export class PcmLevelMeterTransform extends Transform {
     super();
     this.onSnapshot = onSnapshot;
     this.intervalMs = intervalMs;
+  }
+
+  setGain(gain: number): void {
+    this.gain = Number.isFinite(gain) ? Math.max(0, Math.min(1, gain)) : 1;
   }
 
   getSnapshot(): PcmLevelSnapshot {
@@ -134,7 +139,7 @@ export class PcmLevelMeterTransform extends Transform {
     this.remainder = completeBytes < input.length ? Buffer.from(input.subarray(completeBytes)) : Buffer.alloc(0);
 
     for (let offset = 0; offset < completeBytes; offset += 4) {
-      const sample = input.readFloatLE(offset);
+      const sample = input.readFloatLE(offset) * this.gain;
 
       if (!Number.isFinite(sample)) {
         continue;

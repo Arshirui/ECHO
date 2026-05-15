@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { createMainWindow } from './createMainWindow';
 import { requestAppQuit } from './tray';
 import { getMainWindow } from './windowManager';
@@ -13,6 +13,34 @@ import { dispatchLocalAudioFilesOpened, parseLocalAudioFileArguments } from './l
 import { initializeAutoUpdater } from './autoUpdater';
 import { getAppSettings } from './appSettings';
 import { disposeBackgroundPlaybackShortcuts, initializeBackgroundPlaybackShortcuts } from './backgroundPlaybackShortcuts';
+import { getAccountService } from '../accounts/AccountService';
+import { IpcChannels } from '../../shared/constants/ipcChannels';
+import type { AccountStatus } from '../../shared/types/accounts';
+
+const sendAccountStatusesChanged = (statuses: AccountStatus[]): void => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    const send = (): void => {
+      if (!window.isDestroyed()) {
+        window.webContents.send(IpcChannels.AccountStatusesChanged, statuses);
+      }
+    };
+
+    if (window.webContents.isLoading()) {
+      window.webContents.once('did-finish-load', send);
+    } else {
+      send();
+    }
+  }
+};
+
+const refreshPreviouslyLoggedInAccountsOnStartup = async (): Promise<void> => {
+  const statuses = await getAccountService().checkPreviouslyLoggedInAccounts();
+  const disconnectedStatuses = statuses.filter((status) => !status.connected && Boolean(status.error));
+
+  if (disconnectedStatuses.length > 0) {
+    sendAccountStatusesChanged(disconnectedStatuses);
+  }
+};
 
 export const registerAppLifecycle = (): void => {
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -48,7 +76,11 @@ export const registerAppLifecycle = (): void => {
     initializeLastFmIntegration();
     createMainWindow();
     initializeBackgroundPlaybackShortcuts();
-    initializeAutoUpdater(getAppSettings().autoUpdateEnabled !== false);
+    const appSettings = getAppSettings();
+    if (appSettings.autoAccountCheckOnStartup !== false) {
+      void refreshPreviouslyLoggedInAccountsOnStartup().catch(() => undefined);
+    }
+    initializeAutoUpdater(appSettings.autoUpdateEnabled !== false);
     dispatchLocalAudioFilesOpened(parseLocalAudioFileArguments(process.argv));
 
     app.on('activate', () => {

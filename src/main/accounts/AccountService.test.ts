@@ -78,6 +78,20 @@ describe('AccountService', () => {
     expect(status.displayName).toContain('edge');
   });
 
+  it('checks only accounts with saved login state for startup refreshes', async () => {
+    const { service } = createService();
+    service.saveCookie('netease', 'MUSIC_U=secret');
+    service.setYouTubeBrowser('edge');
+
+    const statuses = await service.checkPreviouslyLoggedInAccounts();
+
+    expect(statuses.find((status) => status.provider === 'netease')?.lastCheckedAt).toBeTruthy();
+    expect(statuses.find((status) => status.provider === 'youtube')?.lastCheckedAt).toBeTruthy();
+    expect(statuses.find((status) => status.provider === 'qqmusic')?.lastCheckedAt).toBeNull();
+    expect(statuses.find((status) => status.provider === 'bilibili')?.lastCheckedAt).toBeNull();
+    expect(statuses.find((status) => status.provider === 'soundcloud')?.lastCheckedAt).toBeNull();
+  });
+
   it('falls back to empty statuses when accounts.json is damaged', () => {
     const { service, storagePath } = createService();
     writeFileSync(storagePath, '{broken json', 'utf8');
