@@ -161,6 +161,33 @@ if (!ready || !position || !telemetry || !ended || !hasReadyBufferTelemetry(shar
 
 console.log('[smoke:audio-host] shared ready/position/telemetry/ended OK');
 
+if (process.platform === 'win32') {
+  const directSoundResult = await runPcmHost(['-sr', '48000', '-ch', '2', '-shared-backend', 'directsound'], {
+    timeoutMs: 10000,
+    sampleRate: 48000,
+    seconds: 0.25,
+  });
+  const directSoundReady = directSoundResult.events.find((event) => event.ready === true);
+  const directSoundPosition = directSoundResult.events.some((event) => typeof event.pos === 'number');
+  const directSoundEnded = directSoundResult.events.some((event) => event.event === 'ended');
+
+  if (directSoundResult.exitCode !== 0) {
+    fail(`DirectSound shared host exited with ${directSoundResult.exitCode}; stdin=${directSoundResult.stdinError || 'ok'}; stderr=${directSoundResult.stderr}; stdout=${directSoundResult.stdout}`);
+  }
+
+  if (
+    !directSoundReady ||
+    directSoundReady.backend !== 'directsound-shared' ||
+    !directSoundPosition ||
+    !directSoundEnded ||
+    !hasReadyBufferTelemetry(directSoundReady)
+  ) {
+    fail(`missing expected DirectSound shared events ready=${Boolean(directSoundReady)} bufferTelemetry=${hasReadyBufferTelemetry(directSoundReady)} position=${directSoundPosition} ended=${directSoundEnded}; stderr=${directSoundResult.stderr}; stdout=${directSoundResult.stdout}`);
+  }
+
+  console.log('[smoke:audio-host] DirectSound shared ready/position/ended OK');
+}
+
 const asioListResult = runList(['-list', '-asio']);
 const asioDevices = parseDeviceLines(asioListResult.stdout);
 

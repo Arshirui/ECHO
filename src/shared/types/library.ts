@@ -152,6 +152,8 @@ export type LibrarySort =
   | 'titleDesc'
   | 'durationAsc'
   | 'durationDesc'
+  | 'fileModifiedAsc'
+  | 'fileModifiedDesc'
   | 'qualityAsc'
   | 'qualityDesc'
   | 'frequent'

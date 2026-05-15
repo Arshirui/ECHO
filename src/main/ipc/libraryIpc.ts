@@ -41,6 +41,8 @@ const sortValues = new Set<LibrarySort>([
   'titleDesc',
   'durationAsc',
   'durationDesc',
+  'fileModifiedAsc',
+  'fileModifiedDesc',
   'qualityAsc',
   'qualityDesc',
   'frequent',

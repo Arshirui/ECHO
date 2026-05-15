@@ -191,6 +191,41 @@ void testHostBufferFallbackAttempts()
     requireVectorEquals(buildBufferSizeAttempts(balanced), { 2048, 4096, 8192 }, "exclusive requested buffer fallback chain");
 }
 
+void testHostSharedBackendOptions()
+{
+    const auto defaultOptions = parseOptions({ "echo-audio-host" });
+    require(defaultOptions.sharedBackend == "auto", "shared backend default must be auto");
+
+    const auto directSound = parseOptions({ "echo-audio-host", "-shared-backend", "directsound" });
+    require(directSound.sharedBackend == "directsound", "directsound shared backend must parse");
+
+    const auto windows = parseOptions({ "echo-audio-host", "-shared-backend", "windows" });
+    require(windows.sharedBackend == "windows", "windows shared backend must parse");
+
+    const auto invalid = parseOptions({ "echo-audio-host", "-shared-backend", "invalid" });
+    require(invalid.sharedBackend == "auto", "invalid shared backend must fall back to auto");
+
+    require(shouldIncludeSharedBackendType("DirectSound", directSound.sharedBackend), "directsound backend must include DirectSound");
+    require(! shouldIncludeSharedBackendType("Windows Audio", directSound.sharedBackend), "directsound backend must skip Windows Audio");
+    require(shouldIncludeSharedBackendType("Windows Audio", windows.sharedBackend), "windows backend must include Windows Audio");
+    require(! shouldIncludeSharedBackendType("DirectSound", windows.sharedBackend), "windows backend must skip DirectSound");
+    require(shouldIncludeSharedBackendType("DirectSound", defaultOptions.sharedBackend), "auto backend must include DirectSound");
+    require(shouldIncludeSharedBackendType("Windows Audio", defaultOptions.sharedBackend), "auto backend must include Windows Audio");
+}
+
+void testHostBackendNames()
+{
+    const auto shared = parseOptions({ "echo-audio-host" });
+    require(getBackendName(shared, "Windows Audio") == "wasapi-shared", "Windows Audio shared backend name");
+    require(getBackendName(shared, "DirectSound") == "directsound-shared", "DirectSound shared backend name");
+
+    const auto exclusive = parseOptions({ "echo-audio-host", "-exclusive" });
+    require(getBackendName(exclusive, "Windows Audio (Exclusive Mode)") == "wasapi-exclusive", "exclusive backend name");
+
+    const auto asio = parseOptions({ "echo-audio-host", "-asio" });
+    require(getBackendName(asio, "ASIO") == "asio", "ASIO backend name");
+}
+
 void testHostPrebufferDefaultsRemainCompatible()
 {
     const auto exclusive = parseOptions({ "echo-audio-host", "-exclusive" });
@@ -429,6 +464,8 @@ int main()
         { "rapid changes stay finite", testRapidChangesStayFinite },
         { "coefficient updates stop in steady state", testCoefficientUpdatesStopInSteadyState },
         { "host buffer fallback attempts", testHostBufferFallbackAttempts },
+        { "host shared backend options", testHostSharedBackendOptions },
+        { "host backend names", testHostBackendNames },
         { "host prebuffer defaults remain compatible", testHostPrebufferDefaultsRemainCompatible },
         { "explicit zero prebuffer disables wait", testExplicitZeroPrebufferDisablesWait },
         { "framed stdin session reset and late PCM drop", testFramedStdinSessionResetAndLatePcmDrop },

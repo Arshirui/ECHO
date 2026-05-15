@@ -67,6 +67,7 @@ export type NativeOutputStartOptions = {
   channels: number;
   deviceIndex?: number;
   deviceName?: string;
+  sharedBackend?: 'auto' | 'windows' | 'directsound';
   asio?: boolean;
   exclusive?: boolean;
   latencyProfile?: AudioOutputSettings['latencyProfile'];

@@ -71,6 +71,30 @@ const appendTailLine = (lines: string[], line: string): void => {
   }
 };
 
+const windowsCrashCodes: Record<number, string> = {
+  0xc0000005: 'access_violation',
+};
+
+const formatExitCodeHex = (exitCode: number): string => `0x${(exitCode >>> 0).toString(16).toUpperCase().padStart(8, '0')}`;
+
+const getNativeCrashDetails = (reason: string): string[] => {
+  const match = /^exit_code_(-?\d+)$/.exec(reason);
+
+  if (!match) {
+    return [];
+  }
+
+  const exitCode = Number(match[1]);
+  if (!Number.isInteger(exitCode)) {
+    return [];
+  }
+
+  const unsignedExitCode = exitCode >>> 0;
+  const crashName = windowsCrashCodes[unsignedExitCode];
+
+  return crashName ? [`exitCodeHex=${formatExitCodeHex(exitCode)}`, `nativeCrash=${crashName}`] : [];
+};
+
 const createHostError = (
   reason: string,
   hostBinary: string,
@@ -84,6 +108,7 @@ const createHostError = (
     `args="${args.join(' ')}"`,
     `mode="${metadata.mode}"`,
     `elapsedMs=${Math.max(0, Math.round(metadata.elapsedMs))}`,
+    ...getNativeCrashDetails(reason),
   ];
 
   if (stderr) {
@@ -213,6 +238,7 @@ const createReuseKey = (options: NativeOutputStartOptions): string => {
     outputMode: options.asio ? 'asio' : options.exclusive ? 'exclusive' : 'shared',
     deviceIndex: Number.isInteger(Number(options.deviceIndex)) ? Number(options.deviceIndex) : null,
     deviceName: options.deviceName ?? null,
+    sharedBackend: outputMode === 'shared' ? options.sharedBackend ?? 'auto' : null,
     sampleRate,
     channels: options.channels,
     asio: options.asio === true,
@@ -624,6 +650,10 @@ export class NativeOutputBridge extends EventEmitter {
 
     if (options.exclusive && !options.asio) {
       args.push('-exclusive');
+    }
+
+    if (!options.exclusive && !options.asio && options.sharedBackend && options.sharedBackend !== 'auto') {
+      args.push('-shared-backend', options.sharedBackend);
     }
 
     const volume = Number(options.volume ?? 1);

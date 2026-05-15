@@ -1528,6 +1528,40 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('getTracks sorts by file modified time', async () => {
+    const harness = createHarness();
+    const oldFile = writeAudioFile(harness.folder, 'Old.flac', new Date('2024-01-01T00:00:00.000Z'));
+    const newFile = writeAudioFile(harness.folder, 'New.flac', new Date('2024-03-01T00:00:00.000Z'));
+    harness.metadataService.overrides.set(oldFile, baseMetadata({ title: 'Old Song' }));
+    harness.metadataService.overrides.set(newFile, baseMetadata({ title: 'New Song' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const ascending = harness.service.getTracks({ pageSize: 10, sort: 'fileModifiedAsc' });
+    const descending = harness.service.getTracks({ pageSize: 10, sort: 'fileModifiedDesc' });
+
+    expect(ascending.items.map((track) => track.title)).toEqual(['Old Song', 'New Song']);
+    expect(descending.items.map((track) => track.title)).toEqual(['New Song', 'Old Song']);
+    harness.cleanup();
+  });
+
+  it('getAlbums sorts by the modified time of files inside each album', async () => {
+    const harness = createHarness();
+    const oldAlbumFile = writeAudioFile(harness.folder, 'Old Album.flac', new Date('2024-01-01T00:00:00.000Z'));
+    const newAlbumFile = writeAudioFile(harness.folder, 'New Album.flac', new Date('2024-03-01T00:00:00.000Z'));
+    harness.metadataService.overrides.set(oldAlbumFile, baseMetadata({ title: 'Old Track', album: 'Old Album' }));
+    harness.metadataService.overrides.set(newAlbumFile, baseMetadata({ title: 'New Track', album: 'New Album' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const ascending = harness.service.getAlbums({ pageSize: 10, sort: 'fileModifiedAsc' });
+    const descending = harness.service.getAlbums({ pageSize: 10, sort: 'fileModifiedDesc' });
+
+    expect(ascending.items.map((album) => album.title)).toEqual(['Old Album', 'New Album']);
+    expect(descending.items.map((album) => album.title)).toEqual(['New Album', 'Old Album']);
+    harness.cleanup();
+  });
+
   it('getTracks search matches multiple terms across metadata fields', async () => {
     const harness = createHarness();
     const match = writeAudioFile(harness.folder, 'Loose Match.flac');

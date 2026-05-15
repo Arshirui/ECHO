@@ -328,6 +328,16 @@ describe('library IPC', () => {
     expect(result).toEqual({ 'track-1': 1, 'track-2': 0 });
   });
 
+  it('accepts file modified sorting for songs and albums', async () => {
+    const service = installLibraryService();
+
+    await handlers[IpcChannels.LibraryGetTracks]!(null, { page: 1, pageSize: 50, sort: 'fileModifiedDesc', extra: true });
+    await handlers[IpcChannels.LibraryGetAlbums]!(null, { page: 1, pageSize: 50, sort: 'fileModifiedAsc', extra: true });
+
+    expect(service.getTracks).toHaveBeenCalledWith({ page: 1, pageSize: 50, sort: 'fileModifiedDesc' });
+    expect(service.getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 50, sort: 'fileModifiedAsc' });
+  });
+
   it('registers artist detail IPC handlers with normalized queries', async () => {
     const service = installLibraryService();
     service.getArtist.mockReturnValue({

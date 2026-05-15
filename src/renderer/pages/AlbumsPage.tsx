@@ -23,6 +23,8 @@ const albumSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> 
   { value: 'createdDesc', labelKey: 'library.sort.createdDesc' },
   { value: 'durationAsc', labelKey: 'library.sort.durationAsc' },
   { value: 'durationDesc', labelKey: 'library.sort.durationDesc' },
+  { value: 'fileModifiedAsc', labelKey: 'library.sort.fileModifiedAsc' },
+  { value: 'fileModifiedDesc', labelKey: 'library.sort.fileModifiedDesc' },
   { value: 'recent', labelKey: 'library.sort.recent' },
   { value: 'random', labelKey: 'library.sort.random' },
 ];

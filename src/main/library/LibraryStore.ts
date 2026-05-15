@@ -3504,6 +3504,10 @@ export class LibraryStore {
         return 'ORDER BY tracks.duration ASC, tracks.title COLLATE NOCASE';
       case 'durationDesc':
         return 'ORDER BY tracks.duration DESC, tracks.title COLLATE NOCASE';
+      case 'fileModifiedAsc':
+        return 'ORDER BY tracks.mtime_ms ASC, tracks.title COLLATE NOCASE';
+      case 'fileModifiedDesc':
+        return 'ORDER BY tracks.mtime_ms DESC, tracks.title COLLATE NOCASE';
       case 'qualityAsc':
         return 'ORDER BY COALESCE(tracks.bitrate, 0) ASC, tracks.size_bytes ASC, tracks.title COLLATE NOCASE';
       case 'qualityDesc':
@@ -3561,6 +3565,10 @@ export class LibraryStore {
         return 'ORDER BY tracks.duration ASC, tracks.title COLLATE NOCASE';
       case 'durationDesc':
         return 'ORDER BY tracks.duration DESC, tracks.title COLLATE NOCASE';
+      case 'fileModifiedAsc':
+        return 'ORDER BY tracks.mtime_ms ASC, tracks.title COLLATE NOCASE';
+      case 'fileModifiedDesc':
+        return 'ORDER BY tracks.mtime_ms DESC, tracks.title COLLATE NOCASE';
       case 'random':
         return 'ORDER BY RANDOM()';
       case 'default':
@@ -3584,6 +3592,22 @@ export class LibraryStore {
         return 'ORDER BY albums.duration ASC, albums.title COLLATE NOCASE';
       case 'durationDesc':
         return 'ORDER BY albums.duration DESC, albums.title COLLATE NOCASE';
+      case 'fileModifiedAsc':
+        return `ORDER BY (
+          SELECT MIN(tracks.mtime_ms)
+          FROM album_tracks
+          INNER JOIN tracks ON tracks.id = album_tracks.track_id
+          WHERE album_tracks.album_id = albums.id
+            AND tracks.missing = 0
+        ) ASC, albums.title COLLATE NOCASE`;
+      case 'fileModifiedDesc':
+        return `ORDER BY (
+          SELECT MAX(tracks.mtime_ms)
+          FROM album_tracks
+          INNER JOIN tracks ON tracks.id = album_tracks.track_id
+          WHERE album_tracks.album_id = albums.id
+            AND tracks.missing = 0
+        ) DESC, albums.title COLLATE NOCASE`;
       case 'random':
         return 'ORDER BY RANDOM()';
       case 'album':

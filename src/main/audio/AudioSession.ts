@@ -254,6 +254,11 @@ const createSafeSharedFallbackSettings = (settings: AudioOutputSettings): AudioO
   bufferSizeFrames: undefined,
 });
 
+const isNativeAccessViolationHostCrash = (error: Error): boolean =>
+  error.message.includes('nativeCrash=access_violation') ||
+  error.message.includes('exit_code_3221225477') ||
+  error.message.includes('exit_code_-1073741819');
+
 const numericReadyField = (ready: NativeBridgeReadyResult, field: string): number | null => {
   const value = ready.device[field];
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.round(value)) : null;
@@ -1985,6 +1990,88 @@ export class AudioSession extends EventEmitter {
     } catch (error) {
       const fallbackError = error instanceof Error ? error : new Error(String(error));
       this.logger(`[AudioSession] safe shared fallback failed: ${fallbackError.message}`);
+      bridge.stop();
+      if (this.bridge === bridge) {
+        this.bridge = null;
+        this.currentResidentOutputSampleRate = null;
+      }
+      const nativeCrash = isNativeAccessViolationHostCrash(cause)
+        ? cause
+        : isNativeAccessViolationHostCrash(fallbackError)
+          ? fallbackError
+          : null;
+
+      if (nativeCrash) {
+        return this.startDirectSoundSharedFallbackForProbe(probe, token, startSeconds, nativeCrash);
+      }
+
+      throw cause;
+    }
+  }
+
+  private async startDirectSoundSharedFallbackForProbe(
+    probe: AudioProbeResult,
+    token: number,
+    startSeconds: number,
+    cause: Error,
+  ): Promise<BridgeStartResult> {
+    if (!this.currentOutputSettings) {
+      throw new Error('audio output settings unavailable');
+    }
+
+    this.bridge?.stop();
+    this.bridge = null;
+    this.currentResidentOutputSampleRate = null;
+
+    const fallbackSettings = createSafeSharedFallbackSettings(this.currentOutputSettings);
+    const fallbackDevice = this.resolveDefaultSharedDevice();
+    this.assertCurrentRun(token);
+    this.currentOutputSettings = fallbackSettings;
+    this.currentDevice = fallbackDevice;
+    this.currentPlan = this.createSampleRatePlan(probe, fallbackSettings, fallbackDevice);
+    this.sharedStabilityTier = 'emergency';
+    this.addOutputWarning('shared_output_recovered_safe_mode');
+    this.addOutputWarning('shared_output_recovered_directsound_backend');
+    this.logger(`[AudioSession] shared output crashed before ready; trying DirectSound shared output: ${cause.message}`);
+    this.clock.reset(startSeconds, this.currentPlan.requestedOutputSampleRate);
+
+    const bridge = this.createBridge();
+    this.bridge = bridge;
+    this.attachBridgeEvents(bridge, token);
+
+    try {
+      const ready = await bridge.start(this.createNativeOutputStartOptions({
+        requestedOutputSampleRate: this.currentPlan.requestedOutputSampleRate,
+        sharedMixSampleRate: this.currentPlan.requestedOutputSampleRate,
+        channels: probe.channels,
+        asio: false,
+        exclusive: false,
+        sharedBackend: 'directsound',
+        latencyProfile: fallbackSettings.latencyProfile,
+        bufferSizeFrames: fallbackSettings.bufferSizeFrames ?? undefined,
+        volume: fallbackSettings.volume,
+        startSeconds,
+        playbackRate: fallbackSettings.playbackRate,
+        playbackSpeedMode: fallbackSettings.playbackSpeedMode,
+        durationSeconds: probe.durationSeconds,
+      }));
+
+      this.reportRecoverableAudioError(cause, 'safe-shared-fallback', {
+        recovered: true,
+        sharedBackend: 'directsound',
+        requestedOutputSampleRate: this.currentPlan.requestedOutputSampleRate,
+        channels: probe.channels,
+      });
+      return {
+        bridge,
+        plan: this.currentPlan,
+        ready,
+        hostReused: false,
+        hostRestartReason: 'directsound_shared_fallback',
+      };
+    } catch (error) {
+      const fallbackError = error instanceof Error ? error : new Error(String(error));
+      this.logger(`[AudioSession] DirectSound shared fallback failed: ${fallbackError.message}`);
       bridge.stop();
       if (this.bridge === bridge) {
         this.bridge = null;

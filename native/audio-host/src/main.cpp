@@ -148,6 +148,7 @@ struct Options
     int eqControlPort = 0;
     double volume = 1.0;
     juce::String deviceName;
+    juce::String sharedBackend = "auto";
 };
 
 enum class StdinFrameType : uint8_t
@@ -345,6 +346,12 @@ Options parseOptions(const std::vector<juce::String>& args)
         {
             options.volume = std::max(0.0, std::min(1.0, parseDouble(args[++i], options.volume)));
         }
+        else if (arg == "-shared-backend" && i + 1 < args.size())
+        {
+            const auto value = args[++i].toLowerCase();
+            if (value == "auto" || value == "windows" || value == "directsound")
+                options.sharedBackend = value;
+        }
     }
 
     return options;
@@ -365,6 +372,11 @@ bool isPreferredSharedType(const juce::String& typeName)
     return ! isExclusiveType(typeName)
         && (typeName.containsIgnoreCase("windows audio")
             || typeName.containsIgnoreCase("wasapi"));
+}
+
+bool isDirectSoundType(const juce::String& typeName)
+{
+    return typeName.containsIgnoreCase("directsound");
 }
 
 int sharedTypePriority(const juce::String& typeName)
@@ -398,6 +410,17 @@ bool shouldIncludeType(const juce::String& typeName, DeviceListMode mode)
     return ! exclusiveType;
 }
 
+bool shouldIncludeSharedBackendType(const juce::String& typeName, const juce::String& sharedBackend)
+{
+    if (sharedBackend == "windows")
+        return isPreferredSharedType(typeName);
+
+    if (sharedBackend == "directsound")
+        return ! isExclusiveType(typeName) && isDirectSoundType(typeName);
+
+    return true;
+}
+
 DeviceListMode getHostOutputMode(const Options& options)
 {
     if (options.asio)
@@ -416,6 +439,9 @@ std::string getBackendName(const Options& options, const juce::String& typeName)
 
     if (options.exclusive || isExclusiveType(typeName))
         return "wasapi-exclusive";
+
+    if (isDirectSoundType(typeName))
+        return "directsound-shared";
 
     return "wasapi-shared";
 }
@@ -771,7 +797,10 @@ void applyCoreAudioSharedSampleRates(std::vector<DeviceDescriptor>& devices)
 }
 #endif
 
-std::vector<DeviceDescriptor> enumerateDevices(DeviceListMode mode, bool dedupe = true)
+std::vector<DeviceDescriptor> enumerateDevices(
+    DeviceListMode mode,
+    bool dedupe = true,
+    const juce::String& sharedBackend = "auto")
 {
     juce::OwnedArray<juce::AudioIODeviceType> types;
     createDeviceTypes(types);
@@ -784,6 +813,9 @@ std::vector<DeviceDescriptor> enumerateDevices(DeviceListMode mode, bool dedupe 
             continue;
 
         if (! shouldIncludeType(type->getTypeName(), mode))
+            continue;
+
+        if (mode == DeviceListMode::Shared && ! shouldIncludeSharedBackendType(type->getTypeName(), sharedBackend))
             continue;
 
         if (dedupe && mode == DeviceListMode::Shared && ! isPreferredSharedType(type->getTypeName()))
@@ -799,8 +831,13 @@ std::vector<DeviceDescriptor> enumerateDevices(DeviceListMode mode, bool dedupe 
             if (type == nullptr)
                 continue;
 
-            if (shouldIncludeType(type->getTypeName(), mode))
-                candidateTypes.push_back(type);
+            if (! shouldIncludeType(type->getTypeName(), mode))
+                continue;
+
+            if (mode == DeviceListMode::Shared && ! shouldIncludeSharedBackendType(type->getTypeName(), sharedBackend))
+                continue;
+
+            candidateTypes.push_back(type);
         }
     }
 
@@ -890,7 +927,10 @@ bool isLooseDeviceNameMatch(const juce::String& left, const juce::String& right)
 
 DeviceDescriptor selectDevice(const Options& options)
 {
-    const auto devices = enumerateDevices(options.asio ? DeviceListMode::Asio : DeviceListMode::Shared);
+    const auto devices = enumerateDevices(
+        options.asio ? DeviceListMode::Asio : DeviceListMode::Shared,
+        true,
+        options.sharedBackend);
 
     if (devices.empty())
         throw std::runtime_error("no output devices available");
@@ -949,7 +989,7 @@ std::vector<DeviceDescriptor> buildOpenCandidates(const Options& options, const 
     if (shouldIncludeType(selected.typeName, outputMode))
         addCandidate(selected);
 
-    const auto allDevices = enumerateDevices(outputMode, false);
+    const auto allDevices = enumerateDevices(outputMode, false, options.sharedBackend);
 
     for (const auto& device : allDevices)
     {
@@ -1585,6 +1625,7 @@ std::unique_ptr<juce::AudioIODevice> openDevice(
     int& actualBufferFrames)
 {
     const auto createStarted = std::chrono::steady_clock::now();
+    logLine("createDevice starting for " + descriptor.name.toStdString());
     std::unique_ptr<juce::AudioIODevice> device(type.createDevice(descriptor.name, {}));
     logLine(
         "createDevice completed in " + std::to_string(elapsedMs(createStarted))
@@ -1608,6 +1649,10 @@ std::unique_ptr<juce::AudioIODevice> openDevice(
         for (const auto rate : attempts)
         {
             const auto openStarted = std::chrono::steady_clock::now();
+            logLine(
+                "device->open starting at " + std::to_string(rate)
+                + " Hz, " + std::to_string(channelCount)
+                + " ch, buffer=" + std::to_string(bufferSize));
             lastError = device->open({}, outputChannels, static_cast<double>(rate), bufferSize);
             logLine(
                 "device->open(" + std::to_string(rate)
@@ -1731,6 +1776,9 @@ int runHost(const Options& options)
     if (options.asio)
         logLine("ASIO requested; shared fallback is disabled");
 
+    if (! options.exclusive && ! options.asio)
+        logLine("Shared backend preference: " + options.sharedBackend.toStdString());
+
     const auto descriptor = selectDevice(options);
     logLine("Using device index " + std::to_string(descriptor.index) + ": " + descriptor.name.toStdString());
 
@@ -1783,6 +1831,7 @@ int runHost(const Options& options)
     else
         reader = std::thread(stdinReader, std::ref(source), options.channels);
 
+    logLine("ready event writing");
     writeJsonLine(
         std::string("{\"ready\":true,\"sampleRate\":") + std::to_string(actualSampleRate)
         + ",\"hardwareSampleRate\":" + std::to_string(actualSampleRate)
@@ -1813,7 +1862,9 @@ int runHost(const Options& options)
             logLine("Initial PCM prebuffer before device start: " + std::to_string(prebufferedFrames) + " frames");
     }
 
+    logLine("device->start starting");
     device->start(&player);
+    logLine("device->start completed");
     uint64_t lastReported = std::numeric_limits<uint64_t>::max();
     bool endedReported = false;
 

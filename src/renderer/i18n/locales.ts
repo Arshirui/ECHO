@@ -117,6 +117,8 @@ export type TranslationKey =
   | 'library.sort.default'
   | 'library.sort.durationAsc'
   | 'library.sort.durationDesc'
+  | 'library.sort.fileModifiedAsc'
+  | 'library.sort.fileModifiedDesc'
   | 'library.sort.random'
   | 'library.sort.recent'
   | 'folders.action.addScan'
@@ -800,6 +802,8 @@ const zhCN: TranslationMap = {
   'library.sort.default': '默认',
   'library.sort.durationAsc': '时长最短',
   'library.sort.durationDesc': '时长最长',
+  'library.sort.fileModifiedAsc': '文件修改最早',
+  'library.sort.fileModifiedDesc': '文件修改最新',
   'library.sort.random': '随机',
   'library.sort.recent': '最近',
   'folders.action.addScan': '添加并扫描',
@@ -1403,6 +1407,8 @@ const zhTW: TranslationMap = {
   'library.sort.default': '預設',
   'library.sort.durationAsc': '時長最短',
   'library.sort.durationDesc': '時長最長',
+  'library.sort.fileModifiedAsc': '檔案修改最早',
+  'library.sort.fileModifiedDesc': '檔案修改最新',
   'library.sort.random': '隨機',
   'library.sort.recent': '最近',
   'audioDrawer.action.close': '關閉音訊設定',
@@ -1846,6 +1852,8 @@ const jaJP: TranslationMap = {
   'library.sort.default': 'デフォルト',
   'library.sort.durationAsc': '短い順',
   'library.sort.durationDesc': '長い順',
+  'library.sort.fileModifiedAsc': 'ファイル更新が古い順',
+  'library.sort.fileModifiedDesc': 'ファイル更新が新しい順',
   'library.sort.random': 'ランダム',
   'library.sort.recent': '最近',
   'app.navigation.main': 'メインナビゲーション',
@@ -2373,6 +2381,8 @@ const enUS: TranslationMap = {
   'library.sort.default': 'Default',
   'library.sort.durationAsc': 'Duration Shortest',
   'library.sort.durationDesc': 'Duration Longest',
+  'library.sort.fileModifiedAsc': 'File Modified Oldest',
+  'library.sort.fileModifiedDesc': 'File Modified Newest',
   'library.sort.random': 'Random',
   'library.sort.recent': 'Recent',
   'app.navigation.main': 'Main navigation',

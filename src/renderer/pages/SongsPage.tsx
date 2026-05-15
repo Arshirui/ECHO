@@ -28,6 +28,8 @@ const sortOptions: Array<{ value: LibrarySort; label: string }> = [
   { value: 'titleDesc', label: '歌曲名 (Z-A)' },
   { value: 'durationAsc', label: '音乐时间 (短到长)' },
   { value: 'durationDesc', label: '音乐时间 (长到短)' },
+  { value: 'fileModifiedAsc', label: '文件修改时间 (旧到新)' },
+  { value: 'fileModifiedDesc', label: '文件修改时间 (新到旧)' },
   { value: 'qualityAsc', label: '歌曲质量/大小 (小到大)' },
   { value: 'qualityDesc', label: '歌曲质量/大小 (大到小)' },
   { value: 'frequent', label: '根据常听歌曲排序' },

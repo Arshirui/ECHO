@@ -159,8 +159,20 @@ class FakeBridge extends EventEmitter {
       device: {
         ready: true,
         sampleRate: actualDeviceSampleRate,
-        backend: options.asio ? 'asio' : options.exclusive ? 'wasapi-exclusive' : 'wasapi-shared',
-        deviceType: options.asio ? 'ASIO' : options.exclusive ? 'Windows Audio (Exclusive Mode)' : 'Windows Audio (Shared Mode)',
+        backend: options.asio
+          ? 'asio'
+          : options.exclusive
+            ? 'wasapi-exclusive'
+            : options.sharedBackend === 'directsound'
+              ? 'directsound-shared'
+              : 'wasapi-shared',
+        deviceType: options.asio
+          ? 'ASIO'
+          : options.exclusive
+            ? 'Windows Audio (Exclusive Mode)'
+            : options.sharedBackend === 'directsound'
+              ? 'DirectSound'
+              : 'Windows Audio (Shared Mode)',
         deviceName: options.deviceName ?? 'Default output',
         deviceBufferFrames: requestedBufferFrames,
         nativeActualBufferFrames: requestedBufferFrames,
@@ -204,6 +216,7 @@ class FakeBridge extends EventEmitter {
       outputMode,
       deviceIndex: Number.isInteger(Number(options.deviceIndex)) ? Number(options.deviceIndex) : null,
       deviceName: options.deviceName ?? null,
+      sharedBackend: outputMode === 'shared' ? options.sharedBackend ?? 'auto' : null,
       sampleRate,
       channels: options.channels,
       asio: options.asio === true,
@@ -215,6 +228,7 @@ class FakeBridge extends EventEmitter {
       outputMode: startOutputMode,
       deviceIndex: Number.isInteger(Number(this.startOptions?.deviceIndex)) ? Number(this.startOptions?.deviceIndex) : null,
       deviceName: this.startOptions?.deviceName ?? null,
+      sharedBackend: startOutputMode === 'shared' ? this.startOptions?.sharedBackend ?? 'auto' : null,
       sampleRate: startSampleRate,
       channels: this.startOptions?.channels,
       asio: this.startOptions?.asio === true,
@@ -951,6 +965,47 @@ describe('Audio Core sample-rate regression guard', () => {
     }));
   });
 
+  it('recovers a pre-ready shared access violation with DirectSound shared output', async () => {
+    const crashMessage =
+      'echo-audio-host exit_code_3221225477; host="echo-audio-host.exe"; args="-sr 48000 -ch 2"; mode="shared"; elapsedMs=778; exitCodeHex=0xC0000005; nativeCrash=access_violation; stderrTail="[echo-audio-host] createDevice completed"';
+    const defaultBridge = new ConfigurableStartupFailingBridge(crashMessage);
+    const safeBridge = new ConfigurableStartupFailingBridge(crashMessage);
+    const directSoundBridge = new FakeBridge(48000);
+    const bridges = [defaultBridge, safeBridge, directSoundBridge];
+    const reportAudioError = vi.fn();
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([['song.flac', probe('song.flac', 44100)]])),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridges.shift() as unknown as FakeBridge,
+      reportAudioError,
+      logger: noopLogger,
+    });
+
+    const status = await session.playLocalFile({
+      filePath: 'song.flac',
+      output: { outputMode: 'shared' },
+    });
+
+    expect(defaultBridge.stop).toHaveBeenCalledTimes(1);
+    expect(safeBridge.stop).toHaveBeenCalledTimes(1);
+    expect(directSoundBridge.startOptions).toMatchObject({
+      sharedBackend: 'directsound',
+      bufferSizeFrames: 8192,
+      fifoCapacityMs: 1500,
+      startupPrebufferMs: 250,
+    });
+    expect(status.state).toBe('playing');
+    expect(status.outputBackend).toBe('directsound-shared');
+    expect(status.outputDeviceType).toBe('DirectSound');
+    expect(status.warnings).toContain('shared_output_recovered_safe_mode');
+    expect(status.warnings).toContain('shared_output_recovered_directsound_backend');
+    expect(reportAudioError).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('nativeCrash=access_violation'),
+      phase: 'safe-shared-fallback',
+      severity: 'recoverable',
+    }));
+  });
+
   it('uses library probe hints and avoids device enumeration on the playback hot path', async () => {
     const decoder = new FakeDecoder(new Map());
     const bridges: FakeBridge[] = [];
@@ -1049,6 +1104,39 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.outputMode).toBe('shared');
     expect(status.outputBackend).toBe('wasapi-shared');
     expect(status.warnings).toContain('exclusive_output_fell_back_to_shared');
+    expect(status.error).toBeNull();
+  });
+
+  it('recovers exclusive fallback shared access violations with DirectSound shared output', async () => {
+    const decoder = new FakeDecoder(new Map([['song.flac', probe('song.flac', 44100)]]));
+    const exclusiveBridge = new ConfigurableStartupFailingBridge('WASAPI exclusive open failed: AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED');
+    const sharedCrashMessage =
+      'echo-audio-host exit_code_3221225477; host="echo-audio-host.exe"; args="-sr 48000 -ch 2"; mode="shared"; elapsedMs=778; exitCodeHex=0xC0000005; nativeCrash=access_violation';
+    const sharedBridge = new ConfigurableStartupFailingBridge(sharedCrashMessage);
+    const safeBridge = new ConfigurableStartupFailingBridge(sharedCrashMessage);
+    const directSoundBridge = new FakeBridge(48000);
+    const bridges = [exclusiveBridge, sharedBridge, safeBridge, directSoundBridge];
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridges.shift() as unknown as FakeBridge,
+      logger: noopLogger,
+    });
+
+    const status = await session.playLocalFile({
+      filePath: 'song.flac',
+      output: { outputMode: 'exclusive' },
+    });
+
+    expect(exclusiveBridge.startOptions).toMatchObject({ exclusive: true });
+    expect(sharedBridge.startOptions).toMatchObject({ exclusive: false });
+    expect(safeBridge.startOptions).toMatchObject({ exclusive: false });
+    expect(directSoundBridge.startOptions).toMatchObject({ exclusive: false, sharedBackend: 'directsound' });
+    expect(status.state).toBe('playing');
+    expect(status.outputMode).toBe('shared');
+    expect(status.outputBackend).toBe('directsound-shared');
+    expect(status.warnings).toContain('exclusive_output_fell_back_to_shared');
+    expect(status.warnings).toContain('shared_output_recovered_directsound_backend');
     expect(status.error).toBeNull();
   });
 
@@ -2538,6 +2626,86 @@ describe('DecoderPipeline ffmpeg resolution', () => {
 });
 
 describe('NativeOutputBridge diagnostics', () => {
+  it('passes DirectSound shared backend to the host and includes it in the reuse key', async () => {
+    let spawnedArgs: string[] = [];
+    const fakeSpawn = (_file: string, args: string[]): ChildProcessWithoutNullStreams => {
+      spawnedArgs = args;
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stdout.write('{"ready":true,"sampleRate":48000,"backend":"directsound-shared","deviceType":"DirectSound","deviceName":"Default output"}\n');
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+
+    await bridge.start({
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+      channels: 2,
+      sharedBackend: 'directsound',
+    });
+
+    expect(spawnedArgs).toEqual(expect.arrayContaining(['-shared-backend', 'directsound']));
+    expect(bridge.canReuseFor({
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+      channels: 2,
+      sharedBackend: 'directsound',
+    })).toBe(true);
+    expect(bridge.canReuseFor({
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+      channels: 2,
+    })).toBe(false);
+  });
+
+  it('formats Windows access violations with hex crash metadata', async () => {
+    const fakeSpawn = (): ChildProcessWithoutNullStreams => {
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stderr.write('[echo-audio-host] createDevice completed\n');
+        child.emit('exit', 3221225477, null);
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+
+    await expect(
+      bridge.start({
+        requestedOutputSampleRate: 48000,
+        channels: 2,
+      }),
+    ).rejects.toThrow('exitCodeHex=0xC0000005; nativeCrash=access_violation');
+  });
+
   it('includes elapsed time, output mode, and stderr tail when ready times out', async () => {
     const fakeSpawn = (): ChildProcessWithoutNullStreams => {
       const stdin = new PassThrough();
