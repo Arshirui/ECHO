@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { parsePlainLyrics, parseSyncedLyrics } from '../../lyrics/lyricsParser';
+import { normalizeSyncedLyricAlternates, parsePlainLyrics, parseSyncedLyrics } from '../../lyrics/lyricsParser';
 
 export const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -110,7 +110,7 @@ const mergeSecondaryLyrics = <Line extends { timeMs: number | null; text: string
   if (syncedSecondary.length > 0) {
     const usedIndexes = new Set<number>();
     let changed = false;
-    const nextLines = lines.map((line, index) => {
+    const nextLines = lines.map((line) => {
       const lineTimeMs = typeof line.timeMs === 'number' ? line.timeMs : null;
       let secondaryText: string | null = null;
 
@@ -129,13 +129,12 @@ const mergeSecondaryLyrics = <Line extends { timeMs: number | null; text: string
           }
         }
 
-        if (closestIndex >= 0 && closestDelta <= 1500) {
+        if (closestIndex >= 0 && closestDelta <= 350) {
           usedIndexes.add(closestIndex);
           secondaryText = syncedSecondary[closestIndex].text;
         }
       }
 
-      secondaryText = secondaryText ?? (syncedSecondary.length === lines.length ? syncedSecondary[index]?.text : null) ?? null;
       if (!secondaryText) {
         return line;
       }
@@ -172,7 +171,14 @@ export const linesFromLyrics = (
   translationLyrics: string | null = null,
   romanizationLyrics: string | null = null,
 ) => {
-  const syncedLines = syncedLyrics ? parseSyncedLyrics(syncedLyrics).map((line) => ({ timeMs: line.timeMs, text: line.text })) : [];
+  const syncedLines = syncedLyrics
+    ? normalizeSyncedLyricAlternates(parseSyncedLyrics(syncedLyrics)).map((line) => ({
+        timeMs: line.timeMs,
+        text: line.text,
+        ...(line.translation ? { translation: line.translation } : {}),
+        ...(line.romanization ? { romanization: line.romanization } : {}),
+      }))
+    : [];
   const primaryLines: Array<{ timeMs: number | null; text: string }> = syncedLines.length > 0
     ? syncedLines
     : (plainLyrics ?? '')
