@@ -53,6 +53,8 @@ namespace
 {
 void logLine(const std::string& message);
 
+std::mutex stdoutMutex;
+
 #if JUCE_WINDOWS
 void logWindowsError(const std::string& action)
 {
@@ -205,6 +207,7 @@ long long elapsedMs(std::chrono::steady_clock::time_point started)
 
 void writeJsonLine(const std::string& json)
 {
+    const std::lock_guard<std::mutex> lock(stdoutMutex);
     std::cout << json << std::endl;
 }
 
@@ -2110,6 +2113,45 @@ uint32_t legacyWasapiRenderCallback(void* userData, float* output, uint32_t fram
     return source != nullptr ? source->renderInterleaved(output, frameCount, channels) : 0;
 }
 
+void writeWasapiNotificationEvent(const wasapi_host_notification* notification)
+{
+    if (notification == nullptr || notification->event == nullptr)
+        return;
+
+    std::string json = "{\"event\":\"" + jsonEscape(juce::String::fromUTF8(notification->event)) + "\"";
+
+    if (notification->deviceId != nullptr && notification->deviceId[0] != L'\0')
+        json += ",\"deviceId\":\"" + jsonEscape(juce::String(notification->deviceId)) + "\"";
+
+    if (notification->reason != nullptr && notification->reason[0] != '\0')
+        json += ",\"reason\":\"" + jsonEscape(juce::String::fromUTF8(notification->reason)) + "\"";
+
+    json += ",\"code\":" + std::to_string(notification->code)
+        + ",\"currentDevice\":" + std::string(notification->currentDevice ? "true" : "false")
+        + ",\"followsDefaultDevice\":" + std::string(notification->followsDefaultDevice ? "true" : "false")
+        + "}";
+
+    writeJsonLine(json);
+}
+
+void wasapiNotificationCallback(void* userData, const wasapi_host_notification* notification)
+{
+    (void)userData;
+
+    try
+    {
+        writeWasapiNotificationEvent(notification);
+    }
+    catch (const std::exception& error)
+    {
+        logLine(std::string("WASAPI notification write failed: ") + error.what());
+    }
+    catch (...)
+    {
+        logLine("WASAPI notification write failed");
+    }
+}
+
 void cleanupLegacyWasapiAndAck(
     PcmRingAudioSource& source,
     wasapi_exclusive_runtime*& runtime,
@@ -2348,14 +2390,21 @@ int runLegacyWasapiExclusiveHost(const Options& options)
     wasapi_exclusive_runtime* runtime = nullptr;
     wasapi_exclusive_ready_info readyInfo {};
     char error[512] {};
+    const bool useDefaultWasapiDevice = options.deviceName.isEmpty() && options.deviceIndex < 0;
+    const char* wasapiDeviceName = useDefaultWasapiDevice ? nullptr : descriptor.name.toRawUTF8();
+    const int wasapiDeviceIndex = (! useDefaultWasapiDevice && options.deviceIndex >= 0 && descriptor.index == options.deviceIndex)
+        ? descriptor.index
+        : -1;
     const auto startResult = wasapi_exclusive_start(
-        descriptor.name.toRawUTF8(),
-        -1,
+        wasapiDeviceName,
+        wasapiDeviceIndex,
         static_cast<uint32_t>(options.sampleRate),
         static_cast<uint32_t>(options.channels),
         static_cast<uint32_t>(requestedDeviceBufferFrames),
         legacyWasapiRenderCallback,
         &source,
+        wasapiNotificationCallback,
+        nullptr,
         &runtime,
         &readyInfo,
         error,
@@ -2503,14 +2552,21 @@ int runLegacyWasapiSharedHost(const Options& options)
     wasapi_shared_runtime* runtime = nullptr;
     wasapi_shared_ready_info readyInfo {};
     char error[512] {};
+    const bool useDefaultWasapiDevice = options.deviceName.isEmpty() && options.deviceIndex < 0;
+    const char* wasapiDeviceName = useDefaultWasapiDevice ? nullptr : descriptor.name.toRawUTF8();
+    const int wasapiDeviceIndex = (! useDefaultWasapiDevice && options.deviceIndex >= 0 && descriptor.index == options.deviceIndex)
+        ? descriptor.index
+        : -1;
     const auto startResult = wasapi_shared_start(
-        descriptor.name.toRawUTF8(),
-        -1,
+        wasapiDeviceName,
+        wasapiDeviceIndex,
         static_cast<uint32_t>(plannedSampleRate),
         static_cast<uint32_t>(options.channels),
         static_cast<uint32_t>(requestedDeviceBufferFrames),
         legacyWasapiRenderCallback,
         &source,
+        wasapiNotificationCallback,
+        nullptr,
         &runtime,
         &readyInfo,
         error,

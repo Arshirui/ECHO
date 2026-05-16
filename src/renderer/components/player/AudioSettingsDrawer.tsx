@@ -73,6 +73,7 @@ type AudioDrawerCopy = {
 const hiddenDeviceStorageKey = 'echo-next.hidden-audio-devices';
 const drawerExitAnimationMs = 320;
 const outputApplyTimeoutMs = 20_000;
+const lowLatencyMaxBufferSizeFrames = 2048;
 const latencyProfileOptions: Array<{ id: AudioLatencyProfile; label: string; detail: string }> = [
   { id: 'lowLatency', label: 'Low latency', detail: '~8 ms / adaptive' },
   { id: 'balanced', label: 'Balanced', detail: '2048 frames' },
@@ -89,6 +90,24 @@ const asioBufferOptions: Array<{ value: number | null; label: string; detail: st
 
 const supportsAdvancedNativeOutput = (): boolean =>
   typeof window !== 'undefined' && isAdvancedNativeOutputPlatform(detectRendererPlatform(window.navigator));
+
+const sanitizeOutputBufferSizeFrames = (
+  outputMode: AudioOutputMode,
+  latencyProfile: AudioLatencyProfile,
+  bufferSizeFrames: number | null | undefined,
+): number | undefined => {
+  const numeric = Number(bufferSizeFrames);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return undefined;
+  }
+
+  const rounded = Math.round(numeric);
+  if (latencyProfile !== 'lowLatency' || rounded <= lowLatencyMaxBufferSizeFrames) {
+    return rounded;
+  }
+
+  return outputMode === 'shared' ? undefined : lowLatencyMaxBufferSizeFrames;
+};
 
 const getDeviceStorageKey = (device: AudioDeviceInfo): string => `${device.outputMode}:${device.id || device.index}:${device.name}`;
 
@@ -746,19 +765,25 @@ export const AudioSettingsDrawer = ({
       const nextSharedBackend = nextOutputMode === 'shared'
         ? normalizeSharedBackend(settings.sharedBackend ?? remembered.sharedBackend ?? sharedBackend)
         : 'auto';
+      const nextLatencyProfile = resolveSupportedLatencyProfile(
+        nextOutputMode,
+        settings.latencyProfile ?? remembered.latencyProfile ?? status?.latencyProfile ?? 'lowLatency',
+      );
+      const nextBufferSizeFrames = sanitizeOutputBufferSizeFrames(
+        nextOutputMode,
+        nextLatencyProfile,
+        hasBufferSize
+          ? settings.bufferSizeFrames ?? undefined
+          : remembered.bufferSizeFrames,
+      );
       writeRememberedAudioOutput({
         enabled,
         outputMode: nextOutputMode,
         sharedBackend: nextSharedBackend,
-        latencyProfile: resolveSupportedLatencyProfile(
-          nextOutputMode,
-          settings.latencyProfile ?? remembered.latencyProfile ?? status?.latencyProfile ?? 'lowLatency',
-        ),
+        latencyProfile: nextLatencyProfile,
         deviceIndex: isDeviceSelection ? settings.deviceIndex : remembered.deviceIndex,
         deviceName: isDeviceSelection ? settings.deviceName : remembered.deviceName,
-        bufferSizeFrames: hasBufferSize
-          ? settings.bufferSizeFrames ?? undefined
-          : remembered.bufferSizeFrames,
+        bufferSizeFrames: nextBufferSizeFrames,
       });
     },
     [outputMode, rememberOutput, sharedBackend, status?.latencyProfile, status?.outputMode],
@@ -813,6 +838,36 @@ export const AudioSettingsDrawer = ({
       }
     },
     [asioUnavailableFallbackEnabled, copy.desktopBridgeUnavailable, onStatusChange, outputMode, persistOutput, rememberOutput, sharedBackend, status?.outputMode],
+  );
+
+  const applyLatencyProfile = useCallback(
+    (requestedLatencyProfile: AudioLatencyProfile): void => {
+      const nextOutputMode = status?.outputMode ?? outputMode ?? 'shared';
+      const latencyProfile = resolveSupportedLatencyProfile(nextOutputMode, requestedLatencyProfile);
+      const remembered = readRememberedAudioOutput();
+      const rememberedBufferSizeFrames = remembered.bufferSizeFrames ?? null;
+      const currentBufferSizeFrames =
+        nextOutputMode === 'asio'
+          ? currentAsioBufferFrames ?? rememberedBufferSizeFrames
+          : rememberedBufferSizeFrames;
+      const settings: AudioOutputSettings = { latencyProfile };
+      const sanitizedBufferSizeFrames = sanitizeOutputBufferSizeFrames(
+        nextOutputMode,
+        latencyProfile,
+        currentBufferSizeFrames,
+      );
+
+      if (
+        latencyProfile === 'lowLatency' &&
+        currentBufferSizeFrames !== null &&
+        sanitizedBufferSizeFrames !== currentBufferSizeFrames
+      ) {
+        settings.bufferSizeFrames = sanitizedBufferSizeFrames ?? null;
+      }
+
+      void applyOutput(settings);
+    },
+    [applyOutput, currentAsioBufferFrames, outputMode, status?.outputMode],
   );
 
   const applyDevice = (mode: AudioOutputMode, device: AudioDeviceInfo | null): void => {
@@ -1240,7 +1295,7 @@ export const AudioSettingsDrawer = ({
                       type="button"
                       key={option.id}
                       disabled={isBusy}
-                      onClick={() => void applyOutput({ latencyProfile: option.id })}
+                      onClick={() => applyLatencyProfile(option.id)}
                     >
                       <Gauge size={15} />
                       <span>

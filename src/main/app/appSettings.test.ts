@@ -313,6 +313,41 @@ describe('app settings normalization', () => {
     ).toBe('auto');
   });
 
+  it('sanitizes incompatible remembered low-latency buffer sizes', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(
+      normalizeSettings({
+        rememberedAudioOutput: {
+          enabled: true,
+          outputMode: 'shared',
+          latencyProfile: 'lowLatency',
+          bufferSizeFrames: 8192,
+        },
+      }).rememberedAudioOutput,
+    ).not.toHaveProperty('bufferSizeFrames');
+    expect(
+      normalizeSettings({
+        rememberedAudioOutput: {
+          enabled: true,
+          outputMode: 'asio',
+          latencyProfile: 'lowLatency',
+          bufferSizeFrames: 8192,
+        },
+      }).rememberedAudioOutput?.bufferSizeFrames,
+    ).toBe(2048);
+    expect(
+      normalizeSettings({
+        rememberedAudioOutput: {
+          enabled: true,
+          outputMode: 'shared',
+          latencyProfile: 'stable',
+          bufferSizeFrames: 8192,
+        },
+      }).rememberedAudioOutput?.bufferSizeFrames,
+    ).toBe(8192);
+  });
+
   it('normalizes JUCE output as an opt-in audio setting', async () => {
     const { normalizeSettings } = await import('./appSettings');
 

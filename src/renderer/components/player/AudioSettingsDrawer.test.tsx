@@ -341,6 +341,35 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     });
   });
 
+  it('clears incompatible remembered buffer size when switching to shared low latency', async () => {
+    window.localStorage.setItem(
+      'echo-next.audio-output-memory',
+      JSON.stringify({
+        enabled: true,
+        outputMode: 'shared',
+        sharedBackend: 'auto',
+        latencyProfile: 'stable',
+        bufferSizeFrames: 8192,
+      }),
+    );
+    const setOutput = vi.fn().mockResolvedValue({ ...baseStatus, latencyProfile: 'lowLatency' });
+    renderDrawer({ ...baseStatus, latencyProfile: 'stable' }, setOutput);
+    openBufferControls();
+
+    fireEvent.click(screen.getByRole('button', { name: /Low latency/ }));
+
+    await waitFor(() => expect(setOutput).toHaveBeenCalledWith({
+      latencyProfile: 'lowLatency',
+      bufferSizeFrames: null,
+    }));
+    expect(JSON.parse(window.localStorage.getItem('echo-next.audio-output-memory') ?? '{}')).toMatchObject({
+      enabled: true,
+      outputMode: 'shared',
+      latencyProfile: 'lowLatency',
+    });
+    expect(JSON.parse(window.localStorage.getItem('echo-next.audio-output-memory') ?? '{}')).not.toHaveProperty('bufferSizeFrames');
+  });
+
   it('hides Windows-only output controls on Linux', async () => {
     setNavigatorUserAgent('Mozilla/5.0 (X11; Linux x86_64)');
     renderDrawer(baseStatus);

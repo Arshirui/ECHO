@@ -40,6 +40,8 @@ int wasapi_shared_start(
     uint32_t requestedBufferFrames,
     wasapi_render_callback callback,
     void* userData,
+    wasapi_host_notification_callback notificationCallback,
+    void* notificationUserData,
     wasapi_shared_runtime** outRuntime,
     wasapi_shared_ready_info* outInfo,
     char* error,

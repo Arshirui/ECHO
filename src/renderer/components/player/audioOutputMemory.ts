@@ -3,6 +3,7 @@ import type { RememberedAudioOutput } from '../../../shared/types/appSettings';
 import { getAppBridge } from '../../utils/echoBridge';
 
 const storageKey = 'echo-next.audio-output-memory';
+const lowLatencyMaxBufferSizeFrames = 2048;
 
 export const resolveSupportedLatencyProfile = (
   _outputMode: AudioOutputMode,
@@ -13,6 +14,24 @@ export const resolveSupportedLatencyProfile = (
 
 export const normalizeSharedBackend = (value: unknown): AudioSharedBackend =>
   value === 'windows' || value === 'directsound' ? value : 'auto';
+
+const sanitizeBufferSizeFrames = (
+  outputMode: AudioOutputMode,
+  latencyProfile: AudioLatencyProfile,
+  bufferSizeFrames: unknown,
+): number | undefined => {
+  const numeric = Number(bufferSizeFrames);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return undefined;
+  }
+
+  const rounded = Math.round(numeric);
+  if (latencyProfile !== 'lowLatency' || rounded <= lowLatencyMaxBufferSizeFrames) {
+    return rounded;
+  }
+
+  return outputMode === 'shared' ? undefined : lowLatencyMaxBufferSizeFrames;
+};
 
 export const readRememberedAudioOutput = (): RememberedAudioOutput => {
   try {
@@ -29,7 +48,6 @@ export const readRememberedAudioOutput = (): RememberedAudioOutput => {
       parsed.latencyProfile === 'stable' || parsed.latencyProfile === 'balanced' || parsed.latencyProfile === 'lowLatency'
         ? parsed.latencyProfile
         : 'balanced';
-    const bufferSizeFrames = Number(parsed.bufferSizeFrames);
     const remembered: RememberedAudioOutput = {
       enabled: parsed.enabled === true,
       outputMode,
@@ -39,8 +57,9 @@ export const readRememberedAudioOutput = (): RememberedAudioOutput => {
       deviceName: typeof parsed.deviceName === 'string' && parsed.deviceName.trim() ? parsed.deviceName : undefined,
     };
 
-    if (Number.isFinite(bufferSizeFrames) && bufferSizeFrames > 0) {
-      remembered.bufferSizeFrames = Math.round(bufferSizeFrames);
+    const bufferSizeFrames = sanitizeBufferSizeFrames(outputMode, latencyProfile, parsed.bufferSizeFrames);
+    if (bufferSizeFrames !== undefined) {
+      remembered.bufferSizeFrames = bufferSizeFrames;
     }
 
     return remembered;
@@ -50,8 +69,18 @@ export const readRememberedAudioOutput = (): RememberedAudioOutput => {
 };
 
 export const writeRememberedAudioOutput = (settings: RememberedAudioOutput): void => {
-  window.localStorage.setItem(storageKey, JSON.stringify(settings));
-  void getAppBridge()?.setSettings({ rememberedAudioOutput: settings }).catch(() => undefined);
+  const latencyProfile = settings.latencyProfile ?? 'balanced';
+  const sanitized = {
+    ...settings,
+    latencyProfile,
+    bufferSizeFrames: sanitizeBufferSizeFrames(settings.outputMode, latencyProfile, settings.bufferSizeFrames),
+  };
+  if (sanitized.bufferSizeFrames === undefined) {
+    delete sanitized.bufferSizeFrames;
+  }
+
+  window.localStorage.setItem(storageKey, JSON.stringify(sanitized));
+  void getAppBridge()?.setSettings({ rememberedAudioOutput: sanitized }).catch(() => undefined);
 };
 
 export const loadPersistedRememberedAudioOutput = async (): Promise<RememberedAudioOutput> => {
@@ -63,9 +92,26 @@ export const loadPersistedRememberedAudioOutput = async (): Promise<RememberedAu
   }
 
   const settings = await appBridge.getSettings();
-  const remembered = (settings.appMemoryVersion ?? 0) < 1 && localOutput.enabled
+  const rawRemembered = (settings.appMemoryVersion ?? 0) < 1 && localOutput.enabled
     ? localOutput
     : (settings.rememberedAudioOutput ?? { enabled: false, outputMode: 'shared', sharedBackend: 'auto', latencyProfile: 'balanced' });
+  const outputMode = rawRemembered.outputMode === 'exclusive' || rawRemembered.outputMode === 'asio'
+    ? rawRemembered.outputMode
+    : 'shared';
+  const latencyProfile =
+    rawRemembered.latencyProfile === 'stable' || rawRemembered.latencyProfile === 'balanced' || rawRemembered.latencyProfile === 'lowLatency'
+      ? rawRemembered.latencyProfile
+      : 'balanced';
+  const remembered: RememberedAudioOutput = {
+    ...rawRemembered,
+    outputMode,
+    sharedBackend: normalizeSharedBackend(rawRemembered.sharedBackend),
+    latencyProfile: resolveSupportedLatencyProfile(outputMode, latencyProfile),
+    bufferSizeFrames: sanitizeBufferSizeFrames(outputMode, latencyProfile, rawRemembered.bufferSizeFrames),
+  };
+  if (remembered.bufferSizeFrames === undefined) {
+    delete remembered.bufferSizeFrames;
+  }
   window.localStorage.setItem(storageKey, JSON.stringify(remembered));
 
   if ((settings.appMemoryVersion ?? 0) < 1 && localOutput.enabled) {

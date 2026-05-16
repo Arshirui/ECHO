@@ -9,6 +9,7 @@ import { Writable } from 'node:stream';
 import electron from 'electron';
 import { getEqBridge } from './EqBridge';
 import type {
+  NativeHostNotificationEvent,
   NativeBridgeReadyMessage,
   NativeBridgeReadyResult,
   NativeOutputTelemetry,
@@ -60,6 +61,13 @@ const sharedGracefulStopTimeoutMs = 2_500;
 const exclusiveGracefulStopTimeoutMs = 4_000;
 const forceKilledExitWaitMs = 1_000;
 const maxPositionExtrapolationMs = 250;
+const lowLatencyMaxBufferSizeFrames = 2048;
+const nativeHostNotificationEvents = new Set<NativeHostNotificationEvent['event']>([
+  'default_device_changed',
+  'device_state_changed',
+  'device_removed',
+  'audio_session_disconnected',
+]);
 
 const appendTailLine = (lines: string[], line: string): void => {
   const trimmed = line.trim();
@@ -96,6 +104,54 @@ const getNativeCrashDetails = (reason: string): string[] => {
   const crashName = windowsCrashCodes[unsignedExitCode];
 
   return crashName ? [`exitCodeHex=${formatExitCodeHex(exitCode)}`, `nativeCrash=${crashName}`] : [];
+};
+
+const isNativeHostNotificationEvent = (event: unknown): event is NativeHostNotificationEvent['event'] =>
+  typeof event === 'string' && nativeHostNotificationEvents.has(event as NativeHostNotificationEvent['event']);
+
+const parseNativeHostNotification = (
+  message: Record<string, unknown> & { event?: unknown },
+): NativeHostNotificationEvent | null => {
+  if (!isNativeHostNotificationEvent(message.event)) {
+    return null;
+  }
+
+  const notification: NativeHostNotificationEvent = {
+    event: message.event,
+  };
+
+  if (typeof message.deviceId === 'string') {
+    notification.deviceId = message.deviceId;
+  }
+  if (typeof message.reason === 'string') {
+    notification.reason = message.reason;
+  }
+  if (typeof message.code === 'number' && Number.isFinite(message.code)) {
+    notification.code = Math.max(0, Math.round(message.code));
+  }
+  if (typeof message.currentDevice === 'boolean') {
+    notification.currentDevice = message.currentDevice;
+  }
+  if (typeof message.followsDefaultDevice === 'boolean') {
+    notification.followsDefaultDevice = message.followsDefaultDevice;
+  }
+
+  return notification;
+};
+
+const sanitizeHostBufferSizeFrames = (
+  options: NativeOutputStartOptions,
+  bufferSizeFrames: number,
+): number | null => {
+  if (options.latencyProfile !== 'lowLatency' || bufferSizeFrames <= lowLatencyMaxBufferSizeFrames) {
+    return bufferSizeFrames;
+  }
+
+  if (options.asio || options.exclusive) {
+    return lowLatencyMaxBufferSizeFrames;
+  }
+
+  return null;
 };
 
 const formatHostDetailValue = (value: string): string =>
@@ -257,6 +313,10 @@ const createReuseKey = (options: NativeOutputStartOptions): string => {
     outputMode === 'shared'
       ? normalizePositiveInteger(options.sharedMixSampleRate) ?? normalizePositiveInteger(options.requestedOutputSampleRate)
       : normalizePositiveInteger(options.requestedOutputSampleRate);
+  const rawBufferSizeFrames = normalizePositiveInteger(options.bufferSizeFrames);
+  const bufferSizeFrames = rawBufferSizeFrames !== null
+    ? sanitizeHostBufferSizeFrames(options, rawBufferSizeFrames)
+    : null;
 
   return JSON.stringify({
     outputMode: options.asio ? 'asio' : options.exclusive ? 'exclusive' : 'shared',
@@ -268,7 +328,7 @@ const createReuseKey = (options: NativeOutputStartOptions): string => {
     asio: options.asio === true,
     exclusive: options.exclusive === true,
     useJuceOutput: options.useJuceOutput === true,
-    bufferSizeFrames: Number.isFinite(Number(options.bufferSizeFrames)) ? Math.round(Number(options.bufferSizeFrames)) : null,
+    bufferSizeFrames,
     latencyProfile: options.latencyProfile ?? null,
     playbackSpeedMode: options.playbackSpeedMode ?? null,
   });
@@ -832,7 +892,14 @@ export class NativeOutputBridge extends EventEmitter {
 
     const bufferSizeFrames = Number(options.bufferSizeFrames);
     if (Number.isFinite(bufferSizeFrames) && bufferSizeFrames > 0) {
-      args.push('-buffer', String(Math.round(bufferSizeFrames)));
+      const sanitizedBufferSizeFrames = sanitizeHostBufferSizeFrames(options, Math.round(bufferSizeFrames));
+      if (sanitizedBufferSizeFrames !== null) {
+        args.push('-buffer', String(sanitizedBufferSizeFrames));
+      } else {
+        this.logger(
+          `[NativeOutputBridge] low_latency_buffer_ignored; requestedBuffer=${Math.round(bufferSizeFrames)}`,
+        );
+      }
     }
 
     const fifoCapacityMs = Number(options.fifoCapacityMs);
@@ -913,6 +980,12 @@ export class NativeOutputBridge extends EventEmitter {
     }
 
     if (sourceProc && this.proc !== sourceProc) {
+      return;
+    }
+
+    const nativeNotification = parseNativeHostNotification(message);
+    if (nativeNotification) {
+      this.emit('device-event', nativeNotification);
       return;
     }
 

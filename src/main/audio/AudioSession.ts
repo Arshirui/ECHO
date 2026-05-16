@@ -22,6 +22,7 @@ import type {
   AudioSessionPlayRequest,
   AudioStatus,
   DecoderRun,
+  NativeHostNotificationEvent,
   NativeBridgeReadyResult,
   NativeOutputTelemetry,
   NativeOutputStartOptions,
@@ -46,9 +47,9 @@ type OutputBridgeLike = {
   getPositionSeconds: () => number;
   getPositionStalenessMs?: () => number | null;
   resetOutputClock?: (startSeconds?: number, playbackRate?: number) => void;
-  on: (event: 'position' | 'ended' | 'error', listener: (...args: unknown[]) => void) => OutputBridgeLike;
-  off?: (event: 'position' | 'ended' | 'error', listener: (...args: unknown[]) => void) => OutputBridgeLike;
-  removeListener?: (event: 'position' | 'ended' | 'error', listener: (...args: unknown[]) => void) => OutputBridgeLike;
+  on: (event: 'position' | 'ended' | 'error' | 'device-event', listener: (...args: unknown[]) => void) => OutputBridgeLike;
+  off?: (event: 'position' | 'ended' | 'error' | 'device-event', listener: (...args: unknown[]) => void) => OutputBridgeLike;
+  removeListener?: (event: 'position' | 'ended' | 'error' | 'device-event', listener: (...args: unknown[]) => void) => OutputBridgeLike;
 };
 
 type BridgeStartResult = {
@@ -81,6 +82,7 @@ type BridgeEventListeners = {
   position: (frames: unknown, telemetry?: unknown) => void;
   ended: () => void;
   error: (error: unknown) => void;
+  deviceEvent: (event: unknown) => void;
 };
 
 type PreparedLocalProbeUse = {
@@ -119,6 +121,22 @@ const levelMeterStatusIntervalMs = 1000;
 const sharedStabilityMemoryTtlMs = 5 * 60 * 1000;
 const asioFailedStartGracefulStopTimeoutMs = 1_000;
 const asioUnavailableCooldownMs = 30_000;
+const nativeHostNotificationEvents = new Set<NativeHostNotificationEvent['event']>([
+  'default_device_changed',
+  'device_state_changed',
+  'device_removed',
+  'audio_session_disconnected',
+]);
+const inactiveDeviceReasons = new Set(['disabled', 'not_present', 'unplugged', 'removed']);
+
+const isNativeHostNotificationEvent = (event: unknown): event is NativeHostNotificationEvent => {
+  if (!event || typeof event !== 'object' || Array.isArray(event)) {
+    return false;
+  }
+
+  const name = (event as { event?: unknown }).event;
+  return typeof name === 'string' && nativeHostNotificationEvents.has(name as NativeHostNotificationEvent['event']);
+};
 const sharedReplacementGracefulStopTimeoutMs = 250;
 const minReliableAsioSampleRate = 44_100;
 
@@ -178,6 +196,9 @@ const latencyProfiles: Record<AudioLatencyProfile, Pick<NativeOutputStartOptions
   },
 };
 
+const lowLatencyMaxBufferSizeFrames = 2048;
+const lowLatencyBufferClampedWarning = `low_latency_buffer_clamped:${lowLatencyMaxBufferSizeFrames}`;
+const lowLatencyBufferIgnoredWarning = 'low_latency_buffer_ignored';
 const exclusiveLowLatencyMinimumBufferMs = 8;
 const exclusiveLowLatencyBufferStepFrames = 128;
 
@@ -214,6 +235,22 @@ const resolveBufferSizeFrames = (
   }
 
   return normalizePositiveInteger(settings.bufferSizeFrames) ?? undefined;
+};
+
+const sanitizeLowLatencyBuffer = (
+  outputMode: AudioOutputMode,
+  latencyProfile: AudioLatencyProfile,
+  bufferSizeFrames: number | undefined,
+): { bufferSizeFrames: number | undefined; warning: string | null } => {
+  if (latencyProfile !== 'lowLatency' || bufferSizeFrames === undefined || bufferSizeFrames <= lowLatencyMaxBufferSizeFrames) {
+    return { bufferSizeFrames, warning: null };
+  }
+
+  if (outputMode === 'shared') {
+    return { bufferSizeFrames: undefined, warning: lowLatencyBufferIgnoredWarning };
+  }
+
+  return { bufferSizeFrames: lowLatencyMaxBufferSizeFrames, warning: lowLatencyBufferClampedWarning };
 };
 
 const isWritableUsable = (writable: Writable | null): writable is Writable =>
@@ -831,13 +868,19 @@ export class AudioSession extends EventEmitter {
       baseLatencyProfile,
       settings.outputMode !== undefined,
     );
+    const nextBufferSizeFrames = this.sanitizeLowLatencyBufferForOutputMode(
+      nextOutputMode,
+      nextLatencyProfile,
+      resolveBufferSizeFrames(settings, this.outputSettings.bufferSizeFrames),
+      'output_settings',
+    );
     this.outputSettings = {
       ...this.outputSettings,
       ...settings,
       outputMode: nextOutputMode,
       sharedBackend: nextSharedBackend,
       latencyProfile: nextLatencyProfile,
-      bufferSizeFrames: resolveBufferSizeFrames(settings, this.outputSettings.bufferSizeFrames),
+      bufferSizeFrames: nextBufferSizeFrames,
       asioUnavailableFallbackEnabled: settings.asioUnavailableFallbackEnabled ?? this.outputSettings.asioUnavailableFallbackEnabled ?? false,
       volume: Math.max(0, Math.min(1, Number(settings.volume ?? this.outputSettings.volume) || 0)),
       playbackRate: normalizePlaybackRate(settings.playbackRate ?? this.outputSettings.playbackRate),
@@ -1565,7 +1608,12 @@ export class AudioSession extends EventEmitter {
         ? normalizeSharedBackend(output?.sharedBackend ?? this.outputSettings.sharedBackend)
         : 'auto',
       latencyProfile: nextLatencyProfile,
-      bufferSizeFrames: resolveBufferSizeFrames(output, this.outputSettings.bufferSizeFrames),
+      bufferSizeFrames: this.sanitizeLowLatencyBufferForOutputMode(
+        nextOutputMode,
+        nextLatencyProfile,
+        resolveBufferSizeFrames(output, this.outputSettings.bufferSizeFrames),
+        'playback_request',
+      ),
       asioUnavailableFallbackEnabled: output?.asioUnavailableFallbackEnabled ?? this.outputSettings.asioUnavailableFallbackEnabled ?? false,
       volume: Math.max(0, Math.min(1, Number(output?.volume ?? this.outputSettings.volume) || 0)),
       playbackRate: normalizePlaybackRate(output?.playbackRate ?? this.outputSettings.playbackRate),
@@ -2042,7 +2090,12 @@ export class AudioSession extends EventEmitter {
   private createNativeOutputStartOptions(options: NativeOutputStartOptions): NativeOutputStartOptions {
     const outputMode = options.asio ? 'asio' : options.exclusive ? 'exclusive' : 'shared';
     const latencyProfile = resolveSupportedLatencyProfile(outputMode, normalizeLatencyProfile(options.latencyProfile));
-    const explicitBufferSizeFrames = normalizePositiveInteger(options.bufferSizeFrames);
+    const explicitBufferSizeFrames = this.sanitizeLowLatencyBufferForOutputMode(
+      outputMode,
+      latencyProfile,
+      normalizePositiveInteger(options.bufferSizeFrames) ?? undefined,
+      'native_start_options',
+    );
     const profileBufferSizeFrames =
       explicitBufferSizeFrames ??
       getLatencyProfileBufferSizeFrames(outputMode, latencyProfile, options.requestedOutputSampleRate);
@@ -2073,10 +2126,22 @@ export class AudioSession extends EventEmitter {
       : latencyProfile === 'stable'
         ? stableSharedProfile
         : sharedStabilityProfiles[this.sharedStabilityTier];
+    const sharedProfileBufferSizeFrames = sharedProfile.bufferSizeFrames ?? 0;
+    const stableProfileBufferSizeFrames = latencyProfiles.stable.bufferSizeFrames ?? 8192;
+    const effectiveLatencyProfile =
+      latencyProfile === 'lowLatency' && sharedProfileBufferSizeFrames > lowLatencyMaxBufferSizeFrames
+        ? (sharedProfileBufferSizeFrames >= stableProfileBufferSizeFrames ? 'stable' : 'balanced')
+        : latencyProfile;
+    if (effectiveLatencyProfile !== latencyProfile) {
+      this.addOutputWarning(lowLatencyBufferIgnoredWarning);
+      this.logger(
+        `[AudioSession] ${lowLatencyBufferIgnoredWarning}; source=shared_stability_profile outputMode=shared requestedBuffer=${sharedProfileBufferSizeFrames}`,
+      );
+    }
 
     return {
       ...options,
-      latencyProfile,
+      latencyProfile: effectiveLatencyProfile,
       ...sharedProfile,
       bufferSizeFrames: explicitBufferSizeFrames ?? (
         sharedBackend === 'directsound'
@@ -2626,11 +2691,19 @@ export class AudioSession extends EventEmitter {
 
         this.handleError(error instanceof Error ? error : new Error(String(error)));
       },
+      deviceEvent: (event: unknown) => {
+        if (this.runToken !== token) {
+          return;
+        }
+
+        void this.handleNativeHostNotification(event);
+      },
     };
 
     bridge.on('position', listeners.position);
     bridge.on('ended', listeners.ended);
     bridge.on('error', listeners.error);
+    bridge.on('device-event', listeners.deviceEvent);
     this.attachedBridgeEvents = { bridge, listeners };
   }
 
@@ -2645,6 +2718,7 @@ export class AudioSession extends EventEmitter {
       removeListener.call(bridge, 'position', attached.listeners.position);
       removeListener.call(bridge, 'ended', attached.listeners.ended);
       removeListener.call(bridge, 'error', attached.listeners.error);
+      removeListener.call(bridge, 'device-event', attached.listeners.deviceEvent);
     }
 
     this.attachedBridgeEvents = null;
@@ -2721,6 +2795,54 @@ export class AudioSession extends EventEmitter {
         this.handleError(error instanceof Error ? error : new Error(String(error)));
       }
     });
+  }
+
+  private async handleNativeHostNotification(event: unknown): Promise<void> {
+    if (
+      !isNativeHostNotificationEvent(event) ||
+      this.state !== 'playing' ||
+      this.watchdogRecovering ||
+      this.sharedStabilityRecovering ||
+      !this.currentFilePath ||
+      !this.currentOutputSettings ||
+      !this.currentPlan ||
+      !this.currentProbe ||
+      !this.bridge
+    ) {
+      return;
+    }
+
+    const reason = typeof event.reason === 'string' && event.reason ? event.reason : 'unknown';
+    const affectsCurrentOutput = event.currentDevice === true || event.followsDefaultDevice === true;
+    let recoveryReason: string | null = null;
+
+    if (event.event === 'audio_session_disconnected') {
+      recoveryReason = `native_session_disconnected:${reason}`;
+    } else if (event.event === 'default_device_changed' && affectsCurrentOutput) {
+      recoveryReason = 'default_device_changed';
+    } else if (event.event === 'device_removed' && affectsCurrentOutput) {
+      recoveryReason = 'audio_device_removed';
+    } else if (event.event === 'device_state_changed' && affectsCurrentOutput && inactiveDeviceReasons.has(reason)) {
+      recoveryReason = `audio_device_state_changed:${reason}`;
+    }
+
+    if (!recoveryReason) {
+      return;
+    }
+
+    const bridgePositionSeconds = this.bridge.getPositionSeconds();
+    const positionSeconds = Number.isFinite(bridgePositionSeconds) ? bridgePositionSeconds : this.clock.getPositionSeconds();
+    this.logger(
+      `[AudioSession] ${recoveryReason}; restarting output after native host notification position=${positionSeconds.toFixed(3)}`,
+    );
+
+    if (this.currentPlan.outputMode === 'exclusive' && event.event !== 'default_device_changed') {
+      this.addPendingOutputWarning(recoveryReason);
+      await this.fallbackExclusiveToSharedForInstability(positionSeconds);
+      return;
+    }
+
+    await this.recoverOutputStability(recoveryReason, positionSeconds);
   }
 
   private handleNativeTelemetry(telemetry: NativeOutputTelemetry): void {
@@ -3133,6 +3255,23 @@ export class AudioSession extends EventEmitter {
     this.emitStatus();
   }
 
+  private sanitizeLowLatencyBufferForOutputMode(
+    outputMode: AudioOutputMode,
+    latencyProfile: AudioLatencyProfile,
+    bufferSizeFrames: number | undefined,
+    source: string,
+  ): number | undefined {
+    const sanitized = sanitizeLowLatencyBuffer(outputMode, latencyProfile, bufferSizeFrames);
+    if (sanitized.warning && sanitized.bufferSizeFrames !== bufferSizeFrames) {
+      this.addOutputWarning(sanitized.warning);
+      this.logger(
+        `[AudioSession] ${sanitized.warning}; source=${source} outputMode=${outputMode} requestedBuffer=${bufferSizeFrames ?? 'auto'}`,
+      );
+    }
+
+    return sanitized.bufferSizeFrames;
+  }
+
   private addOutputWarning(warning: string): void {
     if (!this.outputWarnings.includes(warning)) {
       this.outputWarnings.push(warning);
@@ -3255,7 +3394,7 @@ export class AudioSession extends EventEmitter {
     if (isSharedOutput) {
       return {
         ...output,
-        latencyProfile: 'lowLatency',
+        latencyProfile: recoveryCount >= 2 ? 'stable' : 'balanced',
         bufferSizeFrames: undefined,
       };
     }

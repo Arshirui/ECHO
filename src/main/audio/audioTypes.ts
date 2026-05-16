@@ -96,6 +96,15 @@ export type NativeOutputTelemetry = {
   nativePositionStalenessMs?: number | null;
 };
 
+export type NativeHostNotificationEvent = {
+  event: 'default_device_changed' | 'device_state_changed' | 'device_removed' | 'audio_session_disconnected';
+  deviceId?: string;
+  reason?: string;
+  code?: number;
+  currentDevice?: boolean;
+  followsDefaultDevice?: boolean;
+};
+
 export type NativeBridgeReadyMessage = Record<string, unknown> & {
   ready?: boolean;
   sampleRate?: number;

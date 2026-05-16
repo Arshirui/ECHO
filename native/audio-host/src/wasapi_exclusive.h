@@ -12,6 +12,19 @@ typedef unsigned int (*wasapi_render_callback)(
     unsigned int frameCount,
     unsigned int channels);
 
+typedef struct wasapi_host_notification {
+    const char* event;
+    const wchar_t* deviceId;
+    const char* reason;
+    unsigned int code;
+    int currentDevice;
+    int followsDefaultDevice;
+} wasapi_host_notification;
+
+typedef void (*wasapi_host_notification_callback)(
+    void* userData,
+    const wasapi_host_notification* notification);
+
 typedef struct wasapi_exclusive_device_info {
     wchar_t id[512];
     char name[512];
@@ -44,6 +57,8 @@ int wasapi_exclusive_start(
     uint32_t requestedBufferFrames,
     wasapi_render_callback callback,
     void* userData,
+    wasapi_host_notification_callback notificationCallback,
+    void* notificationUserData,
     wasapi_exclusive_runtime** outRuntime,
     wasapi_exclusive_ready_info* outInfo,
     char* error,

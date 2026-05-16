@@ -4,6 +4,7 @@
 
 #include <windows.h>
 #include <audioclient.h>
+#include <audiopolicy.h>
 #include <avrt.h>
 #include <mmdeviceapi.h>
 #include <propidl.h>
@@ -13,6 +14,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <new>
 #include <vector>
 
 static const GUID ECHO_SUBTYPE_PCM = {
@@ -36,9 +38,16 @@ typedef struct wasapi_format_desc {
     const char* name;
 } wasapi_format_desc;
 
+class DeviceWatcher;
+class SessionWatcher;
+
 struct wasapi_exclusive_runtime {
     IAudioClient* audioClient;
     IAudioRenderClient* renderClient;
+    IMMDeviceEnumerator* deviceEnumerator;
+    DeviceWatcher* deviceWatcher;
+    IAudioSessionControl* sessionControl;
+    SessionWatcher* sessionWatcher;
     HANDLE renderEvent;
     HANDLE stopEvent;
     HANDLE thread;
@@ -48,6 +57,10 @@ struct wasapi_exclusive_runtime {
     wasapi_format_desc format;
     wasapi_render_callback callback;
     void* userData;
+    wasapi_host_notification_callback notificationCallback;
+    void* notificationUserData;
+    wchar_t deviceId[512];
+    int followsDefaultDevice;
     volatile LONG renderFailed;
     int comNeedsUninit;
 };
@@ -92,6 +105,371 @@ static void wide_to_utf8(const wchar_t* wide, char* out, int outLen) {
     if (wide == NULL || wide[0] == L'\0') return;
     if (WideCharToMultiByte(CP_UTF8, 0, wide, -1, out, outLen, NULL, NULL) <= 0) {
         out[0] = '\0';
+    }
+}
+
+static int wide_equals_icase(const wchar_t* left, const wchar_t* right) {
+    if (left == NULL || right == NULL) return 0;
+    return _wcsicmp(left, right) == 0 ? 1 : 0;
+}
+
+static const char* device_state_name(DWORD state) {
+    switch (state) {
+        case DEVICE_STATE_ACTIVE: return "active";
+        case DEVICE_STATE_DISABLED: return "disabled";
+        case DEVICE_STATE_NOTPRESENT: return "not_present";
+        case DEVICE_STATE_UNPLUGGED: return "unplugged";
+        default: return "unknown";
+    }
+}
+
+static const char* endpoint_role_name(ERole role) {
+    switch (role) {
+        case eConsole: return "console";
+        case eMultimedia: return "multimedia";
+        case eCommunications: return "communications";
+        default: return "unknown";
+    }
+}
+
+static const char* session_disconnect_reason_name(AudioSessionDisconnectReason reason) {
+    switch (reason) {
+        case DisconnectReasonDeviceRemoval: return "device_removal";
+        case DisconnectReasonServerShutdown: return "server_shutdown";
+        case DisconnectReasonFormatChanged: return "format_changed";
+        case DisconnectReasonSessionLogoff: return "session_logoff";
+        case DisconnectReasonSessionDisconnected: return "session_disconnected";
+        case DisconnectReasonExclusiveModeOverride: return "exclusive_mode_override";
+        default: return "unknown";
+    }
+}
+
+static void copy_device_id(IMMDevice* device, wchar_t* out, size_t outLen) {
+    LPWSTR rawId = NULL;
+    if (out == NULL || outLen == 0) return;
+    out[0] = L'\0';
+    if (device == NULL) return;
+    if (SUCCEEDED(device->GetId(&rawId)) && rawId != NULL) {
+        wcsncpy(out, rawId, outLen - 1);
+        out[outLen - 1] = L'\0';
+    }
+    if (rawId != NULL) CoTaskMemFree(rawId);
+}
+
+static void dispatch_notification(
+    wasapi_host_notification_callback callback,
+    void* userData,
+    const char* event,
+    const wchar_t* deviceId,
+    const char* reason,
+    unsigned int code,
+    int currentDevice,
+    int followsDefaultDevice) {
+    if (callback == NULL || event == NULL) return;
+
+    wasapi_host_notification notification;
+    notification.event = event;
+    notification.deviceId = deviceId;
+    notification.reason = reason;
+    notification.code = code;
+    notification.currentDevice = currentDevice;
+    notification.followsDefaultDevice = followsDefaultDevice;
+    callback(userData, &notification);
+}
+
+class DeviceWatcher : public IMMNotificationClient {
+public:
+    DeviceWatcher(
+        const wchar_t* currentDeviceIdToUse,
+        int followsDefaultDeviceToUse,
+        wasapi_host_notification_callback callbackToUse,
+        void* callbackUserDataToUse)
+        : followsDefaultDevice(followsDefaultDeviceToUse),
+          notificationCallback(callbackToUse),
+          notificationUserData(callbackUserDataToUse) {
+        currentDeviceId[0] = L'\0';
+        if (currentDeviceIdToUse != NULL) {
+            wcsncpy(currentDeviceId, currentDeviceIdToUse, sizeof(currentDeviceId) / sizeof(currentDeviceId[0]) - 1);
+            currentDeviceId[sizeof(currentDeviceId) / sizeof(currentDeviceId[0]) - 1] = L'\0';
+        }
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef(void) override {
+        return (ULONG)InterlockedIncrement(&refCount);
+    }
+
+    ULONG STDMETHODCALLTYPE Release(void) override {
+        ULONG remaining = (ULONG)InterlockedDecrement(&refCount);
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** object) override {
+        if (object == NULL) return E_POINTER;
+        *object = NULL;
+
+        if (riid == __uuidof(IUnknown) || riid == __uuidof(IMMNotificationClient)) {
+            *object = static_cast<IMMNotificationClient*>(this);
+            AddRef();
+            return S_OK;
+        }
+
+        return E_NOINTERFACE;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR defaultDeviceId) override {
+        if (flow == eRender) {
+            dispatch_notification(
+                notificationCallback,
+                notificationUserData,
+                "default_device_changed",
+                defaultDeviceId,
+                endpoint_role_name(role),
+                (unsigned int)role,
+                followsDefaultDevice || wide_equals_icase(defaultDeviceId, currentDeviceId),
+                followsDefaultDevice);
+        }
+
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR deviceId) override {
+        (void)deviceId;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR deviceId) override {
+        dispatch_notification(
+            notificationCallback,
+            notificationUserData,
+            "device_removed",
+            deviceId,
+            "removed",
+            0,
+            wide_equals_icase(deviceId, currentDeviceId),
+            followsDefaultDevice);
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR deviceId, DWORD newState) override {
+        dispatch_notification(
+            notificationCallback,
+            notificationUserData,
+            "device_state_changed",
+            deviceId,
+            device_state_name(newState),
+            (unsigned int)newState,
+            wide_equals_icase(deviceId, currentDeviceId),
+            followsDefaultDevice);
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR deviceId, const PROPERTYKEY key) override {
+        (void)deviceId;
+        (void)key;
+        return S_OK;
+    }
+
+private:
+    volatile LONG refCount = 1;
+    wchar_t currentDeviceId[512];
+    int followsDefaultDevice = 0;
+    wasapi_host_notification_callback notificationCallback = NULL;
+    void* notificationUserData = NULL;
+};
+
+class SessionWatcher : public IAudioSessionEvents {
+public:
+    SessionWatcher(
+        const wchar_t* currentDeviceIdToUse,
+        int followsDefaultDeviceToUse,
+        wasapi_host_notification_callback callbackToUse,
+        void* callbackUserDataToUse)
+        : followsDefaultDevice(followsDefaultDeviceToUse),
+          notificationCallback(callbackToUse),
+          notificationUserData(callbackUserDataToUse) {
+        currentDeviceId[0] = L'\0';
+        if (currentDeviceIdToUse != NULL) {
+            wcsncpy(currentDeviceId, currentDeviceIdToUse, sizeof(currentDeviceId) / sizeof(currentDeviceId[0]) - 1);
+            currentDeviceId[sizeof(currentDeviceId) / sizeof(currentDeviceId[0]) - 1] = L'\0';
+        }
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef(void) override {
+        return (ULONG)InterlockedIncrement(&refCount);
+    }
+
+    ULONG STDMETHODCALLTYPE Release(void) override {
+        ULONG remaining = (ULONG)InterlockedDecrement(&refCount);
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** object) override {
+        if (object == NULL) return E_POINTER;
+        *object = NULL;
+
+        if (riid == __uuidof(IUnknown) || riid == __uuidof(IAudioSessionEvents)) {
+            *object = static_cast<IAudioSessionEvents*>(this);
+            AddRef();
+            return S_OK;
+        }
+
+        return E_NOINTERFACE;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnDisplayNameChanged(LPCWSTR name, LPCGUID context) override {
+        (void)name;
+        (void)context;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnIconPathChanged(LPCWSTR iconPath, LPCGUID context) override {
+        (void)iconPath;
+        (void)context;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnSimpleVolumeChanged(float volume, BOOL muted, LPCGUID context) override {
+        (void)volume;
+        (void)muted;
+        (void)context;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnChannelVolumeChanged(DWORD channelCount, float newVolumes[], DWORD changedChannel, LPCGUID context) override {
+        (void)channelCount;
+        (void)newVolumes;
+        (void)changedChannel;
+        (void)context;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnGroupingParamChanged(LPCGUID groupingId, LPCGUID context) override {
+        (void)groupingId;
+        (void)context;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnStateChanged(AudioSessionState state) override {
+        (void)state;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnSessionDisconnected(AudioSessionDisconnectReason reason) override {
+        dispatch_notification(
+            notificationCallback,
+            notificationUserData,
+            "audio_session_disconnected",
+            currentDeviceId,
+            session_disconnect_reason_name(reason),
+            (unsigned int)reason,
+            1,
+            followsDefaultDevice);
+        return S_OK;
+    }
+
+private:
+    volatile LONG refCount = 1;
+    wchar_t currentDeviceId[512];
+    int followsDefaultDevice = 0;
+    wasapi_host_notification_callback notificationCallback = NULL;
+    void* notificationUserData = NULL;
+};
+
+static void register_device_watcher(wasapi_exclusive_runtime* runtime) {
+    if (runtime == NULL || runtime->notificationCallback == NULL) return;
+
+    HRESULT hr = CoCreateInstance(
+        __uuidof(MMDeviceEnumerator),
+        NULL,
+        CLSCTX_ALL,
+        __uuidof(IMMDeviceEnumerator),
+        (void**)&runtime->deviceEnumerator);
+    if (FAILED(hr) || runtime->deviceEnumerator == NULL) {
+        fprintf(stderr, "[echo-audio-host] WASAPI exclusive notification enumerator failed hr=0x%08lx\n", (unsigned long)hr);
+        return;
+    }
+
+    runtime->deviceWatcher = new (std::nothrow) DeviceWatcher(
+        runtime->deviceId,
+        runtime->followsDefaultDevice,
+        runtime->notificationCallback,
+        runtime->notificationUserData);
+    if (runtime->deviceWatcher == NULL) {
+        runtime->deviceEnumerator->Release();
+        runtime->deviceEnumerator = NULL;
+        return;
+    }
+
+    hr = runtime->deviceEnumerator->RegisterEndpointNotificationCallback(runtime->deviceWatcher);
+    if (FAILED(hr)) {
+        fprintf(stderr, "[echo-audio-host] WASAPI exclusive device watcher registration failed hr=0x%08lx\n", (unsigned long)hr);
+        runtime->deviceWatcher->Release();
+        runtime->deviceWatcher = NULL;
+        runtime->deviceEnumerator->Release();
+        runtime->deviceEnumerator = NULL;
+    }
+}
+
+static void register_session_watcher(wasapi_exclusive_runtime* runtime) {
+    if (runtime == NULL || runtime->notificationCallback == NULL || runtime->audioClient == NULL) return;
+
+    runtime->sessionWatcher = new (std::nothrow) SessionWatcher(
+        runtime->deviceId,
+        runtime->followsDefaultDevice,
+        runtime->notificationCallback,
+        runtime->notificationUserData);
+    if (runtime->sessionWatcher == NULL) return;
+
+    HRESULT hr = runtime->audioClient->GetService(__uuidof(IAudioSessionControl), (void**)&runtime->sessionControl);
+    if (FAILED(hr) || runtime->sessionControl == NULL) {
+        fprintf(stderr, "[echo-audio-host] WASAPI exclusive session control failed hr=0x%08lx\n", (unsigned long)hr);
+        runtime->sessionWatcher->Release();
+        runtime->sessionWatcher = NULL;
+        return;
+    }
+
+    hr = runtime->sessionControl->RegisterAudioSessionNotification(runtime->sessionWatcher);
+    if (FAILED(hr)) {
+        fprintf(stderr, "[echo-audio-host] WASAPI exclusive session watcher registration failed hr=0x%08lx\n", (unsigned long)hr);
+        runtime->sessionWatcher->Release();
+        runtime->sessionWatcher = NULL;
+        runtime->sessionControl->Release();
+        runtime->sessionControl = NULL;
+    }
+
+    if (runtime->sessionControl != NULL) {
+        AudioSessionState state;
+        runtime->sessionControl->GetState(&state);
+    }
+}
+
+static void unregister_watchers(wasapi_exclusive_runtime* runtime) {
+    if (runtime == NULL) return;
+
+    if (runtime->deviceEnumerator != NULL && runtime->deviceWatcher != NULL) {
+        runtime->deviceEnumerator->UnregisterEndpointNotificationCallback(runtime->deviceWatcher);
+    }
+    if (runtime->deviceWatcher != NULL) {
+        runtime->deviceWatcher->Release();
+        runtime->deviceWatcher = NULL;
+    }
+    if (runtime->deviceEnumerator != NULL) {
+        runtime->deviceEnumerator->Release();
+        runtime->deviceEnumerator = NULL;
+    }
+
+    if (runtime->sessionControl != NULL && runtime->sessionWatcher != NULL) {
+        runtime->sessionControl->UnregisterAudioSessionNotification(runtime->sessionWatcher);
+    }
+    if (runtime->sessionWatcher != NULL) {
+        runtime->sessionWatcher->Release();
+        runtime->sessionWatcher = NULL;
+    }
+    if (runtime->sessionControl != NULL) {
+        runtime->sessionControl->Release();
+        runtime->sessionControl = NULL;
     }
 }
 
@@ -620,6 +998,8 @@ int wasapi_exclusive_start(
     uint32_t requestedBufferFrames,
     wasapi_render_callback callback,
     void* userData,
+    wasapi_host_notification_callback notificationCallback,
+    void* notificationUserData,
     wasapi_exclusive_runtime** outRuntime,
     wasapi_exclusive_ready_info* outInfo,
     char* error,
@@ -714,6 +1094,10 @@ int wasapi_exclusive_start(
         (unsigned int)requestedBufferFrames);
     runtime->callback = callback;
     runtime->userData = userData;
+    runtime->notificationCallback = notificationCallback;
+    runtime->notificationUserData = notificationUserData;
+    runtime->followsDefaultDevice = (targetDeviceIndex < 0 && (targetDeviceName == NULL || targetDeviceName[0] == '\0')) ? 1 : 0;
+    copy_device_id(device, runtime->deviceId, sizeof(runtime->deviceId) / sizeof(runtime->deviceId[0]));
     runtime->comNeedsUninit = com.needsUninit;
     com.needsUninit = 0;
     audioClient = NULL;
@@ -731,6 +1115,9 @@ int wasapi_exclusive_start(
         set_error(error, errorLen, "Failed to set WASAPI event handle", hr);
         goto done;
     }
+
+    register_device_watcher(runtime);
+    register_session_watcher(runtime);
 
     /* declared up front so earlier `goto done` doesn't cross initialization (g++ rejects that) */
     endpointBuffer = NULL;
@@ -780,6 +1167,7 @@ done:
 void wasapi_exclusive_stop(wasapi_exclusive_runtime* runtime) {
     if (runtime == NULL) return;
 
+    unregister_watchers(runtime);
     if (runtime->stopEvent != NULL) SetEvent(runtime->stopEvent);
     if (runtime->thread != NULL) {
         DWORD waitResult = WaitForSingleObject(runtime->thread, 5000);

@@ -65,6 +65,24 @@ const defaultRememberedAudioOutput: RememberedAudioOutput = {
   sharedBackend: 'auto',
   latencyProfile: 'balanced',
 };
+const lowLatencyMaxBufferSizeFrames = 2048;
+
+const sanitizeRememberedBufferSizeFrames = (
+  outputMode: RememberedAudioOutput['outputMode'],
+  latencyProfile: RememberedAudioOutput['latencyProfile'],
+  bufferSizeFrames: number,
+): number | undefined => {
+  if (!Number.isFinite(bufferSizeFrames) || bufferSizeFrames <= 0) {
+    return undefined;
+  }
+
+  const rounded = Math.round(bufferSizeFrames);
+  if (latencyProfile !== 'lowLatency' || rounded <= lowLatencyMaxBufferSizeFrames) {
+    return rounded;
+  }
+
+  return outputMode === 'shared' ? undefined : lowLatencyMaxBufferSizeFrames;
+};
 
 const normalizeRememberedWindowSize = (value: unknown): RememberedWindowSize | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -313,8 +331,9 @@ const normalizeRememberedAudioOutput = (value: unknown): RememberedAudioOutput =
     deviceName,
   };
 
-  if (Number.isFinite(bufferSizeFrames) && bufferSizeFrames > 0) {
-    normalized.bufferSizeFrames = Math.round(bufferSizeFrames);
+  const normalizedBufferSizeFrames = sanitizeRememberedBufferSizeFrames(outputMode, latencyProfile, bufferSizeFrames);
+  if (normalizedBufferSizeFrames !== undefined) {
+    normalized.bufferSizeFrames = normalizedBufferSizeFrames;
   }
 
   return normalized;

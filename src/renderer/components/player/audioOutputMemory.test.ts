@@ -80,4 +80,53 @@ describe('audioOutputMemory', () => {
       isDefault: false,
     }, 'stable', 'directsound')).not.toHaveProperty('deviceIndex');
   });
+
+  it('sanitizes incompatible low-latency buffer sizes in local output memory', () => {
+    window.localStorage.setItem(
+      'echo-next.audio-output-memory',
+      JSON.stringify({
+        enabled: true,
+        outputMode: 'shared',
+        sharedBackend: 'auto',
+        latencyProfile: 'lowLatency',
+        bufferSizeFrames: 8192,
+      }),
+    );
+
+    expect(readRememberedAudioOutput()).not.toHaveProperty('bufferSizeFrames');
+
+    writeRememberedAudioOutput({
+      enabled: true,
+      outputMode: 'shared',
+      sharedBackend: 'auto',
+      latencyProfile: 'lowLatency',
+      bufferSizeFrames: 8192,
+    });
+    expect(JSON.parse(window.localStorage.getItem('echo-next.audio-output-memory') ?? '{}')).not.toHaveProperty('bufferSizeFrames');
+
+    writeRememberedAudioOutput({
+      enabled: true,
+      outputMode: 'asio',
+      latencyProfile: 'lowLatency',
+      bufferSizeFrames: 8192,
+    });
+    expect(JSON.parse(window.localStorage.getItem('echo-next.audio-output-memory') ?? '{}')).toMatchObject({
+      outputMode: 'asio',
+      latencyProfile: 'lowLatency',
+      bufferSizeFrames: 2048,
+    });
+
+    writeRememberedAudioOutput({
+      enabled: true,
+      outputMode: 'shared',
+      sharedBackend: 'auto',
+      latencyProfile: 'stable',
+      bufferSizeFrames: 8192,
+    });
+    expect(JSON.parse(window.localStorage.getItem('echo-next.audio-output-memory') ?? '{}')).toMatchObject({
+      outputMode: 'shared',
+      latencyProfile: 'stable',
+      bufferSizeFrames: 8192,
+    });
+  });
 });
