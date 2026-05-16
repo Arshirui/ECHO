@@ -137,6 +137,76 @@ const normalizeQuery = (value: unknown): LibraryPageQuery => {
   return query;
 };
 
+type ArtistImageIpcInput = { id?: string; name?: string; artistKey?: string; artistName?: string };
+
+const normalizeArtistImageInputs = (value: unknown): ArtistImageIpcInput[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const artists: ArtistImageIpcInput[] = [];
+
+  for (const item of value) {
+    if (typeof item === 'string' && item.trim()) {
+      artists.push({ id: item.trim() });
+      continue;
+    }
+
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      continue;
+    }
+
+    const input = item as Record<string, unknown>;
+    const id = typeof input.id === 'string' && input.id.trim() ? input.id.trim() : undefined;
+    const name = typeof input.name === 'string' && input.name.trim() ? input.name.trim() : undefined;
+    const artistKey = typeof input.artistKey === 'string' && input.artistKey.trim() ? input.artistKey.trim() : undefined;
+    const artistName = typeof input.artistName === 'string' && input.artistName.trim() ? input.artistName.trim() : undefined;
+
+    if (id || name || artistKey || artistName) {
+      artists.push({ id, name, artistKey, artistName });
+    }
+  }
+
+  return artists;
+};
+
+const normalizeArtistImagesEnqueueRequest = (
+  value: unknown,
+): { artists: ArtistImageIpcInput[]; force: boolean; limit?: number } => {
+  if (Array.isArray(value)) {
+    return { artists: normalizeArtistImageInputs(value), force: false };
+  }
+
+  if (!value || typeof value !== 'object') {
+    return { artists: [], force: false };
+  }
+
+  const input = value as Record<string, unknown>;
+  const limit = Number(input.limit);
+
+  return {
+    artists: normalizeArtistImageInputs(input.artists),
+    force: input.force === true,
+    limit: Number.isFinite(limit) && limit > 0 ? Math.round(limit) : undefined,
+  };
+};
+
+const normalizeArtistImageRefreshOneRequest = (value: unknown): { artistIdOrKey: string; force: boolean } => {
+  if (typeof value === 'string') {
+    return { artistIdOrKey: requireText(value, 'artistId'), force: false };
+  }
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('artist image refresh request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    artistIdOrKey: requireText(input.artistId ?? input.artistKey ?? input.id, 'artistId'),
+    force: input.force === true,
+  };
+};
+
 const normalizeDuplicateMode = (value: unknown): DuplicateTrackMode => (value === 'strict' ? 'strict' : 'strict');
 
 const normalizeFolderChildrenQuery = (value: unknown): LibraryFolderChildrenQuery => {
@@ -713,7 +783,12 @@ const getAlbumCoverImage = (albumId: unknown): { image: Electron.NativeImage; su
 };
 
 const safeExportFileName = (name: string): string => {
-  const cleaned = name.replace(/[<>:"/\\|?*\u0000-\u001F]/gu, ' ').replace(/\s+/gu, ' ').trim();
+  const cleaned = Array.from(name, (character) =>
+    /[<>:"/\\|?*]/u.test(character) || character.charCodeAt(0) <= 0x1f ? ' ' : character,
+  )
+    .join('')
+    .replace(/\s+/gu, ' ')
+    .trim();
   return (cleaned || 'Playlist').slice(0, 120);
 };
 
@@ -1023,6 +1098,24 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetArtistAlbums, (_event, artistId: unknown, query: unknown) =>
     getLibraryService().getArtistAlbums(requireText(artistId, 'artistId'), normalizeQuery(query)),
   );
+  ipcMain.handle(IpcChannels.LibraryArtistImagesEnqueueMissing, (_event, request: unknown) => {
+    const normalized = normalizeArtistImagesEnqueueRequest(request);
+    return getLibraryService().enqueueMissingArtistImages(normalized.artists, {
+      force: normalized.force,
+      limit: normalized.limit,
+    });
+  });
+  ipcMain.handle(IpcChannels.LibraryArtistImagesRefreshOne, (_event, request: unknown) => {
+    const normalized = normalizeArtistImageRefreshOneRequest(request);
+    return getLibraryService().refreshArtistImage(normalized.artistIdOrKey, normalized.force);
+  });
+  ipcMain.handle(IpcChannels.LibraryArtistImagesRefreshVisible, (_event, artists: unknown) =>
+    getLibraryService().refreshVisibleArtistImages(normalizeArtistImageInputs(artists)),
+  );
+  ipcMain.handle(IpcChannels.LibraryArtistImagesGetStatus, (_event, artistIdOrKey: unknown) =>
+    getLibraryService().getArtistImage(requireText(artistIdOrKey, 'artistId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryArtistImagesClearCache, () => getLibraryService().clearArtistImageCache());
   ipcMain.handle(IpcChannels.LibraryGetAlbumTracks, (_event, albumId: unknown, query: unknown) =>
     getLibraryService().getAlbumTracks(requireText(albumId, 'albumId'), normalizeQuery(query)),
   );

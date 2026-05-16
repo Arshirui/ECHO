@@ -120,6 +120,19 @@ const echoApi: EchoApi = {
     getArtist: (artistId) => ipcRenderer.invoke(IpcChannels.LibraryGetArtist, artistId),
     getArtistTracks: (artistId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetArtistTracks, artistId, query),
     getArtistAlbums: (artistId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetArtistAlbums, artistId, query),
+    enqueueMissingArtistImages: (request) => ipcRenderer.invoke(IpcChannels.LibraryArtistImagesEnqueueMissing, request),
+    refreshArtistImage: (artistId, force) =>
+      ipcRenderer.invoke(IpcChannels.LibraryArtistImagesRefreshOne, { artistId, force }),
+    refreshVisibleArtistImages: (artists) => ipcRenderer.invoke(IpcChannels.LibraryArtistImagesRefreshVisible, artists),
+    getArtistImageStatus: (artistId) => ipcRenderer.invoke(IpcChannels.LibraryArtistImagesGetStatus, artistId),
+    clearArtistImageCache: () => ipcRenderer.invoke(IpcChannels.LibraryArtistImagesClearCache),
+    onArtistImagesUpdated: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
+        handler(payload as { artistId: string | null; artistKey: string; status: string });
+      };
+      ipcRenderer.on(IpcChannels.LibraryArtistImagesUpdated, listener);
+      return () => ipcRenderer.off(IpcChannels.LibraryArtistImagesUpdated, listener);
+    },
     getAlbumTracks: (albumId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbumTracks, albumId, query),
     getSummary: () => ipcRenderer.invoke(IpcChannels.LibraryGetSummary),
     refreshAlbumGrouping: () => ipcRenderer.invoke(IpcChannels.LibraryRefreshAlbumGrouping),

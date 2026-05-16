@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
 import electron from 'electron';
+import { IpcChannels } from '../../shared/constants/ipcChannels';
 import { defaultSettings, getAppSettings } from '../app/appSettings';
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
 import { AlbumService } from './AlbumService';
@@ -15,6 +16,8 @@ import { getRecommendedScanConcurrency } from './ScanConcurrency';
 import { ScanJobQueue } from './ScanJobQueue';
 import { NetworkMetadataService, type NetworkCandidateList, type NetworkRepairResult } from './network/NetworkMetadataService';
 import { BpmAnalysisJobQueue } from './audioAnalysis/BpmAnalysisJobQueue';
+import { ArtistImageCacheService } from './artistImages/ArtistImageCacheService';
+import type { ArtistImageLookupInput, ArtistImageProvider } from './artistImages/ArtistImageTypes';
 import type { MetadataService } from './MetadataService';
 import type {
   LibraryAlbum,
@@ -57,6 +60,11 @@ import type {
   DuplicateTrackMode,
   BpmAnalysisJobStatus,
   BpmAnalysisStartOptions,
+  ArtistImageCacheClearResult,
+  ArtistImageCacheEntry,
+  ArtistImageCacheSummary,
+  ArtistImageQueueResult,
+  ArtistImageRefreshResult,
 } from './libraryTypes';
 import type {
   EmbeddedTrackTagsLoadResult,
@@ -91,6 +99,8 @@ type LibraryServiceDependencies = {
   appSettings?: () => AppSettings;
   metadataConcurrency?: number;
   coverConcurrency?: number;
+  artistImageCacheDir?: string;
+  artistImageProviders?: ArtistImageProvider[];
 };
 
 export class LibraryService {
@@ -108,6 +118,7 @@ export class LibraryService {
     private readonly metadataReader: MetadataReader = new TsMetadataReader(),
     private readonly networkMetadataService: NetworkMetadataService | null = null,
     private readonly bpmAnalysisJobQueue: BpmAnalysisJobQueue | null = null,
+    private readonly artistImageCacheService: ArtistImageCacheService | null = null,
     private readonly readAppSettings: () => AppSettings = getAppSettingsSafe,
     private readonly scanConcurrency: ScanConcurrencyRecommendation = getRecommendedScanConcurrency(),
   ) {}
@@ -383,6 +394,65 @@ export class LibraryService {
     return this.store.getArtistAlbums(artistId, query);
   }
 
+  getArtistImage(artistIdOrKey: string): ArtistImageCacheEntry | null {
+    if (!this.artistImageCacheService) {
+      return null;
+    }
+
+    return this.artistImageCacheService.getArtistImage(artistIdOrKey);
+  }
+
+  getArtistImageCacheSummary(): ArtistImageCacheSummary {
+    if (!this.artistImageCacheService) {
+      return {
+        total: 0,
+        matched: 0,
+        pending: 0,
+        loading: 0,
+        notFound: 0,
+        error: 0,
+        rateLimited: 0,
+      };
+    }
+
+    return this.artistImageCacheService.getSummary();
+  }
+
+  enqueueMissingArtistImages(
+    artists: ArtistImageLookupInput[] = [],
+    options: { force?: boolean; limit?: number } = {},
+  ): ArtistImageQueueResult {
+    if (!this.artistImagesNetworkEnabled() || !this.artistImageCacheService) {
+      return { queued: 0, skipped: artists.length, disabled: true };
+    }
+
+    return this.artistImageCacheService.enqueueMissingArtistImages(artists, options);
+  }
+
+  refreshVisibleArtistImages(artists: ArtistImageLookupInput[]): ArtistImageQueueResult {
+    if (!this.artistImagesNetworkEnabled() || !this.artistImageCacheService) {
+      return { queued: 0, skipped: artists.length, disabled: true };
+    }
+
+    return this.artistImageCacheService.refreshVisibleArtistImages(artists);
+  }
+
+  refreshArtistImage(artistIdOrKey: string, force = false): Promise<ArtistImageRefreshResult> {
+    if (!this.artistImagesNetworkEnabled() || !this.artistImageCacheService) {
+      return Promise.resolve({ queued: false, disabled: true, entry: this.getArtistImage(artistIdOrKey) });
+    }
+
+    return this.artistImageCacheService.refreshArtistImage(artistIdOrKey, force);
+  }
+
+  clearArtistImageCache(): ArtistImageCacheClearResult {
+    if (!this.artistImageCacheService) {
+      return { removedRows: 0, deletedFiles: 0, freedBytes: 0 };
+    }
+
+    return this.artistImageCacheService.clearCache();
+  }
+
   getAlbumTracks(albumId: string, query?: Pick<LibraryPageQuery, 'page' | 'pageSize'>): LibraryPage<LibraryTrack> {
     return this.store.getAlbumTracks(albumId, query);
   }
@@ -422,6 +492,13 @@ export class LibraryService {
 
   resolveCoverAsset(coverId: string, variant: CoverVariant): { filePath: string; mimeType: string | null } | null {
     return this.store.resolveCoverAsset(coverId, variant);
+  }
+
+  resolveArtistImageAsset(
+    artistKey: string,
+    variant: 'thumb' | 'medium' | 'large',
+  ): { filePath: string; mimeType: string | null } | null {
+    return this.artistImageCacheService?.resolveAsset(artistKey, variant) ?? null;
   }
 
   getTrack(trackId: string): LibraryTrack | null {
@@ -1156,6 +1233,10 @@ export class LibraryService {
     this.artistsDirty = false;
   }
 
+  private artistImagesNetworkEnabled(): boolean {
+    return this.readAppSettings().autoFetchArtistImages === true;
+  }
+
   private backupPlaylist(playlistId: string, reason: PlaylistBackupReason): void {
     backupPlaylistIfEnabled(this.database, playlistId, reason, this.readAppSettings);
   }
@@ -1209,6 +1290,22 @@ export const createLibraryService = (
 
   const networkMetadataService = new NetworkMetadataService(database);
   const bpmAnalysisJobQueue = new BpmAnalysisJobQueue(store);
+  const artistImageCacheDir = resolve(dependencies.artistImageCacheDir ?? join(dirname(databasePath), 'artist-images'));
+  const artistImageCacheService = new ArtistImageCacheService(database, {
+    cacheRoot: artistImageCacheDir,
+    providers: dependencies.artistImageProviders,
+    onUpdated: (payload) => {
+      const windows = (electron as unknown as {
+        BrowserWindow?: {
+          getAllWindows: () => Array<{ webContents: { send: (channel: string, payload: unknown) => void } }>;
+        };
+      }).BrowserWindow?.getAllWindows() ?? [];
+
+      for (const window of windows) {
+        window.webContents.send(IpcChannels.LibraryArtistImagesUpdated, payload);
+      }
+    },
+  });
 
   return new LibraryService(
     store,
@@ -1222,6 +1319,7 @@ export const createLibraryService = (
     metadataReader,
     networkMetadataService,
     bpmAnalysisJobQueue,
+    artistImageCacheService,
     readSettings,
     scanConcurrency,
   );

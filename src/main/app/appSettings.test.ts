@@ -24,6 +24,7 @@ describe('app settings normalization', () => {
     expect(settings.albumMergeStrategy).toBe('standard');
     expect(settings.chineseCrossScriptSearchEnabled).toBe(true);
     expect(settings.artistWallAlbumArtwork).toBe(false);
+    expect(settings.autoFetchArtistImages).toBe(false);
     expect(settings.autoAccountCheckOnStartup).toBe(true);
     expect(settings.spotifyAutoLaunchOfficialPlayer).toBe(true);
     expect(settings.playlistBackupsEnabled).toBe(true);
@@ -130,6 +131,14 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({}).artistWallAlbumArtwork).toBe(false);
     expect(normalizeSettings({ artistWallAlbumArtwork: 'yes' as never }).artistWallAlbumArtwork).toBe(false);
     expect(normalizeSettings({ artistWallAlbumArtwork: true }).artistWallAlbumArtwork).toBe(true);
+  });
+
+  it('normalizes automatic artist image fetching as disabled by default', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).autoFetchArtistImages).toBe(false);
+    expect(normalizeSettings({ autoFetchArtistImages: 'yes' as never }).autoFetchArtistImages).toBe(false);
+    expect(normalizeSettings({ autoFetchArtistImages: true }).autoFetchArtistImages).toBe(true);
   });
 
   it('keeps playlist backups enabled unless explicitly disabled', async () => {

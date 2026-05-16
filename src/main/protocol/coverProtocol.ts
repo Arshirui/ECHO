@@ -26,6 +26,9 @@ const allowedRemoteImageHosts = new Set([
 const isCoverVariant = (value: string): value is CoverVariant =>
   value === 'thumb' || value === 'album' || value === 'large' || value === 'original';
 
+const isArtistImageVariant = (value: string): value is 'thumb' | 'medium' | 'large' =>
+  value === 'thumb' || value === 'medium' || value === 'large';
+
 const contentTypeForPath = (filePath: string, fallback: string | null): string => {
   switch (extname(filePath).toLocaleLowerCase()) {
     case '.webp':
@@ -115,6 +118,15 @@ export const registerCoverProtocolScheme = (): void => {
         stream: true,
       },
     },
+    {
+      scheme: 'echo-artist-image',
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        stream: true,
+      },
+    },
   ]);
 };
 
@@ -173,6 +185,32 @@ export const registerCoverProtocolHandler = (): void => {
         headers: {
           'Content-Type': contentTypeForPath(wallpaperPath, null),
           'Cache-Control': wallpaperCacheControlHeader,
+        },
+      });
+    } catch {
+      return missingCoverResponse();
+    }
+  });
+  protocol.handle('echo-artist-image', async (request) => {
+    try {
+      const url = new URL(request.url);
+      const variant = url.hostname;
+      const artistKey = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+
+      if (!isArtistImageVariant(variant) || !artistKey) {
+        return missingCoverResponse();
+      }
+
+      const asset = getLibraryService().resolveArtistImageAsset(artistKey, variant);
+
+      if (!asset || !existsSync(asset.filePath)) {
+        return missingCoverResponse();
+      }
+
+      return new Response(readFileSync(asset.filePath), {
+        headers: {
+          'Content-Type': contentTypeForPath(asset.filePath, asset.mimeType),
+          'Cache-Control': cacheControlHeader,
         },
       });
     } catch {

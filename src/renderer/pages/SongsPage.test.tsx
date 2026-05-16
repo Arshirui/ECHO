@@ -17,6 +17,7 @@ vi.mock('../components/library/TrackList', () => ({
     isLoadingMore,
     loadedCount,
     onEndReached,
+    onOpenTrackMenu,
     onPlay,
     onShowVersions,
     onVisibleTrackIdsChange,
@@ -29,6 +30,7 @@ vi.mock('../components/library/TrackList', () => ({
     isLoadingMore?: boolean;
     loadedCount?: number;
     onEndReached?: () => void;
+    onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
     onPlay?: (track: LibraryTrack) => void;
     onShowVersions?: (track: LibraryTrack) => void;
     onVisibleTrackIdsChange?: (trackIds: string[]) => void;
@@ -50,7 +52,14 @@ vi.mock('../components/library/TrackList', () => ({
       </button>
       {tracks.map((track) => (
         <div key={track.id}>
-          <button type="button" onClick={() => onPlay?.(track)}>
+          <button
+            type="button"
+            onClick={() => onPlay?.(track)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              onOpenTrackMenu?.(track, { x: event.clientX, y: event.clientY });
+            }}
+          >
             {track.title}
           </button>
           {duplicateHiddenCounts?.[track.id] ? (
@@ -130,6 +139,7 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
   window.echo = {
     library: {
       getTracks: vi.fn().mockResolvedValue(makePage(tracks)),
+      getTrack: vi.fn((trackId: string) => Promise.resolve(tracks.find((track) => track.id === trackId) ?? null)),
       getAlbums: vi.fn(),
       getAlbumTracks: vi.fn(),
       getSummary: vi.fn(),
@@ -173,6 +183,7 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
       clearTracks: vi.fn().mockResolvedValue({ scannedCount: tracks.length, removedCount: tracks.length }),
       clearCache: vi.fn(),
       startBpmAnalysis: vi.fn(),
+      getBpmAnalysisStatus: vi.fn(),
     },
     playback: {
       getStatus: vi.fn().mockResolvedValue({
@@ -337,6 +348,28 @@ describe('SongsPage', () => {
       }),
     );
     await waitFor(() => expect(screen.getByTestId('current-track-id').textContent).toBe('track-1'));
+  });
+
+  it('opens osu timing from the song context menu and copies the timing line', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    installEcho([makeTrack({ bpm: 128, bpmConfidence: 0.9, beatOffsetMs: 12, analysisStatus: 'complete' })]);
+
+    await renderSongsPage();
+
+    const row = await screen.findByRole('button', { name: 'Song One' });
+    fireEvent.contextMenu(row, { clientX: 240, clientY: 180 });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'osu! Timing' }));
+
+    expect(await screen.findByRole('dialog', { name: 'osu! Timing' })).toBeTruthy();
+    expect(screen.getByText('12,468.75,4,1,0,100,1,0')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy timing line' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('12,468.75,4,1,0,100,1,0'));
   });
 
   it('prunes invalid library entries from the toolbar without starting a folder scan', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, FolderOpen, PauseCircle, Play, RefreshCw, RotateCcw, Save, Server, Trash2, Wifi } from 'lucide-react';
 import type {
   RemoteBackgroundGlobalStatus,
@@ -125,9 +125,30 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestRemoteSourceResult | null>(null);
+  const terminalSyncEventsRef = useRef<Record<string, string>>({});
 
   const activeTab = useMemo(() => tabs.find((tab) => tab.provider === activeProvider) ?? tabs[0], [activeProvider]);
   const visibleSources = useMemo(() => sources.filter((source) => source.provider === activeProvider), [activeProvider, sources]);
+  const visibleSourceIds = useMemo(() => visibleSources.map((source) => source.id), [visibleSources]);
+
+  const refreshStatuses = useCallback(async (sourceIds: string[], replace = false): Promise<void> => {
+    if (!remoteApi) {
+      return;
+    }
+
+    const uniqueIds = Array.from(new Set(sourceIds.filter(Boolean)));
+    const [statuses, jobs, globalStatus] = await Promise.all([
+      Promise.all(uniqueIds.map((sourceId) => remoteApi.getSyncStatus(sourceId).catch(() => emptyStatus(sourceId)))),
+      Promise.all(uniqueIds.map((sourceId) => remoteApi.getJobStatus(sourceId).catch(() => emptyJobStatus(sourceId)))),
+      remoteApi.getBackgroundGlobalStatus().catch(() => emptyGlobalStatus()),
+    ]);
+
+    const nextStatuses = Object.fromEntries(statuses.map((status) => [status.sourceId, status]));
+    const nextJobs = Object.fromEntries(jobs.map((status) => [status.sourceId, status]));
+    setSyncStatuses((current) => (replace ? nextStatuses : { ...current, ...nextStatuses }));
+    setJobStatuses((current) => (replace ? nextJobs : { ...current, ...nextJobs }));
+    setGlobalJobStatus(globalStatus);
+  }, [remoteApi]);
 
   const refreshSources = useCallback(async (): Promise<void> => {
     if (!remoteApi) {
@@ -136,30 +157,58 @@ export const RemoteSourcesPanel = (): JSX.Element => {
 
     const nextSources = await remoteApi.list();
     setSources(nextSources);
-    const statuses = await Promise.all(nextSources.map((source) => remoteApi.getSyncStatus(source.id).catch(() => emptyStatus(source.id))));
-    const jobs = await Promise.all(nextSources.map((source) => remoteApi.getJobStatus(source.id).catch(() => emptyJobStatus(source.id))));
-    const globalStatus = await remoteApi.getBackgroundGlobalStatus().catch(() => emptyGlobalStatus());
-    setSyncStatuses(Object.fromEntries(statuses.map((status) => [status.sourceId, status])));
-    setJobStatuses(Object.fromEntries(jobs.map((status) => [status.sourceId, status])));
-    setGlobalJobStatus(globalStatus);
-  }, [remoteApi]);
+    await refreshStatuses(nextSources.map((source) => source.id), true);
+  }, [refreshStatuses, remoteApi]);
 
   useEffect(() => {
     void refreshSources();
   }, [refreshSources]);
 
   useEffect(() => {
-    const hasRunningSync = Object.values(syncStatuses).some((status) => status.status === 'running');
-    const hasRunningJobs = Object.values(jobStatuses).some((status) => sumKinds(status.pending) + sumKinds(status.running) > 0);
+    const hasRunningSync = visibleSourceIds.some((sourceId) => syncStatuses[sourceId]?.status === 'running');
+    const hasRunningJobs = visibleSourceIds.some((sourceId) => {
+      const status = jobStatuses[sourceId];
+      return status ? sumKinds(status.pending) + sumKinds(status.running) > 0 : false;
+    });
     if ((!hasRunningSync && !hasRunningJobs) || !remoteApi) {
       return undefined;
     }
 
     const timer = window.setInterval(() => {
-      void refreshSources();
-    }, 1200);
+      void refreshStatuses(visibleSourceIds);
+    }, 1500);
     return () => window.clearInterval(timer);
-  }, [jobStatuses, refreshSources, remoteApi, syncStatuses]);
+  }, [jobStatuses, refreshStatuses, remoteApi, syncStatuses, visibleSourceIds]);
+
+  useEffect(() => {
+    let shouldRefreshSources = false;
+    let shouldRefreshLibrary = false;
+
+    for (const status of Object.values(syncStatuses)) {
+      if (status.status !== 'completed' && status.status !== 'failed' && status.status !== 'cancelled') {
+        continue;
+      }
+      if (!status.finishedAt) {
+        continue;
+      }
+
+      const eventKey = `${status.status}:${status.finishedAt}`;
+      if (terminalSyncEventsRef.current[status.sourceId] === eventKey) {
+        continue;
+      }
+
+      terminalSyncEventsRef.current[status.sourceId] = eventKey;
+      shouldRefreshSources = true;
+      shouldRefreshLibrary = true;
+    }
+
+    if (shouldRefreshLibrary) {
+      window.dispatchEvent(new Event('library:changed'));
+    }
+    if (shouldRefreshSources) {
+      void refreshSources();
+    }
+  }, [refreshSources, syncStatuses]);
 
   const updateForm = (patch: Partial<typeof form>): void => {
     setForm((current) => ({ ...current, ...patch }));
@@ -226,7 +275,6 @@ export const RemoteSourcesPanel = (): JSX.Element => {
       setMessage(action === 'saveSync' ? '来源已保存，正在开始同步。' : '来源已保存。');
       if (action === 'saveSync') {
         await remoteApi.sync(saved.id);
-        window.dispatchEvent(new Event('library:changed'));
       }
       setForm((current) => ({ ...current, displayName: '', baseUrl: '', username: '', secret: '' }));
       await refreshSources();
@@ -254,7 +302,6 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         setMessage(result.message);
       } else if (action === 'sync') {
         await remoteApi.sync(source.id);
-        window.dispatchEvent(new Event('library:changed'));
         setMessage('已开始同步。');
       } else if (action === 'metadata') {
         await remoteApi.startBackgroundJobs(source.id, ['metadata', 'cover', 'duration-backfill']);
@@ -430,14 +477,15 @@ export const RemoteSourcesPanel = (): JSX.Element => {
               <div className="remote-sync-status">
                 <span>阶段：<strong>{syncStatus.phase}</strong></span>
                 <span>发现：<strong>{syncStatus.discoveredCount}</strong></span>
-                <span>写入：<strong>{syncStatus.writtenCount}</strong></span>
+                <span>成功写入：<strong>{syncStatus.writtenCount}</strong></span>
+                <span>跳过：<strong>{syncStatus.skippedCount}</strong></span>
                 <span>失败：<strong>{syncStatus.failedCount}</strong></span>
               </div>
               <div className="remote-job-grid">
                 {jobKinds.map((kind) => (
                   <span key={kind}>
                     <em>{jobLabels[kind]}</em>
-                    <strong>{jobStatus.pending[kind]} 待处理 / {jobStatus.running[kind]} 运行 / {jobStatus.failed[kind]} 失败</strong>
+                    <strong>{jobStatus.completed[kind]} 完成 / {jobStatus.pending[kind]} 待处理 / {jobStatus.running[kind]} 运行 / {jobStatus.failed[kind]} 失败</strong>
                   </span>
                 ))}
               </div>

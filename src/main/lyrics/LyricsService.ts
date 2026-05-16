@@ -40,6 +40,8 @@ type LyricsSettings = Pick<
   | 'lyricsAutoAcceptScore'
   | 'lyricsCoverAutoAcceptScore'
   | 'lyricsDefaultOffsetMs'
+  | 'lyricsRomanizationEnabled'
+  | 'lyricsTranslationEnabled'
 >;
 
 type LibraryLookup = {
@@ -443,6 +445,8 @@ const safeSettings = (readSettings: () => AppSettings): LyricsSettings => {
         ? Math.max(0.5, Math.min(1, Number(settings.lyricsCoverAutoAcceptScore)))
         : (defaultSettings.lyricsCoverAutoAcceptScore ?? 0.97),
       lyricsDefaultOffsetMs: clampOffset(Number(settings.lyricsDefaultOffsetMs ?? 0)),
+      lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled !== false,
+      lyricsTranslationEnabled: settings.lyricsTranslationEnabled !== false,
     };
   } catch {
     return {
@@ -457,12 +461,20 @@ const safeSettings = (readSettings: () => AppSettings): LyricsSettings => {
       lyricsAutoAcceptScore: defaultSettings.lyricsAutoAcceptScore,
       lyricsCoverAutoAcceptScore: defaultSettings.lyricsCoverAutoAcceptScore ?? 0.97,
       lyricsDefaultOffsetMs: defaultSettings.lyricsDefaultOffsetMs,
+      lyricsRomanizationEnabled: defaultSettings.lyricsRomanizationEnabled,
+      lyricsTranslationEnabled: defaultSettings.lyricsTranslationEnabled,
     };
   }
 };
 
+const preferredSecondaryFields = (settings: LyricsSettings): Array<'translation' | 'romanization'> => [
+  ...(settings.lyricsTranslationEnabled ? ['translation' as const] : []),
+  ...(settings.lyricsRomanizationEnabled ? ['romanization' as const] : []),
+];
+
 export class LyricsService {
   private readonly matchEngine: LyricsMatchEngine;
+  private readonly secondaryLyricsRefreshMisses = new Set<string>();
 
   constructor(
     private readonly database: EchoDatabase,
@@ -488,12 +500,12 @@ export class LyricsService {
     }
 
     const query = toQuery(track);
+    const settings = safeSettings(this.readAppSettings);
     const cached = this.findCachedLyricsWithRepair(query);
     if (cached) {
-      return this.fillCachedRomanization(query, cached);
+      const enrichedCached = await this.fillCachedRomanization(query, cached);
+      return this.refreshCachedLyricsForPreferredSecondary(query, enrichedCached, settings);
     }
-
-    const settings = safeSettings(this.readAppSettings);
 
     try {
       const result = await this.matchEngine.match(query, {
@@ -505,6 +517,7 @@ export class LyricsService {
         coverAutoAcceptScore: settings.lyricsCoverAutoAcceptScore,
         deepSearchEnabled: settings.lyricsDeepSearchEnabled,
         collectAllCandidates: false,
+        preferredSecondaryFields: preferredSecondaryFields(settings),
         isRejected: (provider, providerLyricsId) => this.hasRejectedProviderLyrics(trackId, provider, providerLyricsId),
       });
 
@@ -546,6 +559,7 @@ export class LyricsService {
         coverAutoAcceptScore: settings.lyricsCoverAutoAcceptScore,
         deepSearchEnabled: settings.lyricsDeepSearchEnabled,
         collectAllCandidates: true,
+        preferredSecondaryFields: preferredSecondaryFields(settings),
         isRejected: (provider, providerLyricsId) => this.hasRejectedProviderLyrics(trackId, provider, providerLyricsId),
       });
 
@@ -1112,6 +1126,73 @@ export class LyricsService {
     }
 
     return this.writeLyricsCache(query, enriched);
+  }
+
+  private missingPreferredSecondaryFields(
+    lyrics: TrackLyrics,
+    settings: LyricsSettings,
+  ): Array<'translation' | 'romanization'> {
+    const fields = preferredSecondaryFields(settings);
+    if (fields.length === 0 || lyrics.lines.length === 0) {
+      return [];
+    }
+
+    return fields.filter((field) => !lyrics.lines.some((line) => Boolean(line[field]?.trim())));
+  }
+
+  private async refreshCachedLyricsForPreferredSecondary(
+    query: LyricsQuery,
+    cached: TrackLyrics,
+    settings: LyricsSettings,
+  ): Promise<TrackLyrics> {
+    const fields = this.missingPreferredSecondaryFields(cached, settings);
+    if (
+      !query.trackId ||
+      !settings.lyricsNetworkEnabled ||
+      !settings.lyricsAutoSearch ||
+      fields.length === 0
+    ) {
+      return cached;
+    }
+
+    const trackId = query.trackId;
+    const refreshKey = `${cacheKeyFor(query, cached.provider)}:${fields.join(',')}`;
+    if (this.secondaryLyricsRefreshMisses.has(refreshKey)) {
+      return cached;
+    }
+
+    try {
+      const result = await this.matchEngine.match(query, {
+        enabledProviders: settings.lyricsEnabledProviders,
+        networkEnabled: settings.lyricsNetworkEnabled && settings.lyricsAutoSearch,
+        providerTimeoutMs: settings.lyricsProviderTimeoutMs,
+        totalMatchTimeoutMs: settings.lyricsTotalMatchTimeoutMs,
+        autoAcceptScore: settings.lyricsAutoAcceptScore,
+        coverAutoAcceptScore: settings.lyricsCoverAutoAcceptScore,
+        deepSearchEnabled: settings.lyricsDeepSearchEnabled,
+        collectAllCandidates: false,
+        preferredSecondaryFields: fields,
+        isRejected: (provider, providerLyricsId) => this.hasRejectedProviderLyrics(trackId, provider, providerLyricsId),
+      });
+      if (!result.accepted) {
+        this.secondaryLyricsRefreshMisses.add(refreshKey);
+        return cached;
+      }
+
+      const lyrics = providerResultToTrackLyrics(query, result.accepted.providerResult, result.accepted.score);
+      const hasRequestedSecondary = lyrics
+        ? fields.some((field) => lyrics.lines.some((line) => Boolean(line[field]?.trim())))
+        : false;
+      if (!lyrics || !hasRequestedSecondary) {
+        this.secondaryLyricsRefreshMisses.add(refreshKey);
+        return cached;
+      }
+
+      return this.writeLyricsCacheWithRepair(query, await this.fillLyricsRomanization(lyrics));
+    } catch {
+      this.secondaryLyricsRefreshMisses.add(refreshKey);
+      return cached;
+    }
   }
 }
 

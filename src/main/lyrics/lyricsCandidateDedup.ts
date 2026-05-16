@@ -6,6 +6,9 @@ import { normalizeTextForIdentity } from './lyricsTextNormalization';
 export type DedupableLyricsCandidate = LyricsSearchCandidate & {
   raw?: unknown;
   providerPriority?: number;
+  hasTranslation?: boolean;
+  hasRomanization?: boolean;
+  secondaryLyricsPriority?: number;
 };
 
 const textHash = (value: string | null | undefined): string =>
@@ -41,6 +44,10 @@ const mergeReasons = (left?: string[], right?: string[]): string[] | undefined =
 };
 
 const betterCandidate = <T extends DedupableLyricsCandidate>(left: T, right: T): T => {
+  if ((right.secondaryLyricsPriority ?? 0) !== (left.secondaryLyricsPriority ?? 0)) {
+    return (right.secondaryLyricsPriority ?? 0) > (left.secondaryLyricsPriority ?? 0) ? right : left;
+  }
+
   if ((right.providerPriority ?? 0) !== (left.providerPriority ?? 0)) {
     return (right.providerPriority ?? 0) > (left.providerPriority ?? 0) ? right : left;
   }
@@ -90,6 +97,9 @@ export const sortLyricsCandidates = <T extends DedupableLyricsCandidate>(queryDu
     const leftAuto = left.reasons?.includes('auto_accept') ? 1 : 0;
     const rightAuto = right.reasons?.includes('auto_accept') ? 1 : 0;
     if (rightAuto !== leftAuto) return rightAuto - leftAuto;
+
+    const secondaryLyricsDelta = (right.secondaryLyricsPriority ?? 0) - (left.secondaryLyricsPriority ?? 0);
+    if (secondaryLyricsDelta !== 0) return secondaryLyricsDelta;
 
     const priorityDelta = (right.providerPriority ?? 0) - (left.providerPriority ?? 0);
     if (priorityDelta !== 0) return priorityDelta;

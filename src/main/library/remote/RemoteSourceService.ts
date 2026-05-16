@@ -62,10 +62,7 @@ export class RemoteSourceService {
     );
     this.syncService = new RemoteLibrarySyncService(this.store, (provider) => this.getAdapter(provider), (_sourceId, tracks) => {
       for (const indexed of tracks) {
-        const track = this.store.getTrack(indexed.id);
-        if (track) {
-          this.backgroundQueue.enqueueTrack(track, ['metadata', 'duration-backfill', 'cover', 'lyrics', 'mv']);
-        }
+        this.backgroundQueue.enqueueTrackWrite(indexed, ['metadata', 'duration-backfill', 'cover']);
       }
     });
   }

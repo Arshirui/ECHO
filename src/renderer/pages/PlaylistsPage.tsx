@@ -791,6 +791,14 @@ export const PlaylistsPage = (): JSX.Element => {
       try {
         setError(null);
 
+        if (
+          track.mediaType === 'remote' &&
+          (action === 'open-osu-timing' || action === 'show-in-folder' || action === 'copy-path' || action === 'open-system' || action === 'delete-song')
+        ) {
+          setError('远程歌曲暂不支持本地文件操作。');
+          return;
+        }
+
         switch (action) {
           case 'play-next':
             playTrackNext(track, queueSource);

@@ -14,6 +14,7 @@ export type LyricsMatchEngineOptions = {
   coverAutoAcceptScore: number;
   deepSearchEnabled: boolean;
   collectAllCandidates: boolean;
+  preferredSecondaryFields: Array<'translation' | 'romanization'>;
   isRejected?: (provider: LyricsProviderId, providerLyricsId: string | null) => boolean;
 };
 
@@ -37,6 +38,7 @@ const defaultOptions: LyricsMatchEngineOptions = {
   coverAutoAcceptScore: 0.97,
   deepSearchEnabled: true,
   collectAllCandidates: false,
+  preferredSecondaryFields: [],
 };
 
 const providerPriorityBonus = (priority: number): number => Math.min(0.01, Math.max(0, priority / 100000));
@@ -51,6 +53,20 @@ const providerOrderPriority = (order: LyricsProviderId[], provider: LyricsProvid
 
 const sortProvidersByOrder = (providers: LyricsProvider[], order: LyricsProviderId[]): LyricsProvider[] =>
   [...providers].sort((left, right) => providerOrderPriority(order, right) - providerOrderPriority(order, left));
+
+const hasText = (value: string | null | undefined): boolean => typeof value === 'string' && value.trim().length > 0;
+
+const providerCanSupplyPreferredSecondary = (
+  provider: LyricsProvider,
+  settings: LyricsMatchEngineOptions,
+): boolean =>
+  settings.preferredSecondaryFields.some((field) => provider.capabilities[field]);
+
+const candidateHasPreferredSecondary = (
+  candidate: MatchedLyricsCandidate,
+  settings: LyricsMatchEngineOptions,
+): boolean =>
+  settings.preferredSecondaryFields.some((field) => (field === 'translation' ? candidate.hasTranslation : candidate.hasRomanization));
 
 const sanitizeQueryForProvider = (query: LyricsQuery, provider: LyricsProvider): LyricsQuery =>
   provider.id === 'local'
@@ -133,6 +149,7 @@ export class LyricsMatchEngine {
     const totalTimer = setTimeout(() => totalController.abort(), settings.totalMatchTimeoutMs);
     const pending = new Map<LyricsProviderId, Promise<MatchedLyricsCandidate[]>>();
     const providerPriorityById = new Map(networkProviders.map((provider) => [provider.id, providerOrderPriority(settings.enabledProviders, provider)]));
+    const networkProviderById = new Map(networkProviders.map((provider) => [provider.id, provider]));
     const collected: MatchedLyricsCandidate[] = [...localCollected];
     let accepted: MatchedLyricsCandidate | null = null;
 
@@ -153,7 +170,14 @@ export class LyricsMatchEngine {
         const sorted = sortLyricsCandidates(normalized.durationSeconds, dedupeLyricsCandidates(collected));
         accepted = sorted.find((candidate) => candidate.decision.autoAccept && candidate.decision.risk === 'low') ?? null;
         const strongestPendingPriority = Math.max(0, ...Array.from(pending.keys()).map((id) => providerPriorityById.get(id) ?? 0));
-        if (accepted && !settings.collectAllCandidates && (accepted.providerPriority ?? 0) >= strongestPendingPriority) {
+        const shouldWaitForPreferredSecondary =
+          accepted &&
+          !candidateHasPreferredSecondary(accepted, settings) &&
+          Array.from(pending.keys()).some((id) => {
+            const provider = networkProviderById.get(id);
+            return provider ? providerCanSupplyPreferredSecondary(provider, settings) : false;
+          });
+        if (accepted && !settings.collectAllCandidates && !shouldWaitForPreferredSecondary && (accepted.providerPriority ?? 0) >= strongestPendingPriority) {
           totalController.abort();
           break;
         }
@@ -249,6 +273,20 @@ export class LyricsMatchEngine {
       decision.reasons.push('auto_accept');
     }
 
+    const hasTranslation = hasText(result.translationLyrics);
+    const hasRomanization = hasText(result.romanizationLyrics);
+    const secondaryLyricsPriority = settings.preferredSecondaryFields.reduce((priority, field) => {
+      if (field === 'translation' && hasTranslation) {
+        return priority + 1;
+      }
+
+      if (field === 'romanization' && hasRomanization) {
+        return priority + 1;
+      }
+
+      return priority;
+    }, 0);
+
     return {
       id: randomUUID(),
       ...base,
@@ -262,6 +300,9 @@ export class LyricsMatchEngine {
       versionScore: decision.versionScore,
       raw: result.raw ?? result,
       providerPriority: providerOrderPriority(settings.enabledProviders, provider),
+      hasTranslation,
+      hasRomanization,
+      secondaryLyricsPriority,
       decision,
       providerResult: result,
     };

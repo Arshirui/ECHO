@@ -150,4 +150,84 @@ describe('SubsonicRemoteSourceAdapter', () => {
     expect(Buffer.from(await proxied.arrayBuffer()).equals(audio)).toBe(true);
     await proxy.close();
   });
+
+  it('fetches album details with bounded concurrency and continues when one album fails', async () => {
+    let activeAlbumRequests = 0;
+    let maxActiveAlbumRequests = 0;
+    const errors: Array<{ path: string; message: string }> = [];
+    const server = createServer(async (request, response) => {
+      const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+      if (url.pathname === '/rest/ping.view') {
+        response.setHeader('Content-Type', 'application/json');
+        response.end(envelope({}));
+        return;
+      }
+      if (url.pathname === '/rest/getAlbumList2.view') {
+        response.setHeader('Content-Type', 'application/json');
+        response.end(envelope({
+          albumList2: {
+            album: [
+              { id: 'album-1', name: 'One' },
+              { id: 'album-2', name: 'Two' },
+              { id: 'album-3', name: 'Three' },
+              { id: 'album-4', name: 'Four' },
+            ],
+          },
+        }));
+        return;
+      }
+      if (url.pathname === '/rest/getAlbum.view') {
+        const id = url.searchParams.get('id') ?? '';
+        activeAlbumRequests += 1;
+        maxActiveAlbumRequests = Math.max(maxActiveAlbumRequests, activeAlbumRequests);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        activeAlbumRequests -= 1;
+
+        if (id === 'album-2') {
+          response.writeHead(500, { 'Content-Type': 'text/plain' });
+          response.end('failed album');
+          return;
+        }
+
+        response.setHeader('Content-Type', 'application/json');
+        response.end(envelope({
+          album: {
+            id,
+            song: [{
+              id: `song-${id}`,
+              title: `Song ${id}`,
+              artist: 'Echo Artist',
+              album: `Album ${id}`,
+              duration: 120,
+            }],
+          },
+        }));
+        return;
+      }
+
+      response.writeHead(404);
+      response.end();
+    });
+    servers.push(server);
+    const port = await listen(server);
+    const adapter = new SubsonicRemoteSourceAdapter();
+    const scanSource = {
+      ...source(port),
+      config: { ...source(port).config, scanConcurrency: 3 },
+    };
+
+    const scanned = [];
+    for await (const item of adapter.scan({
+      source: scanSource,
+      onError: (path, error) => errors.push({ path, message: error.message }),
+    })) {
+      scanned.push(item);
+    }
+
+    expect(scanned).toHaveLength(3);
+    expect(scanned.map((item) => item.stableKey).sort()).toEqual(['song-album-1', 'song-album-3', 'song-album-4']);
+    expect(errors).toEqual([expect.objectContaining({ path: 'subsonic:album:album-2' })]);
+    expect(maxActiveAlbumRequests).toBeGreaterThan(1);
+    expect(maxActiveAlbumRequests).toBeLessThanOrEqual(3);
+  });
 });

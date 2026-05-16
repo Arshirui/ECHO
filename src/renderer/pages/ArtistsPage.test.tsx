@@ -47,6 +47,12 @@ const installLibrary = (
     },
     library: {
       getArtists,
+      enqueueMissingArtistImages: vi.fn(),
+      refreshArtistImage: vi.fn(),
+      refreshVisibleArtistImages: vi.fn(),
+      getArtistImageStatus: vi.fn(),
+      clearArtistImageCache: vi.fn(),
+      onArtistImagesUpdated: vi.fn(() => () => undefined),
       getAlbums: vi.fn(),
       getTracks: vi.fn(),
       getAlbumTracks: vi.fn(),
@@ -249,6 +255,43 @@ describe('ArtistsPage', () => {
     await screen.findByText('Artist 1');
     expect(screen.getByText('AR')).toBeTruthy();
     expect(document.querySelector('.artist-avatar img')).toBeNull();
+  });
+
+  it('renders cached artist avatar before album artwork', async () => {
+    const getArtists = vi.fn().mockResolvedValue(
+      page([
+        artist('1', {
+          coverId: 'cover-1',
+          coverThumb: 'echo-cover://album/cover-1',
+          avatarThumbUrl: 'echo-artist-image://thumb/artist-1',
+          avatarStatus: 'matched',
+        }),
+      ]),
+    );
+    installLibrary(getArtists, vi.fn().mockResolvedValue({ artistWallAlbumArtwork: false, autoFetchArtistImages: false }));
+
+    renderArtistsPage();
+
+    await screen.findByText('Artist 1');
+    const image = document.querySelector('.artist-avatar img') as HTMLImageElement | null;
+    expect(image?.getAttribute('src')).toBe('echo-artist-image://thumb/artist-1');
+    expect(image?.getAttribute('loading')).toBe('lazy');
+    expect(screen.queryByText('AR')).toBeNull();
+  });
+
+  it('queues current page artist avatars only when automatic fetching is enabled', async () => {
+    const getArtists = vi.fn().mockResolvedValue(page([artist('1'), artist('2')]));
+    const refreshVisibleArtistImages = vi.fn().mockResolvedValue({ queued: 2, skipped: 0 });
+    installLibrary(getArtists, vi.fn().mockResolvedValue({ artistWallAlbumArtwork: false, autoFetchArtistImages: true }));
+    window.echo!.library.refreshVisibleArtistImages = refreshVisibleArtistImages;
+
+    renderArtistsPage();
+
+    await waitFor(() => expect(refreshVisibleArtistImages).toHaveBeenCalledTimes(1));
+    expect(refreshVisibleArtistImages).toHaveBeenCalledWith([
+      { id: '1', name: 'Artist 1' },
+      { id: '2', name: 'Artist 2' },
+    ]);
   });
 
   it('renders album artwork when the artist wall artwork setting is enabled', async () => {

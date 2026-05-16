@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AppSettings } from '../../../shared/types/appSettings';
 import type { LyricsSearchCandidate, TrackLyrics } from '../../../shared/types/lyrics';
+import type { MvSettings } from '../../../shared/types/mv';
 import { LyricsSettingsDrawer } from './LyricsSettingsDrawer';
 
 const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
@@ -118,6 +119,19 @@ const makeTrackLyrics = (overrides: Partial<TrackLyrics> = {}): TrackLyrics => (
   ...overrides,
 });
 
+const makeMvSettings = (overrides: Partial<MvSettings> = {}): MvSettings => ({
+  autoSearch: true,
+  autoPreload: true,
+  restartAudioOnLoad: false,
+  replayAudioOnChange: true,
+  enabledProviders: ['bilibili', 'youtube'],
+  providerOrder: ['bilibili', 'youtube'],
+  maxQuality: 'max',
+  allow60fps: true,
+  lyricsReadabilityEnhanced: false,
+  ...overrides,
+});
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -137,6 +151,7 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
+    fireEvent.click(await screen.findByRole('checkbox', { name: /显示歌词样式设置/ }));
     await waitFor(() => expect(container.querySelectorAll('input[type="range"]').length).toBeGreaterThan(0));
     const fontSizeSlider = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]')).find((input) => {
       const labelText = input.closest('label')?.textContent ?? '';
@@ -229,6 +244,7 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
+    fireEvent.click(await screen.findByRole('checkbox', { name: /显示歌词样式设置/ }));
     await waitFor(() => expect(container.querySelectorAll('input[type="range"]').length).toBeGreaterThan(4));
     vi.useFakeTimers();
     const ranges = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]'));
@@ -277,6 +293,7 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
+    fireEvent.click(await screen.findByRole('checkbox', { name: /显示歌词样式设置/ }));
     await waitFor(() => expect(container.querySelectorAll('input[type="range"]').length).toBeGreaterThan(0));
     vi.useFakeTimers();
     const spacingSlider = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]')).find(

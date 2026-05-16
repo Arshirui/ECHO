@@ -47,6 +47,9 @@ const frameTypePcmF32Le = 2;
 const frameTypeEndSession = 3;
 const frameTypeShutdown = 4;
 
+const normalizeExitCode = (code) =>
+  typeof code === 'number' && code > 0x7fffffff ? code - 0x1_0000_0000 : code;
+
 const createFrameHeader = (type, sessionId, payloadBytes) => {
   const header = Buffer.alloc(16);
   header.write(framedMagic, 0, 'ascii');
@@ -76,9 +79,11 @@ const createPcm = ({ sampleRate = 48000, seconds = 0.1, channels = 2 } = {}) => 
   return pcm;
 };
 
-const runPcmHost = async (args, { timeoutMs = 15000, sampleRate = 48000, seconds = 0.1 } = {}) => {
+const runPcmHost = async (args, { timeoutMs = 15000, sampleRate = 48000, seconds = 0.1, env = undefined } = {}) => {
+  const startedAt = Date.now();
   const child = spawn(hostPath, args, {
     cwd: projectRoot,
+    env: env ? { ...process.env, ...env } : process.env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
@@ -123,6 +128,7 @@ const runPcmHost = async (args, { timeoutMs = 15000, sampleRate = 48000, seconds
 
   return {
     exitCode,
+    elapsedMs: Date.now() - startedAt,
     stdout,
     stderr,
     stdinError,
@@ -242,6 +248,30 @@ if (devices.length === 0) {
 }
 
 console.log(`[smoke:audio-host] listed ${devices.length} output devices`);
+
+if (process.platform === 'win32') {
+  const initTimeoutResult = await runPcmHost(['-sr', '48000', '-ch', '2'], {
+    timeoutMs: 6000,
+    sampleRate: 48000,
+    seconds: 0.01,
+    env: { ECHO_TEST_WASAPI_INITIALIZE_HANG_MS: '5000' },
+  });
+  const initTimeoutExitCode = normalizeExitCode(initTimeoutResult.exitCode);
+
+  if (initTimeoutExitCode !== -3) {
+    fail(`WASAPI initialize timeout exited with ${initTimeoutResult.exitCode}; stderr=${initTimeoutResult.stderr}; stdout=${initTimeoutResult.stdout}`);
+  }
+
+  if (initTimeoutResult.elapsedMs >= 3500) {
+    fail(`WASAPI initialize timeout took ${initTimeoutResult.elapsedMs}ms; stderr=${initTimeoutResult.stderr}; stdout=${initTimeoutResult.stdout}`);
+  }
+
+  if (!/WASAPI Initialize timed out after 3000ms phase=initialize/u.test(initTimeoutResult.stderr)) {
+    fail(`WASAPI initialize timeout missing diagnostic; stderr=${initTimeoutResult.stderr}; stdout=${initTimeoutResult.stdout}`);
+  }
+
+  console.log(`[smoke:audio-host] WASAPI initialize timeout fail-fast OK (${initTimeoutResult.elapsedMs}ms)`);
+}
 
 const sharedResult = await runPcmHost(['-sr', '48000', '-ch', '2'], {
   timeoutMs: 10000,

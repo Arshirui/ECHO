@@ -23,6 +23,54 @@ export type LibraryCacheClearResult = LibraryCleanupResult & {
   freedCoverCacheBytes: number;
 };
 
+export type ArtistImageCacheStatus = 'pending' | 'loading' | 'matched' | 'not_found' | 'error' | 'rate_limited';
+
+export type ArtistImageCacheEntry = {
+  artistKey: string;
+  artistName: string;
+  provider: string;
+  providerArtistId: string | null;
+  sourceUrl: string | null;
+  sourceHash: string | null;
+  thumbPath: string | null;
+  mediumPath: string | null;
+  largePath: string | null;
+  status: ArtistImageCacheStatus;
+  confidence: number;
+  failureReason: string | null;
+  fetchedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ArtistImageCacheSummary = {
+  total: number;
+  matched: number;
+  pending: number;
+  loading: number;
+  notFound: number;
+  error: number;
+  rateLimited: number;
+};
+
+export type ArtistImageQueueResult = {
+  queued: number;
+  skipped: number;
+  disabled?: boolean;
+};
+
+export type ArtistImageRefreshResult = {
+  queued: boolean;
+  disabled?: boolean;
+  entry: ArtistImageCacheEntry | null;
+};
+
+export type ArtistImageCacheClearResult = {
+  removedRows: number;
+  deletedFiles: number;
+  freedBytes: number;
+};
+
 export type ImportPathClassification = {
   folders: string[];
   audioFiles: string[];
@@ -505,6 +553,9 @@ export type NetworkTagCandidateSearchRequest = {
 
 export type LibraryAlbum = {
   id: string;
+  mediaType?: 'local' | 'remote';
+  sourceId?: string | null;
+  provider?: string | null;
   albumKey: string;
   title: string;
   albumArtist: string;
@@ -523,6 +574,9 @@ export type LibraryAlbumDetail = LibraryAlbum & {
 
 export type LibraryArtist = {
   id: string;
+  mediaType?: 'local' | 'remote';
+  sourceId?: string | null;
+  provider?: string | null;
   name: string;
   sortName: string;
   role: 'track' | 'album' | 'both';
@@ -530,6 +584,10 @@ export type LibraryArtist = {
   albumCount: number;
   coverId: string | null;
   coverThumb: string | null;
+  avatarThumbUrl?: string | null;
+  avatarUrl?: string | null;
+  avatarStatus?: ArtistImageCacheStatus | null;
+  avatarProvider?: string | null;
 };
 
 export type LibraryPage<T> = {

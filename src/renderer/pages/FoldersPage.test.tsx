@@ -203,5 +203,24 @@ describe('FoldersPage', () => {
 
     expect(await screen.findByRole('menu')).toBeTruthy();
     expect(screen.getAllByRole('menuitem').length).toBeGreaterThan(5);
+    expect(screen.getByRole('menuitem', { name: 'osu! Timing' })).toBeTruthy();
+  });
+
+  it('opens osu timing from a folder track context menu', async () => {
+    libraryMock.getFolderTracks.mockResolvedValue(
+      page([track({ bpm: 150, bpmConfidence: 0.82, beatOffsetMs: 24, analysisStatus: 'complete' })]),
+    );
+
+    renderFoldersPage();
+
+    await screen.findByText('Root Song');
+    const row = screen.getByText('Root Song').closest('.track-row');
+    expect(row).toBeTruthy();
+
+    fireEvent.contextMenu(row!, { clientX: 240, clientY: 180 });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'osu! Timing' }));
+
+    expect(await screen.findByRole('dialog', { name: 'osu! Timing' })).toBeTruthy();
+    expect(screen.getByText('24,400,4,1,0,100,1,0')).toBeTruthy();
   });
 });

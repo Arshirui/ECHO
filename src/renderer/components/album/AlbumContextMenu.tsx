@@ -31,6 +31,7 @@ type MenuItem = {
 
 const viewportPadding = 8;
 const pointerOffset = 6;
+const remoteHiddenActions = new Set<AlbumMenuAction>(['edit-tags', 'delete-album']);
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(value, max));
 
@@ -72,7 +73,7 @@ export const AlbumContextMenu = ({ album, position, liked = false, onAction, onC
     };
   }, [onClose]);
 
-  const items: MenuItem[] = [
+  const allItems: MenuItem[] = [
     { action: 'play-album', label: '播放专辑', icon: Play },
     { action: 'add-to-queue', label: '加入队列', icon: ListEnd },
     { action: 'toggle-liked', label: liked ? '取消喜欢专辑' : '喜欢专辑', icon: Heart },
@@ -82,6 +83,7 @@ export const AlbumContextMenu = ({ album, position, liked = false, onAction, onC
     { action: 'save-cover', label: '保存专辑封面', icon: Download },
     { action: 'delete-album', label: '删除专辑', icon: Trash2, danger: true },
   ];
+  const items = allItems.filter((item) => album.mediaType !== 'remote' || !remoteHiddenActions.has(item.action));
 
   return createPortal(
     <div className="album-menu-layer" role="presentation" onMouseDown={onClose}>

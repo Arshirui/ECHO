@@ -1,6 +1,7 @@
 #ifdef _WIN32
 
 #include "wasapi_shared.h"
+#include "wasapi_timeout.h"
 
 #include <windows.h>
 #include <audioclient.h>
@@ -68,6 +69,7 @@ struct wasapi_shared_runtime {
     int followsDefaultDevice;
     volatile LONG renderFailed;
     int comNeedsUninit;
+    bool audioClientLeakedOnTimeout;
 };
 
 typedef struct com_scope {
@@ -822,7 +824,10 @@ static int prime_shared_buffer(
     return SUCCEEDED(hr) ? 0 : -1;
 }
 
-static void release_audio_client_pair(IAudioClient* audioClient, IAudioRenderClient* renderClient) {
+static void release_audio_client_pair(IAudioClient* audioClient, IAudioRenderClient* renderClient, bool leakedOnTimeout = false) {
+    if (leakedOnTimeout) {
+        return;
+    }
     if (audioClient != NULL) {
         audioClient->Stop();
     }
@@ -895,13 +900,19 @@ static int rebuild_audio_client(wasapi_shared_runtime* runtime) {
     REFERENCE_TIME bufferDuration = runtime->requestedBufferFrames > 0
         ? frames_to_hns(runtime->requestedBufferFrames, format.wave.Format.nSamplesPerSec)
         : 0;
-    hr = audioClient->Initialize(
+    hr = echo_wasapi_timeout::initialize_with_timeout(
+        audioClient,
         AUDCLNT_SHAREMODE_SHARED,
         AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
         bufferDuration,
         0,
         (WAVEFORMATEX*)&format.wave,
         NULL);
+    if (hr == E_PENDING) {
+        fprintf(stderr, "[echo-audio-host] WASAPI shared rebuild Initialize timed out; exiting host\n");
+        fflush(stderr);
+        ExitProcess((UINT)echo_audio_host::kExitDeviceInitializeTimeout);
+    }
     if (FAILED(hr)) {
         fprintf(stderr, "[echo-audio-host] WASAPI shared rebuild Initialize failed hr=0x%08lx\n", (unsigned long)hr);
         goto done;
@@ -932,17 +943,25 @@ static int rebuild_audio_client(wasapi_shared_runtime* runtime) {
         goto done;
     }
 
-    hr = audioClient->Start();
+    hr = echo_wasapi_timeout::start_with_timeout(audioClient);
+    if (hr == E_PENDING) {
+        fprintf(stderr, "[echo-audio-host] WASAPI shared rebuild Start timed out; exiting host\n");
+        fflush(stderr);
+        ExitProcess((UINT)echo_audio_host::kExitDeviceInitializeTimeout);
+    }
     if (FAILED(hr)) {
         fprintf(stderr, "[echo-audio-host] WASAPI shared rebuild Start failed hr=0x%08lx\n", (unsigned long)hr);
         goto done;
     }
 
-    unregister_watchers(runtime);
-    release_audio_client_pair(runtime->audioClient, runtime->renderClient);
+    if (!runtime->audioClientLeakedOnTimeout) {
+        unregister_watchers(runtime);
+    }
+    release_audio_client_pair(runtime->audioClient, runtime->renderClient, runtime->audioClientLeakedOnTimeout);
 
     runtime->audioClient = audioClient;
     runtime->renderClient = renderClient;
+    runtime->audioClientLeakedOnTimeout = false;
     runtime->sampleRate = format.wave.Format.nSamplesPerSec;
     runtime->channels = format.wave.Format.nChannels;
     runtime->bufferFrameCount = bufferFrames;
@@ -1211,13 +1230,19 @@ int wasapi_shared_start(
     REFERENCE_TIME bufferDuration = requestedBufferFrames > 0
         ? frames_to_hns(requestedBufferFrames, format.wave.Format.nSamplesPerSec)
         : 0;
-    hr = audioClient->Initialize(
+    hr = echo_wasapi_timeout::initialize_with_timeout(
+        audioClient,
         AUDCLNT_SHAREMODE_SHARED,
         AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
         bufferDuration,
         0,
         (WAVEFORMATEX*)&format.wave,
         NULL);
+    if (hr == E_PENDING) {
+        set_error(error, errorLen, "WASAPI Initialize timed out", S_OK);
+        result = echo_audio_host::kExitDeviceInitializeTimeout;
+        goto done;
+    }
     if (FAILED(hr)) {
         set_error(error, errorLen, "Failed to initialize WASAPI shared client", hr);
         goto done;
@@ -1304,7 +1329,13 @@ int wasapi_shared_start(
         goto done;
     }
 
-    hr = runtime->audioClient->Start();
+    hr = echo_wasapi_timeout::start_with_timeout(runtime->audioClient);
+    if (hr == E_PENDING) {
+        set_error(error, errorLen, "WASAPI Start timed out", S_OK);
+        runtime->audioClientLeakedOnTimeout = true;
+        result = echo_audio_host::kExitDeviceInitializeTimeout;
+        goto done;
+    }
     if (FAILED(hr)) {
         set_error(error, errorLen, "Failed to start WASAPI shared client", hr);
         goto done;
@@ -1322,13 +1353,13 @@ int wasapi_shared_start(
 done:
     if (closestMatch != NULL) CoTaskMemFree(closestMatch);
     if (mixFormat != NULL) CoTaskMemFree(mixFormat);
-    if (runtime != NULL) {
+    if (runtime != NULL && result != echo_audio_host::kExitDeviceInitializeTimeout) {
         wasapi_shared_stop(runtime);
     }
     if (renderClient != NULL) renderClient->Release();
-    if (audioClient != NULL) audioClient->Release();
+    if (audioClient != NULL && result != echo_audio_host::kExitDeviceInitializeTimeout) audioClient->Release();
     if (device != NULL) device->Release();
-    com_scope_leave(&com);
+    if (result != echo_audio_host::kExitDeviceInitializeTimeout) com_scope_leave(&com);
     return result;
 }
 
@@ -1346,13 +1377,21 @@ void wasapi_shared_stop(wasapi_shared_runtime* runtime) {
         }
         CloseHandle(runtime->thread);
     }
-    unregister_watchers(runtime);
-    if (runtime->audioClient != NULL) runtime->audioClient->Stop();
+    if (!runtime->audioClientLeakedOnTimeout) {
+        unregister_watchers(runtime);
+    }
+    if (runtime->audioClient != NULL && !runtime->audioClientLeakedOnTimeout) runtime->audioClient->Stop();
     if (runtime->renderEvent != NULL) CloseHandle(runtime->renderEvent);
     if (runtime->stopEvent != NULL) CloseHandle(runtime->stopEvent);
-    if (runtime->renderClient != NULL) runtime->renderClient->Release();
-    if (runtime->audioClient != NULL) runtime->audioClient->Release();
-    if (runtime->comNeedsUninit) CoUninitialize();
+    if (runtime->renderClient != NULL && !runtime->audioClientLeakedOnTimeout) runtime->renderClient->Release();
+    if (runtime->audioClient != NULL && !runtime->audioClientLeakedOnTimeout) runtime->audioClient->Release();
+    runtime->renderClient = NULL;
+    runtime->audioClient = NULL;
+    runtime->deviceWatcher = NULL;
+    runtime->deviceEnumerator = NULL;
+    runtime->sessionWatcher = NULL;
+    runtime->sessionControl = NULL;
+    if (runtime->comNeedsUninit && !runtime->audioClientLeakedOnTimeout) CoUninitialize();
     free(runtime);
 }
 

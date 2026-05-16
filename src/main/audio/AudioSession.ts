@@ -378,8 +378,16 @@ const outputDeviceStartRefusedPatterns = [
   /timeout_waiting_for_ready/iu,
 ];
 
+const deviceInitializeTimeoutPatterns = [
+  /\bdevice_initialize_timeout\b/u,
+];
+
+const isDeviceInitializeTimeoutError = (error: Error): boolean =>
+  deviceInitializeTimeoutPatterns.some((pattern) => pattern.test(error.message));
+
 const isOutputDeviceStartRefused = (error: Error): boolean =>
-  outputDeviceStartRefusedPatterns.some((pattern) => pattern.test(error.message));
+  outputDeviceStartRefusedPatterns.some((pattern) => pattern.test(error.message)) ||
+  isDeviceInitializeTimeoutError(error);
 
 const asioUnavailablePatterns = [
   /No device found/iu,
@@ -2407,6 +2415,11 @@ export class AudioSession extends EventEmitter {
           channels: probe.channels,
         });
         await this.stopBridgeGracefully(bridge, 'output-start-failed');
+        if (isDeviceInitializeTimeoutError(lastError)) {
+          this.addOutputWarning('device_initialize_timeout');
+          this.logger('[AudioSession] device initialize timed out; skipping retry on same device');
+          break;
+        }
         const nativeFallback = await this.startNativeFallbackForJuceOutput(
           startOptions,
           token,

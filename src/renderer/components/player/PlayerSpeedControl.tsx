@@ -16,6 +16,14 @@ const formatSpeed = (value: number): string => `${clampPlaybackRate(value).toFix
 const speedFromStatus = (status: AudioStatus | null): number => clampPlaybackRate(status?.playbackRate ?? 1);
 const modeFromStatus = (status: AudioStatus | null): PlaybackSpeedMode => status?.playbackSpeedMode ?? 'nightcore';
 const speedsMatch = (left: number, right: number): boolean => Math.abs(left - right) < 0.001;
+const popoverCloseDistancePx = 150;
+const popoverExitAnimationMs = 180;
+
+const distanceFromRect = (x: number, y: number, rect: DOMRect): number => {
+  const dx = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0;
+  const dy = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
+  return Math.hypot(dx, dy);
+};
 
 export const PlayerSpeedControl = ({
   status,
@@ -26,9 +34,28 @@ export const PlayerSpeedControl = ({
 }: PlayerSpeedControlProps): JSX.Element => {
   const [playbackRate, setPlaybackRate] = useState(speedFromStatus(status));
   const [mode, setMode] = useState<PlaybackSpeedMode>(modeFromStatus(status));
+  const [shouldRenderPopover, setShouldRenderPopover] = useState(isOpen);
+  const [isPopoverVisible, setIsPopoverVisible] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
   const isDraggingRef = useRef(false);
   const pendingCommitRef = useRef<{ playbackRate: number; mode: PlaybackSpeedMode } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRenderPopover(true);
+      const frameId = window.requestAnimationFrame(() => setIsPopoverVisible(true));
+      return () => window.cancelAnimationFrame(frameId);
+    }
+
+    setIsPopoverVisible(false);
+    if (!shouldRenderPopover) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setShouldRenderPopover(false), popoverExitAnimationMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [isOpen, shouldRenderPopover]);
 
   useEffect(() => {
     const nextPlaybackRate = speedFromStatus(status);
@@ -85,6 +112,21 @@ export const PlayerSpeedControl = ({
       return undefined;
     }
 
+    const handlePointerMove = (event: PointerEvent): void => {
+      if (isDraggingRef.current) {
+        return;
+      }
+
+      const rects = [rootRef.current?.getBoundingClientRect(), popoverRef.current?.getBoundingClientRect()].filter(
+        (rect): rect is DOMRect => Boolean(rect),
+      );
+      const nearestDistance = Math.min(...rects.map((rect) => distanceFromRect(event.clientX, event.clientY, rect)));
+
+      if (nearestDistance > popoverCloseDistancePx) {
+        onOpenChange(false);
+      }
+    };
+
     const handlePointerDown = (event: PointerEvent): void => {
       if (rootRef.current?.contains(event.target as Node)) {
         return;
@@ -93,8 +135,12 @@ export const PlayerSpeedControl = ({
       onOpenChange(false);
     };
 
+    window.addEventListener('pointermove', handlePointerMove, true);
     window.addEventListener('pointerdown', handlePointerDown, true);
-    return () => window.removeEventListener('pointerdown', handlePointerDown, true);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove, true);
+      window.removeEventListener('pointerdown', handlePointerDown, true);
+    };
   }, [isOpen, onOpenChange]);
 
   const commitSpeed = useCallback(
@@ -146,8 +192,8 @@ export const PlayerSpeedControl = ({
       >
         <Gauge size={17} />
       </button>
-      {isOpen ? (
-        <div className="speed-popover">
+      {shouldRenderPopover ? (
+        <div className="speed-popover" data-open={isPopoverVisible} ref={popoverRef}>
           <div className="speed-popover-header">
             <span>{formatSpeed(playbackRate)}</span>
             <button

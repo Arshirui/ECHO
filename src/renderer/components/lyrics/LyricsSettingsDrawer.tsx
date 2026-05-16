@@ -21,6 +21,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { AppSettings } from '../../../shared/types/appSettings';
+import type { MvSettings } from '../../../shared/types/mv';
 import type { LyricsProviderId, LyricsSearchCandidate, LyricsSource, TrackLyrics } from '../../../shared/types/lyrics';
 
 type LyricsSettingsDrawerProps = {
@@ -126,7 +127,7 @@ const lyricsProviderLabels: Record<LyricsSource, string> = {
 const providerLabelFor = (provider: LyricsSource | null | undefined): string =>
   provider ? lyricsProviderLabels[provider] : '未应用歌词';
 
-const dispatchSettingsChanged = (patch?: Partial<AppSettings>): void => {
+const dispatchSettingsChanged = (patch?: Partial<AppSettings> | Partial<MvSettings>): void => {
   window.dispatchEvent(patch ? new CustomEvent('settings:changed', { detail: patch }) : new Event('settings:changed'));
 };
 
@@ -220,7 +221,9 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const [isBusy, setIsBusy] = useState(false);
   const [currentLyricsProviderLabel, setCurrentLyricsProviderLabel] = useState(providerLabelFor(null));
   const [draggingSourceId, setDraggingSourceId] = useState<LyricsProviderId | null>(null);
+  const [isLyricsStyleControlsOpen, setIsLyricsStyleControlsOpen] = useState(false);
   const [isBackgroundControlsOpen, setIsBackgroundControlsOpen] = useState(true);
+  const [lyricsReadabilityEnhanced, setLyricsReadabilityEnhanced] = useState(false);
   const [lyricsSearchQuery, setLyricsSearchQuery] = useState('');
   const [lyricsCandidates, setLyricsCandidates] = useState<LyricsSearchCandidate[]>([]);
   const [activeLyricsCandidateSource, setActiveLyricsCandidateSource] = useState('all');
@@ -364,9 +367,18 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     }
   }, []);
 
+  const loadMvSettings = useCallback(async (): Promise<void> => {
+    try {
+      const mvSettings = await window.echo?.mv?.getSettings?.();
+      setLyricsReadabilityEnhanced(mvSettings?.lyricsReadabilityEnhanced === true);
+    } catch {
+      setLyricsReadabilityEnhanced(false);
+    }
+  }, []);
+
   const refreshDrawerSummary = useCallback(async (): Promise<void> => {
-    await Promise.all([loadSettings(), loadCurrentLyricsProvider()]);
-  }, [loadCurrentLyricsProvider, loadSettings]);
+    await Promise.all([loadSettings(), loadCurrentLyricsProvider(), loadMvSettings()]);
+  }, [loadCurrentLyricsProvider, loadMvSettings, loadSettings]);
 
   const resolveCurrentTrackId = useCallback(async (): Promise<string | null> => {
     const playback = window.echo?.playback;
@@ -500,6 +512,33 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       });
     })();
   }, [effectiveSettings.lyricsMvAutoShowTrackInfoDisabled, patchSettings]);
+
+  const toggleLyricsReadabilityEnhanced = useCallback((): void => {
+    const mv = window.echo?.mv;
+    if (!mv?.setSettings) {
+      setError('Desktop bridge unavailable');
+      return;
+    }
+
+    const nextValue = !lyricsReadabilityEnhanced;
+    const patch: Partial<MvSettings> = { lyricsReadabilityEnhanced: nextValue };
+    setLyricsReadabilityEnhanced(nextValue);
+    dispatchSettingsChanged(patch);
+
+    void mv
+      .setSettings(patch)
+      .then((nextSettings) => {
+        const savedValue = nextSettings.lyricsReadabilityEnhanced === true;
+        setLyricsReadabilityEnhanced(savedValue);
+        dispatchSettingsChanged({ lyricsReadabilityEnhanced: savedValue });
+        setError(null);
+      })
+      .catch((settingsError) => {
+        setLyricsReadabilityEnhanced(!nextValue);
+        setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
+        dispatchSettingsChanged();
+      });
+  }, [lyricsReadabilityEnhanced]);
 
   useEffect(() => {
     return () => {
@@ -1048,7 +1087,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           <p>优先显示歌词源提供的中文翻译；没有翻译时不显示额外文本。</p>
 
-          {showFullControls && isSecondaryLyricsSizeOpen ? (
+          {showFullControls ? (
+          <>
+          <label className="audio-toggle-row lyrics-style-toggle">
+            <span>
+              <Type size={17} />
+              <strong>显示歌词样式设置</strong>
+            </span>
+            <input type="checkbox" checked={isLyricsStyleControlsOpen} onChange={(event) => setIsLyricsStyleControlsOpen(event.currentTarget.checked)} />
+          </label>
+          <p>包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。</p>
+          </>
+          ) : null}
+
+          {showFullControls && isLyricsStyleControlsOpen && isSecondaryLyricsSizeOpen ? (
             <label className="lyrics-drawer-range lyrics-secondary-size-range">
               <span>
                 <strong>
@@ -1068,7 +1120,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             </label>
           ) : null}
 
-          {showFullControls ? (
+          {showFullControls && isLyricsStyleControlsOpen ? (
           <label className="lyrics-drawer-range">
             <span>
               <strong>
@@ -1088,7 +1140,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           ) : null}
 
-          {showFullControls ? (
+          {showFullControls && isLyricsStyleControlsOpen ? (
           <label className="lyrics-drawer-range">
             <span>
               <strong>
@@ -1108,7 +1160,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           ) : null}
 
-          {showFullControls ? (
+          {showFullControls && isLyricsStyleControlsOpen ? (
           <label className="lyrics-drawer-range">
             <span>
               <strong>
@@ -1128,7 +1180,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           ) : null}
 
-          {showFullControls ? (
+          {showFullControls && isLyricsStyleControlsOpen ? (
           <div className="lyrics-color-panel">
             <div className="lyrics-color-panel__header">
               <span>
@@ -1180,6 +1232,15 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <ImageIcon size={17} />
             <h3>歌词背景</h3>
           </div>
+
+          <label className="audio-toggle-row lyrics-readability-toggle">
+            <span>
+              <EyeOff size={17} />
+              <strong>歌词可读性增强</strong>
+            </span>
+            <input type="checkbox" checked={lyricsReadabilityEnhanced} onChange={toggleLyricsReadabilityEnhanced} />
+          </label>
+          <p>为沉浸式 MV 背景上的歌词增加描边和投影；不用展开沉浸式 MV 背景设置也可以常驻开关。</p>
 
           <label className="audio-toggle-row lyrics-background-toggle">
             <span>

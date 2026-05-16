@@ -563,6 +563,12 @@ export const MvPanel = ({
         return;
       }
 
+      if (isMvSettingsPatch(patch) && !shouldReloadMvSelection(patch)) {
+        setSettings((current) => ({ ...current, ...patch }));
+        setHasLoadedSettings(true);
+        return;
+      }
+
       void loadSettings().then((nextSettings) => {
         if (nextSettings.enabled === false) {
           setSelectedVideo(null);

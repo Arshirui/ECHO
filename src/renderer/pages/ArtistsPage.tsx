@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { Check, ChevronDown, ListFilter, Play, RefreshCw, Search } from 'lucide-react';
 import type { LibraryArtist, LibrarySort } from '../../shared/types/library';
 import { ArtistDetailView } from '../components/artist/ArtistDetailView';
@@ -46,6 +46,8 @@ export const ArtistsPage = (): JSX.Element => {
   const [hasMore, setHasMore] = useState(false);
   const [selectedArtist, setSelectedArtist] = useState<LibraryArtist | null>(null);
   const [artistWallAlbumArtwork, setArtistWallAlbumArtwork] = useState(false);
+  const [artistImagesAutoFetch, setArtistImagesAutoFetch] = useState(false);
+  const [failedAvatarUrls, setFailedAvatarUrls] = useState<Record<string, string>>({});
   const [failedCoverUrls, setFailedCoverUrls] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +57,7 @@ export const ArtistsPage = (): JSX.Element => {
   const shouldRestorePageScrollRef = useRef(false);
   const requestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
+  const requestedArtistImageIdsRef = useRef(new Set<string>());
   const { wallRef: artistWallRef, spacerHeight } = useMediaWallScrollSpacer<HTMLElement>({
     itemCount: artists.length,
     totalCount: total,
@@ -178,8 +181,14 @@ export const ArtistsPage = (): JSX.Element => {
 
       void app
         .getSettings()
-        .then((settings) => setArtistWallAlbumArtwork(settings.artistWallAlbumArtwork === true))
-        .catch(() => setArtistWallAlbumArtwork(false));
+        .then((settings) => {
+          setArtistWallAlbumArtwork(settings.artistWallAlbumArtwork === true);
+          setArtistImagesAutoFetch(settings.autoFetchArtistImages === true);
+        })
+        .catch(() => {
+          setArtistWallAlbumArtwork(false);
+          setArtistImagesAutoFetch(false);
+        });
     };
 
     loadSettings();
@@ -200,6 +209,77 @@ export const ArtistsPage = (): JSX.Element => {
     void loadArtists(1, 'replace');
   }, [loadArtists]);
 
+  const applyUpdatedArtist = useCallback((updatedArtist: LibraryArtist): void => {
+    setArtists((current) => {
+      let changed = false;
+      const next = current.map((artist) => {
+        if (artist.id !== updatedArtist.id) {
+          return artist;
+        }
+
+        changed = true;
+        return updatedArtist;
+      });
+
+      return changed ? next : current;
+    });
+    setSelectedArtist((current) => (current?.id === updatedArtist.id ? updatedArtist : current));
+  }, []);
+
+  useEffect(() => {
+    const library = window.echo?.library;
+
+    if (!library?.onArtistImagesUpdated || !library?.getArtist) {
+      return undefined;
+    }
+
+    return library.onArtistImagesUpdated((payload) => {
+      if (!payload.artistId) {
+        return;
+      }
+
+      void library
+        .getArtist(payload.artistId)
+        .then((updatedArtist) => {
+          if (updatedArtist) {
+            applyUpdatedArtist(updatedArtist);
+          }
+        })
+        .catch(() => undefined);
+    });
+  }, [applyUpdatedArtist]);
+
+  useEffect(() => {
+    if (!artistImagesAutoFetch || artists.length === 0) {
+      return;
+    }
+
+    const library = window.echo?.library;
+    if (!library?.refreshVisibleArtistImages) {
+      return;
+    }
+
+    const candidates = artists
+      .filter((artist) => {
+        if (artist.avatarThumbUrl || requestedArtistImageIdsRef.current.has(artist.id)) {
+          return false;
+        }
+
+        return artist.avatarStatus !== 'not_found' && artist.avatarStatus !== 'error' && artist.avatarStatus !== 'rate_limited';
+      })
+      .slice(0, pageSize);
+
+    if (candidates.length === 0) {
+      return;
+    }
+
+    for (const artist of candidates) {
+      requestedArtistImageIdsRef.current.add(artist.id);
+    }
+
+    void library.refreshVisibleArtistImages(candidates.map((artist) => ({ id: artist.id, name: artist.name }))).catch(() => undefined);
+  }, [artistImagesAutoFetch, artists]);
+
   const handleArtistCoverError = useCallback((artist: LibraryArtist): void => {
     if (!artist.coverThumb) {
       return;
@@ -214,6 +294,54 @@ export const ArtistsPage = (): JSX.Element => {
           },
     );
   }, []);
+
+  const handleArtistAvatarError = useCallback((artist: LibraryArtist): void => {
+    if (!artist.avatarThumbUrl) {
+      return;
+    }
+
+    setFailedAvatarUrls((current) =>
+      current[artist.id] === artist.avatarThumbUrl
+        ? current
+        : {
+            ...current,
+            [artist.id]: artist.avatarThumbUrl!,
+          },
+    );
+  }, []);
+
+  const handleRefreshArtistAvatar = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>, artist: LibraryArtist): void => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!artistImagesAutoFetch) {
+        return;
+      }
+
+      const library = window.echo?.library;
+      if (!library?.refreshArtistImage || !library?.getArtist) {
+        return;
+      }
+
+      setFailedAvatarUrls((current) => {
+        const next = { ...current };
+        delete next[artist.id];
+        return next;
+      });
+
+      void library
+        .refreshArtistImage(artist.id, true)
+        .then(() => library.getArtist(artist.id))
+        .then((updatedArtist) => {
+          if (updatedArtist) {
+            applyUpdatedArtist(updatedArtist);
+          }
+        })
+        .catch(() => undefined);
+    },
+    [applyUpdatedArtist, artistImagesAutoFetch],
+  );
 
   const openArtistDetail = useCallback((artist: LibraryArtist): void => {
     pageScrollTopRef.current = readPageScrollTop(pageRootRef.current);
@@ -292,36 +420,57 @@ export const ArtistsPage = (): JSX.Element => {
 
       <section ref={artistWallRef} className="artist-wall" aria-label={t('library.artists.listAria')}>
         {artists.map((artist) => {
-          const shouldShowCover = Boolean(
-            artistWallAlbumArtwork && artist.coverThumb && failedCoverUrls[artist.id] !== artist.coverThumb,
+          const shouldShowAvatar = Boolean(
+            artist.avatarThumbUrl && failedAvatarUrls[artist.id] !== artist.avatarThumbUrl,
           );
+          const shouldShowCover = Boolean(
+            !shouldShowAvatar && artistWallAlbumArtwork && artist.coverThumb && failedCoverUrls[artist.id] !== artist.coverThumb,
+          );
+          const imageUrl = shouldShowAvatar ? artist.avatarThumbUrl : shouldShowCover ? artist.coverThumb : null;
 
           return (
             <article
               className="artist-card"
-              data-cover={shouldShowCover}
+              data-cover={Boolean(imageUrl)}
               key={artist.id}
               role="button"
               tabIndex={0}
               onClick={() => openArtistDetail(artist)}
               onKeyDown={(event) => handleArtistKeyDown(event, artist)}
             >
-              <div className="artist-avatar" data-cover={shouldShowCover} aria-hidden="true">
-                {shouldShowCover ? (
+              <div className="artist-avatar" data-cover={Boolean(imageUrl)} data-visual={shouldShowAvatar ? 'avatar' : shouldShowCover ? 'cover' : 'letter'} aria-hidden="true">
+                {imageUrl ? (
                   <img
                     alt=""
                     decoding="async"
                     draggable={false}
                     height={320}
                     loading="lazy"
-                    src={artist.coverThumb!}
+                    src={imageUrl}
                     width={320}
-                    onError={() => handleArtistCoverError(artist)}
+                    onError={() => {
+                      if (shouldShowAvatar) {
+                        handleArtistAvatarError(artist);
+                      } else {
+                        handleArtistCoverError(artist);
+                      }
+                    }}
                   />
                 ) : (
                   <span>{artistMark(artist.name)}</span>
                 )}
               </div>
+              {artistImagesAutoFetch ? (
+                <button
+                  className="artist-avatar-refresh"
+                  type="button"
+                  aria-label={`Refresh avatar for ${artist.name}`}
+                  title="Refresh artist avatar"
+                  onClick={(event) => handleRefreshArtistAvatar(event, artist)}
+                >
+                  <RefreshCw size={13} />
+                </button>
+              ) : null}
               <div className="artist-copy">
                 <strong>{artist.name}</strong>
                 <small>{artistMeta(artist, t)}</small>

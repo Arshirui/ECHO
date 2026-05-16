@@ -1,6 +1,7 @@
 #ifdef _WIN32
 
 #include "wasapi_exclusive.h"
+#include "wasapi_timeout.h"
 
 #include <windows.h>
 #include <audioclient.h>
@@ -63,6 +64,7 @@ struct wasapi_exclusive_runtime {
     int followsDefaultDevice;
     volatile LONG renderFailed;
     int comNeedsUninit;
+    bool audioClientLeakedOnTimeout;
 };
 
 typedef struct com_scope {
@@ -828,13 +830,17 @@ static HRESULT initialize_exclusive_client(
 
     const DWORD streamFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST;
 
-    hr = client->Initialize(
+    hr = echo_wasapi_timeout::initialize_with_timeout(
+        client,
         AUDCLNT_SHAREMODE_EXCLUSIVE,
         streamFlags,
         bufferDuration,
         bufferDuration,
         (WAVEFORMATEX*)&format->wave,
         NULL);
+    if (hr == E_PENDING) {
+        return hr;
+    }
 
     if (hr == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED) {
         UINT32 alignedFrames = 0;
@@ -844,13 +850,17 @@ static HRESULT initialize_exclusive_client(
             hr = activate_audio_client(device, &client);
             if (FAILED(hr)) return hr;
             bufferDuration = frames_to_hns(alignedFrames, format->wave.Format.nSamplesPerSec);
-            hr = client->Initialize(
+            hr = echo_wasapi_timeout::initialize_with_timeout(
+                client,
                 AUDCLNT_SHAREMODE_EXCLUSIVE,
                 streamFlags,
                 bufferDuration,
                 bufferDuration,
                 (WAVEFORMATEX*)&format->wave,
                 NULL);
+            if (hr == E_PENDING) {
+                return hr;
+            }
         }
     }
 
@@ -979,6 +989,9 @@ static DWORD WINAPI render_thread_proc(void* param) {
 }
 
 static int classify_initialize_failure(HRESULT hr) {
+    if (hr == E_PENDING) {
+        return echo_audio_host::kExitDeviceInitializeTimeout;
+    }
     if (hr == AUDCLNT_E_UNSUPPORTED_FORMAT) {
         return -4;
     }
@@ -1063,7 +1076,9 @@ int wasapi_exclusive_start(
         set_error(
             error,
             errorLen,
-            result == -4 ? "WASAPI exclusive format unsupported" : "Failed to initialize WASAPI exclusive client",
+            result == echo_audio_host::kExitDeviceInitializeTimeout
+                ? "WASAPI Initialize timed out"
+                : (result == -4 ? "WASAPI exclusive format unsupported" : "Failed to initialize WASAPI exclusive client"),
             hr);
         goto done;
     }
@@ -1137,7 +1152,13 @@ int wasapi_exclusive_start(
         goto done;
     }
 
-    hr = runtime->audioClient->Start();
+    hr = echo_wasapi_timeout::start_with_timeout(runtime->audioClient);
+    if (hr == E_PENDING) {
+        set_error(error, errorLen, "WASAPI Start timed out", S_OK);
+        runtime->audioClientLeakedOnTimeout = true;
+        result = echo_audio_host::kExitDeviceInitializeTimeout;
+        goto done;
+    }
     if (FAILED(hr)) {
         set_error(error, errorLen, "Failed to start WASAPI exclusive client", hr);
         result = classify_initialize_failure(hr);
@@ -1154,20 +1175,22 @@ int wasapi_exclusive_start(
     result = 0;
 
 done:
-    if (runtime != NULL) {
+    if (runtime != NULL && result != echo_audio_host::kExitDeviceInitializeTimeout) {
         wasapi_exclusive_stop(runtime);
     }
     if (renderClient != NULL) renderClient->Release();
-    if (audioClient != NULL) audioClient->Release();
+    if (audioClient != NULL && result != echo_audio_host::kExitDeviceInitializeTimeout) audioClient->Release();
     if (device != NULL) device->Release();
-    com_scope_leave(&com);
+    if (result != echo_audio_host::kExitDeviceInitializeTimeout) com_scope_leave(&com);
     return result;
 }
 
 void wasapi_exclusive_stop(wasapi_exclusive_runtime* runtime) {
     if (runtime == NULL) return;
 
-    unregister_watchers(runtime);
+    if (!runtime->audioClientLeakedOnTimeout) {
+        unregister_watchers(runtime);
+    }
     if (runtime->stopEvent != NULL) SetEvent(runtime->stopEvent);
     if (runtime->thread != NULL) {
         DWORD waitResult = WaitForSingleObject(runtime->thread, 5000);
@@ -1179,15 +1202,21 @@ void wasapi_exclusive_stop(wasapi_exclusive_runtime* runtime) {
         }
         CloseHandle(runtime->thread);
     }
-    if (runtime->audioClient != NULL) {
+    if (runtime->audioClient != NULL && !runtime->audioClientLeakedOnTimeout) {
         runtime->audioClient->Stop();
         runtime->audioClient->Reset();
     }
     if (runtime->renderEvent != NULL) CloseHandle(runtime->renderEvent);
     if (runtime->stopEvent != NULL) CloseHandle(runtime->stopEvent);
-    if (runtime->renderClient != NULL) runtime->renderClient->Release();
-    if (runtime->audioClient != NULL) runtime->audioClient->Release();
-    if (runtime->comNeedsUninit) CoUninitialize();
+    if (runtime->renderClient != NULL && !runtime->audioClientLeakedOnTimeout) runtime->renderClient->Release();
+    if (runtime->audioClient != NULL && !runtime->audioClientLeakedOnTimeout) runtime->audioClient->Release();
+    runtime->renderClient = NULL;
+    runtime->audioClient = NULL;
+    runtime->deviceWatcher = NULL;
+    runtime->deviceEnumerator = NULL;
+    runtime->sessionWatcher = NULL;
+    runtime->sessionControl = NULL;
+    if (runtime->comNeedsUninit && !runtime->audioClientLeakedOnTimeout) CoUninitialize();
     free(runtime);
 }
 

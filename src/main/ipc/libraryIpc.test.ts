@@ -165,6 +165,11 @@ const installLibraryService = () => {
     getArtist: vi.fn(),
     getArtistTracks: vi.fn(),
     getArtistAlbums: vi.fn(),
+    enqueueMissingArtistImages: vi.fn(() => ({ queued: 0, skipped: 0 })),
+    refreshArtistImage: vi.fn(async () => ({ queued: true, entry: null })),
+    refreshVisibleArtistImages: vi.fn(() => ({ queued: 0, skipped: 0 })),
+    getArtistImage: vi.fn(() => null),
+    clearArtistImageCache: vi.fn(() => ({ removedRows: 0, deletedFiles: 0, freedBytes: 0 })),
     getAlbumTracks: vi.fn(),
     getSummary: vi.fn(),
     refreshAlbumGrouping: vi.fn(() => ({ songCount: 2, albumCount: 1, artistCount: 2, folderCount: 1, totalDuration: 2, lastScanAt: null })),
@@ -385,6 +390,29 @@ describe('library IPC', () => {
     expect(service.getArtist).toHaveBeenCalledWith('artist-1');
     expect(service.getArtistTracks).toHaveBeenCalledWith('artist-1', { page: 2, pageSize: 50, sort: 'durationDesc' });
     expect(service.getArtistAlbums).toHaveBeenCalledWith('artist-1', { page: 1, pageSize: 12, sort: 'recent' });
+  });
+
+  it('registers artist image cache IPC handlers', async () => {
+    const service = installLibraryService();
+
+    await handlers[IpcChannels.LibraryArtistImagesEnqueueMissing]!(null, {
+      artists: [{ id: 'artist-1', name: 'Suara' }],
+      limit: 25,
+      force: false,
+    });
+    await handlers[IpcChannels.LibraryArtistImagesRefreshVisible]!(null, [{ id: 'artist-1', name: 'Suara' }]);
+    await handlers[IpcChannels.LibraryArtistImagesRefreshOne]!(null, { artistId: 'artist-1', force: true });
+    await handlers[IpcChannels.LibraryArtistImagesGetStatus]!(null, 'artist-1');
+    await handlers[IpcChannels.LibraryArtistImagesClearCache]!();
+
+    expect(service.enqueueMissingArtistImages).toHaveBeenCalledWith([{ id: 'artist-1', name: 'Suara', artistKey: undefined, artistName: undefined }], {
+      force: false,
+      limit: 25,
+    });
+    expect(service.refreshVisibleArtistImages).toHaveBeenCalledWith([{ id: 'artist-1', name: 'Suara', artistKey: undefined, artistName: undefined }]);
+    expect(service.refreshArtistImage).toHaveBeenCalledWith('artist-1', true);
+    expect(service.getArtistImage).toHaveBeenCalledWith('artist-1');
+    expect(service.clearArtistImageCache).toHaveBeenCalledTimes(1);
   });
 
   it('registers folder center IPC handlers with normalized queries', async () => {

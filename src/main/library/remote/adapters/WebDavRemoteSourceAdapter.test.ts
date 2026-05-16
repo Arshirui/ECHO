@@ -56,6 +56,53 @@ const makeSource = (port: number, config: Record<string, unknown> = {}, override
   ...overrides,
 });
 
+const makeRemoteItem = (path: string, sizeBytes: number, contentType = 'audio/mpeg') => ({
+  sourceId: 'source-1',
+  provider: 'webdav' as const,
+  path,
+  name: path.split('/').pop() ?? path,
+  kind: 'file' as const,
+  sizeBytes,
+  modifiedAt: null,
+  etag: null,
+  contentType,
+  audio: true,
+  remoteUrlHash: 'hash',
+  stableKey: 'stable',
+});
+
+const serveRangedBuffer = (data: Buffer, contentType: string, onRange?: (range: string | undefined) => void): Server =>
+  createServer((request, response) => {
+    const range = request.headers.range;
+    onRange?.(range);
+    const match = typeof range === 'string' ? range.match(/^bytes=(\d+)-(\d+)$/u) : null;
+    const start = match ? Math.min(Number(match[1]), data.length - 1) : 0;
+    const end = match ? Math.min(Number(match[2]), data.length - 1) : data.length - 1;
+    const chunk = data.subarray(start, end + 1);
+    response.writeHead(match ? 206 : 200, {
+      'Content-Type': contentType,
+      'Content-Length': String(chunk.length),
+      'Content-Range': `bytes ${start}-${end}/${data.length}`,
+      'Accept-Ranges': 'bytes',
+    });
+    response.end(chunk);
+  });
+
+const makeCbrMp3 = (durationSeconds: number): Buffer => {
+  const sampleRate = 44100;
+  const samplesPerFrame = 1152;
+  const frameLength = 417;
+  const frameCount = Math.ceil((durationSeconds * sampleRate) / samplesPerFrame);
+  const data = Buffer.alloc(frameLength * frameCount);
+  for (let offset = 0; offset + 4 <= data.length; offset += frameLength) {
+    data[offset] = 0xff;
+    data[offset + 1] = 0xfb;
+    data[offset + 2] = 0x90;
+    data[offset + 3] = 0x64;
+  }
+  return data;
+};
+
 describe('WebDavRemoteSourceAdapter', () => {
   const servers: Server[] = [];
 
@@ -237,7 +284,7 @@ describe('WebDavRemoteSourceAdapter', () => {
         return;
       }
 
-      expect(request.headers.range).toBe('bytes=0-262143');
+      expect(request.headers.range).toBe('bytes=0-1048575');
       response.writeHead(200, {
         'Content-Type': 'audio/mpeg',
         'Content-Length': String(10 * 1024 * 1024),
@@ -269,6 +316,57 @@ describe('WebDavRemoteSourceAdapter', () => {
     expect(metadata.status).toBe('partial');
     expect(metadata.title).toBe('song');
     expect(metadata.warnings).toContain('metadata_fallback');
+  });
+
+  it('reads MP3 duration from a larger WebDAV metadata range', async () => {
+    const durationSeconds = 180;
+    const data = makeCbrMp3(durationSeconds);
+    const seenRanges: Array<string | undefined> = [];
+    const server = serveRangedBuffer(data, 'audio/mpeg', (range) => seenRanges.push(range));
+    servers.push(server);
+    const port = await listen(server);
+
+    const adapter = new WebDavRemoteSourceAdapter();
+    const metadata = await adapter.readMetadata({
+      source: makeSource(port),
+      item: makeRemoteItem('/Tagged MP3.mp3', data.length, 'audio/mpeg'),
+    });
+
+    expect(seenRanges[0]).toBe('bytes=0-1048575');
+    expect(metadata.duration ?? 0).toBeGreaterThan(durationSeconds - 1);
+    expect(metadata.duration ?? 0).toBeLessThan(durationSeconds + 1);
+    expect(metadata.fieldSources.duration).not.toBe('unknown');
+  });
+
+  it('uses OGG/Opus granule position from the tail range for accurate duration', async () => {
+    const durationSeconds = 123;
+    const preSkip = 312;
+    const granule = BigInt(durationSeconds * 48000 + preSkip);
+    const sizeBytes = 512 * 1024;
+    const data = Buffer.alloc(sizeBytes);
+    data.write('OggS', 0, 'ascii');
+    data.write('OpusHead', 27, 'ascii');
+    data[35] = 1;
+    data[36] = 2;
+    data.writeUInt16LE(preSkip, 37);
+    const tailPage = sizeBytes - 64 * 1024 + 128;
+    data.write('OggS', tailPage, 'ascii');
+    data.writeBigUInt64LE(granule, tailPage + 6);
+    const seenRanges: Array<string | undefined> = [];
+    const server = serveRangedBuffer(data, 'audio/ogg', (range) => seenRanges.push(range));
+    servers.push(server);
+    const port = await listen(server);
+
+    const adapter = new WebDavRemoteSourceAdapter();
+    const metadata = await adapter.readMetadata({
+      source: makeSource(port),
+      item: makeRemoteItem('/Podcast.ogg', sizeBytes, 'audio/ogg'),
+    });
+
+    expect(seenRanges).toEqual(['bytes=0-65535', `bytes=${sizeBytes - 64 * 1024}-${sizeBytes - 1}`]);
+    expect(metadata.duration).toBe(durationSeconds);
+    expect(metadata.sampleRate).toBe(48000);
+    expect(metadata.fieldSources.duration).toBe('ogg_granule');
   });
 
   it('uses a larger range when reading embedded WebDAV covers', async () => {

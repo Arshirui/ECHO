@@ -1338,6 +1338,49 @@ describe('Audio Core sample-rate regression guard', () => {
     }));
   });
 
+  it('treats device_initialize_timeout as non-retryable and falls back without re-trying same device', async () => {
+    const failingBridge = new ConfigurableStartupFailingBridge(
+      'echo-audio-host device_initialize_timeout; host="echo-audio-host.exe"; args="-sr 44100 -ch 2 -device Sleeping USB DAC"; mode="shared"; elapsedMs=3011; stderrTail="[echo-audio-host] WASAPI Initialize timed out after 3000ms phase=initialize"',
+    );
+    const safeBridge = new FakeBridge(48000);
+    const bridges = [failingBridge, safeBridge];
+    const reportAudioError = vi.fn();
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([['song.flac', probe('song.flac', 44100)]])),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridges.shift() as unknown as FakeBridge,
+      reportAudioError,
+      logger: noopLogger,
+    });
+
+    const status = await session.playLocalFile({
+      filePath: 'song.flac',
+      output: { outputMode: 'shared', deviceIndex: 6, deviceName: 'Sleeping USB DAC' },
+    });
+
+    expect(failingBridge.startOptions).toMatchObject({
+      deviceIndex: 6,
+      deviceName: 'Sleeping USB DAC',
+    });
+    expect(safeBridge.startOptions?.deviceIndex).toBeUndefined();
+    expect(safeBridge.startOptions?.deviceName).toBeUndefined();
+    expect(safeBridge.startOptions).toMatchObject({
+      bufferSizeFrames: 8192,
+      fifoCapacityMs: 1500,
+      startupPrebufferMs: 250,
+    });
+    expect(status.state).toBe('playing');
+    expect(status.warnings).toContain('device_initialize_timeout');
+    expect(status.warnings).toContain('shared_output_recovered_safe_mode');
+    expect(status.warnings).not.toContain('shared_output_fell_back_to_default_device');
+    expect(bridges).toHaveLength(0);
+    expect(reportAudioError).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('device_initialize_timeout'),
+      phase: 'safe-shared-fallback',
+      severity: 'recoverable',
+    }));
+  });
+
   it('skips same-device native retry after selected JUCE shared device refuses to open', async () => {
     const failingJuceBridge = new ConfigurableStartupFailingBridge(
       'echo-audio-host timeout_waiting_for_ready; host="echo-audio-host.exe"; args="-sr 48000 -ch 2 -device USB DAC -juce-output"; mode="shared"; elapsedMs=15000; stderrTail="Couldn\'t open the output device!"',
@@ -4882,6 +4925,39 @@ describe('NativeOutputBridge diagnostics', () => {
     ).rejects.toThrow(
       'echo-audio-host exit_code_1; host="echo-audio-host.exe"; args="-sr 44100 -ch 2 -eq-port',
     );
+  });
+
+  it('maps WASAPI initialize timeout exit codes to device_initialize_timeout', async () => {
+    const fakeSpawn = (): ChildProcessWithoutNullStreams => {
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stderr.write('[echo-audio-host] WASAPI Initialize timed out after 3000ms phase=initialize\n');
+        child.emit('exit', 4294967293, null);
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+
+    await expect(
+      bridge.start({
+        requestedOutputSampleRate: 44100,
+        channels: 2,
+      }),
+    ).rejects.toThrow('echo-audio-host device_initialize_timeout');
   });
 
   it('rejects startup error events without emitting a runtime bridge error before ready', async () => {

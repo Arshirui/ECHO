@@ -28,10 +28,14 @@ import { SCANNABLE_AUDIO_EXTENSIONS } from '../../../../shared/constants/audioEx
 
 const audioExtensions = SCANNABLE_AUDIO_EXTENSIONS;
 const metadataReadBytes = 256 * 1024;
+const mp3MetadataReadBytes = 1024 * 1024;
+const oggMetadataReadBytes = 64 * 1024;
 const coverReadBytes = 2 * 1024 * 1024;
 const maxRangeFallbackBytes = metadataReadBytes * 2;
+const maxMp3RangeFallbackBytes = mp3MetadataReadBytes * 2;
 const maxCoverRangeFallbackBytes = coverReadBytes * 2;
 const propfindRetryCount = 2;
+const oggExtensions = new Set(['.ogg', '.oga', '.opus']);
 
 const nowIso = (): string => new Date().toISOString();
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -154,6 +158,12 @@ type RangeChunkSet = {
   tail: Uint8Array | null;
 };
 
+type OggDurationInfo = {
+  duration: number;
+  sampleRate: number;
+  codec: string;
+};
+
 export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
   readonly provider: RemoteSourceProvider = 'webdav';
   private streamUrlResolver: ((input: RemoteStreamInput) => Promise<RemoteStreamUrlResult>) | null = null;
@@ -234,12 +244,18 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
     const fallback = this.fallbackMetadata(input.item.path);
 
     try {
-      const chunks = await this.fetchMetadataChunks(input);
+      const extension = extname(input.item.path).toLocaleLowerCase();
+      const chunks = await this.fetchMetadataChunks(
+        input,
+        this.metadataReadBytesFor(extension),
+        extension === '.mp3' ? maxMp3RangeFallbackBytes : maxRangeFallbackBytes,
+        { fetchTailAfterHead: extension === '.mp3' || oggExtensions.has(extension) },
+      );
       if (!chunks) {
         return fallback;
       }
 
-      const extension = extname(input.item.path).toLocaleLowerCase();
+      const oggDuration = oggExtensions.has(extension) ? this.readOggDuration(chunks) : null;
       const parseCandidates =
         extension === '.flac'
           ? [chunks.head]
@@ -258,7 +274,12 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
       let lastError: unknown = null;
       for (const candidate of parseCandidates) {
         try {
-          const parsed = await this.parseMetadataBuffer(candidate, input, fallback);
+          const parsed = this.applyDurationFallbacks(
+            await this.parseMetadataBuffer(candidate, input, fallback),
+            input,
+            extension,
+            oggDuration,
+          );
           if (parsed.duration || parsed.title !== fallback.title || parsed.artist !== fallback.artist) {
             return parsed;
           }
@@ -269,16 +290,14 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
 
       if (extension === '.mp3') {
         const parsed = await this.parseMetadataBuffer(parseCandidates.at(-1) ?? chunks.head, input, fallback).catch(() => fallback);
-        const estimatedDuration = this.estimateDurationFromBitrate(input.item.sizeBytes, parsed.bitrate);
-        if (estimatedDuration) {
-          return {
-            ...parsed,
-            status: 'partial',
-            duration: estimatedDuration,
-            fieldSources: { ...parsed.fieldSources, duration: 'bitrate_estimate' },
-            warnings: [...parsed.warnings, 'duration_estimated'],
-          };
+        const withEstimate = this.applyDurationFallbacks(parsed, input, extension, null);
+        if (withEstimate.duration) {
+          return withEstimate;
         }
+      }
+
+      if (oggDuration) {
+        return this.applyOggDuration(fallback, oggDuration);
       }
 
       return {
@@ -481,6 +500,7 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
     input: RemoteReadMetadataInput,
     readBytes = metadataReadBytes,
     maxFallbackBytes = maxRangeFallbackBytes,
+    options: { fetchTailAfterHead?: boolean } = {},
   ): Promise<RangeChunkSet | null> {
     const baseUrl = input.source.baseUrl;
     if (!baseUrl) {
@@ -494,7 +514,7 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
       return null;
     }
 
-    const needsTail = size > readBytes * 2;
+    const needsTail = size > readBytes * (options.fetchTailAfterHead ? 1 : 2);
     const tail = needsTail ? await this.fetchRange(url, input, `bytes=${Math.max(0, size - readBytes)}-${size - 1}`, maxFallbackBytes) : null;
 
     return { head, tail };
@@ -554,6 +574,117 @@ export class WebDavRemoteSourceAdapter implements RemoteSourceAdapter {
       warnings: duration ? [] : ['duration_unavailable'],
       errors: [],
     };
+  }
+
+  private metadataReadBytesFor(extension: string): number {
+    if (extension === '.mp3') {
+      return mp3MetadataReadBytes;
+    }
+    if (oggExtensions.has(extension)) {
+      return oggMetadataReadBytes;
+    }
+    return metadataReadBytes;
+  }
+
+  private applyDurationFallbacks(
+    metadata: RemoteMetadataResult,
+    input: RemoteReadMetadataInput,
+    extension: string,
+    oggDuration: OggDurationInfo | null,
+  ): RemoteMetadataResult {
+    if (oggDuration && (!metadata.duration || Math.abs(metadata.duration - oggDuration.duration) > 2)) {
+      return this.applyOggDuration(metadata, oggDuration);
+    }
+
+    if (extension === '.mp3') {
+      const estimatedDuration = this.estimateDurationFromBitrate(input.item.sizeBytes, metadata.bitrate);
+      const likelyPartialParse =
+        Boolean(input.item.sizeBytes && input.item.sizeBytes > mp3MetadataReadBytes) &&
+        Boolean(metadata.duration && estimatedDuration && Math.abs(estimatedDuration - metadata.duration) > 2);
+      if (estimatedDuration && (!metadata.duration || likelyPartialParse)) {
+        return {
+          ...metadata,
+          status: metadata.status === 'ok' ? 'ok' : 'partial',
+          duration: estimatedDuration,
+          fieldSources: { ...metadata.fieldSources, duration: 'bitrate_estimate' },
+          warnings: Array.from(new Set([...metadata.warnings.filter((warning) => warning !== 'duration_unavailable'), 'duration_estimated'])),
+        };
+      }
+    }
+
+    return metadata;
+  }
+
+  private applyOggDuration(metadata: RemoteMetadataResult, oggDuration: OggDurationInfo): RemoteMetadataResult {
+    return {
+      ...metadata,
+      status: metadata.status === 'ok' ? 'ok' : 'partial',
+      duration: oggDuration.duration,
+      codec: metadata.codec ?? oggDuration.codec,
+      sampleRate: metadata.sampleRate ?? oggDuration.sampleRate,
+      fieldSources: {
+        ...metadata.fieldSources,
+        duration: 'ogg_granule',
+        sampleRate: metadata.sampleRate ? metadata.fieldSources.sampleRate ?? 'technical' : 'ogg_granule',
+      },
+      warnings: metadata.warnings.filter((warning) => warning !== 'duration_unavailable'),
+    };
+  }
+
+  private readOggDuration(chunks: RangeChunkSet): OggDurationInfo | null {
+    const head = Buffer.from(chunks.head);
+    const tail = Buffer.from(chunks.tail ?? chunks.head);
+    const opusHead = head.indexOf('OpusHead', 0, 'ascii');
+    if (opusHead >= 0 && opusHead + 12 <= head.length) {
+      const preSkip = head.readUInt16LE(opusHead + 10);
+      const lastGranule = this.readLastOggGranule(tail);
+      if (lastGranule !== null && lastGranule > preSkip) {
+        return {
+          duration: (lastGranule - preSkip) / 48000,
+          sampleRate: 48000,
+          codec: 'Opus',
+        };
+      }
+    }
+
+    const vorbisHead = head.indexOf(Buffer.from([0x01, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73]));
+    if (vorbisHead >= 0 && vorbisHead + 16 <= head.length) {
+      const sampleRate = head.readUInt32LE(vorbisHead + 12);
+      const lastGranule = this.readLastOggGranule(tail);
+      if (sampleRate > 0 && lastGranule !== null && lastGranule > 0) {
+        return {
+          duration: lastGranule / sampleRate,
+          sampleRate,
+          codec: 'Vorbis',
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private readLastOggGranule(buffer: Buffer): number | null {
+    let position = 0;
+    let lastGranule: bigint | null = null;
+
+    while (position >= 0 && position + 14 <= buffer.length) {
+      const pageStart = buffer.indexOf('OggS', position, 'ascii');
+      if (pageStart < 0 || pageStart + 14 > buffer.length) {
+        break;
+      }
+
+      const granule = buffer.readBigUInt64LE(pageStart + 6);
+      if (granule !== 0xffff_ffff_ffff_ffffn) {
+        lastGranule = granule;
+      }
+      position = pageStart + 4;
+    }
+
+    if (lastGranule === null || lastGranule > BigInt(Number.MAX_SAFE_INTEGER)) {
+      return null;
+    }
+
+    return Number(lastGranule);
   }
 
   private estimateDurationFromBitrate(sizeBytes: number | null, bitrate: number | null): number | null {

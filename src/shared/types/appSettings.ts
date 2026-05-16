@@ -47,6 +47,7 @@ export type AppSettings = {
   albumMergeStrategy: 'standard' | 'sameTitleAndCover';
   chineseCrossScriptSearchEnabled?: boolean;
   artistWallAlbumArtwork: boolean;
+  autoFetchArtistImages?: boolean;
   autoUpdateEnabled?: boolean;
   autoAccountCheckOnStartup?: boolean;
   spotifyAutoLaunchOfficialPlayer?: boolean;

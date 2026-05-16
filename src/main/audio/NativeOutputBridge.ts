@@ -86,6 +86,12 @@ const windowsCrashCodes: Record<number, string> = {
   0xc0000005: 'access_violation',
 };
 
+const signedExitCode = (exitCode: number): number =>
+  exitCode > 0x7fffffff ? exitCode - 0x1_0000_0000 : exitCode;
+
+const matchesExitCode = (exitCode: number | null, expected: number): boolean =>
+  exitCode !== null && (exitCode === expected || signedExitCode(exitCode) === expected);
+
 const formatExitCodeHex = (exitCode: number): string => `0x${(exitCode >>> 0).toString(16).toUpperCase().padStart(8, '0')}`;
 
 const getNativeCrashDetails = (reason: string): string[] => {
@@ -558,8 +564,10 @@ export class NativeOutputBridge extends EventEmitter {
         }
 
         const reason =
-          code === -2
+          matchesExitCode(code, -2)
             ? 'exclusive_denied'
+            : matchesExitCode(code, -3)
+              ? 'device_initialize_timeout'
             : code != null ? `exit_code_${code}` : `exit_signal_${signal ?? '?'}`;
         const error = createError(reason);
 

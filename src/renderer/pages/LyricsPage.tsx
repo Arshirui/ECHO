@@ -440,6 +440,10 @@ const pickLyricsDisplaySettingsPatch = (
   return patch;
 };
 
+const isExplicitObjectSettingsPatch = (event: Event): boolean =>
+  event instanceof CustomEvent &&
+  Boolean(event.detail && typeof event.detail === "object" && !Array.isArray(event.detail));
+
 const clampPlaybackPosition = (
   positionSeconds: number,
   durationSeconds: number | null,
@@ -685,7 +689,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     null,
   );
   const [isLyricsOffsetSaving, setIsLyricsOffsetSaving] = useState(false);
-  const [isCustomLyricsApplying, setIsCustomLyricsApplying] = useState(false);
+  const [, setIsCustomLyricsApplying] = useState(false);
   const [isCustomLyricsDragging, setIsCustomLyricsDragging] = useState(false);
   const lyricsRequestRef = useRef(0);
   const state = audioStatus?.state ?? playbackStatus?.state ?? "idle";
@@ -950,6 +954,10 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         lyricsDisplaySettingsLoadVersionRef.current += 1;
         setLyricsDisplaySettings((current) => ({ ...current, ...patch }));
         setIsLyricsDisplaySettingsReady(true);
+        return;
+      }
+
+      if (isExplicitObjectSettingsPatch(event)) {
         return;
       }
 

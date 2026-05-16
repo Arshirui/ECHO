@@ -10,7 +10,7 @@ import { getMvService } from '../../mv/MvService';
 import { CoverService } from '../CoverService';
 import type { FieldSources, MetadataStatus, ParsedTrackMetadata } from '../libraryTypes';
 import type { RemoteLibraryStore } from './RemoteLibraryStore';
-import type { RemoteSourceAdapter } from './remoteTypes';
+import type { RemoteSourceAdapter, RemoteTrackWrite } from './remoteTypes';
 
 type QueueJob = {
   sourceId: string;
@@ -25,6 +25,37 @@ type RunningJob = QueueJob & {
   remotePath: string;
   startedAt: string;
 };
+
+type QueueableTrack = Pick<
+  RemoteLibraryTrack,
+  | 'id'
+  | 'sourceId'
+  | 'provider'
+  | 'remotePath'
+  | 'stableKey'
+  | 'title'
+  | 'artist'
+  | 'album'
+  | 'albumArtist'
+  | 'trackNo'
+  | 'discNo'
+  | 'year'
+  | 'genre'
+  | 'duration'
+  | 'codec'
+  | 'sampleRate'
+  | 'bitDepth'
+  | 'bitrate'
+  | 'sizeBytes'
+  | 'modifiedAt'
+  | 'etag'
+  | 'coverId'
+  | 'metadataStatus'
+  | 'lyricsStatus'
+  | 'mvStatus'
+  | 'availability'
+  | 'fieldSources'
+>;
 
 const jobKinds: RemoteBackgroundJobKind[] = ['metadata', 'cover', 'lyrics', 'mv', 'duration-backfill'];
 const defaultConcurrency: Record<RemoteBackgroundJobKind, number> = {
@@ -50,12 +81,21 @@ const zeroCounts = (): Record<RemoteBackgroundJobKind, number> => ({
   mv: 0,
   'duration-backfill': 0,
 });
+const emptyPendingQueues = (): Record<RemoteBackgroundJobKind, QueueJob[]> => ({
+  metadata: [],
+  cover: [],
+  lyrics: [],
+  mv: [],
+  'duration-backfill': [],
+});
 
 const nowIso = (): string => new Date().toISOString();
 
 export class RemoteBackgroundJobQueue {
-  private readonly pending: QueueJob[] = [];
+  private readonly pendingByKind = emptyPendingQueues();
   private readonly running = new Map<string, RunningJob>();
+  private readonly pendingBySource = new Map<string, Record<RemoteBackgroundJobKind, number>>();
+  private readonly runningBySource = new Map<string, Record<RemoteBackgroundJobKind, number>>();
   private readonly pausedSources = new Set<string>();
   private readonly completedBySource = new Map<string, Record<RemoteBackgroundJobKind, number>>();
   private readonly failedBySource = new Map<string, Record<RemoteBackgroundJobKind, number>>();
@@ -63,6 +103,8 @@ export class RemoteBackgroundJobQueue {
   private readonly lastErrors = new Map<string, string>();
   private readonly queuedKeys = new Set<string>();
   private readonly runtimeLimits = new Map<string, RemoteRuntimeLimits>();
+  private readonly coverIdsByKey = new Map<string, string | null>();
+  private readonly coverPromisesByKey = new Map<string, Promise<string | null>>();
   private globalPaused = false;
   private playbackActive = false;
   private scheduling = false;
@@ -89,12 +131,16 @@ export class RemoteBackgroundJobQueue {
     return this.getStatus(sourceId);
   }
 
-  enqueueTrack(track: RemoteLibraryTrack, kinds: RemoteBackgroundJobKind[] = ['metadata'], priority = 0): void {
+  enqueueTrack(track: QueueableTrack, kinds: RemoteBackgroundJobKind[] = ['metadata'], priority = 0): void {
     for (const kind of this.kindsForTrack(track, this.normalizeKinds(kinds), false)) {
       this.enqueue({ sourceId: track.sourceId, kind, trackId: track.id, priority, retry: false });
     }
 
     this.schedule();
+  }
+
+  enqueueTrackWrite(track: RemoteTrackWrite, kinds: RemoteBackgroundJobKind[] = ['metadata'], priority = 0): void {
+    this.enqueueTrack(track, kinds, priority);
   }
 
   pause(sourceId: string): RemoteBackgroundJobStatus {
@@ -140,27 +186,18 @@ export class RemoteBackgroundJobQueue {
   }
 
   getStatus(sourceId: string): RemoteBackgroundJobStatus {
-    const pending = zeroCounts();
-    const running = zeroCounts();
-
-    for (const job of this.pending) {
-      if (job.sourceId === sourceId) {
-        pending[job.kind] += 1;
-      }
-    }
+    const pending = { ...this.getCounts(this.pendingBySource, sourceId) };
+    const running = { ...this.getCounts(this.runningBySource, sourceId) };
 
     const current = Array.from(this.running.values())
       .filter((job) => job.sourceId === sourceId)
-      .map((job) => {
-        running[job.kind] += 1;
-        return {
-          kind: job.kind,
-          trackId: job.trackId,
-          title: job.title,
-          remotePath: job.remotePath,
-          startedAt: job.startedAt,
-        };
-      });
+      .map((job) => ({
+        kind: job.kind,
+        trackId: job.trackId,
+        title: job.title,
+        remotePath: job.remotePath,
+        startedAt: job.startedAt,
+      }));
 
     return {
       sourceId,
@@ -204,8 +241,9 @@ export class RemoteBackgroundJobQueue {
     }
 
     this.queuedKeys.add(key);
-    this.pending.push(job);
-    this.pending.sort((left, right) => right.priority - left.priority);
+    this.pendingByKind[job.kind].push(job);
+    this.pendingByKind[job.kind].sort((left, right) => right.priority - left.priority);
+    this.adjust(this.pendingBySource, job.sourceId, job.kind, 1);
     this.touch();
   }
 
@@ -229,14 +267,16 @@ export class RemoteBackgroundJobQueue {
     let started = false;
 
     for (const kind of jobKinds) {
+      const pending = this.pendingByKind[kind];
       while (true) {
-        const index = this.pending.findIndex((job) => job.kind === kind && this.canStart(job));
+        const index = pending.findIndex((job) => this.canStart(job));
         if (index < 0) {
           break;
         }
 
-        const [job] = this.pending.splice(index, 1);
+        const [job] = pending.splice(index, 1);
         this.queuedKeys.delete(this.jobKey(job));
+        this.adjust(this.pendingBySource, job.sourceId, job.kind, -1);
         const track = this.store.getTrack(job.trackId);
         if (!track || track.availability === 'missing') {
           this.increment(this.skippedBySource, job.sourceId, job.kind);
@@ -250,8 +290,10 @@ export class RemoteBackgroundJobQueue {
           startedAt: nowIso(),
         };
         this.running.set(this.jobKey(job), runningJob);
+        this.adjust(this.runningBySource, job.sourceId, job.kind, 1);
         void this.run(job, track).finally(() => {
           this.running.delete(this.jobKey(job));
+          this.adjust(this.runningBySource, job.sourceId, job.kind, -1);
           this.touch();
           this.schedule();
         });
@@ -270,9 +312,6 @@ export class RemoteBackgroundJobQueue {
         const updated = await this.runMetadataJob(track, job.kind);
         if (updated) {
           this.enqueueTrack(updated, ['cover']);
-        }
-        if (updated && this.hasMatchableMetadata(updated)) {
-          this.enqueueTrack(updated, ['lyrics', 'mv']);
         }
       } else if (job.kind === 'cover') {
         const covered = await this.runCoverJob(track);
@@ -308,6 +347,58 @@ export class RemoteBackgroundJobQueue {
       return false;
     }
 
+    const coverKey = this.coverCacheKey(track);
+    if (coverKey && this.coverIdsByKey.has(coverKey)) {
+      const coverId = this.coverIdsByKey.get(coverKey) ?? null;
+      if (coverId) {
+        this.applyCoverId(track, coverId);
+      }
+      return Boolean(coverId);
+    }
+
+    if (coverKey) {
+      const existingPromise = this.coverPromisesByKey.get(coverKey);
+      if (existingPromise) {
+        const coverId = await existingPromise;
+        if (coverId) {
+          this.applyCoverId(track, coverId);
+        }
+        return Boolean(coverId);
+      }
+    }
+
+    const coverPromise = this.readAndCacheCover(track, this.coverService);
+    if (coverKey) {
+      this.coverPromisesByKey.set(coverKey, coverPromise);
+    }
+
+    try {
+      const coverId = await coverPromise;
+      if (coverKey) {
+        this.coverIdsByKey.set(coverKey, coverId);
+      }
+      if (coverId) {
+        this.applyCoverId(track, coverId);
+      }
+      return Boolean(coverId);
+    } finally {
+      if (coverKey) {
+        this.coverPromisesByKey.delete(coverKey);
+      }
+    }
+  }
+
+  private applyCoverId(track: RemoteLibraryTrack, coverId: string): void {
+    const coverArt = track.fieldSources.coverArt;
+    if (coverArt) {
+      this.store.updateTrackCoversByCoverArt(track.sourceId, coverArt, coverId);
+      return;
+    }
+
+    this.store.updateTrackCover(track.id, coverId);
+  }
+
+  private async readAndCacheCover(track: RemoteLibraryTrack, coverService: CoverService): Promise<string | null> {
     const source = this.store.getSourceWithSecret(track.sourceId);
     if (!source) {
       throw new Error(`Unknown remote source ${track.sourceId}`);
@@ -315,7 +406,7 @@ export class RemoteBackgroundJobQueue {
 
     const adapter = this.getAdapter(source.provider);
     if (!adapter.readCover) {
-      return false;
+      return null;
     }
 
     const result = await adapter.readCover({
@@ -356,7 +447,7 @@ export class RemoteBackgroundJobQueue {
     });
 
     if (!result.data) {
-      return false;
+      return null;
     }
 
     const metadata: ParsedTrackMetadata = {
@@ -382,9 +473,13 @@ export class RemoteBackgroundJobQueue {
       errors: result.errors,
       metadataStatus: this.toLocalMetadataStatus(track.metadataStatus),
     };
-    const coverId = await this.coverService.ensureCover(`remote://${track.sourceId}${track.remotePath}`, metadata);
-    this.store.updateTrackCover(track.id, coverId);
-    return Boolean(coverId);
+    const coverId = await coverService.ensureCover(`remote://${track.sourceId}${track.remotePath}`, metadata);
+    return coverId;
+  }
+
+  private coverCacheKey(track: RemoteLibraryTrack): string | null {
+    const coverArt = track.fieldSources.coverArt;
+    return coverArt ? `${track.sourceId}:${coverArt}` : null;
   }
 
   private async runMetadataJob(track: RemoteLibraryTrack, kind: RemoteBackgroundJobKind): Promise<RemoteLibraryTrack | null> {
@@ -437,7 +532,7 @@ export class RemoteBackgroundJobQueue {
     });
   }
 
-  private kindsForTrack(track: RemoteLibraryTrack, kinds: RemoteBackgroundJobKind[], failedOnly: boolean): RemoteBackgroundJobKind[] {
+  private kindsForTrack(track: QueueableTrack, kinds: RemoteBackgroundJobKind[], failedOnly: boolean): RemoteBackgroundJobKind[] {
     return kinds.filter((kind) => {
       if (kind === 'metadata') {
         return failedOnly ? track.metadataStatus === 'error' : track.metadataStatus === 'pending' || track.metadataStatus === 'partial';
@@ -458,7 +553,7 @@ export class RemoteBackgroundJobQueue {
     });
   }
 
-  private hasMatchableMetadata(track: RemoteLibraryTrack): boolean {
+  private hasMatchableMetadata(track: QueueableTrack): boolean {
     return Boolean(track.title.trim() && track.artist.trim() && track.artist !== 'Unknown Artist');
   }
 
@@ -483,7 +578,7 @@ export class RemoteBackgroundJobQueue {
     }
 
     const limit = this.effectiveConcurrency(job.sourceId)[job.kind];
-    const runningForSource = Array.from(this.running.values()).filter((running) => running.sourceId === job.sourceId && running.kind === job.kind).length;
+    const runningForSource = this.getCounts(this.runningBySource, job.sourceId)[job.kind];
     return runningForSource < limit;
   }
 
@@ -545,6 +640,11 @@ export class RemoteBackgroundJobQueue {
     const counts = this.getCounts(map, sourceId);
     counts[kind] += 1;
     this.touch();
+  }
+
+  private adjust(map: Map<string, Record<RemoteBackgroundJobKind, number>>, sourceId: string, kind: RemoteBackgroundJobKind, delta: number): void {
+    const counts = this.getCounts(map, sourceId);
+    counts[kind] = Math.max(0, counts[kind] + delta);
   }
 
   private touch(): void {

@@ -8,6 +8,7 @@
 #include "../../audio-engine/ChannelBalanceProcessor.h"
 
 #if JUCE_WINDOWS
+#include "audio_host_exit_codes.h"
 #include "asio_host.h"
 #include "wasapi_exclusive.h"
 #include "wasapi_shared.h"
@@ -2412,6 +2413,13 @@ int runLegacyWasapiExclusiveHost(const Options& options)
 
     if (startResult != 0 || runtime == nullptr)
     {
+        if (startResult == echo_audio_host::kExitDeviceInitializeTimeout)
+        {
+            logLine(std::string("WASAPI exclusive open failed: ") + (error[0] != '\0' ? error : "device initialize timeout"));
+            std::cerr.flush();
+            ExitProcess((UINT)echo_audio_host::kExitDeviceInitializeTimeout);
+            return echo_audio_host::kExitDeviceInitializeTimeout;
+        }
         shutdownRequested.store(true, std::memory_order_release);
         source.requestStop();
         if (reader.joinable())
@@ -2574,6 +2582,13 @@ int runLegacyWasapiSharedHost(const Options& options)
 
     if (startResult != 0 || runtime == nullptr)
     {
+        if (startResult == echo_audio_host::kExitDeviceInitializeTimeout)
+        {
+            logLine(std::string("WASAPI shared open failed: ") + (error[0] != '\0' ? error : "device initialize timeout"));
+            std::cerr.flush();
+            ExitProcess((UINT)echo_audio_host::kExitDeviceInitializeTimeout);
+            return echo_audio_host::kExitDeviceInitializeTimeout;
+        }
         shutdownRequested.store(true, std::memory_order_release);
         source.requestStop();
         if (reader.joinable())

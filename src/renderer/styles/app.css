@@ -2683,8 +2683,21 @@
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 18px 38px rgba(0, 0, 0, 0.13);
-  transform: translateX(50%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(50%) translateY(8px) scale(0.97);
+  transform-origin: 50% 100%;
+  transition:
+    opacity 160ms ease,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
   z-index: 20;
+}
+
+.volume-popover[data-open="true"],
+.speed-popover[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(50%) translateY(0) scale(1);
 }
 
 .volume-popover span,

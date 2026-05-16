@@ -6,6 +6,7 @@ const provider = (
   id: 'lrclib' | 'netease' | 'qqmusic',
   results: LyricsProviderResult[],
   delayMs = 0,
+  capabilities: Partial<LyricsProvider['capabilities']> = {},
 ): LyricsProvider => ({
   id,
   label: id === 'lrclib' ? 'LRCLIB' : id === 'netease' ? 'NetEase Lyrics' : 'QQ Music',
@@ -19,6 +20,7 @@ const provider = (
     byIsrc: false,
     byMusicBrainzId: false,
     needsAccount: false,
+    ...capabilities,
   },
   search: vi.fn(async (request: LyricsProviderSearchRequest) => {
     if (delayMs) {
@@ -157,6 +159,37 @@ describe('LyricsMatchEngine', () => {
     expect(matched.accepted?.provider).toBe('netease');
     expect(matched.accepted?.providerLyricsId).toBe('first');
     expect(second.search).toHaveBeenCalled();
+  });
+
+  it('waits for translation-capable providers when translations are preferred', async () => {
+    const lrclib = provider('lrclib', [result({ providerLyricsId: 'plain-hit' })], 0);
+    const netease = provider(
+      'netease',
+      [
+        result({
+          provider: 'netease',
+          providerLyricsId: 'translated-hit',
+          translationLyrics: '[00:01.00]Translated line',
+          raw: { id: 'translated-hit' },
+        }),
+      ],
+      20,
+      { translation: true },
+    );
+    const engine = new LyricsMatchEngine([lrclib, netease]);
+
+    const matched = await engine.match(query, {
+      enabledProviders: ['lrclib', 'netease'],
+      deepSearchEnabled: true,
+      preferredSecondaryFields: ['translation'],
+      providerTimeoutMs: 100,
+      totalMatchTimeoutMs: 200,
+    });
+
+    expect(matched.accepted?.provider).toBe('netease');
+    expect(matched.accepted?.providerLyricsId).toBe('translated-hit');
+    expect(lrclib.search).toHaveBeenCalled();
+    expect(netease.search).toHaveBeenCalled();
   });
 
   it('collects all provider candidates when requested', async () => {

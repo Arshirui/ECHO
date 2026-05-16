@@ -64,6 +64,11 @@ const cleanNumber = (value: unknown): number | null => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
+const clampInt = (value: unknown, fallback: number, min = 1, max = 8): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.round(parsed))) : fallback;
+};
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const timeoutSignal = (timeoutMs: number, signal?: AbortSignal): AbortSignal => {
   const controller = new AbortController();
@@ -142,6 +147,7 @@ export class SubsonicRemoteSourceAdapter implements RemoteSourceAdapter {
     const configuredFolderIds = Array.isArray(input.source.config.musicFolderIds)
       ? input.source.config.musicFolderIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
       : [undefined];
+    const concurrency = clampInt(input.source.config.scanConcurrency, 3, 1, 8);
 
     for (const folderId of configuredFolderIds.length ? configuredFolderIds : [undefined]) {
       let offset = 0;
@@ -157,17 +163,21 @@ export class SubsonicRemoteSourceAdapter implements RemoteSourceAdapter {
         }
         const albumPage = await this.request<{ albumList2?: { album?: SubsonicAlbum[] } }>(input, '/rest/getAlbumList2.view', params);
         const albums = albumPage.albumList2?.album ?? [];
-        for (const album of albums) {
-          const albumId = cleanText(album.id);
-          if (!albumId) {
-            continue;
-          }
-          const detail = await this.request<{ album?: SubsonicAlbum }>(input, '/rest/getAlbum.view', { id: albumId });
-          for (const song of detail.album?.song ?? []) {
-            const scanItem = this.songToScanItem(input.source.id, song);
-            if (scanItem) {
-              input.onProgress?.(scanItem);
-              yield scanItem;
+        for (let index = 0; index < albums.length && !input.signal?.aborted; index += concurrency) {
+          const batch = albums.slice(index, index + concurrency);
+          const details = await Promise.all(batch.map((album) => this.readAlbumDetail(input, album)));
+
+          for (const detail of details) {
+            for (const song of detail?.song ?? []) {
+              if (input.signal?.aborted) {
+                break;
+              }
+
+              const scanItem = this.songToScanItem(input.source.id, song);
+              if (scanItem) {
+                input.onProgress?.(scanItem);
+                yield scanItem;
+              }
             }
           }
         }
@@ -226,6 +236,29 @@ export class SubsonicRemoteSourceAdapter implements RemoteSourceAdapter {
       throw new Error('Remote stream proxy is not available');
     }
     return this.streamUrlResolver(input);
+  }
+
+  private async readAlbumDetail(input: RemoteScanInput, album: SubsonicAlbum): Promise<SubsonicAlbum | null> {
+    const albumId = cleanText(album.id);
+    if (!albumId) {
+      return null;
+    }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const detail = await this.request<{ album?: SubsonicAlbum }>(input, '/rest/getAlbum.view', { id: albumId });
+        return detail.album ?? null;
+      } catch (error) {
+        if (input.signal?.aborted || attempt === 1) {
+          input.onError?.(`subsonic:album:${albumId}`, error instanceof Error ? error : new Error(String(error)));
+          return null;
+        }
+
+        await delay(250);
+      }
+    }
+
+    return null;
   }
 
   private async request<T>(input: RemoteAdapterInput, path: string, params: Record<string, string> = {}): Promise<T> {

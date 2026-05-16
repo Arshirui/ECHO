@@ -25,6 +25,7 @@ import type {
 } from '../../shared/types/library';
 import { TrackContextMenu } from '../components/library/TrackContextMenu';
 import type { TrackMenuAction } from '../components/library/TrackContextMenu';
+import { OsuTimingPanel } from '../components/library/OsuTimingPanel';
 import { TrackList } from '../components/library/TrackList';
 import { TrackTagEditorDrawer } from '../components/library/TrackTagEditorDrawer';
 import {
@@ -212,6 +213,7 @@ export const FoldersPage = (): JSX.Element => {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [trackMenu, setTrackMenu] = useState<TrackMenuState | null>(null);
+  const [osuTimingTrack, setOsuTimingTrack] = useState<LibraryTrack | null>(null);
   const [editingTrack, setEditingTrack] = useState<LibraryTrack | null>(null);
   const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
   const [tagEditorError, setTagEditorError] = useState<string | null>(null);
@@ -637,7 +639,7 @@ export const FoldersPage = (): JSX.Element => {
       const library = window.echo?.library;
       setTrackMenu(null);
 
-      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags') {
+      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'edit-tags' && action !== 'open-osu-timing') {
         setError(t('folders.error.desktopFileActions'));
         return;
       }
@@ -645,6 +647,19 @@ export const FoldersPage = (): JSX.Element => {
       try {
         setError(null);
         setMessage(null);
+
+        if (
+          track.mediaType === 'remote' &&
+          (action === 'edit-tags' ||
+            action === 'open-osu-timing' ||
+            action === 'show-in-folder' ||
+            action === 'copy-path' ||
+            action === 'open-system' ||
+            action === 'delete-song')
+        ) {
+          setError('远程歌曲暂不支持本地文件操作。');
+          return;
+        }
 
         switch (action) {
           case 'play-next':
@@ -669,6 +684,9 @@ export const FoldersPage = (): JSX.Element => {
                 removeQueueItem(queuedItem.queueId);
               }
             }
+            return;
+          case 'open-osu-timing':
+            setOsuTimingTrack(track);
             return;
           case 'edit-tags':
             setTagEditorError(null);
@@ -1074,6 +1092,16 @@ export const FoldersPage = (): JSX.Element => {
         error={tagEditorError}
         onClose={closeTagEditor}
         onSave={(track, tags, coverPath, coverUrl, coverMimeType) => void handleSaveTags(track, tags, coverPath, coverUrl, coverMimeType)}
+      />
+
+      <OsuTimingPanel
+        track={osuTimingTrack}
+        isOpen={Boolean(osuTimingTrack)}
+        onClose={() => setOsuTimingTrack(null)}
+        onTrackUpdated={(updatedTrack) => {
+          setOsuTimingTrack(updatedTrack);
+          setTracks((current) => current.map((item) => (item.id === updatedTrack.id ? updatedTrack : item)));
+        }}
       />
     </div>
   );

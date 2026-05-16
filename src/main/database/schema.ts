@@ -149,6 +149,24 @@ CREATE TABLE IF NOT EXISTS artists (
   FOREIGN KEY (cover_id) REFERENCES covers(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS artist_image_cache (
+  artist_key TEXT PRIMARY KEY,
+  artist_name TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  provider_artist_id TEXT,
+  source_url TEXT,
+  source_hash TEXT,
+  thumb_path TEXT,
+  medium_path TEXT,
+  large_path TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  confidence REAL DEFAULT 0,
+  failure_reason TEXT,
+  fetched_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS artist_tracks (
   artist_id TEXT NOT NULL,
   track_id TEXT NOT NULL,
@@ -600,6 +618,8 @@ CREATE INDEX IF NOT EXISTS idx_artist_tracks_artist_id ON artist_tracks(artist_i
 CREATE INDEX IF NOT EXISTS idx_artist_tracks_track_id ON artist_tracks(track_id);
 CREATE INDEX IF NOT EXISTS idx_artist_albums_artist_id ON artist_albums(artist_id);
 CREATE INDEX IF NOT EXISTS idx_artist_albums_album_id ON artist_albums(album_id);
+CREATE INDEX IF NOT EXISTS idx_artist_image_cache_status ON artist_image_cache(status);
+CREATE INDEX IF NOT EXISTS idx_artist_image_cache_provider_id ON artist_image_cache(provider, provider_artist_id);
 CREATE INDEX IF NOT EXISTS idx_folders_path ON folders(path);
 CREATE INDEX IF NOT EXISTS idx_covers_id ON covers(id);
 CREATE INDEX IF NOT EXISTS idx_covers_source_hash ON covers(source_hash);

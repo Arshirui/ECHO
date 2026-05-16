@@ -37,6 +37,10 @@ import type {
   LibraryScanMode,
   LibrarySummary,
   LibraryTrack,
+  ArtistImageCacheClearResult,
+  ArtistImageCacheEntry,
+  ArtistImageQueueResult,
+  ArtistImageRefreshResult,
   MissingMetadataScanOptions,
   MissingMetadataScanResult,
   BpmAnalysisResult,
@@ -203,6 +207,14 @@ export type EchoApi = {
     getArtist: (artistId: string) => Promise<LibraryArtist | null>;
     getArtistTracks: (artistId: string, query?: LibraryPageQuery) => Promise<LibraryPage<LibraryTrack>>;
     getArtistAlbums: (artistId: string, query?: LibraryPageQuery) => Promise<LibraryPage<LibraryAlbum>>;
+    enqueueMissingArtistImages: (
+      request?: { artists?: Array<Pick<LibraryArtist, 'id' | 'name'>>; force?: boolean; limit?: number } | Array<Pick<LibraryArtist, 'id' | 'name'>>,
+    ) => Promise<ArtistImageQueueResult>;
+    refreshArtistImage: (artistId: string, force?: boolean) => Promise<ArtistImageRefreshResult>;
+    refreshVisibleArtistImages: (artists: Array<Pick<LibraryArtist, 'id' | 'name'>>) => Promise<ArtistImageQueueResult>;
+    getArtistImageStatus: (artistId: string) => Promise<ArtistImageCacheEntry | null>;
+    clearArtistImageCache: () => Promise<ArtistImageCacheClearResult>;
+    onArtistImagesUpdated: (handler: (payload: { artistId: string | null; artistKey: string; status: string }) => void) => () => void;
     getAlbumTracks: (
       albumId: string,
       query?: Pick<LibraryPageQuery, 'page' | 'pageSize'>,

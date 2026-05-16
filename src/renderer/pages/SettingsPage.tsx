@@ -674,6 +674,8 @@ export const SettingsPage = (): JSX.Element => {
   const [albumGroupingMessage, setAlbumGroupingMessage] = useState<string | null>(null);
   const [libraryScanBusy, setLibraryScanBusy] = useState(false);
   const [libraryScanMessage, setLibraryScanMessage] = useState<string | null>(null);
+  const [artistImageBusyAction, setArtistImageBusyAction] = useState<'refresh' | 'clear' | null>(null);
+  const [artistImageMessage, setArtistImageMessage] = useState<string | null>(null);
   const [embeddedTagRescanBusy, setEmbeddedTagRescanBusy] = useState<'all' | 'missing-cover' | null>(null);
   const [embeddedTagRescanMessage, setEmbeddedTagRescanMessage] = useState<string | null>(null);
   const [duplicateSummary, setDuplicateSummary] = useState<DuplicateTrackIndexSummary | null>(null);
@@ -1729,6 +1731,55 @@ export const SettingsPage = (): JSX.Element => {
       .catch((settingsError) => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
+  };
+
+  const handleAutoFetchArtistImagesToggle = (): void => {
+    patchAppSettings({ autoFetchArtistImages: !(appSettings?.autoFetchArtistImages ?? false) });
+  };
+
+  const handleRefreshMissingArtistImages = async (): Promise<void> => {
+    const library = getLibraryBridge();
+
+    if (!library?.enqueueMissingArtistImages) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to refresh artist avatars.');
+      return;
+    }
+
+    try {
+      setArtistImageBusyAction('refresh');
+      setArtistImageMessage(null);
+      const result = await library.enqueueMissingArtistImages({ limit: 500 });
+      setArtistImageMessage(
+        result.disabled
+          ? 'Enable automatic artist avatar fetching first.'
+          : `Queued ${result.queued} artist avatars. Skipped ${result.skipped}.`,
+      );
+    } catch (artistImageError) {
+      setError(artistImageError instanceof Error ? artistImageError.message : String(artistImageError));
+    } finally {
+      setArtistImageBusyAction(null);
+    }
+  };
+
+  const handleClearArtistImageCache = async (): Promise<void> => {
+    const library = getLibraryBridge();
+
+    if (!library?.clearArtistImageCache) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to clear artist avatars.');
+      return;
+    }
+
+    try {
+      setArtistImageBusyAction('clear');
+      setArtistImageMessage(null);
+      const result = await library.clearArtistImageCache();
+      setArtistImageMessage(`Cleared ${result.removedRows} avatar records and ${result.deletedFiles} files.`);
+      window.dispatchEvent(new Event('library:changed'));
+    } catch (artistImageError) {
+      setError(artistImageError instanceof Error ? artistImageError.message : String(artistImageError));
+    } finally {
+      setArtistImageBusyAction(null);
+    }
   };
 
   const handleAlbumMergeStrategyApply = async (): Promise<void> => {
@@ -3006,6 +3057,43 @@ export const SettingsPage = (): JSX.Element => {
                   </div>
                   {bpmAnalysisMessage ? <p className="settings-inline-note">{bpmAnalysisMessage}</p> : null}
                   {bpmAnalysisJob?.errorCount ? <p className="settings-inline-error">分析错误 {bpmAnalysisJob.errorCount} 个，已跳过问题文件。</p> : null}
+                </div>
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                title="Artist Avatars"
+                description="Fetch real artist avatars slowly in the background and reuse local cached images on the artist wall."
+              >
+                <div className="settings-cache-panel">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <div className="settings-inline-toggle">
+                      <span>Auto Fetch Artist Avatars</span>
+                      <ToggleButton
+                        active={appSettings?.autoFetchArtistImages ?? false}
+                        disabled={!appSettings || artistImageBusyAction !== null}
+                        onClick={handleAutoFetchArtistImagesToggle}
+                      />
+                    </div>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={!appSettings?.autoFetchArtistImages || artistImageBusyAction !== null}
+                      onClick={() => void handleRefreshMissingArtistImages()}
+                    >
+                      <RotateCw className={artistImageBusyAction === 'refresh' ? 'spinning-icon' : undefined} size={15} />
+                      {artistImageBusyAction === 'refresh' ? 'Queueing...' : 'Refresh Missing Avatars'}
+                    </button>
+                    <button
+                      className="settings-danger-button"
+                      type="button"
+                      disabled={artistImageBusyAction !== null}
+                      onClick={() => void handleClearArtistImageCache()}
+                    >
+                      <Trash2 size={15} />
+                      Clear Avatar Cache
+                    </button>
+                  </div>
+                  {artistImageMessage ? <p className="settings-inline-note">{artistImageMessage}</p> : null}
                 </div>
               </SettingRow>
               <SettingRow title={t('settings.library.network.title')} description={t('settings.library.network.description')}>

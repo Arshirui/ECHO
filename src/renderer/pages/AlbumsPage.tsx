@@ -293,6 +293,11 @@ export const AlbumsPage = (): JSX.Element => {
       try {
         setError(null);
 
+        if (album.mediaType === 'remote' && (action === 'edit-tags' || action === 'delete-album')) {
+          setError('远程专辑暂不支持编辑标签或删除服务器文件。');
+          return;
+        }
+
         switch (action) {
           case 'play-album':
             await playAlbum(album);

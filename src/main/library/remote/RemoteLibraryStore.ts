@@ -259,6 +259,24 @@ export class RemoteLibraryStore {
       : null;
   }
 
+  getComparableFingerprints(sourceId: string): Map<string, { etag: string | null; modifiedAt: string | null; sizeBytes: number | null; coverId: string | null }> {
+    const rows = this.database
+      .prepare<[string], DbRow>('SELECT remote_path, etag, modified_at, size_bytes, cover_id FROM remote_tracks WHERE source_id = ?')
+      .all(sourceId);
+    const fingerprints = new Map<string, { etag: string | null; modifiedAt: string | null; sizeBytes: number | null; coverId: string | null }>();
+
+    for (const row of rows) {
+      fingerprints.set(String(row.remote_path), {
+        etag: textOrNull(row.etag),
+        modifiedAt: textOrNull(row.modified_at),
+        sizeBytes: numberOrNull(row.size_bytes),
+        coverId: textOrNull(row.cover_id),
+      });
+    }
+
+    return fingerprints;
+  }
+
   upsertTracks(tracks: RemoteTrackWrite[]): void {
     if (tracks.length === 0) {
       return;
@@ -290,7 +308,7 @@ export class RemoteLibraryStore {
         size_bytes = excluded.size_bytes,
         modified_at = excluded.modified_at,
         etag = excluded.etag,
-        cover_id = excluded.cover_id,
+        cover_id = COALESCE(excluded.cover_id, remote_tracks.cover_id),
         metadata_status = excluded.metadata_status,
         availability = excluded.availability,
         field_sources_json = excluded.field_sources_json,
@@ -434,6 +452,18 @@ export class RemoteLibraryStore {
   updateTrackCover(trackId: string, coverId: string | null): RemoteLibraryTrack | null {
     this.database.prepare('UPDATE remote_tracks SET cover_id = ?, updated_at = ? WHERE id = ?').run(coverId, nowIso(), trackId);
     return this.getTrack(trackId);
+  }
+
+  updateTrackCoversByCoverArt(sourceId: string, coverArt: string, coverId: string): number {
+    return this.database
+      .prepare(
+        `UPDATE remote_tracks
+         SET cover_id = ?, updated_at = ?
+         WHERE source_id = ?
+           AND cover_id IS NULL
+           AND json_extract(field_sources_json, '$.coverArt') = ?`,
+      )
+      .run(coverId, nowIso(), sourceId, coverArt).changes;
   }
 
   updateTrackJobStatus(trackId: string, kind: RemoteBackgroundJobKind, status: RemoteLibraryTrack['metadataStatus']): void {

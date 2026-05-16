@@ -1,9 +1,12 @@
+import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
 import type { RemoteSyncStatus } from '../../../shared/types/remoteSources';
 import type { RemoteLibraryStore } from './RemoteLibraryStore';
 import type { RemoteSourceAdapter, RemoteTrackWrite } from './remoteTypes';
 import { remoteTrackIdFor } from './remoteIdentity';
 
-const batchSize = 100;
+const batchSize = 500;
+const statusFlushIntervalMs = 300;
+const statusFlushItemDelta = 64;
 const nowIso = (): string => new Date().toISOString();
 
 const initialStatus = (sourceId: string): RemoteSyncStatus => ({
@@ -80,7 +83,42 @@ export class RemoteLibrarySyncService {
     const adapter = this.getAdapter(source.provider);
     const errors: string[] = [];
     const seenPaths = new Set<string>();
+    const fingerprints = this.store.getComparableFingerprints(sourceId);
     let batch: RemoteTrackWrite[] = [];
+    let discoveredCount = 0;
+    let parsedCount = 0;
+    let writtenCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+    let lastStatusFlushAt = 0;
+    let lastDiscoveredCount = 0;
+    let lastWrittenCount = 0;
+
+    const publishProgress = (force = false, patch: Partial<RemoteSyncStatus> = {}): void => {
+      const now = Date.now();
+      const shouldFlush =
+        force ||
+        now - lastStatusFlushAt >= statusFlushIntervalMs ||
+        discoveredCount - lastDiscoveredCount >= statusFlushItemDelta ||
+        writtenCount - lastWrittenCount >= statusFlushItemDelta;
+
+      if (!shouldFlush) {
+        return;
+      }
+
+      lastStatusFlushAt = now;
+      lastDiscoveredCount = discoveredCount;
+      lastWrittenCount = writtenCount;
+      this.patchStatus(sourceId, {
+        discoveredCount,
+        parsedCount,
+        writtenCount,
+        skippedCount,
+        failedCount,
+        errors: errors.slice(-20),
+        ...patch,
+      });
+    };
 
     try {
       const test = await adapter.testConnection({ source, signal: controller.signal });
@@ -90,7 +128,7 @@ export class RemoteLibrarySyncService {
         return;
       }
 
-      this.patchStatus(sourceId, { phase: 'scanning' });
+      publishProgress(true, { phase: 'scanning' });
 
       for await (const item of adapter.scan({
         source,
@@ -98,11 +136,8 @@ export class RemoteLibrarySyncService {
         onError: (path, error) => {
           const message = `${path}: ${error.message}`;
           errors.push(message);
-          this.patchStatus(sourceId, {
-            failedCount: this.getSyncStatus(sourceId).failedCount + 1,
-            errors: errors.slice(-20),
-            currentPath: path,
-          });
+          failedCount += 1;
+          publishProgress(false, { currentPath: path });
         },
       })) {
         if (controller.signal.aborted) {
@@ -111,12 +146,10 @@ export class RemoteLibrarySyncService {
         }
 
         seenPaths.add(item.path);
-        this.patchStatus(sourceId, {
-          discoveredCount: this.getSyncStatus(sourceId).discoveredCount + 1,
-          currentPath: item.path,
-        });
+        discoveredCount += 1;
+        publishProgress(false, { currentPath: item.path });
 
-        const existing = this.store.getComparableFingerprint(sourceId, item.path);
+        const existing = fingerprints.get(item.path);
         const unchanged =
           existing &&
           existing.etag === item.etag &&
@@ -124,12 +157,13 @@ export class RemoteLibrarySyncService {
           existing.sizeBytes === item.sizeBytes;
 
         if (unchanged && existing.coverId) {
-          this.patchStatus(sourceId, { skippedCount: this.getSyncStatus(sourceId).skippedCount + 1 });
+          skippedCount += 1;
+          publishProgress();
           continue;
         }
 
         const metadata = item.metadata ?? this.createLayeredIndexMetadata(item.name);
-        this.patchStatus(sourceId, { parsedCount: this.getSyncStatus(sourceId).parsedCount + 1 });
+        parsedCount += 1;
         batch.push({
           id: remoteTrackIdFor(sourceId, item.stableKey),
           sourceId,
@@ -162,25 +196,34 @@ export class RemoteLibrarySyncService {
         });
 
         if (batch.length >= batchSize) {
-          this.flush(sourceId, batch);
+          publishProgress(true, { phase: 'writing_database' });
+          writtenCount += this.flush(sourceId, batch);
           batch = [];
+          publishProgress(true, { phase: 'scanning' });
+          await yieldToMainLoop();
         }
       }
 
-      this.flush(sourceId, batch);
-      this.patchStatus(sourceId, { phase: 'marking_missing' });
+      publishProgress(true, { phase: 'writing_database' });
+      writtenCount += this.flush(sourceId, batch);
+      await yieldToMainLoop();
+      publishProgress(true, { phase: 'marking_missing' });
       const missingCount = this.store.markMissingExcept(sourceId, seenPaths);
       const finishedAt = nowIso();
       this.patchStatus(sourceId, {
         status: 'completed',
         phase: 'finished',
+        discoveredCount,
+        parsedCount,
+        writtenCount,
+        skippedCount,
         missingCount,
-        failedCount: errors.length,
+        failedCount,
         errors: errors.slice(-20),
         currentPath: null,
         finishedAt,
       });
-      this.store.updateSourceSyncResult(sourceId, errors.length === 0, errors[0] ?? null, finishedAt);
+      this.store.updateSourceSyncResult(sourceId, failedCount === 0, errors[0] ?? null, finishedAt);
     } catch (error) {
       if (controller.signal.aborted) {
         this.cancelled(sourceId);
@@ -191,15 +234,14 @@ export class RemoteLibrarySyncService {
     }
   }
 
-  private flush(sourceId: string, batch: RemoteTrackWrite[]): void {
+  private flush(sourceId: string, batch: RemoteTrackWrite[]): number {
     if (batch.length === 0) {
-      return;
+      return 0;
     }
 
-    this.patchStatus(sourceId, { phase: 'writing_database' });
     this.store.upsertTracks(batch);
     this.onTracksIndexed(sourceId, batch);
-    this.patchStatus(sourceId, { writtenCount: this.getSyncStatus(sourceId).writtenCount + batch.length });
+    return batch.length;
   }
 
   private createLayeredIndexMetadata(fileName: string): {

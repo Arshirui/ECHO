@@ -42,7 +42,6 @@ const immersiveBackgroundDefaults = {
   immersiveBackgroundBlurPx: 0,
   immersiveBackgroundBrightnessPercent: 100,
   immersiveBackgroundOverlayOpacityPercent: 0,
-  lyricsReadabilityEnhanced: false,
 } satisfies Partial<MvSettings>;
 
 const fallbackSettings: MvSettings = {
@@ -1067,20 +1066,6 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
                   >
                     <RotateCcw size={15} />
                     {t('mvSettings.immersive.reset')}
-                  </button>
-                  <button
-                    type="button"
-                    className="mv-source-toggle mv-auto-apply-toggle"
-                    aria-pressed={settings.lyricsReadabilityEnhanced === true}
-                    onClick={() => void patchSettings({ lyricsReadabilityEnhanced: settings.lyricsReadabilityEnhanced !== true })}
-                  >
-                    <span className="mv-switch-track" aria-hidden="true">
-                      <span />
-                    </span>
-                    <span className="mv-toggle-copy">
-                      <strong>{t('mvSettings.immersive.lyricsReadability')}</strong>
-                      <em>{t('mvSettings.immersive.lyricsReadabilityDescription')}</em>
-                    </span>
                   </button>
                   <label className="mv-threshold-control">
                     <span className="mv-threshold-copy">

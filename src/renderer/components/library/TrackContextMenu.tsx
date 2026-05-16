@@ -13,6 +13,7 @@ import {
   PanelTopOpen,
   Play,
   Plus,
+  Timer,
   Tag,
   Trash2,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ export type TrackMenuAction =
   | 'toggle-liked'
   | 'remove-from-queue'
   | 'edit-tags'
+  | 'open-osu-timing'
   | 'go-to-album'
   | 'show-in-folder'
   | 'copy-path'
@@ -53,6 +55,7 @@ type MenuItem = {
 
 const viewportPadding = 8;
 const pointerOffset = 6;
+const remoteHiddenActions = new Set<TrackMenuAction>(['edit-tags', 'open-osu-timing', 'show-in-folder', 'copy-path', 'open-system', 'delete-song']);
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(value, max));
 
@@ -94,12 +97,13 @@ export const TrackContextMenu = ({ track, position, liked = false, onAction, onC
     };
   }, [onClose]);
 
-  const items: MenuItem[] = [
+  const allItems: MenuItem[] = [
     { action: 'add-to-playlist', label: '加入歌单...', icon: Plus },
     { action: 'play-next', label: '下一首播放', icon: Play },
     { action: 'add-to-queue', label: '加入队列', icon: ListEnd },
     { action: 'toggle-liked', label: liked ? '取消喜欢' : '喜欢', icon: Heart },
     { action: 'remove-from-queue', label: '从播放队列移除', icon: Minus },
+    { action: 'open-osu-timing', label: 'osu! Timing', icon: Timer },
     { action: 'edit-tags', label: '编辑标签', icon: Tag },
     { action: 'go-to-album', label: '定位到专辑', icon: Disc3 },
     { action: 'show-in-folder', label: '在文件夹中显示', icon: FolderOpen },
@@ -110,6 +114,7 @@ export const TrackContextMenu = ({ track, position, liked = false, onAction, onC
     { action: 'save-cover', label: '保存歌曲卡片图片', icon: Download },
     { action: 'delete-song', label: '删除歌曲', icon: Trash2, danger: true },
   ];
+  const items = allItems.filter((item) => track.mediaType !== 'remote' || !remoteHiddenActions.has(item.action));
 
   return createPortal(
     <div className="track-menu-layer" role="presentation" onMouseDown={onClose}>

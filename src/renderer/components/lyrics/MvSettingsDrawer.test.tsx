@@ -360,15 +360,11 @@ describe('MvSettingsDrawer', () => {
     await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ immersiveBackgroundOverlayOpacityPercent: 35 }));
   });
 
-  it('toggles immersive MV lyrics readability enhancement from the drawer', async () => {
+  it('does not show lyrics readability enhancement in the MV drawer', async () => {
     renderDrawer();
 
-    const toggle = await screen.findByRole('button', { name: /Lyrics readability boost/ });
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
-
-    fireEvent.click(toggle);
-
-    await waitFor(() => expect(window.echo.mv.setSettings).toHaveBeenCalledWith({ lyricsReadabilityEnhanced: true }));
+    expect(await screen.findByRole('button', { name: /Immersive MV background/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Lyrics readability boost/ })).toBeNull();
   });
 
   it('resets immersive MV background tuning', async () => {
@@ -380,7 +376,6 @@ describe('MvSettingsDrawer', () => {
       immersiveBackgroundBlurPx: 16,
       immersiveBackgroundBrightnessPercent: 70,
       immersiveBackgroundOverlayOpacityPercent: 80,
-      lyricsReadabilityEnhanced: true,
     });
 
     fireEvent.click(await screen.findByRole('button', { name: /Reset immersive background/ }));
@@ -393,7 +388,6 @@ describe('MvSettingsDrawer', () => {
         immersiveBackgroundBlurPx: 0,
         immersiveBackgroundBrightnessPercent: 100,
         immersiveBackgroundOverlayOpacityPercent: 0,
-        lyricsReadabilityEnhanced: false,
       }),
     );
   });

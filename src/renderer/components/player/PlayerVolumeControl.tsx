@@ -17,6 +17,15 @@ const volumeFromStatus = (status: AudioStatus | null): number => {
   return Math.max(0, Math.min(1, status?.volume ?? 1));
 };
 
+const popoverCloseDistancePx = 150;
+const popoverExitAnimationMs = 180;
+
+const distanceFromRect = (x: number, y: number, rect: DOMRect): number => {
+  const dx = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0;
+  const dy = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
+  return Math.hypot(dx, dy);
+};
+
 export const PlayerVolumeControl = ({
   status,
   onStatusChange,
@@ -26,10 +35,29 @@ export const PlayerVolumeControl = ({
   onCommitVolume,
 }: PlayerVolumeControlProps): JSX.Element => {
   const [volume, setVolume] = useState(volumeFromStatus(status));
+  const [shouldRenderPopover, setShouldRenderPopover] = useState(isOpen);
+  const [isPopoverVisible, setIsPopoverVisible] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
   const pendingCommitRef = useRef<number | null>(null);
   const isInteractingRef = useRef(false);
   const Icon = volume <= 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
+
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRenderPopover(true);
+      const frameId = window.requestAnimationFrame(() => setIsPopoverVisible(true));
+      return () => window.cancelAnimationFrame(frameId);
+    }
+
+    setIsPopoverVisible(false);
+    if (!shouldRenderPopover) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setShouldRenderPopover(false), popoverExitAnimationMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [isOpen, shouldRenderPopover]);
 
   useEffect(() => {
     if (isInteractingRef.current || pendingCommitRef.current !== null) {
@@ -73,6 +101,21 @@ export const PlayerVolumeControl = ({
       return undefined;
     }
 
+    const handlePointerMove = (event: PointerEvent): void => {
+      if (isInteractingRef.current) {
+        return;
+      }
+
+      const rects = [rootRef.current?.getBoundingClientRect(), popoverRef.current?.getBoundingClientRect()].filter(
+        (rect): rect is DOMRect => Boolean(rect),
+      );
+      const nearestDistance = Math.min(...rects.map((rect) => distanceFromRect(event.clientX, event.clientY, rect)));
+
+      if (nearestDistance > popoverCloseDistancePx) {
+        onOpenChange(false);
+      }
+    };
+
     const handlePointerDown = (event: PointerEvent): void => {
       if (rootRef.current?.contains(event.target as Node)) {
         return;
@@ -81,8 +124,12 @@ export const PlayerVolumeControl = ({
       onOpenChange(false);
     };
 
+    window.addEventListener('pointermove', handlePointerMove, true);
     window.addEventListener('pointerdown', handlePointerDown, true);
-    return () => window.removeEventListener('pointerdown', handlePointerDown, true);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove, true);
+      window.removeEventListener('pointerdown', handlePointerDown, true);
+    };
   }, [isOpen, onOpenChange]);
 
   const commitVolume = useCallback(
@@ -160,8 +207,8 @@ export const PlayerVolumeControl = ({
       >
         <Icon size={18} />
       </button>
-      {isOpen ? (
-        <div className="volume-popover">
+      {shouldRenderPopover ? (
+        <div className="volume-popover" data-open={isPopoverVisible} ref={popoverRef}>
           <span>{formatPercent(volume)}</span>
           <input
             aria-label="Volume level"

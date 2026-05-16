@@ -594,7 +594,10 @@ describe('PlayerBar', () => {
 
     fireEvent.mouseEnter(screen.getByRole('button', { name: '播放速度' }).parentElement!);
     expect(screen.getByText('1.00x')).toBeTruthy();
-    expect(screen.queryByText('100%')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('100%')).toBeNull());
+
+    fireEvent.pointerMove(window, { clientX: 500, clientY: 500 });
+    await waitFor(() => expect(screen.queryByText('1.00x')).toBeNull());
   });
 
   it('handles the space playback shortcut even when the focused target stops keydown bubbling', async () => {

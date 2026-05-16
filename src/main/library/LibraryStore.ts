@@ -29,6 +29,7 @@ import type {
   DuplicateTrackIndexSummary,
   DuplicateTrackMember,
   DuplicateTrackMode,
+  ArtistImageCacheStatus,
   PlaybackHistoryEntry,
   PlaybackHistoryQuery,
   PlaybackHistorySummary,
@@ -317,6 +318,8 @@ const normalizeAlbumTitleForSimilarity = (value: string): string =>
     .normalize('NFKC')
     .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
     .trim();
+const normalizeAlbumTitleForExactLooseMerge = (value: string): string =>
+  value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
 const albumTitleSimilarity = (left: string, right: string): number => {
   const a = normalizeAlbumTitleForSimilarity(left);
   const b = normalizeAlbumTitleForSimilarity(right);
@@ -370,6 +373,15 @@ const playbackHistoryKey = (trackId: string | null, trackPath: string): string =
 const coverSourceOrNull = (value: unknown): CoverSource | null =>
   value === 'manual' || value === 'embedded' || value === 'folder' || value === 'network' || value === 'default' ? value : null;
 const artistNameSeparatorPattern = /\s*(?:\/|,|;|；|&|×)\s*|\s+\b(?:feat\.?|ft\.?|featuring|with|x)\b\s+/iu;
+const artistImageStatusOrNull = (value: unknown): ArtistImageCacheStatus | null =>
+  value === 'pending' ||
+  value === 'loading' ||
+  value === 'matched' ||
+  value === 'not_found' ||
+  value === 'error' ||
+  value === 'rate_limited'
+    ? value
+    : null;
 const coverSourceRank: Record<CoverSource, number> = {
   default: 0,
   network: 1,
@@ -2114,8 +2126,11 @@ export class LibraryStore {
       const coverMatchKey = mostCommonMapKey(standardGroup.coverFingerprints) ?? coverSourceHash;
       const matchingCluster = clusters.find((cluster) => {
         const titleScore = albumTitleSimilarity(standardGroup.title, cluster.representativeTitle);
+        const exactTitleMatch =
+          normalizeAlbumTitleForExactLooseMerge(standardGroup.title) ===
+          normalizeAlbumTitleForExactLooseMerge(cluster.representativeTitle);
 
-        if (titleScore >= 0.95) {
+        if (titleScore >= 0.95 && !exactTitleMatch) {
           return true;
         }
 
@@ -2363,39 +2378,21 @@ export class LibraryStore {
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const searchFilter = buildSearchFilter(search, [
-      likePredicate('albums.title'),
-      likePredicate('albums.album_artist'),
-      likePredicate('COALESCE(CAST(albums.year AS TEXT), \'\')'),
-      (term) => {
-        const value = likeSearch(term);
-
-        return {
-          sql: `EXISTS (
-            SELECT 1
-            FROM album_tracks
-            INNER JOIN tracks ON tracks.id = album_tracks.track_id
-            WHERE album_tracks.album_id = albums.id
-              AND tracks.missing = 0
-              AND (
-                tracks.title LIKE ? ESCAPE '\\'
-                OR tracks.artist LIKE ? ESCAPE '\\'
-                OR tracks.album_artist LIKE ? ESCAPE '\\'
-                OR COALESCE(tracks.genre, '') LIKE ? ESCAPE '\\'
-                OR tracks.path LIKE ? ESCAPE '\\'
-              )
-          )`,
-          params: [value, value, value, value, value],
-        };
-      },
+      likePredicate('library_albums.title'),
+      likePredicate('library_albums.album_artist'),
+      likePredicate('COALESCE(CAST(library_albums.year AS TEXT), \'\')'),
+      likePredicate('library_albums.search_blob'),
     ], searchOptions);
     const whereSql = searchFilter.sql ? `WHERE ${searchFilter.sql}` : '';
-    const orderSql = this.albumOrderSql(sort);
-    const totalRow = this.getRow(`SELECT COUNT(*) AS total FROM albums ${whereSql}`, ...searchFilter.params);
+    const orderSql = this.unifiedAlbumOrderSql(sort);
+    const albumsSql = this.unifiedAlbumsSql();
+    const totalRow = this.getRow(`${albumsSql} SELECT COUNT(*) AS total FROM library_albums ${whereSql}`, ...searchFilter.params);
     const rows = this.allRows(
-      `SELECT
-        albums.id, albums.album_key, albums.title, albums.album_artist, albums.year, albums.track_count,
-        albums.duration, albums.cover_id
-      FROM albums
+      `${albumsSql}
+      SELECT
+        id, media_type, source_id, provider, album_key, title, album_artist, year, track_count,
+        duration, cover_id
+      FROM library_albums
       ${whereSql}
       ${orderSql}
       LIMIT ? OFFSET ?`,
@@ -2418,13 +2415,213 @@ export class LibraryStore {
     }
   }
 
+  private unifiedAlbumsSql(): string {
+    const remoteAlbumIdentity = `remote_tracks.source_id || char(31) ||
+      lower(trim(COALESCE(NULLIF(TRIM(remote_tracks.album_artist), ''), NULLIF(TRIM(remote_tracks.artist), ''), 'Unknown Artist'))) || char(31) ||
+      lower(trim(CASE WHEN TRIM(COALESCE(remote_tracks.album, '')) = '' THEN remote_tracks.id ELSE remote_tracks.album END)) || char(31) ||
+      COALESCE(CAST(remote_tracks.year AS TEXT), '')`;
+
+    return `WITH remote_album_rows AS (
+      SELECT
+        remote_tracks.*,
+        'remote-album:' || lower(hex(${remoteAlbumIdentity})) AS album_id,
+        ${this.remoteArtistIdSql('remote_tracks')} AS artist_id,
+        COALESCE(NULLIF(TRIM(remote_tracks.album), ''), 'Unknown Album') AS album_title,
+        COALESCE(NULLIF(TRIM(remote_tracks.album_artist), ''), NULLIF(TRIM(remote_tracks.artist), ''), 'Unknown Artist') AS album_artist_name,
+        COALESCE(CAST(strftime('%s', remote_tracks.modified_at) AS INTEGER) * 1000, 0) AS sort_mtime_ms
+      FROM remote_tracks
+      INNER JOIN remote_sources ON remote_sources.id = remote_tracks.source_id
+      WHERE remote_tracks.availability != 'missing'
+        AND remote_sources.status = 'enabled'
+    ),
+    local_albums AS (
+      SELECT
+        albums.id,
+        'local' AS media_type,
+        NULL AS source_id,
+        NULL AS provider,
+        albums.album_key,
+        albums.title,
+        albums.album_artist,
+        albums.year,
+        albums.track_count,
+        albums.duration,
+        albums.cover_id,
+        albums.created_at,
+        albums.updated_at,
+        COALESCE((
+          SELECT MAX(tracks.mtime_ms)
+          FROM album_tracks
+          INNER JOIN tracks ON tracks.id = album_tracks.track_id
+          WHERE album_tracks.album_id = albums.id
+            AND tracks.missing = 0
+        ), 0) AS sort_mtime_ms,
+        albums.title || ' ' || albums.album_artist || ' ' || COALESCE(CAST(albums.year AS TEXT), '') || ' ' || COALESCE((
+          SELECT GROUP_CONCAT(tracks.search_terms || ' ' || tracks.title || ' ' || tracks.artist || ' ' || tracks.album_artist || ' ' || COALESCE(tracks.genre, '') || ' ' || tracks.path, ' ')
+          FROM album_tracks
+          INNER JOIN tracks ON tracks.id = album_tracks.track_id
+          WHERE album_tracks.album_id = albums.id
+            AND tracks.missing = 0
+        ), '') AS search_blob
+      FROM albums
+    ),
+    remote_albums AS (
+      SELECT
+        album_id AS id,
+        'remote' AS media_type,
+        source_id,
+        provider,
+        album_id AS album_key,
+        MIN(album_title) AS title,
+        MIN(album_artist_name) AS album_artist,
+        MIN(year) AS year,
+        COUNT(*) AS track_count,
+        COALESCE(SUM(COALESCE(duration, 0)), 0) AS duration,
+        MIN(cover_id) AS cover_id,
+        MIN(created_at) AS created_at,
+        MAX(updated_at) AS updated_at,
+        MAX(sort_mtime_ms) AS sort_mtime_ms,
+        GROUP_CONCAT(COALESCE(search_terms, '') || ' ' || title || ' ' || artist || ' ' || album_artist || ' ' || COALESCE(genre, '') || ' ' || remote_path, ' ') AS search_blob
+      FROM remote_album_rows
+      GROUP BY album_id, source_id, provider
+    ),
+    library_albums AS (
+      SELECT * FROM local_albums
+      UNION ALL
+      SELECT * FROM remote_albums
+    )`;
+  }
+
+  private unifiedAlbumOrderSql(sort: string): string {
+    switch (sort) {
+      case 'artist':
+        return 'ORDER BY album_artist COLLATE NOCASE, title COLLATE NOCASE';
+      case 'recent':
+      case 'createdDesc':
+        return 'ORDER BY updated_at DESC, title COLLATE NOCASE';
+      case 'createdAsc':
+        return 'ORDER BY created_at ASC, title COLLATE NOCASE';
+      case 'titleDesc':
+        return 'ORDER BY title COLLATE NOCASE DESC, album_artist COLLATE NOCASE';
+      case 'durationAsc':
+        return 'ORDER BY duration ASC, title COLLATE NOCASE';
+      case 'durationDesc':
+        return 'ORDER BY duration DESC, title COLLATE NOCASE';
+      case 'fileModifiedAsc':
+        return 'ORDER BY sort_mtime_ms ASC, title COLLATE NOCASE';
+      case 'fileModifiedDesc':
+        return 'ORDER BY sort_mtime_ms DESC, title COLLATE NOCASE';
+      case 'random':
+        return 'ORDER BY RANDOM()';
+      case 'album':
+      case 'titleAsc':
+      case 'default':
+      case 'title':
+      default:
+        return 'ORDER BY title COLLATE NOCASE, album_artist COLLATE NOCASE';
+    }
+  }
+
+  private remoteArtistIdSql(tableName: string): string {
+    return `'remote-artist:' || lower(hex(${tableName}.source_id || char(31) || lower(trim(COALESCE(NULLIF(TRIM(${tableName}.artist), ''), 'Unknown Artist')))))`;
+  }
+
+  private unifiedArtistsSql(): string {
+    const remoteAlbumIdentity = `remote_tracks.source_id || char(31) ||
+      lower(trim(COALESCE(NULLIF(TRIM(remote_tracks.album_artist), ''), NULLIF(TRIM(remote_tracks.artist), ''), 'Unknown Artist'))) || char(31) ||
+      lower(trim(CASE WHEN TRIM(COALESCE(remote_tracks.album, '')) = '' THEN remote_tracks.id ELSE remote_tracks.album END)) || char(31) ||
+      COALESCE(CAST(remote_tracks.year AS TEXT), '')`;
+
+    return `WITH remote_artist_rows AS (
+      SELECT
+        remote_tracks.*,
+        ${this.remoteArtistIdSql('remote_tracks')} AS artist_id,
+        lower(trim(COALESCE(NULLIF(TRIM(remote_tracks.artist), ''), 'Unknown Artist'))) AS artist_key,
+        COALESCE(NULLIF(TRIM(remote_tracks.artist), ''), 'Unknown Artist') AS artist_name,
+        'remote-album:' || lower(hex(${remoteAlbumIdentity})) AS album_id
+      FROM remote_tracks
+      INNER JOIN remote_sources ON remote_sources.id = remote_tracks.source_id
+      WHERE remote_tracks.availability != 'missing'
+        AND remote_sources.status = 'enabled'
+    ),
+    local_artists AS (
+      SELECT
+        artists.id,
+        'local' AS media_type,
+        NULL AS source_id,
+        NULL AS provider,
+        artists.artist_key,
+        artists.name,
+        artists.sort_name,
+        artists.role,
+        artists.track_count,
+        artists.album_count,
+        artists.cover_id,
+        artist_image_cache.status AS avatar_status,
+        artist_image_cache.provider AS avatar_provider,
+        artist_image_cache.thumb_path AS avatar_thumb_path,
+        artist_image_cache.medium_path AS avatar_medium_path,
+        artist_image_cache.large_path AS avatar_large_path
+      FROM artists
+      LEFT JOIN artist_image_cache ON artist_image_cache.artist_key = artists.artist_key
+    ),
+    remote_artists AS (
+      SELECT
+        remote_artist_rows.artist_id AS id,
+        'remote' AS media_type,
+        remote_artist_rows.source_id,
+        remote_artist_rows.provider,
+        remote_artist_rows.artist_key,
+        MIN(remote_artist_rows.artist_name) AS name,
+        remote_artist_rows.artist_key AS sort_name,
+        'both' AS role,
+        COUNT(*) AS track_count,
+        COUNT(DISTINCT remote_artist_rows.album_id) AS album_count,
+        MIN(remote_artist_rows.cover_id) AS cover_id,
+        artist_image_cache.status AS avatar_status,
+        artist_image_cache.provider AS avatar_provider,
+        artist_image_cache.thumb_path AS avatar_thumb_path,
+        artist_image_cache.medium_path AS avatar_medium_path,
+        artist_image_cache.large_path AS avatar_large_path
+      FROM remote_artist_rows
+      LEFT JOIN artist_image_cache ON artist_image_cache.artist_key = remote_artist_rows.artist_key
+      GROUP BY remote_artist_rows.artist_id, remote_artist_rows.source_id, remote_artist_rows.provider, remote_artist_rows.artist_key
+    ),
+    library_artists AS (
+      SELECT * FROM local_artists
+      UNION ALL
+      SELECT * FROM remote_artists
+    )`;
+  }
+
+  private unifiedArtistOrderSql(sort: string): string {
+    switch (sort) {
+      case 'frequent':
+        return 'ORDER BY track_count DESC, album_count DESC, name COLLATE NOCASE';
+      case 'createdDesc':
+      case 'recent':
+        return 'ORDER BY name COLLATE NOCASE';
+      case 'titleDesc':
+        return 'ORDER BY name COLLATE NOCASE DESC';
+      case 'random':
+        return 'ORDER BY RANDOM()';
+      case 'artist':
+      case 'titleAsc':
+      case 'default':
+      case 'title':
+      default:
+        return 'ORDER BY sort_name COLLATE NOCASE, name COLLATE NOCASE';
+    }
+  }
+
   getAlbum(albumId: string): LibraryAlbumDetail | null {
     const row = this.getRow(
-      `SELECT
-        albums.id, albums.album_key, albums.title, albums.album_artist, albums.year, albums.track_count,
-        albums.duration, albums.cover_id
-      FROM albums
-      WHERE albums.id = ?`,
+      `${this.unifiedAlbumsSql()}
+      SELECT
+        id, media_type, source_id, provider, album_key, title, album_artist, year, track_count,
+        duration, cover_id
+      FROM library_albums
+      WHERE id = ?`,
       albumId,
     );
 
@@ -2445,7 +2642,24 @@ export class LibraryStore {
       trackId,
     );
 
-    return row ? this.mapAlbum(row) : null;
+    if (row) {
+      return this.mapAlbum(row);
+    }
+
+    const remoteRow = this.getRow(
+      `${this.unifiedAlbumsSql()}
+       SELECT
+        library_albums.id, library_albums.media_type, library_albums.source_id, library_albums.provider,
+        library_albums.album_key, library_albums.title, library_albums.album_artist, library_albums.year,
+        library_albums.track_count, library_albums.duration, library_albums.cover_id
+       FROM remote_album_rows
+       INNER JOIN library_albums ON library_albums.id = remote_album_rows.album_id
+       WHERE remote_album_rows.id = ?
+       LIMIT 1`,
+      trackId,
+    );
+
+    return remoteRow ? this.mapAlbum(remoteRow) : null;
   }
 
   getArtists(query?: LibraryPageQuery): LibraryPage<LibraryArtist> {
@@ -2453,15 +2667,20 @@ export class LibraryStore {
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const searchFilter = buildSearchFilter(search, [
-      likePredicate('artists.name'),
-      likePredicate('COALESCE(artists.sort_name, \'\')'),
+      likePredicate('library_artists.name'),
+      likePredicate('COALESCE(library_artists.sort_name, \'\')'),
     ], searchOptions);
     const whereSql = searchFilter.sql ? `WHERE ${searchFilter.sql}` : '';
-    const orderSql = this.artistOrderSql(sort);
-    const totalRow = this.getRow(`SELECT COUNT(*) AS total FROM artists ${whereSql}`, ...searchFilter.params);
+    const orderSql = this.unifiedArtistOrderSql(sort);
+    const artistsSql = this.unifiedArtistsSql();
+    const totalRow = this.getRow(`${artistsSql} SELECT COUNT(*) AS total FROM library_artists ${whereSql}`, ...searchFilter.params);
     const rows = this.allRows(
-      `SELECT id, name, sort_name, role, track_count, album_count, cover_id
-       FROM artists
+      `${artistsSql}
+      SELECT
+        id, media_type, source_id, provider, artist_key, name, sort_name, role,
+        track_count, album_count, cover_id, avatar_status, avatar_provider,
+        avatar_thumb_path, avatar_medium_path, avatar_large_path
+       FROM library_artists
        ${whereSql}
        ${orderSql}
        LIMIT ? OFFSET ?`,
@@ -2482,8 +2701,12 @@ export class LibraryStore {
 
   getArtist(artistId: string): LibraryArtist | null {
     const row = this.getRow(
-      `SELECT id, name, sort_name, role, track_count, album_count, cover_id
-       FROM artists
+      `${this.unifiedArtistsSql()}
+       SELECT
+        id, media_type, source_id, provider, artist_key, name, sort_name, role,
+        track_count, album_count, cover_id, avatar_status, avatar_provider,
+        avatar_thumb_path, avatar_medium_path, avatar_large_path
+       FROM library_artists
        WHERE id = ?`,
       artistId,
     );
@@ -2503,6 +2726,61 @@ export class LibraryStore {
         pageSize,
         total: 0,
         hasMore: false,
+      };
+    }
+
+    if (artist.mediaType === 'remote') {
+      const total = Number(this.getRow(`${this.unifiedArtistsSql()} SELECT COUNT(*) AS total FROM remote_artist_rows WHERE artist_id = ?`, artist.id)?.total ?? 0);
+      const rows = this.allRows(
+        `${this.unifiedArtistsSql()}
+        SELECT
+          remote_artist_rows.id,
+          'remote' AS media_type,
+          'remote://' || remote_artist_rows.source_id || remote_artist_rows.remote_path AS path,
+          remote_artist_rows.source_id,
+          remote_artist_rows.provider,
+          remote_artist_rows.remote_path,
+          remote_artist_rows.stable_key,
+          remote_artist_rows.title,
+          remote_artist_rows.artist,
+          remote_artist_rows.album,
+          remote_artist_rows.album_artist,
+          remote_artist_rows.track_no,
+          remote_artist_rows.disc_no,
+          remote_artist_rows.year,
+          remote_artist_rows.genre,
+          COALESCE(remote_artist_rows.duration, 0) AS duration,
+          remote_artist_rows.codec,
+          remote_artist_rows.sample_rate,
+          remote_artist_rows.bit_depth,
+          remote_artist_rows.bitrate,
+          NULL AS bpm,
+          NULL AS bpm_confidence,
+          NULL AS beat_offset_ms,
+          'none' AS analysis_status,
+          NULL AS analysis_updated_at,
+          remote_artist_rows.cover_id,
+          remote_artist_rows.metadata_status,
+          'present' AS embedded_metadata_status,
+          CASE WHEN remote_artist_rows.cover_id IS NULL THEN 'missing' ELSE 'present' END AS embedded_cover_status,
+          'none' AS network_metadata_status,
+          remote_artist_rows.field_sources_json,
+          remote_artist_rows.availability
+        FROM remote_artist_rows
+        WHERE remote_artist_rows.artist_id = ?
+        ORDER BY remote_artist_rows.album COLLATE NOCASE, COALESCE(remote_artist_rows.disc_no, 0), COALESCE(remote_artist_rows.track_no, 0), remote_artist_rows.title COLLATE NOCASE
+        LIMIT ? OFFSET ?`,
+        artist.id,
+        pageSize,
+        offset,
+      );
+
+      return {
+        items: rows.map((row) => this.mapTrack(row)),
+        page,
+        pageSize,
+        total,
+        hasMore: offset + rows.length < total,
       };
     }
 
@@ -2584,6 +2862,50 @@ export class LibraryStore {
       };
     }
 
+    if (artist.mediaType === 'remote') {
+      const albumsSql = this.unifiedAlbumsSql();
+      const orderSql = this.unifiedAlbumOrderSql(sort);
+      const totalRow = this.getRow(
+        `${albumsSql}
+         SELECT COUNT(*) AS total
+         FROM library_albums
+         WHERE media_type = 'remote'
+           AND id IN (
+             SELECT DISTINCT album_id
+             FROM remote_album_rows
+             WHERE artist_id = ?
+           )`,
+        artist.id,
+      );
+      const rows = this.allRows(
+        `${albumsSql}
+         SELECT
+          id, media_type, source_id, provider, album_key, title, album_artist, year, track_count,
+          duration, cover_id
+         FROM library_albums
+         WHERE media_type = 'remote'
+           AND id IN (
+             SELECT DISTINCT album_id
+             FROM remote_album_rows
+             WHERE artist_id = ?
+           )
+         ${orderSql}
+         LIMIT ? OFFSET ?`,
+        artist.id,
+        pageSize,
+        offset,
+      );
+      const total = Number(totalRow?.total ?? 0);
+
+      return {
+        items: rows.map((row) => this.mapAlbum(row)),
+        page,
+        pageSize,
+        total,
+        hasMore: offset + rows.length < total,
+      };
+    }
+
     const orderSql = this.albumOrderSql(sort);
     const totalRow = this.getRow(
       `SELECT COUNT(*) AS total
@@ -2619,6 +2941,61 @@ export class LibraryStore {
   getAlbumTracks(albumId: string, query?: Pick<LibraryPageQuery, 'page' | 'pageSize'>): LibraryPage<LibraryTrack> {
     const { page, pageSize } = pageFromQuery(query);
     const offset = (page - 1) * pageSize;
+    if (albumId.startsWith('remote-album:')) {
+      const total = Number(this.getRow(`${this.unifiedAlbumsSql()} SELECT COUNT(*) AS total FROM remote_album_rows WHERE album_id = ?`, albumId)?.total ?? 0);
+      const rows = this.allRows(
+        `${this.unifiedAlbumsSql()}
+        SELECT
+          remote_album_rows.id,
+          'remote' AS media_type,
+          'remote://' || remote_album_rows.source_id || remote_album_rows.remote_path AS path,
+          remote_album_rows.source_id,
+          remote_album_rows.provider,
+          remote_album_rows.remote_path,
+          remote_album_rows.stable_key,
+          remote_album_rows.title,
+          remote_album_rows.artist,
+          remote_album_rows.album,
+          remote_album_rows.album_artist,
+          remote_album_rows.track_no,
+          remote_album_rows.disc_no,
+          remote_album_rows.year,
+          remote_album_rows.genre,
+          COALESCE(remote_album_rows.duration, 0) AS duration,
+          remote_album_rows.codec,
+          remote_album_rows.sample_rate,
+          remote_album_rows.bit_depth,
+          remote_album_rows.bitrate,
+          NULL AS bpm,
+          NULL AS bpm_confidence,
+          NULL AS beat_offset_ms,
+          'none' AS analysis_status,
+          NULL AS analysis_updated_at,
+          remote_album_rows.cover_id,
+          remote_album_rows.metadata_status,
+          'present' AS embedded_metadata_status,
+          CASE WHEN remote_album_rows.cover_id IS NULL THEN 'missing' ELSE 'present' END AS embedded_cover_status,
+          'none' AS network_metadata_status,
+          remote_album_rows.field_sources_json,
+          remote_album_rows.availability
+        FROM remote_album_rows
+        WHERE remote_album_rows.album_id = ?
+        ORDER BY COALESCE(remote_album_rows.disc_no, 0), COALESCE(remote_album_rows.track_no, 0), remote_album_rows.title COLLATE NOCASE
+        LIMIT ? OFFSET ?`,
+        albumId,
+        pageSize,
+        offset,
+      );
+
+      return {
+        items: rows.map((row) => this.mapTrack(row)),
+        page,
+        pageSize,
+        total,
+        hasMore: offset + rows.length < total,
+      };
+    }
+
     const totalRow = this.getRow('SELECT COUNT(*) AS total FROM album_tracks WHERE album_id = ?', albumId);
     const rows = this.allRows(
       `SELECT
@@ -4200,9 +4577,19 @@ export class LibraryStore {
   private mapArtist(row: DbRow): LibraryArtist {
     const trackCount = Number(row.track_count ?? 0);
     const albumCount = Number(row.album_count ?? 0);
+    const artistKey = String(row.artist_key ?? '');
+    const avatarStatus = artistImageStatusOrNull(row.avatar_status);
+    const avatarProvider = textOrNull(row.avatar_provider);
+    const avatarThumbPath = textOrNull(row.avatar_thumb_path);
+    const avatarMediumPath = textOrNull(row.avatar_medium_path);
+    const avatarLargePath = textOrNull(row.avatar_large_path);
+    const hasMatchedAvatar = avatarStatus === 'matched';
 
     return {
       id: String(row.id),
+      mediaType: row.media_type === 'remote' ? 'remote' : 'local',
+      sourceId: textOrNull(row.source_id),
+      provider: textOrNull(row.provider),
       name: String(row.name),
       sortName: String(row.sort_name ?? row.name),
       role: trackCount > 0 && albumCount > 0 ? 'both' : albumCount > 0 ? 'album' : 'track',
@@ -4210,6 +4597,12 @@ export class LibraryStore {
       albumCount,
       coverId: textOrNull(row.cover_id),
       coverThumb: this.toCoverUrl(row.cover_id, 'album'),
+      avatarThumbUrl: hasMatchedAvatar && avatarThumbPath ? this.toArtistImageUrl(artistKey, 'thumb') : null,
+      avatarUrl: hasMatchedAvatar && (avatarLargePath || avatarMediumPath || avatarThumbPath)
+        ? this.toArtistImageUrl(artistKey, avatarLargePath ? 'large' : 'medium')
+        : null,
+      avatarStatus,
+      avatarProvider,
     };
   }
 
@@ -4253,6 +4646,9 @@ export class LibraryStore {
   private mapAlbum(row: DbRow): LibraryAlbum {
     return {
       id: String(row.id),
+      mediaType: row.media_type === 'remote' ? 'remote' : 'local',
+      sourceId: textOrNull(row.source_id),
+      provider: textOrNull(row.provider),
       albumKey: String(row.album_key),
       title: String(row.title),
       albumArtist: String(row.album_artist),
@@ -4311,6 +4707,10 @@ export class LibraryStore {
     const coverId = textOrNull(value);
 
     return coverId ? `echo-cover://${variant}/${encodeURIComponent(coverId)}` : null;
+  }
+
+  private toArtistImageUrl(artistKey: string, variant: 'thumb' | 'medium' | 'large'): string | null {
+    return artistKey ? `echo-artist-image://${variant}/${encodeURIComponent(artistKey)}` : null;
   }
 
   private mimeTypeForCoverPath(filePath: string, fallback: string | null): string | null {

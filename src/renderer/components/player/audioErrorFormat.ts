@@ -3,6 +3,10 @@ export const formatAudioHostError = (error: string | null | undefined): string |
     return null;
   }
 
+  if (/\bdevice_initialize_timeout\b/u.test(error)) {
+    return '设备驱动响应过慢,可能是 USB DAC 异常。建议重新插拔 USB,或在设置里点"重启音频引擎"。';
+  }
+
   if (error.includes('echo-audio-host timeout_waiting_for_ready')) {
     return '音频输出启动超时，可能是驱动初始化太慢、设备被占用，或采样率/缓冲设置被拒绝。';
   }

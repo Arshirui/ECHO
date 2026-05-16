@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDatabase, type EchoDatabase } from '../../database/createDatabase';
+import { LibraryStore } from '../LibraryStore';
 import { RemoteSourceService } from './RemoteSourceService';
 import { remoteTrackIdFor } from './remoteIdentity';
 
@@ -74,16 +75,28 @@ const waitForSync = async (service: RemoteSourceService, sourceId: string): Prom
   throw new Error('Timed out waiting for Subsonic sync');
 };
 
-const waitForJobs = async (service: RemoteSourceService, sourceId: string): Promise<void> => {
+const waitForCoverJob = async (service: RemoteSourceService, sourceId: string): Promise<void> => {
   for (let index = 0; index < 100; index += 1) {
     const status = service.getJobStatus(sourceId);
-    if (status.completed.cover === 1 && status.completed.lyrics === 1 && status.completed.mv === 1) {
+    if (status.completed.cover === 1) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 
-  throw new Error('Timed out waiting for Subsonic background jobs');
+  throw new Error('Timed out waiting for Subsonic cover job');
+};
+
+const waitForMatchJobs = async (service: RemoteSourceService, sourceId: string): Promise<void> => {
+  for (let index = 0; index < 100; index += 1) {
+    const status = service.getJobStatus(sourceId);
+    if (status.completed.lyrics === 1 && status.completed.mv === 1) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  throw new Error('Timed out waiting for Subsonic match jobs');
 };
 
 describe('RemoteSourceService Subsonic integration', () => {
@@ -106,7 +119,7 @@ describe('RemoteSourceService Subsonic integration', () => {
     }
   });
 
-  it('starts enrichment jobs for Subsonic tracks whose metadata is already complete during sync', async () => {
+  it('indexes Subsonic tracks, exposes remote albums/artists, and leaves lyrics/MV for manual matching', async () => {
     serviceMocks.getLyricsForTrack.mockResolvedValue({ id: 'lyrics-1' });
     serviceMocks.searchNetworkCandidates.mockResolvedValue([{ id: 'mv-1' }]);
     const server = createServer((request, response) => {
@@ -165,6 +178,7 @@ describe('RemoteSourceService Subsonic integration', () => {
     tempDirs.push(coverCacheDir);
     database = createDatabase(':memory:');
     service = new RemoteSourceService(database, () => database?.close(), coverCacheDir);
+    const libraryStore = new LibraryStore(database);
 
     const source = service.createSource({
       provider: 'subsonic',
@@ -179,7 +193,7 @@ describe('RemoteSourceService Subsonic integration', () => {
 
     service.syncSource(source.id);
     await waitForSync(service, source.id);
-    await waitForJobs(service, source.id);
+    await waitForCoverJob(service, source.id);
 
     const trackId = remoteTrackIdFor(source.id, 'song-1');
     const track = service.getTrackAsLibraryTrack(trackId);
@@ -194,6 +208,40 @@ describe('RemoteSourceService Subsonic integration', () => {
       coverThumb: expect.stringContaining('echo-cover://thumb/'),
       metadataStatus: 'ok',
     }));
+    const albums = libraryStore.getAlbums({ search: 'Echo Album' });
+    expect(albums.items).toHaveLength(1);
+    expect(albums.items[0]).toEqual(expect.objectContaining({
+      mediaType: 'remote',
+      sourceId: source.id,
+      provider: 'subsonic',
+      title: 'Echo Album',
+      albumArtist: 'Echo Artist',
+      trackCount: 1,
+    }));
+    expect(libraryStore.getAlbumTracks(albums.items[0].id).items.map((item) => item.id)).toEqual([trackId]);
+
+    const artists = libraryStore.getArtists({ search: 'Echo Artist' });
+    expect(artists.items).toHaveLength(1);
+    expect(artists.items[0]).toEqual(expect.objectContaining({
+      mediaType: 'remote',
+      sourceId: source.id,
+      provider: 'subsonic',
+      name: 'Echo Artist',
+      trackCount: 1,
+      albumCount: 1,
+    }));
+    expect(libraryStore.getArtistTracks(artists.items[0].id).items.map((item) => item.id)).toEqual([trackId]);
+    expect(libraryStore.getArtistAlbums(artists.items[0].id).items.map((item) => item.id)).toEqual([albums.items[0].id]);
+
+    const jobStatusAfterSync = service.getJobStatus(source.id);
+    expect(jobStatusAfterSync.completed.cover).toBe(1);
+    expect(jobStatusAfterSync.completed.lyrics).toBe(0);
+    expect(jobStatusAfterSync.completed.mv).toBe(0);
+    expect(serviceMocks.getLyricsForTrack).not.toHaveBeenCalled();
+    expect(serviceMocks.searchNetworkCandidates).not.toHaveBeenCalled();
+
+    service.startBackgroundJobs(source.id, ['lyrics', 'mv']);
+    await waitForMatchJobs(service, source.id);
     expect(serviceMocks.getLyricsForTrack).toHaveBeenCalledWith(trackId);
     expect(serviceMocks.searchNetworkCandidates).toHaveBeenCalledWith(trackId);
   });

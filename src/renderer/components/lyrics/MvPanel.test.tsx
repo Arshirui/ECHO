@@ -1014,4 +1014,39 @@ describe('MvPanel', () => {
     expect(window.echo.mv.getSelected).toHaveBeenCalledTimes(initialCallCount);
     expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/video-1');
   });
+
+  it('applies immersive visual setting patches without reloading settings or the selected MV', async () => {
+    const { container } = renderPanel(makeVideo(), true, {
+      ...defaultMvSettings,
+      immersiveBackground: true,
+    });
+
+    const background = await waitFor(() => {
+      const element = container.querySelector('.lyrics-mv-background') as HTMLElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    const initialSettingsCallCount = vi.mocked(window.echo.mv.getSettings).mock.calls.length;
+    const initialSelectedCallCount = vi.mocked(window.echo.mv.getSelected).mock.calls.length;
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('settings:changed', {
+          detail: {
+            immersiveBackgroundBlurPx: 12,
+            immersiveBackgroundBrightnessPercent: 82,
+            immersiveBackgroundOverlayOpacityPercent: 44,
+            immersiveBackgroundScalePercent: 138,
+          },
+        }),
+      );
+    });
+
+    await waitFor(() => expect(background.style.getPropertyValue('--mv-immersive-blur')).toBe('12px'));
+    expect(background.style.getPropertyValue('--mv-immersive-brightness')).toBe('82%');
+    expect(background.style.getPropertyValue('--mv-immersive-overlay-opacity')).toBe('0.44');
+    expect(background.style.getPropertyValue('--mv-immersive-scale')).toBe('1.38');
+    expect(window.echo.mv.getSettings).toHaveBeenCalledTimes(initialSettingsCallCount);
+    expect(window.echo.mv.getSelected).toHaveBeenCalledTimes(initialSelectedCallCount);
+  });
 });

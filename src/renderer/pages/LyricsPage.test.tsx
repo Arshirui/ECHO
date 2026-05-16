@@ -396,7 +396,7 @@ describe("LyricsPage", () => {
     const track = makeTrack();
     mockEcho(track);
 
-    const { container } = render(
+    render(
       <PlaybackQueueProvider>
         <QueueSeed track={track}>
           <LyricsPage initialLyrics={lyrics} />
@@ -896,7 +896,7 @@ describe("LyricsPage", () => {
       clearCache: vi.fn(),
     };
 
-    const { container } = render(
+    render(
       <PlaybackQueueProvider>
         <QueueSeed track={track}>
           <LyricsPage />
@@ -1052,7 +1052,7 @@ describe("LyricsPage", () => {
       clearCache: vi.fn(),
     };
 
-    const { container } = render(
+    render(
       <PlaybackQueueProvider>
         <QueueSeed track={track}>
           <LyricsPage />
@@ -1607,6 +1607,43 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-context-opacity")).toBe(
       "0.24",
     );
+  });
+
+  it("ignores explicit non-lyrics settings change events", async () => {
+    const track = makeTrack();
+    mockEcho(track);
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+    const getSettings = vi.mocked(window.echo.app.getSettings);
+    const initialCallCount = getSettings.mock.calls.length;
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("settings:changed", {
+          detail: {
+            immersiveBackgroundScalePercent: 140,
+            immersiveBackgroundBlurPx: 10,
+            immersiveBackgroundBrightnessPercent: 118,
+            immersiveBackgroundOverlayOpacityPercent: 35,
+          },
+        }),
+      );
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(getSettings).toHaveBeenCalledTimes(initialCallCount);
+    expect(page.style.getPropertyValue("--lyrics-font-size")).toBe("40px");
+    expect(page.style.getPropertyValue("--lyrics-background-scale")).toBe("1.00");
   });
 
   it("does not reload or rematch lyrics when visual display settings change", async () => {
