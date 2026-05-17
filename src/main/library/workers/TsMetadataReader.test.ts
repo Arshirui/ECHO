@@ -237,6 +237,43 @@ describe('TsMetadataReader parser fallbacks', () => {
     expect(result.fieldSources.bitDepth).toBe('technical');
   });
 
+  it('does not invoke TagLib for complete ordinary FLAC tags just because optional fields or cover are missing', async () => {
+    parseFileMock.mockResolvedValue(emptyMetadata({
+      common: {
+        title: 'Complete Title',
+        artist: 'Complete Artist',
+        album: 'Complete Album',
+        albumartist: 'Complete Album Artist',
+        track: { no: 3, of: null },
+      },
+      format: {
+        duration: 196,
+        codec: 'FLAC',
+        sampleRate: 192000,
+        bitsPerSample: 24,
+        bitrate: 5400000,
+      },
+    }));
+
+    const result = await new TsMetadataReader().read('D:\\Music\\Complete.flac');
+
+    expect(result.fields).toMatchObject({
+      title: 'Complete Title',
+      artist: 'Complete Artist',
+      album: 'Complete Album',
+      albumArtist: 'Complete Album Artist',
+      trackNo: 3,
+      duration: 196,
+      codec: 'FLAC',
+      sampleRate: 192000,
+      bitDepth: 24,
+      bitrate: 5400000,
+    });
+    expect(result.embeddedCoverStatus).toBe('missing');
+    expect(readTagLibMetadataMock).not.toHaveBeenCalled();
+    expect(readTagLibPicturesMock).not.toHaveBeenCalled();
+  });
+
   it('repairs mojibake returned by embedded tag parsers', async () => {
     parseFileMock.mockResolvedValue(emptyMetadata({
       common: {

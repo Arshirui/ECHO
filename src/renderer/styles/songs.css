@@ -206,6 +206,28 @@
   justify-self: end;
 }
 
+.artist-control-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+}
+
+.artist-avatar-priority-toggle {
+  max-width: 128px;
+}
+
+.artist-avatar-priority-toggle[aria-pressed="true"] {
+  color: var(--theme-heading-text);
+  border-color: transparent;
+  background: var(--theme-control-bg);
+}
+
+.artist-avatar-priority-toggle[aria-pressed="true"] .sort-button-icon {
+  color: var(--theme-heading-text);
+}
+
 .sort-button-label {
   flex: 1;
   min-width: 0;
@@ -2691,6 +2713,9 @@
   min-width: 0;
   gap: 10px;
   cursor: pointer;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 .album-card:focus-visible {
@@ -2764,21 +2789,16 @@
   justify-items: center;
   gap: 9px;
   padding: 8px 6px 12px;
-  border: 1px solid transparent;
-  border-radius: 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   cursor: pointer;
   transition:
-    border-color 170ms ease,
-    background-color 170ms ease,
-    box-shadow 170ms ease,
     transform 170ms ease;
 }
 
 .artist-card:hover,
 .artist-card:focus-visible {
-  border-color: rgba(48, 82, 112, 0.1);
-  background: rgba(246, 249, 252, 0.72);
-  box-shadow: 0 6px 18px rgba(42, 61, 84, 0.04);
   transform: translateY(-1px);
 }
 
@@ -2807,7 +2827,7 @@
 }
 
 .artist-avatar[data-visual="cover"] {
-  border-radius: 18px;
+  border-radius: 50%;
   background: #eef3f8;
 }
 
@@ -2952,8 +2972,13 @@
   }
 
   .sort-select,
+  .artist-control-actions,
   .sort-button {
     justify-self: start;
+  }
+
+  .artist-control-actions {
+    flex-wrap: wrap;
   }
 
   .songs-header {
@@ -3026,8 +3051,7 @@ html[data-theme="dark"] .duplicate-toggle,
 html[data-theme="dark"] .duplicate-analyze-button,
 html[data-theme="dark"] .search-box,
 html[data-theme="dark"] .songs-import-hint,
-html[data-theme="dark"] .album-card,
-html[data-theme="dark"] .artist-card {
+html[data-theme="dark"] .album-card {
   color: var(--color-muted);
   border-color: var(--color-border);
   background: rgba(27, 33, 42, 0.78);
@@ -3078,11 +3102,19 @@ html[data-theme="dark"] .sort-button {
   box-shadow: none;
 }
 
+html[data-theme="dark"] .artist-avatar-priority-toggle[aria-pressed="true"] {
+  color: var(--echo-heading-text);
+  background: rgba(232, 238, 247, 0.08);
+}
+
+html[data-theme="dark"] .artist-avatar-priority-toggle[aria-pressed="true"] .sort-button-icon {
+  color: var(--echo-heading-text);
+}
+
 html[data-theme="dark"] .tool-button:hover,
 html[data-theme="dark"] .duplicate-toggle:hover,
 html[data-theme="dark"] .duplicate-analyze-button:hover,
-html[data-theme="dark"] .album-card:hover,
-html[data-theme="dark"] .artist-card:hover {
+html[data-theme="dark"] .album-card:hover {
   color: var(--echo-heading-text);
   border-color: var(--color-border-strong);
   background: rgba(39, 48, 61, 0.9);
@@ -3700,6 +3732,13 @@ html[data-theme="dark"] .unavailable-pill {
   opacity: 0.5;
 }
 
+.streaming-playlist-panel {
+  display: grid;
+  min-height: 0;
+  align-content: start;
+  gap: 12px;
+}
+
 .streaming-results-shell {
   min-height: 0;
   overflow: hidden;
@@ -3713,6 +3752,11 @@ html[data-theme="dark"] .unavailable-pill {
   padding-right: 5px;
   scrollbar-color: rgba(86, 105, 128, 0.38) transparent;
   scrollbar-width: thin;
+}
+
+.streaming-album-track-list {
+  display: grid;
+  gap: 8px;
 }
 
 .streaming-virtual-spacer {
@@ -3815,6 +3859,33 @@ html[data-theme="dark"] .unavailable-pill {
   color: #4f7195;
 }
 
+.streaming-playlist-card {
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+}
+
+.streaming-playlist-add {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(47, 109, 168, 0.2);
+  border-radius: 8px;
+  background: var(--theme-accent-bg);
+  color: #1f5f8f;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 820;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.streaming-playlist-add:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .streaming-main {
   display: grid;
   min-width: 0;
@@ -3860,6 +3931,47 @@ html[data-theme="dark"] .unavailable-pill {
   color: #65758a;
   font-size: 12px;
   font-weight: 680;
+}
+
+.streaming-credit-links {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+}
+
+.streaming-credit-part {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 3px;
+}
+
+.streaming-credit-separator {
+  flex: 0 0 auto;
+  color: #9aa7b6;
+}
+
+.streaming-inline-link {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 760;
+  overflow: hidden;
+  padding: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.streaming-inline-link:hover,
+.streaming-inline-link:focus-visible {
+  color: #236b9c;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .streaming-main small {

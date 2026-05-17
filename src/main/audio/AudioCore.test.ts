@@ -2118,7 +2118,7 @@ describe('Audio Core sample-rate regression guard', () => {
     });
   });
 
-  it('reuses ASIO output for consecutive tracks with the same explicit buffer size', async () => {
+  it('rotates ASIO output between consecutive tracks with the same explicit buffer size', async () => {
     const { bridges, session } = createSessionHarness([probe('first-asio.flac', 48000), probe('second-asio.flac', 48000)]);
 
     await session.playLocalFile({
@@ -2130,9 +2130,15 @@ describe('Audio Core sample-rate regression guard', () => {
       output: { outputMode: 'asio', bufferSizeFrames: 128 },
     });
 
-    expect(bridges).toHaveLength(1);
-    expect(bridges[0].stop).not.toHaveBeenCalled();
-    expect(bridges[0].sessionBegins).toBe(2);
+    expect(bridges).toHaveLength(2);
+    expect(bridges[0].stop).toHaveBeenCalledTimes(1);
+    expect(bridges[0].sessionBegins).toBe(1);
+    expect(bridges[1].startOptions).toMatchObject({
+      asio: true,
+      bufferSizeFrames: 128,
+      requestedOutputSampleRate: 48000,
+    });
+    expect(bridges[1].sessionBegins).toBe(1);
   });
 
   it('decodes DSD sources to a PCM-rate ASIO plan instead of opening ASIO at the DSD bit clock', async () => {
@@ -2190,6 +2196,44 @@ describe('Audio Core sample-rate regression guard', () => {
       expect(status.dsdNativeSampleRate).toBe(2822400);
       expect(status.dsdTransportSampleRate).toBe(176400);
       expect(status.warnings).not.toContain('dsd_source_decoded_to_pcm:2822400->176400');
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+      session.dispose();
+    }
+  });
+
+  it('keeps DSF bitstream DoP when seeking while playing', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'echo-dop-seek-'));
+    const filePath = join(tempDir, 'native-dop-seek.dsf');
+    await writeFile(filePath, createDsfDopFixture());
+    const { bridges, decoder, session } = createSessionHarness([dsdProbe(filePath)]);
+
+    try {
+      await session.playLocalFile({
+        filePath,
+        output: { outputMode: 'exclusive', dsdOutputMode: 'dop', useJuceOutput: true },
+      });
+      for (let attempt = 0; attempt < 10 && bridges[0].sessionChunks.length === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+
+      const seekSeconds = 16 / 2_822_400;
+      const status = await session.seek(seekSeconds);
+      for (let attempt = 0; attempt < 10 && bridges[0].sessionChunks.length < 2; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+
+      expect(bridges).toHaveLength(1);
+      expect(decoder.decodeRequests).toHaveLength(0);
+      expect(bridges[0].startOptions).toMatchObject({
+        inputFormat: 'dop24le',
+        requestedOutputSampleRate: 176400,
+      });
+      expect(bridges[0].sessionChunks.map((item) => item.sessionId)).toEqual([1, 2]);
+      const lastChunk = bridges[0].sessionChunks.at(-1)?.chunk;
+      expect(lastChunk ? [...lastChunk] : []).toEqual([3, 4, 0xfa, 7, 8, 0xfa]);
+      expect(status.activeDecodeBackendImpl).toBe('dsf-bitstream-dop');
+      expect(status.activeDsdOutputMode).toBe('dop');
     } finally {
       await rm(tempDir, { recursive: true, force: true });
       session.dispose();
@@ -3566,6 +3610,20 @@ describe('AudioSession playback watchdog', () => {
     }));
   });
 
+  it('ignores direct superseded playback cancellation errors', () => {
+    const reportAudioError = vi.fn();
+    const { session } = createSessionHarness([], [], [], {
+      reportAudioError,
+    });
+
+    (session as unknown as { handleError(error: Error): void }).handleError(new Error('audio_session_run_cancelled'));
+
+    const status = session.getStatus();
+    expect(status.state).not.toBe('error');
+    expect(status.error).toBeNull();
+    expect(reportAudioError).not.toHaveBeenCalled();
+  });
+
   it('recovers immediately when the native host reports a session disconnect', async () => {
     const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 44100)], [], [], {
       disableWatchdogTimer: true,
@@ -4073,6 +4131,46 @@ describe('NativeOutputBridge host arguments', () => {
     bridge.stop();
   });
 
+  it('does not reuse ASIO host sessions even when output options still match', async () => {
+    const fakeSpawn = (): ChildProcessWithoutNullStreams => {
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stdout.write('{"ready":true,"sampleRate":48000,"backend":"asio","deviceType":"ASIO"}\n');
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+
+    await bridge.start({
+      requestedOutputSampleRate: 48000,
+      channels: 2,
+      asio: true,
+      bufferSizeFrames: 512,
+    });
+
+    expect(bridge.canReuseFor({
+      requestedOutputSampleRate: 48000,
+      channels: 2,
+      asio: true,
+      bufferSizeFrames: 512,
+    })).toBe(false);
+    bridge.stop();
+  });
+
   it('passes shared FIFO and startup prebuffer host arguments', async () => {
     const spawned: Array<{ file: string; args: string[] }> = [];
     const fakeSpawn = (file: string, args: string[]): ChildProcessWithoutNullStreams => {
@@ -4545,7 +4643,7 @@ describe('NativeOutputBridge host arguments', () => {
       asio: true,
       latencyProfile: 'lowLatency',
       bufferSizeFrames: 2048,
-    })).toBe(true);
+    })).toBe(false);
     bridge.stop();
 
     await bridge.start({

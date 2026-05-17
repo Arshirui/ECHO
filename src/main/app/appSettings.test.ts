@@ -61,6 +61,9 @@ describe('app settings normalization', () => {
     expect(settings.lyricsMvAutoShowTrackInfoDisabled).toBe(true);
     expect(settings.lyricsEmptyStateHidden).toBe(true);
     expect(settings.lyricsPlayerBarDrawerEnabled).toBe(false);
+    expect(settings.lyricsPlayerBarDrawerOpacityPercent).toBe(78);
+    expect(settings.lyricsPlayerBarDrawerColorMode).toBe('default');
+    expect(settings.lyricsPlayerBarDrawerColor).toBe('#232120');
     expect(settings.lyricsRomanizationEnabled).toBe(true);
     expect(settings.lyricsTranslationEnabled).toBe(true);
     expect(settings.lyricsWordHighlightEnabled).toBe(true);
@@ -70,6 +73,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsContextOpacityPercent).toBe(49);
     expect(settings.lyricsColor).toBe('#314054');
     expect(settings.lyricsSmartReadableColorsEnabled).toBe(false);
+    expect(settings.lyricsHighResolutionNetworkCoverEnabled).toBe(false);
     expect(settings.lyricsBackgroundMode).toBe('theme');
     expect(settings.lyricsCustomWallpaperPath).toBeNull();
     expect(settings.lyricsCoverOpacityPercent).toBe(100);
@@ -507,6 +511,9 @@ describe('app settings normalization', () => {
         lyricsMvAutoShowTrackInfoDisabled: false,
         lyricsEmptyStateHidden: false,
         lyricsPlayerBarDrawerEnabled: true,
+        lyricsPlayerBarDrawerOpacityPercent: 500,
+        lyricsPlayerBarDrawerColorMode: 'neon' as never,
+        lyricsPlayerBarDrawerColor: 'red',
         lyricsRomanizationEnabled: false,
         lyricsTranslationEnabled: false,
         lyricsWordHighlightEnabled: false,
@@ -515,6 +522,7 @@ describe('app settings normalization', () => {
         lyricsContextOpacityPercent: 1000,
         lyricsColor: 'red',
         lyricsSmartReadableColorsEnabled: 'yes' as never,
+        lyricsHighResolutionNetworkCoverEnabled: 'yes' as never,
         lyricsBackgroundMode: 'album' as never,
         lyricsCustomWallpaperPath: 'D:\\Outside\\wallpaper.png',
         lyricsCoverOpacityPercent: -10,
@@ -541,6 +549,9 @@ describe('app settings normalization', () => {
       lyricsMvAutoShowTrackInfoDisabled: false,
       lyricsEmptyStateHidden: false,
       lyricsPlayerBarDrawerEnabled: true,
+      lyricsPlayerBarDrawerOpacityPercent: 100,
+      lyricsPlayerBarDrawerColorMode: 'default',
+      lyricsPlayerBarDrawerColor: '#232120',
       lyricsRomanizationEnabled: false,
       lyricsTranslationEnabled: false,
       lyricsWordHighlightEnabled: false,
@@ -549,6 +560,7 @@ describe('app settings normalization', () => {
       lyricsContextOpacityPercent: 100,
       lyricsColor: '#314054',
       lyricsSmartReadableColorsEnabled: false,
+      lyricsHighResolutionNetworkCoverEnabled: false,
       lyricsBackgroundMode: 'theme',
       lyricsCustomWallpaperPath: null,
       lyricsCoverOpacityPercent: 0,
@@ -564,8 +576,12 @@ describe('app settings normalization', () => {
         lyricsLineSpacingPercent: 20,
         lyricsAutoAcceptScore: 0.1,
         lyricsContextOpacityPercent: 64.4,
+        lyricsPlayerBarDrawerOpacityPercent: 12,
+        lyricsPlayerBarDrawerColorMode: 'cover',
+        lyricsPlayerBarDrawerColor: '#ff8a80',
         lyricsColor: '#ff3366',
         lyricsSmartReadableColorsEnabled: true,
+        lyricsHighResolutionNetworkCoverEnabled: true,
         lyricsBackgroundMode: 'cover',
         lyricsCoverOpacityPercent: 64.4,
         lyricsCoverBlurPx: 12.5,
@@ -577,8 +593,12 @@ describe('app settings normalization', () => {
       lyricsLineSpacingPercent: 60,
       lyricsAutoAcceptScore: 0.3,
       lyricsContextOpacityPercent: 64,
+      lyricsPlayerBarDrawerOpacityPercent: 20,
+      lyricsPlayerBarDrawerColorMode: 'cover',
+      lyricsPlayerBarDrawerColor: '#FF8A80',
       lyricsColor: '#FF3366',
       lyricsSmartReadableColorsEnabled: true,
+      lyricsHighResolutionNetworkCoverEnabled: true,
       lyricsBackgroundMode: 'cover',
       lyricsCoverOpacityPercent: 64,
       lyricsCoverBlurPx: 13,

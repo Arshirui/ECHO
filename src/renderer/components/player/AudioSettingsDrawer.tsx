@@ -343,7 +343,14 @@ const getOutputSampleRate = (status: AudioStatus | null, deviceSampleRate?: numb
   return status?.actualDeviceSampleRate ?? status?.requestedOutputSampleRate ?? status?.sharedDeviceSampleRate ?? null;
 };
 
+const isActiveDsdBitstream = (status: AudioStatus | null): boolean =>
+  status?.activeDsdOutputMode === 'dop' || status?.activeDsdOutputMode === 'native';
+
 const hasInferredRateMismatch = (status: AudioStatus | null, deviceSampleRate?: number | null): boolean => {
+  if (isActiveDsdBitstream(status)) {
+    return false;
+  }
+
   const fileSampleRate = status?.fileSampleRate ?? null;
   const outputSampleRate = getOutputSampleRate(status, deviceSampleRate);
 
@@ -351,6 +358,15 @@ const hasInferredRateMismatch = (status: AudioStatus | null, deviceSampleRate?: 
 };
 
 const formatRatePath = (status: AudioStatus | null, deviceSampleRate: number | null | undefined, copy: AudioDrawerCopy): string => {
+  if (status?.activeDsdOutputMode === 'dop') {
+    const sourceRate = formatRate(status.dsdNativeSampleRate ?? status.fileSampleRate);
+    const transportRate = formatRate(status.dsdTransportSampleRate ?? getOutputSampleRate(status, deviceSampleRate));
+
+    if (sourceRate && transportRate) {
+      return `${sourceRate} -> DoP ${transportRate}`;
+    }
+  }
+
   const sourceRate = formatRate(status?.fileSampleRate);
   const outputRate = formatRate(getOutputSampleRate(status, deviceSampleRate));
 
@@ -379,6 +395,14 @@ const getEqSignalText = (status: AudioStatus | null, copy: AudioDrawerCopy): str
 
 const getResampleSignalText = (status: AudioStatus | null, deviceSampleRate: number | null | undefined, copy: AudioDrawerCopy): string => {
   const resamplerSuffix = status?.resamplerEngine === 'soxr' && status.resamplerFallbackActive !== true ? ` / ${copy.soxrResampler}` : '';
+  if (status?.activeDsdOutputMode === 'dop') {
+    return formatRatePath(status, deviceSampleRate, copy);
+  }
+
+  if (status?.activeDsdOutputMode === 'native') {
+    return copy.nativeRate;
+  }
+
   if (status?.resampling || status?.sampleRateMismatch || hasInferredRateMismatch(status, deviceSampleRate)) {
     return `${formatRatePath(status, deviceSampleRate, copy)}${resamplerSuffix}`;
   }
@@ -839,7 +863,7 @@ export const AudioSettingsDrawer = ({
       { label: t('audioDrawer.meter.source'), value: formatSourceQuality(status, copy) },
       { label: t('audioDrawer.meter.chain'), value: getPlaybackChainText(status, copy) },
       { label: 'EQ', value: getEqSignalText(status, copy) },
-      { label: t('audioDrawer.meter.resample'), value: getResampleSignalText(status, effectiveSharedSampleRate, copy) },
+      { label: status?.activeDsdOutputMode === 'dop' ? 'DoP' : t('audioDrawer.meter.resample'), value: getResampleSignalText(status, effectiveSharedSampleRate, copy) },
       { label: t('audioDrawer.meter.direct'), value: getDirectSignalText(status, effectiveSharedSampleRate, copy) },
       { label: t('audioDrawer.meter.latency'), value: getNativeLatencyText(status, t('settings.playback.stability.value.unknown')) },
       { label: t('settings.playback.stability.field.sharedStabilityTier'), value: getSharedStabilityText(status, t('settings.playback.stability.value.unknown')) },

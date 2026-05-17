@@ -7,6 +7,7 @@ import type {
   AppearancePreferences,
   AppSettings,
   LyricsBackgroundMode,
+  LyricsMiniPlayerColorMode,
   RememberedAudioOutput,
   RememberedWindowSize,
 } from '../../shared/types/appSettings';
@@ -31,6 +32,7 @@ import {
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 const wallpaperExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 const defaultLyricsColor = '#314054';
+const defaultLyricsMiniPlayerColor = '#232120';
 const mvNetworkProviders: NetworkMvProviderId[] = ['bilibili', 'youtube'];
 const lyricsProviders: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic', 'musixmatch', 'genius', 'manual'];
 const defaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic'];
@@ -185,6 +187,9 @@ export const defaultSettings: AppSettings = {
   lyricsMvAutoShowTrackInfoDisabled: true,
   lyricsEmptyStateHidden: true,
   lyricsPlayerBarDrawerEnabled: false,
+  lyricsPlayerBarDrawerOpacityPercent: 78,
+  lyricsPlayerBarDrawerColorMode: 'default',
+  lyricsPlayerBarDrawerColor: defaultLyricsMiniPlayerColor,
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsWordHighlightEnabled: true,
@@ -194,6 +199,7 @@ export const defaultSettings: AppSettings = {
   lyricsContextOpacityPercent: 49,
   lyricsColor: defaultLyricsColor,
   lyricsSmartReadableColorsEnabled: false,
+  lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -406,17 +412,22 @@ const normalizeGlobalShortcuts = (value: unknown): GlobalShortcutSettings => {
   return shortcuts;
 };
 
-const normalizeLyricsColor = (value: unknown): string => {
+const normalizeHexColor = (value: unknown, fallback: string): string => {
   if (typeof value !== 'string') {
-    return defaultLyricsColor;
+    return fallback;
   }
 
   const normalized = value.trim();
-  return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toUpperCase() : defaultLyricsColor;
+  return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toUpperCase() : fallback;
 };
+
+const normalizeLyricsColor = (value: unknown): string => normalizeHexColor(value, defaultLyricsColor);
 
 const normalizeLyricsBackgroundMode = (value: unknown): LyricsBackgroundMode =>
   value === 'cover' || value === 'customWallpaper' || value === 'theme' ? value : defaultSettings.lyricsBackgroundMode;
+
+const normalizeLyricsMiniPlayerColorMode = (value: unknown): LyricsMiniPlayerColorMode =>
+  value === 'custom' || value === 'cover' || value === 'default' ? value : defaultSettings.lyricsPlayerBarDrawerColorMode ?? 'default';
 
 const normalizeMvProviderList = (value: unknown, fallback: NetworkMvProviderId[]): NetworkMvProviderId[] => {
   if (!Array.isArray(value)) {
@@ -538,6 +549,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const lyricsSecondaryFontSizePx = Number(settings.lyricsSecondaryFontSizePx);
   const lyricsLineSpacingPercent = Number(settings.lyricsLineSpacingPercent);
   const lyricsContextOpacityPercent = Number(settings.lyricsContextOpacityPercent);
+  const lyricsPlayerBarDrawerOpacityPercent = Number(settings.lyricsPlayerBarDrawerOpacityPercent);
   const lyricsCoverOpacityPercent = Number(settings.lyricsCoverOpacityPercent);
   const lyricsCoverBlurPx = Number(settings.lyricsCoverBlurPx);
   const lyricsCoverBrightnessPercent = Number(settings.lyricsCoverBrightnessPercent);
@@ -637,6 +649,11 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsMvAutoShowTrackInfoDisabled: settings.lyricsMvAutoShowTrackInfoDisabled !== false,
     lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden !== false,
     lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled === true,
+    lyricsPlayerBarDrawerOpacityPercent: Number.isFinite(lyricsPlayerBarDrawerOpacityPercent)
+      ? Math.round(clamp(lyricsPlayerBarDrawerOpacityPercent, 20, 100))
+      : defaultSettings.lyricsPlayerBarDrawerOpacityPercent,
+    lyricsPlayerBarDrawerColorMode: normalizeLyricsMiniPlayerColorMode(settings.lyricsPlayerBarDrawerColorMode),
+    lyricsPlayerBarDrawerColor: normalizeHexColor(settings.lyricsPlayerBarDrawerColor, defaultLyricsMiniPlayerColor),
     lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled !== false,
     lyricsTranslationEnabled: settings.lyricsTranslationEnabled !== false,
     lyricsWordHighlightEnabled: settings.lyricsWordHighlightEnabled !== false,
@@ -654,6 +671,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.lyricsContextOpacityPercent,
     lyricsColor: normalizeLyricsColor(settings.lyricsColor),
     lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
+    lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
     lyricsBackgroundMode: normalizeLyricsBackgroundMode(settings.lyricsBackgroundMode),
     lyricsCustomWallpaperPath: normalizeLyricsWallpaperPath(settings.lyricsCustomWallpaperPath),
     lyricsCoverOpacityPercent: Number.isFinite(lyricsCoverOpacityPercent)

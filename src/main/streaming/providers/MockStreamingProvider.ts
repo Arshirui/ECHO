@@ -15,6 +15,7 @@ import type {
 } from '../../../shared/types/streaming';
 import { streamingStableKey } from '../../../shared/types/streaming';
 import type { StreamingProvider } from '../StreamingProvider';
+import { rankByFuzzySearch } from '../StreamingFuzzySearch';
 
 const provider = 'mock' as const;
 
@@ -150,6 +151,26 @@ const artists: StreamingArtist[] = [
 
 const normalizeQuery = (query: string): string => query.trim().toLocaleLowerCase();
 
+const trackSearchFields = (track: StreamingTrack): string[] => [
+  track.title,
+  track.artist,
+  track.album,
+  track.providerTrackId,
+  ...track.artists.map((artist) => artist.name),
+];
+
+const albumSearchFields = (album: StreamingAlbum): string[] => [
+  album.title,
+  album.artist,
+  album.providerAlbumId,
+  ...album.artists.map((artist) => artist.name),
+];
+
+const artistSearchFields = (artist: StreamingArtist): string[] => [
+  artist.name,
+  artist.providerArtistId,
+];
+
 const getTrack = (providerTrackId: string): StreamingTrack => {
   const track = tracks.find((item) => item.providerTrackId === providerTrackId);
   if (!track) {
@@ -218,15 +239,9 @@ export class MockStreamingProvider implements StreamingProvider {
     const page = Math.max(1, Math.floor(request.page ?? 1));
     const pageSize = Math.min(50, Math.max(1, Math.floor(request.pageSize ?? 20)));
     const mediaType = request.mediaTypes?.[0] ?? 'track';
-    const filteredTracks = query
-      ? tracks.filter((track) =>
-          [track.title, track.artist, track.album].some((field) => field.toLocaleLowerCase().includes(query)),
-        )
-      : tracks;
-    const filteredAlbums = query
-      ? albums.filter((album) => [album.title, album.artist].some((field) => field.toLocaleLowerCase().includes(query)))
-      : albums;
-    const filteredArtists = query ? artists.filter((artist) => artist.name.toLocaleLowerCase().includes(query)) : artists;
+    const filteredTracks = query ? rankByFuzzySearch(tracks, query, trackSearchFields) : tracks;
+    const filteredAlbums = query ? rankByFuzzySearch(albums, query, albumSearchFields) : albums;
+    const filteredArtists = query ? rankByFuzzySearch(artists, query, artistSearchFields) : artists;
     const filtered = mediaType === 'album' ? filteredAlbums : mediaType === 'artist' ? filteredArtists : filteredTracks;
     const offset = (page - 1) * pageSize;
     const pageItems = filtered.slice(offset, offset + pageSize);
@@ -252,6 +267,31 @@ export class MockStreamingProvider implements StreamingProvider {
 
   async getTrack(input: { providerTrackId: string }): Promise<StreamingTrack> {
     return getTrack(input.providerTrackId);
+  }
+
+  async getAlbum(input: { providerAlbumId: string }): Promise<StreamingAlbum & { tracks: StreamingTrack[] }> {
+    const album = albums.find((item) => item.providerAlbumId === input.providerAlbumId);
+    if (!album) {
+      throw new Error(`Mock streaming album not found: ${input.providerAlbumId}`);
+    }
+
+    return {
+      ...album,
+      tracks: tracks.filter((track) => track.albumId === input.providerAlbumId),
+    };
+  }
+
+  async getArtist(input: { providerArtistId: string }) {
+    const artist = artists.find((item) => item.providerArtistId === input.providerArtistId);
+    if (!artist) {
+      throw new Error(`Mock streaming artist not found: ${input.providerArtistId}`);
+    }
+
+    return {
+      ...artist,
+      topTracks: tracks.filter((track) => track.artists.some((item) => item.providerArtistId === input.providerArtistId)).slice(0, 20),
+      albums: albums.filter((album) => album.artists.some((item) => item.providerArtistId === input.providerArtistId)),
+    };
   }
 
   async getLyrics(input: { providerTrackId: string }): Promise<StreamingLyricsResult> {

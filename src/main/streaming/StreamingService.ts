@@ -8,6 +8,8 @@ import type {
   StreamingLyricsResult,
   StreamingLikedSongsSyncProviderResult,
   StreamingLikedSongsSyncResult,
+  StreamingAlbumDetail,
+  StreamingArtistDetail,
   StreamingMvResult,
   StreamingPlaybackRequest,
   StreamingPlaybackSource,
@@ -40,7 +42,7 @@ const maxPlaybackTtlMs = 5 * 60 * 1000;
 const fallbackPlaybackTtlMs = 2 * 60 * 1000;
 const providerTimeoutMs = 10 * 1000;
 const likedSongsSyncTimeoutMs = 45 * 1000;
-const searchCacheVersion = 'v2';
+const searchCacheVersion = 'v5';
 const lyricsCacheVersion = 'v3';
 const playlistImportPageSize = 500;
 const likedSongsSyncPageSize = 100;
@@ -82,6 +84,12 @@ const searchCacheKey = (request: StreamingSearchRequest): string =>
 
 const trackCacheKey = (provider: StreamingProviderName, providerTrackId: string): string =>
   `track:${provider}:${providerTrackId}`;
+
+const albumCacheKey = (provider: StreamingProviderName, providerAlbumId: string): string =>
+  `album:${searchCacheVersion}:${provider}:${providerAlbumId}`;
+
+const artistCacheKey = (provider: StreamingProviderName, providerArtistId: string): string =>
+  `artist:${searchCacheVersion}:${provider}:${providerArtistId}`;
 
 const playbackCacheKey = (request: StreamingPlaybackRequest): string =>
   `playback:${request.provider}:${request.providerTrackId}:${request.quality ?? 'auto'}`;
@@ -513,6 +521,75 @@ export class StreamingService {
       provider: 'netease',
       providerPlaylistId: detail.providerPlaylistId,
     };
+  }
+
+  async getAlbum(providerName: StreamingProviderName, providerAlbumId: string): Promise<StreamingAlbumDetail> {
+    const key = albumCacheKey(providerName, providerAlbumId);
+    const memoryHit = this.memoryCache.get<StreamingAlbumDetail>(key);
+    if (memoryHit) {
+      return memoryHit;
+    }
+
+    const sqliteHit = this.cacheStore.getApiCache<StreamingAlbumDetail>(key);
+    if (sqliteHit) {
+      this.memoryCache.set(key, sqliteHit, trackDetailTtlMs);
+      return sqliteHit;
+    }
+
+    return this.memoryCache.getOrCreateInflight(key, async () => {
+      const provider = this.registry.get(providerName);
+      if (!provider.getAlbum) {
+        throw new Error('This streaming provider does not support album details.');
+      }
+
+      const detail = await this.callProvider(provider, () => provider.getAlbum!({ providerAlbumId }), 'Streaming album');
+      const normalizedDetail = {
+        ...detail,
+        provider: providerName,
+        providerAlbumId: detail.providerAlbumId.trim() || providerAlbumId,
+        id: detail.id || streamingStableKey(providerName, `album:${providerAlbumId}`),
+        title: detail.title.trim() || 'Unknown Album',
+        artist: detail.artist.trim() || 'Unknown Artist',
+        tracks: detail.tracks.map((track) => this.normalizeTrack(providerName, track)),
+      };
+      this.cacheStore.upsertTracks(normalizedDetail.tracks);
+      this.cacheStore.setApiCache(providerName, 'album', key, normalizedDetail, expiresAtFromTtl(trackDetailTtlMs));
+      return this.memoryCache.set(key, normalizedDetail, trackDetailTtlMs);
+    });
+  }
+
+  async getArtist(providerName: StreamingProviderName, providerArtistId: string): Promise<StreamingArtistDetail> {
+    const key = artistCacheKey(providerName, providerArtistId);
+    const memoryHit = this.memoryCache.get<StreamingArtistDetail>(key);
+    if (memoryHit) {
+      return memoryHit;
+    }
+
+    const sqliteHit = this.cacheStore.getApiCache<StreamingArtistDetail>(key);
+    if (sqliteHit) {
+      this.memoryCache.set(key, sqliteHit, trackDetailTtlMs);
+      return sqliteHit;
+    }
+
+    return this.memoryCache.getOrCreateInflight(key, async () => {
+      const provider = this.registry.get(providerName);
+      if (!provider.getArtist) {
+        throw new Error('This streaming provider does not support artist details.');
+      }
+
+      const detail = await this.callProvider(provider, () => provider.getArtist!({ providerArtistId }), 'Streaming artist');
+      const normalizedDetail = {
+        ...detail,
+        provider: providerName,
+        providerArtistId: detail.providerArtistId.trim() || providerArtistId,
+        id: detail.id || streamingStableKey(providerName, `artist:${providerArtistId}`),
+        name: detail.name.trim() || 'Unknown Artist',
+        topTracks: detail.topTracks.map((track) => this.normalizeTrack(providerName, track)),
+      };
+      this.cacheStore.upsertTracks(normalizedDetail.topTracks);
+      this.cacheStore.setApiCache(providerName, 'artist', key, normalizedDetail, expiresAtFromTtl(trackDetailTtlMs));
+      return this.memoryCache.set(key, normalizedDetail, trackDetailTtlMs);
+    });
   }
 
   async importM3u8PlaylistFile(filePath: string, content: string): Promise<StreamingPlaylistImportResult> {

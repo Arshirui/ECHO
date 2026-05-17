@@ -31,6 +31,8 @@ const tagLibPreferredExtensions = new Set([
   '.webm',
   '.mpc',
 ]);
+const tagLibCoreFallbackFields = ['title', 'artist'] as const;
+const tagLibTechnicalFallbackFields = ['duration', 'codec', 'sampleRate', 'bitDepth', 'bitrate'] as const;
 const replaceableMetadataSources = new Set<FieldSource>(['unknown', 'filename_fallback', 'folder_structure', 'artist_fallback']);
 const replaceableTechnicalSources = new Set<FieldSource>(['unknown', 'filename_fallback']);
 const mojibakeCandidateEncodings = ['latin1', 'win1252', 'gbk', 'big5', 'shift_jis'] as const;
@@ -676,13 +678,14 @@ export class TsMetadataReader implements MetadataReader {
       return true;
     }
 
-    if (result.embeddedCoverStatus !== 'present') {
-      return true;
-    }
-
-    return ['title', 'artist', 'album', 'albumArtist', 'trackNo', 'discNo', 'year', 'genre', 'bpm'].some((field) =>
+    const missingCoreMetadata = tagLibCoreFallbackFields.some((field) =>
       replaceableMetadataSources.has(result.fieldSources[field] ?? 'unknown'),
     );
+    const missingTechnicalMetadata = tagLibTechnicalFallbackFields.some((field) =>
+      replaceableTechnicalSources.has(result.fieldSources[field] ?? 'unknown'),
+    );
+
+    return missingCoreMetadata || missingTechnicalMetadata;
   }
 
   private applyTagLibFallback(result: MetadataResult, tagLibMetadata: TagLibFallbackMetadata, filePath: string): MetadataResult {

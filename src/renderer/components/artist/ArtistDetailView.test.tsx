@@ -147,6 +147,54 @@ describe('ArtistDetailView', () => {
     expect(await screen.findByText('这个艺术家还没有可显示的歌曲。')).toBeTruthy();
   });
 
+  it('renders a round artist avatar in the detail hero when one is cached', async () => {
+    installLibrary(vi.fn().mockResolvedValue(artist({
+      avatarThumbUrl: 'echo-artist-image://thumb/echo-unit',
+      avatarUrl: 'echo-artist-image://large/echo-unit',
+      avatarStatus: 'matched',
+    })));
+
+    render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+
+    await screen.findByText('Echo Unit');
+    const hero = document.querySelector('.artist-hero-avatar') as HTMLElement | null;
+    const image = hero?.querySelector('img') as HTMLImageElement | null;
+    expect(hero?.dataset.cover).toBe('true');
+    expect(image?.getAttribute('src')).toBe('echo-artist-image://large/echo-unit');
+    expect(image?.getAttribute('srcset')).toBe('echo-artist-image://thumb/echo-unit 192w, echo-artist-image://large/echo-unit 1024w');
+    expect(screen.queryByText('EC')).toBeNull();
+  });
+
+  it('falls back to the round letter mark when the detail hero image fails', async () => {
+    installLibrary(vi.fn().mockResolvedValue(artist({
+      avatarUrl: 'echo-artist-image://large/echo-unit',
+      avatarStatus: 'matched',
+    })));
+
+    render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+
+    await screen.findByText('Echo Unit');
+    const image = document.querySelector('.artist-hero-avatar img') as HTMLImageElement;
+    fireEvent.error(image);
+
+    expect(document.querySelector('.artist-hero-avatar img')).toBeNull();
+    expect(screen.getByText('EC')).toBeTruthy();
+  });
+
+  it('updates the detail hero when the same artist receives an avatar', async () => {
+    const getArtist = vi.fn().mockResolvedValue(artist());
+    installLibrary(getArtist);
+    const { rerender } = render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+
+    await screen.findByText('Echo Unit');
+    expect(screen.getByText('EC')).toBeTruthy();
+
+    rerender(<ArtistDetailView artist={artist({ avatarUrl: 'echo-artist-image://large/echo-unit', avatarStatus: 'matched' })} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(document.querySelector('.artist-hero-avatar img')?.getAttribute('src')).toBe('echo-artist-image://large/echo-unit'));
+    expect(screen.queryByText('EC')).toBeNull();
+  });
+
   it('plays the loaded artist queue from Play Artist', async () => {
     const first = track('1');
     const second = track('2');

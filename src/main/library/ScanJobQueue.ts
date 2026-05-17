@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
 import type { AlbumMergeStrategy, AlbumService } from './AlbumService';
 import type { LibraryStore } from './LibraryStore';
 import type {
@@ -246,6 +247,7 @@ export class ScanJobQueue {
           coverCount,
           errors,
         });
+        await yieldToMainLoop();
       });
 
       this.throwIfCancelled(jobId);
@@ -292,9 +294,11 @@ export class ScanJobQueue {
           coverCount,
           errors,
         });
+        await yieldToMainLoop();
       });
 
       this.throwIfCancelled(jobId);
+      await yieldToMainLoop();
 
       this.store.transaction(() => {
         const timestamp = new Date().toISOString();

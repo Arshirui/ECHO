@@ -2,12 +2,15 @@ import { createRequire } from 'node:module';
 import type { AccountStatus } from '../../../shared/types/accounts';
 import type {
   StreamingAlbum,
+  StreamingAlbumDetail,
   StreamingArtist,
+  StreamingArtistDetail,
   StreamingArtistRef,
   StreamingLyricsResult,
   StreamingMvResult,
   StreamingPlaybackRequest,
   StreamingPlaybackSource,
+  StreamingPlaylist,
   StreamingPlaylistDetail,
   StreamingProviderDescriptor,
   StreamingSearchRequest,
@@ -17,6 +20,7 @@ import type {
 import { streamingStableKey } from '../../../shared/types/streaming';
 import { getAccountService } from '../../accounts/AccountService';
 import type { StreamingProvider } from '../StreamingProvider';
+import { streamingSearchQueryVariants } from '../StreamingSearchQueryVariants';
 import { asRecord, integer, jsonFetch, linesFromLyrics, number, splitLyricsByKind, streamingImageProxyUrl, text } from './chinaStreamingUtils';
 
 const provider = 'netease' as const;
@@ -34,6 +38,10 @@ const neteaseHeaders = (cookie?: string): Record<string, string> => ({
 
 type NeteaseRequestedQuality = NonNullable<StreamingPlaybackRequest['quality']> | 'fallback';
 type NeteaseApi = {
+  album?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
+  artist_album?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
+  artist_top_song?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
+  artists?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   likelist?: (request: Record<string, unknown>) => Promise<{ body?: { ids?: unknown[]; checkPoint?: unknown[]; code?: number } }>;
   login_status?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   playlist_track_all?: (request: Record<string, unknown>) => Promise<{ body?: { songs?: unknown[] } }>;
@@ -282,13 +290,73 @@ const mapArtist = (artistValue: unknown): StreamingArtist => {
   };
 };
 
-const neteaseSearchType = (request: StreamingSearchRequest): '1' | '10' | '100' => {
+const artistFromRef = (artist: StreamingArtistRef): StreamingArtist => ({
+  id: streamingStableKey(provider, `artist:${artist.providerArtistId}`),
+  provider,
+  providerArtistId: artist.providerArtistId,
+  name: artist.name,
+  avatarUrl: null,
+  coverUrl: null,
+});
+
+const uniqueArtistsFromTracks = (tracks: StreamingTrack[]): StreamingArtist[] => {
+  const artistsById = new Map<string, StreamingArtist>();
+  for (const track of tracks) {
+    for (const artist of track.artists) {
+      if (!artistsById.has(artist.providerArtistId)) {
+        artistsById.set(artist.providerArtistId, artistFromRef(artist));
+      }
+    }
+  }
+
+  return [...artistsById.values()];
+};
+
+const mapPlaylist = (playlistValue: unknown): StreamingPlaylist => {
+  const playlist = asRecord(playlistValue);
+  const providerPlaylistId = String(playlist.id ?? text(playlist.name) ?? '').trim();
+  const title = text(playlist.name) ?? 'NetEase Playlist';
+  const creator = asRecord(playlist.creator);
+
+  return {
+    id: streamingStableKey(provider, `playlist:${providerPlaylistId || title}`),
+    provider,
+    providerPlaylistId: providerPlaylistId || title,
+    title,
+    description: text(playlist.description),
+    creator: text(creator.nickname) ?? text(creator.userName) ?? text(creator.name),
+    coverUrl: neteaseImageUrl(playlist.coverImgUrl ?? playlist.picUrl ?? playlist.coverUrl, 600),
+    coverThumb: neteaseImageUrl(playlist.coverImgUrl ?? playlist.picUrl ?? playlist.coverUrl, 160),
+    trackCount: integer(playlist.trackCount ?? playlist.bookCount ?? playlist.size),
+  };
+};
+
+const neteaseAlbumSongs = (value: unknown): unknown[] => {
+  const record = asRecord(value);
+  const directSongs = record.songs;
+  if (Array.isArray(directSongs)) {
+    return directSongs;
+  }
+
+  const album = asRecord(record.album);
+  const albumSongs = album.songs;
+  if (Array.isArray(albumSongs)) {
+    return albumSongs;
+  }
+
+  return [];
+};
+
+const neteaseSearchType = (request: StreamingSearchRequest): '1' | '10' | '100' | '1000' => {
   const mediaType = request.mediaTypes?.[0] ?? 'track';
   if (mediaType === 'album') {
     return '10';
   }
   if (mediaType === 'artist') {
     return '100';
+  }
+  if (mediaType === 'playlist') {
+    return '1000';
   }
   return '1';
 };
@@ -347,6 +415,41 @@ export class NeteaseStreamingProvider implements StreamingProvider {
   }
 
   async search(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
+    const variants = (request.page ?? 1) === 1 ? streamingSearchQueryVariants(request.query) : [request.query];
+    let firstResult: StreamingSearchResult | null = null;
+
+    for (const query of variants) {
+      const result = await this.searchOnce({ ...request, query });
+      firstResult ??= result;
+      if (result.tracks.length > 0 || result.albums.length > 0 || result.artists.length > 0 || result.playlists.length > 0) {
+        return { ...result, query: request.query };
+      }
+    }
+
+    if ((request.mediaTypes?.[0] ?? 'track') === 'artist' && (request.page ?? 1) === 1) {
+      for (const query of variants) {
+        const trackResult = await this.searchOnce({ ...request, query, mediaTypes: ['track'] });
+        const artists = uniqueArtistsFromTracks(trackResult.tracks);
+        if (artists.length > 0) {
+          return {
+            ...trackResult,
+            query: request.query,
+            tracks: [],
+            albums: [],
+            artists: artists.slice(0, request.pageSize ?? 20),
+            playlists: [],
+            mvs: [],
+            total: artists.length,
+            hasMore: false,
+          };
+        }
+      }
+    }
+
+    return firstResult ? { ...firstResult, query: request.query } : this.searchOnce(request);
+  }
+
+  private async searchOnce(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
     const page = Math.max(1, Math.floor(request.page ?? 1));
     const pageSize = Math.min(50, Math.max(1, Math.floor(request.pageSize ?? 20)));
     const searchType = neteaseSearchType(request);
@@ -361,11 +464,19 @@ export class NeteaseStreamingProvider implements StreamingProvider {
     const songs = Array.isArray(result.songs) ? result.songs : [];
     const albums = Array.isArray(result.albums) ? result.albums : [];
     const artists = Array.isArray(result.artists) ? result.artists : [];
+    const playlists = Array.isArray(result.playlists) ? result.playlists : [];
     const total = integer(result.songCount);
     const detailCoverUrls = await this.findDetailCoverUrls(
       songs.map((songValue) => asRecord(songValue).id).filter((id) => id !== undefined && id !== null),
     );
-    const resultTotal = searchType === '10' ? integer(result.albumCount) : searchType === '100' ? integer(result.artistCount) : total;
+    const resultTotal =
+      searchType === '10'
+        ? integer(result.albumCount)
+        : searchType === '100'
+          ? integer(result.artistCount)
+          : searchType === '1000'
+            ? integer(result.playlistCount)
+            : total;
 
     return {
       provider,
@@ -373,11 +484,11 @@ export class NeteaseStreamingProvider implements StreamingProvider {
       page,
       pageSize,
       total: resultTotal,
-      hasMore: resultTotal ? page * pageSize < resultTotal : Math.max(songs.length, albums.length, artists.length) === pageSize,
+      hasMore: resultTotal ? page * pageSize < resultTotal : Math.max(songs.length, albums.length, artists.length, playlists.length) === pageSize,
       tracks: songs.map((song) => mapSong(song, detailCoverUrls.get(String(asRecord(song).id)) ?? null)),
       albums: albums.map(mapAlbum),
       artists: artists.map(mapArtist),
-      playlists: [],
+      playlists: playlists.map(mapPlaylist),
       mvs: [],
     };
   }
@@ -392,6 +503,77 @@ export class NeteaseStreamingProvider implements StreamingProvider {
     }
 
     return mapSong(song);
+  }
+
+  async getAlbum(input: { providerAlbumId: string }): Promise<StreamingAlbumDetail> {
+    const cookie = accountCookie();
+    const ncm = getNcmApi();
+    let data = asRecord(
+      ncm?.album
+        ? (await ncm.album({ id: input.providerAlbumId, ...(cookie ? { cookie } : {}) })).body
+        : await jsonFetch(`https://music.163.com/api/v1/album/${encodeURIComponent(input.providerAlbumId)}`, {
+            headers: neteaseHeaders(cookie),
+          }),
+    );
+    let songs = neteaseAlbumSongs(data);
+    if (songs.length === 0 && ncm?.album) {
+      const fallbackData = asRecord(
+        await jsonFetch(`https://music.163.com/api/v1/album/${encodeURIComponent(input.providerAlbumId)}`, {
+          headers: neteaseHeaders(cookie),
+        }),
+      );
+      songs = neteaseAlbumSongs(fallbackData);
+      if (songs.length > 0 || !asRecord(data.album).id) {
+        data = fallbackData;
+      }
+    }
+    const albumValue = asRecord(data.album);
+    if (!albumValue.id && songs.length === 0) {
+      throw new Error('没有找到这张网易云音乐专辑');
+    }
+
+    const album = mapAlbum({ ...albumValue, id: albumValue.id ?? input.providerAlbumId });
+    const coverUrl = text(albumValue.picUrl ?? albumValue.blurPicUrl ?? albumValue.pic);
+    return {
+      ...album,
+      tracks: songs.map((song) => mapSong(song, coverUrl)),
+    };
+  }
+
+  async getArtist(input: { providerArtistId: string }): Promise<StreamingArtistDetail> {
+    const cookie = accountCookie();
+    const ncm = getNcmApi();
+    const [artistData, topSongData, albumData] = await Promise.all([
+      ncm?.artists
+        ? ncm.artists({ id: input.providerArtistId, ...(cookie ? { cookie } : {}) }).then((response) => response.body)
+        : jsonFetch(`https://music.163.com/api/v1/artist/${encodeURIComponent(input.providerArtistId)}`, { headers: neteaseHeaders(cookie) }),
+      ncm?.artist_top_song
+        ? ncm.artist_top_song({ id: input.providerArtistId, ...(cookie ? { cookie } : {}) }).then((response) => response.body)
+        : jsonFetch(`https://music.163.com/api/artist/top/song?id=${encodeURIComponent(input.providerArtistId)}`, { headers: neteaseHeaders(cookie) }),
+      ncm?.artist_album
+        ? ncm.artist_album({ id: input.providerArtistId, limit: 24, offset: 0, ...(cookie ? { cookie } : {}) }).then((response) => response.body)
+        : jsonFetch(`https://music.163.com/api/artist/albums/${encodeURIComponent(input.providerArtistId)}?limit=24&offset=0`, { headers: neteaseHeaders(cookie) }),
+    ]);
+    const artistValue = asRecord(asRecord(artistData).artist);
+    const artist = mapArtist({ ...artistValue, id: artistValue.id ?? input.providerArtistId });
+    const topSongRecord = asRecord(topSongData);
+    const topSongItems: unknown[] = Array.isArray(topSongRecord.songs)
+      ? topSongRecord.songs
+      : Array.isArray(asRecord(artistData).hotSongs)
+        ? asRecord(artistData).hotSongs as unknown[]
+        : [];
+    const topTracks = topSongItems
+      .slice(0, 30)
+      .map((song) => mapSong(song));
+    const albumRecord = asRecord(albumData);
+    const albums = (Array.isArray(albumRecord.hotAlbums) ? albumRecord.hotAlbums : Array.isArray(albumRecord.albums) ? albumRecord.albums : [])
+      .map(mapAlbum);
+
+    return {
+      ...artist,
+      topTracks,
+      albums,
+    };
   }
 
   async getPlaylist(input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> {

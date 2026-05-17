@@ -17,9 +17,14 @@ import {
   ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE,
   artistImageKeyForName,
 } from './ArtistImageMatching';
+import { KugouArtistImageProvider } from './KugouArtistImageProvider';
+import { KuwoArtistImageProvider } from './KuwoArtistImageProvider';
 import { NeteaseArtistImageProvider } from './NeteaseArtistImageProvider';
 import { QQMusicArtistImageProvider } from './QQMusicArtistImageProvider';
+import { SpotifyArtistImageProvider } from './SpotifyArtistImageProvider';
+import { WikidataArtistImageProvider } from './WikidataArtistImageProvider';
 import { WikipediaArtistImageProvider } from './WikipediaArtistImageProvider';
+import { isLikelyDefaultArtistAvatarImage } from './ArtistImageDefaultAvatar';
 import {
   ARTIST_IMAGE_CACHE_SOURCE_VERSION,
   artistImageCacheSourceHash,
@@ -57,6 +62,12 @@ type ProviderLookupResult = {
   error: unknown | null;
 };
 
+type StoreCandidateResult = {
+  entry: ArtistImageCacheEntry | null;
+  attemptedCount: number;
+  downloadErrors: Array<{ candidate: ArtistImageCandidate; error: unknown }>;
+};
+
 type ArtistImageCacheServiceOptions = {
   cacheRoot: string;
   providers?: ArtistImageProvider[];
@@ -69,6 +80,8 @@ const maxImageBytes = 5 * 1024 * 1024;
 const imageRequestTimeoutMs = 8000;
 const minAcceptedImageSide = 240;
 const defaultProvider = 'qqmusic';
+const preferredPrimaryProviderNames = new Set(['qqmusic', 'netease']);
+const fallbackProviderNames = new Set(['spotify', 'wikipedia', 'wikidata']);
 const cacheStatuses = new Set<ArtistImageCacheStatus>([
   'pending',
   'loading',
@@ -93,7 +106,11 @@ const hashText = (value: string): string => createHash('sha256').update(value).d
 const defaultArtistImageProviders = (): ArtistImageProvider[] => [
   new QQMusicArtistImageProvider(),
   new NeteaseArtistImageProvider(),
+  new KuwoArtistImageProvider(),
+  new KugouArtistImageProvider(),
+  new SpotifyArtistImageProvider(),
   new WikipediaArtistImageProvider(),
+  new WikidataArtistImageProvider(),
 ];
 
 const isSupportedImageMimeType = (value: string | null | undefined): value is string => {
@@ -150,7 +167,7 @@ export class ArtistImageCacheService {
     options: ArtistImageCacheServiceOptions,
   ) {
     this.providers = options.providers?.length ? options.providers : defaultArtistImageProviders();
-    this.concurrency = Math.max(1, Math.min(6, Math.floor(options.concurrency ?? 4)));
+    this.concurrency = Math.max(1, Math.min(10, Math.floor(options.concurrency ?? 8)));
     this.fetchImage = options.fetchImage ?? this.downloadImage;
     this.onUpdated = options.onUpdated ?? null;
     this.cacheRoot = resolve(options.cacheRoot);
@@ -455,53 +472,71 @@ export class ArtistImageCacheService {
       });
       task.resolve?.(entry);
     }
+
+    if (entry) {
+      this.onUpdated?.({
+        artistId: task.artist.artistId,
+        artistKey: task.artist.artistKey,
+        status: entry.status,
+      });
+    }
   }
 
   private async fetchAndStore(artist: ResolvedArtist): Promise<ArtistImageCacheEntry> {
-    const results = await Promise.all(this.providers.map((provider) => this.searchProvider(provider, artist)));
-    const providerErrors = results.filter((result) => result.error);
-    const candidates = results
-      .flatMap((result) => result.candidates)
-      .sort((left, right) => {
-        const confidenceDelta = right.confidence - left.confidence;
-        if (confidenceDelta !== 0) {
-          return confidenceDelta;
-        }
-
-        return (right.quality ?? 0) - (left.quality ?? 0);
-      });
-    const bestLowConfidence = candidates.find((candidate) => candidate.confidence < ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE) ?? null;
-    const autoMatchCandidates = candidates.filter((candidate) => candidate.confidence >= ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE);
+    const primaryProviders = this.providers.filter((provider) => !fallbackProviderNames.has(provider.name));
+    const fallbackProviders = this.providers.filter((provider) => fallbackProviderNames.has(provider.name));
+    const attemptedImageUrls = new Set<string>();
+    const results: ProviderLookupResult[] = [];
+    const primarySearchProviders = primaryProviders.length > 0 ? primaryProviders : this.providers;
+    const pendingPrimaryResults = new Map(
+      primarySearchProviders.map((provider) => [provider, this.searchProvider(provider, artist)] as const),
+    );
+    const preferredPrimaryProviders = primarySearchProviders.filter((provider) => preferredPrimaryProviderNames.has(provider.name));
+    const remainingPrimaryProviders = primarySearchProviders.filter((provider) => !preferredPrimaryProviderNames.has(provider.name));
+    const primaryProviderGroups =
+      preferredPrimaryProviders.length > 0
+        ? [preferredPrimaryProviders, remainingPrimaryProviders]
+        : [primarySearchProviders];
+    let candidates: ArtistImageCandidate[] = [];
+    let attemptedAutoMatchCount = 0;
     const downloadErrors: Array<{ candidate: ArtistImageCandidate; error: unknown }> = [];
 
-    for (const candidate of autoMatchCandidates) {
-      try {
-        const downloaded = await this.fetchImage(candidate.imageUrl);
-        const paths = await this.writeImageVariants(artist.artistKey, downloaded.data);
-        const entry = this.markStatus(artist, 'matched', {
-          provider: candidate.provider,
-          providerArtistId: candidate.providerArtistId,
-          sourceUrl: candidate.sourceUrl ?? candidate.imageUrl,
-          sourceHash: artistImageCacheSourceHash(downloaded.sourceHash),
-          thumbPath: paths.thumbPath,
-          mediumPath: paths.mediumPath,
-          largePath: paths.largePath,
-          confidence: candidate.confidence,
-          failureReason: null,
-          fetchedAt: nowIso(),
-        });
-        this.onUpdated?.({
-          artistId: artist.artistId,
-          artistKey: artist.artistKey,
-          status: 'matched',
-        });
-        return entry;
-      } catch (error) {
-        downloadErrors.push({ candidate, error });
+    for (const providerGroup of primaryProviderGroups) {
+      if (providerGroup.length === 0) {
+        continue;
       }
+
+      results.push(...await Promise.all(providerGroup.map((provider) => pendingPrimaryResults.get(provider)!)));
+      candidates = this.sortCandidates(results.flatMap((result) => result.candidates));
+      const storeResult = await this.tryStoreCandidates(artist, candidates, attemptedImageUrls);
+
+      if (storeResult.entry) {
+        return storeResult.entry;
+      }
+
+      attemptedAutoMatchCount += storeResult.attemptedCount;
+      downloadErrors.push(...storeResult.downloadErrors);
     }
 
-    if (autoMatchCandidates.length > 0 && downloadErrors.length === autoMatchCandidates.length) {
+    if (primaryProviders.length > 0 && fallbackProviders.length > 0) {
+      const fallbackResults = await Promise.all(fallbackProviders.map((provider) => this.searchProvider(provider, artist)));
+      results.push(...fallbackResults);
+      candidates = this.sortCandidates(results.flatMap((result) => result.candidates));
+      const storeResult = await this.tryStoreCandidates(artist, candidates, attemptedImageUrls);
+
+      if (storeResult.entry) {
+        return storeResult.entry;
+      }
+
+      attemptedAutoMatchCount += storeResult.attemptedCount;
+      downloadErrors.push(...storeResult.downloadErrors);
+    }
+
+    const providerErrors = results.filter((result) => result.error);
+    const bestLowConfidence = candidates.find((candidate) => candidate.confidence < ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE) ?? null;
+    const autoMatchCandidates = candidates.filter((candidate) => candidate.confidence >= ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE);
+
+    if (autoMatchCandidates.length > 0 && attemptedAutoMatchCount > 0 && downloadErrors.length === attemptedAutoMatchCount) {
       const first = downloadErrors[0]!;
       const status = first.error instanceof ArtistImageDownloadError ? first.error.status : 'error';
       return this.markStatus(artist, status, {
@@ -545,6 +580,58 @@ export class ArtistImageCacheService {
         : 'all_providers_no_result',
       fetchedAt: nowIso(),
     });
+  }
+
+  private sortCandidates(candidates: ArtistImageCandidate[]): ArtistImageCandidate[] {
+    return candidates.sort((left, right) => {
+      const confidenceDelta = right.confidence - left.confidence;
+      if (confidenceDelta !== 0) {
+        return confidenceDelta;
+      }
+
+      return (right.quality ?? 0) - (left.quality ?? 0);
+    });
+  }
+
+  private async tryStoreCandidates(
+    artist: ResolvedArtist,
+    candidates: ArtistImageCandidate[],
+    attemptedImageUrls: Set<string>,
+  ): Promise<StoreCandidateResult> {
+    const autoMatchCandidates = candidates.filter((candidate) => candidate.confidence >= ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE);
+    const downloadErrors: Array<{ candidate: ArtistImageCandidate; error: unknown }> = [];
+    let attemptedCount = 0;
+
+    for (const candidate of autoMatchCandidates) {
+      if (attemptedImageUrls.has(candidate.imageUrl)) {
+        continue;
+      }
+
+      attemptedImageUrls.add(candidate.imageUrl);
+      attemptedCount += 1;
+
+      try {
+        const downloaded = await this.fetchImage(candidate.imageUrl);
+        const paths = await this.writeImageVariants(artist.artistKey, downloaded.data);
+        const entry = this.markStatus(artist, 'matched', {
+          provider: candidate.provider,
+          providerArtistId: candidate.providerArtistId,
+          sourceUrl: candidate.sourceUrl ?? candidate.imageUrl,
+          sourceHash: artistImageCacheSourceHash(downloaded.sourceHash),
+          thumbPath: paths.thumbPath,
+          mediumPath: paths.mediumPath,
+          largePath: paths.largePath,
+          confidence: candidate.confidence,
+          failureReason: null,
+          fetchedAt: nowIso(),
+        });
+        return { entry, attemptedCount, downloadErrors };
+      } catch (error) {
+        downloadErrors.push({ candidate, error });
+      }
+    }
+
+    return { entry: null, attemptedCount, downloadErrors };
   }
 
   private async searchProvider(provider: ArtistImageProvider, artist: ResolvedArtist): Promise<ProviderLookupResult> {
@@ -878,6 +965,10 @@ export class ArtistImageCacheService {
         throw new ArtistImageDownloadError('artist_image_too_small', 'not_found');
       }
 
+      if (await isLikelyDefaultArtistAvatarImage(source)) {
+        throw new ArtistImageDownloadError('artist_image_default_placeholder', 'not_found');
+      }
+
       await Promise.all([
         source.clone().resize(320, 320, { fit: 'cover', position: 'centre' }).webp({ quality: 94, effort: 5 }).toFile(tempThumbPath),
         source.clone().resize(640, 640, { fit: 'cover', position: 'centre' }).webp({ quality: 95, effort: 5 }).toFile(tempMediumPath),
@@ -892,6 +983,9 @@ export class ArtistImageCacheService {
         rm(tempMediumPath, { force: true }),
         rm(tempLargePath, { force: true }),
       ]);
+      if (error instanceof ArtistImageDownloadError) {
+        throw error;
+      }
       throw new ArtistImageDownloadError(error instanceof Error ? error.message : String(error), 'error');
     }
 

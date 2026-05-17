@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
-import { Check, ChevronDown, ListFilter, Play, RefreshCw, Search } from 'lucide-react';
+import { Check, ChevronDown, Image as ImageIcon, ListFilter, Play, RefreshCw, Search } from 'lucide-react';
 import type { LibraryArtist, LibrarySort } from '../../shared/types/library';
 import { ArtistDetailView } from '../components/artist/ArtistDetailView';
 import { artistMark } from '../components/artist/artistVisual';
@@ -19,6 +19,11 @@ const artistSortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }>
   { value: 'createdDesc', labelKey: 'library.sort.createdDesc' },
   { value: 'random', labelKey: 'library.sort.random' },
 ];
+
+const hasArtistAvatar = (artist: LibraryArtist): boolean => Boolean(artist.avatarUrl || artist.avatarThumbUrl);
+
+const prioritizeArtistsWithAvatars = (items: LibraryArtist[]): LibraryArtist[] =>
+  [...items].sort((left, right) => Number(hasArtistAvatar(right)) - Number(hasArtistAvatar(left)));
 
 const artistMeta = (artist: LibraryArtist, t: (key: TranslationKey, options?: Record<string, string | number>) => string): string => {
   const parts: string[] = [];
@@ -41,6 +46,7 @@ export const ArtistsPage = (): JSX.Element => {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<LibrarySort>('default');
+  const [prioritizeArtistAvatars, setPrioritizeArtistAvatars] = useState(false);
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -120,13 +126,17 @@ export const ArtistsPage = (): JSX.Element => {
           pageSize,
           search,
           sort,
+          ...(prioritizeArtistAvatars ? { prioritizeArtistAvatars: true } : {}),
         });
 
         if (requestIdRef.current !== requestId) {
           return;
         }
 
-        setArtists((current) => (mode === 'append' ? [...current, ...result.items] : result.items));
+        setArtists((current) => {
+          const next = mode === 'append' ? [...current, ...result.items] : result.items;
+          return prioritizeArtistAvatars ? prioritizeArtistsWithAvatars(next) : next;
+        });
         setPage(result.page);
         setTotal(result.total);
         setHasMore(result.hasMore);
@@ -141,7 +151,7 @@ export const ArtistsPage = (): JSX.Element => {
         }
       }
     },
-    [search, sort, t],
+    [prioritizeArtistAvatars, search, sort, t],
   );
 
   useEffect(() => {
@@ -160,7 +170,7 @@ export const ArtistsPage = (): JSX.Element => {
 
   useLayoutEffect(() => {
     writePageScrollTop(pageRootRef.current, 0);
-  }, [search, sort]);
+  }, [prioritizeArtistAvatars, search, sort]);
 
   useLayoutEffect(() => {
     if (selectedArtist || !shouldRestorePageScrollRef.current) {
@@ -225,10 +235,10 @@ export const ArtistsPage = (): JSX.Element => {
         return updatedArtist;
       });
 
-      return changed ? next : current;
+      return changed ? (prioritizeArtistAvatars ? prioritizeArtistsWithAvatars(next) : next) : current;
     });
     setSelectedArtist((current) => (current?.id === updatedArtist.id ? updatedArtist : current));
-  }, []);
+  }, [prioritizeArtistAvatars]);
 
   useEffect(() => {
     const library = window.echo?.library;
@@ -387,38 +397,51 @@ export const ArtistsPage = (): JSX.Element => {
           />
         </label>
 
-        <div className="sort-select" ref={sortMenuRef}>
+        <div className="artist-control-actions">
           <button
-            className="sort-button"
+            className="sort-button artist-avatar-priority-toggle"
             type="button"
-            aria-haspopup="listbox"
-            aria-expanded={isSortOpen}
-            onClick={() => setIsSortOpen((current) => !current)}
+            aria-pressed={prioritizeArtistAvatars}
+            title={t('library.artists.avatarPriority')}
+            onClick={() => setPrioritizeArtistAvatars((current) => !current)}
           >
-            <ListFilter className="sort-button-icon" size={16} aria-hidden="true" />
-            <span className="sort-button-label">{t(artistSortOptions.find((option) => option.value === sort)?.labelKey ?? 'library.sort.default')}</span>
-            <ChevronDown className="sort-button-chevron" size={15} aria-hidden="true" />
+            <ImageIcon className="sort-button-icon" size={16} aria-hidden="true" />
+            <span className="sort-button-label">{t('library.artists.avatarPriority')}</span>
           </button>
-          {isSortOpen ? (
-            <div className="sort-menu" role="listbox" aria-label={t('library.artists.sort.aria')}>
-              {artistSortOptions.map((option) => (
-                <button
-                  key={option.value}
-                  className="sort-option"
-                  type="button"
-                  role="option"
-                  aria-selected={sort === option.value}
-                  onClick={() => {
-                    setSort(option.value);
-                    setIsSortOpen(false);
-                  }}
-                >
-                  <span>{t(option.labelKey)}</span>
-                  {sort === option.value ? <Check size={14} /> : null}
-                </button>
-              ))}
-            </div>
-          ) : null}
+
+          <div className="sort-select" ref={sortMenuRef}>
+            <button
+              className="sort-button"
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded={isSortOpen}
+              onClick={() => setIsSortOpen((current) => !current)}
+            >
+              <ListFilter className="sort-button-icon" size={16} aria-hidden="true" />
+              <span className="sort-button-label">{t(artistSortOptions.find((option) => option.value === sort)?.labelKey ?? 'library.sort.default')}</span>
+              <ChevronDown className="sort-button-chevron" size={15} aria-hidden="true" />
+            </button>
+            {isSortOpen ? (
+              <div className="sort-menu" role="listbox" aria-label={t('library.artists.sort.aria')}>
+                {artistSortOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    className="sort-option"
+                    type="button"
+                    role="option"
+                    aria-selected={sort === option.value}
+                    onClick={() => {
+                      setSort(option.value);
+                      setIsSortOpen(false);
+                    }}
+                  >
+                    <span>{t(option.labelKey)}</span>
+                    {sort === option.value ? <Check size={14} /> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 

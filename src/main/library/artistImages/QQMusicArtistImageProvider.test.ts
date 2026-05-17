@@ -74,4 +74,26 @@ describe('QQMusicArtistImageProvider', () => {
 
     expect(candidates).toEqual([]);
   });
+
+  it('filters QQ Music numbered placeholder artist image URLs', async () => {
+    const streamingProvider = {
+      search: vi.fn().mockResolvedValue({
+        artists: [
+          {
+            id: 'qqmusic:artist:abyssmare',
+            provider: 'qqmusic',
+            providerArtistId: '002gpmEG2XGULI',
+            name: 'Abyssmare',
+            avatarUrl: 'https://y.gtimg.cn/music/photo_new/T001R150x150M000002knSQ01Ts1vS_0.jpg',
+            coverUrl: null,
+          },
+        ],
+      }),
+    };
+    const provider = new QQMusicArtistImageProvider(streamingProvider as never);
+
+    const candidates = await provider.searchArtistImage({ artistName: 'Abyssmare', artistKey: 'abyssmare' });
+
+    expect(candidates).toEqual([]);
+  });
 });

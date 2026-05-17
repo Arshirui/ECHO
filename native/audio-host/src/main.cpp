@@ -1576,7 +1576,7 @@ public:
         if (output == nullptr || frameCount == 0 || outputChannels == 0)
             return 0;
 
-        std::memset(output, 0, static_cast<size_t>(frameCount) * outputChannels * sizeof(uint32_t));
+        fillDopSilence(output, frameCount, outputChannels);
 
         if (shouldHoldForStartupPrebuffer())
             return 0;
@@ -1625,6 +1625,8 @@ public:
 
         if (framesReadTotal > 0)
             framesPlayed.fetch_add(framesReadTotal, std::memory_order_relaxed);
+
+        normalizeDopMarkers(output, frameCount, outputChannels);
 
         return framesReadTotal;
     }
@@ -1722,6 +1724,35 @@ public:
     }
 
 private:
+    static uint32_t makeDopSample(uint32_t frameIndex, uint32_t dsdLow16)
+    {
+        const uint32_t marker = (frameIndex & 1u) == 0 ? 0x05u : 0xfau;
+        return (dsdLow16 & 0x0000ffffu) | (marker << 16);
+    }
+
+    static void fillDopSilence(uint32_t* output, uint32_t frameCount, uint32_t outputChannels)
+    {
+        for (uint32_t frame = 0; frame < frameCount; ++frame)
+        {
+            const uint32_t sample = makeDopSample(frame, 0u);
+            for (uint32_t channel = 0; channel < outputChannels; ++channel)
+                output[static_cast<size_t>(frame) * outputChannels + channel] = sample;
+        }
+    }
+
+    static void normalizeDopMarkers(uint32_t* output, uint32_t frameCount, uint32_t outputChannels)
+    {
+        for (uint32_t frame = 0; frame < frameCount; ++frame)
+        {
+            const uint32_t marker = (frame & 1u) == 0 ? 0x05u : 0xfau;
+            for (uint32_t channel = 0; channel < outputChannels; ++channel)
+            {
+                auto& sample = output[static_cast<size_t>(frame) * outputChannels + channel];
+                sample = (sample & 0x0000ffffu) | (marker << 16);
+            }
+        }
+    }
+
     void copyFromInput(const uint32_t* source, int startFrame, int frameCount)
     {
         if (frameCount <= 0)

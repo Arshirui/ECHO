@@ -240,6 +240,7 @@ export type LibraryPageQuery = {
   sourceProvider?: PlaylistSourceProvider;
   hideDuplicates?: boolean;
   duplicateMode?: DuplicateTrackMode;
+  prioritizeArtistAvatars?: boolean;
 };
 
 export type PlaylistKind = 'manual' | 'smart' | 'synced' | 'system';

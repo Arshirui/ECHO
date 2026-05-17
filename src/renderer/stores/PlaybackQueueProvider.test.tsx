@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { useEffect, useRef } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AudioStatus } from '../../shared/types/audio';
 import type { LibraryTrack } from '../../shared/types/library';
 import { PlaybackQueueProvider, usePlaybackQueue } from './PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from './playbackStatusStore';
@@ -677,6 +678,68 @@ describe('PlaybackQueueProvider playback history session', () => {
 
     await waitFor(() => expect(screen.getByLabelText('shared-track').textContent).toBe(second.id));
     expect(screen.getByLabelText('shared-error').textContent).toBe('');
+  });
+
+  it('suppresses superseded audio session cancellation status errors', async () => {
+    let emitAudioStatus: ((status: AudioStatus) => void) | null = null;
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'stopped',
+          currentTrackId: null,
+          positionMs: 0,
+          durationMs: 0,
+          filePath: null,
+        }),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'stopped',
+          error: null,
+        }),
+        onStatus: vi.fn((listener: (status: AudioStatus) => void) => {
+          emitAudioStatus = listener;
+          return () => undefined;
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const StatusProbe = (): JSX.Element => {
+      const status = useSharedPlaybackStatus();
+
+      return (
+        <div>
+          <output aria-label="shared-error">{status.error ?? ''}</output>
+          <output aria-label="shared-audio-state">{status.audioStatus?.state ?? ''}</output>
+        </div>
+      );
+    };
+
+    render(<StatusProbe />);
+
+    await waitFor(() => expect(window.echo?.audio?.onStatus).toHaveBeenCalled());
+    if (!emitAudioStatus) {
+      throw new Error('audio status listener was not captured');
+    }
+
+    act(() => {
+      emitAudioStatus?.({
+        state: 'error',
+        error: 'audio_session_run_cancelled',
+      } as AudioStatus);
+    });
+    expect(screen.getByLabelText('shared-error').textContent).toBe('');
+    expect(screen.getByLabelText('shared-audio-state').textContent).not.toBe('error');
+
+    act(() => {
+      emitAudioStatus?.({
+        state: 'error',
+        error: 'native_writable_error: device failed',
+      } as AudioStatus);
+    });
+    expect(screen.getByLabelText('shared-error').textContent).toBe('native_writable_error: device failed');
+    expect(screen.getByLabelText('shared-audio-state').textContent).toBe('error');
   });
 });
 

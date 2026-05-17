@@ -5,6 +5,7 @@ import { PlayerBar } from '../components/player/PlayerBar';
 import { AudioSettingsDrawer } from '../components/player/AudioSettingsDrawer';
 import { LyricsSettingsDrawer } from '../components/lyrics/LyricsSettingsDrawer';
 import { MvSettingsDrawer } from '../components/lyrics/MvSettingsDrawer';
+import { parseHexColor, sampleImageUrl, type ReadableColorSample, type Rgb } from '../components/lyrics/lyricsReadableColor';
 import { DragDropImportOverlay } from '../components/import/DragDropImportOverlay';
 import { loadPersistedRememberedAudioOutput } from '../components/player/audioOutputMemory';
 import { Sidebar } from '../components/layout/Sidebar';
@@ -38,6 +39,14 @@ type AppWallpaperSettings = Pick<
   | 'appWallpaperUnifiedOpacityEnabled'
 >;
 
+type LyricsMiniPlayerSettings = Pick<
+  AppSettings,
+  | 'lyricsPlayerBarDrawerEnabled'
+  | 'lyricsPlayerBarDrawerOpacityPercent'
+  | 'lyricsPlayerBarDrawerColorMode'
+  | 'lyricsPlayerBarDrawerColor'
+>;
+
 const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appCustomWallpaperPath: null,
   appWallpaperScalePercent: 100,
@@ -46,6 +55,13 @@ const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appWallpaperUiOpacityPercent: 100,
   appWallpaperVisualProtectionEnabled: true,
   appWallpaperUnifiedOpacityEnabled: false,
+};
+
+const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
+  lyricsPlayerBarDrawerEnabled: false,
+  lyricsPlayerBarDrawerOpacityPercent: 78,
+  lyricsPlayerBarDrawerColorMode: 'default',
+  lyricsPlayerBarDrawerColor: '#232120',
 };
 
 const persistentRouteIds = new Set<AppRouteId>(['songs']);
@@ -71,6 +87,48 @@ const selectAppWallpaperSettings = (settings: AppSettings): AppWallpaperSettings
   appWallpaperUnifiedOpacityEnabled: settings.appWallpaperUnifiedOpacityEnabled,
 });
 
+const selectLyricsMiniPlayerSettings = (settings: Partial<AppSettings>): LyricsMiniPlayerSettings => ({
+  lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled === true,
+  lyricsPlayerBarDrawerOpacityPercent: Number.isFinite(settings.lyricsPlayerBarDrawerOpacityPercent)
+    ? Math.max(20, Math.min(100, Math.round(Number(settings.lyricsPlayerBarDrawerOpacityPercent))))
+    : defaultLyricsMiniPlayerSettings.lyricsPlayerBarDrawerOpacityPercent,
+  lyricsPlayerBarDrawerColorMode:
+    settings.lyricsPlayerBarDrawerColorMode === 'custom' || settings.lyricsPlayerBarDrawerColorMode === 'cover'
+      ? settings.lyricsPlayerBarDrawerColorMode
+      : defaultLyricsMiniPlayerSettings.lyricsPlayerBarDrawerColorMode,
+  lyricsPlayerBarDrawerColor: /^#[0-9a-fA-F]{6}$/u.test(settings.lyricsPlayerBarDrawerColor ?? '')
+    ? (settings.lyricsPlayerBarDrawerColor as string).toUpperCase()
+    : defaultLyricsMiniPlayerSettings.lyricsPlayerBarDrawerColor,
+});
+
+const originalCoverUrlFromThumb = (coverUrl: string | null): string | null =>
+  coverUrl?.replace(/^echo-cover:\/\/(?:thumb|album|large)\//u, 'echo-cover://original/') ?? null;
+
+const miniPlayerArtworkUrl = (
+  track: { coverId: string | null; coverThumb: string | null } | null,
+): string | null =>
+  track?.coverId
+    ? `echo-cover://original/${encodeURIComponent(track.coverId)}`
+    : originalCoverUrlFromThumb(track?.coverThumb ?? null);
+
+const mixRgb = (from: Rgb, to: Rgb, amount: number): Rgb => {
+  const weight = Math.max(0, Math.min(1, amount));
+  return {
+    r: from.r + (to.r - from.r) * weight,
+    g: from.g + (to.g - from.g) * weight,
+    b: from.b + (to.b - from.b) * weight,
+  };
+};
+
+const formatRgbChannels = (rgb: Rgb): string =>
+  [rgb.r, rgb.g, rgb.b].map((channel) => Math.round(Math.max(0, Math.min(255, channel)))).join(', ');
+
+const tintedMiniPlayerRgb = (sample: ReadableColorSample): Rgb => {
+  const darkAnchor = { r: 21, g: 22, b: 25 };
+  const darkenAmount = sample.luminance > 0.42 ? 0.58 : sample.luminance > 0.22 ? 0.46 : 0.28;
+  return mixRgb(sample.averageRgb, darkAnchor, darkenAmount);
+};
+
 const openAudioSettingsEvent = 'app:open-audio-settings';
 const openMvSettingsEvent = 'app:open-mv-settings';
 const openLyricsSettingsEvent = 'app:open-lyrics-settings';
@@ -89,8 +147,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isLyricsDrawerOpen, setIsLyricsDrawerOpen] = useState(false);
   const [isMvDrawerOpen, setIsMvDrawerOpen] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
-  const [isLyricsPlayerDrawerEnabled, setIsLyricsPlayerDrawerEnabled] = useState(false);
-  const [isLyricsPlayerDrawerOpen, setIsLyricsPlayerDrawerOpen] = useState(false);
+  const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
+  const [lyricsMiniPlayerCoverSample, setLyricsMiniPlayerCoverSample] = useState<ReadableColorSample | null>(null);
   const [appWallpaperSettings, setAppWallpaperSettings] = useState<AppWallpaperSettings>(defaultAppWallpaperSettings);
   const [loadedAppWallpaperUrl, setLoadedAppWallpaperUrl] = useState<string | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -127,8 +185,37 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, [activeRoute, mountedPersistentRouteIds, routes]);
   const isStandaloneRoute = activeRoute.chrome === 'standalone';
   const isLyricsRoute = activeRouteId === 'lyrics';
-  const shouldUseLyricsPlayerDrawer = isLyricsRoute && isLyricsPlayerDrawerEnabled;
+  const shouldUseLyricsPlayerDrawer = isLyricsRoute && lyricsMiniPlayerSettings.lyricsPlayerBarDrawerEnabled === true;
   const shouldRenderPlayerBar = !isStandaloneRoute || isLyricsRoute;
+  const currentMiniPlayerTrack = playbackQueue.currentTrack ?? playbackQueue.lastPlayedTrack ?? null;
+  const lyricsMiniPlayerCoverUrl = useMemo(
+    () => miniPlayerArtworkUrl(currentMiniPlayerTrack),
+    [currentMiniPlayerTrack?.coverId, currentMiniPlayerTrack?.coverThumb],
+  );
+  const lyricsMiniPlayerStyle = useMemo<CSSProperties>(() => {
+    const opacity = Math.max(0.2, Math.min(1, (lyricsMiniPlayerSettings.lyricsPlayerBarDrawerOpacityPercent ?? 78) / 100));
+    const colorMode = lyricsMiniPlayerSettings.lyricsPlayerBarDrawerColorMode ?? 'default';
+    const fallbackRgb = parseHexColor(defaultLyricsMiniPlayerSettings.lyricsPlayerBarDrawerColor ?? '#232120') ?? { r: 35, g: 33, b: 32 };
+    const customRgb = parseHexColor(lyricsMiniPlayerSettings.lyricsPlayerBarDrawerColor) ?? fallbackRgb;
+    const rgb =
+      colorMode === 'cover' && lyricsMiniPlayerCoverSample
+        ? tintedMiniPlayerRgb(lyricsMiniPlayerCoverSample)
+        : colorMode === 'custom'
+          ? customRgb
+          : fallbackRgb;
+    const channels = formatRgbChannels(rgb);
+
+    return {
+      '--lyrics-mini-player-opacity': opacity.toFixed(2),
+      '--lyrics-mini-player-background': `rgba(${channels}, ${opacity.toFixed(2)})`,
+      '--lyrics-mini-player-border': `rgba(255, 255, 255, ${Math.max(0.08, opacity * 0.2).toFixed(2)})`,
+    } as CSSProperties;
+  }, [
+    lyricsMiniPlayerCoverSample,
+    lyricsMiniPlayerSettings.lyricsPlayerBarDrawerColor,
+    lyricsMiniPlayerSettings.lyricsPlayerBarDrawerColorMode,
+    lyricsMiniPlayerSettings.lyricsPlayerBarDrawerOpacityPercent,
+  ]);
   const appWallpaperUrl = appWallpaperSettings.appCustomWallpaperPath
     ? `echo-wallpaper://app/custom?path=${encodeURIComponent(appWallpaperSettings.appCustomWallpaperPath)}`
     : null;
@@ -376,10 +463,16 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   useEffect(() => {
     let cancelled = false;
 
-    const refreshLyricsPlayerDrawerSetting = (event?: Event): void => {
+    const refreshLyricsMiniPlayerSettings = (event?: Event): void => {
       const patch = (event as CustomEvent<Partial<AppSettings>> | undefined)?.detail;
-      if (typeof patch?.lyricsPlayerBarDrawerEnabled === 'boolean') {
-        setIsLyricsPlayerDrawerEnabled(patch.lyricsPlayerBarDrawerEnabled);
+      if (
+        patch &&
+        ('lyricsPlayerBarDrawerEnabled' in patch ||
+          'lyricsPlayerBarDrawerOpacityPercent' in patch ||
+          'lyricsPlayerBarDrawerColorMode' in patch ||
+          'lyricsPlayerBarDrawerColor' in patch)
+      ) {
+        setLyricsMiniPlayerSettings((current) => selectLyricsMiniPlayerSettings({ ...current, ...patch }));
         return;
       }
 
@@ -387,24 +480,51 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         ?.getSettings?.()
         .then((settings) => {
           if (!cancelled) {
-            setIsLyricsPlayerDrawerEnabled(settings.lyricsPlayerBarDrawerEnabled === true);
+            setLyricsMiniPlayerSettings(selectLyricsMiniPlayerSettings(settings));
           }
         })
         .catch(() => {
           if (!cancelled) {
-            setIsLyricsPlayerDrawerEnabled(false);
+            setLyricsMiniPlayerSettings(defaultLyricsMiniPlayerSettings);
           }
         });
     };
 
-    refreshLyricsPlayerDrawerSetting();
-    window.addEventListener('settings:changed', refreshLyricsPlayerDrawerSetting);
+    refreshLyricsMiniPlayerSettings();
+    window.addEventListener('settings:changed', refreshLyricsMiniPlayerSettings);
 
     return () => {
       cancelled = true;
-      window.removeEventListener('settings:changed', refreshLyricsPlayerDrawerSetting);
+      window.removeEventListener('settings:changed', refreshLyricsMiniPlayerSettings);
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      !shouldUseLyricsPlayerDrawer ||
+      lyricsMiniPlayerSettings.lyricsPlayerBarDrawerColorMode !== 'cover' ||
+      !lyricsMiniPlayerCoverUrl
+    ) {
+      setLyricsMiniPlayerCoverSample(null);
+      return undefined;
+    }
+
+    let disposed = false;
+    setLyricsMiniPlayerCoverSample(null);
+    void sampleImageUrl(lyricsMiniPlayerCoverUrl).then((sample) => {
+      if (!disposed) {
+        setLyricsMiniPlayerCoverSample(sample);
+      }
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [
+    lyricsMiniPlayerCoverUrl,
+    lyricsMiniPlayerSettings.lyricsPlayerBarDrawerColorMode,
+    shouldUseLyricsPlayerDrawer,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -754,8 +874,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   return (
     <div
       className={`app-shell ${isStandaloneRoute ? 'app-shell--standalone' : ''} ${isLyricsRoute ? 'app-shell--lyrics' : ''} ${
-        shouldUseLyricsPlayerDrawer ? 'app-shell--lyrics-player-drawer' : ''
-      } ${shouldUseLyricsPlayerDrawer && isLyricsPlayerDrawerOpen ? 'app-shell--lyrics-player-drawer-open' : ''} ${
+        shouldUseLyricsPlayerDrawer ? 'app-shell--lyrics-player-drawer app-shell--lyrics-mini-player' : ''
+      } ${
         visibleAppWallpaperUrl ? 'app-shell--wallpaper' : ''
       } ${
         isAppWallpaperReady ? 'app-shell--wallpaper-ready' : ''
@@ -897,18 +1017,11 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       <LyricsSettingsDrawer isOpen={isLyricsDrawerOpen} onClose={() => setIsLyricsDrawerOpen(false)} />
       <MvSettingsDrawer isOpen={isMvDrawerOpen} onClose={() => setIsMvDrawerOpen(false)} />
 
-      {shouldUseLyricsPlayerDrawer ? (
-        <div
-          className="lyrics-player-drawer-zone"
-          aria-hidden="true"
-          onPointerEnter={() => setIsLyricsPlayerDrawerOpen(true)}
-        />
-      ) : null}
       {shouldRenderPlayerBar ? (
         <div
-          className={`player-bar-host ${shouldUseLyricsPlayerDrawer ? 'lyrics-player-drawer-host' : ''}`}
-          onPointerEnter={shouldUseLyricsPlayerDrawer ? () => setIsLyricsPlayerDrawerOpen(true) : undefined}
-          onPointerLeave={shouldUseLyricsPlayerDrawer ? () => setIsLyricsPlayerDrawerOpen(false) : undefined}
+          className={`player-bar-host ${shouldUseLyricsPlayerDrawer ? 'lyrics-player-drawer-host lyrics-mini-player-host' : ''}`}
+          data-mini-player-color-mode={shouldUseLyricsPlayerDrawer ? lyricsMiniPlayerSettings.lyricsPlayerBarDrawerColorMode : undefined}
+          style={shouldUseLyricsPlayerDrawer ? lyricsMiniPlayerStyle : undefined}
         >
           <PlayerBar onOpenAudioSettings={() => setIsAudioDrawerOpen(true)} />
         </div>

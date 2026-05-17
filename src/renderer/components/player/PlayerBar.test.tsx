@@ -1042,6 +1042,100 @@ describe('PlayerBar', () => {
     await waitFor(() => expect(screen.getByText('128 BPM')).toBeTruthy(), { timeout: 3000 });
   }, 10000);
 
+  it('starts playback BPM analysis when the setting is enabled during the current song', async () => {
+    const track = makeTrack(1, {
+      bpm: null,
+      analysisStatus: 'none',
+    });
+    const analyzedTrack = {
+      ...track,
+      bpm: 128,
+      bpmConfidence: 0.86,
+      beatOffsetMs: 12,
+      analysisStatus: 'complete' as const,
+      analysisUpdatedAt: '2026-05-14T12:00:00.000Z',
+      fieldSources: { bpm: 'audio_analysis', beatOffsetMs: 'audio_analysis' },
+    };
+    const startBpmAnalysis = vi.fn().mockResolvedValue({
+      id: 'bpm-job-enabled-late',
+      status: 'running',
+      totalTracks: 1,
+      processedTracks: 0,
+      updatedTracks: 0,
+      errorCount: 0,
+      currentTrackTitle: track.title,
+      startedAt: '2026-05-14T11:59:58.000Z',
+      finishedAt: null,
+      errors: [],
+    });
+    const getBpmAnalysisStatus = vi.fn().mockResolvedValue({
+      id: 'bpm-job-enabled-late',
+      status: 'completed',
+      totalTracks: 1,
+      processedTracks: 1,
+      updatedTracks: 1,
+      errorCount: 0,
+      currentTrackTitle: null,
+      startedAt: '2026-05-14T11:59:58.000Z',
+      finishedAt: '2026-05-14T12:00:00.000Z',
+      errors: [],
+    });
+    let appSettings = { smtcEnabled: true, audioAnalysisEnabled: false };
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: track.id,
+          positionMs: 4000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(track)),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(analyzedTrack),
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+        startBpmAnalysis,
+        getBpmAnalysisStatus,
+      },
+      app: {
+        getSettings: vi.fn(() => Promise.resolve(appSettings)),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Song 1');
+    await waitFor(() => expect(window.echo?.app.getSettings).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(startBpmAnalysis).not.toHaveBeenCalled();
+
+    appSettings = { smtcEnabled: true, audioAnalysisEnabled: true };
+    act(() => {
+      window.dispatchEvent(new CustomEvent('settings:changed', { detail: { audioAnalysisEnabled: true } }));
+    });
+
+    await waitFor(() => expect(startBpmAnalysis).toHaveBeenCalledWith({ trackIds: [track.id] }));
+    await waitFor(() => expect(screen.getByText('128 BPM')).toBeTruthy(), { timeout: 3000 });
+  }, 10000);
+
   it('routes SMTC pause, previous, and next commands through the playback queue', async () => {
     const firstTrack = makeTrack(1);
     const secondTrack = makeTrack(2);

@@ -74,6 +74,22 @@ describe('writeEmbeddedTrackTags', () => {
     expect(workerMockState.workers[0].source).not.toContain("import('taglib-wasm')");
   });
 
+  it('writes BPM-only tag updates through the same worker queue', async () => {
+    const { writeEmbeddedBpmTag } = await import('./TagWriter');
+
+    await writeEmbeddedBpmTag('D:/Music/song.wav', 127.6);
+
+    expect(workerMockState.workers).toHaveLength(1);
+    expect(workerMockState.workers[0].options.workerData).toMatchObject({
+      kind: 'bpm',
+      filePath: 'D:/Music/song.wav',
+      bpm: 128,
+      taglibWasmModuleUrl: expect.stringMatching(/^file:\/\//),
+    });
+    expect(workerMockState.workers[0].source).toContain("workerData.kind === 'bpm'");
+    expect(workerMockState.workers[0].source).toContain('applyTagsToFile');
+  });
+
   it('serializes embedded tag writes globally', async () => {
     workerMockState.autoComplete = false;
     const { writeEmbeddedTrackTags } = await import('./TagWriter');

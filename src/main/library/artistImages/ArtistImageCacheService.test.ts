@@ -23,6 +23,12 @@ const validPng = (): Uint8Array =>
     'utf8',
   );
 
+const qqDefaultArtistAvatar = (): Uint8Array =>
+  Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="#ecf6ee"/><circle cx="256" cy="178" r="76" fill="#fde6ce"/><rect x="80" y="286" width="352" height="226" rx="176" fill="#92e4bb"/><rect x="228" y="326" width="56" height="116" rx="10" fill="#ffffff"/><rect x="216" y="354" width="80" height="12" rx="6" fill="#ffffff"/><rect x="216" y="382" width="80" height="12" rx="6" fill="#ffffff"/></svg>',
+    'utf8',
+  );
+
 const insertArtist = (database: EchoDatabase, id: string, name: string): string => {
   const key = artistImageKeyForName(name);
   database
@@ -100,14 +106,14 @@ const createService = (
   database: EchoDatabase,
   providers: ArtistImageProvider | ArtistImageProvider[],
   root = makeTempRoot(),
-  options: { concurrency?: number } = {},
+  options: { concurrency?: number; fetchImageData?: Uint8Array } = {},
 ): ArtistImageCacheService =>
   new ArtistImageCacheService(database, {
     cacheRoot: join(root, 'artist-images'),
     providers: Array.isArray(providers) ? providers : [providers],
     concurrency: options.concurrency,
     fetchImage: async (url) => ({
-      data: validPng(),
+      data: options.fetchImageData ?? validPng(),
       mimeType: 'image/png',
       sourceHash: `hash:${url}`,
     }),
@@ -389,6 +395,31 @@ describe('ArtistImageCacheService', () => {
     database.close();
   });
 
+  it('rejects QQ Music default artist avatar image content', async () => {
+    const database = createDatabase(':memory:');
+    insertArtist(database, 'artist-1', 'Default Avatar Artist');
+    const providerSearch = vi.fn().mockResolvedValue([
+      {
+        provider: 'qqmusic',
+        providerArtistId: 'default-avatar',
+        artistName: 'Default Avatar Artist',
+        imageUrl: 'https://y.gtimg.cn/music/photo_new/T001R500x500M000default-avatar.jpg',
+        confidence: 0.96,
+      },
+    ]);
+    const service = createService(database, createProvider(providerSearch), makeTempRoot(), {
+      fetchImageData: qqDefaultArtistAvatar(),
+    });
+
+    const result = await service.refreshArtistImage('artist-1', true);
+
+    expect(result.entry).toMatchObject({
+      status: 'not_found',
+      failureReason: 'artist_image_default_placeholder',
+    });
+    database.close();
+  });
+
   it('stores a NetEase match when QQ Music has no candidates', async () => {
     const database = createDatabase(':memory:');
     insertArtist(database, 'artist-1', 'Arika');
@@ -486,6 +517,37 @@ describe('ArtistImageCacheService', () => {
     database.close();
   });
 
+  it('does not wait for secondary primary providers once QQ or NetEase has a usable match', async () => {
+    const database = createDatabase(':memory:');
+    insertArtist(database, 'artist-1', 'Arika');
+    const kuwoDeferred = createDeferred<ArtistImageCandidate[]>();
+    const qqSearch = vi.fn().mockResolvedValue([
+      {
+        provider: 'qqmusic',
+        providerArtistId: 'qq-arika',
+        artistName: 'Arika',
+        imageUrl: 'https://y.gtimg.cn/arika.jpg',
+        confidence: 0.96,
+      },
+    ]);
+    const kuwoSearch = vi.fn().mockReturnValue(kuwoDeferred.promise);
+    const service = createService(database, [
+      createProvider(qqSearch, 'qqmusic'),
+      createProvider(kuwoSearch, 'kuwo'),
+    ]);
+
+    const result = await service.refreshArtistImage('artist-1', true);
+
+    expect(kuwoSearch).toHaveBeenCalledTimes(1);
+    expect(result.entry).toMatchObject({
+      status: 'matched',
+      provider: 'qqmusic',
+      providerArtistId: 'qq-arika',
+    });
+    kuwoDeferred.resolve([]);
+    database.close();
+  });
+
   it('stores not_found only when all providers return no candidates', async () => {
     const database = createDatabase(':memory:');
     insertArtist(database, 'artist-1', 'Missing Artist');
@@ -523,6 +585,28 @@ describe('ArtistImageCacheService', () => {
     expect(artist.avatarUrl).toBe(`echo-artist-image://large/${encodeURIComponent(artistKey)}`);
     expect(artist.avatarStatus).toBe('matched');
     expect(artist.avatarProvider).toBe('qqmusic');
+    database.close();
+  });
+
+  it('can prioritize artists with cached avatars before the selected artist sort', () => {
+    const database = createDatabase(':memory:');
+    insertArtist(database, 'artist-1', 'Alpha No Avatar');
+    const avatarArtistKey = insertArtist(database, 'artist-2', 'Zulu Avatar');
+    insertCache(database, avatarArtistKey, 'matched', {
+      thumbPath: 'D:/cache/thumb.webp',
+      sourceHash: artistImageCacheSourceHash('avatar'),
+      confidence: 0.96,
+    });
+    const store = new LibraryStore(database);
+
+    expect(store.getArtists({ pageSize: 10, sort: 'titleAsc' }).items.map((artist) => artist.name)).toEqual([
+      'Alpha No Avatar',
+      'Zulu Avatar',
+    ]);
+    expect(store.getArtists({ pageSize: 10, sort: 'titleAsc', prioritizeArtistAvatars: true }).items.map((artist) => artist.name)).toEqual([
+      'Zulu Avatar',
+      'Alpha No Avatar',
+    ]);
     database.close();
   });
 

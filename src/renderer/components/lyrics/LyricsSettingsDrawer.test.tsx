@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AppSettings } from '../../../shared/types/appSettings';
 import type { LyricsSearchCandidate, TrackLyrics } from '../../../shared/types/lyrics';
 import type { MvSettings } from '../../../shared/types/mv';
@@ -33,6 +33,10 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
+  lyricsPlayerBarDrawerEnabled: false,
+  lyricsPlayerBarDrawerOpacityPercent: 78,
+  lyricsPlayerBarDrawerColorMode: 'default',
+  lyricsPlayerBarDrawerColor: '#232120',
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsWordHighlightEnabled: true,
@@ -42,6 +46,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
   lyricsSmartReadableColorsEnabled: false,
+  lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -372,7 +377,7 @@ describe('LyricsSettingsDrawer', () => {
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsWordHighlightEnabled: false }));
   });
 
-  it('lets users enable the lyrics player bar drawer', async () => {
+  it('lets users enable the lyrics mini player bar', async () => {
     const setSettings = vi.fn().mockResolvedValue(makeSettings({ lyricsPlayerBarDrawerEnabled: true }));
     window.echo = {
       app: {
@@ -384,10 +389,77 @@ describe('LyricsSettingsDrawer', () => {
 
     render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    const toggle = (await screen.findByRole('checkbox', { name: /底栏抽屉/ })) as HTMLInputElement;
+    const toggle = (await screen.findByRole('checkbox', { name: /迷你底栏/ })) as HTMLInputElement;
     fireEvent.click(toggle);
 
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsPlayerBarDrawerEnabled: true }));
+  });
+
+  it('shows mini player tuning only after the mini player is enabled', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsPlayerBarDrawerEnabled: false })),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { unmount } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await screen.findByRole('checkbox', { name: /迷你底栏/ });
+    expect(screen.queryByText('底栏透明度')).toBeNull();
+    expect(screen.queryByText('底栏颜色')).toBeNull();
+
+    unmount();
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsPlayerBarDrawerEnabled: true })),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    expect(await screen.findByText('底栏透明度')).toBeTruthy();
+    expect(screen.getByText('底栏颜色')).toBeTruthy();
+    const miniColorPanel = document.querySelector('.lyrics-mini-player-color-panel') as HTMLElement;
+    expect(within(miniColorPanel).getByRole('button', { name: '跟随封面' })).toBeTruthy();
+  });
+
+  it('lets users tune mini player opacity and color mode', async () => {
+    const setSettings = vi.fn().mockResolvedValue(makeSettings({
+      lyricsPlayerBarDrawerEnabled: true,
+      lyricsPlayerBarDrawerOpacityPercent: 66,
+      lyricsPlayerBarDrawerColorMode: 'cover',
+    }));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsPlayerBarDrawerEnabled: true })),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+    const opacityLabel = await screen.findByText('底栏透明度');
+    const opacitySlider = opacityLabel.closest('label')?.querySelector('input[type="range"]') as HTMLInputElement;
+
+    vi.useFakeTimers();
+    fireEvent.change(opacitySlider, { target: { value: '66' } });
+    await act(async () => {
+      vi.advanceTimersByTime(240);
+      await Promise.resolve();
+    });
+
+    expect(setSettings).toHaveBeenCalledWith({ lyricsPlayerBarDrawerOpacityPercent: 66 });
+    vi.useRealTimers();
+
+    const miniColorPanel = container.querySelector('.lyrics-mini-player-color-panel') as HTMLElement;
+    fireEvent.click(within(miniColorPanel).getByRole('button', { name: '跟随封面' }));
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsPlayerBarDrawerColorMode: 'cover' }));
+    expect(container.querySelector('.lyrics-mini-player-color-panel')).toBeTruthy();
   });
 
   it('does not rebroadcast full lyrics settings after saving a non-layout toggle', async () => {
@@ -408,7 +480,7 @@ describe('LyricsSettingsDrawer', () => {
 
     const toggle = await waitFor(() => {
       const playerDrawerToggle = Array.from(container.querySelectorAll<HTMLInputElement>('.audio-toggle-row input')).find((input) =>
-        /搴曟爮鎶藉眽|底栏抽屉/.test(input.closest('label')?.textContent ?? ''),
+        /迷你底栏/.test(input.closest('label')?.textContent ?? ''),
       );
       expect(playerDrawerToggle).toBeTruthy();
       return playerDrawerToggle as HTMLInputElement;
@@ -593,6 +665,42 @@ describe('LyricsSettingsDrawer', () => {
     );
     expect(displaySettingsChangedListener).toHaveBeenCalledWith(
       expect.objectContaining({ detail: { lyricsSmartReadableColorsEnabled: true } }),
+    );
+
+    window.removeEventListener('settings:changed', settingsChangedListener);
+    window.removeEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+  });
+
+  it('toggles high resolution network cover lookup from the lyrics background section', async () => {
+    const setSettings = vi.fn(async (patch: Partial<AppSettings>) => makeSettings({ lyricsBackgroundMode: 'cover', ...patch }));
+    const settingsChangedListener = vi.fn();
+    const displaySettingsChangedListener = vi.fn();
+    window.addEventListener('settings:changed', settingsChangedListener);
+    window.addEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsBackgroundMode: 'cover' })),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-background-network-cover-toggle input')).toBeTruthy());
+    const toggle = container.querySelector('.lyrics-background-network-cover-toggle input') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    expect(toggle.disabled).toBe(false);
+
+    fireEvent.click(toggle);
+
+    expect(toggle.checked).toBe(true);
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsHighResolutionNetworkCoverEnabled: true }));
+    expect(settingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsHighResolutionNetworkCoverEnabled: true } }),
+    );
+    expect(displaySettingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsHighResolutionNetworkCoverEnabled: true } }),
     );
 
     window.removeEventListener('settings:changed', settingsChangedListener);

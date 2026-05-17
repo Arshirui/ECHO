@@ -306,6 +306,11 @@ const isResidentOutputMode = (value: unknown): boolean => {
   return mode === 'exclusive' || mode === 'asio';
 };
 
+const canReuseResidentOutputBridge = (outputMode: AudioOutputMode): boolean => {
+  // ASIO drivers are more fragile across long-lived multi-session hosts, so rotate them per track.
+  return outputMode !== 'asio';
+};
+
 const normalizeLatencyProfile = (value: unknown): AudioLatencyProfile => {
   return value === 'stable' || value === 'lowLatency' ? value : 'balanced';
 };
@@ -1359,6 +1364,14 @@ export class AudioSession extends EventEmitter {
           this.emitStatus();
           return this.getStatus();
         } catch (error) {
+          if (this.runToken !== token) {
+            throw new Error('audio_session_run_cancelled');
+          }
+
+          if (isAudioSessionRunCancelledError(error)) {
+            throw error;
+          }
+
           const nativeDsdError = error instanceof Error ? error : new Error(String(error));
           this.addOutputWarning(`asio_native_dsd_fell_back_to_dop:${nativeDsdError.message.slice(0, 96)}`);
           await this.stopResourcesGracefully('asio-native-dsd-fallback-to-dop');
@@ -1405,6 +1418,14 @@ export class AudioSession extends EventEmitter {
           this.emitStatus();
           return this.getStatus();
         } catch (error) {
+          if (this.runToken !== token) {
+            throw new Error('audio_session_run_cancelled');
+          }
+
+          if (isAudioSessionRunCancelledError(error)) {
+            throw error;
+          }
+
           const dopError = error instanceof Error ? error : new Error(String(error));
           this.addOutputWarning(`dsd_dop_fell_back_to_pcm:${dopError.message.slice(0, 96)}`);
           await this.stopResourcesGracefully('dsd-dop-fallback-to-pcm');
@@ -1743,6 +1764,30 @@ export class AudioSession extends EventEmitter {
       this.stopDecoderRun();
       await this.syncEqStateForPlayback();
       this.assertCurrentRun(token);
+
+      const activeDsdOutputMode = this.currentPlan.dsdOutputMode;
+      let bitstreamRun: { stream: Readable; decodeBackendImpl: string; nativeSampleRate: number; transportSampleRate: number | null } | null = null;
+      if (activeDsdOutputMode === 'dop' || activeDsdOutputMode === 'native') {
+        try {
+          const info = await readDsfDopInfo(this.currentFilePath);
+          bitstreamRun = {
+            stream: activeDsdOutputMode === 'native'
+              ? createDsfNativeDsdStream(this.currentFilePath, info, safePositionSeconds)
+              : createDsfDopStream(this.currentFilePath, info, safePositionSeconds),
+            decodeBackendImpl: activeDsdOutputMode === 'native' ? 'dsf-bitstream-native-dsd' : 'dsf-bitstream-dop',
+            nativeSampleRate: info.nativeSampleRate,
+            transportSampleRate: activeDsdOutputMode === 'dop' ? info.transportSampleRate : null,
+          };
+        } catch (error) {
+          if (this.runToken !== token || isAudioSessionRunCancelledError(error)) {
+            return this.getStatus();
+          }
+
+          this.handleError(error instanceof Error ? error : new Error(String(error)));
+          return this.getStatus();
+        }
+      }
+
       const sessionId = this.bridge.beginSession?.({
         startSeconds: safePositionSeconds,
         playbackRate: this.currentOutputSettings.playbackRate ?? 1,
@@ -1751,6 +1796,21 @@ export class AudioSession extends EventEmitter {
       this.bridge.resetOutputClock?.(safePositionSeconds, this.currentOutputSettings.playbackRate ?? 1);
       this.attachBridgeEvents(this.bridge, token);
       this.clock.reset(safePositionSeconds, this.currentPlan.actualDeviceSampleRate ?? this.currentPlan.requestedOutputSampleRate);
+
+      if (bitstreamRun) {
+        const writable = this.bridge.createSessionWritable?.(sessionId) ?? this.bridge.writable;
+        if (!writable) {
+          throw new Error('native output bridge did not expose a writable DSD bitstream');
+        }
+        this.currentActiveDsdOutputMode = activeDsdOutputMode;
+        this.currentDsdNativeSampleRate = bitstreamRun.nativeSampleRate;
+        this.currentDsdTransportSampleRate = bitstreamRun.transportSampleRate;
+        this.currentDecodeBackendImpl = bitstreamRun.decodeBackendImpl;
+        this.startBitstreamRun(bitstreamRun.stream, writable, token);
+        this.resetWatchdogProgress();
+        this.emitStatus();
+        return this.getStatus();
+      }
 
       const run = await this.createDecoderRunForPlayback(
         this.currentFilePath,
@@ -2864,6 +2924,7 @@ export class AudioSession extends EventEmitter {
       );
       const isDsdDopOutput = this.currentPlan.dsdOutputMode === 'dop';
       const isAsioNativeDsdOutput = this.currentPlan.dsdOutputMode === 'native';
+      const residentReuseAllowed = canReuseResidentOutputBridge(outputMode);
 
       const startOptions = this.createNativeOutputStartOptions({
         requestedOutputSampleRate: this.currentPlan.requestedOutputSampleRate,
@@ -2892,7 +2953,7 @@ export class AudioSession extends EventEmitter {
         nativeDsdSampleRate: isAsioNativeDsdOutput ? this.currentPlan.dsdNativeSampleRate : null,
       });
       const reusableBridge = this.bridge;
-      if (!useDirectSoundBackend && reusableBridge?.canReuseFor?.(startOptions) && this.currentReadyResult) {
+      if (!useDirectSoundBackend && residentReuseAllowed && reusableBridge?.canReuseFor?.(startOptions) && this.currentReadyResult) {
         const residentSampleRate =
           isResidentOutputMode(outputMode) ? getReadyOutputSampleRate(this.currentReadyResult) : null;
         this.currentResidentOutputSampleRate = residentSampleRate;
@@ -2918,7 +2979,9 @@ export class AudioSession extends EventEmitter {
 
       const hostRestartReason = this.bridge
         ? this.currentReadyResult
-          ? 'reuse_key_changed'
+          ? residentReuseAllowed
+            ? 'reuse_key_changed'
+            : 'asio_session_rotation'
           : 'resident_host_not_ready'
         : 'initial_start';
 
@@ -3904,6 +3967,11 @@ export class AudioSession extends EventEmitter {
 
   private handleError(error: Error): void {
     this.logger(`[AudioSession] ${error.message}`);
+    if (isAudioSessionRunCancelledError(error)) {
+      this.logger('[AudioSession] ignored superseded playback run cancellation');
+      return;
+    }
+
     if (this.tryClaimRecoverableAudioError(error)) {
       this.stopResources();
       this.errorMessage = null;

@@ -112,6 +112,49 @@ const downloadSettings: DownloadSettings = {
   outputDirectory: 'D:\\Downloads',
 };
 
+const playbackStatus = {
+  host: 'ready',
+  state: 'stopped',
+  outputDeviceId: null,
+  outputDeviceName: null,
+  outputDeviceType: null,
+  outputBackend: 'wasapi-shared',
+  activeOutputBackendImpl: 'juce',
+  outputMode: 'shared',
+  sharedBackend: 'auto',
+  useJuceOutputRequested: true,
+  useJuceDecodeRequested: false,
+  activeDecodeBackendImpl: null,
+  volume: 1,
+  playbackRate: 1,
+  playbackSpeedMode: 'nightcore',
+  currentFilePath: null,
+  currentTrackId: null,
+  durationSeconds: 0,
+  positionSeconds: 0,
+  channels: null,
+  codec: null,
+  bitDepth: null,
+  bitrate: null,
+  fileSampleRate: null,
+  decoderOutputSampleRate: null,
+  requestedOutputSampleRate: null,
+  actualDeviceSampleRate: null,
+  sharedDeviceSampleRate: null,
+  resampling: false,
+  bitPerfectCandidate: false,
+  sampleRateMismatch: false,
+  eqEnabled: false,
+  channelBalanceEnabled: false,
+  dspActive: false,
+  preampDb: 0,
+  eqPresetName: null,
+  clippingRisk: false,
+  bitPerfectDisabledReason: null,
+  warnings: [],
+  error: null,
+};
+
 vi.mock('../i18n/I18nProvider', () => ({
   useI18n: () => ({
     locale: 'zh-CN',
@@ -504,7 +547,7 @@ describe('SettingsPage', () => {
     await screen.findByText('route.settings.label');
     fireEvent.click(screen.getAllByText('route.lyricsSettings.label')[0]);
     expect(screen.queryByText('Lyrics Engine')).toBeNull();
-    fireEvent.click(await screen.findByRole('checkbox', { name: /底栏抽屉/ }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: /迷你底栏/ }));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ lyricsPlayerBarDrawerEnabled: true }));
   });
@@ -725,6 +768,44 @@ describe('SettingsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'settings.shortcuts.action.restoreRecommended' }));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ globalShortcuts: createRecommendedGlobalShortcuts() }));
+  });
+
+  it('syncs the playback output select from the active device name when the host has no device id', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    audioGetStatusMock.mockResolvedValue({
+      ...playbackStatus,
+      outputDeviceName: 'USB DAC B',
+    });
+    audioListDevicesMock.mockResolvedValue([
+      {
+        id: 'shared-a',
+        index: 0,
+        name: 'USB DAC A',
+        outputMode: 'shared',
+        sampleRate: 48000,
+        sharedDeviceSampleRate: 48000,
+        isDefault: true,
+      },
+      {
+        id: 'shared-b',
+        index: 1,
+        name: 'USB DAC B',
+        outputMode: 'shared',
+        sampleRate: 96000,
+        sharedDeviceSampleRate: 96000,
+        isDefault: false,
+      },
+    ]);
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
+
+    expect(await screen.findByText('1 - USB DAC B')).toBeTruthy();
   });
 
   it('resets the audio engine from playback settings', async () => {

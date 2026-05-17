@@ -21,6 +21,11 @@ type PlaybackStatusSnapshot = {
 const idlePollingStates = new Set(['paused', 'stopped', 'idle', 'error']);
 const activePollingIntervalMs = 500;
 const idlePollingIntervalMs = 2000;
+const nonActionableAudioStatusErrorPatterns = [
+  /\beq_control_(?:closed|disconnected)\b/u,
+  /\beq_control_sync_skipped\b/u,
+  /\baudio_session_run_cancelled\b/u,
+];
 
 let snapshot: PlaybackStatusSnapshot = {
   audioStatus: null,
@@ -59,6 +64,17 @@ const isStaleStatusForVisualIntent = (status: AudioStatus | PlaybackStatus, inte
   Boolean(intent && playbackHasIdentity(status) && !playbackMatchesIntent(status, intent));
 
 const getAuthoritativeState = (): AudioPlaybackState => snapshot.audioStatus?.state ?? snapshot.playbackStatus?.state ?? 'idle';
+
+const getActionableAudioStatusError = (error: string | null | undefined): string | null => {
+  if (!error) {
+    return null;
+  }
+
+  return nonActionableAudioStatusErrorPatterns.some((pattern) => pattern.test(error)) ? null : error;
+};
+
+const shouldIgnoreAudioStatusPatch = (audioStatus: AudioStatus): boolean =>
+  audioStatus.state === 'error' && Boolean(audioStatus.error) && !getActionableAudioStatusError(audioStatus.error);
 
 const shouldClearVisualIntentForPatch = (
   patch: Partial<Omit<PlaybackStatusSnapshot, 'version'>>,
@@ -179,9 +195,9 @@ export const refreshPlaybackStatus = async (): Promise<PlaybackStatusSnapshot> =
     }
 
     return setPlaybackStatusSnapshot({
-      audioStatus,
+      audioStatus: shouldIgnoreAudioStatusPatch(audioStatus) ? null : audioStatus,
       playbackStatus,
-      error: audioStatus.error,
+      error: getActionableAudioStatusError(audioStatus.error),
     });
   } catch (error) {
     if (refreshRequestId !== requestId) {
@@ -240,7 +256,10 @@ const ensureStarted = (): void => {
 
   unsubscribeAudioStatus = window.echo?.audio?.onStatus?.((audioStatus) => {
     refreshRequestId += 1;
-    setPlaybackStatusSnapshot({ audioStatus, error: audioStatus.error });
+    setPlaybackStatusSnapshot({
+      audioStatus: shouldIgnoreAudioStatusPatch(audioStatus) ? null : audioStatus,
+      error: getActionableAudioStatusError(audioStatus.error),
+    });
   });
   document.addEventListener('visibilitychange', handleVisibilityChange);
   void refreshPlaybackStatus();

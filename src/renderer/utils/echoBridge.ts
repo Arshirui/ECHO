@@ -510,6 +510,12 @@ const browserStreamingBridge: StreamingBridgeApi = {
   getTrack: async () => {
     throw new Error('桌面桥接不可用，请在 ECHO Next 客户端窗口中读取流媒体歌曲。');
   },
+  getAlbum: async () => {
+    throw new Error('Desktop bridge unavailable. Open ECHO Next in Electron to read streaming albums.');
+  },
+  getArtist: async () => {
+    throw new Error('Desktop bridge unavailable. Open ECHO Next in Electron to read streaming artists.');
+  },
   resolvePlayback: async () => {
     throw new Error('桌面桥接不可用，请在 ECHO Next 客户端窗口中播放流媒体。');
   },

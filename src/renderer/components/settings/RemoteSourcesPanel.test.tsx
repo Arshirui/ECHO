@@ -245,4 +245,21 @@ describe('RemoteSourcesPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /删除/u }));
     await waitFor(() => expect(remoteApiMocks.delete).toHaveBeenCalledWith('source-1'));
   });
+
+  it('removes a deleted source from local state even if the refresh fails', async () => {
+    sources = [remoteSource()];
+    remoteApiMocks.list
+      .mockImplementationOnce(() => Promise.resolve(sources))
+      .mockImplementation(() => Promise.reject(new Error('refresh failed')));
+    remoteApiMocks.delete.mockResolvedValue(undefined);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<RemoteSourcesPanel />);
+
+    await screen.findByText('Mock AList');
+    fireEvent.click(screen.getByRole('button', { name: /删除/u }));
+
+    await waitFor(() => expect(remoteApiMocks.delete).toHaveBeenCalledWith('source-1'));
+    await waitFor(() => expect(screen.queryByText('Mock AList')).toBeNull());
+  });
 });

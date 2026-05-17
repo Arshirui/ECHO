@@ -46,6 +46,7 @@ export const isQqDefaultArtistImageUrl = (url: string | null | undefined): boole
 
   const normalized = url.toLocaleLowerCase();
   return /(?:default|nopic|no_pic|placeholder|avatar_default|singer_default|artist_default)/u.test(normalized)
+    || /\/t001r\d+x\d+m000[^./?#]+_0\.(?:jpg|jpeg|png|webp)(?:[?#]|$)/u.test(normalized)
     || /\/(?:0|default)\.(?:jpg|jpeg|png|webp)(?:[?#]|$)/u.test(normalized);
 };
 

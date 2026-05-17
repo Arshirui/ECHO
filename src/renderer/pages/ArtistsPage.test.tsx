@@ -184,6 +184,34 @@ describe('ArtistsPage', () => {
     expect(getArtists).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 96, search: '2hollis', sort: 'frequent' });
   });
 
+  it('can prioritize artists with avatars above the selected sort', async () => {
+    const getArtists = vi
+      .fn()
+      .mockResolvedValueOnce(page([artist('1')], { total: 2 }))
+      .mockResolvedValueOnce(page([artist('2', { avatarThumbUrl: 'echo-artist-image://thumb/artist-2', avatarStatus: 'matched' })], { total: 2 }))
+      .mockResolvedValueOnce(page([artist('1')], { total: 2 }));
+    installLibrary(getArtists);
+
+    renderArtistsPage();
+
+    await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(1));
+    expect(getArtists).toHaveBeenNthCalledWith(1, { page: 1, pageSize: 96, search: '', sort: 'default' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avatar First' }));
+    await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(2));
+    expect(getArtists).toHaveBeenNthCalledWith(2, {
+      page: 1,
+      pageSize: 96,
+      search: '',
+      sort: 'default',
+      prioritizeArtistAvatars: true,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avatar First' }));
+    await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(3));
+    expect(getArtists).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 96, search: '', sort: 'default' });
+  });
+
   it('search and sort reset the page surface scroll position', async () => {
     const getArtists = vi
       .fn()

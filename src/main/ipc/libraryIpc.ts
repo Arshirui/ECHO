@@ -142,6 +142,10 @@ const normalizeQuery = (value: unknown): LibraryPageQuery => {
     query.duplicateMode = 'strict';
   }
 
+  if (typeof input.prioritizeArtistAvatars === 'boolean') {
+    query.prioritizeArtistAvatars = input.prioritizeArtistAvatars;
+  }
+
   return query;
 };
 

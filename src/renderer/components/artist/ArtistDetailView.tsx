@@ -40,12 +40,24 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
   const [areTracksLoading, setAreTracksLoading] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
   const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(null);
+  const [failedHeroImageUrl, setFailedHeroImageUrl] = useState<string | null>(null);
   const detailRootRef = useRef<HTMLDivElement | null>(null);
   const detailScrollTopRef = useRef(0);
   const shouldRestoreDetailScrollRef = useRef(false);
   const source = useMemo(() => ({ type: 'artist' as const, label: artist.name, artistId: artist.id }), [artist.id, artist.name]);
   const displayArtist = verifiedArtist ?? artist;
   const displayedTrackCount = Math.max(displayArtist.trackCount, loadedTrackTotal);
+  const artistAvatarUrl = displayArtist.avatarUrl ?? displayArtist.avatarThumbUrl ?? null;
+  const heroImageUrl = artistAvatarUrl ?? displayArtist.coverThumb ?? null;
+  const shouldShowHeroImage = Boolean(heroImageUrl && failedHeroImageUrl !== heroImageUrl);
+  const heroAvatarSrcSet = artistAvatarUrl && displayArtist.avatarThumbUrl && displayArtist.avatarUrl && displayArtist.avatarThumbUrl !== displayArtist.avatarUrl
+    ? `${displayArtist.avatarThumbUrl} 192w, ${displayArtist.avatarUrl} 1024w`
+    : undefined;
+
+  useEffect(() => {
+    setVerifiedArtist(artist);
+    setFailedHeroImageUrl(null);
+  }, [artist]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -87,6 +99,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
 
   useEffect(() => {
     setSelectedAlbum(null);
+    setFailedHeroImageUrl(null);
   }, [artist.id]);
 
   useLayoutEffect(() => {
@@ -192,8 +205,23 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
       </button>
 
       <section className="artist-hero" aria-label={`${displayArtist.name} artist details`}>
-        <div className="artist-hero-avatar" aria-hidden="true">
-          <span>{artistMark(displayArtist.name)}</span>
+        <div className="artist-hero-avatar" data-cover={shouldShowHeroImage} aria-hidden="true">
+          {shouldShowHeroImage && heroImageUrl ? (
+            <img
+              alt=""
+              decoding="async"
+              draggable={false}
+              height={512}
+              loading="lazy"
+              sizes="160px"
+              src={heroImageUrl}
+              srcSet={heroAvatarSrcSet}
+              width={512}
+              onError={() => setFailedHeroImageUrl(heroImageUrl)}
+            />
+          ) : (
+            <span>{artistMark(displayArtist.name)}</span>
+          )}
         </div>
 
         <div className="artist-hero-copy">

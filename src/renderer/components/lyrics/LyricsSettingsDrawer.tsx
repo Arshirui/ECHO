@@ -53,6 +53,9 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsMvAutoShowTrackInfoDisabled'
   | 'lyricsEmptyStateHidden'
   | 'lyricsPlayerBarDrawerEnabled'
+  | 'lyricsPlayerBarDrawerOpacityPercent'
+  | 'lyricsPlayerBarDrawerColorMode'
+  | 'lyricsPlayerBarDrawerColor'
   | 'lyricsRomanizationEnabled'
   | 'lyricsTranslationEnabled'
   | 'lyricsWordHighlightEnabled'
@@ -62,6 +65,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsContextOpacityPercent'
   | 'lyricsColor'
   | 'lyricsSmartReadableColorsEnabled'
+  | 'lyricsHighResolutionNetworkCoverEnabled'
   | 'lyricsBackgroundMode'
   | 'lyricsCustomWallpaperPath'
   | 'lyricsCoverOpacityPercent'
@@ -86,6 +90,9 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsMvAutoShowTrackInfoDisabled: true,
   lyricsEmptyStateHidden: true,
   lyricsPlayerBarDrawerEnabled: false,
+  lyricsPlayerBarDrawerOpacityPercent: 78,
+  lyricsPlayerBarDrawerColorMode: 'default',
+  lyricsPlayerBarDrawerColor: '#232120',
   lyricsRomanizationEnabled: true,
   lyricsTranslationEnabled: true,
   lyricsWordHighlightEnabled: true,
@@ -95,6 +102,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
   lyricsSmartReadableColorsEnabled: false,
+  lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -244,6 +252,9 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsMvAutoShowTrackInfoDisabled: settings.lyricsMvAutoShowTrackInfoDisabled !== false,
   lyricsEmptyStateHidden: settings.lyricsEmptyStateHidden,
   lyricsPlayerBarDrawerEnabled: settings.lyricsPlayerBarDrawerEnabled === true,
+  lyricsPlayerBarDrawerOpacityPercent: settings.lyricsPlayerBarDrawerOpacityPercent ?? fallbackSettings.lyricsPlayerBarDrawerOpacityPercent,
+  lyricsPlayerBarDrawerColorMode: settings.lyricsPlayerBarDrawerColorMode ?? fallbackSettings.lyricsPlayerBarDrawerColorMode,
+  lyricsPlayerBarDrawerColor: settings.lyricsPlayerBarDrawerColor ?? fallbackSettings.lyricsPlayerBarDrawerColor,
   lyricsRomanizationEnabled: settings.lyricsRomanizationEnabled,
   lyricsTranslationEnabled: settings.lyricsTranslationEnabled,
   lyricsWordHighlightEnabled: settings.lyricsWordHighlightEnabled !== false,
@@ -253,6 +264,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent,
   lyricsColor: settings.lyricsColor,
   lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
+  lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
   lyricsBackgroundMode: settings.lyricsBackgroundMode,
   lyricsCustomWallpaperPath: settings.lyricsCustomWallpaperPath,
   lyricsCoverOpacityPercent: settings.lyricsCoverOpacityPercent,
@@ -318,6 +330,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     );
   }, [effectiveSettings.lyricsEnabledProviders, effectiveSettings.lyricsNetworkEnabled, effectiveSettings.lyricsProviderOrder]);
   const thresholdPercent = Math.round(effectiveSettings.lyricsAutoAcceptScore * 100);
+  const miniPlayerOpacityPercent = effectiveSettings.lyricsPlayerBarDrawerOpacityPercent ?? fallbackSettings.lyricsPlayerBarDrawerOpacityPercent;
+  const miniPlayerColor = effectiveSettings.lyricsPlayerBarDrawerColor ?? fallbackSettings.lyricsPlayerBarDrawerColor ?? '#232120';
   const offsetSeconds = useMemo(() => (effectiveSettings.lyricsDefaultOffsetMs / 1000).toFixed(1), [effectiveSettings.lyricsDefaultOffsetMs]);
   const isSecondaryLyricsSizeOpen =
     effectiveSettings.lyricsEnabled &&
@@ -511,7 +525,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   }, []);
 
   const patchSettingsDebounced = useCallback(
-    (patch: Partial<AppSettings>): void => {
+    (patch: Partial<AppSettings>, options: { broadcastSettings?: boolean } = {}): void => {
       const app = window.echo?.app;
       if (!app) {
         setError('Desktop bridge unavailable');
@@ -523,6 +537,9 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         ...patch,
       };
       setSettings((current) => ({ ...(current ?? fallbackSettings), ...(patch as Partial<LyricsDrawerSettings>) }));
+      if (options.broadcastSettings) {
+        dispatchSettingsChanged(patch);
+      }
       dispatchLyricsDisplaySettingsChanged(patch);
 
       if (debouncedSaveTimerRef.current !== null) {
@@ -1093,7 +1110,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           <label className="audio-toggle-row">
             <span>
               <EyeOff size={17} />
-              <strong>底栏抽屉</strong>
+              <strong>迷你底栏</strong>
             </span>
             <input
               type="checkbox"
@@ -1102,8 +1119,108 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsPlayerBarDrawerEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>开启后歌词页会隐藏底部播放栏，鼠标靠近窗口底部时自动拉出，离开后收回。</p>
-          <p>隐藏歌词页左上角封面、歌名和艺术家信息；底部播放栏仍会显示当前歌曲。</p>
+          <p>开启后歌词页会隐藏默认底部播放栏，改用贴在底部中央的小号控制条。</p>
+          <p>默认关闭；适合想保留歌词沉浸感、但仍要快速切歌和拖动进度时使用。</p>
+
+          {effectiveSettings.lyricsPlayerBarDrawerEnabled ? (
+            <div className="audio-drawer-mini-grid lyrics-mini-player-options">
+              <label className="lyrics-drawer-range">
+                <span>
+                  <strong>
+                    <EyeOff size={15} />
+                    底栏透明度
+                  </strong>
+                  <em>{miniPlayerOpacityPercent}%</em>
+                </span>
+                <input
+                  type="range"
+                  min={20}
+                  max={100}
+                  step={1}
+                  value={miniPlayerOpacityPercent}
+                  disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                  onChange={(event) =>
+                    patchSettingsDebounced(
+                      { lyricsPlayerBarDrawerOpacityPercent: Number(event.currentTarget.value) },
+                      { broadcastSettings: true },
+                    )
+                  }
+                />
+              </label>
+
+              <div className="lyrics-color-panel lyrics-mini-player-color-panel">
+                <div className="lyrics-color-panel__header">
+                  <span>
+                    <Palette size={15} />
+                    <strong>底栏颜色</strong>
+                  </span>
+                  <em>
+                    {effectiveSettings.lyricsPlayerBarDrawerColorMode === 'cover'
+                      ? '跟随封面'
+                      : effectiveSettings.lyricsPlayerBarDrawerColorMode === 'custom'
+                        ? miniPlayerColor
+                        : '默认深色'}
+                  </em>
+                </div>
+                <div className="lyrics-background-segmented lyrics-mini-player-color-modes" aria-label="迷你底栏颜色模式">
+                  {[
+                    ['default', '默认深色'],
+                    ['custom', '自定义'],
+                    ['cover', '跟随封面'],
+                  ].map(([mode, label]) => (
+                    <button
+                      type="button"
+                      key={mode}
+                      aria-pressed={effectiveSettings.lyricsPlayerBarDrawerColorMode === mode}
+                      disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                      onClick={() => void patchSettings({ lyricsPlayerBarDrawerColorMode: mode as AppSettings['lyricsPlayerBarDrawerColorMode'] })}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {effectiveSettings.lyricsPlayerBarDrawerColorMode === 'custom' ? (
+                  <>
+                    <div className="lyrics-color-panel__header lyrics-mini-player-custom-color">
+                      <span>
+                        <Palette size={15} />
+                        <strong>自定义颜色</strong>
+                      </span>
+                      <label className="lyrics-color-input" title="选择底栏颜色">
+                        <input
+                          type="color"
+                          value={miniPlayerColor}
+                          disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                          onChange={(event) => void patchSettings({ lyricsPlayerBarDrawerColor: event.currentTarget.value })}
+                        />
+                        <em>{miniPlayerColor}</em>
+                      </label>
+                    </div>
+                    <div className="lyrics-color-swatches" aria-label="迷你底栏颜色调色盘">
+                      {colorSwatches.map((color) => (
+                        <button
+                          className="lyrics-color-swatch"
+                          type="button"
+                          key={color}
+                          style={{ backgroundColor: color }}
+                          aria-label={`使用底栏颜色 ${color}`}
+                          aria-pressed={miniPlayerColor.toUpperCase() === color}
+                          disabled={isBusy || !effectiveSettings.lyricsEnabled}
+                          onClick={() => void patchSettings({ lyricsPlayerBarDrawerColor: color })}
+                        >
+                          {miniPlayerColor.toUpperCase() === color ? <Check size={13} /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
+                {effectiveSettings.lyricsPlayerBarDrawerColorMode === 'cover' ? (
+                  <p>会从当前歌曲封面提取颜色，并自动压暗成适合按钮阅读的玻璃色。</p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           <label className="audio-toggle-row">
             <span>
@@ -1364,6 +1481,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             ))}
           </div>
           <p>封面模式会使用当前歌曲封面；自定义壁纸会保存到应用数据目录。</p>
+
+          <label className="audio-toggle-row lyrics-background-network-cover-toggle">
+            <span>
+              <ImageIcon size={17} />
+              <strong>请求网络元数据的高清封面</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsHighResolutionNetworkCoverEnabled === true}
+              disabled={isBusy || effectiveSettings.lyricsBackgroundMode !== 'cover'}
+              onChange={(event) => void patchSettings({ lyricsHighResolutionNetworkCoverEnabled: event.currentTarget.checked })}
+            />
+          </label>
+          <p>仅在跟随封面时临时请求高清封面作为歌词背景；关闭时只使用本地封面兜底。</p>
 
           <div className="lyrics-cover-tuning">
             <p>跟随封面和自定义壁纸都会使用这里的透明度、模糊度和亮度。</p>

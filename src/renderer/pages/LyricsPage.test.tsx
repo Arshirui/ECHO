@@ -147,6 +147,7 @@ const makeAppSettings = (
   lyricsContextOpacityPercent: 49,
   lyricsColor: "#314054",
   lyricsSmartReadableColorsEnabled: false,
+  lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsBackgroundMode: "theme",
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -407,14 +408,20 @@ afterEach(() => {
 });
 
 describe("LyricsPage", () => {
-  it("keeps MV immersive lyrics color driven by the lyrics color variable", () => {
+  it("keeps MV immersive lyrics readable over bright videos in dark mode", () => {
     const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
 
-    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line \{\s*color: var\(--lyrics-color\);/);
-    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line\[data-active="true"\] \{\s*color: var\(--lyrics-color\);/);
+    expect(css).toContain("--lyrics-word-accent-color: var(--lyrics-color);");
+    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line \{\s*color: var\(--lyrics-readable-color\);/);
+    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line\[data-active="true"\] \{\s*color: var\(--lyrics-readable-color\);/);
+    expect(css).toContain('html[data-theme="dark"] .lyrics-page:has(.lyrics-mv-background)');
+    expect(css).toContain("--lyrics-readable-color: color-mix(in srgb, var(--theme-heading-text) 86%, var(--lyrics-color) 14%);");
+    expect(css).toContain("--lyrics-word-accent-color: color-mix(in srgb, var(--color-accent-strong) 72%, var(--theme-heading-text) 28%);");
+    expect(css).toMatch(/html\[data-theme="dark"\] \.lyrics-mv-background::after \{\s*opacity: max\(var\(--mv-immersive-overlay-opacity\), 0\.42\);/);
+    expect(css).toContain("var(--lyrics-word-accent-color) 0 calc(var(--lyrics-word-progress) * 100%)");
     expect(css).toContain('.lyrics-page:has(.lyrics-mv-panel[data-lyrics-readability="true"]) .lyrics-line span');
     expect(css).toContain('.lyrics-page:has(.lyrics-mv-panel[data-lyrics-readability="true"]) .lyrics-line[data-word-highlight="true"] .lyrics-word');
-    expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line(?:\[data-active="true"\])? \{\s*color: #fff;/);
+    expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line(?:\[data-active="true"\])? \{\s*color: var\(--lyrics-color\);/);
   });
 
   it("keeps MV immersive lyrics on the normal lyrics size scale", () => {
@@ -423,6 +430,40 @@ describe("LyricsPage", () => {
     expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line span \{\s*max-width: min\(100%, 1120px\);\s*font-size: calc\(var\(--lyrics-font-size\) \* 0\.9\);/);
     expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line\[data-active="true"\] span \{\s*font-size: calc\(var\(--lyrics-font-size\) \* 1\.25\);/);
     expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\)[\s\S]*font-size: calc\(var\(--lyrics-font-size\) \* 1\.5\);/);
+  });
+
+  it("scopes smart readable colors to lyric text only", () => {
+    const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
+    const polishCss = readFileSync("src/renderer/styles/ui-polish.css", "utf8");
+
+    expect(css).toContain('.lyrics-page[data-smart-readable="true"] .lyrics-line,');
+    expect(css).toContain('.lyrics-page[data-smart-readable="true"] .lyrics-line[data-active="true"] {');
+    expect(css).not.toContain('.lyrics-page[data-smart-readable="true"]::after');
+    expect(css).not.toContain('.lyrics-page[data-smart-readable="true"] .lyrics-track-copy h1');
+    expect(css).not.toContain('.lyrics-page[data-smart-readable="true"] .lyrics-track-copy p');
+    expect(css).not.toContain('.lyrics-page[data-smart-readable="true"] .lyrics-track-album');
+    expect(css).not.toContain('.lyrics-page[data-smart-readable="true"] .lyrics-track-status');
+    expect(css).not.toContain('.lyrics-page[data-smart-readable="true"] .lyrics-back-button');
+    expect(polishCss).not.toContain('data-lyrics-smart-readable');
+  });
+
+  it("keeps the optional lyrics mini player compact, setting gated, and clear of cover-only shelves", () => {
+    const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
+    const layoutCss = readFileSync("src/renderer/styles/layout.css", "utf8");
+    const polishCss = readFileSync("src/renderer/styles/ui-polish.css", "utf8");
+
+    expect(layoutCss).toMatch(/\.app-shell--lyrics-player-drawer \{[\s\S]*?grid-template-rows: var\(--titlebar-height\) minmax\(0, 1fr\) 0;/);
+    expect(layoutCss).toMatch(/\.lyrics-player-drawer-host \{[\s\S]*?position: fixed;[\s\S]*?width: min\(780px, calc\(100vw - 96px\)\);/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.player-bar \{[\s\S]*?min-height: 54px;[\s\S]*?border-radius: 999px;[\s\S]*?background: var\(--lyrics-mini-player-background, rgba\(35, 33, 32, 0\.78\)\);/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.player-center \{[\s\S]*?grid-template-columns: auto auto;[\s\S]*?justify-content: center;/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.progress-row \{[\s\S]*?width: clamp\(210px, 22vw, 280px\);/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-left-panel \{\s*grid-template-rows: clamp\(54px, 8vh, 86px\) minmax\(0, 1fr\);/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-scroll \{[\s\S]*?padding-bottom: clamp\(76px, 10vh, 112px\);/);
+    expect(css).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{\s*display: none;/);
+    expect(css).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.app-shell--lyrics-player-drawer \.lyrics-page:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-left-panel \{\s*grid-template-rows: 58px minmax\(0, 1fr\);/);
+    expect(polishCss).toMatch(/\.app-shell--lyrics-player-drawer \.lyrics-player-drawer-host \.player-bar \{[\s\S]*?background: var\(--lyrics-mini-player-background, rgba\(35, 33, 32, 0\.78\)\);[\s\S]*?backdrop-filter: blur\(22px\) saturate\(1\.18\);/);
+    expect(css).not.toMatch(/\.app-shell:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.player-bar \{/);
+    expect(polishCss).not.toMatch(/\.app-shell:has\(\.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.player-bar \{/);
   });
 
   it("does not wash out the lyrics wallpaper when regular MV is visible", () => {
@@ -1013,11 +1054,15 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-cover")).toBe(
       'url("echo-cover://original/cover%201")',
     );
+    expect(window.echo.library.resolveLyricsBackgroundCover).not.toHaveBeenCalled();
   });
 
   it("uses a high resolution network cover for cover-following lyrics background when available", async () => {
     const track = makeTrack({ coverId: "cover 1" });
-    mockEcho(track, 0, { lyricsBackgroundMode: "cover" });
+    mockEcho(track, 0, {
+      lyricsBackgroundMode: "cover",
+      lyricsHighResolutionNetworkCoverEnabled: true,
+    });
     let resolveNetworkCover!: (value: {
       coverUrl: string;
       provider: string;
@@ -1302,6 +1347,50 @@ describe("LyricsPage", () => {
     expect(container.querySelector(".lyrics-risk-badge--medium")).toBeTruthy();
   });
 
+  it("auto-applies exact identity candidates above the threshold when only duration differs", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, { lyricsAutoAcceptScore: 0.56 });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(null),
+      searchCandidates: vi.fn().mockResolvedValue([
+        makeLyricsCandidate({
+          id: "candidate-duration-mismatch",
+          score: 0.7,
+          risk: "high",
+          reasons: ["title_exact", "artist_exact", "duration_mismatch"],
+          titleScore: 1,
+          artistScore: 1,
+          durationScore: 0.04,
+        }),
+      ]),
+      applyCandidate: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: [{ timeMs: 0, text: "Duration mismatch auto applied" }],
+          syncedText: "[00:00.00]Duration mismatch auto applied",
+          plainText: "Duration mismatch auto applied",
+        }),
+      ),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Duration mismatch auto applied")).toBeTruthy();
+    expect(window.echo.lyrics.applyCandidate).toHaveBeenCalledWith(
+      "track-1",
+      "candidate-duration-mismatch",
+    );
+  });
+
   it("allows manually applying candidates below the auto-apply threshold", async () => {
     const track = makeTrack();
     mockEcho(track);
@@ -1343,6 +1432,43 @@ describe("LyricsPage", () => {
       ),
     );
     expect(await screen.findByText("Manually selected line")).toBeTruthy();
+  });
+
+  it("auto-closes the lyrics candidate panel after ten seconds without interaction", async () => {
+    vi.useFakeTimers();
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(null),
+      searchCandidates: vi.fn().mockResolvedValue([
+        makeLyricsCandidate({ id: "candidate-low-score", score: 0.42 }),
+      ]),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(container.querySelector(".lyrics-match-panel")).toBeTruthy());
+
+    act(() => {
+      vi.advanceTimersByTime(9999);
+    });
+    expect(container.querySelector(".lyrics-match-panel")).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(container.querySelector(".lyrics-match-panel")).toBeNull();
   });
 
   it("auto-applies a high scoring candidate after rematching lyrics", async () => {
@@ -1849,7 +1975,7 @@ describe("LyricsPage", () => {
     await waitFor(() => expect(page.dataset.smartReadable).toBe("true"));
     expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toMatch(/^rgb\(/);
     expect(page.style.getPropertyValue("--lyrics-smart-secondary-color")).toMatch(/^rgb\(/);
-    expect(document.documentElement.dataset.lyricsSmartReadable).toBe("true");
+    expect(document.documentElement.dataset.lyricsSmartReadable).toBeUndefined();
   });
 
   it("applies lyrics display settings from settings change events immediately", async () => {

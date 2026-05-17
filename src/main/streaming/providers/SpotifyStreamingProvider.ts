@@ -1,6 +1,8 @@
 import type {
   StreamingAlbum,
+  StreamingAlbumDetail,
   StreamingArtist,
+  StreamingArtistDetail,
   StreamingArtistRef,
   StreamingLyricsResult,
   StreamingPlaybackRequest,
@@ -63,6 +65,8 @@ const spotifyApiFetch = async <T>(path: string): Promise<T> => {
 
   return (await response.json()) as T;
 };
+
+void spotifyApiFetch;
 
 const spotifyApiFetchJson = async <T>(path: string): Promise<T> => {
   const response = await fetch(`${spotifyApiBaseUrl}${path}`, {
@@ -376,6 +380,50 @@ export class SpotifyStreamingProvider implements StreamingProvider {
     return track;
   }
 
+  async getAlbum(input: { providerAlbumId: string }): Promise<StreamingAlbumDetail> {
+    const data = await spotifyApiFetchJson<unknown>(`/albums/${encodeURIComponent(input.providerAlbumId)}`);
+    const album = albumFrom(data);
+    if (!album) {
+      throw new Error('Spotify album is unavailable.');
+    }
+
+    const albumRecord = asRecord(data);
+    const trackItems = itemsFromPage(albumRecord.tracks);
+    const tracks = trackItems
+      .map((item) => trackFrom({ ...asRecord(item), album: albumRecord }))
+      .filter((track): track is StreamingTrack => Boolean(track));
+
+    return {
+      ...album,
+      tracks,
+    };
+  }
+
+  async getArtist(input: { providerArtistId: string }): Promise<StreamingArtistDetail> {
+    const artist = artistFrom(await spotifyApiFetchJson<unknown>(`/artists/${encodeURIComponent(input.providerArtistId)}`));
+    if (!artist) {
+      throw new Error('Spotify artist is unavailable.');
+    }
+
+    const [topTracksData, albumsData] = await Promise.all([
+      spotifyApiFetchJson<unknown>(`/artists/${encodeURIComponent(input.providerArtistId)}/top-tracks`),
+      spotifyApiFetchJson<unknown>(`/artists/${encodeURIComponent(input.providerArtistId)}/albums?limit=20&include_groups=album,single`),
+    ]);
+    const topTrackItems: unknown[] = Array.isArray(asRecord(topTracksData).tracks) ? asRecord(topTracksData).tracks as unknown[] : [];
+    const topTracks = topTrackItems
+      .map(trackFrom)
+      .filter((track): track is StreamingTrack => Boolean(track));
+    const albums = itemsFromPage(albumsData)
+      .map(albumFrom)
+      .filter((album): album is StreamingAlbum => Boolean(album));
+
+    return {
+      ...artist,
+      topTracks,
+      albums,
+    };
+  }
+
   async getPlaylist(input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> {
     const page = Math.max(1, Math.floor(input.page ?? 1));
     const pageSize = Math.min(100, Math.max(1, Math.floor(input.pageSize ?? 50)));
@@ -436,6 +484,7 @@ export class SpotifyStreamingProvider implements StreamingProvider {
   }
 
   async resolvePlayback(_request: StreamingPlaybackRequest): Promise<StreamingPlaybackSource> {
+    void _request;
     throw new Error('Spotify 由官方 Web Playback SDK 播放，不提供可下载音频 URL。');
   }
 }

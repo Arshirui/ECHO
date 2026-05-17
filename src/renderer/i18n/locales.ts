@@ -172,6 +172,7 @@ export type TranslationKey =
   | 'library.albums.sort.titleDesc'
   | 'library.albums.title'
   | 'library.artists.error.desktopBridge'
+  | 'library.artists.avatarPriority'
   | 'library.artists.listAria'
   | 'library.artists.loading'
   | 'library.artists.meta.albums'
@@ -1027,6 +1028,7 @@ const zhCN: TranslationMap = {
   'library.albums.sort.titleDesc': '标题 Z-A',
   'library.albums.title': '专辑',
   'library.artists.error.desktopBridge': '桌面桥接不可用。请在 ECHO Next 桌面版中读取艺术家。',
+  'library.artists.avatarPriority': '头像优先',
   'library.artists.listAria': '艺术家列表',
   'library.artists.loading': '正在加载艺术家...',
   'library.artists.meta.albums': '{count} 张专辑',
@@ -1730,6 +1732,7 @@ const zhTW: TranslationMap = {
   'library.albums.sort.titleDesc': '標題 Z-A',
   'library.albums.title': '專輯',
   'library.artists.error.desktopBridge': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取藝術家。',
+  'library.artists.avatarPriority': '頭像優先',
   'library.artists.listAria': '藝術家列表',
   'library.artists.loading': '正在載入藝術家...',
   'library.artists.meta.albums': '{count} 張專輯',
@@ -2308,6 +2311,7 @@ const jaJP: TranslationMap = {
   'library.albums.sort.titleDesc': 'タイトル Z-A',
   'library.albums.title': 'アルバム',
   'library.artists.error.desktopBridge': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でアーティストを読み込んでください。',
+  'library.artists.avatarPriority': '画像優先',
   'library.artists.listAria': 'アーティスト一覧',
   'library.artists.loading': 'アーティストを読み込み中...',
   'library.artists.meta.albums': '{count} アルバム',
@@ -2970,6 +2974,7 @@ const enUS: TranslationMap = {
   'library.albums.sort.titleDesc': 'Title Z-A',
   'library.albums.title': 'Albums',
   'library.artists.error.desktopBridge': 'Desktop bridge unavailable. Open ECHO Next in Electron to read artists.',
+  'library.artists.avatarPriority': 'Avatar First',
   'library.artists.listAria': 'Artist list',
   'library.artists.loading': 'Loading artists...',
   'library.artists.meta.albums': '{count} albums',

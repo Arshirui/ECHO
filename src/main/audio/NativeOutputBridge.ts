@@ -652,6 +652,10 @@ export class NativeOutputBridge extends EventEmitter {
 
   canReuseFor(options: NativeOutputStartOptions): boolean {
     const stdin = this.proc?.stdin;
+    if (normalizeOutputMode(options) === 'asio') {
+      return false;
+    }
+
     return Boolean(
       this.ready &&
       this.proc &&

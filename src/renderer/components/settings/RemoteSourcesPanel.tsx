@@ -100,6 +100,11 @@ const readConfigNumber = (source: RemoteSource, key: string, fallback: number): 
 };
 
 const defaultNameFor = (provider: RemoteSourceProvider): string => providerLabels[provider];
+const withoutSourceKey = <T,>(sourceId: string, values: Record<string, T>): Record<string, T> => {
+  const next = { ...values };
+  delete next[sourceId];
+  return next;
+};
 
 export const RemoteSourcesPanel = (): JSX.Element => {
   const remoteApi = getRemoteSourcesBridge();
@@ -324,6 +329,10 @@ export const RemoteSourcesPanel = (): JSX.Element => {
           return;
         }
         await remoteApi.delete(source.id);
+        setSources((current) => current.filter((item) => item.id !== source.id));
+        setSyncStatuses((current) => withoutSourceKey(source.id, current));
+        setJobStatuses((current) => withoutSourceKey(source.id, current));
+        setBrowsePreviews((current) => withoutSourceKey(source.id, current));
         window.dispatchEvent(new Event('library:changed'));
         setMessage('来源已删除，相关远程索引已移除。');
       } else if (action === 'cancel') {

@@ -204,10 +204,16 @@ describe('AppLayout standalone routes', () => {
     expect(screen.getByRole('complementary', { name: 'Main navigation' })).toBeTruthy();
   });
 
-  it('uses the lyrics player bar drawer when the lyrics setting is enabled', async () => {
+  it('uses the lyrics mini player bar when the lyrics setting is enabled', async () => {
     window.echo = {
       app: {
-        getSettings: vi.fn().mockResolvedValue({ lyricsPlayerBarDrawerEnabled: true, smtcEnabled: true }),
+        getSettings: vi.fn().mockResolvedValue({
+          lyricsPlayerBarDrawerEnabled: true,
+          lyricsPlayerBarDrawerOpacityPercent: 64,
+          lyricsPlayerBarDrawerColorMode: 'custom',
+          lyricsPlayerBarDrawerColor: '#ff3366',
+          smtcEnabled: true,
+        }),
       },
     } as unknown as Window['echo'];
 
@@ -221,14 +227,16 @@ describe('AppLayout standalone routes', () => {
     fireEvent.click(within(sidebar).getByRole('button', { name: 'Lyrics' }));
 
     await waitFor(() => expect(container.querySelector('.app-shell--lyrics-player-drawer')).toBeTruthy());
-    const drawerZone = container.querySelector('.lyrics-player-drawer-zone') as HTMLElement;
-    expect(drawerZone).toBeTruthy();
-    fireEvent.pointerEnter(drawerZone);
-    expect(container.querySelector('.app-shell--lyrics-player-drawer-open')).toBeTruthy();
+    expect(container.querySelector('.app-shell--lyrics-mini-player')).toBeTruthy();
+    expect(container.querySelector('.lyrics-player-drawer-zone')).toBeNull();
+    const miniHost = container.querySelector('.lyrics-player-drawer-host') as HTMLElement;
+    expect(miniHost.querySelector('.player-bar')).toBeTruthy();
+    expect(miniHost.dataset.miniPlayerColorMode).toBe('custom');
+    expect(miniHost.style.getPropertyValue('--lyrics-mini-player-background')).toBe('rgba(255, 51, 102, 0.64)');
     expect(screen.getByRole('contentinfo')).toBeTruthy();
   });
 
-  it('keeps the same player bar instance when entering the lyrics drawer', async () => {
+  it('keeps the same player bar instance when entering the lyrics mini player', async () => {
     const unsubscribeAudioStatus = vi.fn();
     const audioOnStatus = vi.fn(() => unsubscribeAudioStatus);
 

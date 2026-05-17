@@ -78,6 +78,31 @@ import {
 
 const isDevBuild = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 
+const normalizeAsioOutputChannelStart = (value: unknown): number | undefined => {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 0 ? numeric : undefined;
+};
+
+const deviceMatchesAudioStatus = (device: AudioDeviceInfo, status: AudioStatus | null): boolean => {
+  if (!status) {
+    return false;
+  }
+
+  const modeMatches = status.outputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared';
+  if (!modeMatches) {
+    return false;
+  }
+
+  const identityMatches = status.outputDeviceId === device.id || status.outputDeviceName === device.name;
+  if (!identityMatches || status.outputMode !== 'asio') {
+    return identityMatches;
+  }
+
+  const deviceChannelStart = normalizeAsioOutputChannelStart(device.asioOutputChannelStart) ?? 0;
+  const statusChannelStart = normalizeAsioOutputChannelStart(status.asioOutputChannelStart) ?? 0;
+  return deviceChannelStart === statusChannelStart;
+};
+
 const playbackSpeedModes: Array<{ mode: PlaybackSpeedMode; label: string }> = [
   { mode: 'nightcore', label: 'Nightcore' },
   { mode: 'daycore', label: 'Daycore' },
@@ -1410,6 +1435,10 @@ export const SettingsPage = (): JSX.Element => {
     () => devices.filter((device) => (outputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')),
     [devices, outputMode],
   );
+  const statusSelectedDevice = useMemo(
+    () => devices.find((device) => deviceMatchesAudioStatus(device, status)) ?? null,
+    [devices, status],
+  );
   const outputDeviceOptions = useMemo(
     () =>
       compatibleDevices.length === 0
@@ -1611,7 +1640,7 @@ export const SettingsPage = (): JSX.Element => {
   }, [activeSection]);
 
   useEffect(() => {
-    if (activeSection !== 'appearance') {
+    if (activeSection !== 'library') {
       return undefined;
     }
 
@@ -1645,7 +1674,7 @@ export const SettingsPage = (): JSX.Element => {
     void refreshSummary();
     timer = window.setInterval(() => {
       void refreshSummary();
-    }, 1500);
+    }, 750);
 
     return () => {
       disposed = true;
@@ -1692,10 +1721,10 @@ export const SettingsPage = (): JSX.Element => {
   }, [status?.outputBackend, status?.outputMode, status?.sharedBackend]);
 
   useEffect(() => {
-    if (status?.outputDeviceId && devices.some((device) => device.id === status.outputDeviceId)) {
-      setSelectedDeviceId(status.outputDeviceId);
+    if (statusSelectedDevice) {
+      setSelectedDeviceId(statusSelectedDevice.id);
     }
-  }, [devices, status?.outputDeviceId]);
+  }, [statusSelectedDevice]);
 
   useEffect(() => {
     if (appSettings?.albumMergeStrategy) {
@@ -1712,6 +1741,10 @@ export const SettingsPage = (): JSX.Element => {
   }, [accountStatusByProvider.youtube?.displayName]);
 
   useEffect(() => {
+    if (statusSelectedDevice && compatibleDevices.some((device) => device.id === statusSelectedDevice.id)) {
+      return;
+    }
+
     if (compatibleDevices.length === 0) {
       setSelectedDeviceId('');
       return;
@@ -1720,7 +1753,7 @@ export const SettingsPage = (): JSX.Element => {
     if (!compatibleDevices.some((device) => device.id === selectedDeviceId)) {
       setSelectedDeviceId(compatibleDevices.find((device) => device.isDefault)?.id ?? compatibleDevices[0].id);
     }
-  }, [compatibleDevices, selectedDeviceId]);
+  }, [compatibleDevices, selectedDeviceId, statusSelectedDevice]);
 
   useEffect(() => {
     if (activeSection !== 'appearance') {
@@ -4365,7 +4398,7 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
                 title="BPM / Offset 分析"
-                description="默认开启。开启后会在扫描结束和播放歌曲时低优先级分析缺失 BPM，并把高置信 BPM 写入歌曲标签。"
+                description="默认开启。开启后会在扫描结束和播放歌曲时低优先级分析缺失 BPM，并把检测到的 BPM 写入歌曲标签。"
               >
                 <div className="settings-cache-panel">
                   <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">

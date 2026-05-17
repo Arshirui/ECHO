@@ -2516,6 +2516,61 @@
   user-select: text;
 }
 
+.player-track-copy .player-marquee {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.player-marquee-inner {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.player-marquee[data-overflow="true"] .player-marquee-inner {
+  max-width: none;
+  padding-right: 18px;
+  animation: player-marquee-scroll var(--player-marquee-duration, 12s) ease-in-out infinite;
+  will-change: transform;
+}
+
+.player-marquee[data-overflow="true"]:hover .player-marquee-inner,
+.player-marquee[data-overflow="true"]:focus-visible .player-marquee-inner {
+  animation-play-state: paused;
+}
+
+@keyframes player-marquee-scroll {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+
+  58%,
+  76% {
+    transform: translateX(calc(var(--player-marquee-distance, 0px) * -1));
+  }
+
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-marquee[data-overflow="true"] .player-marquee-inner {
+    max-width: 100%;
+    padding-right: 0;
+    animation: none;
+    will-change: auto;
+  }
+}
+
 .player-status-card {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

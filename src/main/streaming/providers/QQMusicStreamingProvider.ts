@@ -1,12 +1,15 @@
 import type { AccountStatus } from '../../../shared/types/accounts';
 import type {
   StreamingAlbum,
+  StreamingAlbumDetail,
   StreamingArtist,
+  StreamingArtistDetail,
   StreamingArtistRef,
   StreamingLyricsResult,
   StreamingMvResult,
   StreamingPlaybackRequest,
   StreamingPlaybackSource,
+  StreamingPlaylist,
   StreamingPlaylistDetail,
   StreamingProviderDescriptor,
   StreamingSearchRequest,
@@ -16,6 +19,7 @@ import type {
 import { streamingStableKey } from '../../../shared/types/streaming';
 import { getAccountService } from '../../accounts/AccountService';
 import type { StreamingProvider } from '../StreamingProvider';
+import { streamingSearchQueryVariants } from '../StreamingSearchQueryVariants';
 import { asRecord, integer, jsonFetch, linesFromLyrics, maybeDecodeBase64, number, splitLyricsByKind, streamingImageProxyUrl, text } from './chinaStreamingUtils';
 
 const provider = 'qqmusic' as const;
@@ -179,6 +183,47 @@ const mapArtist = (artistValue: unknown): StreamingArtist => {
   };
 };
 
+const artistFromRef = (artist: StreamingArtistRef): StreamingArtist => ({
+  id: streamingStableKey(provider, `artist:${artist.providerArtistId}`),
+  provider,
+  providerArtistId: artist.providerArtistId,
+  name: artist.name,
+  avatarUrl: null,
+  coverUrl: null,
+});
+
+const uniqueArtistsFromTracks = (tracks: StreamingTrack[]): StreamingArtist[] => {
+  const artistsById = new Map<string, StreamingArtist>();
+  for (const track of tracks) {
+    for (const artist of track.artists) {
+      if (!artistsById.has(artist.providerArtistId)) {
+        artistsById.set(artist.providerArtistId, artistFromRef(artist));
+      }
+    }
+  }
+
+  return [...artistsById.values()];
+};
+
+const mapPlaylist = (playlistValue: unknown): StreamingPlaylist => {
+  const playlist = asRecord(playlistValue);
+  const providerPlaylistId = text(playlist.dissid) ?? text(playlist.disstid) ?? text(playlist.id) ?? text(playlist.tid) ?? text(playlist.dirid) ?? text(playlist.name) ?? 'playlist';
+  const title = text(playlist.dissname) ?? text(playlist.dirName) ?? text(playlist.name) ?? text(playlist.title) ?? 'QQ Music Playlist';
+  const rawCover = text(playlist.imgurl) ?? text(playlist.logo) ?? text(playlist.picurl) ?? text(playlist.cover_url) ?? text(playlist.coverUrl);
+
+  return {
+    id: streamingStableKey(provider, `playlist:${providerPlaylistId}`),
+    provider,
+    providerPlaylistId,
+    title,
+    description: text(playlist.introduction) ?? text(playlist.desc) ?? text(playlist.description),
+    creator: text(playlist.creator) ?? text(playlist.nickname) ?? text(playlist.username) ?? text(playlist.dissCreator),
+    coverUrl: rawCover ? streamingImageProxyUrl(rawCover, qqReferer) : null,
+    coverThumb: rawCover ? streamingImageProxyUrl(rawCover, qqReferer) : null,
+    trackCount: integer(playlist.song_count ?? playlist.songCount ?? playlist.songnum ?? playlist.total_song_num),
+  };
+};
+
 const qqSearchType = (request: StreamingSearchRequest): number => {
   const mediaType = request.mediaTypes?.[0] ?? 'track';
   if (mediaType === 'album') {
@@ -186,6 +231,9 @@ const qqSearchType = (request: StreamingSearchRequest): number => {
   }
   if (mediaType === 'artist') {
     return 9;
+  }
+  if (mediaType === 'playlist') {
+    return 3;
   }
   return 0;
 };
@@ -223,6 +271,41 @@ export class QQMusicStreamingProvider implements StreamingProvider {
   }
 
   async search(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
+    const variants = (request.page ?? 1) === 1 ? streamingSearchQueryVariants(request.query) : [request.query];
+    let firstResult: StreamingSearchResult | null = null;
+
+    for (const query of variants) {
+      const result = await this.searchOnce({ ...request, query });
+      firstResult ??= result;
+      if (result.tracks.length > 0 || result.albums.length > 0 || result.artists.length > 0 || result.playlists.length > 0) {
+        return { ...result, query: request.query };
+      }
+    }
+
+    if ((request.mediaTypes?.[0] ?? 'track') === 'artist' && (request.page ?? 1) === 1) {
+      for (const query of variants) {
+        const trackResult = await this.searchOnce({ ...request, query, mediaTypes: ['track'] });
+        const artists = uniqueArtistsFromTracks(trackResult.tracks);
+        if (artists.length > 0) {
+          return {
+            ...trackResult,
+            query: request.query,
+            tracks: [],
+            albums: [],
+            artists: artists.slice(0, request.pageSize ?? 20),
+            playlists: [],
+            mvs: [],
+            total: artists.length,
+            hasMore: false,
+          };
+        }
+      }
+    }
+
+    return firstResult ? { ...firstResult, query: request.query } : this.searchOnce(request);
+  }
+
+  private async searchOnce(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
     const page = Math.max(1, Math.floor(request.page ?? 1));
     const pageSize = Math.min(50, Math.max(1, Math.floor(request.pageSize ?? 20)));
     const searchType = qqSearchType(request);
@@ -255,15 +338,25 @@ export class QQMusicStreamingProvider implements StreamingProvider {
     const songData = asRecord(bodyData.song);
     const albumData = asRecord(bodyData.album);
     const singerData = asRecord(bodyData.singer);
+    const playlistData = asRecord(bodyData.songlist ?? bodyData.playlist ?? bodyData.mv);
     const meta = asRecord(payload.meta);
     const songs = Array.isArray(songData.list) ? songData.list : [];
     const albums = Array.isArray(albumData.list) ? albumData.list : [];
     const artists = Array.isArray(singerData.list) ? singerData.list : [];
+    const playlistRecords = Array.isArray(playlistData.list)
+      ? playlistData.list
+      : Array.isArray(playlistData.itemlist)
+        ? playlistData.itemlist
+        : searchType === 3
+          ? findPlaylistRecords(bodyData)
+          : [];
     const total =
       searchType === 8
         ? integer(albumData.totalnum ?? albumData.total ?? meta.sum ?? meta.estimate_sum)
         : searchType === 9
           ? integer(singerData.totalnum ?? singerData.total ?? meta.sum ?? meta.estimate_sum)
+          : searchType === 3
+            ? integer(playlistData.totalnum ?? playlistData.total ?? meta.sum ?? meta.estimate_sum)
           : integer(songData.totalnum ?? songData.total ?? meta.sum ?? meta.estimate_sum);
 
     return {
@@ -272,11 +365,11 @@ export class QQMusicStreamingProvider implements StreamingProvider {
       page,
       pageSize,
       total,
-      hasMore: total ? page * pageSize < total : Math.max(songs.length, albums.length, artists.length) === pageSize,
+      hasMore: total ? page * pageSize < total : Math.max(songs.length, albums.length, artists.length, playlistRecords.length) === pageSize,
       tracks: songs.map(mapSong),
       albums: albums.map(mapAlbum),
       artists: artists.map(mapArtist),
-      playlists: [],
+      playlists: playlistRecords.map(mapPlaylist),
       mvs: [],
     };
   }
@@ -284,6 +377,83 @@ export class QQMusicStreamingProvider implements StreamingProvider {
   async getTrack(input: { providerTrackId: string }): Promise<StreamingTrack> {
     const song = await this.fetchSong(input.providerTrackId);
     return mapSong(song);
+  }
+
+  async getAlbum(input: { providerAlbumId: string }): Promise<StreamingAlbumDetail> {
+    const params = new URLSearchParams({
+      albummid: input.providerAlbumId,
+      format: 'json',
+      newsong: '1',
+    });
+    const data = asRecord(
+      await jsonFetch(`https://c.y.qq.com/v8/fcg-bin/fcg_v8_album_info_cp.fcg?${params.toString()}`, {
+        headers: qqHeaders(accountCookie()),
+      }),
+    );
+    const albumValue = asRecord(data.data ?? data);
+    const songs = Array.isArray(albumValue.list) ? albumValue.list : Array.isArray(albumValue.songlist) ? albumValue.songlist : [];
+    const album = mapAlbum({
+      ...albumValue,
+      albumMID: text(albumValue.mid) ?? text(albumValue.albumMID) ?? input.providerAlbumId,
+      albumName: text(albumValue.name) ?? text(albumValue.albumName),
+      singerName: text(albumValue.singername) ?? text(albumValue.singerName),
+      publicTime: text(albumValue.aDate) ?? text(albumValue.publicTime),
+      song_count: integer(albumValue.total) ?? integer(albumValue.total_song_num) ?? songs.length,
+    });
+
+    if (!album.providerAlbumId && songs.length === 0) {
+      throw new Error('没有找到这张 QQ 音乐专辑');
+    }
+
+    return {
+      ...album,
+      tracks: songs.map(mapSong),
+    };
+  }
+
+  async getArtist(input: { providerArtistId: string }): Promise<StreamingArtistDetail> {
+    const cookie = accountCookie();
+    const [tracksData, albumsData] = await Promise.all([
+      jsonFetch(
+        `https://c.y.qq.com/v8/fcg-bin/fcg_v8_singer_track_cp.fcg?${new URLSearchParams({
+          singermid: input.providerArtistId,
+          begin: '0',
+          num: '30',
+          order: 'listen',
+          format: 'json',
+        }).toString()}`,
+        { headers: qqHeaders(cookie) },
+      ),
+      jsonFetch(
+        `https://c.y.qq.com/v8/fcg-bin/fcg_v8_singer_album.fcg?${new URLSearchParams({
+          singermid: input.providerArtistId,
+          begin: '0',
+          num: '24',
+          format: 'json',
+        }).toString()}`,
+        { headers: qqHeaders(cookie) },
+      ),
+    ]);
+    const tracksRoot = asRecord(asRecord(tracksData).data ?? tracksData);
+    const albumsRoot = asRecord(asRecord(albumsData).data ?? albumsData);
+    const singer = asRecord(tracksRoot.singer ?? albumsRoot.singer);
+    const artist = mapArtist({
+      ...singer,
+      singerMID: text(singer.mid) ?? text(singer.singerMID) ?? input.providerArtistId,
+      singerName: text(singer.name) ?? text(singer.singerName),
+    });
+    const topTracks = (Array.isArray(tracksRoot.list) ? tracksRoot.list : [])
+      .map((item) => asRecord(item).musicData ?? item)
+      .map(mapSong);
+    const albums = (Array.isArray(albumsRoot.list) ? albumsRoot.list : [])
+      .map((item) => asRecord(item).album ?? item)
+      .map(mapAlbum);
+
+    return {
+      ...artist,
+      topTracks,
+      albums,
+    };
   }
 
   async getPlaylist(input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> {

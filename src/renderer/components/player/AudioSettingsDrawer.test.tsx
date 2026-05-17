@@ -378,6 +378,9 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
       activeOutputBackendImpl: 'legacy-wasapi-exclusive-dop',
       codec: 'DSF',
       currentFilePath: 'D:\\Music\\native.dsf',
+      fileSampleRate: 2822400,
+      requestedOutputSampleRate: 176400,
+      actualDeviceSampleRate: 176400,
       dsdOutputModeRequested: 'dop',
       activeDsdOutputMode: 'dop',
       dsdNativeSampleRate: 2822400,
@@ -388,6 +391,8 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     expect(screen.getByRole('checkbox', { name: /DSD DoP Direct Pilot/ })).toHaveProperty('checked', true);
     expect(screen.getByText('DSF bitstream -> DoP -> exclusive')).toBeTruthy();
     expect(screen.getByText('DSF bitstream -> DoP')).toBeTruthy();
+    expect(screen.getAllByText('2822 kHz -> DoP 176 kHz').length).toBeGreaterThan(0);
+    expect(screen.queryByText('2822 kHz -> 176 kHz')).toBeNull();
   });
 
   it('shows DSD DoP fallback as PCM fallback rather than direct output', () => {

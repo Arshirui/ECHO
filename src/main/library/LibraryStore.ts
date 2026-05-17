@@ -8,7 +8,11 @@ import { buildTrackSearchTerms } from './SearchIndexTokens';
 import { normalizeAlbumTitleForLooseMerge, type AlbumKeyInput, type AlbumMergeStrategy, type AlbumService } from './AlbumService';
 import { updateCoverPathsInDatabase } from './CoverCacheManager';
 import { DuplicateTrackService } from './duplicates/DuplicateTrackService';
-import { isCurrentArtistImageCacheSourceHash } from './artistImages/ArtistImageTypes';
+import {
+  ARTIST_IMAGE_CACHE_SOURCE_HASH_PREFIX,
+  ARTIST_IMAGE_CACHE_SOURCE_VERSION,
+  isCurrentArtistImageCacheSourceHash,
+} from './artistImages/ArtistImageTypes';
 import type {
   CoverSource,
   CoverResult,
@@ -130,6 +134,8 @@ const searchSeparatorPattern = /[\s!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~_-]+/u;
 const cjkPattern = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const pathSeparatorPattern = /[\\/]+/u;
 const preferredPathSeparator = process.platform === 'win32' ? '\\' : '/';
+
+const sqlString = (value: string): string => `'${value.replace(/'/gu, "''")}'`;
 
 const stripTrailingPathSeparators = (value: string): string => {
   const normalized = resolve(value);
@@ -2645,23 +2651,36 @@ export class LibraryStore {
     )`;
   }
 
-  private unifiedArtistOrderSql(sort: string): string {
+  private artistAvatarPriorityOrderSql(): string {
+    return `CASE
+      WHEN avatar_status = 'matched'
+        AND (avatar_source_hash = ${sqlString(ARTIST_IMAGE_CACHE_SOURCE_VERSION)}
+          OR avatar_source_hash LIKE ${sqlString(`${ARTIST_IMAGE_CACHE_SOURCE_HASH_PREFIX}%`)})
+        AND COALESCE(avatar_large_path, avatar_medium_path, avatar_thumb_path) IS NOT NULL
+      THEN 0
+      ELSE 1
+    END`;
+  }
+
+  private unifiedArtistOrderSql(sort: string, prioritizeArtistAvatars = false): string {
+    const prioritySql = prioritizeArtistAvatars ? `${this.artistAvatarPriorityOrderSql()}, ` : '';
+
     switch (sort) {
       case 'frequent':
-        return 'ORDER BY track_count DESC, album_count DESC, name COLLATE NOCASE';
+        return `ORDER BY ${prioritySql}track_count DESC, album_count DESC, name COLLATE NOCASE`;
       case 'createdDesc':
       case 'recent':
-        return 'ORDER BY name COLLATE NOCASE';
+        return `ORDER BY ${prioritySql}name COLLATE NOCASE`;
       case 'titleDesc':
-        return 'ORDER BY name COLLATE NOCASE DESC';
+        return `ORDER BY ${prioritySql}name COLLATE NOCASE DESC`;
       case 'random':
-        return 'ORDER BY RANDOM()';
+        return `ORDER BY ${prioritySql}RANDOM()`;
       case 'artist':
       case 'titleAsc':
       case 'default':
       case 'title':
       default:
-        return 'ORDER BY sort_name COLLATE NOCASE, name COLLATE NOCASE';
+        return `ORDER BY ${prioritySql}sort_name COLLATE NOCASE, name COLLATE NOCASE`;
     }
   }
 
@@ -2722,7 +2741,7 @@ export class LibraryStore {
       likePredicate('COALESCE(library_artists.sort_name, \'\')'),
     ], searchOptions);
     const whereSql = searchFilter.sql ? `WHERE ${searchFilter.sql}` : '';
-    const orderSql = this.unifiedArtistOrderSql(sort);
+    const orderSql = this.unifiedArtistOrderSql(sort, query?.prioritizeArtistAvatars === true);
     const artistsSql = this.unifiedArtistsSql();
     const totalRow = this.getRow(`${artistsSql} SELECT COUNT(*) AS total FROM library_artists ${whereSql}`, ...searchFilter.params);
     const rows = this.allRows(

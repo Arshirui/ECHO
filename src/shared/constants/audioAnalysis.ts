@@ -23,3 +23,8 @@ export const isReliableBpmAnalysis = (
 
   return status === undefined || status === null || status === 'complete';
 };
+
+export const isDisplayableBpmAnalysis = (
+  bpm: number | null | undefined,
+  status?: string | null,
+): bpm is number => isFinitePositive(bpm) && status !== 'error' && status !== 'analyzing';

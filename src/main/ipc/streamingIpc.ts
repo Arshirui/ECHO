@@ -102,6 +102,24 @@ const normalizeTrackRequest = (value: unknown): { provider: StreamingProviderNam
   };
 };
 
+const normalizeAlbumRequest = (value: unknown): { provider: StreamingProviderName; providerAlbumId: string } => {
+  const input = requireObject(value, 'streaming album request');
+
+  return {
+    provider: requireProvider(input.provider),
+    providerAlbumId: requireText(input.providerAlbumId, 'providerAlbumId'),
+  };
+};
+
+const normalizeArtistRequest = (value: unknown): { provider: StreamingProviderName; providerArtistId: string } => {
+  const input = requireObject(value, 'streaming artist request');
+
+  return {
+    provider: requireProvider(input.provider),
+    providerArtistId: requireText(input.providerArtistId, 'providerArtistId'),
+  };
+};
+
 const normalizeLikedTrackRequest = (
   value: unknown,
 ): { provider: Extract<StreamingProviderName, 'netease' | 'qqmusic'>; providerTrackId: string; liked: boolean } => {
@@ -175,6 +193,22 @@ export const registerStreamingIpc = (): void => {
       return await getStreamingService().getTrack(provider, providerTrackId);
     } catch (error) {
       throw friendlyError(error, 'Streaming track lookup failed.');
+    }
+  });
+  ipcMain.handle(IpcChannels.StreamingGetAlbum, async (_event, request: unknown) => {
+    try {
+      const { provider, providerAlbumId } = normalizeAlbumRequest(request);
+      return await getStreamingService().getAlbum(provider, providerAlbumId);
+    } catch (error) {
+      throw friendlyError(error, 'Streaming album lookup failed.');
+    }
+  });
+  ipcMain.handle(IpcChannels.StreamingGetArtist, async (_event, request: unknown) => {
+    try {
+      const { provider, providerArtistId } = normalizeArtistRequest(request);
+      return await getStreamingService().getArtist(provider, providerArtistId);
+    } catch (error) {
+      throw friendlyError(error, 'Streaming artist lookup failed.');
     }
   });
   ipcMain.handle(IpcChannels.StreamingResolvePlayback, async (_event, request: unknown) => {

@@ -240,6 +240,8 @@ const echoApi: EchoApi = {
   streaming: {
     search: (request) => ipcRenderer.invoke(IpcChannels.StreamingSearch, request),
     getTrack: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetTrack, request),
+    getAlbum: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetAlbum, request),
+    getArtist: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetArtist, request),
     resolvePlayback: (request) => ipcRenderer.invoke(IpcChannels.StreamingResolvePlayback, request),
     analyzeBpm: (request) => ipcRenderer.invoke(IpcChannels.StreamingAnalyzeBpm, request),
     getLyrics: (request) => ipcRenderer.invoke(IpcChannels.StreamingGetLyrics, request),

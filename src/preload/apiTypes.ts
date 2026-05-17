@@ -107,6 +107,8 @@ import type {
 } from '../shared/types/remoteSources';
 import type {
   StreamingLyricsResult,
+  StreamingAlbumDetail,
+  StreamingArtistDetail,
   StreamingLikedSongsSyncResult,
   StreamingMvResult,
   StreamingPlaybackRequest,
@@ -314,6 +316,8 @@ export type EchoApi = {
   streaming: {
     search: (request: StreamingSearchRequest) => Promise<StreamingSearchResult>;
     getTrack: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingTrack>;
+    getAlbum: (request: { provider: StreamingProviderName; providerAlbumId: string }) => Promise<StreamingAlbumDetail>;
+    getArtist: (request: { provider: StreamingProviderName; providerArtistId: string }) => Promise<StreamingArtistDetail>;
     resolvePlayback: (request: StreamingPlaybackRequest) => Promise<StreamingPlaybackSource>;
     analyzeBpm: (request: StreamingPlaybackRequest) => Promise<BpmAnalysisResult>;
     getLyrics: (request: { provider: StreamingProviderName; providerTrackId: string }) => Promise<StreamingLyricsResult>;

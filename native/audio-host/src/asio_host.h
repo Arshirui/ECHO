@@ -111,6 +111,13 @@ uint32_t asio_build_buffer_candidates_for_tests(
     uint32_t* outCandidates,
     uint32_t maxCandidates);
 
+uint32_t asio_build_buffer_include_input_attempts_for_tests(
+    long inputChannelCount,
+    int dopMode,
+    int nativeDsdMode,
+    int* outAttempts,
+    uint32_t maxAttempts);
+
 const char* asio_error_name_for_tests(long error);
 
 uint32_t asio_build_sample_rate_pivot_candidates_for_tests(
@@ -123,6 +130,12 @@ void asio_write_sample_for_tests(
     long sampleType,
     long frameIndex,
     float sample);
+
+void asio_write_dop_sample_for_tests(
+    void* buffer,
+    long sampleType,
+    long frameIndex,
+    uint32_t sample24);
 
 void asio_write_native_dsd_samples_for_tests(
     void* buffer,

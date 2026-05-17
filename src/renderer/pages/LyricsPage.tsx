@@ -29,7 +29,6 @@ import { LyricsView } from "../components/lyrics/LyricsView";
 import { MvPanel, type MvAudioClock } from "../components/lyrics/MvPanel";
 import {
   createReadableLyricsColorVars,
-  readableLyricsCssVarNames,
   sampleImageUrl,
   type ReadableColorSample,
   type ReadableLyricsCssVars,
@@ -76,6 +75,7 @@ type LyricsDisplaySettings = Pick<
   | "lyricsContextOpacityPercent"
   | "lyricsCoverOpacityPercent"
   | "lyricsSmartReadableColorsEnabled"
+  | "lyricsHighResolutionNetworkCoverEnabled"
   | "lyricsCoverBlurPx"
   | "lyricsCoverBrightnessPercent"
   | "lyricsBackgroundScalePercent"
@@ -113,6 +113,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsContextOpacityPercent: 49,
   lyricsCoverOpacityPercent: 100,
   lyricsSmartReadableColorsEnabled: false,
+  lyricsHighResolutionNetworkCoverEnabled: false,
   lyricsCoverBlurPx: 10,
   lyricsCoverBrightnessPercent: 100,
   lyricsBackgroundScalePercent: 100,
@@ -235,6 +236,7 @@ const formatDuration = (durationSeconds: number | null): string => {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 };
 
+const lyricsMatchAutoCloseMs = 10000;
 const formatScore = (score: number): string => `${Math.round(score * 100)}%`;
 const formatOffset = (offsetMs: number): string => {
   if (offsetMs === 0) {
@@ -343,9 +345,29 @@ const selectAutoApplyCandidate = (
   return candidates.find(
     (candidate) =>
       candidate.score >= threshold &&
-      (candidate.risk ?? "low") === "low" &&
+      isAutoApplyRiskAllowed(candidate) &&
       (candidate.hasSynced || candidate.hasPlain || candidate.instrumental),
   ) ?? null;
+};
+
+const isAutoApplyRiskAllowed = (candidate: LyricsSearchCandidate): boolean => {
+  const risk = candidate.risk ?? "low";
+  if (risk === "low") {
+    return true;
+  }
+
+  const reasons = new Set(candidate.reasons ?? []);
+  const titleScore = candidate.titleScore ?? (reasons.has("title_exact") ? 1 : 0);
+  const artistScore = candidate.artistScore ?? (reasons.has("artist_exact") ? 1 : 0);
+  const hasOnlyDurationMismatch =
+    reasons.has("duration_mismatch") &&
+    !reasons.has("artist_mismatch") &&
+    !reasons.has("version_conflict") &&
+    !reasons.has("rejected_by_user") &&
+    !reasons.has("candidate_only_cover") &&
+    !reasons.has("cover_intent");
+
+  return hasOnlyDurationMismatch && titleScore >= 0.98 && artistScore >= 0.98;
 };
 
 const safeCoverUrl = (track: LibraryTrack | null): string | null => {
@@ -414,6 +436,7 @@ const selectLyricsDisplaySettings = (
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackLyricsDisplaySettings.lyricsContextOpacityPercent,
   lyricsCoverOpacityPercent: settings.lyricsCoverOpacityPercent,
   lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
+  lyricsHighResolutionNetworkCoverEnabled: settings.lyricsHighResolutionNetworkCoverEnabled === true,
   lyricsCoverBlurPx: settings.lyricsCoverBlurPx,
   lyricsCoverBrightnessPercent: settings.lyricsCoverBrightnessPercent,
   lyricsBackgroundScalePercent: settings.lyricsBackgroundScalePercent,
@@ -457,6 +480,7 @@ const lyricsDisplaySettingsKeys = [
   "lyricsContextOpacityPercent",
   "lyricsCoverOpacityPercent",
   "lyricsSmartReadableColorsEnabled",
+  "lyricsHighResolutionNetworkCoverEnabled",
   "lyricsCoverBlurPx",
   "lyricsCoverBrightnessPercent",
   "lyricsBackgroundScalePercent",
@@ -706,6 +730,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     useState<CandidateSourceFilter>(() => readRememberedCandidateSource());
   const [isLyricsMatchPanelClosed, setIsLyricsMatchPanelClosed] = useState(false);
   const [isLyricsMatchPanelRevealed, setIsLyricsMatchPanelRevealed] = useState(false);
+  const [lyricsMatchPanelActivityToken, setLyricsMatchPanelActivityToken] = useState(0);
   const [isCandidateLoading, setIsCandidateLoading] = useState(false);
   const [isAlbumNavigating, setIsAlbumNavigating] = useState(false);
   const [applyingCandidateId, setApplyingCandidateId] = useState<string | null>(
@@ -854,7 +879,12 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   }, []);
 
   useEffect(() => {
-    if (effectiveLyricsBackgroundMode !== "cover" || !currentTrack?.id || !backgroundCoverUrl) {
+    if (
+      !lyricsDisplaySettings.lyricsHighResolutionNetworkCoverEnabled ||
+      effectiveLyricsBackgroundMode !== "cover" ||
+      !currentTrack?.id ||
+      !backgroundCoverUrl
+    ) {
       setNetworkBackgroundCoverUrl(null);
       return undefined;
     }
@@ -883,7 +913,12 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     return () => {
       disposed = true;
     };
-  }, [backgroundCoverUrl, currentTrack?.id, effectiveLyricsBackgroundMode]);
+  }, [
+    backgroundCoverUrl,
+    currentTrack?.id,
+    effectiveLyricsBackgroundMode,
+    lyricsDisplaySettings.lyricsHighResolutionNetworkCoverEnabled,
+  ]);
 
   useEffect(() => {
     if (!lyricsSmartReadableEnabled || !lyricsSmartReadableImageUrl) {
@@ -925,32 +960,6 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     window.addEventListener(lyricsSmartReadableVideoSampleEvent, handleVideoSample);
     return () => window.removeEventListener(lyricsSmartReadableVideoSampleEvent, handleVideoSample);
   }, [lyricsSmartReadableEnabled, trackId]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return undefined;
-    }
-
-    const root = document.documentElement;
-    const clearSmartReadableRootVars = (): void => {
-      delete root.dataset.lyricsSmartReadable;
-      for (const name of readableLyricsCssVarNames) {
-        root.style.removeProperty(name);
-      }
-    };
-
-    if (!lyricsSmartReadableEnabled || !smartReadableColors) {
-      clearSmartReadableRootVars();
-      return clearSmartReadableRootVars;
-    }
-
-    root.dataset.lyricsSmartReadable = "true";
-    for (const [name, value] of Object.entries(smartReadableColors)) {
-      root.style.setProperty(name, value);
-    }
-
-    return clearSmartReadableRootVars;
-  }, [lyricsSmartReadableEnabled, smartReadableColors]);
 
   const handleOpenAlbumDetail = useCallback((): void => {
     if (!currentTrack || isAlbumNavigating) {
@@ -1211,7 +1220,35 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   useEffect(() => {
     setIsLyricsMatchPanelClosed(false);
     setIsLyricsMatchPanelRevealed(false);
+    setLyricsMatchPanelActivityToken(0);
   }, [trackId]);
+
+  const noteLyricsMatchPanelActivity = useCallback((): void => {
+    setLyricsMatchPanelActivityToken((token) => (token + 1) % 1000000);
+  }, []);
+
+  useEffect(() => {
+    if (
+      isLyricsMatchPanelClosed ||
+      !isLyricsMatchPanelRevealed ||
+      candidates.length === 0 ||
+      applyingCandidateId
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setIsLyricsMatchPanelClosed(true);
+    }, lyricsMatchAutoCloseMs);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    applyingCandidateId,
+    candidates.length,
+    isLyricsMatchPanelClosed,
+    isLyricsMatchPanelRevealed,
+    lyricsMatchPanelActivityToken,
+  ]);
 
   const tryAutoApplyCandidate = useCallback(
     async (
@@ -1950,7 +1987,15 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     }
 
     return (
-      <section className="lyrics-match-panel" aria-label="Lyrics matching">
+      <section
+        className="lyrics-match-panel"
+        aria-label="Lyrics matching"
+        onFocusCapture={noteLyricsMatchPanelActivity}
+        onKeyDown={noteLyricsMatchPanelActivity}
+        onPointerDown={noteLyricsMatchPanelActivity}
+        onPointerEnter={noteLyricsMatchPanelActivity}
+        onWheel={noteLyricsMatchPanelActivity}
+      >
         <div className="lyrics-match-panel__bar">
           {statusText ? <p className="lyrics-match-status">{statusText}</p> : <span />}
           <button
@@ -2041,6 +2086,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     lyricsDisplaySettings.lyricsEnabled,
     lyrics.lines.length,
     lyricsStatus,
+    noteLyricsMatchPanelActivity,
     selectCandidateSource,
     trackId,
     visibleCandidates,

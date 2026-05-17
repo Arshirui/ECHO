@@ -78,6 +78,19 @@ struct BufferAttempt
 
 asio_runtime* activeRuntime = nullptr;
 
+std::vector<bool> build_buffer_include_input_attempts(
+    long inputChannelCount,
+    bool dopMode,
+    bool nativeDsdMode)
+{
+    std::vector<bool> attempts;
+    if (! dopMode && ! nativeDsdMode && inputChannelCount > 0)
+        attempts.push_back(true);
+
+    attempts.push_back(false);
+    return attempts;
+}
+
 void set_error(char* error, size_t errorLen, const char* message)
 {
     if (error == nullptr || errorLen == 0)
@@ -331,13 +344,17 @@ void write_asio_dop_sample(void* buffer, ASIOSampleType type, long frameIndex, u
 {
     auto* bytes = static_cast<unsigned char*>(buffer);
     const uint32_t payload = sample24 & 0x00ffffffu;
+    const auto dsdByte1 = static_cast<unsigned char>(payload & 0xffu);
+    const auto dsdByte2 = static_cast<unsigned char>((payload >> 8) & 0xffu);
+    const auto marker = static_cast<unsigned char>((payload >> 16) & 0xffu);
 
     switch (type)
     {
         case ASIOSTInt24LSB:
-            bytes[frameIndex * 3 + 0] = static_cast<unsigned char>(payload & 0xff);
-            bytes[frameIndex * 3 + 1] = static_cast<unsigned char>((payload >> 8) & 0xff);
-            bytes[frameIndex * 3 + 2] = static_cast<unsigned char>((payload >> 16) & 0xff);
+            // Match the proven asio-test-native DoP layout for ASIO drivers.
+            bytes[frameIndex * 3 + 0] = marker;
+            bytes[frameIndex * 3 + 1] = dsdByte1;
+            bytes[frameIndex * 3 + 2] = dsdByte2;
             break;
         case ASIOSTInt24MSB:
             bytes[frameIndex * 3 + 0] = static_cast<unsigned char>((payload >> 16) & 0xff);
@@ -345,8 +362,14 @@ void write_asio_dop_sample(void* buffer, ASIOSampleType type, long frameIndex, u
             bytes[frameIndex * 3 + 2] = static_cast<unsigned char>(payload & 0xff);
             break;
         case ASIOSTInt32LSB24:
-        case ASIOSTInt32LSB:
             reinterpret_cast<uint32_t*>(buffer)[frameIndex] = payload << 8;
+            break;
+        case ASIOSTInt32LSB:
+            reinterpret_cast<uint32_t*>(buffer)[frameIndex] =
+                (static_cast<uint32_t>(marker) << 24)
+                | (static_cast<uint32_t>(marker) << 16)
+                | (static_cast<uint32_t>(dsdByte1) << 8)
+                | static_cast<uint32_t>(dsdByte2);
             break;
         case ASIOSTInt32MSB24:
         case ASIOSTInt32MSB:
@@ -1208,11 +1231,13 @@ bool create_buffers_with_candidates(
 {
     std::vector<BufferAttempt> attempts;
 
-    for (bool includeInputs : { true, false })
-    {
-        if (includeInputs && runtime->inputChannelCount <= 0)
-            continue;
+    const auto includeInputAttempts = build_buffer_include_input_attempts(
+        runtime->inputChannelCount,
+        runtime->dopMode,
+        runtime->nativeDsdMode);
 
+    for (bool includeInputs : includeInputAttempts)
+    {
         for (long candidate : candidates)
         {
             prepare_buffer_infos(runtime, includeInputs);
@@ -1696,13 +1721,15 @@ static int asio_start_impl(
         asio_sample_rate_to_uint32(actualRate),
         asio_error_name(sampleRateResult),
         static_cast<long>(sampleRateResult));
-    if (runtime->nativeDsdMode && (sampleRateResult != ASE_OK || asio_sample_rate_to_uint32(actualRate) != requestedSampleRate))
+    if ((runtime->nativeDsdMode || runtime->dopMode)
+        && (sampleRateResult != ASE_OK || asio_sample_rate_to_uint32(actualRate) != requestedSampleRate))
     {
         char message[256] {};
         snprintf(
             message,
             sizeof(message),
-            "ASIO native DSD sample-rate negotiation failed requested=%u actual=%u result=%s(%ld)",
+            "ASIO %s sample-rate negotiation failed requested=%u actual=%u result=%s(%ld)",
+            runtime->nativeDsdMode ? "native DSD" : "DoP",
             requestedSampleRate,
             asio_sample_rate_to_uint32(actualRate),
             asio_error_name(sampleRateResult),
@@ -1768,7 +1795,14 @@ static int asio_start_impl(
             return -1;
         }
     }
-    fprintf(stderr, "[echo-audio-host] ASIOCreateBuffers completed: buffer=%ld\n", runtime->bufferSize);
+    fprintf(stderr,
+        "[echo-audio-host] ASIOCreateBuffers completed: buffer=%ld totalChannels=%ld outputOffset=%ld outputFormat=%s dop=%d nativeDsd=%d\n",
+        runtime->bufferSize,
+        runtime->totalChannelCount,
+        runtime->outputChannelOffset,
+        output_format_summary(runtime).c_str(),
+        runtime->dopMode ? 1 : 0,
+        runtime->nativeDsdMode ? 1 : 0);
 
     if (runtime->nativeDsdMode)
     {
@@ -2011,6 +2045,28 @@ uint32_t asio_build_buffer_candidates_for_tests(
     return count;
 }
 
+uint32_t asio_build_buffer_include_input_attempts_for_tests(
+    long inputChannelCount,
+    int dopMode,
+    int nativeDsdMode,
+    int* outAttempts,
+    uint32_t maxAttempts)
+{
+    const auto attempts = build_buffer_include_input_attempts(
+        inputChannelCount,
+        dopMode != 0,
+        nativeDsdMode != 0);
+    const auto count = static_cast<uint32_t>(std::min<size_t>(attempts.size(), maxAttempts));
+
+    if (outAttempts != nullptr)
+    {
+        for (uint32_t i = 0; i < count; ++i)
+            outAttempts[i] = attempts[i] ? 1 : 0;
+    }
+
+    return count;
+}
+
 const char* asio_error_name_for_tests(long error)
 {
     return asio_error_name(static_cast<ASIOError>(error));
@@ -2036,6 +2092,11 @@ uint32_t asio_build_sample_rate_pivot_candidates_for_tests(
 void asio_write_sample_for_tests(void* buffer, long sampleType, long frameIndex, float sample)
 {
     write_asio_sample(buffer, static_cast<ASIOSampleType>(sampleType), frameIndex, sample);
+}
+
+void asio_write_dop_sample_for_tests(void* buffer, long sampleType, long frameIndex, uint32_t sample24)
+{
+    write_asio_dop_sample(buffer, static_cast<ASIOSampleType>(sampleType), frameIndex, sample24);
 }
 
 void asio_write_native_dsd_samples_for_tests(

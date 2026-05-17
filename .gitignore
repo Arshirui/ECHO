@@ -1,4 +1,5 @@
 node_modules/
+.cache/
 out/
 dist/
 .electron-cache/
@@ -7,6 +8,7 @@ dist/
 
 # Local Codex workspace state
 .codex/
+.codex-backups/
 
 # Native/Electron build outputs
 native/**/build/

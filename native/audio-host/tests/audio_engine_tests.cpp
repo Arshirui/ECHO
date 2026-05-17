@@ -420,6 +420,31 @@ void testNativeRenderAdapter()
         require(std::abs(output[i] - input[i]) <= nearTolerance, "native render adapter must preserve interleaved PCM");
 }
 
+void testDopRenderKeepsValidMarkersDuringSilenceAndData()
+{
+    DopRingSource source(2, 16, 0, 0);
+    std::vector<uint32_t> silence(6, 0xffffffffu);
+
+    const auto emptyFrames = source.renderInterleaved(silence.data(), 3, 2);
+    require(emptyFrames == 0, "DoP silence render must not count as consumed input frames");
+    require(silence[0] == 0x050000 && silence[1] == 0x050000, "DoP silence frame 0 must carry 0x05 markers");
+    require(silence[2] == 0xfa0000 && silence[3] == 0xfa0000, "DoP silence frame 1 must carry 0xfa markers");
+    require(silence[4] == 0x050000 && silence[5] == 0x050000, "DoP silence frame 2 must keep alternating markers");
+
+    source.beginSession();
+    const std::vector<uint32_t> wrongMarkerInput {
+        0xaa0201u, 0xaa0605u,
+        0xbb0403u, 0xbb0807u,
+    };
+    require(source.push(wrongMarkerInput.data(), 2), "DoP source must accept packed frames");
+
+    std::vector<uint32_t> data(4, 0u);
+    const auto dataFrames = source.renderInterleaved(data.data(), 2, 2);
+    require(dataFrames == 2, "DoP render must consume queued input frames");
+    require(data[0] == 0x050201 && data[1] == 0x050605, "DoP data frame 0 must rewrite to the reference 0x05 marker");
+    require(data[2] == 0xfa0403 && data[3] == 0xfa0807, "DoP data frame 1 must rewrite to the reference 0xfa marker");
+}
+
 #if JUCE_WINDOWS
 std::vector<uint32_t> buildAsioCandidates(long minSize, long maxSize, long preferredSize, long granularity, uint32_t requested)
 {
@@ -430,6 +455,19 @@ std::vector<uint32_t> buildAsioCandidates(long minSize, long maxSize, long prefe
         preferredSize,
         granularity,
         requested,
+        values.data(),
+        static_cast<uint32_t>(values.size()));
+    values.resize(count);
+    return values;
+}
+
+std::vector<int> buildAsioIncludeInputAttempts(long inputChannels, bool dopMode, bool nativeDsdMode)
+{
+    std::vector<int> values(4, -1);
+    const auto count = asio_build_buffer_include_input_attempts_for_tests(
+        inputChannels,
+        dopMode ? 1 : 0,
+        nativeDsdMode ? 1 : 0,
         values.data(),
         static_cast<uint32_t>(values.size()));
     values.resize(count);
@@ -465,6 +503,23 @@ void testAsioBufferCandidateGeneration()
     auto stepped = buildAsioCandidates(128, 4096, 512, 128, 1000);
     require(std::find(stepped.begin(), stepped.end(), 896) != stepped.end(), "ASIO stepped lower aligned candidate");
     require(std::find(stepped.begin(), stepped.end(), 1024) != stepped.end(), "ASIO stepped upper aligned candidate");
+
+    requireVectorEquals(
+        buildAsioIncludeInputAttempts(2, false, false),
+        { 1, 0 },
+        "ASIO PCM should still try input+output before output-only");
+    requireVectorEquals(
+        buildAsioIncludeInputAttempts(0, false, false),
+        { 0 },
+        "ASIO PCM without inputs should try output-only");
+    requireVectorEquals(
+        buildAsioIncludeInputAttempts(2, true, false),
+        { 0 },
+        "ASIO DoP must match the reference host and create output-only buffers");
+    requireVectorEquals(
+        buildAsioIncludeInputAttempts(2, false, true),
+        { 0 },
+        "ASIO native DSD must match the reference host and create output-only buffers");
 }
 
 void testAsioSampleRatePivotCandidateGeneration()
@@ -512,6 +567,27 @@ void testAsioSampleConversion()
     require(bytes[0] == 0x3f && bytes[1] == 0x80 && bytes[2] == 0x00 && bytes[3] == 0x00, "ASIO float32 MSB conversion");
 
     require(std::string(asio_error_name_for_tests(ASE_InvalidMode)) == "ASE_InvalidMode", "ASIO error name helper");
+}
+
+void testAsioDopConversionMatchesReferenceHost()
+{
+    std::vector<unsigned char> bytes(16, 0);
+    asio_write_dop_sample_for_tests(bytes.data(), ASIOSTInt32LSB, 0, 0x050201u);
+    require(
+        bytes[0] == 0x02 && bytes[1] == 0x01 && bytes[2] == 0x05 && bytes[3] == 0x05,
+        "ASIO DoP int32 LSB must match asio-test-native byte layout");
+
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
+    asio_write_dop_sample_for_tests(bytes.data(), ASIOSTInt32LSB24, 0, 0x050201u);
+    require(
+        bytes[0] == 0x00 && bytes[1] == 0x01 && bytes[2] == 0x02 && bytes[3] == 0x05,
+        "ASIO DoP int32 LSB 24-bit aligned must keep the DoP payload left-aligned");
+
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
+    asio_write_dop_sample_for_tests(bytes.data(), ASIOSTInt24LSB, 0, 0xfa0403u);
+    require(
+        bytes[0] == 0xfa && bytes[1] == 0x03 && bytes[2] == 0x04,
+        "ASIO DoP int24 LSB must match asio-test-native byte layout");
 }
 
 void testAsioNativeDsdConversion()
@@ -678,10 +754,12 @@ int main()
         { "framed stdin idle does not count underrun before PCM", testFramedStdinIdleDoesNotCountUnderrunBeforePcm },
         { "framed stdin prebuffer does not count underrun before target", testFramedStdinPrebufferDoesNotCountUnderrunBeforeTarget },
         { "native render adapter", testNativeRenderAdapter },
+        { "DoP render keeps valid markers during silence and data", testDopRenderKeepsValidMarkersDuringSilenceAndData },
 #if JUCE_WINDOWS
         { "ASIO buffer candidate generation", testAsioBufferCandidateGeneration },
         { "ASIO sample-rate pivot candidate generation", testAsioSampleRatePivotCandidateGeneration },
         { "ASIO sample conversion", testAsioSampleConversion },
+        { "ASIO DoP conversion matches reference host", testAsioDopConversionMatchesReferenceHost },
         { "ASIO native DSD conversion", testAsioNativeDsdConversion },
 #endif
         { "framed stdin shutdown", testFramedStdinShutdown },

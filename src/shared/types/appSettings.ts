@@ -7,6 +7,7 @@ import type { GlobalShortcutSettings } from './globalShortcuts';
 
 export type ScanPerformanceMode = 'low' | 'balanced' | 'performance';
 export type LyricsBackgroundMode = 'theme' | 'cover' | 'customWallpaper';
+export type LyricsMiniPlayerColorMode = 'default' | 'custom' | 'cover';
 export type AppLocale = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
 export type AppThemeMode = 'light' | 'dark' | 'system';
 
@@ -92,6 +93,9 @@ export type AppSettings = {
   lyricsMvAutoShowTrackInfoDisabled?: boolean;
   lyricsEmptyStateHidden: boolean;
   lyricsPlayerBarDrawerEnabled?: boolean;
+  lyricsPlayerBarDrawerOpacityPercent?: number;
+  lyricsPlayerBarDrawerColorMode?: LyricsMiniPlayerColorMode;
+  lyricsPlayerBarDrawerColor?: string;
   lyricsRomanizationEnabled: boolean;
   lyricsTranslationEnabled: boolean;
   lyricsWordHighlightEnabled?: boolean;
@@ -101,6 +105,7 @@ export type AppSettings = {
   lyricsContextOpacityPercent?: number;
   lyricsColor: string;
   lyricsSmartReadableColorsEnabled?: boolean;
+  lyricsHighResolutionNetworkCoverEnabled?: boolean;
   lyricsBackgroundMode: LyricsBackgroundMode;
   lyricsCustomWallpaperPath: string | null;
   lyricsCoverOpacityPercent: number;

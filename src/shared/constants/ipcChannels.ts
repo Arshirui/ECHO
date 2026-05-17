@@ -185,6 +185,8 @@ export const IpcChannels = {
   RemoteSourcesUpdateRuntimeLimits: 'remoteSources:updateRuntimeLimits',
   StreamingSearch: 'streaming:search',
   StreamingGetTrack: 'streaming:getTrack',
+  StreamingGetAlbum: 'streaming:getAlbum',
+  StreamingGetArtist: 'streaming:getArtist',
   StreamingResolvePlayback: 'streaming:resolvePlayback',
   StreamingAnalyzeBpm: 'streaming:analyzeBpm',
   StreamingGetLyrics: 'streaming:getLyrics',

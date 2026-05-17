@@ -1,6 +1,6 @@
 import type { ArtistImageCacheEntry } from '../../../shared/types/library';
 
-export const ARTIST_IMAGE_CACHE_SOURCE_VERSION = 'artist-image-cache-v2';
+export const ARTIST_IMAGE_CACHE_SOURCE_VERSION = 'artist-image-cache-v3';
 export const ARTIST_IMAGE_CACHE_SOURCE_HASH_PREFIX = `${ARTIST_IMAGE_CACHE_SOURCE_VERSION}:`;
 
 export const artistImageCacheSourceHash = (sourceHash: string): string =>

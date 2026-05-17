@@ -38,6 +38,21 @@ const isStreamingProviderName = (provider: string | null | undefined): provider 
   streamingProviderNames.includes(provider as StreamingProviderName);
 const isVerifiedAudioAnalysisBpm = (track: { bpm?: number | null; bpmConfidence?: number | null; analysisStatus?: string | null; fieldSources?: Record<string, string> } | null): boolean =>
   Boolean(track?.fieldSources?.bpm === 'audio_analysis' && isReliableBpmAnalysis(track.bpm, track.bpmConfidence, track.analysisStatus));
+const readAudioAnalysisEnabled = (settings: unknown): boolean => {
+  if (!settings || typeof settings !== 'object') {
+    return true;
+  }
+
+  return (settings as { audioAnalysisEnabled?: unknown }).audioAnalysisEnabled !== false;
+};
+const readAudioAnalysisEnabledPatch = (patch: unknown): boolean | null => {
+  if (!patch || typeof patch !== 'object') {
+    return null;
+  }
+
+  const value = (patch as { audioAnalysisEnabled?: unknown }).audioAnalysisEnabled;
+  return typeof value === 'boolean' ? value : null;
+};
 
 const deferNonCriticalPlaybackTask = (callback: () => void): (() => void) => {
   let cancelled = false;
@@ -106,6 +121,61 @@ const dispatchPlaybackSeeked = (positionSeconds: number, trackId: string | null)
   window.dispatchEvent(new CustomEvent(playbackSeekedEvent, { detail: { positionSeconds, trackId } }));
 };
 
+const PlayerMarqueeText = ({ kind, text }: { kind: 'title' | 'subtitle'; text: string }): JSX.Element => {
+  const textRef = useRef<HTMLElement | null>(null);
+  const innerRef = useRef<HTMLSpanElement | null>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  useEffect(() => {
+    const element = textRef.current;
+    const innerElement = innerRef.current;
+    if (!element || !innerElement) {
+      return undefined;
+    }
+
+    let frameId: number | null = null;
+    const updateOverflow = (): void => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        const distance = Math.max(0, innerElement.scrollWidth - element.clientWidth);
+        const shouldScroll = distance > 2;
+        element.style.setProperty('--player-marquee-distance', `${distance + 18}px`);
+        element.style.setProperty('--player-marquee-duration', `${Math.min(22, Math.max(8, distance / 18 + 6))}s`);
+        setIsOverflowing(shouldScroll);
+      });
+    };
+
+    updateOverflow();
+
+    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(updateOverflow) : null;
+    resizeObserver?.observe(element);
+    resizeObserver?.observe(innerElement);
+    window.addEventListener('resize', updateOverflow);
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateOverflow);
+    };
+  }, [text]);
+
+  const content = <span className="player-marquee-inner" ref={innerRef}>{text}</span>;
+  const commonProps = {
+    className: 'player-marquee',
+    'data-overflow': isOverflowing ? 'true' : undefined,
+    ref: textRef,
+    title: text,
+  };
+
+  return kind === 'title' ? <strong {...commonProps}>{content}</strong> : <span {...commonProps}>{content}</span>;
+};
+
 const isTextEditingElement = (target: EventTarget | null): boolean => {
   if (!(target instanceof Element)) {
     return false;
@@ -141,6 +211,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const [openPopover, setOpenPopover] = useState<'volume' | 'speed' | null>(null);
   const [isCurrentTrackLiked, setIsCurrentTrackLiked] = useState(false);
   const [smtcEnabled, setSmtcEnabled] = useState(true);
+  const [audioAnalysisEnabled, setAudioAnalysisEnabled] = useState<boolean | null>(null);
   const handledEndedTrackRef = useRef<string | null>(null);
   const hydratedTrackIdsRef = useRef(new Set<string>());
   const bpmAnalysisJobIdsRef = useRef(new Map<string, string | 'done'>());
@@ -335,6 +406,49 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     activeTrackIdRef.current = currentTrack?.id ?? trackId ?? null;
   }, [currentTrack?.id, trackId]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshAudioAnalysisSetting = (): void => {
+      const getSettings = window.echo?.app?.getSettings;
+      if (typeof getSettings !== 'function') {
+        setAudioAnalysisEnabled(true);
+        return;
+      }
+
+      void getSettings()
+        .then((settings) => {
+          if (!cancelled) {
+            setAudioAnalysisEnabled(readAudioAnalysisEnabled(settings));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setAudioAnalysisEnabled(true);
+          }
+        });
+    };
+
+    const handleSettingsChanged = (event: Event): void => {
+      if (event instanceof CustomEvent) {
+        const patchedValue = readAudioAnalysisEnabledPatch(event.detail);
+        if (patchedValue !== null) {
+          setAudioAnalysisEnabled(patchedValue);
+        }
+      }
+
+      refreshAudioAnalysisSetting();
+    };
+
+    refreshAudioAnalysisSetting();
+    window.addEventListener('settings:changed', handleSettingsChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
+
   const refreshCurrentTrackLiked = useCallback(async (): Promise<void> => {
     if (!trackId || (!isLibraryCurrentTrack && !isProviderLikedStreamingTrack) || !window.echo?.library) {
       setIsCurrentTrackLiked(false);
@@ -479,6 +593,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       analysisTrack.analysisStatus !== 'analyzing' &&
       !isVerifiedAudioAnalysisBpm(analysisTrack);
     const shouldStartAnalysis = isPlaying;
+    const canStartAnalysis = audioAnalysisEnabled === true;
     const shouldContinueAnalysis = Boolean(existingJobId && existingJobId !== 'done');
 
     if (
@@ -497,7 +612,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       return undefined;
     }
 
-    if ((!canAnalyzeCurrentTrack && !shouldContinueAnalysis) || (!shouldStartAnalysis && !shouldContinueAnalysis)) {
+    if ((!canAnalyzeCurrentTrack && !shouldContinueAnalysis) || ((!shouldStartAnalysis || !canStartAnalysis) && !shouldContinueAnalysis)) {
       return undefined;
     }
 
@@ -580,11 +695,12 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
         window.clearTimeout(pollTimer);
       }
     };
-  }, [currentTrack, isPlaying, updateTrackSnapshot]);
+  }, [audioAnalysisEnabled, currentTrack, isPlaying, updateTrackSnapshot]);
 
   useEffect(() => {
     const streaming = window.echo?.streaming;
     const canAnalyzeCurrentTrack =
+      audioAnalysisEnabled === true &&
       isPlaying &&
       streamingTrackMediaType === 'streaming' &&
       streamingTrackProvider !== 'spotify' &&
@@ -648,6 +764,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       }
     };
   }, [
+    audioAnalysisEnabled,
     isPlaying,
     streamingTrackAnalysisStatus,
     streamingTrackBpm,
@@ -1036,8 +1153,8 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           <div className="cover-sheen" />
         </button>
         <div className="player-track-copy">
-          <strong>{title}</strong>
-          <span>{artist}</span>
+          <PlayerMarqueeText kind="title" text={title} />
+          <PlayerMarqueeText kind="subtitle" text={artist} />
           <PlayerStatusChips status={audioStatus} state={state} track={currentTrack} />
         </div>
       </div>

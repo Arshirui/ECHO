@@ -47,12 +47,16 @@ describe('TrackRow', () => {
     expect(screen.getByRole('button', { name: 'More Afraid' })).toBeTruthy();
   });
 
-  it('only shows BPM tags once the analysis is reliable', () => {
+  it('shows detected BPM tags after analysis even when confidence is low', () => {
     const { rerender } = render(<TrackRow isPlaying={false} track={track({ bpm: 128, bpmConfidence: 0.92, analysisStatus: 'complete' })} />);
 
     expect(screen.getByText('128 BPM')).toBeTruthy();
 
     rerender(<TrackRow isPlaying={false} track={track({ bpm: 128, bpmConfidence: 0.2, analysisStatus: 'low_confidence' })} />);
+
+    expect(screen.getByText('128 BPM')).toBeTruthy();
+
+    rerender(<TrackRow isPlaying={false} track={track({ bpm: 128, bpmConfidence: null, analysisStatus: 'analyzing' })} />);
 
     expect(screen.queryByText('128 BPM')).toBeNull();
   });

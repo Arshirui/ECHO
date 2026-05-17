@@ -11,9 +11,17 @@ type EmbeddedCoverData = {
 
 type TagWriteRequest = {
   filePath: string;
-  tags: EditableTrackTags;
-  coverData: EmbeddedCoverData | null;
-};
+} & (
+  | {
+      kind?: 'full';
+      tags: EditableTrackTags;
+      coverData: EmbeddedCoverData | null;
+    }
+  | {
+      kind: 'bpm';
+      bpm: number;
+    }
+);
 
 type TagWriteWorkerData = TagWriteRequest & {
   taglibWasmModuleUrl: string;
@@ -26,12 +34,21 @@ const workerSource = String.raw`
 const { parentPort, workerData } = module['require']('node:worker_threads');
 
 (async () => {
-  const { filePath, tags, coverData, taglibWasmModuleUrl } = workerData;
+  const { filePath, taglibWasmModuleUrl } = workerData;
   const [{ applyCoverArt, applyTagsToFile }, fs] = await Promise.all([
     import(taglibWasmModuleUrl),
     import('node:fs/promises'),
   ]);
 
+  if (workerData.kind === 'bpm') {
+    await applyTagsToFile(filePath, {
+      bpm: workerData.bpm,
+    });
+    parentPort.postMessage({ ok: true });
+    return;
+  }
+
+  const { tags, coverData } = workerData;
   await applyTagsToFile(filePath, {
     title: tags.title,
     artist: tags.artist,
@@ -41,6 +58,7 @@ const { parentPort, workerData } = module['require']('node:worker_threads');
     discNumber: tags.discNo ?? 0,
     year: tags.year ?? 0,
     genre: tags.genre ?? '',
+    bpm: tags.bpm ?? undefined,
   });
 
   if (coverData) {
@@ -70,6 +88,31 @@ export const writeEmbeddedTrackTags = async (request: TagWriteRequest): Promise<
   });
 
   tagWriteQueues.set(request.filePath, queuedWrite);
+  void queuedWrite.catch(() => undefined);
+
+  return nextWrite;
+};
+
+export const writeEmbeddedBpmTag = async (filePath: string, bpm: number): Promise<void> => {
+  const roundedBpm = Math.round(bpm);
+  if (!Number.isFinite(roundedBpm) || roundedBpm <= 0) {
+    throw new Error('bpm must be a positive finite number');
+  }
+
+  const request: TagWriteRequest = {
+    kind: 'bpm',
+    filePath,
+    bpm: roundedBpm,
+  };
+  const previousWrite = tagWriteQueues.get(filePath) ?? Promise.resolve();
+  const nextWrite = previousWrite.catch(() => undefined).then(() => enqueueGlobalTagWrite(request));
+  const queuedWrite = nextWrite.finally(() => {
+    if (tagWriteQueues.get(filePath) === queuedWrite) {
+      tagWriteQueues.delete(filePath);
+    }
+  });
+
+  tagWriteQueues.set(filePath, queuedWrite);
   void queuedWrite.catch(() => undefined);
 
   return nextWrite;
