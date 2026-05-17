@@ -17,7 +17,7 @@ import {
   writeSongsFirstPageSnapshot,
   type SongsFirstPageSnapshot,
 } from '../stores/songsFirstPageSnapshot';
-import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { isPlaybackCancellationError, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { usePlaybackFollowCurrentTrack } from '../hooks/usePlaybackFollowCurrentTrack';
 import { openAlbumDetailForTrack } from '../utils/albumNavigation';
 
@@ -525,6 +525,10 @@ export const SongsPage = (): JSX.Element => {
           source: queueSource,
         });
       } catch (playError) {
+        if (isPlaybackCancellationError(playError)) {
+          return;
+        }
+
         setError(playError instanceof Error ? playError.message : String(playError));
       }
     },

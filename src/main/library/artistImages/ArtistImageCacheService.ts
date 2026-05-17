@@ -17,9 +17,15 @@ import {
   ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE,
   artistImageKeyForName,
 } from './ArtistImageMatching';
+import { DeezerArtistImageProvider } from './DeezerArtistImageProvider';
+import { DoubanArtistImageProvider } from './DoubanArtistImageProvider';
 import { KugouArtistImageProvider } from './KugouArtistImageProvider';
 import { KuwoArtistImageProvider } from './KuwoArtistImageProvider';
+import { LastFmArtistImageProvider } from './LastFmArtistImageProvider';
+import { MiguArtistImageProvider } from './MiguArtistImageProvider';
+import { MusicBrainzFanartArtistImageProvider } from './MusicBrainzFanartArtistImageProvider';
 import { NeteaseArtistImageProvider } from './NeteaseArtistImageProvider';
+import { QianqianArtistImageProvider } from './QianqianArtistImageProvider';
 import { QQMusicArtistImageProvider } from './QQMusicArtistImageProvider';
 import { SpotifyArtistImageProvider } from './SpotifyArtistImageProvider';
 import { WikidataArtistImageProvider } from './WikidataArtistImageProvider';
@@ -80,8 +86,17 @@ const maxImageBytes = 5 * 1024 * 1024;
 const imageRequestTimeoutMs = 8000;
 const minAcceptedImageSide = 240;
 const defaultProvider = 'qqmusic';
-const preferredPrimaryProviderNames = new Set(['qqmusic', 'netease']);
-const fallbackProviderNames = new Set(['spotify', 'wikipedia', 'wikidata']);
+const preferredPrimaryProviderNames = new Set([
+  'qqmusic',
+  'netease',
+  'kuwo',
+  'kugou',
+  'migu',
+  'qianqian',
+  'douban',
+  'deezer',
+]);
+const fallbackProviderNames = new Set(['spotify', 'lastfm', 'musicbrainz_fanarttv', 'wikipedia', 'wikidata']);
 const cacheStatuses = new Set<ArtistImageCacheStatus>([
   'pending',
   'loading',
@@ -108,7 +123,13 @@ const defaultArtistImageProviders = (): ArtistImageProvider[] => [
   new NeteaseArtistImageProvider(),
   new KuwoArtistImageProvider(),
   new KugouArtistImageProvider(),
+  new MiguArtistImageProvider(),
+  new QianqianArtistImageProvider(),
+  new DoubanArtistImageProvider(),
   new SpotifyArtistImageProvider(),
+  new DeezerArtistImageProvider(),
+  new LastFmArtistImageProvider(),
+  new MusicBrainzFanartArtistImageProvider(),
   new WikipediaArtistImageProvider(),
   new WikidataArtistImageProvider(),
 ];
@@ -134,6 +155,40 @@ const mimeTypeForImageUrl = (url: string): string | null => {
   } catch {
     return null;
   }
+};
+
+const refererForImageUrl = (url: string): string => {
+  try {
+    const hostname = new URL(url).hostname.toLocaleLowerCase();
+    if (hostname.endsWith('doubanio.com')) {
+      return 'https://movie.douban.com/';
+    }
+    if (hostname.endsWith('dmhmusic.com') || hostname.endsWith('91q.com')) {
+      return 'https://music.91q.com/';
+    }
+    if (hostname.endsWith('migu.cn')) {
+      return 'https://music.migu.cn/';
+    }
+    if (hostname.endsWith('dzcdn.net') || hostname.endsWith('deezer.com')) {
+      return 'https://www.deezer.com/';
+    }
+    if (hostname.endsWith('fanart.tv')) {
+      return 'https://fanart.tv/';
+    }
+    if (hostname.endsWith('last.fm') || hostname.endsWith('fastly.net')) {
+      return 'https://www.last.fm/';
+    }
+    if (hostname.endsWith('kuwo.cn')) {
+      return 'https://www.kuwo.cn/';
+    }
+    if (hostname.endsWith('kugou.com')) {
+      return 'https://www.kugou.com/';
+    }
+  } catch {
+    // Fall through to the safest default used by the original QQ image path.
+  }
+
+  return 'https://y.qq.com/';
 };
 
 class ArtistImageDownloadError extends Error {
@@ -892,7 +947,7 @@ export class ArtistImageCacheService {
         redirect: 'follow',
         headers: {
           Accept: 'image/avif,image/webp,image/png,image/jpeg,*/*',
-          Referer: 'https://y.qq.com/',
+          Referer: refererForImageUrl(url),
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         },

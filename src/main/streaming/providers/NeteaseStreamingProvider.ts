@@ -42,11 +42,13 @@ type NeteaseApi = {
   artist_album?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   artist_top_song?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   artists?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
+  cloudsearch?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   likelist?: (request: Record<string, unknown>) => Promise<{ body?: { ids?: unknown[]; checkPoint?: unknown[]; code?: number } }>;
   login_status?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   playlist_track_all?: (request: Record<string, unknown>) => Promise<{ body?: { songs?: unknown[] } }>;
   recommend_songs?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
   song_like?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
+  song_url?: (request: Record<string, unknown>) => Promise<{ body?: { data?: unknown[] } }>;
   song_url_v1?: (request: Record<string, unknown>) => Promise<{ body?: { data?: unknown[] } }>;
   user_account?: (request: Record<string, unknown>) => Promise<{ body?: unknown }>;
 };
@@ -164,7 +166,7 @@ const resolveWithNcmApi = async (
   cookie: string | undefined,
 ): Promise<NeteaseResolvedSource | null> => {
   const ncm = getNcmApi();
-  if (!ncm?.song_url_v1) {
+  if (!ncm?.song_url_v1 && !ncm?.song_url) {
     return null;
   }
 
@@ -173,10 +175,36 @@ const resolveWithNcmApi = async (
     return null;
   }
 
+  if (ncm.song_url_v1) {
+    try {
+      const response = await ncm.song_url_v1({
+        id,
+        level: candidate.level,
+        ...(cookie ? { cookie } : {}),
+      });
+      const entry = asRecord(Array.isArray(response.body?.data) ? response.body?.data[0] : null);
+      const url = text(entry.url);
+      if (url) {
+        return {
+          url,
+          type: text(entry.type) ?? candidate.quality,
+          br: integer(entry.br) ?? candidate.bitrate,
+          level: text(entry.level) ?? candidate.level,
+        };
+      }
+    } catch {
+      // Fall through to the older bitrate based resolver below.
+    }
+  }
+
+  if (!ncm.song_url) {
+    return null;
+  }
+
   try {
-    const response = await ncm.song_url_v1({
+    const response = await ncm.song_url({
       id,
-      level: candidate.level,
+      br: candidate.bitrate,
       ...(cookie ? { cookie } : {}),
     });
     const entry = asRecord(Array.isArray(response.body?.data) ? response.body?.data[0] : null);
@@ -226,8 +254,7 @@ const mapSong = (songValue: unknown, detailCoverUrl: string | null = null): Stre
   const artist = artists.map((item) => item.name).join(' / ') || 'Unknown Artist';
   const albumTitle = text(album.name) ?? 'Unknown Album';
   const fee = integer(song.fee);
-  const noCopyright = song.noCopyrightRcmd != null || song.copyright === 0;
-  const playable = !noCopyright;
+  const playable = Boolean(providerTrackId);
   const coverSource = detailCoverUrl ?? album.picUrl ?? album.blurPicUrl ?? album.pic;
 
   return {
@@ -247,7 +274,7 @@ const mapSong = (songValue: unknown, detailCoverUrl: string | null = null): Stre
     qualities: fee === 1 ? ['standard', 'high'] : ['standard', 'high', 'lossless'],
     explicit: false,
     playable,
-    unavailableReason: playable ? null : 'This NetEase track is temporarily unavailable.',
+    unavailableReason: playable ? null : 'This NetEase track has no provider id.',
     lyricsStatus: 'available',
     mvStatus: integer(song.mvid ?? song.mv) ? 'available' : 'unknown',
   };
@@ -361,6 +388,42 @@ const neteaseSearchType = (request: StreamingSearchRequest): '1' | '10' | '100' 
   return '1';
 };
 
+const neteaseSearchResultHasItems = (result: Record<string, unknown>): boolean => {
+  const songs = Array.isArray(result.songs) ? result.songs : [];
+  const albums = Array.isArray(result.albums) ? result.albums : [];
+  const artists = Array.isArray(result.artists) ? result.artists : [];
+  const playlists = Array.isArray(result.playlists) ? result.playlists : [];
+
+  return songs.length > 0 || albums.length > 0 || artists.length > 0 || playlists.length > 0;
+};
+
+const resolveWithNcmCloudSearch = async (
+  request: StreamingSearchRequest,
+  searchType: '1' | '10' | '100' | '1000',
+  page: number,
+  pageSize: number,
+  cookie: string | undefined,
+): Promise<Record<string, unknown> | null> => {
+  const ncm = getNcmApi();
+  if (!ncm?.cloudsearch) {
+    return null;
+  }
+
+  try {
+    const response = await ncm.cloudsearch({
+      keywords: request.query,
+      type: Number(searchType),
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      ...(cookie ? { cookie } : {}),
+    });
+    const data = asRecord(response.body);
+    return asRecord(data.result);
+  } catch {
+    return null;
+  }
+};
+
 const dailyRecommendSongs = (value: unknown): unknown[] => {
   const body = asRecord(value);
   const data = asRecord(body.data);
@@ -459,8 +522,27 @@ export class NeteaseStreamingProvider implements StreamingProvider {
       limit: String(pageSize),
       offset: String((page - 1) * pageSize),
     });
-    const data = asRecord(await jsonFetch(`https://music.163.com/api/search/get/web?${params.toString()}`, { headers: neteaseHeaders(accountCookie()) }));
-    const result = asRecord(data.result);
+    const cookie = accountCookie();
+    let result: Record<string, unknown>;
+    try {
+      const data = asRecord(await jsonFetch(`https://music.163.com/api/search/get/web?${params.toString()}`, { headers: neteaseHeaders(cookie) }));
+      result = asRecord(data.result);
+    } catch (error) {
+      const fallbackResult = await resolveWithNcmCloudSearch(request, searchType, page, pageSize, cookie);
+      if (!fallbackResult) {
+        throw error;
+      }
+
+      result = fallbackResult;
+    }
+
+    if (!neteaseSearchResultHasItems(result)) {
+      const fallbackResult = await resolveWithNcmCloudSearch(request, searchType, page, pageSize, cookie);
+      if (fallbackResult && neteaseSearchResultHasItems(fallbackResult)) {
+        result = fallbackResult;
+      }
+    }
+
     const songs = Array.isArray(result.songs) ? result.songs : [];
     const albums = Array.isArray(result.albums) ? result.albums : [];
     const artists = Array.isArray(result.artists) ? result.artists : [];

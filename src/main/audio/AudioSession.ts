@@ -156,6 +156,8 @@ const isAudioSessionRunCancelledError = (error: unknown): boolean => {
   return message.includes('audio_session_run_cancelled');
 };
 const sharedReplacementGracefulStopTimeoutMs = 250;
+const releaseExclusiveOnPauseGracefulStopTimeoutMs = 1_500;
+const releaseExclusiveOnPausePlayWaitTimeoutMs = 900;
 const minReliableAsioSampleRate = 44_100;
 type SharedOutputProfile = Pick<
   NativeOutputStartOptions,
@@ -862,6 +864,7 @@ export class AudioSession extends EventEmitter {
     asioNativeDsdExperimentalEnabled: false,
     asioUnavailableFallbackEnabled: false,
     soxrFallbackEnabled: true,
+    releaseExclusiveOnPauseExperimentalEnabled: false,
     volume: 1,
     playbackRate: 1,
     playbackSpeedMode: 'nightcore',
@@ -908,6 +911,9 @@ export class AudioSession extends EventEmitter {
   private errorMessage: string | null = null;
   private outputWarnings: string[] = [];
   private pausedPositionSeconds: number | null = null;
+  private exclusiveReleaseOnPausePromise: Promise<void> | null = null;
+  private exclusiveReleasedOnPause = false;
+  private exclusiveResumeAfterRelease = false;
   private runToken = 0;
   private readonly watchdogIntervalMs: number;
   private readonly watchdogStallChecks: number;
@@ -1118,6 +1124,10 @@ export class AudioSession extends EventEmitter {
       asioNativeDsdExperimentalEnabled: settings.asioNativeDsdExperimentalEnabled ?? this.outputSettings.asioNativeDsdExperimentalEnabled ?? false,
       asioUnavailableFallbackEnabled: settings.asioUnavailableFallbackEnabled ?? this.outputSettings.asioUnavailableFallbackEnabled ?? false,
       soxrFallbackEnabled: settings.soxrFallbackEnabled ?? this.outputSettings.soxrFallbackEnabled ?? true,
+      releaseExclusiveOnPauseExperimentalEnabled:
+        settings.releaseExclusiveOnPauseExperimentalEnabled ??
+        this.outputSettings.releaseExclusiveOnPauseExperimentalEnabled ??
+        false,
       volume: Math.max(0, Math.min(1, Number(settings.volume ?? this.outputSettings.volume) || 0)),
       playbackRate: normalizePlaybackRate(settings.playbackRate ?? this.outputSettings.playbackRate),
       playbackSpeedMode: normalizePlaybackSpeedMode(settings.playbackSpeedMode ?? this.outputSettings.playbackSpeedMode),
@@ -1233,6 +1243,7 @@ export class AudioSession extends EventEmitter {
       ...(this.watchdogPendingWarning ? [this.watchdogPendingWarning] : []),
       ...this.pendingOutputWarnings,
     ];
+    this.exclusiveReleasedOnPause = false;
     this.watchdogPendingWarning = null;
     this.pendingOutputWarnings = [];
     this.resetWatchdogProgress();
@@ -1338,6 +1349,9 @@ export class AudioSession extends EventEmitter {
         preparedLocalProbeUsed: Boolean(preparedProbe),
         preparedLocalProbeAgeMs: preparedProbe?.ageMs ?? null,
       });
+      if (this.exclusiveResumeAfterRelease && activePlan.outputMode === 'exclusive') {
+        this.exclusiveResumeAfterRelease = false;
+      }
       if (activePlan.dsdOutputMode === 'native') {
         try {
           const info = await readDsfDopInfo(request.filePath);
@@ -1531,6 +1545,8 @@ export class AudioSession extends EventEmitter {
   }
 
   async play(): Promise<AudioStatus> {
+    await this.waitForExclusiveReleaseOnPause('play');
+
     if (this.state === 'paused' && this.currentFilePath && this.currentOutputSettings) {
       const bridge = this.bridge;
       const currentProbe = this.currentProbe;
@@ -1579,6 +1595,8 @@ export class AudioSession extends EventEmitter {
         return this.getStatus();
       }
 
+      this.exclusiveResumeAfterRelease = this.exclusiveReleasedOnPause;
+      this.exclusiveReleasedOnPause = false;
       return this.playLocalFile({
         filePath: this.currentFilePath,
         trackId: this.currentTrackId ?? undefined,
@@ -1592,21 +1610,143 @@ export class AudioSession extends EventEmitter {
     return this.getStatus();
   }
 
-  pause(): AudioStatus {
+  private shouldReleaseExclusiveOnPause(): boolean {
+    return Boolean(
+      this.state === 'playing' &&
+      this.currentOutputSettings?.releaseExclusiveOnPauseExperimentalEnabled === true &&
+      normalizeOutputMode(this.currentPlan?.outputMode ?? this.currentOutputSettings.outputMode) === 'exclusive' &&
+      this.bridge &&
+      this.currentReadyResult,
+    );
+  }
+
+  private async waitForExclusiveReleaseOnPause(reason: string): Promise<void> {
+    const release = this.exclusiveReleaseOnPausePromise;
+    if (!release) {
+      return;
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    try {
+      await Promise.race([
+        release,
+        new Promise<void>((resolve) => {
+          timeout = setTimeout(resolve, releaseExclusiveOnPausePlayWaitTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (this.exclusiveReleaseOnPausePromise) {
+      this.addOutputWarning('exclusive_release_on_pause_still_finishing');
+      this.logger(`[AudioSession] continuing ${reason} while exclusive pause release finishes in background`);
+    }
+  }
+
+  private async releaseExclusiveOutputOnPause(
+    bridge: OutputBridgeLike,
+    token: number,
+    positionSeconds: number,
+    sampleRate: number | null,
+  ): Promise<void> {
+    this.stopDecoderRun();
+    try {
+      bridge.endSession?.();
+    } catch {
+      // Best-effort idle transition before releasing exclusive WASAPI.
+    }
+
+    this.detachBridgeEvents(bridge);
+    this.pausedPositionSeconds = positionSeconds;
+    this.clock.reset(positionSeconds, sampleRate);
+    this.state = 'paused';
+    this.hostStatus = 'starting';
+    this.nativeUnderrunWindow = null;
+    this.resetWatchdogProgress();
+    this.exclusiveReleasedOnPause = true;
+    this.addOutputWarning('exclusive_released_on_pause');
+    this.emitStatus();
+
+    const release = this.releaseExclusiveBridgeOnPause(bridge, token);
+    this.exclusiveReleaseOnPausePromise = release;
+    try {
+      await release;
+    } finally {
+      if (this.exclusiveReleaseOnPausePromise === release) {
+        this.exclusiveReleaseOnPausePromise = null;
+      }
+    }
+  }
+
+  private async releaseExclusiveBridgeOnPause(bridge: OutputBridgeLike, token: number): Promise<void> {
+    const reason = 'release-exclusive-on-pause';
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let timedOut = false;
+
+    try {
+      await Promise.race([
+        this.stopBridgeWithOptions(bridge, reason, releaseExclusiveOnPauseGracefulStopTimeoutMs, true),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => {
+            timedOut = true;
+            reject(new Error('release_exclusive_on_pause_timeout'));
+          }, releaseExclusiveOnPauseGracefulStopTimeoutMs + 250);
+        }),
+      ]);
+    } catch (error) {
+      if (timedOut) {
+        this.addOutputWarning('exclusive_release_on_pause_forced_stop');
+      } else {
+        this.addOutputWarning('exclusive_release_on_pause_failed');
+      }
+      this.logger(`[AudioSession] exclusive release on pause cleanup failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`);
+      try {
+        bridge.stop();
+      } catch {
+        // The host may have already exited or be force-killed by stopGracefully.
+      }
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      if (this.bridge === bridge && this.runToken === token) {
+        this.bridge = null;
+        this.currentReadyResult = null;
+        this.currentBridgeOutputMode = null;
+        this.currentBridgeSharedBackend = null;
+        this.currentResidentOutputSampleRate = null;
+        this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
+        this.emitStatus();
+      }
+    }
+  }
+
+  async pause(): Promise<AudioStatus> {
     if (this.state === 'playing' || this.state === 'loading') {
       if (this.state === 'playing') {
         this.updatePositionFromOutput();
       }
       const positionSeconds = this.state === 'playing' ? this.clock.getPositionSeconds() : this.pausedPositionSeconds ?? 0;
       const sampleRate = this.currentPlan?.actualDeviceSampleRate ?? this.currentPlan?.requestedOutputSampleRate ?? null;
+      const shouldReleaseExclusiveOnPause = this.shouldReleaseExclusiveOnPause();
       const keepResidentBridge = Boolean(
         this.state === 'playing' &&
+        !shouldReleaseExclusiveOnPause &&
         isResidentOutputMode(this.currentPlan?.outputMode ?? this.currentOutputSettings?.outputMode) &&
         this.bridge &&
         this.currentReadyResult,
       );
       this.runToken += 1;
       const token = this.runToken;
+      if (shouldReleaseExclusiveOnPause && this.bridge) {
+        await this.releaseExclusiveOutputOnPause(this.bridge, token, positionSeconds, sampleRate);
+        return this.getStatus();
+      }
       if (keepResidentBridge) {
         this.stopDecoderRun();
         try {
@@ -1638,6 +1778,9 @@ export class AudioSession extends EventEmitter {
 
   stop(): AudioStatus {
     this.runToken += 1;
+    this.exclusiveReleaseOnPausePromise = null;
+    this.exclusiveReleasedOnPause = false;
+    this.exclusiveResumeAfterRelease = false;
     this.stopResources();
     this.resetLevelMeter();
     this.resetNativeTelemetry();
@@ -1701,6 +1844,9 @@ export class AudioSession extends EventEmitter {
   }
 
   private resetSessionAfterForcedStop(): void {
+    this.exclusiveReleaseOnPausePromise = null;
+    this.exclusiveReleasedOnPause = false;
+    this.exclusiveResumeAfterRelease = false;
     this.resetLevelMeter();
     this.resetNativeTelemetry();
     this.state = 'stopped';
@@ -1749,7 +1895,11 @@ export class AudioSession extends EventEmitter {
       await this.stopResourcesGracefully('seek-paused');
       this.pausedPositionSeconds = safePositionSeconds;
       this.clock.reset(safePositionSeconds, sampleRate);
-      const canPrewarm = Boolean(this.currentProbe && this.currentOutputSettings && this.isNativeHostAvailable());
+      const keepExclusiveReleased =
+        this.exclusiveReleasedOnPause &&
+        this.currentOutputSettings.releaseExclusiveOnPauseExperimentalEnabled === true &&
+        normalizeOutputMode(this.currentOutputSettings.outputMode) === 'exclusive';
+      const canPrewarm = !keepExclusiveReleased && Boolean(this.currentProbe && this.currentOutputSettings && this.isNativeHostAvailable());
       this.hostStatus = canPrewarm ? 'starting' : this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
       this.emitStatus();
       if (canPrewarm) {
@@ -2106,6 +2256,10 @@ export class AudioSession extends EventEmitter {
       useJuceDecode: output?.useJuceDecode ?? this.outputSettings.useJuceDecode ?? false,
       dsdOutputMode: normalizeDsdOutputMode(output?.dsdOutputMode ?? this.outputSettings.dsdOutputMode),
       soxrFallbackEnabled: output?.soxrFallbackEnabled ?? this.outputSettings.soxrFallbackEnabled ?? true,
+      releaseExclusiveOnPauseExperimentalEnabled:
+        output?.releaseExclusiveOnPauseExperimentalEnabled ??
+        this.outputSettings.releaseExclusiveOnPauseExperimentalEnabled ??
+        false,
       volume: Math.max(0, Math.min(1, Number(output?.volume ?? this.outputSettings.volume) || 0)),
       playbackRate: normalizePlaybackRate(output?.playbackRate ?? this.outputSettings.playbackRate),
       playbackSpeedMode: normalizePlaybackSpeedMode(output?.playbackSpeedMode ?? this.outputSettings.playbackSpeedMode),
@@ -3094,7 +3248,11 @@ export class AudioSession extends EventEmitter {
       this.currentOutputSettings = fallbackSettings;
       this.currentDevice = fallbackDevice;
       this.currentPlan = this.createSampleRatePlan(probe, fallbackSettings, fallbackDevice);
-      this.outputWarnings.push('exclusive_output_fell_back_to_shared');
+      this.addOutputWarning('exclusive_output_fell_back_to_shared');
+      if (this.exclusiveResumeAfterRelease) {
+        this.addOutputWarning('exclusive_resume_fell_back_to_shared');
+        this.exclusiveResumeAfterRelease = false;
+      }
       this.logger(
         `[AudioSession] exclusive output failed; falling back to shared output: ${
           lastError?.message ?? 'unknown exclusive output error'
@@ -3251,7 +3409,11 @@ export class AudioSession extends EventEmitter {
     this.currentOutputSettings = fallbackSettings;
     this.currentDevice = fallbackDevice;
     this.currentPlan = this.createSampleRatePlan(probe, fallbackSettings, fallbackDevice);
-    this.outputWarnings.push('exclusive_output_fell_back_to_shared');
+    this.addOutputWarning('exclusive_output_fell_back_to_shared');
+    if (this.exclusiveResumeAfterRelease) {
+      this.addOutputWarning('exclusive_resume_fell_back_to_shared');
+      this.exclusiveResumeAfterRelease = false;
+    }
     this.logger(`[AudioSession] exclusive output failed; falling back to shared output: ${cause.message}`);
     this.clock.reset(startSeconds, this.currentPlan.requestedOutputSampleRate);
 

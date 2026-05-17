@@ -92,10 +92,12 @@ export type TranslationKey =
   | 'audioDrawer.note.juceDecode'
   | 'audioDrawer.note.dsdDop'
   | 'audioDrawer.note.asioNativeDsd'
+  | 'audioDrawer.note.releaseExclusiveOnPause'
   | 'audioDrawer.option.juceOutput'
   | 'audioDrawer.option.juceDecode'
   | 'audioDrawer.option.dsdDop'
   | 'audioDrawer.option.asioNativeDsd'
+  | 'audioDrawer.option.releaseExclusiveOnPause'
   | 'audioDrawer.option.active'
   | 'audioDrawer.option.set'
   | 'audioDrawer.option.rememberOutput'
@@ -948,10 +950,12 @@ const zhCN: TranslationMap = {
   'audioDrawer.note.juceDecode': '默认关闭。本地 WAV/FLAC/MP3 在无需重采样时尝试 JUCE 解码；MP3 走 Windows Media，失败会自动回退 FFmpeg。',
   'audioDrawer.note.dsdDop': '默认关闭。本地 DSF 在独占或 ASIO 下尝试 DoP 直出；失败会自动回退 FFmpeg PCM，最终以 DAC 显示为准。',
   'audioDrawer.note.asioNativeDsd': '默认关闭。仅 ASIO + 本地 DSF + DoP 开启且无 EQ/音量/变速/DSP 时尝试；失败会退回现有 DoP/PCM。',
+  'audioDrawer.note.releaseExclusiveOnPause': '实验功能。暂停时释放 WASAPI 独占，让其它软件临时出声；恢复播放会重新抢独占，失败时临时降到共享。',
   'audioDrawer.option.juceOutput': 'JUCE 主输出',
   'audioDrawer.option.juceDecode': 'JUCE 解码试验',
   'audioDrawer.option.dsdDop': 'DSD DoP 直出试验',
   'audioDrawer.option.asioNativeDsd': 'ASIO 原生 DSD 实验',
+  'audioDrawer.option.releaseExclusiveOnPause': '暂停释放独占实验',
   'audioDrawer.option.active': '开启',
   'audioDrawer.option.set': '设置',
   'audioDrawer.option.rememberOutput': '保存输出设置',
@@ -1831,10 +1835,12 @@ const zhTW: TranslationMap = {
   'audioDrawer.note.juceDecode': '預設關閉。本機 WAV/FLAC/MP3 在不需重取樣時嘗試 JUCE 解碼；MP3 走 Windows Media，失敗會自動退回 FFmpeg。',
   'audioDrawer.note.dsdDop': '預設關閉。本機 DSF 在獨占或 ASIO 下嘗試 DoP 直出；失敗會自動退回 FFmpeg PCM，最終以 DAC 顯示為準。',
   'audioDrawer.note.asioNativeDsd': '預設關閉。僅 ASIO + 本機 DSF + DoP 開啟且無 EQ/音量/變速/DSP 時嘗試；失敗會退回現有 DoP/PCM。',
+  'audioDrawer.note.releaseExclusiveOnPause': '實驗功能。暫停時釋放 WASAPI 獨占，讓其他軟體暫時出聲；恢復播放會重新搶獨占，失敗時暫時降到共享。',
   'audioDrawer.option.juceOutput': 'JUCE 主輸出',
   'audioDrawer.option.juceDecode': 'JUCE 解碼試驗',
   'audioDrawer.option.dsdDop': 'DSD DoP 直出試驗',
   'audioDrawer.option.asioNativeDsd': 'ASIO 原生 DSD 實驗',
+  'audioDrawer.option.releaseExclusiveOnPause': '暫停釋放獨占實驗',
   'audioDrawer.option.active': '開啟',
   'audioDrawer.option.set': '設定',
   'audioDrawer.option.rememberOutput': '儲存輸出設定',
@@ -2417,10 +2423,12 @@ const jaJP: TranslationMap = {
   'audioDrawer.note.juceDecode': '既定ではオフです。リサンプル不要のローカル WAV/FLAC/MP3 で JUCE デコードを試します。MP3 は Windows Media 経由で、失敗時は FFmpeg に戻します。',
   'audioDrawer.note.dsdDop': '既定ではオフです。ローカル DSF を排他または ASIO で DoP 直出し、失敗時は FFmpeg PCM に戻します。最終確認は DAC 表示で行います。',
   'audioDrawer.note.asioNativeDsd': '既定ではオフです。ASIO + ローカル DSF + DoP 有効、かつ EQ/音量/速度/DSP なしの時だけ試し、失敗時は既存の DoP/PCM に戻します。',
+  'audioDrawer.note.releaseExclusiveOnPause': '実験機能です。一時停止時に WASAPI 排他を解放し、他のアプリの音を通します。再生再開時に排他を取り直し、失敗時は一時的に共有へ戻します。',
   'audioDrawer.option.juceOutput': 'JUCE メイン出力',
   'audioDrawer.option.juceDecode': 'JUCE デコード実験',
   'audioDrawer.option.dsdDop': 'DSD DoP 直出実験',
   'audioDrawer.option.asioNativeDsd': 'ASIO ネイティブ DSD 実験',
+  'audioDrawer.option.releaseExclusiveOnPause': '一時停止で排他を解放',
   'audioDrawer.option.active': 'オン',
   'audioDrawer.option.set': '設定',
   'audioDrawer.option.rememberOutput': '出力設定を保存',
@@ -3080,10 +3088,12 @@ const enUS: TranslationMap = {
   'audioDrawer.note.juceDecode': 'Off by default. Tries JUCE decode for local WAV/FLAC/MP3 files that need no resampling; MP3 uses Windows Media and falls back to FFmpeg on failure.',
   'audioDrawer.note.dsdDop': 'Off by default. Tries DoP direct output for local DSF in Exclusive or ASIO; falls back to FFmpeg PCM on failure. Trust the DAC display.',
   'audioDrawer.note.asioNativeDsd': 'Off by default. Tries only for ASIO + local DSF + DoP with no EQ, volume, speed, or DSP; falls back to the existing DoP/PCM path on failure.',
+  'audioDrawer.note.releaseExclusiveOnPause': 'Experimental. Pause releases WASAPI Exclusive so other apps can play; resume tries Exclusive again and temporarily falls back to Shared if needed.',
   'audioDrawer.option.juceOutput': 'JUCE Main Output',
   'audioDrawer.option.juceDecode': 'JUCE Decode Experiment',
   'audioDrawer.option.dsdDop': 'DSD DoP Direct Experiment',
   'audioDrawer.option.asioNativeDsd': 'ASIO Native DSD Experiment',
+  'audioDrawer.option.releaseExclusiveOnPause': 'Release Exclusive on Pause',
   'audioDrawer.option.active': 'On',
   'audioDrawer.option.set': 'Set',
   'audioDrawer.option.rememberOutput': 'Save Output Settings',

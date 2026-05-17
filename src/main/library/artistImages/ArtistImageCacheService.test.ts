@@ -517,7 +517,7 @@ describe('ArtistImageCacheService', () => {
     database.close();
   });
 
-  it('does not wait for secondary primary providers once QQ or NetEase has a usable match', async () => {
+  it('waits for same-tier primary providers and chooses the best domestic match', async () => {
     const database = createDatabase(':memory:');
     insertArtist(database, 'artist-1', 'Arika');
     const kuwoDeferred = createDeferred<ArtistImageCandidate[]>();
@@ -525,9 +525,9 @@ describe('ArtistImageCacheService', () => {
       {
         provider: 'qqmusic',
         providerArtistId: 'qq-arika',
-        artistName: 'Arika',
+        artistName: 'Arika Fan Page',
         imageUrl: 'https://y.gtimg.cn/arika.jpg',
-        confidence: 0.96,
+        confidence: 0.86,
       },
     ]);
     const kuwoSearch = vi.fn().mockReturnValue(kuwoDeferred.promise);
@@ -536,15 +536,29 @@ describe('ArtistImageCacheService', () => {
       createProvider(kuwoSearch, 'kuwo'),
     ]);
 
-    const result = await service.refreshArtistImage('artist-1', true);
+    const resultPromise = service.refreshArtistImage('artist-1', true);
+    await waitFor(() => kuwoSearch.mock.calls.length === 1);
+    await delay(20);
+
+    expect(service.getJobStatus().active).toBe(1);
+
+    kuwoDeferred.resolve([
+      {
+        provider: 'kuwo',
+        providerArtistId: 'kuwo-arika',
+        artistName: 'Arika',
+        imageUrl: 'https://img2.kuwo.cn/star/starheads/500/arika.jpg',
+        confidence: 0.96,
+      },
+    ]);
+    const result = await resultPromise;
 
     expect(kuwoSearch).toHaveBeenCalledTimes(1);
     expect(result.entry).toMatchObject({
       status: 'matched',
-      provider: 'qqmusic',
-      providerArtistId: 'qq-arika',
+      provider: 'kuwo',
+      providerArtistId: 'kuwo-arika',
     });
-    kuwoDeferred.resolve([]);
     database.close();
   });
 

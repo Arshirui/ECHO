@@ -662,6 +662,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         const asioNativeDsdExperimentalEnabled = settings?.audioAsioNativeDsdExperimentalEnabled === true;
         const asioUnavailableFallbackEnabled = settings?.audioAsioUnavailableFallbackEnabled === true;
         const soxrFallbackEnabled = settings?.audioSoxrFallbackEnabled !== false;
+        const releaseExclusiveOnPauseExperimentalEnabled = settings?.audioReleaseExclusiveOnPauseExperimentalEnabled === true;
         if (!remembered.enabled) {
           return audio
             .setOutput({
@@ -671,6 +672,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
               asioNativeDsdExperimentalEnabled,
               asioUnavailableFallbackEnabled,
               soxrFallbackEnabled,
+              releaseExclusiveOnPauseExperimentalEnabled,
             })
             .then(setAudioDrawerStatus);
         }
@@ -688,6 +690,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
             asioNativeDsdExperimentalEnabled,
             asioUnavailableFallbackEnabled,
             soxrFallbackEnabled,
+            releaseExclusiveOnPauseExperimentalEnabled,
           })
           .then(setAudioDrawerStatus);
       })

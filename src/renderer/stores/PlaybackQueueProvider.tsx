@@ -9,6 +9,13 @@ import type { StreamingProviderName } from '../../shared/types/streaming';
 import { isSpotifyTrack, playSpotifyTrack } from '../integrations/spotify/spotifyPlayback';
 import { beginPlaybackSwitchSnapshot, setPlaybackStatusSnapshot } from './playbackStatusStore';
 
+const playbackCancellationErrorMessage = 'audio_session_run_cancelled';
+
+export const isPlaybackCancellationError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes(playbackCancellationErrorMessage);
+};
+
 export type QueueSource =
   | { type: 'songs'; label: string; search?: string; sort?: string; hideDuplicates?: boolean }
   | { type: 'album'; label: string; albumId: string }
@@ -706,7 +713,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
             })();
       } catch (error) {
         if (playRequestTokenRef.current !== requestToken) {
-          throw new Error('audio_session_run_cancelled');
+          throw new Error(playbackCancellationErrorMessage);
         }
 
         setPlaybackStatusSnapshot({

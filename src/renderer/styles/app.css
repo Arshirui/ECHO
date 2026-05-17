@@ -278,6 +278,73 @@
   font-weight: 680;
 }
 
+.player-download-notice {
+  position: fixed;
+  top: 52px;
+  left: 18px;
+  z-index: 42;
+  display: grid;
+  width: min(420px, calc(100vw - 36px));
+  gap: 9px;
+  padding: 12px 14px;
+  color: var(--theme-page-text);
+  border: 1px solid var(--theme-panel-border-strong);
+  border-radius: 8px;
+  background: var(--theme-panel-bg-strong);
+  box-shadow: var(--theme-shadow-soft);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.player-download-notice-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.player-download-notice-copy strong,
+.player-download-notice-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-download-notice-copy strong {
+  color: var(--theme-heading-text);
+  font-size: 12px;
+  font-weight: 860;
+}
+
+.player-download-notice-copy span {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.player-download-notice-progress {
+  overflow: hidden;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--theme-control-bg);
+}
+
+.player-download-notice-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--theme-accent-solid-bg), var(--theme-success-text));
+  transition: width 180ms ease;
+}
+
+.player-download-notice--success {
+  border-color: var(--theme-success-border);
+  background: var(--theme-success-panel-bg);
+}
+
+.player-download-notice--error {
+  border-color: var(--theme-danger-border);
+  background: var(--theme-danger-panel-bg);
+}
+
 .drag-import-overlay {
   position: fixed;
   z-index: 90;
@@ -8385,6 +8452,12 @@ html[data-theme="dark"] .history-play-count {
     top: 48px;
     left: 12px;
     max-width: calc(100vw - 24px);
+  }
+
+  .player-download-notice {
+    top: 48px;
+    left: 12px;
+    width: calc(100vw - 24px);
   }
 
   .drag-import-overlay {

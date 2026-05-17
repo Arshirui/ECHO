@@ -18,7 +18,8 @@ import type {
   StreamingTrack,
 } from '../../../shared/types/streaming';
 import { streamingStableKey } from '../../../shared/types/streaming';
-import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
+import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
+import { isPlaybackCancellationError, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { getDownloadsBridge, getStreamingBridge } from '../../utils/echoBridge';
 import {
   readStreamingSearchMemory,
@@ -192,7 +193,10 @@ export const StreamingSearchPage = (): JSX.Element => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [failedCoverUrls, setFailedCoverUrls] = useState<Record<string, string>>(initialMemory.failedCoverUrls);
+  const { isReturning: isAlbumReturning, returnBack: returnFromAlbum } = useAnimatedBackNavigation(() => setSelectedAlbum(null), Boolean(selectedAlbum));
+  const { isReturning: isArtistReturning, returnBack: returnFromArtist } = useAnimatedBackNavigation(() => setSelectedArtist(null), Boolean(selectedArtist) && !selectedAlbum);
   const requestIdRef = useRef(0);
+  const playActionIdRef = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
   const notifiedDownloadJobIdsRef = useRef<Set<string>>(new Set());
 
@@ -491,6 +495,8 @@ export const StreamingSearchPage = (): JSX.Element => {
 
       setActionError(null);
       setActionMessage(null);
+      const playActionId = playActionIdRef.current + 1;
+      playActionIdRef.current = playActionId;
       setResolvingTrackKey(track.stableKey);
       try {
         await queue.playTrack(streamingTrackToLibraryTrack(track, quality), {
@@ -498,9 +504,15 @@ export const StreamingSearchPage = (): JSX.Element => {
           forceNewQueueItem: true,
         });
       } catch (playError) {
+        if (isPlaybackCancellationError(playError) || playActionIdRef.current !== playActionId) {
+          return;
+        }
+
         setActionError(playError instanceof Error ? playError.message : '流媒体服务暂时不可用');
       } finally {
-        setResolvingTrackKey(null);
+        if (playActionIdRef.current === playActionId) {
+          setResolvingTrackKey(null);
+        }
       }
     },
     [quality, queue, resolvingTrackKey, source],
@@ -720,6 +732,10 @@ export const StreamingSearchPage = (): JSX.Element => {
         source: detailSource,
       });
     } catch (playError) {
+      if (isPlaybackCancellationError(playError)) {
+        return;
+      }
+
       setAlbumDetailError(playError instanceof Error ? playError.message : String(playError));
     }
   }, [quality, queue, selectedAlbumDetail]);
@@ -744,8 +760,8 @@ export const StreamingSearchPage = (): JSX.Element => {
     const currentDetailStableKey = queue.currentTrack?.mediaType === 'streaming' ? queue.currentTrack.stableKey ?? queue.currentTrack.id : null;
 
     return (
-      <div className="album-detail-page">
-        <button className="album-back-button" type="button" onClick={() => setSelectedAlbum(null)}>
+      <div className={`album-detail-page ${isAlbumReturning ? 'is-returning' : ''}`}>
+        <button className="album-back-button" type="button" onClick={returnFromAlbum}>
           <ArrowLeft size={17} />
           Streaming
         </button>
@@ -875,6 +891,10 @@ export const StreamingSearchPage = (): JSX.Element => {
         source: { type: 'streaming' as const, label: `${detail.name} / ${detail.provider}`, provider: detail.provider },
       });
     } catch (playError) {
+      if (isPlaybackCancellationError(playError)) {
+        return;
+      }
+
       setArtistDetailError(playError instanceof Error ? playError.message : String(playError));
     }
   }, [quality, queue, selectedArtistDetail]);
@@ -903,8 +923,8 @@ export const StreamingSearchPage = (): JSX.Element => {
     const canPlay = topTracks.some((track) => track.playable);
 
     return (
-      <div className="artist-detail-page">
-        <button className="artist-detail-back" type="button" onClick={() => setSelectedArtist(null)}>
+      <div className={`artist-detail-page ${isArtistReturning ? 'is-returning' : ''}`}>
+        <button className="artist-detail-back" type="button" onClick={returnFromArtist}>
           <ArrowLeft size={17} />
           Streaming
         </button>

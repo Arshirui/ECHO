@@ -93,6 +93,7 @@ describe('China streaming providers', () => {
   });
 
   it('retries NetEase search with normalized query variants when the exact query is empty', async () => {
+    setNeteaseApiForTests(null);
     const fetchRunner = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ result: { songCount: 0, songs: [] } }))
@@ -133,6 +134,57 @@ describe('China streaming providers', () => {
     });
     expect(String(fetchRunner.mock.calls[0][0])).toContain('s=Echo-Lab');
     expect(String(fetchRunner.mock.calls[1][0])).toContain('s=Echo+Lab');
+  });
+
+  it('falls back to the NetEase enhanced cloud search when the public search is empty', async () => {
+    const cloudsearch = vi.fn().mockResolvedValue({
+      body: {
+        result: {
+          songCount: 1,
+          songs: [
+            {
+              id: 654,
+              name: 'Cloud Song',
+              dt: 182000,
+              ar: [{ id: 7, name: 'Cloud Artist' }],
+              al: { id: 8, name: 'Cloud Album' },
+            },
+          ],
+        },
+      },
+    });
+    setNeteaseApiForTests({ cloudsearch });
+    const fetchRunner = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ result: { songCount: 0, songs: [] } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          songs: [
+            {
+              id: 654,
+              album: { picUrl: 'https://p.music.126.net/cloud-cover.jpg' },
+            },
+          ],
+        }),
+      );
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const result = await new NeteaseStreamingProvider().search({ provider: 'netease', query: 'cloud', page: 1, pageSize: 10 });
+
+    expect(cloudsearch).toHaveBeenCalledWith({
+      keywords: 'cloud',
+      type: 1,
+      limit: 10,
+      offset: 0,
+      cookie: 'MUSIC_U=secret; csrf=hidden',
+    });
+    expect(result.tracks[0]).toMatchObject({
+      providerTrackId: '654',
+      title: 'Cloud Song',
+      artist: 'Cloud Artist',
+      album: 'Cloud Album',
+      coverThumb: remoteImageUrl('https://p.music.126.net/cloud-cover.jpg?param=160y160', 'https://music.163.com/'),
+    });
   });
 
   it('maps NetEase album search results', async () => {
@@ -307,6 +359,7 @@ describe('China streaming providers', () => {
   });
 
   it('falls back to NetEase track search to discover strict artist results', async () => {
+    setNeteaseApiForTests(null);
     const fetchRunner = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ result: { artistCount: 0, artists: [] } }))
@@ -357,6 +410,8 @@ describe('China streaming providers', () => {
             id: 123,
             name: 'Artist Song',
             duration: 181000,
+            noCopyrightRcmd: { type: 1 },
+            copyright: 0,
             artists: [{ id: 789, name: 'NetEase Artist' }],
             album: { id: 456, name: 'Artist Album' },
           },
@@ -387,7 +442,7 @@ describe('China streaming providers', () => {
       providerArtistId: '789',
       name: 'NetEase Artist',
     });
-    expect(detail.topTracks[0]).toMatchObject({ providerTrackId: '123', title: 'Artist Song' });
+    expect(detail.topTracks[0]).toMatchObject({ providerTrackId: '123', title: 'Artist Song', playable: true });
     expect(detail.albums[0]).toMatchObject({ providerAlbumId: '456', title: 'Artist Album' });
   });
 
@@ -464,6 +519,47 @@ describe('China streaming providers', () => {
     });
   });
 
+  it('falls back to the NetEase bitrate song_url resolver when song_url_v1 returns no URL', async () => {
+    const songUrlV1 = vi.fn().mockResolvedValue({
+      body: {
+        data: [{ id: 123, url: null, br: 320000, type: 'mp3' }],
+      },
+    });
+    const songUrl = vi.fn().mockResolvedValue({
+      body: {
+        data: [
+          {
+            url: 'https://m701.music.126.net/legacy/song.mp3',
+            br: 320000,
+            type: 'mp3',
+          },
+        ],
+      },
+    });
+    const fetchRunner = vi.fn();
+    setNeteaseApiForTests({ song_url_v1: songUrlV1, song_url: songUrl });
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const source = await new NeteaseStreamingProvider().resolvePlayback({ provider: 'netease', providerTrackId: '123', quality: 'high' });
+
+    expect(songUrlV1).toHaveBeenCalledWith({
+      id: 123,
+      level: 'exhigh',
+      cookie: 'MUSIC_U=secret; csrf=hidden',
+    });
+    expect(songUrl).toHaveBeenCalledWith({
+      id: 123,
+      br: 320000,
+      cookie: 'MUSIC_U=secret; csrf=hidden',
+    });
+    expect(fetchRunner).not.toHaveBeenCalled();
+    expect(source).toMatchObject({
+      url: 'https://m701.music.126.net/legacy/song.mp3',
+      codec: 'mp3',
+      bitrate: 320000,
+    });
+  });
+
   it('falls back to high quality when NetEase max quality returns no URL', async () => {
     setNeteaseApiForTests(null);
     const fetchRunner = vi
@@ -502,32 +598,35 @@ describe('China streaming providers', () => {
   });
 
   it('maps QQ Music search results to streaming tracks', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse({
-          req_1: {
-            data: {
-              body: {
-                song: {
-                  list: [
-                    {
-                      mid: 'song-mid',
-                      name: '测试歌曲',
-                      interval: 180,
-                      singer: [{ mid: 'artist-mid', name: '测试歌手' }],
-                      album: { mid: 'album-mid', name: '测试专辑' },
-                    },
-                  ],
-                },
-              },
-              meta: {
-                sum: 1,
+    const fetchRunner = vi.fn().mockResolvedValue(
+      jsonResponse({
+        req_1: {
+          data: {
+            body: {
+              song: {
+                list: [
+                  {
+                    mid: 'song-mid',
+                    name: '测试歌曲',
+                    interval: 180,
+                    pay: { pay_play: 1 },
+                    action: { msgpay: 11 },
+                    singer: [{ mid: 'artist-mid', name: '测试歌手' }],
+                    album: { mid: 'album-mid', name: '测试专辑' },
+                  },
+                ],
               },
             },
+            meta: {
+              sum: 1,
+            },
           },
-        }),
-      ),
+        },
+      }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      fetchRunner,
     );
 
     const result = await new QQMusicStreamingProvider().search({ provider: 'qqmusic', query: '测试', page: 1, pageSize: 10 });
@@ -541,6 +640,46 @@ describe('China streaming providers', () => {
       album: '测试专辑',
       duration: 180,
       coverThumb: remoteImageUrl('https://y.gtimg.cn/music/photo_new/T002R150x150M000album-mid.jpg', 'https://y.qq.com/'),
+      playable: true,
+      qualities: ['standard', 'high', 'lossless'],
+    });
+  });
+
+  it('marks paid QQ Music tracks unavailable when no playback account is connected', async () => {
+    accountStatus.connected = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          req_1: {
+            data: {
+              body: {
+                song: {
+                  list: [
+                    {
+                      mid: 'paid-song-mid',
+                      name: 'Paid Song',
+                      pay: { pay_play: 1 },
+                      singer: [{ mid: 'artist-mid', name: 'Paid Artist' }],
+                      album: { mid: 'album-mid', name: 'Paid Album' },
+                    },
+                  ],
+                },
+              },
+              meta: { sum: 1 },
+            },
+          },
+        }),
+      ),
+    );
+
+    const result = await new QQMusicStreamingProvider().search({ provider: 'qqmusic', query: 'paid', page: 1, pageSize: 10 });
+
+    expect(result.tracks[0]).toMatchObject({
+      providerTrackId: 'paid-song-mid',
+      playable: false,
+      qualities: ['standard'],
+      unavailableReason: '需要 QQ 音乐会员或当前版权不可播放。',
     });
   });
 
@@ -856,6 +995,65 @@ describe('China streaming providers', () => {
     expect(detail.albums[0]).toMatchObject({ providerAlbumId: 'album-mid', title: 'Artist Album' });
   });
 
+  it('resolves a QQ Music artist name to singermid when detail lookup returns 404', async () => {
+    const fetchRunner = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('not found', { status: 404 }))
+      .mockResolvedValueOnce(new Response('not found', { status: 404 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          req_1: {
+            data: {
+              body: {
+                singer: {
+                  list: [{ singerMID: 'real-mid', singerName: '赵小六' }],
+                },
+              },
+              meta: { sum: 1 },
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            singer: { mid: 'real-mid', name: '赵小六' },
+            list: [
+              {
+                musicData: {
+                  mid: 'song-mid',
+                  name: 'Artist Song',
+                  interval: 180,
+                  singer: [{ mid: 'real-mid', name: '赵小六' }],
+                  album: { mid: 'album-mid', name: 'Artist Album' },
+                },
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            singer: { mid: 'real-mid', name: '赵小六' },
+            list: [],
+          },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const detail = await new QQMusicStreamingProvider().getArtist({ providerArtistId: '赵小六' });
+
+    expect(JSON.parse(String(fetchRunner.mock.calls[2][1]?.body)).req_1.param.search_type).toBe(9);
+    expect(String(fetchRunner.mock.calls[3][0])).toContain('singermid=real-mid');
+    expect(detail).toMatchObject({
+      provider: 'qqmusic',
+      providerArtistId: 'real-mid',
+      name: '赵小六',
+    });
+    expect(detail.topTracks[0]).toMatchObject({ providerTrackId: 'song-mid', title: 'Artist Song' });
+  });
+
   it('maps QQ Music playlist song fields to streaming tracks', async () => {
     vi.stubGlobal(
       'fetch',
@@ -1047,37 +1245,48 @@ describe('China streaming providers', () => {
   });
 
   it('resolves QQ Music playback through vkey without leaking account cookies', async () => {
+    const fetchRunner = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [
+            {
+              mid: 'song-mid',
+              name: '测试歌曲',
+              file: { media_mid: 'media-mid' },
+              singer: [{ name: '测试歌手' }],
+              album: { name: '测试专辑', mid: 'album-mid' },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          req_0: {
+            data: {
+              sip: ['https://isure.stream.qqmusic.qq.com/'],
+              midurlinfo: [{ purl: 'M800media-mid.mp3?vkey=temporary' }],
+            },
+          },
+        }),
+      );
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          jsonResponse({
-            data: [
-              {
-                mid: 'song-mid',
-                name: '测试歌曲',
-                file: { media_mid: 'media-mid' },
-                singer: [{ name: '测试歌手' }],
-                album: { name: '测试专辑', mid: 'album-mid' },
-              },
-            ],
-          }),
-        )
-        .mockResolvedValueOnce(
-          jsonResponse({
-            req_0: {
-              data: {
-                sip: ['https://isure.stream.qqmusic.qq.com/'],
-                midurlinfo: [{ purl: 'M800media-mid.mp3?vkey=temporary' }],
-              },
-            },
-          }),
-        ),
+      fetchRunner,
     );
 
     const source = await new QQMusicStreamingProvider().resolvePlayback({ provider: 'qqmusic', providerTrackId: 'song-mid', quality: 'high' });
+    const vkeyBody = JSON.parse(String(fetchRunner.mock.calls[1][1]?.body));
 
+    expect(vkeyBody.req_0).toMatchObject({
+      module: 'music.vkey.GetVkey',
+      method: 'UrlGetVkey',
+      param: {
+        filename: ['M800media-mid.mp3'],
+        songmid: ['song-mid'],
+        ctx: 0,
+      },
+    });
     expect(source).toMatchObject({
       provider: 'qqmusic',
       providerTrackId: 'song-mid',
@@ -1119,6 +1328,26 @@ describe('China streaming providers', () => {
           req_0: {
             data: {
               sip: ['https://isure.stream.qqmusic.qq.com/'],
+              midurlinfo: [{ purl: '' }],
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          req_0: {
+            data: {
+              sip: ['https://isure.stream.qqmusic.qq.com/'],
+              midurlinfo: [{ purl: '' }],
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          req_0: {
+            data: {
+              sip: ['https://isure.stream.qqmusic.qq.com/'],
               midurlinfo: [{ purl: 'M800media-mid.mp3?vkey=temporary' }],
             },
           },
@@ -1129,10 +1358,12 @@ describe('China streaming providers', () => {
     const source = await new QQMusicStreamingProvider().resolvePlayback({ provider: 'qqmusic', providerTrackId: 'song-mid', quality: 'lossless' });
 
     const losslessBody = JSON.parse(String(fetchRunner.mock.calls[1][1]?.body));
-    const highBody = JSON.parse(String(fetchRunner.mock.calls[2][1]?.body));
+    const highBody = JSON.parse(String(fetchRunner.mock.calls[4][1]?.body));
 
     expect(losslessBody.req_0.param.filename).toEqual(['F000media-mid.flac']);
+    expect(losslessBody.req_0.module).toBe('music.vkey.GetVkey');
     expect(highBody.req_0.param.filename).toEqual(['M800media-mid.mp3']);
+    expect(highBody.req_0.module).toBe('music.vkey.GetVkey');
     expect(source).toMatchObject({
       url: 'https://isure.stream.qqmusic.qq.com/M800media-mid.mp3?vkey=temporary',
       codec: 'mp3',
@@ -1146,6 +1377,7 @@ describe('China streaming providers', () => {
     const descriptor = new QQMusicStreamingProvider().descriptor;
 
     expect(descriptor).toMatchObject({
+      displayName: 'QQ 音乐',
       requiresAccount: true,
       accountConnected: false,
       status: 'needs_account',

@@ -148,6 +148,35 @@ describe('RemoteBackgroundJobQueue', () => {
     expect(queue.getStatus(source.id).pending.metadata).toBe(0);
   });
 
+  it('does not duplicate a remote metadata read when metadata and duration backfill are queued together', async () => {
+    const source = makeSource();
+    const track = makeTrack();
+    const readMetadata = vi.fn().mockResolvedValue(makeMetadata());
+    const store = {
+      getTracksForBackgroundJobs: vi.fn().mockReturnValue([track]),
+      getTrack: vi.fn(() => track),
+      getSource: vi.fn(() => source),
+      getSourceWithSecret: vi.fn(() => source),
+      updateTrackJobStatus: vi.fn((_trackId: string, _kind: string, status: string) => {
+        track.metadataStatus = status as RemoteLibraryTrack['metadataStatus'];
+      }),
+      updateTrackMetadata: vi.fn((_trackId: string, update: Partial<RemoteLibraryTrack>) => {
+        Object.assign(track, update);
+        return track;
+      }),
+    };
+    const queue = new RemoteBackgroundJobQueue(store as never, () => ({ readMetadata } as never));
+
+    const initial = queue.enqueueSource(source.id, ['metadata', 'duration-backfill']);
+    expect(initial.pending.metadata).toBe(1);
+    expect(initial.pending['duration-backfill']).toBe(0);
+
+    await waitFor(() => queue.getStatus(source.id).completed.metadata === 1);
+
+    expect(readMetadata).toHaveBeenCalledTimes(1);
+    expect(queue.getStatus(source.id).completed['duration-backfill']).toBe(0);
+  });
+
   it('honors global pause and playback-aware concurrency limits', async () => {
     const source = { ...makeSource(), config: { metadataConcurrency: 8 } };
     const track = makeTrack();

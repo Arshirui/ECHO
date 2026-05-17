@@ -182,7 +182,7 @@ export class RemoteBackgroundJobQueue {
   }
 
   retryFailed(sourceId: string, kinds?: RemoteBackgroundJobKind[]): RemoteBackgroundJobStatus {
-    return this.enqueueSource(sourceId, kinds ?? ['metadata', 'lyrics', 'mv'], { failedOnly: true, priority: 5 });
+    return this.enqueueSource(sourceId, kinds ?? ['metadata', 'cover', 'lyrics', 'mv', 'duration-backfill'], { failedOnly: true, priority: 5 });
   }
 
   getStatus(sourceId: string): RemoteBackgroundJobStatus {
@@ -533,11 +533,16 @@ export class RemoteBackgroundJobQueue {
   }
 
   private kindsForTrack(track: QueueableTrack, kinds: RemoteBackgroundJobKind[], failedOnly: boolean): RemoteBackgroundJobKind[] {
+    const metadataEligible = failedOnly ? track.metadataStatus === 'error' : track.metadataStatus === 'pending' || track.metadataStatus === 'partial';
+
     return kinds.filter((kind) => {
       if (kind === 'metadata') {
-        return failedOnly ? track.metadataStatus === 'error' : track.metadataStatus === 'pending' || track.metadataStatus === 'partial';
+        return metadataEligible;
       }
       if (kind === 'duration-backfill') {
+        if (kinds.includes('metadata') && metadataEligible) {
+          return false;
+        }
         return failedOnly ? track.metadataStatus === 'error' : (!track.duration || track.duration <= 0 || track.metadataStatus === 'pending') && track.metadataStatus !== 'error';
       }
       if (kind === 'cover') {

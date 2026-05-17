@@ -3253,7 +3253,7 @@ describe('Audio Core sample-rate regression guard', () => {
 
     await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
     bridges[0].positionSeconds = 12.5;
-    const status = session.pause();
+    const status = await session.pause();
 
     expect(status.state).toBe('paused');
     expect(status.positionSeconds).toBe(12.5);
@@ -3267,7 +3267,7 @@ describe('Audio Core sample-rate regression guard', () => {
 
     await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
     bridges[0].positionSeconds = 18.25;
-    session.pause();
+    await session.pause();
     await Promise.resolve();
     await Promise.resolve();
     const status = await session.play();
@@ -3285,7 +3285,7 @@ describe('Audio Core sample-rate regression guard', () => {
 
     await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'exclusive' } });
     bridges[0].positionSeconds = 14.5;
-    const pausedStatus = session.pause();
+    const pausedStatus = await session.pause();
     const resumedStatus = await session.play();
 
     expect(pausedStatus.state).toBe('paused');
@@ -3296,6 +3296,71 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges[0].sessionBegins).toBe(2);
     expect(bridges[0].sessionEnds).toBeGreaterThanOrEqual(1);
     expect(decoder.decodeRequests.at(-1)).toMatchObject({ startSeconds: 14.5 });
+  });
+
+  it('release-exclusive-on-pause stops resident exclusive output and reopens it on resume', async () => {
+    const decoder = new FakeDecoder(new Map([['song.flac', probe('song.flac', 44100)]]));
+    const firstBridge = new GracefulFakeBridge(44100);
+    const resumedBridge = new GracefulFakeBridge(44100);
+    const bridges = [firstBridge, resumedBridge];
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridges.shift() as GracefulFakeBridge,
+      logger: noopLogger,
+    });
+
+    await session.playLocalFile({
+      filePath: 'song.flac',
+      output: { outputMode: 'exclusive', useJuceOutput: false, releaseExclusiveOnPauseExperimentalEnabled: true },
+    });
+    firstBridge.positionSeconds = 14.5;
+
+    const pausedStatus = await session.pause();
+    const resumedStatus = await session.play();
+
+    expect(pausedStatus.state).toBe('paused');
+    expect(pausedStatus.host).toBe('not-initialized');
+    expect(pausedStatus.positionSeconds).toBe(14.5);
+    expect(pausedStatus.warnings).toContain('exclusive_released_on_pause');
+    expect(firstBridge.sessionEnds).toBeGreaterThanOrEqual(1);
+    expect(firstBridge.stopGracefully).toHaveBeenCalledWith('release-exclusive-on-pause', 1500, true);
+    expect(resumedStatus.state).toBe('playing');
+    expect(resumedBridge.startOptions).toMatchObject({
+      exclusive: true,
+      startSeconds: 14.5,
+    });
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({ startSeconds: 14.5 });
+  });
+
+  it('falls back to shared when exclusive resume after pause release cannot reclaim the device', async () => {
+    const decoder = new FakeDecoder(new Map([['song.flac', probe('song.flac', 44100)]]));
+    const firstBridge = new GracefulFakeBridge(44100);
+    const refusedExclusiveBridge = new ConfigurableStartupFailingBridge('WASAPI exclusive open failed: exclusive_denied');
+    const sharedBridge = new FakeBridge(48000);
+    const bridges = [firstBridge, refusedExclusiveBridge, sharedBridge];
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridges.shift() as unknown as FakeBridge,
+      logger: noopLogger,
+    });
+
+    await session.playLocalFile({
+      filePath: 'song.flac',
+      output: { outputMode: 'exclusive', useJuceOutput: false, releaseExclusiveOnPauseExperimentalEnabled: true },
+    });
+    firstBridge.positionSeconds = 22.25;
+    await session.pause();
+
+    const resumedStatus = await session.play();
+
+    expect(resumedStatus.state).toBe('playing');
+    expect(resumedStatus.outputMode).toBe('shared');
+    expect(resumedStatus.warnings).toContain('exclusive_output_fell_back_to_shared');
+    expect(resumedStatus.warnings).toContain('exclusive_resume_fell_back_to_shared');
+    expect(refusedExclusiveBridge.startOptions).toMatchObject({ exclusive: true, startSeconds: 22.25 });
+    expect(sharedBridge.startOptions).toMatchObject({ exclusive: false, startSeconds: 22.25 });
   });
 
   it('does not resume from a paused prewarm bridge before its actual sample rate is ready', async () => {
@@ -3313,7 +3378,7 @@ describe('Audio Core sample-rate regression guard', () => {
 
     await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
     initialBridge.positionSeconds = 18.25;
-    session.pause();
+    await session.pause();
     await delayedPrewarmBridge.started;
 
     const status = await session.play();
@@ -3334,7 +3399,7 @@ describe('Audio Core sample-rate regression guard', () => {
 
     await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
     bridges[0].positionSeconds = 7;
-    session.pause();
+    await session.pause();
     const pausedStatus = await session.seek(33);
 
     expect(pausedStatus.state).toBe('paused');
@@ -3458,7 +3523,7 @@ describe('Audio Core sample-rate regression guard', () => {
       output: { outputMode: 'shared', deviceIndex: 0, deviceName: 'TEAC USB AUDIO DEVICE' },
     });
     bridges[0].positionSeconds = 9;
-    session.pause();
+    await session.pause();
     const pausedStatus = await session.setOutput({
       outputMode: 'shared',
       deviceIndex: 5,
@@ -3527,7 +3592,7 @@ describe('AudioSession playback watchdog', () => {
       });
       expect(statuses).toHaveLength(2);
 
-      session.pause();
+      await session.pause();
       expect(statuses).toHaveLength(3);
     } finally {
       session.dispose();
@@ -3654,7 +3719,7 @@ describe('AudioSession playback watchdog', () => {
     });
     await pausedHarness.session.playLocalFile({ filePath: 'paused.flac', output: { outputMode: 'shared' } });
     pausedHarness.bridges[0].positionSeconds = 5;
-    pausedHarness.session.pause();
+    await pausedHarness.session.pause();
     await pausedHarness.session.checkPlaybackWatchdog();
     await pausedHarness.session.checkPlaybackWatchdog();
     expect(pausedHarness.bridges).toHaveLength(2);

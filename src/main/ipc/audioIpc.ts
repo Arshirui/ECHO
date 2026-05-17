@@ -137,6 +137,10 @@ const normalizeOutputSettings = (value: unknown): AudioOutputSettings => {
     output.soxrFallbackEnabled = input.soxrFallbackEnabled;
   }
 
+  if (typeof input.releaseExclusiveOnPauseExperimentalEnabled === 'boolean') {
+    output.releaseExclusiveOnPauseExperimentalEnabled = input.releaseExclusiveOnPauseExperimentalEnabled;
+  }
+
   if (typeof input.volume === 'number' && Number.isFinite(input.volume)) {
     output.volume = Math.max(0, Math.min(1, input.volume));
   }

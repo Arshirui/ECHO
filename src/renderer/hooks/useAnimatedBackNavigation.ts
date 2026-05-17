@@ -11,7 +11,7 @@ const isEditableTarget = (target: EventTarget | null): boolean => {
   return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable;
 };
 
-export const useAnimatedBackNavigation = (onBack: () => void) => {
+export const useAnimatedBackNavigation = (onBack: () => void, enabled = true) => {
   const [isReturning, setIsReturning] = useState(false);
   const onBackRef = useRef(onBack);
   const timeoutRef = useRef<number | null>(null);
@@ -21,6 +21,10 @@ export const useAnimatedBackNavigation = (onBack: () => void) => {
   }, [onBack]);
 
   const returnBack = useCallback((): void => {
+    if (!enabled) {
+      return;
+    }
+
     setIsReturning((current) => {
       if (current) {
         return current;
@@ -33,10 +37,14 @@ export const useAnimatedBackNavigation = (onBack: () => void) => {
 
       return true;
     });
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (!enabled) {
+        return;
+      }
+
       if (event.key !== 'Escape' || event.defaultPrevented || isEditableTarget(event.target)) {
         return;
       }
@@ -47,7 +55,7 @@ export const useAnimatedBackNavigation = (onBack: () => void) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [returnBack]);
+  }, [enabled, returnBack]);
 
   useEffect(
     () => () => {

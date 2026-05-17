@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { LibraryTrack } from '../../shared/types/library';
-import { PlaybackQueueProvider, usePlaybackQueue } from './PlaybackQueueProvider';
+import { PlaybackQueueProvider, isPlaybackCancellationError, usePlaybackQueue } from './PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from './playbackStatusStore';
 
 const makeTrack = (index: number): LibraryTrack => ({
@@ -35,6 +35,11 @@ afterEach(() => {
 });
 
 describe('PlaybackQueueProvider playback history session', () => {
+  it('identifies internal playback cancellation errors', () => {
+    expect(isPlaybackCancellationError(new Error('audio_session_run_cancelled'))).toBe(true);
+    expect(isPlaybackCancellationError(new Error('native device failed'))).toBe(false);
+  });
+
   it('does not wait for history writes before switching tracks', async () => {
     const first = makeTrack(1);
     const second = makeTrack(2);

@@ -151,6 +151,130 @@ describe('playback media prepare IPC', () => {
     }));
   });
 
+  it('does not let a stale streaming resolve interrupt a newer local playback request', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    let status = {
+      state: 'idle',
+      currentTrackId: null as string | null,
+      positionSeconds: 0,
+      durationSeconds: 0,
+      currentFilePath: null as string | null,
+    };
+    const playLocalFile = vi.fn(async (request: { filePath: string; trackId?: string; probe?: { durationSeconds?: number } }) => {
+      status = {
+        state: 'playing',
+        currentTrackId: request.trackId ?? null,
+        positionSeconds: 0,
+        durationSeconds: request.probe?.durationSeconds ?? 180,
+        currentFilePath: request.filePath,
+      };
+    });
+    let resolveStreaming!: (source: {
+      url: string;
+      requiresProxy: boolean;
+      headers?: Record<string, string>;
+      sampleRate?: number;
+      codec?: string;
+      bitDepth?: number | null;
+      bitrate?: number;
+    }) => void;
+    const streamingSource = new Promise<{
+      url: string;
+      requiresProxy: boolean;
+      headers?: Record<string, string>;
+      sampleRate?: number;
+      codec?: string;
+      bitDepth?: number | null;
+      bitrate?: number;
+    }>((resolve) => {
+      resolveStreaming = resolve;
+    });
+    const resolvePlayback = vi.fn(() => streamingSource);
+
+    vi.doMock('electron', () => ({
+      dialog: { showOpenDialog: vi.fn() },
+      ipcMain: {
+        handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
+          handlers.set(channel, handler);
+        }),
+      },
+    }));
+    vi.doMock('../audio/AudioSession', () => ({
+      getAudioSession: () => ({
+        getStatus: () => status,
+        on: vi.fn(),
+        restorePlaybackMemory: vi.fn(),
+        playLocalFile,
+      }),
+    }));
+    vi.doMock('../audio/PlaybackMemoryStore', () => ({
+      getPlaybackMemoryStore: () => ({
+        load: vi.fn(() => null),
+        save: vi.fn(),
+        clear: vi.fn(),
+      }),
+    }));
+    vi.doMock('../integrations/smtc/SmtcStatusSync', () => ({ syncSmtcStatus: vi.fn() }));
+    vi.doMock('../library/remote/RemoteSourceService', () => ({
+      getRemoteSourceService: () => ({
+        setPlaybackActive: vi.fn(),
+        refreshTrackMetadata: vi.fn(),
+        createStreamUrl: vi.fn(),
+        backfillDuration: vi.fn(),
+      }),
+    }));
+    vi.doMock('../streaming/StreamingService', () => ({
+      getStreamingService: () => ({
+        resolvePlayback,
+        invalidatePlayback: vi.fn(),
+      }),
+    }));
+    vi.doMock('../app/localFileOpen', () => ({ resolveLocalAudioFiles: vi.fn() }));
+
+    const { IpcChannels } = await import('../../shared/constants/ipcChannels');
+    const { registerPlaybackIpc } = await import('./playbackIpc');
+    registerPlaybackIpc();
+
+    const streamingRequest = {
+      item: {
+        mediaType: 'streaming',
+        trackId: 'streaming-track',
+        provider: 'mock',
+        providerTrackId: 'provider-track',
+        stableKey: 'mock:provider-track',
+        title: 'Slow Stream',
+        artist: 'Artist',
+        album: 'Album',
+        duration: 120,
+      },
+    };
+
+    const staleStreamingPlay = handlers.get(IpcChannels.PlaybackPlayMediaItem)?.({}, streamingRequest) as Promise<unknown>;
+    await expect.poll(() => resolvePlayback.mock.calls.length).toBe(1);
+
+    await handlers.get(IpcChannels.PlaybackPlayLocalFile)?.({}, {
+      filePath: 'D:\\Music\\local.flac',
+      trackId: 'local-track',
+      probe: { durationSeconds: 180 },
+    });
+
+    resolveStreaming({
+      url: 'https://stream.example.test/late.flac',
+      sampleRate: 44100,
+      codec: 'flac',
+      bitDepth: 16,
+      bitrate: 900000,
+      requiresProxy: false,
+    });
+
+    await expect(staleStreamingPlay).rejects.toThrow('audio_session_run_cancelled');
+    expect(playLocalFile).toHaveBeenCalledTimes(1);
+    expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      filePath: 'D:\\Music\\local.flac',
+      trackId: 'local-track',
+    }));
+  });
+
   it('refreshes an active streaming source when FFmpeg reports an expired CDN URL after playback started', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const reportAudioError = vi.fn();

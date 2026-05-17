@@ -755,6 +755,7 @@ export const AudioSettingsDrawer = ({
   const [asioNativeDsdExperimentalEnabled, setAsioNativeDsdExperimentalEnabled] = useState(false);
   const [asioUnavailableFallbackEnabled, setAsioUnavailableFallbackEnabled] = useState(false);
   const [soxrFallbackEnabled, setSoxrFallbackEnabled] = useState(true);
+  const [releaseExclusiveOnPauseExperimentalEnabled, setReleaseExclusiveOnPauseExperimentalEnabled] = useState(false);
   const [hiddenDeviceKeys, setHiddenDeviceKeys] = useState<string[]>(() => readHiddenDeviceKeys());
   const [hiddenDeviceMenu, setHiddenDeviceMenu] = useState<HiddenDeviceMenu>(null);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
@@ -989,6 +990,7 @@ export const AudioSettingsDrawer = ({
         setAsioNativeDsdExperimentalEnabled(settings.audioAsioNativeDsdExperimentalEnabled === true);
         setAsioUnavailableFallbackEnabled(settings.audioAsioUnavailableFallbackEnabled === true);
         setSoxrFallbackEnabled(settings.audioSoxrFallbackEnabled !== false);
+        setReleaseExclusiveOnPauseExperimentalEnabled(settings.audioReleaseExclusiveOnPauseExperimentalEnabled === true);
       })
       .catch(() => undefined);
     void loadPersistedHiddenDeviceKeys().then(setHiddenDeviceKeys).catch(() => setHiddenDeviceKeys(readHiddenDeviceKeys()));
@@ -1098,6 +1100,11 @@ export const AudioSettingsDrawer = ({
         if (settings.soxrFallbackEnabled !== undefined) {
           settingsWithFallback.soxrFallbackEnabled = settings.soxrFallbackEnabled;
         }
+        if (settings.releaseExclusiveOnPauseExperimentalEnabled !== undefined) {
+          settingsWithFallback.releaseExclusiveOnPauseExperimentalEnabled = settings.releaseExclusiveOnPauseExperimentalEnabled;
+        } else if (releaseExclusiveOnPauseExperimentalEnabled) {
+          settingsWithFallback.releaseExclusiveOnPauseExperimentalEnabled = true;
+        }
         if (rememberOutput) {
           persistOutput(settingsWithFallback);
         }
@@ -1134,6 +1141,7 @@ export const AudioSettingsDrawer = ({
       onStatusChange,
       outputMode,
       persistOutput,
+      releaseExclusiveOnPauseExperimentalEnabled,
       rememberOutput,
       sharedBackend,
       status?.outputMode,
@@ -1308,6 +1316,15 @@ export const AudioSettingsDrawer = ({
     void window.echo?.app.setSettings({ audioSoxrFallbackEnabled: enabled }).catch(() => undefined);
     void applyOutput({ soxrFallbackEnabled: enabled }).catch(() => {
       setSoxrFallbackEnabled(previous);
+    });
+  };
+
+  const toggleReleaseExclusiveOnPauseExperimental = (enabled: boolean): void => {
+    const previous = releaseExclusiveOnPauseExperimentalEnabled;
+    setReleaseExclusiveOnPauseExperimentalEnabled(enabled);
+    void window.echo?.app.setSettings({ audioReleaseExclusiveOnPauseExperimentalEnabled: enabled }).catch(() => undefined);
+    void applyOutput({ releaseExclusiveOnPauseExperimentalEnabled: enabled }).catch(() => {
+      setReleaseExclusiveOnPauseExperimentalEnabled(previous);
     });
   };
 
@@ -1775,6 +1792,20 @@ export const AudioSettingsDrawer = ({
                 />
               </label>
               <p>{t('audioDrawer.guard.soxrFallback.description')}</p>
+
+              <label className="audio-toggle-row">
+                <span>
+                  <Lock size={17} />
+                  <strong>{t('audioDrawer.option.releaseExclusiveOnPause')}</strong>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={releaseExclusiveOnPauseExperimentalEnabled}
+                  disabled={isBusy}
+                  onChange={(event) => toggleReleaseExclusiveOnPauseExperimental(event.currentTarget.checked)}
+                />
+              </label>
+              <p>{t('audioDrawer.note.releaseExclusiveOnPause')}</p>
 
               <div className="audio-drawer-mini-grid" aria-label={t('audioDrawer.option.sharedBackend')}>
                 {([

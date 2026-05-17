@@ -27,6 +27,8 @@ const testTranslations: Record<string, string> = {
   'audioDrawer.option.juceDecode': 'JUCE Decode Experiment',
   'audioDrawer.option.juceOutput': 'JUCE Main Output',
   'audioDrawer.option.dsdDop': 'DSD DoP Direct Pilot',
+  'audioDrawer.option.releaseExclusiveOnPause': 'Release Exclusive on Pause',
+  'audioDrawer.note.releaseExclusiveOnPause': 'Pause releases WASAPI Exclusive.',
   'audioDrawer.option.set': 'Set',
   'audioDrawer.option.showAsioPanelSettings': 'Show ASIO panel settings',
   'audioDrawer.option.showAsioPanelSettingsDescription': 'Show ASIO panel buttons',
@@ -155,6 +157,7 @@ const renderDrawer = (
         audioUseJuceOutput: status.useJuceOutputRequested,
         audioUseJuceDecode: status.useJuceDecodeRequested,
         audioDsdOutputMode: status.dsdOutputModeRequested ?? 'pcm',
+        audioReleaseExclusiveOnPauseExperimentalEnabled: false,
       }),
       setSettings: vi.fn().mockResolvedValue({}),
     },
@@ -423,6 +426,19 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
 
     await waitFor(() => expect(window.echo?.app?.setSettings).toHaveBeenCalledWith({ audioDsdOutputMode: 'dop' }));
     await waitFor(() => expect(setOutput).toHaveBeenCalledWith({ dsdOutputMode: 'dop' }));
+  });
+
+  it('persists release-exclusive-on-pause experiment enablement', async () => {
+    const setOutput = vi.fn().mockResolvedValue(baseStatus);
+    renderDrawer(baseStatus, setOutput);
+    openAdvancedControls();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Release Exclusive on Pause/ }));
+
+    await waitFor(() =>
+      expect(window.echo?.app?.setSettings).toHaveBeenCalledWith({ audioReleaseExclusiveOnPauseExperimentalEnabled: true }),
+    );
+    await waitFor(() => expect(setOutput).toHaveBeenCalledWith({ releaseExclusiveOnPauseExperimentalEnabled: true }));
   });
 
   it('persists manual JUCE output disablement', async () => {

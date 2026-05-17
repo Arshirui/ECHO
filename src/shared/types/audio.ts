@@ -69,6 +69,7 @@ export type AudioOutputSettings = {
   asioNativeDsdExperimentalEnabled?: boolean;
   asioUnavailableFallbackEnabled?: boolean;
   soxrFallbackEnabled?: boolean;
+  releaseExclusiveOnPauseExperimentalEnabled?: boolean;
   volume?: number;
   playbackRate?: number;
   playbackSpeedMode?: PlaybackSpeedMode;

@@ -35,9 +35,62 @@ const accountStatus = (): AccountStatus => getAccountService().getStatus(provide
 
 const accountCookie = (): string | undefined => getAccountService().getCredentials(provider).cookie?.trim() || undefined;
 
+const cookieValue = (cookie: string | undefined, ...names: string[]): string | null => {
+  if (!cookie) {
+    return null;
+  }
+
+  for (const name of names) {
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    const match = cookie.match(new RegExp(`(?:^|;\\s*)${escapedName}=([^;]*)`, 'iu'));
+    if (match) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch {
+        return match[1];
+      }
+    }
+  }
+
+  return null;
+};
+
 const uinFromCookie = (cookie?: string): string => {
-  const match = cookie?.match(/(?:^|;\s*)(?:uin|qqmusic_uin)=o?(\d+)/iu);
+  const value = cookieValue(cookie, 'uin', 'qqmusic_uin', 'p_uin', 'pt2gguin', 'loginUin', 'wxuin');
+  const match = value?.match(/o?(\d+)/iu);
   return match?.[1] ?? '0';
+};
+
+const hasQqPlaybackCredential = (cookie?: string): boolean =>
+  Boolean(cookieValue(cookie, 'qqmusic_key', 'qm_keyst', 'music_key', 'p_skey', 'skey'));
+
+const hasConnectedQqPlaybackAccount = (): boolean => {
+  const status = accountStatus();
+  const cookie = accountCookie();
+  return status.connected && uinFromCookie(cookie) !== '0' && hasQqPlaybackCredential(cookie);
+};
+
+const stableNumericId = (value: string): string => {
+  let hash = 2166136261;
+  for (const char of value) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return String(100000000 + (hash >>> 0) % 900000000);
+};
+
+const qqGuidFromCookie = (cookie: string | undefined, uin: string): string =>
+  cookieValue(cookie, 'pgv_pvid', 'qqmusic_guid', 'guid')?.replace(/\D/gu, '') || stableNumericId(uin !== '0' ? uin : cookie ?? 'qqmusic');
+
+const qqGtkFromCookie = (cookie: string | undefined): number => {
+  const skey = cookieValue(cookie, 'qqmusic_key', 'qm_keyst', 'music_key', 'p_skey', 'skey') ?? '';
+  let hash = 5381;
+  for (const char of skey) {
+    hash += (hash << 5) + char.charCodeAt(0);
+  }
+
+  return hash & 0x7fffffff;
 };
 
 const findPlaylistRecords = (value: unknown, depth = 0): Record<string, unknown>[] => {
@@ -81,7 +134,7 @@ const artistRefs = (singersValue: unknown): StreamingArtistRef[] => {
   const singers = Array.isArray(singersValue) ? singersValue.map(asRecord) : [];
   return singers
     .map((singer): StreamingArtistRef | null => {
-      const id = String(singer.mid ?? singer.id ?? text(singer.name) ?? '').trim();
+      const id = String(singer.mid ?? singer.singerMID ?? singer.singermid ?? singer.singer_mid ?? singer.pmid ?? singer.id ?? text(singer.name) ?? '').trim();
       const name = text(singer.name);
       if (!id || !name) {
         return null;
@@ -108,8 +161,13 @@ const mapSong = (songValue: unknown): StreamingTrack => {
   const albumTitle = text(album.name) ?? text(album.title) ?? text(song.albumname) ?? text(song.albumtitle) ?? 'Unknown Album';
   const albumMid = text(album.mid) ?? text(album.pmid) ?? text(song.albummid) ?? text(song.album_mid);
   const pay = asRecord(song.pay);
-  const payPlay = integer(pay.payplay);
-  const playable = payPlay !== 1 && song.disabled !== true;
+  const action = asRecord(song.action);
+  const payPlay = integer(pay.pay_play ?? pay.payplay ?? pay.payPlay ?? song.pay_play ?? song.payplay ?? song.payPlay);
+  const msgPay = integer(action.msgpay ?? action.msgPay ?? song.msgpay ?? song.msgPay);
+  const paidPlaybackRequired = payPlay === 1 || Boolean(msgPay && msgPay > 0);
+  const hasPlaybackAccount = hasConnectedQqPlaybackAccount();
+  const disabled = song.disabled === true || song.disabled === 1 || song.disabled === '1';
+  const playable = !disabled && (!paidPlaybackRequired || hasPlaybackAccount);
 
   return {
     id: streamingStableKey(provider, mid || title),
@@ -125,10 +183,10 @@ const mapSong = (songValue: unknown): StreamingTrack => {
     duration: number(song.interval),
     coverUrl: albumCoverUrl(albumMid, 500),
     coverThumb: albumCoverUrl(albumMid, 150),
-    qualities: payPlay === 1 ? ['standard'] : ['standard', 'high', 'lossless'],
+    qualities: paidPlaybackRequired && !hasPlaybackAccount ? ['standard'] : ['standard', 'high', 'lossless'],
     explicit: false,
     playable,
-    unavailableReason: playable ? null : '需要会员或版权不可用',
+    unavailableReason: playable ? null : '需要 QQ 音乐会员或当前版权不可播放。',
     lyricsStatus: 'available',
     mvStatus: text(asRecord(song.mv).vid) ? 'available' : 'unknown',
   };
@@ -239,6 +297,17 @@ const qqSearchType = (request: StreamingSearchRequest): number => {
 };
 
 type QqPlaybackQuality = NonNullable<StreamingPlaybackRequest['quality']>;
+type QqVkeyResult = {
+  item: Record<string, unknown>;
+  payload: Record<string, unknown>;
+};
+
+type QqPlaybackEndpoint = {
+  module: string;
+  method: string;
+  modern: boolean;
+  platforms: readonly (string | null)[];
+};
 
 const qqPlaybackQualityFallbacks: Record<QqPlaybackQuality | 'fallback', QqPlaybackQuality[]> = {
   hires: ['lossless', 'high', 'standard'],
@@ -246,6 +315,47 @@ const qqPlaybackQualityFallbacks: Record<QqPlaybackQuality | 'fallback', QqPlayb
   high: ['high', 'standard'],
   standard: ['standard'],
   fallback: ['high', 'standard'],
+};
+
+const qqPlaybackPlatforms = ['20', 'yqq'] as const;
+const qqPlaybackEndpoints: readonly QqPlaybackEndpoint[] = [
+  { module: 'music.vkey.GetVkey', method: 'UrlGetVkey', modern: true, platforms: [null] },
+  { module: 'vkey.GetVkeyServer', method: 'CgiGetVkey', modern: false, platforms: qqPlaybackPlatforms },
+];
+
+const qqPlaybackFilenames = (
+  selectedQuality: ReturnType<typeof qualityPrefix>,
+  mediaMid: string | null,
+  providerTrackId: string,
+): string[] => {
+  const primaryId = mediaMid ?? providerTrackId;
+  const candidates = [`${selectedQuality.prefix}${primaryId}.${selectedQuality.extension}`];
+  if (!mediaMid) {
+    candidates.push(`${selectedQuality.prefix}${providerTrackId}${providerTrackId}.${selectedQuality.extension}`);
+  }
+
+  return [...new Set(candidates)];
+};
+
+const qqPlaybackFailureMessage = (lastResult: QqVkeyResult | null): string => {
+  const rawResult = lastResult?.item.result ?? lastResult?.payload.result ?? lastResult?.payload.code;
+  const result = Number(rawResult);
+  if (result === 104003) {
+    return 'QQ 音乐返回无播放权限（104003）。请确认当前登录的是已开通会员的 QQ 音乐账号，并在设置里重新登录 QQ 音乐后再试。';
+  }
+  if (result === 104013) {
+    return 'QQ 音乐限制当前设备播放（104013）。请稍后重试，或在设置里重新登录 QQ 音乐后再试。';
+  }
+
+  const message = text(lastResult?.item.msg) ?? text(lastResult?.item.message) ?? text(lastResult?.payload.msg) ?? text(lastResult?.payload.message);
+  if (message && !/^\d{1,3}(?:\.\d{1,3}){3};/u.test(message)) {
+    return message;
+  }
+  if (Number.isFinite(result) && result > 0) {
+    return `QQ 音乐暂时没有返回播放地址（${result}）。若你已开通会员，请在设置里重新登录 QQ 音乐后再试。`;
+  }
+
+  return '这首歌暂时不可播放。若你已开通 QQ 音乐会员，请在设置里重新登录 QQ 音乐后再试。';
 };
 
 export class QQMusicStreamingProvider implements StreamingProvider {
@@ -266,7 +376,7 @@ export class QQMusicStreamingProvider implements StreamingProvider {
       accountUsername: status.username,
       accountAvatarUrl: status.avatarUrl,
       status: status.connected ? 'ready' : 'needs_account',
-      statusMessage: status.connected ? '已连接 QQ 音乐账号' : '可搜索公开结果，登录后播放能力更完整',
+      statusMessage: status.connected ? 'QQ Music account connected' : 'Public search is available. Sign in for full playback support.',
     };
   }
 
@@ -379,6 +489,50 @@ export class QQMusicStreamingProvider implements StreamingProvider {
     return mapSong(song);
   }
 
+  private async fetchArtistDetail(providerArtistId: string, cookie: string | undefined): Promise<StreamingArtistDetail> {
+    const [tracksData, albumsData] = await Promise.all([
+      jsonFetch(
+        `https://c.y.qq.com/v8/fcg-bin/fcg_v8_singer_track_cp.fcg?${new URLSearchParams({
+          singermid: providerArtistId,
+          begin: '0',
+          num: '30',
+          order: 'listen',
+          format: 'json',
+        }).toString()}`,
+        { headers: qqHeaders(cookie) },
+      ),
+      jsonFetch(
+        `https://c.y.qq.com/v8/fcg-bin/fcg_v8_singer_album.fcg?${new URLSearchParams({
+          singermid: providerArtistId,
+          begin: '0',
+          num: '24',
+          format: 'json',
+        }).toString()}`,
+        { headers: qqHeaders(cookie) },
+      ),
+    ]);
+    const tracksRoot = asRecord(asRecord(tracksData).data ?? tracksData);
+    const albumsRoot = asRecord(asRecord(albumsData).data ?? albumsData);
+    const singer = asRecord(tracksRoot.singer ?? albumsRoot.singer);
+    const artist = mapArtist({
+      ...singer,
+      singerMID: text(singer.mid) ?? text(singer.singerMID) ?? providerArtistId,
+      singerName: text(singer.name) ?? text(singer.singerName),
+    });
+    const topTracks = (Array.isArray(tracksRoot.list) ? tracksRoot.list : [])
+      .map((item) => asRecord(item).musicData ?? item)
+      .map(mapSong);
+    const albums = (Array.isArray(albumsRoot.list) ? albumsRoot.list : [])
+      .map((item) => asRecord(item).album ?? item)
+      .map(mapAlbum);
+
+    return {
+      ...artist,
+      topTracks,
+      albums,
+    };
+  }
+
   async getAlbum(input: { providerAlbumId: string }): Promise<StreamingAlbumDetail> {
     const params = new URLSearchParams({
       albummid: input.providerAlbumId,
@@ -413,47 +567,17 @@ export class QQMusicStreamingProvider implements StreamingProvider {
 
   async getArtist(input: { providerArtistId: string }): Promise<StreamingArtistDetail> {
     const cookie = accountCookie();
-    const [tracksData, albumsData] = await Promise.all([
-      jsonFetch(
-        `https://c.y.qq.com/v8/fcg-bin/fcg_v8_singer_track_cp.fcg?${new URLSearchParams({
-          singermid: input.providerArtistId,
-          begin: '0',
-          num: '30',
-          order: 'listen',
-          format: 'json',
-        }).toString()}`,
-        { headers: qqHeaders(cookie) },
-      ),
-      jsonFetch(
-        `https://c.y.qq.com/v8/fcg-bin/fcg_v8_singer_album.fcg?${new URLSearchParams({
-          singermid: input.providerArtistId,
-          begin: '0',
-          num: '24',
-          format: 'json',
-        }).toString()}`,
-        { headers: qqHeaders(cookie) },
-      ),
-    ]);
-    const tracksRoot = asRecord(asRecord(tracksData).data ?? tracksData);
-    const albumsRoot = asRecord(asRecord(albumsData).data ?? albumsData);
-    const singer = asRecord(tracksRoot.singer ?? albumsRoot.singer);
-    const artist = mapArtist({
-      ...singer,
-      singerMID: text(singer.mid) ?? text(singer.singerMID) ?? input.providerArtistId,
-      singerName: text(singer.name) ?? text(singer.singerName),
-    });
-    const topTracks = (Array.isArray(tracksRoot.list) ? tracksRoot.list : [])
-      .map((item) => asRecord(item).musicData ?? item)
-      .map(mapSong);
-    const albums = (Array.isArray(albumsRoot.list) ? albumsRoot.list : [])
-      .map((item) => asRecord(item).album ?? item)
-      .map(mapAlbum);
+    try {
+      return await this.fetchArtistDetail(input.providerArtistId, cookie);
+    } catch (error) {
+      const searchResult = await this.searchOnce({ provider, query: input.providerArtistId, mediaTypes: ['artist'], page: 1, pageSize: 5 });
+      const replacement = searchResult.artists.find((artist) => artist.providerArtistId !== input.providerArtistId) ?? searchResult.artists[0];
+      if (!replacement) {
+        throw error;
+      }
 
-    return {
-      ...artist,
-      topTracks,
-      albums,
-    };
+      return this.fetchArtistDetail(replacement.providerArtistId, cookie);
+    }
   }
 
   async getPlaylist(input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> {
@@ -495,7 +619,7 @@ export class QQMusicStreamingProvider implements StreamingProvider {
       provider,
       providerPlaylistId: input.providerPlaylistId,
       title: text(cd.dissname) ?? 'QQ Music Playlist',
-      description: text(cd.desc),
+      description: 'Liked songs synced from the QQ Music account',
       creator: text(asRecord(cd.headurl).nick) ?? text(cd.nickname),
       coverUrl,
       coverThumb: coverUrl,
@@ -577,79 +701,112 @@ export class QQMusicStreamingProvider implements StreamingProvider {
   async resolvePlayback(request: StreamingPlaybackRequest): Promise<StreamingPlaybackSource> {
     const song = asRecord(await this.fetchSong(request.providerTrackId));
     const file = asRecord(song.file);
-    const mediaMid = text(file.media_mid) ?? text(file.strMediaMid) ?? request.providerTrackId;
+    const mediaMid = text(file.media_mid) ?? text(file.strMediaMid);
     const cookie = accountCookie();
     const uin = uinFromCookie(cookie);
+    if (uin === '0' || !hasQqPlaybackCredential(cookie)) {
+      throw new Error('QQ Music login is incomplete. Please reconnect QQ Music before playing VIP tracks.');
+    }
+
+    const guid = qqGuidFromCookie(cookie, uin);
+    const gtk = qqGtkFromCookie(cookie);
     const qualities = qqPlaybackQualityFallbacks[request.quality ?? 'fallback'] ?? qqPlaybackQualityFallbacks.fallback;
-    let lastItem: Record<string, unknown> = {};
+    let lastResult: QqVkeyResult | null = null;
 
     for (const quality of qualities) {
       const selectedQuality = qualityPrefix(quality);
-      const filename = `${selectedQuality.prefix}${mediaMid}.${selectedQuality.extension}`;
-      const body = {
-        req_0: {
-          module: 'vkey.GetVkeyServer',
-          method: 'CgiGetVkey',
-          param: {
-            guid: '10000',
-            songmid: [request.providerTrackId],
-            filename: [filename],
-            songtype: [0],
-            uin,
-            loginflag: 1,
-            platform: '20',
-          },
-        },
-        comm: {
-          uin,
-          format: 'json',
-          ct: 24,
-          cv: 0,
-        },
-      };
-      const data = asRecord(
-        await jsonFetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
-          method: 'POST',
-          headers: qqHeaders(cookie),
-          body,
-        }),
-      );
-      const payload = asRecord(asRecord(data.req_0).data);
-      const item = asRecord((Array.isArray(payload.midurlinfo) ? payload.midurlinfo : [])[0]);
-      lastItem = item;
-      const purl = text(item.purl);
+      for (const filename of qqPlaybackFilenames(selectedQuality, mediaMid, request.providerTrackId)) {
+        for (const endpoint of qqPlaybackEndpoints) {
+          for (const platform of endpoint.platforms) {
+            const param: Record<string, unknown> = {
+              guid,
+              songmid: [request.providerTrackId],
+              filename: [filename],
+              songtype: [0],
+              uin,
+            };
+            if (endpoint.modern) {
+              param.ctx = 0;
+            } else {
+              param.loginflag = 1;
+              if (platform) {
+                param.platform = platform;
+              }
+            }
 
-      if (!purl) {
-        continue;
+            const body = {
+              req_0: {
+                module: endpoint.module,
+                method: endpoint.method,
+                param,
+              },
+              comm: endpoint.modern
+                ? {
+                    uin,
+                    format: 'json',
+                    ct: 24,
+                    cv: 4_747_474,
+                    platform: 'yqq.json',
+                    chid: '0',
+                    g_tk: gtk,
+                    g_tk_new_20200303: gtk,
+                    inCharset: 'utf-8',
+                    outCharset: 'utf-8',
+                    notice: 0,
+                    needNewCode: 1,
+                  }
+                : {
+                    uin,
+                    format: 'json',
+                    ct: 24,
+                    cv: 0,
+                  },
+            };
+            const data = asRecord(
+              await jsonFetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+                method: 'POST',
+                headers: qqHeaders(cookie),
+                body,
+              }),
+            );
+            const payload = asRecord(asRecord(data.req_0).data);
+            const item = asRecord((Array.isArray(payload.midurlinfo) ? payload.midurlinfo : [])[0]);
+            lastResult = { item, payload };
+            const purl = text(item.purl);
+
+            if (!purl) {
+              continue;
+            }
+
+            const sip = Array.isArray(payload.sip) ? payload.sip.map(text).find(Boolean) : null;
+            const url = purl.startsWith('http') ? purl : `${sip ?? 'https://isure.stream.qqmusic.qq.com/'}${purl}`;
+
+            return {
+              provider,
+              providerTrackId: request.providerTrackId,
+              url,
+              expiresAt: new Date(Date.now() + 4 * 60 * 1000).toISOString(),
+              mimeType: selectedQuality.mimeType,
+              bitrate: selectedQuality.bitrate,
+              sampleRate: null,
+              bitDepth: selectedQuality.codec === 'flac' ? 16 : null,
+              codec: selectedQuality.codec,
+              headers: {},
+              requiresProxy: false,
+              supportsRange: true,
+            };
+          }
+        }
       }
-
-      const sip = Array.isArray(payload.sip) ? payload.sip.map(text).find(Boolean) : null;
-      const url = purl.startsWith('http') ? purl : `${sip ?? 'https://isure.stream.qqmusic.qq.com/'}${purl}`;
-
-      return {
-        provider,
-        providerTrackId: request.providerTrackId,
-        url,
-        expiresAt: new Date(Date.now() + 4 * 60 * 1000).toISOString(),
-        mimeType: selectedQuality.mimeType,
-        bitrate: selectedQuality.bitrate,
-        sampleRate: null,
-        bitDepth: selectedQuality.codec === 'flac' ? 16 : null,
-        codec: selectedQuality.codec,
-        headers: {},
-        requiresProxy: false,
-        supportsRange: true,
-      };
     }
 
-    const message = text(lastItem.msg) ?? text(lastItem.message);
-    throw new Error(message ?? '这首歌暂时不可播放，可能需要会员或版权不可用');
+    throw new Error(qqPlaybackFailureMessage(lastResult));
   }
 
   async getLikedSongsPlaylist(input: { page?: number; pageSize?: number } = {}): Promise<StreamingPlaylistDetail> {
     const cookie = accountCookie();
     if (!cookie) {
-      throw new Error('请先登录 QQ 音乐账号。');
+      throw new Error('Please connect a QQ Music account first.');
     }
 
     const page = Math.max(1, Math.floor(input.page ?? 1));
@@ -662,8 +819,8 @@ export class QQMusicStreamingProvider implements StreamingProvider {
       id: streamingStableKey(provider, 'playlist:liked-songs'),
       provider,
       providerPlaylistId: 'liked-songs',
-      title: 'QQ 音乐我喜欢',
-      description: '从 QQ 音乐账号同步的我喜欢歌曲',
+      title: 'QQ Music Liked Songs',
+      description: 'Liked songs synced from the QQ Music account',
       creator: accountStatus().displayName ?? accountStatus().username ?? null,
       coverUrl: tracks[0]?.coverUrl ?? null,
       coverThumb: tracks[0]?.coverThumb ?? null,
@@ -769,7 +926,7 @@ export class QQMusicStreamingProvider implements StreamingProvider {
   private async fetchLikedSongsPage(cookie: string, begin: number, pageSize: number): Promise<{ total: number; songs: unknown[] }> {
     const uin = uinFromCookie(cookie);
     if (uin === '0') {
-      throw new Error('无法读取 QQ 音乐账号 UIN，请重新登录后再同步。');
+      throw new Error('Unable to read QQ Music account UIN. Please reconnect QQ Music and try again.');
     }
 
     const params = new URLSearchParams({
@@ -807,7 +964,7 @@ export class QQMusicStreamingProvider implements StreamingProvider {
   private async findLikedPlaylistId(cookie: string): Promise<string> {
     const uin = uinFromCookie(cookie);
     if (uin === '0') {
-      throw new Error('无法读取 QQ 音乐账号 UIN，请重新登录后再同步。');
+      throw new Error('Unable to read QQ Music account UIN. Please reconnect QQ Music and try again.');
     }
 
     const params = new URLSearchParams({
@@ -840,7 +997,7 @@ export class QQMusicStreamingProvider implements StreamingProvider {
       : text(asRecord(data).mymusic) ?? text(asRecord(data).mymusicId);
 
     if (!id) {
-      throw new Error('没有找到 QQ 音乐“我喜欢”歌单。');
+      throw new Error('Could not find the QQ Music liked songs playlist.');
     }
 
     return id;

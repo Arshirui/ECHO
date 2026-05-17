@@ -1435,7 +1435,6 @@ describe("LyricsPage", () => {
   });
 
   it("auto-closes the lyrics candidate panel after ten seconds without interaction", async () => {
-    vi.useFakeTimers();
     const track = makeTrack();
     mockEcho(track);
     window.echo.lyrics = {
@@ -1459,6 +1458,8 @@ describe("LyricsPage", () => {
     );
 
     await waitFor(() => expect(container.querySelector(".lyrics-match-panel")).toBeTruthy());
+    vi.useFakeTimers();
+    fireEvent.pointerEnter(container.querySelector<HTMLElement>(".lyrics-match-panel")!);
 
     act(() => {
       vi.advanceTimersByTime(9999);

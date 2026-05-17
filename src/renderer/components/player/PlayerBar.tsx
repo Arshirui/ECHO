@@ -1,7 +1,8 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
-import { Import } from 'lucide-react';
+import { Download, Import, Loader2 } from 'lucide-react';
 import type { AudioStatus } from '../../../shared/types/audio';
 import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
+import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
 import type { PlaybackStatus } from '../../../shared/types/playback';
 import { streamingProviderNames, type StreamingProviderName } from '../../../shared/types/streaming';
 import { likedChangedEvent, likedTracksChangedEvent } from '../../hooks/useLikedMedia';
@@ -36,6 +37,27 @@ const seekAnchorMaxAgeSeconds = 3;
 const playbackRateChangeDiscontinuitySeconds = 0.35;
 const isStreamingProviderName = (provider: string | null | undefined): provider is StreamingProviderName =>
   streamingProviderNames.includes(provider as StreamingProviderName);
+const activeDownloadStatuses = new Set<DownloadJobStatus>([
+  'queued',
+  'probing',
+  'downloading',
+  'extracting_audio',
+  'importing',
+  'binding_mv',
+]);
+const terminalDownloadStatuses = new Set<DownloadJobStatus>(['completed', 'failed', 'cancelled']);
+const unsupportedPlayerDownloadProviders = new Set<StreamingProviderName>(['mock', 'spotify']);
+const downloadStatusLabels: Record<DownloadJobStatus, string> = {
+  queued: '排队中',
+  probing: '解析链接',
+  downloading: '下载中',
+  extracting_audio: '提取音频',
+  importing: '导入曲库',
+  binding_mv: '绑定 MV',
+  completed: '下载完成',
+  failed: '下载失败',
+  cancelled: '已取消',
+};
 const isVerifiedAudioAnalysisBpm = (track: { bpm?: number | null; bpmConfidence?: number | null; analysisStatus?: string | null; fieldSources?: Record<string, string> } | null): boolean =>
   Boolean(track?.fieldSources?.bpm === 'audio_analysis' && isReliableBpmAnalysis(track.bpm, track.bpmConfidence, track.analysisStatus));
 const readAudioAnalysisEnabled = (settings: unknown): boolean => {
@@ -52,6 +74,79 @@ const readAudioAnalysisEnabledPatch = (patch: unknown): boolean | null => {
 
   const value = (patch as { audioAnalysisEnabled?: unknown }).audioAnalysisEnabled;
   return typeof value === 'boolean' ? value : null;
+};
+
+type PlayerDownloadNotice = {
+  tone: 'info' | 'success' | 'error';
+  title: string;
+  detail: string;
+  progress: number | null;
+};
+
+const streamingTrackWebUrl = (provider: StreamingProviderName, providerTrackId: string): string | null => {
+  switch (provider) {
+    case 'netease':
+      return `https://music.163.com/#/song?id=${encodeURIComponent(providerTrackId)}`;
+    case 'qqmusic':
+      return `https://y.qq.com/n/ryqq/songDetail/${encodeURIComponent(providerTrackId)}`;
+    case 'spotify':
+      return `https://open.spotify.com/track/${encodeURIComponent(providerTrackId)}`;
+    default:
+      return null;
+  }
+};
+
+const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value);
+
+const shouldUseDirectAudioDownload = (source: {
+  provider: StreamingProviderName;
+  url: string;
+  mimeType: string | null;
+  codec: string | null;
+}): boolean =>
+  source.provider !== 'm3u8' &&
+  isHttpUrl(source.url) &&
+  (source.mimeType?.toLocaleLowerCase().startsWith('audio/') === true || Boolean(source.codec));
+
+const clampDownloadProgress = (progress: number): number => Math.max(0, Math.min(100, Math.round(progress)));
+
+const downloadNoticeFromJob = (job: DownloadJob, fallbackTitle: string | null): PlayerDownloadNotice => {
+  const trackTitle = job.title ?? fallbackTitle ?? '当前流媒体';
+  const progress = clampDownloadProgress(job.progress);
+
+  if (job.status === 'completed') {
+    return {
+      tone: 'success',
+      title: `下载完成：${trackTitle}`,
+      detail: job.outputPath ?? '已保存到下载文件夹',
+      progress: 100,
+    };
+  }
+
+  if (job.status === 'failed') {
+    return {
+      tone: 'error',
+      title: `下载失败：${trackTitle}`,
+      detail: job.error ?? '请稍后重试',
+      progress: null,
+    };
+  }
+
+  if (job.status === 'cancelled') {
+    return {
+      tone: 'error',
+      title: `下载已取消：${trackTitle}`,
+      detail: '任务已停止',
+      progress: null,
+    };
+  }
+
+  return {
+    tone: 'info',
+    title: `正在下载：${trackTitle}`,
+    detail: `${downloadStatusLabels[job.status]} · ${progress}%`,
+    progress,
+  };
 };
 
 const deferNonCriticalPlaybackTask = (callback: () => void): (() => void) => {
@@ -212,10 +307,15 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const [isCurrentTrackLiked, setIsCurrentTrackLiked] = useState(false);
   const [smtcEnabled, setSmtcEnabled] = useState(true);
   const [audioAnalysisEnabled, setAudioAnalysisEnabled] = useState<boolean | null>(null);
+  const [streamingDownloadJobId, setStreamingDownloadJobId] = useState<string | null>(null);
+  const [streamingDownloadNotice, setStreamingDownloadNotice] = useState<PlayerDownloadNotice | null>(null);
+  const [isStreamingDownloadResolving, setIsStreamingDownloadResolving] = useState(false);
   const handledEndedTrackRef = useRef<string | null>(null);
   const hydratedTrackIdsRef = useRef(new Set<string>());
   const bpmAnalysisJobIdsRef = useRef(new Map<string, string | 'done'>());
   const streamingBpmAnalysisTrackIdsRef = useRef(new Set<string>());
+  const streamingDownloadTitleRef = useRef<string | null>(null);
+  const streamingDownloadNoticeTimerRef = useRef<number | null>(null);
   const mvPreloadTrackRef = useRef<string | null>(null);
   const seekAnchorRef = useRef<{ positionSeconds: number; trackKey: string | null; updatedAtMs: number } | null>(null);
   const activeTrackIdRef = useRef<string | null>(null);
@@ -352,6 +452,15 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const streamingTrackMediaType = currentTrack?.mediaType ?? null;
   const streamingTrackProvider = currentTrack?.provider ?? null;
   const streamingTrackProviderTrackId = currentTrack?.providerTrackId ?? null;
+  const currentStreamingDownloadProvider =
+    streamingTrackMediaType === 'streaming' && isStreamingProviderName(streamingTrackProvider) ? streamingTrackProvider : null;
+  const isCurrentStreamingTrack = Boolean(currentStreamingDownloadProvider && streamingTrackProviderTrackId);
+  const canDownloadCurrentStreamingTrack = Boolean(
+    currentStreamingDownloadProvider &&
+      streamingTrackProviderTrackId &&
+      !unsupportedPlayerDownloadProviders.has(currentStreamingDownloadProvider),
+  );
+  const isCurrentStreamingDownloadBusy = isStreamingDownloadResolving || Boolean(streamingDownloadJobId);
   const isProviderLikedStreamingTrack =
     streamingTrackMediaType === 'streaming' &&
     isProviderLikedStreamingProvider(streamingTrackProvider) &&
@@ -361,6 +470,146 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const streamingTrackBpmConfidence = currentTrack?.bpmConfidence ?? null;
   const streamingTrackAnalysisStatus = currentTrack?.analysisStatus ?? null;
   const isSpotifyCurrentTrack = isSpotifyTrack(currentTrack);
+
+  const clearStreamingDownloadNoticeTimer = useCallback((): void => {
+    if (streamingDownloadNoticeTimerRef.current !== null) {
+      window.clearTimeout(streamingDownloadNoticeTimerRef.current);
+      streamingDownloadNoticeTimerRef.current = null;
+    }
+  }, []);
+
+  const showStreamingDownloadNotice = useCallback(
+    (notice: PlayerDownloadNotice, autoHideMs?: number): void => {
+      clearStreamingDownloadNoticeTimer();
+      setStreamingDownloadNotice(notice);
+
+      if (autoHideMs) {
+        streamingDownloadNoticeTimerRef.current = window.setTimeout(() => {
+          setStreamingDownloadNotice(null);
+          streamingDownloadNoticeTimerRef.current = null;
+        }, autoHideMs);
+      }
+    },
+    [clearStreamingDownloadNoticeTimer],
+  );
+
+  useEffect(() => () => clearStreamingDownloadNoticeTimer(), [clearStreamingDownloadNoticeTimer]);
+
+  useEffect(() => {
+    const downloads = window.echo?.downloads;
+    if (!downloads?.onJobsUpdated || !streamingDownloadJobId) {
+      return undefined;
+    }
+
+    const applyJobsSnapshot = (jobs: DownloadJob[]): void => {
+      const job = jobs.find((item) => item.id === streamingDownloadJobId);
+      if (!job) {
+        return;
+      }
+
+      const notice = downloadNoticeFromJob(job, streamingDownloadTitleRef.current);
+      const isTerminal = terminalDownloadStatuses.has(job.status);
+      const isActive = activeDownloadStatuses.has(job.status);
+      showStreamingDownloadNotice(notice, isTerminal ? (job.status === 'completed' ? 4500 : 7000) : undefined);
+      if (!isActive && isTerminal) {
+        setStreamingDownloadJobId(null);
+      }
+    };
+
+    void downloads.getJobs?.().then(applyJobsSnapshot).catch(() => undefined);
+    return downloads.onJobsUpdated(applyJobsSnapshot);
+  }, [showStreamingDownloadNotice, streamingDownloadJobId]);
+
+  const handleDownloadCurrentStreamingTrack = useCallback(async (): Promise<void> => {
+    if (!currentTrack || !currentStreamingDownloadProvider || !streamingTrackProviderTrackId) {
+      return;
+    }
+
+    if (unsupportedPlayerDownloadProviders.has(currentStreamingDownloadProvider)) {
+      const detail =
+        currentStreamingDownloadProvider === 'spotify'
+          ? 'Spotify 由官方播放器播放，不提供可下载音频 URL。'
+          : 'Mock 流媒体用于开发预览，不写入下载任务。';
+      showStreamingDownloadNotice(
+        {
+          tone: 'error',
+          title: '当前平台不支持下载',
+          detail,
+          progress: null,
+        },
+        6500,
+      );
+      return;
+    }
+
+    const downloads = window.echo?.downloads;
+    const streaming = window.echo?.streaming;
+    if (!downloads?.createUrlJob || !streaming?.resolvePlayback) {
+      showStreamingDownloadNotice(
+        {
+          tone: 'error',
+          title: '下载服务不可用',
+          detail: '请在 ECHO Next 桌面端中使用下载功能。',
+          progress: null,
+        },
+        6500,
+      );
+      return;
+    }
+
+    const trackTitle = currentTrack.title || '当前流媒体';
+    streamingDownloadTitleRef.current = trackTitle;
+    setIsStreamingDownloadResolving(true);
+    showStreamingDownloadNotice({
+      tone: 'info',
+      title: `准备下载：${trackTitle}`,
+      detail: '正在解析流媒体地址...',
+      progress: 0,
+    });
+
+    try {
+      const source = await streaming.resolvePlayback({
+        provider: currentStreamingDownloadProvider,
+        providerTrackId: streamingTrackProviderTrackId,
+        quality: currentTrack.streamingQuality,
+      });
+      const directAudio = shouldUseDirectAudioDownload(source);
+      const webpageUrl =
+        streamingTrackWebUrl(currentStreamingDownloadProvider, streamingTrackProviderTrackId) ??
+        (currentStreamingDownloadProvider === 'm3u8' ? source.url : undefined);
+      const job = await downloads.createUrlJob(source.url, {
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+        album: currentTrack.album,
+        albumArtist: currentTrack.albumArtist || currentTrack.artist,
+        coverUrl: currentTrack.coverThumb,
+        webpageUrl,
+        bindMvAfterImport: false,
+        requestHeaders: source.headers,
+        directAudio,
+        directAudioMimeType: source.mimeType,
+        directAudioExtension: source.codec,
+        streamingProvider: currentStreamingDownloadProvider,
+        streamingProviderTrackId: streamingTrackProviderTrackId,
+        streamingStableKey: currentTrack.stableKey ?? currentTrack.id,
+      });
+      setStreamingDownloadJobId(job.id);
+      showStreamingDownloadNotice(downloadNoticeFromJob(job, trackTitle));
+    } catch (downloadError) {
+      setStreamingDownloadJobId(null);
+      showStreamingDownloadNotice(
+        {
+          tone: 'error',
+          title: `下载失败：${trackTitle}`,
+          detail: downloadError instanceof Error ? downloadError.message : String(downloadError),
+          progress: null,
+        },
+        7000,
+      );
+    } finally {
+      setIsStreamingDownloadResolving(false);
+    }
+  }, [currentStreamingDownloadProvider, currentTrack, showStreamingDownloadNotice, streamingTrackProviderTrackId]);
 
   useEffect(() => {
     if (!isSpotifyCurrentTrack || !currentTrack?.providerTrackId || !window.echo?.spotify?.getPlaybackState) {
@@ -1133,6 +1382,26 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
 
   return (
     <footer className="player-bar" aria-label="播放控制">
+      {streamingDownloadNotice ? (
+        <div className={`player-download-notice player-download-notice--${streamingDownloadNotice.tone}`} role="status" aria-live="polite">
+          <div className="player-download-notice-copy">
+            <strong>{streamingDownloadNotice.title}</strong>
+            <span>{streamingDownloadNotice.detail}</span>
+          </div>
+          {streamingDownloadNotice.progress !== null ? (
+            <div
+              className="player-download-notice-progress"
+              role="progressbar"
+              aria-label="流媒体下载进度"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={streamingDownloadNotice.progress}
+            >
+              <span style={{ width: `${streamingDownloadNotice.progress}%` }} />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="player-now">
         <button
           className="player-cover"
@@ -1203,6 +1472,30 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
             onOpenChange={(isOpen) => setOpenPopover(isOpen ? 'speed' : null)}
             onStatusChange={setAudioStatus}
           />
+        ) : null}
+        {isCurrentStreamingTrack ? (
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="下载当前流媒体"
+            title={
+              canDownloadCurrentStreamingTrack
+                ? isCurrentStreamingDownloadBusy
+                  ? '正在准备或下载'
+                  : '下载当前流媒体'
+                : currentStreamingDownloadProvider === 'spotify'
+                  ? 'Spotify 不支持下载'
+                  : '当前流媒体源不支持下载'
+            }
+            disabled={!canDownloadCurrentStreamingTrack || isCurrentStreamingDownloadBusy}
+            onClick={() => void handleDownloadCurrentStreamingTrack()}
+          >
+            {isStreamingDownloadResolving || streamingDownloadJobId ? (
+              <Loader2 className="spinning-icon" size={17} />
+            ) : (
+              <Download size={17} />
+            )}
+          </button>
         ) : null}
         <button className="icon-button" type="button" aria-label="音频控制" title="音频控制" onClick={onOpenAudioSettings}>
           <Import size={17} />

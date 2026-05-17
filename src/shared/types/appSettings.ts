@@ -51,6 +51,7 @@ export type AppSettings = {
   audioAsioNativeDsdExperimentalEnabled?: boolean;
   audioAsioUnavailableFallbackEnabled?: boolean;
   audioSoxrFallbackEnabled?: boolean;
+  audioReleaseExclusiveOnPauseExperimentalEnabled?: boolean;
   albumMergeStrategy: 'standard' | 'sameTitleAndCover';
   chineseCrossScriptSearchEnabled?: boolean;
   artistWallAlbumArtwork: boolean;

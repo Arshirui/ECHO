@@ -47,11 +47,25 @@ type ActiveMediaPlayback = {
 const preparedMediaCache = new Map<string, { expiresAt: number; prepared: PreparedMediaItem }>();
 let activeMediaPlayback: ActiveMediaPlayback | null = null;
 let audioErrorRecoveryRegistered = false;
+let playbackStartGeneration = 0;
+
+const playbackCancellationErrorMessage = 'audio_session_run_cancelled';
+
+const beginPlaybackStartRun = (): number => {
+  playbackStartGeneration += 1;
+  return playbackStartGeneration;
+};
+
+const assertPlaybackStartRunCurrent = (generation: number): void => {
+  if (playbackStartGeneration !== generation) {
+    throw new Error(playbackCancellationErrorMessage);
+  }
+};
 
 const isSupersededPlaybackRun = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
 
-  return message.includes('audio_session_run_cancelled');
+  return message.includes(playbackCancellationErrorMessage);
 };
 
 const requireText = (value: unknown, name: string): string => {
@@ -645,8 +659,10 @@ export const registerPlaybackIpc = (): void => {
   ipcMain.handle(IpcChannels.PlaybackGetStatus, (): PlaybackStatus => toPlaybackStatus());
   ipcMain.handle(IpcChannels.PlaybackPlayLocalFile, async (_event, request: unknown): Promise<PlaybackStatus> => {
     clearActiveMediaPlayback();
+    const playbackRun = beginPlaybackStartRun();
     try {
       await getAudioSession().playLocalFile(normalizePlayRequest(request));
+      assertPlaybackStartRunCurrent(playbackRun);
       savePlaybackMemoryNow();
       void syncSmtcStatus();
       return toPlaybackStatus();
@@ -682,12 +698,14 @@ export const registerPlaybackIpc = (): void => {
 
     const item = request.item;
     clearActiveMediaPlayback();
+    const playbackRun = beginPlaybackStartRun();
     if (item.mediaType === 'streaming' && item.provider === 'spotify') {
       throw new Error('Spotify playback uses the official Web Playback SDK and must not enter the native audio session.');
     }
 
     try {
-      let prepared = await resolveMediaItemForPlayback(request);
+      const prepared = await resolveMediaItemForPlayback(request);
+      assertPlaybackStartRunCurrent(playbackRun);
 
       await getAudioSession().playLocalFile({
         filePath: prepared.filePath,
@@ -697,6 +715,7 @@ export const registerPlaybackIpc = (): void => {
         output: request.output,
         probe: prepared.probe,
       });
+      assertPlaybackStartRunCurrent(playbackRun);
       savePlaybackMemoryNow();
       const status = toPlaybackStatus();
       if (item.mediaType === 'remote' && status.durationMs > 0) {
@@ -719,6 +738,7 @@ export const registerPlaybackIpc = (): void => {
       preparedMediaCache.delete(createPreparedMediaKey(request));
       try {
         const prepared = await resolveMediaItemForPlayback(request, { forceRefresh: true });
+        assertPlaybackStartRunCurrent(playbackRun);
         await getAudioSession().playLocalFile({
           filePath: prepared.filePath,
           inputHeaders: prepared.inputHeaders,
@@ -727,6 +747,7 @@ export const registerPlaybackIpc = (): void => {
           output: request.output,
           probe: prepared.probe,
         });
+        assertPlaybackStartRunCurrent(playbackRun);
         savePlaybackMemoryNow();
         const status = toPlaybackStatus();
         if (item.mediaType === 'remote' && status.durationMs > 0) {
@@ -761,14 +782,15 @@ export const registerPlaybackIpc = (): void => {
       throw error;
     }
   });
-  ipcMain.handle(IpcChannels.PlaybackPause, (): PlaybackStatus => {
-    getAudioSession().pause();
+  ipcMain.handle(IpcChannels.PlaybackPause, async (): Promise<PlaybackStatus> => {
+    await getAudioSession().pause();
     savePlaybackMemoryNow();
     void syncSmtcStatus();
     return toPlaybackStatus();
   });
   ipcMain.handle(IpcChannels.PlaybackStop, (): PlaybackStatus => {
     clearActiveMediaPlayback();
+    beginPlaybackStartRun();
     getAudioSession().stop();
     getRemoteSourceService().setPlaybackActive(false);
     getPlaybackMemoryStore().clear();

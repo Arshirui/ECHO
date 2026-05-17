@@ -317,7 +317,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         await remoteApi.startBackgroundJobs(source.id, ['lyrics', 'mv']);
         setMessage('已加入歌词和 MV 匹配任务。');
       } else if (action === 'retryFailed') {
-        await remoteApi.retryFailedJobs(source.id, ['metadata', 'lyrics', 'mv', 'duration-backfill']);
+        await remoteApi.retryFailedJobs(source.id, ['metadata', 'cover', 'lyrics', 'mv', 'duration-backfill']);
         setMessage('已重新加入失败任务。');
       } else if (action === 'pauseJobs') {
         await remoteApi.pauseBackgroundJobs(source.id);

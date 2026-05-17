@@ -470,6 +470,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ audioSoxrFallbackEnabled: 'yes' as never }).audioSoxrFallbackEnabled).toBe(true);
   });
 
+  it('keeps release-exclusive-on-pause experiment disabled until explicitly enabled', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).audioReleaseExclusiveOnPauseExperimentalEnabled).toBe(false);
+    expect(normalizeSettings({ audioReleaseExclusiveOnPauseExperimentalEnabled: true }).audioReleaseExclusiveOnPauseExperimentalEnabled).toBe(true);
+    expect(normalizeSettings({ audioReleaseExclusiveOnPauseExperimentalEnabled: false }).audioReleaseExclusiveOnPauseExperimentalEnabled).toBe(false);
+    expect(normalizeSettings({ audioReleaseExclusiveOnPauseExperimentalEnabled: 'yes' as never }).audioReleaseExclusiveOnPauseExperimentalEnabled).toBe(false);
+  });
+
   it('keeps audio analysis enabled by default', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
