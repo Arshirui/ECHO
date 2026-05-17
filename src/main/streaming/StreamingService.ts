@@ -32,6 +32,7 @@ import { StreamingRateLimiter } from './StreamingRateLimiter';
 import { MockStreamingProvider } from './providers/MockStreamingProvider';
 import { NeteaseStreamingProvider } from './providers/NeteaseStreamingProvider';
 import { QQMusicStreamingProvider } from './providers/QQMusicStreamingProvider';
+import { SoundCloudStreamingProvider } from './providers/SoundCloudStreamingProvider';
 import { SpotifyStreamingProvider } from './providers/SpotifyStreamingProvider';
 import { M3u8StreamingProvider } from './providers/M3u8StreamingProvider';
 import { buildM3u8StreamingPlaylistDetail } from './M3u8Playlist';
@@ -42,7 +43,8 @@ const maxPlaybackTtlMs = 5 * 60 * 1000;
 const fallbackPlaybackTtlMs = 2 * 60 * 1000;
 const providerTimeoutMs = 10 * 1000;
 const likedSongsSyncTimeoutMs = 45 * 1000;
-const searchCacheVersion = 'v7';
+const searchCacheVersion = 'v8';
+const playbackCacheVersion = 'v2';
 const lyricsCacheVersion = 'v3';
 const playlistImportPageSize = 500;
 const likedSongsSyncPageSize = 100;
@@ -92,7 +94,7 @@ const artistCacheKey = (provider: StreamingProviderName, providerArtistId: strin
   `artist:${searchCacheVersion}:${provider}:${providerArtistId}`;
 
 const playbackCacheKey = (request: StreamingPlaybackRequest): string =>
-  `playback:${request.provider}:${request.providerTrackId}:${request.quality ?? 'auto'}`;
+  `playback:${playbackCacheVersion}:${request.provider}:${request.providerTrackId}:${request.quality ?? 'auto'}`;
 
 const lyricsCacheKey = (provider: StreamingProviderName, providerTrackId: string): string =>
   `lyrics:${lyricsCacheVersion}:streaming:${provider}:${providerTrackId}`;
@@ -767,6 +769,7 @@ export const createStreamingService = (database: EchoDatabase): StreamingService
   registry.register(new MockStreamingProvider());
   registry.register(new NeteaseStreamingProvider());
   registry.register(new QQMusicStreamingProvider());
+  registry.register(new SoundCloudStreamingProvider());
   registry.register(new SpotifyStreamingProvider());
   registry.register(new M3u8StreamingProvider());
   return new StreamingService(

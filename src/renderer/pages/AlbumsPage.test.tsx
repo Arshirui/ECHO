@@ -192,7 +192,7 @@ describe('AlbumsPage', () => {
     expect(getTracks).not.toHaveBeenCalled();
   });
 
-  it('loads page 2 when the page surface scrolls to the spacer bottom', async () => {
+  it('loads page 2 when the album wall scrolls to the spacer bottom', async () => {
     const getAlbums = vi
       .fn()
       .mockResolvedValueOnce(page([album('1')], { page: 1, total: 2, hasMore: true }))
@@ -204,7 +204,7 @@ describe('AlbumsPage', () => {
     await screen.findByLabelText('Album list');
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(1));
 
-    const pageSurface = container.querySelector('.page-surface') as HTMLElement;
+    const pageSurface = container.querySelector('.media-wall-scroll-shell') as HTMLElement;
     const sentinel = container.querySelector('.infinite-scroll-sentinel')!;
     setScrollablePageSurface(pageSurface);
     setSentinelReach(pageSurface, sentinel);
@@ -239,7 +239,7 @@ describe('AlbumsPage', () => {
     expect(getAlbums).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 60, search: 'search', sort: 'artist' });
   });
 
-  it('search and sort reset the page surface scroll position', async () => {
+  it('search and sort reset the album wall scroll position', async () => {
     const getAlbums = vi
       .fn()
       .mockResolvedValueOnce(page([album('1')], { page: 1, total: 120, hasMore: true }))
@@ -250,7 +250,7 @@ describe('AlbumsPage', () => {
     const { container } = renderAlbumsPage();
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(1));
 
-    const pageSurface = container.querySelector('.page-surface') as HTMLElement;
+    const pageSurface = container.querySelector('.media-wall-scroll-shell') as HTMLElement;
     setScrollablePageSurface(pageSurface);
     pageSurface.scrollTop = 640;
 
@@ -475,7 +475,7 @@ describe('AlbumsPage', () => {
     const { container } = renderAlbumsPage();
 
     await screen.findByText('Album 1');
-    const pageSurface = container.querySelector('.page-surface') as HTMLElement;
+    const pageSurface = container.querySelector('.media-wall-scroll-shell') as HTMLElement;
     setScrollablePageSurface(pageSurface);
     pageSurface.scrollTop = 640;
     fireEvent.click(screen.getByText('Album 1'));

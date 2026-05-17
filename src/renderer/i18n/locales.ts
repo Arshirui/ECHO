@@ -348,6 +348,8 @@ export type TranslationKey =
   | 'route.artists.label'
   | 'route.audioSettings.description'
   | 'route.audioSettings.label'
+  | 'route.connect.description'
+  | 'route.connect.label'
   | 'route.downloads.description'
   | 'route.downloads.label'
   | 'route.folders.description'
@@ -1206,6 +1208,8 @@ const zhCN: TranslationMap = {
   'route.artists.label': '艺术家',
   'route.audioSettings.description': '输出与解码设置。',
   'route.audioSettings.label': '音频设置',
+  'route.connect.description': 'DLNA / AirPlay 无线播放。',
+  'route.connect.label': 'Connect',
   'route.downloads.description': '下载任务占位。',
   'route.downloads.label': '下载',
   'route.folders.description': '本地导入根目录。',
@@ -1997,6 +2001,8 @@ const zhTW: TranslationMap = {
   'route.albums.label': '專輯',
   'route.artists.label': '演出者',
   'route.audioSettings.label': '音訊設定',
+  'route.connect.description': 'DLNA / AirPlay 無線播放。',
+  'route.connect.label': 'Connect',
   'route.downloads.description': '下載任務佔位。',
   'route.downloads.label': '下載',
   'route.folders.label': '資料夾',
@@ -2587,6 +2593,8 @@ const jaJP: TranslationMap = {
   'route.artists.label': 'アーティスト',
   'route.audioSettings.description': '出力とデコーダー設定。',
   'route.audioSettings.label': '音声設定',
+  'route.connect.description': 'DLNA / AirPlay ワイヤレス再生。',
+  'route.connect.label': 'Connect',
   'route.downloads.description': 'ダウンロードタスクのプレースホルダー。',
   'route.downloads.label': 'ダウンロード',
   'route.folders.description': 'ローカル取り込み元。',
@@ -3252,6 +3260,8 @@ const enUS: TranslationMap = {
   'route.artists.label': 'Artists',
   'route.audioSettings.description': 'Output and decoder settings.',
   'route.audioSettings.label': 'Audio Settings',
+  'route.connect.description': 'DLNA / AirPlay wireless playback.',
+  'route.connect.label': 'Connect',
   'route.downloads.description': 'Download queue placeholder.',
   'route.downloads.label': 'Downloads',
   'route.folders.description': 'Local import roots.',

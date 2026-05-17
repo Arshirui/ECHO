@@ -157,6 +157,7 @@ const installLibraryService = () => {
     getScanStatus: vi.fn(),
     cancelScan: vi.fn(),
     getTracks: vi.fn(),
+    locateTrackInTracks: vi.fn(() => ({ found: false, reason: 'not-found', track: null, items: [], page: 1, pageSize: 100, index: -1, total: 0, hasMore: false })),
     getDuplicateHiddenCounts: vi.fn(() => ({ 'track-1': 1, 'track-2': 0 })),
     getAlbums: vi.fn(),
     getAlbum: vi.fn(),
@@ -391,6 +392,29 @@ describe('library IPC', () => {
 
     expect(service.getTracks).toHaveBeenCalledWith({ page: 1, pageSize: 50, sort: 'fileModifiedDesc' });
     expect(service.getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 50, sort: 'fileModifiedAsc' });
+  });
+
+  it('locates a song-list track through IPC with a normalized query', async () => {
+    const service = installLibraryService();
+
+    await handlers[IpcChannels.LibraryLocateTrackInTracks]!(null, 'track-1', {
+      page: 9,
+      pageSize: 50,
+      search: 'needle',
+      sort: 'artist',
+      hideDuplicates: true,
+      duplicateMode: 'strict',
+      extra: true,
+    });
+
+    expect(service.locateTrackInTracks).toHaveBeenCalledWith('track-1', {
+      page: 9,
+      pageSize: 50,
+      search: 'needle',
+      sort: 'artist',
+      hideDuplicates: true,
+      duplicateMode: 'strict',
+    });
   });
 
   it('registers artist detail IPC handlers with normalized queries', async () => {

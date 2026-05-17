@@ -144,6 +144,7 @@ const makeAppSettings = (
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
+  lyricsLineMaxChars: 0,
   lyricsContextOpacityPercent: 49,
   lyricsColor: "#314054",
   lyricsSmartReadableColorsEnabled: false,
@@ -424,10 +425,25 @@ describe("LyricsPage", () => {
     expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line(?:\[data-active="true"\])? \{\s*color: var\(--lyrics-color\);/);
   });
 
+  it("keeps dark immersive track info and player tags readable", () => {
+    const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
+    const polishCss = readFileSync("src/renderer/styles/ui-polish.css", "utf8");
+
+    expect(css).toContain('html[data-theme="dark"] .lyrics-page:has(.lyrics-mv-background) .lyrics-track-copy h1');
+    expect(css).toContain("color: color-mix(in srgb, var(--theme-on-accent) 97%, transparent);");
+    expect(css).toContain('html[data-theme="dark"] .lyrics-page:has(.lyrics-mv-background) .lyrics-track-copy p,');
+    expect(css).toContain('html[data-theme="dark"] .lyrics-page:has(.lyrics-mv-background) .lyrics-track-album');
+    expect(polishCss).toContain('html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .hifi-tag');
+    expect(polishCss).toContain("color: var(--theme-page-text);");
+    expect(polishCss).toContain('html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-hires');
+    expect(polishCss).not.toMatch(/html\[data-theme="dark"\] \.app-shell:has\(\.lyrics-page\) \.player-tags \.hifi-tag \{[^}]*color: var\(--theme-button-text\);/);
+  });
+
   it("keeps MV immersive lyrics on the normal lyrics size scale", () => {
     const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
 
-    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line span \{\s*max-width: min\(100%, 1120px\);\s*font-size: calc\(var\(--lyrics-font-size\) \* 0\.9\);/);
+    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line span \{\s*max-width: min\(100%, 1120px, var\(--lyrics-line-max-width\)\);\s*font-size: calc\(var\(--lyrics-font-size\) \* 0\.9\);/);
+    expect(css).toMatch(/\.lyrics-line span \{\s*display: inline-block;\s*max-width: min\(100%, var\(--lyrics-line-max-width\)\);/);
     expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line\[data-active="true"\] span \{\s*font-size: calc\(var\(--lyrics-font-size\) \* 1\.25\);/);
     expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\)[\s\S]*font-size: calc\(var\(--lyrics-font-size\) \* 1\.5\);/);
   });
@@ -1892,6 +1908,7 @@ describe("LyricsPage", () => {
       lyricsBackgroundScalePercent: 132,
       lyricsSecondaryFontSizePx: 24,
       lyricsLineSpacingPercent: 118,
+      lyricsLineMaxChars: 32,
       lyricsContextOpacityPercent: 64,
     });
 
@@ -1926,6 +1943,7 @@ describe("LyricsPage", () => {
       "24px",
     );
     expect(page.style.getPropertyValue("--lyrics-line-spacing")).toBe("1.18");
+    expect(page.style.getPropertyValue("--lyrics-line-max-width")).toBe("32em");
     expect(page.style.getPropertyValue("--lyrics-context-opacity")).toBe(
       "0.64",
     );
@@ -2007,6 +2025,7 @@ describe("LyricsPage", () => {
           lyricsBackgroundScalePercent: 86,
           lyricsSecondaryFontSizePx: 22,
           lyricsLineSpacingPercent: 74,
+          lyricsLineMaxChars: 28,
           lyricsContextOpacityPercent: 24,
         },
       }),
@@ -2032,6 +2051,7 @@ describe("LyricsPage", () => {
       "22px",
     );
     expect(page.style.getPropertyValue("--lyrics-line-spacing")).toBe("0.74");
+    expect(page.style.getPropertyValue("--lyrics-line-max-width")).toBe("28em");
     expect(page.style.getPropertyValue("--lyrics-context-opacity")).toBe(
       "0.24",
     );

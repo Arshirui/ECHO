@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Disc3, Heart, MoreHorizontal, Play } from 'lucide-react';
-import type { LibraryAlbum, LibraryTrack } from '../../../shared/types/library';
-import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent } from '../../hooks/useLikedMedia';
+import type { EditableTrackTags, LibraryAlbum, LibraryTrack } from '../../../shared/types/library';
+import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../../hooks/useLikedMedia';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
+import { openAlbumDetailForTrack } from '../../utils/albumNavigation';
+import { OsuTimingPanel } from '../library/OsuTimingPanel';
+import { TrackContextMenu } from '../library/TrackContextMenu';
+import type { TrackMenuAction } from '../library/TrackContextMenu';
+import { TrackTagEditorDrawer } from '../library/TrackTagEditorDrawer';
 import { AlbumTrackList } from './AlbumTrackList';
 
 type AlbumDetailViewProps = {
@@ -63,8 +68,13 @@ const uniqueValues = (values: Array<string | null | undefined>): string[] =>
 
 const formatTrackCount = (count: number): string => `${count} ${count === 1 ? 'track' : 'tracks'}`;
 
+type TrackMenuState = {
+  track: LibraryTrack;
+  position: { x: number; y: number };
+};
+
 export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.Element => {
-  const { currentTrackId, playTrack, replaceQueue } = usePlaybackQueue();
+  const { appendToQueue, currentTrackId, playTrack, playTrackNext, removeTrackFromQueue, replaceQueue, updateTrackSnapshot } = usePlaybackQueue();
   const { isReturning, returnBack } = useAnimatedBackNavigation(onBack);
   const [firstTrack, setFirstTrack] = useState<LibraryTrack | null>(null);
   const [loadedTracks, setLoadedTracks] = useState<LibraryTrack[]>([]);
@@ -75,6 +85,15 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
   const [failedLargeCover, setFailedLargeCover] = useState(false);
   const [failedThumbCover, setFailedThumbCover] = useState(false);
   const [isAlbumLiked, setIsAlbumLiked] = useState(false);
+  const [trackMenu, setTrackMenu] = useState<TrackMenuState | null>(null);
+  const [trackActionMessage, setTrackActionMessage] = useState<string | null>(null);
+  const [osuTimingTrack, setOsuTimingTrack] = useState<LibraryTrack | null>(null);
+  const [editingTrack, setEditingTrack] = useState<LibraryTrack | null>(null);
+  const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
+  const [tagEditorError, setTagEditorError] = useState<string | null>(null);
+  const [isSavingTags, setIsSavingTags] = useState(false);
+  const tagEditorCloseTimerRef = useRef<number | null>(null);
+  const likedTrackIds = useLikedTrackIds(loadedTracks.map((track) => track.id));
   const duration = formatDuration(album.duration);
   const formatSummary = formatTechnicalSummary(firstTrack);
   const albumMetadata = useMemo(
@@ -231,6 +250,198 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     }
   }, []);
 
+  const handleOpenTrackMenu = useCallback((track: LibraryTrack, position: { x: number; y: number }): void => {
+    setTrackMenu({ track: withAlbumCoverFallback(track), position });
+  }, [withAlbumCoverFallback]);
+
+  const closeTagEditor = useCallback((): void => {
+    setIsTagEditorOpen(false);
+    if (tagEditorCloseTimerRef.current !== null) {
+      window.clearTimeout(tagEditorCloseTimerRef.current);
+    }
+    tagEditorCloseTimerRef.current = window.setTimeout(() => {
+      setEditingTrack(null);
+      tagEditorCloseTimerRef.current = null;
+    }, 280);
+  }, []);
+
+  const handleSaveTags = useCallback(
+    async (
+      track: LibraryTrack,
+      tags: EditableTrackTags,
+      coverPath: string | null,
+      coverUrl: string | null,
+      coverMimeType: string | null,
+    ): Promise<void> => {
+      const library = window.echo?.library;
+
+      if (!library?.updateTrackTags) {
+        setTagEditorError('Desktop bridge unavailable. Open ECHO Next in Electron to edit embedded tags.');
+        return;
+      }
+
+      setIsSavingTags(true);
+      setTagEditorError(null);
+
+      try {
+        const updatedTrack = await library.updateTrackTags({ trackId: track.id, tags, coverPath, coverUrl, coverMimeType });
+        setLoadedTracks((current) => current.map((item) => (item.id === updatedTrack.id ? withAlbumCoverFallback(updatedTrack) : item)));
+        setFirstTrack((current) => (current?.id === updatedTrack.id ? withAlbumCoverFallback(updatedTrack) : current));
+        updateTrackSnapshot(updatedTrack.id, withAlbumCoverFallback(updatedTrack));
+        window.dispatchEvent(new Event('library:changed'));
+        closeTagEditor();
+      } catch (saveError) {
+        setTagEditorError(saveError instanceof Error ? saveError.message : String(saveError));
+      } finally {
+        setIsSavingTags(false);
+      }
+    },
+    [closeTagEditor, updateTrackSnapshot, withAlbumCoverFallback],
+  );
+
+  const handleTrackMenuAction = useCallback(
+    async (action: TrackMenuAction, track: LibraryTrack): Promise<void> => {
+      const library = window.echo?.library;
+      setTrackMenu(null);
+
+      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'open-osu-timing') {
+        setPlayError('Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.');
+        return;
+      }
+
+      try {
+        setPlayError(null);
+        setTrackActionMessage(null);
+
+        if (
+          track.mediaType === 'remote' &&
+          (action === 'edit-tags' ||
+            action === 'open-osu-timing' ||
+            action === 'show-in-folder' ||
+            action === 'copy-path' ||
+            action === 'open-system' ||
+            action === 'delete-song')
+        ) {
+          setPlayError('Remote tracks do not support local file actions yet.');
+          return;
+        }
+
+        switch (action) {
+          case 'play-next':
+            playTrackNext(withAlbumCoverFallback(track), albumSource);
+            return;
+          case 'add-to-queue':
+            appendToQueue(withAlbumCoverFallback(track), albumSource);
+            return;
+          case 'toggle-liked':
+            await handleToggleTrackLiked(track);
+            return;
+          case 'remove-from-queue':
+            {
+              const removedCount = removeTrackFromQueue(track.id);
+              setTrackActionMessage(removedCount > 0 ? `Removed from queue: ${track.title}` : `This track is not in the queue: ${track.title}`);
+            }
+            return;
+          case 'open-osu-timing':
+            setOsuTimingTrack(withAlbumCoverFallback(track));
+            return;
+          case 'edit-tags':
+            setTagEditorError(null);
+            if (tagEditorCloseTimerRef.current !== null) {
+              window.clearTimeout(tagEditorCloseTimerRef.current);
+              tagEditorCloseTimerRef.current = null;
+            }
+            setIsTagEditorOpen(false);
+            setEditingTrack(track);
+            window.requestAnimationFrame(() => setIsTagEditorOpen(true));
+            return;
+          case 'go-to-album':
+            if (!(await openAlbumDetailForTrack(track))) {
+              setTrackActionMessage(`Already viewing this album: ${album.title}`);
+            }
+            return;
+          case 'show-in-folder':
+            await library?.openTrackInFolder(track.id);
+            return;
+          case 'copy-path':
+            await library?.copyTrackPath(track.id);
+            return;
+          case 'open-system':
+            await library?.openTrackWithSystem(track.id);
+            return;
+          case 'copy-name-artist':
+            await library?.copyTrackNameArtist(track.id);
+            return;
+          case 'copy-cover':
+            if (!(await library?.copyTrackCover(track.id))) {
+              setPlayError('This track does not have cover art to copy.');
+            }
+            return;
+          case 'save-cover':
+            if (!(await library?.saveTrackCover(track.id))) {
+              setPlayError('No cover art was saved for this track.');
+            }
+            return;
+          case 'delete-song':
+            if (!window.confirm(`Delete the music file?\n${track.title}`)) {
+              return;
+            }
+            await library?.deleteTrackFile(track.id);
+            setLoadedTracks((current) => current.filter((item) => item.id !== track.id));
+            setLoadedTotal((current) => Math.max(0, current - 1));
+            if (firstTrack?.id === track.id) {
+              setFirstTrack(loadedTracks.find((item) => item.id !== track.id) ?? null);
+            }
+            window.dispatchEvent(new Event('library:changed'));
+            return;
+          case 'add-to-playlist':
+            {
+              const playlists = await library!.getPlaylists();
+              let playlist: (typeof playlists)[number] | null = playlists[0] ?? null;
+              if (playlists.length > 1) {
+                const names = playlists.map((item, index) => `${index + 1}. ${item.name}`).join('\n');
+                const choice = window.prompt(`Choose playlist number:\n${names}`, '1');
+                const index = Number(choice) - 1;
+                playlist = Number.isInteger(index) ? playlists[index] ?? null : null;
+              }
+
+              if (!playlist) {
+                const name = window.prompt('No playlists yet. Enter a name to create one:');
+                if (!name?.trim()) {
+                  return;
+                }
+                playlist = await library!.createPlaylist({ name });
+              }
+
+              if (!playlist) {
+                return;
+              }
+
+              await library!.addTrackToPlaylist(playlist.id, track.id);
+              window.dispatchEvent(new Event('library:playlists-changed'));
+              setTrackActionMessage(`Added to playlist: ${playlist.name}`);
+            }
+            return;
+          default:
+            setPlayError('This track action is not available yet.');
+        }
+      } catch (actionError) {
+        setPlayError(actionError instanceof Error ? actionError.message : String(actionError));
+      }
+    },
+    [
+      album.title,
+      albumSource,
+      appendToQueue,
+      firstTrack?.id,
+      handleToggleTrackLiked,
+      loadedTracks,
+      playTrackNext,
+      removeTrackFromQueue,
+      withAlbumCoverFallback,
+    ],
+  );
+
   const handleDetailCoverError = useCallback((): void => {
     if (coverLarge && !failedLargeCover) {
       setFailedLargeCover(true);
@@ -289,7 +500,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
             </button>
           </div>
 
-          {playError ? <p className="album-detail-error">{playError}</p> : null}
+          {playError || trackActionMessage ? <p className="album-detail-error">{playError ?? trackActionMessage}</p> : null}
         </div>
 
         <aside className="album-detail-facts" aria-label="Album info">
@@ -324,10 +535,43 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           }}
           onFirstTrackChange={handleFirstTrackChange}
           onLoadedTracksChange={handleLoadedTracksChange}
+          onOpenTrackMenu={handleOpenTrackMenu}
           onPlayTrack={handlePlayTrack}
           onToggleTrackLiked={handleToggleTrackLiked}
         />
       </section>
+
+      {trackMenu ? (
+        <TrackContextMenu
+          track={trackMenu.track}
+          position={trackMenu.position}
+          liked={likedTrackIds[trackMenu.track.id] === true}
+          onAction={(action, track) => void handleTrackMenuAction(action, track)}
+          onClose={() => setTrackMenu(null)}
+        />
+      ) : null}
+
+      <TrackTagEditorDrawer
+        track={editingTrack}
+        isOpen={isTagEditorOpen}
+        isSaving={isSavingTags}
+        error={tagEditorError}
+        onClose={closeTagEditor}
+        onSave={(track, tags, coverPath, coverUrl, coverMimeType) => void handleSaveTags(track, tags, coverPath, coverUrl, coverMimeType)}
+      />
+
+      <OsuTimingPanel
+        track={osuTimingTrack}
+        isOpen={Boolean(osuTimingTrack)}
+        onClose={() => setOsuTimingTrack(null)}
+        onTrackUpdated={(updatedTrack) => {
+          const nextTrack = withAlbumCoverFallback(updatedTrack);
+          setOsuTimingTrack(nextTrack);
+          setLoadedTracks((current) => current.map((item) => (item.id === nextTrack.id ? nextTrack : item)));
+          setFirstTrack((current) => (current?.id === nextTrack.id ? nextTrack : current));
+          updateTrackSnapshot(nextTrack.id, nextTrack);
+        }}
+      />
     </div>
   );
 };

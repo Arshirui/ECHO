@@ -375,7 +375,7 @@ export const ArtistsPage = (): JSX.Element => {
   }
 
   return (
-    <div ref={pageRootRef} className="artists-page">
+    <div className="artists-page">
       <header className="songs-header">
         <div className="songs-title-group">
           <h1>{t('library.artists.title')}</h1>
@@ -445,91 +445,93 @@ export const ArtistsPage = (): JSX.Element => {
         </div>
       </div>
 
-      <section ref={artistWallRef} className="artist-wall" aria-label={t('library.artists.listAria')}>
-        {artists.map((artist) => {
-          const avatarImageUrl = artist.avatarUrl ?? artist.avatarThumbUrl ?? null;
-          const shouldShowAvatar = Boolean(
-            avatarImageUrl && failedAvatarUrls[artist.id] !== avatarImageUrl,
-          );
-          const shouldUseMissingAvatarFallback = artist.avatarStatus === 'not_found'
-            || artist.avatarStatus === 'error'
-            || artist.avatarStatus === 'rate_limited'
-            || Boolean(avatarImageUrl && failedAvatarUrls[artist.id] === avatarImageUrl);
-          const shouldShowCover = Boolean(
-            !shouldShowAvatar
-              && (artistWallAlbumArtwork || (artistWallAlbumFallbackForMissingAvatars && shouldUseMissingAvatarFallback))
-              && artist.coverThumb
-              && failedCoverUrls[artist.id] !== artist.coverThumb,
-          );
-          const imageUrl = shouldShowAvatar ? avatarImageUrl : shouldShowCover ? artist.coverThumb : null;
-          const avatarSrcSet = shouldShowAvatar && artist.avatarThumbUrl && artist.avatarUrl && artist.avatarThumbUrl !== artist.avatarUrl
-            ? `${artist.avatarThumbUrl} 192w, ${artist.avatarUrl} 1024w`
-            : undefined;
+      <div ref={pageRootRef} className="media-wall-scroll-shell page-scroll-container">
+        <section ref={artistWallRef} className="artist-wall" aria-label={t('library.artists.listAria')}>
+          {artists.map((artist) => {
+            const avatarImageUrl = artist.avatarUrl ?? artist.avatarThumbUrl ?? null;
+            const shouldShowAvatar = Boolean(
+              avatarImageUrl && failedAvatarUrls[artist.id] !== avatarImageUrl,
+            );
+            const shouldUseMissingAvatarFallback = artist.avatarStatus === 'not_found'
+              || artist.avatarStatus === 'error'
+              || artist.avatarStatus === 'rate_limited'
+              || Boolean(avatarImageUrl && failedAvatarUrls[artist.id] === avatarImageUrl);
+            const shouldShowCover = Boolean(
+              !shouldShowAvatar
+                && (artistWallAlbumArtwork || (artistWallAlbumFallbackForMissingAvatars && shouldUseMissingAvatarFallback))
+                && artist.coverThumb
+                && failedCoverUrls[artist.id] !== artist.coverThumb,
+            );
+            const imageUrl = shouldShowAvatar ? avatarImageUrl : shouldShowCover ? artist.coverThumb : null;
+            const avatarSrcSet = shouldShowAvatar && artist.avatarThumbUrl && artist.avatarUrl && artist.avatarThumbUrl !== artist.avatarUrl
+              ? `${artist.avatarThumbUrl} 192w, ${artist.avatarUrl} 1024w`
+              : undefined;
 
-          return (
-            <article
-              className="artist-card"
-              data-cover={Boolean(imageUrl)}
-              key={artist.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => openArtistDetail(artist)}
-              onKeyDown={(event) => handleArtistKeyDown(event, artist)}
-            >
-              <div className="artist-avatar" data-cover={Boolean(imageUrl)} data-visual={shouldShowAvatar ? 'avatar' : shouldShowCover ? 'cover' : 'letter'} aria-hidden="true">
-                {imageUrl ? (
-                  <img
-                    alt=""
-                    decoding="async"
-                    draggable={false}
-                    height={384}
-                    loading="lazy"
-                    sizes="124px"
-                    src={imageUrl}
-                    srcSet={avatarSrcSet}
-                    width={384}
-                    onError={() => {
-                      if (shouldShowAvatar) {
-                        handleArtistAvatarError(artist, imageUrl);
-                      } else {
-                        handleArtistCoverError(artist, imageUrl);
-                      }
-                    }}
-                  />
-                ) : (
-                  <span>{artistMark(artist.name)}</span>
-                )}
-              </div>
-              {artistImagesAutoFetch ? (
-                <button
-                  className="artist-avatar-refresh"
-                  type="button"
-                  aria-label={`Refresh avatar for ${artist.name}`}
-                  title="Refresh artist avatar"
-                  onClick={(event) => handleRefreshArtistAvatar(event, artist)}
-                >
-                  <RefreshCw size={13} />
-                </button>
-              ) : null}
-              <div className="artist-copy">
-                <strong>{artist.name}</strong>
-                <small>{artistMeta(artist, t)}</small>
-              </div>
-              <span className="artist-card-action" aria-hidden="true">
-                <Play size={14} fill="currentColor" />
-              </span>
-            </article>
-          );
-        })}
-      </section>
-      <InfiniteScrollSentinel canLoadMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMoreArtists} />
+            return (
+              <article
+                className="artist-card"
+                data-cover={Boolean(imageUrl)}
+                key={artist.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openArtistDetail(artist)}
+                onKeyDown={(event) => handleArtistKeyDown(event, artist)}
+              >
+                <div className="artist-avatar" data-cover={Boolean(imageUrl)} data-visual={shouldShowAvatar ? 'avatar' : shouldShowCover ? 'cover' : 'letter'} aria-hidden="true">
+                  {imageUrl ? (
+                    <img
+                      alt=""
+                      decoding="async"
+                      draggable={false}
+                      height={384}
+                      loading="lazy"
+                      sizes="124px"
+                      src={imageUrl}
+                      srcSet={avatarSrcSet}
+                      width={384}
+                      onError={() => {
+                        if (shouldShowAvatar) {
+                          handleArtistAvatarError(artist, imageUrl);
+                        } else {
+                          handleArtistCoverError(artist, imageUrl);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span>{artistMark(artist.name)}</span>
+                  )}
+                </div>
+                {artistImagesAutoFetch ? (
+                  <button
+                    className="artist-avatar-refresh"
+                    type="button"
+                    aria-label={`Refresh avatar for ${artist.name}`}
+                    title="Refresh artist avatar"
+                    onClick={(event) => handleRefreshArtistAvatar(event, artist)}
+                  >
+                    <RefreshCw size={13} />
+                  </button>
+                ) : null}
+                <div className="artist-copy">
+                  <strong>{artist.name}</strong>
+                  <small>{artistMeta(artist, t)}</small>
+                </div>
+                <span className="artist-card-action" aria-hidden="true">
+                  <Play size={14} fill="currentColor" />
+                </span>
+              </article>
+            );
+          })}
+        </section>
+        <InfiniteScrollSentinel canLoadMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMoreArtists} />
 
-      {error || isLoading ? (
-        <div className="list-footer">
-          <span>{error ?? t('library.artists.loading')}</span>
-        </div>
-      ) : null}
-      <MediaWallScrollSpacer height={spacerHeight} />
+        {error || isLoading ? (
+          <div className="list-footer">
+            <span>{error ?? t('library.artists.loading')}</span>
+          </div>
+        ) : null}
+        <MediaWallScrollSpacer height={spacerHeight} />
+      </div>
     </div>
   );
 };

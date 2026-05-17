@@ -2,6 +2,7 @@
 import { Download, Import, Loader2 } from 'lucide-react';
 import type { AudioStatus } from '../../../shared/types/audio';
 import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
+import type { ConnectReceiverStatus } from '../../../shared/types/connect';
 import type { DownloadJob, DownloadJobStatus } from '../../../shared/types/downloads';
 import type { PlaybackStatus } from '../../../shared/types/playback';
 import { streamingProviderNames, type StreamingProviderName } from '../../../shared/types/streaming';
@@ -46,7 +47,7 @@ const activeDownloadStatuses = new Set<DownloadJobStatus>([
   'binding_mv',
 ]);
 const terminalDownloadStatuses = new Set<DownloadJobStatus>(['completed', 'failed', 'cancelled']);
-const unsupportedPlayerDownloadProviders = new Set<StreamingProviderName>(['mock', 'spotify']);
+const unsupportedPlayerDownloadProviders = new Set<StreamingProviderName>(['mock', 'spotify', 'soundcloud']);
 const downloadStatusLabels: Record<DownloadJobStatus, string> = {
   queued: '排队中',
   probing: '解析链接',
@@ -91,6 +92,8 @@ const streamingTrackWebUrl = (provider: StreamingProviderName, providerTrackId: 
       return `https://y.qq.com/n/ryqq/songDetail/${encodeURIComponent(providerTrackId)}`;
     case 'spotify':
       return `https://open.spotify.com/track/${encodeURIComponent(providerTrackId)}`;
+    case 'soundcloud':
+      return `https://soundcloud.com/search/sounds?q=${encodeURIComponent(providerTrackId)}`;
     default:
       return null;
   }
@@ -209,6 +212,21 @@ const isAudioStatusForPlayback = (audioStatus: AudioStatus, playbackStatus: Play
 const isSpotifyPlaybackStatus = (status: PlaybackStatus | null | undefined): boolean =>
   typeof status?.filePath === 'string' && status.filePath.startsWith('streaming:spotify:');
 
+const receiverStateToPlaybackState = (status: ConnectReceiverStatus): AudioStatus['state'] => {
+  switch (status.state) {
+    case 'loading':
+    case 'playing':
+    case 'paused':
+    case 'stopped':
+    case 'error':
+      return status.state;
+    case 'ready':
+      return 'stopped';
+    default:
+      return 'idle';
+  }
+};
+
 const isProviderLikedStreamingProvider = (provider: string | null | undefined): provider is Extract<StreamingProviderName, 'netease' | 'qqmusic'> =>
   provider === 'netease' || provider === 'qqmusic';
 
@@ -301,6 +319,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const updateTrackSnapshot = queue.updateTrackSnapshot;
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus | null>(null);
+  const [receiverStatus, setReceiverStatus] = useState<ConnectReceiverStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [seekPreviewSeconds, setSeekPreviewSeconds] = useState<number | null>(null);
   const [openPopover, setOpenPopover] = useState<'volume' | 'speed' | null>(null);
@@ -417,17 +436,30 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     applySharedPlaybackStatus(await refreshPlaybackStatus());
   }, [applySharedPlaybackStatus]);
 
-  const state = audioStatus?.state ?? playbackStatus?.state ?? 'idle';
-  const visualState = getVisualPlaybackState({
+  const baseState = audioStatus?.state ?? playbackStatus?.state ?? 'idle';
+  const baseVisualState = getVisualPlaybackState({
     audioStatus,
     playbackStatus,
     playbackVisualIntent: sharedPlaybackStatus.playbackVisualIntent,
   });
-  const isPlaying = visualState === 'playing';
   const statusTrackId = playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
   const trackId = queue.currentTrackId ?? statusTrackId;
   const currentTrack = queue.currentTrack ?? queue.tracks.find((track) => track.id === trackId) ?? null;
   const filePath = currentTrack?.path ?? audioStatus?.currentFilePath ?? playbackStatus?.filePath ?? null;
+  const receiverCurrentUri = receiverStatus?.currentUri ?? null;
+  const receiverHasCurrentMedia = Boolean(
+    receiverCurrentUri && receiverStatus && ['ready', 'loading', 'playing', 'paused', 'stopped'].includes(receiverStatus.state),
+  );
+  const isReceiverPlaybackActive = Boolean(
+    receiverHasCurrentMedia &&
+      (audioStatus?.currentFilePath === receiverCurrentUri ||
+        playbackStatus?.filePath === receiverCurrentUri ||
+        !currentTrack),
+  );
+  const receiverPlaybackState = receiverStatus ? receiverStateToPlaybackState(receiverStatus) : 'idle';
+  const state = isReceiverPlaybackActive ? receiverPlaybackState : baseState;
+  const visualState = isReceiverPlaybackActive ? receiverPlaybackState : baseVisualState;
+  const isPlaying = visualState === 'playing';
   const endedStatusTrackId =
     audioStatus?.state === 'ended'
       ? audioStatus.currentTrackId
@@ -440,13 +472,18 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       : playbackStatus?.state === 'ended'
         ? playbackStatus.filePath
         : null;
-  const sourcePositionSeconds = audioStatus?.positionSeconds ?? (playbackStatus?.positionMs ?? 0) / 1000;
-  const durationSeconds = audioStatus?.durationSeconds ?? (playbackStatus?.durationMs ?? 0) / 1000;
+  const sourcePositionSeconds = isReceiverPlaybackActive
+    ? receiverStatus?.positionSeconds ?? audioStatus?.positionSeconds ?? (playbackStatus?.positionMs ?? 0) / 1000
+    : audioStatus?.positionSeconds ?? (playbackStatus?.positionMs ?? 0) / 1000;
+  const durationSeconds = isReceiverPlaybackActive
+    ? Math.max(receiverStatus?.durationSeconds ?? 0, audioStatus?.durationSeconds ?? 0, (playbackStatus?.durationMs ?? 0) / 1000)
+    : audioStatus?.durationSeconds ?? (playbackStatus?.durationMs ?? 0) / 1000;
   const [realtimePositionSeconds, setRealtimePositionSeconds] = useState(sourcePositionSeconds);
   const positionSeconds = seekPreviewSeconds ?? realtimePositionSeconds;
-  const title = currentTrack?.title ?? titleFromPath(filePath);
-  const artist = currentTrack?.artist || currentTrack?.albumArtist || (filePath ? 'Local file' : 'Ready');
-  const artworkUrl = playerArtworkUrl(currentTrack);
+  const receiverMetadata = isReceiverPlaybackActive ? receiverStatus?.metadata ?? null : null;
+  const title = receiverMetadata?.title ?? currentTrack?.title ?? titleFromPath(filePath);
+  const artist = receiverMetadata?.artist ?? currentTrack?.artist ?? currentTrack?.albumArtist ?? (filePath ? 'DLNA stream' : 'Ready');
+  const artworkUrl = receiverMetadata?.coverHttpUrl || playerArtworkUrl(currentTrack);
   const isLibraryCurrentTrack = Boolean(currentTrack && !currentTrack.isTemporary && currentTrack.mediaType !== 'streaming');
   const streamingTrackId = currentTrack?.id ?? null;
   const streamingTrackMediaType = currentTrack?.mediaType ?? null;
@@ -529,7 +566,9 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       const detail =
         currentStreamingDownloadProvider === 'spotify'
           ? 'Spotify 由官方播放器播放，不提供可下载音频 URL。'
-          : 'Mock 流媒体用于开发预览，不写入下载任务。';
+          : currentStreamingDownloadProvider === 'soundcloud'
+            ? 'SoundCloud 在 ECHO Next 中仅用于流播放，不写入下载任务。'
+            : 'Mock 流媒体用于开发预览，不写入下载任务。';
       showStreamingDownloadNotice(
         {
           tone: 'error',
@@ -1131,6 +1170,29 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   useEffect(() => {
     applySharedPlaybackStatus(sharedPlaybackStatus);
   }, [applySharedPlaybackStatus, sharedPlaybackStatus]);
+
+  useEffect(() => {
+    let disposed = false;
+    const connect = window.echo?.connect;
+    const receiverStatusPromise = connect?.getReceiverStatus?.();
+    void receiverStatusPromise?.then((status) => {
+      if (!disposed) {
+        setReceiverStatus(status);
+      }
+    }).catch(() => undefined);
+
+    const unsubscribe = connect?.onReceiverStatus?.((status) => {
+      setReceiverStatus(status);
+      if (status.currentUri && ['ready', 'loading', 'playing', 'paused'].includes(status.state)) {
+        setQueueCurrentTrackId(null);
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [setQueueCurrentTrackId]);
 
   const runPlaybackAction = useCallback(
     async (action: () => Promise<PlaybackStatus | null>): Promise<void> => {

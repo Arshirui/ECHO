@@ -353,6 +353,34 @@ describe('lyricsParser', () => {
     ]);
   });
 
+  it('keeps English lyrics as primary when same-timestamp Chinese translations are present', () => {
+    const lyrics = providerResultToTrackLyrics(
+      { title: 'Song', artist: 'Artist' },
+      {
+        provider: 'local',
+        providerLyricsId: 'local:1',
+        title: 'Song',
+        artist: 'Artist',
+        album: null,
+        durationSeconds: null,
+        instrumental: false,
+        plainLyrics: null,
+        syncedLyrics: [
+          '[01:03.00]i cant wait',
+          '[01:03.00]\u6211\u5df2\u7ecf\u8feb\u4e0d\u53ca\u5f85',
+          "[01:05.00]I'm in love",
+          '[01:05.00]\u6211\u9677\u5165\u4e86\u7231\u6cb3',
+        ].join('\n'),
+      },
+      1,
+    );
+
+    expect(lyrics?.lines).toEqual([
+      { timeMs: 63000, text: 'i cant wait', translation: '\u6211\u5df2\u7ecf\u8feb\u4e0d\u53ca\u5f85' },
+      { timeMs: 65000, text: "I'm in love", translation: '\u6211\u9677\u5165\u4e86\u7231\u6cb3' },
+    ]);
+  });
+
   it('does not merge synced provider romanization with larger provider timestamp drift', () => {
     const lyrics = providerResultToTrackLyrics(
       { title: 'Song', artist: 'Artist' },

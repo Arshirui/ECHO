@@ -18,6 +18,13 @@
 #include <new>
 #include <vector>
 
+#ifndef AUDCLNT_E_RESOURCES_INVALIDATED
+#define AUDCLNT_E_RESOURCES_INVALIDATED ((HRESULT)0x88890026)
+#endif
+#ifndef AUDCLNT_E_SERVICE_NOT_RUNNING
+#define AUDCLNT_E_SERVICE_NOT_RUNNING ((HRESULT)0x88890010)
+#endif
+
 static const GUID ECHO_SUBTYPE_PCM = {
     0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}
 };
@@ -70,6 +77,9 @@ struct wasapi_shared_runtime {
     volatile LONG renderFailed;
     int comNeedsUninit;
     bool audioClientLeakedOnTimeout;
+    DWORD testInvalidateAfterMs;
+    ULONGLONG renderStartedAtMs;
+    int testInvalidationTriggered;
 };
 
 typedef struct com_scope {
@@ -505,10 +515,38 @@ static int wide_contains_icase(const wchar_t* haystack, const wchar_t* needle) {
 }
 
 static HRESULT activate_audio_client(IMMDevice* device, IAudioClient** outClient) {
-    if (outClient == NULL) return E_POINTER;
-    *outClient = NULL;
-    if (device == NULL) return E_POINTER;
-    return device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)outClient);
+    return echo_wasapi_timeout::activate_audio_client_with_timeout(device, outClient);
+}
+
+static bool is_recoverable_shared_client_error(HRESULT hr) {
+    return hr == AUDCLNT_E_DEVICE_INVALIDATED
+        || hr == AUDCLNT_E_RESOURCES_INVALIDATED
+        || hr == AUDCLNT_E_SERVICE_NOT_RUNNING;
+}
+
+static const DWORD kSharedRebuildRetryDelaysMs[] = { 200, 500, 1000 };
+static const uint32_t kSharedRebuildRetryCount =
+    (uint32_t)(sizeof(kSharedRebuildRetryDelaysMs) / sizeof(kSharedRebuildRetryDelaysMs[0]));
+
+static void schedule_shared_rebuild(
+    const char* phase,
+    HRESULT hr,
+    bool* rebuildPending,
+    uint32_t* nextAttemptIndex,
+    ULONGLONG* nextAttemptAtMs) {
+    if (rebuildPending == NULL || nextAttemptIndex == NULL || nextAttemptAtMs == NULL) return;
+
+    if (!*rebuildPending) {
+        *rebuildPending = true;
+        *nextAttemptIndex = 0;
+        *nextAttemptAtMs = GetTickCount64() + kSharedRebuildRetryDelaysMs[0];
+    }
+
+    fprintf(
+        stderr,
+        "[echo-audio-host] WASAPI shared %s reported recoverable error hr=0x%08lx; scheduling audio client rebuild\n",
+        phase != NULL ? phase : "render",
+        (unsigned long)hr);
 }
 
 static HRESULT get_device_name(IMMDevice* device, char* utf8Name, size_t utf8NameLen) {
@@ -875,6 +913,11 @@ static int rebuild_audio_client(wasapi_shared_runtime* runtime) {
     }
 
     HRESULT hr = activate_audio_client(device, &audioClient);
+    if (hr == E_PENDING) {
+        fprintf(stderr, "[echo-audio-host] WASAPI shared rebuild Activate timed out; exiting host\n");
+        fflush(stderr);
+        ExitProcess((UINT)echo_audio_host::kExitDeviceInitializeTimeout);
+    }
     if (FAILED(hr)) {
         fprintf(stderr, "[echo-audio-host] WASAPI shared rebuild Activate failed hr=0x%08lx\n", (unsigned long)hr);
         goto done;
@@ -1056,6 +1099,8 @@ static DWORD WINAPI render_thread_proc(void* param) {
     HANDLE waits[2];
     com_scope com = com_scope_enter();
     bool rebuildPending = false;
+    uint32_t nextRebuildAttemptIndex = 0;
+    ULONGLONG nextRebuildAttemptAtMs = 0;
 
     if (FAILED(com.hr)) {
         InterlockedExchange(&runtime->renderFailed, 1);
@@ -1066,27 +1111,78 @@ static DWORD WINAPI render_thread_proc(void* param) {
     avrtHandle = AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
     waits[0] = runtime->stopEvent;
     waits[1] = runtime->renderEvent;
+    runtime->renderStartedAtMs = GetTickCount64();
 
     while (1) {
-        DWORD waitResult = WaitForMultipleObjects(2, waits, FALSE, rebuildPending ? 200 : INFINITE);
+        DWORD waitTimeout = INFINITE;
+        if (rebuildPending) {
+            const ULONGLONG nowMs = GetTickCount64();
+            waitTimeout = nowMs >= nextRebuildAttemptAtMs
+                ? 0
+                : (DWORD)std::min<ULONGLONG>(nextRebuildAttemptAtMs - nowMs, 1000);
+        }
+
+        DWORD waitResult = WaitForMultipleObjects(2, waits, FALSE, waitTimeout);
         if (waitResult == WAIT_OBJECT_0) break;
-        if (rebuildPending && (waitResult == WAIT_TIMEOUT || waitResult == WAIT_OBJECT_0 + 1)) {
-            if (rebuild_audio_client(runtime) == 0) {
-                rebuildPending = false;
+        if (rebuildPending) {
+            const ULONGLONG nowMs = GetTickCount64();
+            if (waitResult == WAIT_TIMEOUT || nowMs >= nextRebuildAttemptAtMs) {
+                const uint32_t attemptNumber = nextRebuildAttemptIndex + 1;
+                fprintf(
+                    stderr,
+                    "[echo-audio-host] WASAPI shared rebuild retry %u/%u\n",
+                    (unsigned int)attemptNumber,
+                    (unsigned int)kSharedRebuildRetryCount);
+
+                if (rebuild_audio_client(runtime) == 0) {
+                    rebuildPending = false;
+                    nextRebuildAttemptIndex = 0;
+                    nextRebuildAttemptAtMs = 0;
+                    continue;
+                }
+
+                nextRebuildAttemptIndex++;
+                if (nextRebuildAttemptIndex >= kSharedRebuildRetryCount) {
+                    fprintf(stderr, "[echo-audio-host] WASAPI shared rebuild retries exhausted; failing render thread\n");
+                    InterlockedExchange(&runtime->renderFailed, 1);
+                    break;
+                }
+                nextRebuildAttemptAtMs = GetTickCount64() + kSharedRebuildRetryDelaysMs[nextRebuildAttemptIndex];
+                continue;
             }
-            continue;
+            if (waitResult == WAIT_OBJECT_0 + 1) {
+                continue;
+            }
         }
         if (waitResult != WAIT_OBJECT_0 + 1) {
             InterlockedExchange(&runtime->renderFailed, 1);
             break;
         }
 
+        if (
+            runtime->testInvalidateAfterMs > 0 &&
+            !runtime->testInvalidationTriggered &&
+            GetTickCount64() - runtime->renderStartedAtMs >= runtime->testInvalidateAfterMs) {
+            runtime->testInvalidationTriggered = 1;
+            schedule_shared_rebuild(
+                "test-invalidation",
+                AUDCLNT_E_DEVICE_INVALIDATED,
+                &rebuildPending,
+                &nextRebuildAttemptIndex,
+                &nextRebuildAttemptAtMs);
+            continue;
+        }
+
         UINT32 padding = 0;
         HRESULT hr = runtime->audioClient->GetCurrentPadding(&padding);
         if (FAILED(hr)) {
-            if (hr == AUDCLNT_E_DEVICE_INVALIDATED) {
-                fprintf(stderr, "[echo-audio-host] WASAPI shared GetCurrentPadding reported device invalidated; rebuilding audio client\n");
-                rebuildPending = rebuild_audio_client(runtime) != 0;
+            if (is_recoverable_shared_client_error(hr)) {
+                schedule_shared_rebuild(
+                    "GetCurrentPadding",
+                    hr,
+                    &rebuildPending,
+                    &nextRebuildAttemptIndex,
+                    &nextRebuildAttemptAtMs);
                 continue;
             }
             fprintf(stderr, "[echo-audio-host] WASAPI shared GetCurrentPadding failed hr=0x%08lx\n", (unsigned long)hr);
@@ -1101,9 +1197,13 @@ static DWORD WINAPI render_thread_proc(void* param) {
         BYTE* endpointBuffer = NULL;
         hr = runtime->renderClient->GetBuffer(framesAvailable, &endpointBuffer);
         if (FAILED(hr)) {
-            if (hr == AUDCLNT_E_DEVICE_INVALIDATED) {
-                fprintf(stderr, "[echo-audio-host] WASAPI shared GetBuffer reported device invalidated; rebuilding audio client\n");
-                rebuildPending = rebuild_audio_client(runtime) != 0;
+            if (is_recoverable_shared_client_error(hr)) {
+                schedule_shared_rebuild(
+                    "GetBuffer",
+                    hr,
+                    &rebuildPending,
+                    &nextRebuildAttemptIndex,
+                    &nextRebuildAttemptAtMs);
                 continue;
             }
             fprintf(stderr, "[echo-audio-host] WASAPI shared GetBuffer failed hr=0x%08lx\n", (unsigned long)hr);
@@ -1128,9 +1228,13 @@ static DWORD WINAPI render_thread_proc(void* param) {
 
         hr = runtime->renderClient->ReleaseBuffer(framesAvailable, 0);
         if (FAILED(hr)) {
-            if (hr == AUDCLNT_E_DEVICE_INVALIDATED) {
-                fprintf(stderr, "[echo-audio-host] WASAPI shared ReleaseBuffer reported device invalidated; rebuilding audio client\n");
-                rebuildPending = rebuild_audio_client(runtime) != 0;
+            if (is_recoverable_shared_client_error(hr)) {
+                schedule_shared_rebuild(
+                    "ReleaseBuffer",
+                    hr,
+                    &rebuildPending,
+                    &nextRebuildAttemptIndex,
+                    &nextRebuildAttemptAtMs);
                 continue;
             }
             fprintf(stderr, "[echo-audio-host] WASAPI shared ReleaseBuffer failed hr=0x%08lx\n", (unsigned long)hr);
@@ -1196,6 +1300,11 @@ int wasapi_shared_start(
     }
 
     hr = activate_audio_client(device, &audioClient);
+    if (hr == E_PENDING) {
+        set_error(error, errorLen, "WASAPI Activate timed out", S_OK);
+        result = echo_audio_host::kExitDeviceInitializeTimeout;
+        goto done;
+    }
     if (FAILED(hr)) {
         set_error(error, errorLen, "Failed to activate IAudioClient", hr);
         goto done;
@@ -1281,6 +1390,7 @@ int wasapi_shared_start(
     runtime->notificationCallback = notificationCallback;
     runtime->notificationUserData = notificationUserData;
     runtime->targetDeviceIndex = targetDeviceIndex;
+    runtime->testInvalidateAfterMs = echo_wasapi_timeout::read_test_hang_ms("ECHO_TEST_WASAPI_SHARED_INVALIDATE_AFTER_MS");
     if (targetDeviceName != NULL && targetDeviceName[0] != '\0') {
         snprintf(runtime->targetDeviceName, sizeof(runtime->targetDeviceName), "%s", targetDeviceName);
     }

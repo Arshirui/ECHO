@@ -967,7 +967,7 @@ const AccountCookieCard = ({
       <span>推荐点击“登录并同步”；手动粘贴 Cookie 作为备用方式。</span>
       <span>登录 {status?.lastLoginAt ?? 'n/a'} · 检查 {status?.lastCheckedAt ?? 'n/a'}</span>
     </div>
-    {provider === 'soundcloud' ? <p className="settings-inline-note settings-account-note">Cookie 检查第一阶段暂为 TODO，保存后只记录配置状态。</p> : null}
+    {provider === 'soundcloud' ? <p className="settings-inline-note settings-account-note">SoundCloud 流播放使用这里保存的登录 Cookie，不需要 Artist Pro 或开发者 API。</p> : null}
     {message ? <p className="settings-inline-note settings-account-note">{message}</p> : null}
     {error ? <p className="settings-inline-error settings-account-note">{error}</p> : null}
   </article>

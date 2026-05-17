@@ -41,6 +41,7 @@ import type {
   LibraryScanOptions,
   LibrarySummary,
   LibraryTrack,
+  LibraryTrackLocateResult,
   LibraryCleanupResult,
   LibraryMaintenanceCleanupResult,
   LibraryAlbumTagUpdateRequest,
@@ -206,6 +207,16 @@ export class LibraryService {
 
   getTracks(query?: LibraryPageQuery): LibraryPage<LibraryTrack> {
     return this.store.getTracks(query);
+  }
+
+  locateTrackInTracks(trackId: string, query?: LibraryPageQuery): LibraryTrackLocateResult {
+    const result = this.store.locateTrackInTracks(trackId, query);
+    if (!result.track) {
+      const track = this.getTrack(trackId);
+      return track ? { ...result, track } : result;
+    }
+
+    return result;
   }
 
   refreshDuplicateTracks(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {

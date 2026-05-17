@@ -82,14 +82,17 @@ describe('DownloadService', () => {
     expect(() => service.createUrlJob('https://www.youtube.com/watch?v=probe')).toThrow('请选择下载文件夹');
   });
 
-  it('rejects Spotify URLs before creating a download job', () => {
+  it('rejects playback-only streaming URLs before creating a download job', () => {
     const service = new DownloadService();
 
     expect(() => service.createUrlJob('https://open.spotify.com/track/spotify-track-id')).toThrow(
-      'Spotify streams are playback-only in ECHO Next',
+      'This streaming platform is playback-only in ECHO Next',
     );
     expect(() => service.createUrlJob('https://example.com/audio.mp3', { webpageUrl: 'spotify:track:spotify-track-id' })).toThrow(
-      'Spotify streams are playback-only in ECHO Next',
+      'This streaming platform is playback-only in ECHO Next',
+    );
+    expect(() => service.createUrlJob('https://api-media.soundcloud.com/stream/example', { webpageUrl: 'https://soundcloud.com/artist/track' })).toThrow(
+      'This streaming platform is playback-only in ECHO Next',
     );
   });
 

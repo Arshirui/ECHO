@@ -374,6 +374,28 @@ if (process.platform === 'win32') {
   }
 
   console.log(`[smoke:audio-host] WASAPI initialize timeout fail-fast OK (${initTimeoutResult.elapsedMs}ms)`);
+
+  const activateTimeoutResult = await runPcmHost(['-sr', '48000', '-ch', '2'], {
+    timeoutMs: 6000,
+    sampleRate: 48000,
+    seconds: 0.01,
+    env: { ECHO_TEST_WASAPI_ACTIVATE_HANG_MS: '5000' },
+  });
+  const activateTimeoutExitCode = normalizeExitCode(activateTimeoutResult.exitCode);
+
+  if (activateTimeoutExitCode !== -3) {
+    fail(`WASAPI activate timeout exited with ${activateTimeoutResult.exitCode}; stderr=${activateTimeoutResult.stderr}; stdout=${activateTimeoutResult.stdout}`);
+  }
+
+  if (activateTimeoutResult.elapsedMs >= 3500) {
+    fail(`WASAPI activate timeout took ${activateTimeoutResult.elapsedMs}ms; stderr=${activateTimeoutResult.stderr}; stdout=${activateTimeoutResult.stdout}`);
+  }
+
+  if (!/WASAPI Activate timed out after 3000ms phase=activate/u.test(activateTimeoutResult.stderr)) {
+    fail(`WASAPI activate timeout missing diagnostic; stderr=${activateTimeoutResult.stderr}; stdout=${activateTimeoutResult.stdout}`);
+  }
+
+  console.log(`[smoke:audio-host] WASAPI activate timeout fail-fast OK (${activateTimeoutResult.elapsedMs}ms)`);
 }
 
 const sharedResult = await runPcmHost(['-sr', '48000', '-ch', '2'], {
@@ -402,6 +424,27 @@ if (!ready || !position || !telemetry || !ended || !hasReadyBufferTelemetry(shar
 }
 
 console.log('[smoke:audio-host] shared ready/position/telemetry/ended OK');
+
+if (process.platform === 'win32') {
+  const invalidateResult = await runPcmHost(['-sr', '48000', '-ch', '2'], {
+    timeoutMs: 15000,
+    sampleRate: 48000,
+    seconds: 1,
+    env: { ECHO_TEST_WASAPI_SHARED_INVALIDATE_AFTER_MS: '200' },
+  });
+
+  if (invalidateResult.exitCode !== 0) {
+    fail(`shared invalidate host exited with ${invalidateResult.exitCode}; stdin=${invalidateResult.stdinError || 'ok'}; stderr=${invalidateResult.stderr}; stdout=${invalidateResult.stdout}`);
+  }
+
+  const invalidateReady = invalidateResult.events.find((event) => event.ready === true);
+  const invalidateEnded = invalidateResult.events.some((event) => event.event === 'ended');
+  if (!invalidateReady || !invalidateEnded || !/WASAPI shared test-invalidation reported recoverable error/u.test(invalidateResult.stderr) || !/WASAPI shared audio client rebuilt/u.test(invalidateResult.stderr)) {
+    fail(`shared invalidate recovery missing expected signals; ready=${Boolean(invalidateReady)} ended=${invalidateEnded}; stderr=${invalidateResult.stderr}; stdout=${invalidateResult.stdout}`);
+  }
+
+  console.log('[smoke:audio-host] shared invalidation rebuild recovery OK');
+}
 
 const framedSharedResult = await runFramedPcmHost(['-sr', '48000', '-ch', '2'], {
   timeoutMs: 10000,

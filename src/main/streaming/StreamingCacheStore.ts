@@ -37,6 +37,7 @@ const providerReferers: Partial<Record<StreamingProviderName, string>> = {
   netease: 'https://music.163.com/',
   qqmusic: 'https://y.qq.com/',
   bilibili: 'https://www.bilibili.com/',
+  soundcloud: 'https://soundcloud.com/',
 };
 
 const proxyableImageHosts = new Set([
@@ -50,6 +51,10 @@ const proxyableImageHosts = new Set([
   'i0.hdslb.com',
   'i1.hdslb.com',
   'i2.hdslb.com',
+  'i0.sndcdn.com',
+  'i1.sndcdn.com',
+  'i2.sndcdn.com',
+  'i3.sndcdn.com',
   'archive.biliimg.com',
 ]);
 

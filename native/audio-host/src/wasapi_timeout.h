@@ -8,6 +8,7 @@
 #include <audioclient.h>
 #include <mmdeviceapi.h>
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <memory>
@@ -87,17 +88,31 @@ static std::vector<unsigned char> copy_wave_format(const WAVEFORMATEX* format) {
     if (device == NULL) return E_POINTER;
 
     auto clientCopy = std::make_shared<IAudioClient*>(nullptr);
-    auto future = std::async(std::launch::async, [device, clientCopy]() -> HRESULT {
+    auto timedOut = std::make_shared<std::atomic_bool>(false);
+    const DWORD testHangMs = read_test_hang_ms("ECHO_TEST_WASAPI_ACTIVATE_HANG_MS");
+    device->AddRef();
+    auto future = std::async(std::launch::async, [device, clientCopy, timedOut, testHangMs]() -> HRESULT {
         com_worker_scope com = enter_com_worker_scope();
-        if (FAILED(com.hr)) return com.hr;
+        if (FAILED(com.hr)) {
+            device->Release();
+            return com.hr;
+        }
 
         IAudioClient* localClient = NULL;
-        HRESULT hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&localClient);
-        if (SUCCEEDED(hr)) {
+        HRESULT hr = E_PENDING;
+        if (testHangMs > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(testHangMs));
+        } else {
+            hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&localClient);
+        }
+        if (SUCCEEDED(hr) && localClient != NULL && !timedOut->load(std::memory_order_acquire)) {
             *clientCopy = localClient;
+        } else if (localClient != NULL) {
+            localClient->Release();
         }
 
         leave_com_worker_scope(&com);
+        device->Release();
         return hr;
     });
 
@@ -107,6 +122,7 @@ static std::vector<unsigned char> copy_wave_format(const WAVEFORMATEX* format) {
             stderr,
             "[echo-audio-host] WASAPI Activate timed out after %dms phase=activate\n",
             kWasapiInitTimeoutMs);
+        timedOut->store(true, std::memory_order_release);
         abandon_future(std::move(future));
         return E_PENDING;
     }

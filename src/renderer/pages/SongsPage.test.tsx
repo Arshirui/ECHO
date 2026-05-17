@@ -12,30 +12,38 @@ vi.mock('../components/library/TrackList', () => ({
   TrackList: ({
     tracks,
     currentTrackId,
+    currentTrackIndex,
     canLoadMore,
+    canLoadPrevious,
     duplicateHiddenCounts,
     isLoadingMore,
     likedTrackIds,
     loadedCount,
+    loadedStartIndex,
     onEndReached,
     onOpenTrackMenu,
     onPlay,
     onShowVersions,
+    onStartReached,
     onToggleLiked,
     onVisibleTrackIdsChange,
     totalCount,
   }: {
     tracks: LibraryTrack[];
     currentTrackId: string | null;
+    currentTrackIndex?: number | null;
     canLoadMore?: boolean;
+    canLoadPrevious?: boolean;
     duplicateHiddenCounts?: Record<string, number>;
     isLoadingMore?: boolean;
     likedTrackIds?: Record<string, boolean>;
     loadedCount?: number;
+    loadedStartIndex?: number;
     onEndReached?: () => void;
     onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
     onPlay?: (track: LibraryTrack) => void;
     onShowVersions?: (track: LibraryTrack) => void;
+    onStartReached?: () => void;
     onToggleLiked?: (track: LibraryTrack) => void;
     onVisibleTrackIdsChange?: (trackIds: string[]) => void;
     totalCount?: number;
@@ -44,6 +52,8 @@ vi.mock('../components/library/TrackList', () => ({
       data-testid="track-list"
       data-total-count={totalCount ?? tracks.length}
       data-loaded-count={loadedCount ?? tracks.length}
+      data-loaded-start-index={loadedStartIndex ?? 0}
+      data-current-track-index={currentTrackIndex ?? -1}
       data-loading-more={String(isLoadingMore)}
       data-visible-ids={tracks.slice(0, 2).map((track) => track.id).join(',')}
     >
@@ -53,6 +63,9 @@ vi.mock('../components/library/TrackList', () => ({
       <span data-testid="current-track-id">{currentTrackId ?? 'none'}</span>
       <button type="button" disabled={!canLoadMore} onClick={onEndReached}>
         mock-load-more
+      </button>
+      <button type="button" disabled={!canLoadPrevious} onClick={onStartReached}>
+        mock-load-previous
       </button>
       {tracks.map((track) => (
         <div key={track.id}>
@@ -153,6 +166,17 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
   window.echo = {
     library: {
       getTracks: vi.fn().mockResolvedValue(makePage(tracks)),
+      locateTrackInTracks: vi.fn().mockResolvedValue({
+        found: false,
+        reason: 'not-found',
+        track: null,
+        items: [],
+        page: 1,
+        pageSize: 100,
+        index: -1,
+        total: tracks.length,
+        hasMore: false,
+      }),
       getTrack: vi.fn((trackId: string) => Promise.resolve(tracks.find((track) => track.id === trackId) ?? null)),
       getAlbums: vi.fn(),
       getAlbumTracks: vi.fn(),
@@ -493,6 +517,57 @@ describe('SongsPage', () => {
 
     await waitFor(() => expect(screen.getByTestId('track-list').getAttribute('data-total-count')).toBe('10000'));
     expect(screen.getByTestId('track-list').getAttribute('data-loaded-count')).toBe('100');
+  });
+
+  it('locates the current playback track in a target song-list page without loading every track', async () => {
+    const firstPageTrack = makeTrack({ id: 'track-1', title: 'First Page Song' });
+    const locatedTrack = makeTrack({ id: 'track-206', title: 'Located Song' });
+    window.localStorage.setItem(
+      'echo-next:playback-queue',
+      JSON.stringify({
+        version: 1,
+        items: [
+          {
+            queueId: 'queue-1',
+            track: locatedTrack,
+            source: { type: 'album', label: 'Album', albumId: 'album-1' },
+            addedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        currentQueueId: 'queue-1',
+        currentTrackId: locatedTrack.id,
+        lastPlayedTrack: locatedTrack,
+        history: [],
+      }),
+    );
+    installEcho([firstPageTrack]);
+    vi.mocked(window.echo.app.getSettings).mockResolvedValue({
+      duplicateTracksEnabled: false,
+      duplicateTracksMode: 'strict',
+      playbackFollowCurrentTrack: true,
+    } as Awaited<ReturnType<NonNullable<Window['echo']>['app']['getSettings']>>);
+    vi.mocked(window.echo.library.getTracks).mockResolvedValue(makePagedResult([firstPageTrack], { total: 300, hasMore: true }));
+    vi.mocked(window.echo.library.locateTrackInTracks).mockResolvedValue({
+      found: true,
+      reason: 'found',
+      track: locatedTrack,
+      items: [locatedTrack],
+      page: 3,
+      pageSize: 100,
+      index: 200,
+      total: 300,
+      hasMore: false,
+    });
+
+    await renderSongsPage();
+
+    await screen.findByText('Located Song');
+    expect(window.echo.library.locateTrackInTracks).toHaveBeenCalledWith(
+      locatedTrack.id,
+      expect.objectContaining({ pageSize: 100, search: '', sort: 'default', hideDuplicates: false, duplicateMode: 'strict' }),
+    );
+    expect(screen.getByTestId('track-list').getAttribute('data-loaded-start-index')).toBe('200');
+    expect(screen.getByTestId('track-list').getAttribute('data-current-track-index')).toBe('200');
   });
 
   it('loads duplicate badges only for visible song rows', async () => {

@@ -8,6 +8,7 @@ const lyricsLayoutSettingKeys = new Set([
   'lyricsFontSizePx',
   'lyricsSecondaryFontSizePx',
   'lyricsLineSpacingPercent',
+  'lyricsLineMaxChars',
   'lyricsRomanizationEnabled',
   'lyricsTranslationEnabled',
   'lyricsContextOpacityPercent',

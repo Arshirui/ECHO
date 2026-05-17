@@ -1,4 +1,4 @@
-export type StreamingProviderName = 'mock' | 'netease' | 'qqmusic' | 'bilibili' | 'spotify' | 'm3u8';
+export type StreamingProviderName = 'mock' | 'netease' | 'qqmusic' | 'bilibili' | 'soundcloud' | 'spotify' | 'm3u8';
 
 export type StreamingMediaType = 'track' | 'album' | 'artist' | 'playlist' | 'mv';
 
@@ -12,6 +12,7 @@ export const streamingProviderNames: StreamingProviderName[] = [
   'netease',
   'qqmusic',
   'bilibili',
+  'soundcloud',
   'spotify',
   'm3u8',
 ];

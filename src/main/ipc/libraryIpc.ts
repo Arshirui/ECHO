@@ -1033,6 +1033,9 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetTracks, (_event, query: unknown) =>
     getLibraryService().getTracks(normalizeQuery(query)),
   );
+  ipcMain.handle(IpcChannels.LibraryLocateTrackInTracks, (_event, trackId: unknown, query: unknown) =>
+    getLibraryService().locateTrackInTracks(requireText(trackId, 'trackId'), normalizeQuery(query)),
+  );
   ipcMain.handle(IpcChannels.LibraryRefreshDuplicateTracks, (_event, mode: unknown) =>
     getLibraryService().refreshDuplicateTracks(normalizeDuplicateMode(mode)),
   );

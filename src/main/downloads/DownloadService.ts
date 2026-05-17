@@ -67,9 +67,9 @@ const inferProvider = (url: string): DownloadSourceProvider => {
   return 'unknown';
 };
 
-const spotifyDownloadBlockedMessage = 'Spotify streams are playback-only in ECHO Next. Downloading Spotify content is disabled by policy.';
+const playbackOnlyDownloadBlockedMessage = 'This streaming platform is playback-only in ECHO Next. Downloading this content is disabled by policy.';
 
-const isSpotifyHost = (host: string): boolean => {
+const isPlaybackOnlyStreamingHost = (host: string): boolean => {
   const normalized = host.toLowerCase();
   return (
     normalized === 'spotify.com' ||
@@ -77,11 +77,15 @@ const isSpotifyHost = (host: string): boolean => {
     normalized === 'scdn.co' ||
     normalized.endsWith('.scdn.co') ||
     normalized === 'spotifycdn.com' ||
-    normalized.endsWith('.spotifycdn.com')
+    normalized.endsWith('.spotifycdn.com') ||
+    normalized === 'soundcloud.com' ||
+    normalized.endsWith('.soundcloud.com') ||
+    normalized === 'sndcdn.com' ||
+    normalized.endsWith('.sndcdn.com')
   );
 };
 
-const isSpotifyDownloadUrl = (value: unknown): boolean => {
+const isPlaybackOnlyDownloadUrl = (value: unknown): boolean => {
   if (typeof value !== 'string') {
     return false;
   }
@@ -96,7 +100,7 @@ const isSpotifyDownloadUrl = (value: unknown): boolean => {
   }
 
   try {
-    return isSpotifyHost(new URL(trimmed).hostname);
+    return isPlaybackOnlyStreamingHost(new URL(trimmed).hostname);
   } catch {
     return false;
   }
@@ -500,8 +504,8 @@ export class DownloadService extends EventEmitter {
       throw new Error('download URL must be a non-empty string');
     }
 
-    if (isSpotifyDownloadUrl(sourceUrl) || isSpotifyDownloadUrl(options.webpageUrl)) {
-      throw new Error(spotifyDownloadBlockedMessage);
+    if (isPlaybackOnlyDownloadUrl(sourceUrl) || isPlaybackOnlyDownloadUrl(options.webpageUrl)) {
+      throw new Error(playbackOnlyDownloadBlockedMessage);
     }
 
     const outputDirectory = this.settings.outputDirectory;

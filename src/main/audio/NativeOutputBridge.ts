@@ -60,6 +60,7 @@ const slowNativeModeReadyTimeoutMs = 45_000;
 const sharedGracefulStopTimeoutMs = 2_500;
 const exclusiveGracefulStopTimeoutMs = 4_000;
 const forceKilledExitWaitMs = 1_000;
+const forceKilledReleaseSettleMs = 200;
 const maxPositionExtrapolationMs = 250;
 const lowLatencyMaxBufferSizeFrames = 2048;
 const nativeHostNotificationEvents = new Set<NativeHostNotificationEvent['event']>([
@@ -307,6 +308,7 @@ type PendingGracefulStop = {
   proc: ChildProcessWithoutNullStreams;
   timeout: NodeJS.Timeout | null;
   waitForExit: boolean;
+  forceKilledAtMs: number | null;
 };
 
 const normalizePositiveInteger = (value: unknown): number | null => {
@@ -865,6 +867,7 @@ export class NativeOutputBridge extends EventEmitter {
       proc,
       timeout: null,
       waitForExit,
+      forceKilledAtMs: null,
     };
     this.pendingGracefulStop = pendingGracefulStop;
 
@@ -894,6 +897,7 @@ export class NativeOutputBridge extends EventEmitter {
         } catch {
           // Best-effort emergency cleanup.
         }
+        pendingGracefulStop.forceKilledAtMs = performance.now();
         if (pendingGracefulStop.waitForExit) {
           pendingGracefulStop.timeout = setTimeout(() => {
             if (this.pendingGracefulStop?.proc !== proc) {
@@ -1152,6 +1156,23 @@ export class NativeOutputBridge extends EventEmitter {
     const pendingGracefulStop = this.pendingGracefulStop;
     if (!pendingGracefulStop) {
       return;
+    }
+
+    if (pendingGracefulStop.forceKilledAtMs !== null) {
+      const elapsedSinceKillMs = performance.now() - pendingGracefulStop.forceKilledAtMs;
+      const remainingSettleMs = Math.ceil(forceKilledReleaseSettleMs - elapsedSinceKillMs);
+      if (remainingSettleMs > 0) {
+        if (pendingGracefulStop.timeout) {
+          clearTimeout(pendingGracefulStop.timeout);
+        }
+        pendingGracefulStop.timeout = setTimeout(() => {
+          if (this.pendingGracefulStop === pendingGracefulStop) {
+            this.resolvePendingGracefulStop();
+          }
+        }, remainingSettleMs);
+        pendingGracefulStop.timeout?.unref?.();
+        return;
+      }
     }
 
     if (pendingGracefulStop.timeout) {

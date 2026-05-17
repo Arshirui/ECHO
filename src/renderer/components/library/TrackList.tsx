@@ -7,10 +7,13 @@ type TrackListProps = {
   tracks: LibraryTrack[];
   currentTrackId: string | null;
   canLoadMore?: boolean;
+  canLoadPrevious?: boolean;
   totalCount?: number;
   loadedCount?: number;
+  loadedStartIndex?: number;
   isLoadingMore?: boolean;
   onEndReached?: () => void;
+  onStartReached?: () => void;
   onPlay?: (track: LibraryTrack) => void;
   onAddToQueue?: (track: LibraryTrack) => void;
   onDownload?: (track: LibraryTrack) => void;
@@ -23,17 +26,21 @@ type TrackListProps = {
   onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
   onVisibleTrackIdsChange?: (trackIds: string[]) => void;
   followCurrentTrack?: boolean;
+  currentTrackIndex?: number | null;
 };
 
 const rowHeight = 76;
 const loadAheadRows = 12;
 
-export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, totalCount, loadedCount = tracks.length, isLoadingMore = false, onEndReached, onPlay, onAddToQueue, onDownload, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, followCurrentTrack = false }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, onAddToQueue, onDownload, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, followCurrentTrack = false, currentTrackIndex = null }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const loadRequestedRef = useRef(false);
+  const loadPreviousRequestedRef = useRef(false);
   const visibleTrackIdsKeyRef = useRef('');
+  const lastFollowScrollKeyRef = useRef('');
   const virtualCount = Math.max(totalCount ?? tracks.length, tracks.length);
-  const loadedBoundary = Math.min(loadedCount, tracks.length);
+  const safeLoadedStartIndex = Math.max(0, Math.min(loadedStartIndex, Math.max(0, virtualCount - tracks.length)));
+  const loadedBoundary = Math.min(virtualCount, safeLoadedStartIndex + Math.min(loadedCount, tracks.length));
   const rowVirtualizer = useVirtualizer({
     count: virtualCount,
     getScrollElement: () => scrollParentRef.current,
@@ -44,8 +51,9 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, to
   useEffect(() => {
     if (!isLoadingMore) {
       loadRequestedRef.current = false;
+      loadPreviousRequestedRef.current = false;
     }
-  }, [canLoadMore, isLoadingMore, loadedBoundary]);
+  }, [canLoadMore, canLoadPrevious, isLoadingMore, loadedBoundary, safeLoadedStartIndex]);
 
   const requestLoadMore = useCallback(
     (lastVisibleIndex: number): void => {
@@ -61,6 +69,24 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, to
     [canLoadMore, isLoadingMore, loadedBoundary, onEndReached, virtualCount],
   );
 
+  const requestLoadPrevious = useCallback(
+    (firstVisibleIndex: number): void => {
+      if (!canLoadPrevious || isLoadingMore || !onStartReached || loadPreviousRequestedRef.current || safeLoadedStartIndex <= 0) {
+        return;
+      }
+
+      const nearLoadedWindowStart =
+        firstVisibleIndex >= Math.max(0, safeLoadedStartIndex - loadAheadRows) &&
+        firstVisibleIndex <= safeLoadedStartIndex + loadAheadRows;
+
+      if (nearLoadedWindowStart) {
+        loadPreviousRequestedRef.current = true;
+        onStartReached();
+      }
+    },
+    [canLoadPrevious, isLoadingMore, onStartReached, safeLoadedStartIndex],
+  );
+
   const virtualItems = rowVirtualizer.getVirtualItems();
   const renderedVirtualItems =
     virtualItems.length > 0
@@ -71,24 +97,35 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, to
           start: index * rowHeight,
         }));
   const lastVirtualIndex = renderedVirtualItems.at(-1)?.index ?? -1;
+  const firstVirtualIndex = renderedVirtualItems[0]?.index ?? -1;
 
   useEffect(() => {
     requestLoadMore(lastVirtualIndex);
-  }, [lastVirtualIndex, requestLoadMore]);
+    requestLoadPrevious(firstVirtualIndex);
+  }, [firstVirtualIndex, lastVirtualIndex, requestLoadMore, requestLoadPrevious]);
 
   useEffect(() => {
     if (!followCurrentTrack || !currentTrackId) {
+      lastFollowScrollKeyRef.current = '';
       return;
     }
 
-    const currentTrackIndex = tracks.findIndex((track) => track.id === currentTrackId);
+    const loadedCurrentTrackIndex = tracks.findIndex((track) => track.id === currentTrackId);
+    const targetIndex = loadedCurrentTrackIndex >= 0 ? safeLoadedStartIndex + loadedCurrentTrackIndex : currentTrackIndex ?? -1;
 
-    if (currentTrackIndex < 0) {
+    if (targetIndex < 0) {
       return;
     }
 
-    rowVirtualizer.scrollToIndex(currentTrackIndex, { align: 'center', behavior: 'smooth' });
-  }, [currentTrackId, followCurrentTrack, rowVirtualizer, tracks]);
+    const followScrollKey = `${currentTrackId}:${targetIndex}`;
+
+    if (lastFollowScrollKeyRef.current === followScrollKey) {
+      return;
+    }
+
+    lastFollowScrollKeyRef.current = followScrollKey;
+    rowVirtualizer.scrollToIndex(targetIndex, { align: 'center', behavior: 'smooth' });
+  }, [currentTrackId, currentTrackIndex, followCurrentTrack, rowVirtualizer, safeLoadedStartIndex, tracks]);
 
   useEffect(() => {
     if (!onVisibleTrackIdsChange) {
@@ -96,7 +133,7 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, to
     }
 
     const visibleTrackIds = renderedVirtualItems
-      .map((virtualRow) => tracks[virtualRow.index]?.id)
+      .map((virtualRow) => tracks[virtualRow.index - safeLoadedStartIndex]?.id)
       .filter((trackId): trackId is string => Boolean(trackId));
     const visibleTrackIdsKey = visibleTrackIds.join('\0');
 
@@ -106,24 +143,29 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, to
 
     visibleTrackIdsKeyRef.current = visibleTrackIdsKey;
     onVisibleTrackIdsChange(visibleTrackIds);
-  }, [onVisibleTrackIdsChange, renderedVirtualItems, tracks]);
+  }, [onVisibleTrackIdsChange, renderedVirtualItems, safeLoadedStartIndex, tracks]);
 
   const handleScroll = (): void => {
     const scrollElement = scrollParentRef.current;
 
-    if (!scrollElement || !canLoadMore || isLoadingMore || !onEndReached) {
+    if (!scrollElement || isLoadingMore) {
       return;
     }
 
     const distanceToBottom = scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight;
 
     if (distanceToBottom < 320) {
-      if (loadRequestedRef.current) {
+      if (!canLoadMore || !onEndReached || loadRequestedRef.current) {
         return;
       }
 
       loadRequestedRef.current = true;
       onEndReached();
+      return;
+    }
+
+    if (scrollElement.scrollTop < 320) {
+      requestLoadPrevious(rowVirtualizer.getVirtualItems()[0]?.index ?? -1);
       return;
     }
 
@@ -139,7 +181,8 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, to
         data-virtualized="true"
         data-estimated-row-height={String(rowHeight)}
         data-total-count={virtualCount}
-        data-loaded-count={loadedBoundary}
+        data-loaded-count={Math.min(loadedCount, tracks.length)}
+        data-loaded-start-index={safeLoadedStartIndex}
         onScroll={handleScroll}
       >
         {virtualCount === 0 ? (
@@ -147,7 +190,7 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, to
         ) : (
           <div className="track-virtual-spacer" style={{ height: rowVirtualizer.getTotalSize() }}>
             {renderedVirtualItems.map((virtualRow) => {
-              const track = tracks[virtualRow.index];
+              const track = tracks[virtualRow.index - safeLoadedStartIndex];
 
               return (
                 <div

@@ -89,6 +89,7 @@ const echoApi: EchoApi = {
     cancelScan: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryCancelScan, jobId),
     getTrack: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryGetTrack, trackId),
     getTracks: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetTracks, query),
+    locateTrackInTracks: (trackId, query) => ipcRenderer.invoke(IpcChannels.LibraryLocateTrackInTracks, trackId, query),
     refreshDuplicateTracks: (mode) => ipcRenderer.invoke(IpcChannels.LibraryRefreshDuplicateTracks, mode),
     getDuplicateTrackVersions: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryGetDuplicateTrackVersions, trackId),
     getDuplicateHiddenCounts: (trackIds, mode) => ipcRenderer.invoke(IpcChannels.LibraryGetDuplicateHiddenCounts, trackIds, mode),
@@ -236,6 +237,35 @@ const echoApi: EchoApi = {
     setBackgroundPaused: (paused) => ipcRenderer.invoke(IpcChannels.RemoteSourcesSetBackgroundPaused, paused),
     getBackgroundGlobalStatus: () => ipcRenderer.invoke(IpcChannels.RemoteSourcesGetBackgroundGlobalStatus),
     updateRuntimeLimits: (sourceId, limits) => ipcRenderer.invoke(IpcChannels.RemoteSourcesUpdateRuntimeLimits, sourceId, limits),
+  },
+  connect: {
+    listDevices: () => ipcRenderer.invoke(IpcChannels.ConnectListDevices),
+    refresh: () => ipcRenderer.invoke(IpcChannels.ConnectRefresh),
+    getStatus: () => ipcRenderer.invoke(IpcChannels.ConnectGetStatus),
+    connect: (request) => ipcRenderer.invoke(IpcChannels.ConnectConnect, request),
+    disconnect: () => ipcRenderer.invoke(IpcChannels.ConnectDisconnect),
+    play: () => ipcRenderer.invoke(IpcChannels.ConnectPlay),
+    pause: () => ipcRenderer.invoke(IpcChannels.ConnectPause),
+    stop: () => ipcRenderer.invoke(IpcChannels.ConnectStop),
+    seek: (positionSeconds) => ipcRenderer.invoke(IpcChannels.ConnectSeek, positionSeconds),
+    setVolume: (volumePercent) => ipcRenderer.invoke(IpcChannels.ConnectSetVolume, volumePercent),
+    onStatus: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: unknown): void => {
+        handler(status as Awaited<ReturnType<EchoApi['connect']['getStatus']>>);
+      };
+      ipcRenderer.on(IpcChannels.ConnectStatus, listener);
+      return () => ipcRenderer.off(IpcChannels.ConnectStatus, listener);
+    },
+    getReceiverStatus: () => ipcRenderer.invoke(IpcChannels.ConnectReceiverGetStatus),
+    setReceiverEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.ConnectReceiverSetEnabled, enabled),
+    stopReceiverPlayback: () => ipcRenderer.invoke(IpcChannels.ConnectReceiverStopPlayback),
+    onReceiverStatus: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: unknown): void => {
+        handler(status as Awaited<ReturnType<EchoApi['connect']['getReceiverStatus']>>);
+      };
+      ipcRenderer.on(IpcChannels.ConnectReceiverStatus, listener);
+      return () => ipcRenderer.off(IpcChannels.ConnectReceiverStatus, listener);
+    },
   },
   streaming: {
     search: (request) => ipcRenderer.invoke(IpcChannels.StreamingSearch, request),

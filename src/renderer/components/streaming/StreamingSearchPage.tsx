@@ -48,7 +48,8 @@ const defaultCover = `data:image/svg+xml;utf8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="14" fill="#eaf1f8"/><circle cx="31" cy="32" r="12" fill="#9fb6cc"/><path d="M28 67c11-19 25-25 42-9" fill="none" stroke="#5f7f9d" stroke-width="8" stroke-linecap="round"/></svg>',
 )}`;
 
-const providerPriority: StreamingProviderName[] = ['spotify', 'netease', 'qqmusic', 'mock'];
+const providerPriority: StreamingProviderName[] = ['soundcloud', 'spotify', 'netease', 'qqmusic', 'mock'];
+const unsupportedDownloadProviders = new Set<StreamingProviderName>(['spotify', 'soundcloud']);
 const emptyTracks: StreamingTrack[] = [];
 const emptyAlbums: StreamingAlbum[] = [];
 const emptyArtists: StreamingArtist[] = [];
@@ -98,6 +99,8 @@ const streamingTrackWebUrl = (track: StreamingTrack): string | null => {
       return `https://y.qq.com/n/ryqq/songDetail/${encodeURIComponent(track.providerTrackId)}`;
     case 'spotify':
       return `https://open.spotify.com/track/${encodeURIComponent(track.providerTrackId)}`;
+    case 'soundcloud':
+      return `https://soundcloud.com/search/sounds?q=${encodeURIComponent(track.title ? `${track.artist} ${track.title}` : track.providerTrackId)}`;
     default:
       return null;
   }
@@ -111,6 +114,10 @@ const streamingPlaylistWebUrl = (playlist: StreamingPlaylist): string | null => 
       return `https://y.qq.com/n/ryqq/playlist/${encodeURIComponent(playlist.providerPlaylistId)}`;
     case 'spotify':
       return `https://open.spotify.com/playlist/${encodeURIComponent(playlist.providerPlaylistId)}`;
+    case 'soundcloud':
+      return playlist.providerPlaylistId.startsWith('http')
+        ? playlist.providerPlaylistId
+        : `https://soundcloud.com/search/sets?q=${encodeURIComponent(playlist.title)}`;
     default:
       return null;
   }
@@ -536,8 +543,8 @@ export const StreamingSearchPage = (): JSX.Element => {
   );
 
   const handleDownload = useCallback(async (track: StreamingTrack): Promise<void> => {
-    if (track.provider === 'spotify') {
-      setActionError('Spotify 由官方播放器播放，下载功能不适用于 Spotify。');
+    if (unsupportedDownloadProviders.has(track.provider)) {
+      setActionError('这个平台在 ECHO Next 中仅支持流播放，不提供下载任务。');
       setActionMessage(null);
       return;
     }
@@ -1369,7 +1376,7 @@ export const StreamingSearchPage = (): JSX.Element => {
                         <button type="button" title="加入队列" onClick={() => handleAddToQueue(track)} disabled={!track.playable}>
                           {isQueued ? <Check size={16} /> : <ListPlus size={16} />}
                         </button>
-                        {track.provider !== 'spotify' ? (
+                        {!unsupportedDownloadProviders.has(track.provider) ? (
                           <button type="button" title="下载" onClick={() => void handleDownload(track)} disabled={isDownloading}>
                             {isDownloading ? <Loader2 className="spinning-icon" size={16} /> : <Download size={16} />}
                           </button>

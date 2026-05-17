@@ -2681,16 +2681,50 @@
 
 .albums-page {
   display: grid;
+  height: 100%;
   min-height: 0;
-  align-content: start;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 24px;
+  overflow: hidden;
 }
 
 .artists-page {
   display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 22px;
+  overflow: hidden;
+}
+
+.media-wall-scroll-shell {
+  display: grid;
   min-height: 0;
   align-content: start;
-  gap: 22px;
+  gap: 0;
+  overflow: auto;
+  scrollbar-color: var(--theme-scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+.media-wall-scroll-shell::-webkit-scrollbar {
+  width: 9px;
+}
+
+.media-wall-scroll-shell::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.media-wall-scroll-shell::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--theme-scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+.media-wall-scroll-shell::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-scrollbar-thumb-hover);
+  background-clip: padding-box;
 }
 
 .album-refresh {

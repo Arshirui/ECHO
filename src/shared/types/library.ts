@@ -622,6 +622,20 @@ export type LibraryPage<T> = {
   hasMore: boolean;
 };
 
+export type LibraryTrackLocateReason = 'found' | 'not-found' | 'filtered' | 'unsupported-sort';
+
+export type LibraryTrackLocateResult = {
+  found: boolean;
+  reason: LibraryTrackLocateReason;
+  track: LibraryTrack | null;
+  items: LibraryTrack[];
+  page: number;
+  pageSize: number;
+  index: number;
+  total: number;
+  hasMore: boolean;
+};
+
 export type NetworkMetadataCandidate = {
   id: string;
   trackId: string;

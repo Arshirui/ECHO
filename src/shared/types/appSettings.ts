@@ -103,6 +103,7 @@ export type AppSettings = {
   lyricsFontSizePx: number;
   lyricsSecondaryFontSizePx?: number;
   lyricsLineSpacingPercent?: number;
+  lyricsLineMaxChars?: number;
   lyricsContextOpacityPercent?: number;
   lyricsColor: string;
   lyricsSmartReadableColorsEnabled?: boolean;

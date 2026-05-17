@@ -70,6 +70,15 @@ describe('TrackList', () => {
     expect((container.querySelector('.track-virtual-spacer') as HTMLElement).style.height).toBe('7600px');
   });
 
+  it('renders a loaded middle page at its absolute virtual row positions', () => {
+    const tracks = [track(51), track(52)];
+    render(<TrackList currentTrackId={null} tracks={tracks} totalCount={100} loadedCount={2} loadedStartIndex={50} />);
+
+    expect(screen.getByRole('list').getAttribute('data-loaded-start-index')).toBe('50');
+    expect(screen.getByRole('list').getAttribute('data-total-count')).toBe('100');
+    expect(screen.getByRole('list').getAttribute('data-loaded-count')).toBe('2');
+  });
+
   it('renders unloaded rows as lightweight skeletons without row action buttons', () => {
     render(<TrackList currentTrackId={null} tracks={[]} totalCount={20} loadedCount={0} />);
 
@@ -124,5 +133,27 @@ describe('TrackList', () => {
     render(<TrackList currentTrackId="track-8" followCurrentTrack tracks={tracks} />);
 
     await vi.waitFor(() => expect(scrollTo).toHaveBeenCalled());
+  });
+
+  it('does not pull the scroll position back when the loaded window changes around the same current track', async () => {
+    const scrollTo = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    const tracks = Array.from({ length: 12 }, (_, index) => track(index + 1));
+    const { rerender } = render(
+      <TrackList currentTrackId="track-8" followCurrentTrack tracks={tracks} totalCount={100} currentTrackIndex={7} />,
+    );
+
+    await vi.waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    const initialScrollCallCount = scrollTo.mock.calls.length;
+
+    const expandedTracks = Array.from({ length: 20 }, (_, index) => track(index + 1));
+    rerender(<TrackList currentTrackId="track-8" followCurrentTrack tracks={expandedTracks} totalCount={100} currentTrackIndex={7} />);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(scrollTo).toHaveBeenCalledTimes(initialScrollCallCount);
+
+    rerender(<TrackList currentTrackId="track-9" followCurrentTrack tracks={expandedTracks} totalCount={100} currentTrackIndex={8} />);
+
+    await vi.waitFor(() => expect(scrollTo.mock.calls.length).toBeGreaterThan(initialScrollCallCount));
   });
 });

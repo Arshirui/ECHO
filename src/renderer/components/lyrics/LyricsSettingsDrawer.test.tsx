@@ -43,6 +43,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
+  lyricsLineMaxChars: 0,
   lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
   lyricsSmartReadableColorsEnabled: false,
@@ -319,6 +320,43 @@ describe('LyricsSettingsDrawer', () => {
     });
 
     expect(setSettings).toHaveBeenCalledWith({ lyricsLineSpacingPercent: 116 });
+
+    window.removeEventListener('lyrics:display-settings-changed', previewListener);
+  });
+
+  it('previews and saves custom lyrics characters per line', async () => {
+    const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
+    const previewListener = vi.fn();
+    window.addEventListener('lyrics:display-settings-changed', previewListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    const slider = (await screen.findByRole('slider', { name: /每行字数/ })) as HTMLInputElement;
+    expect(slider.min).toBe('0');
+    expect(slider.max).toBe('80');
+    expect(slider.value).toBe('0');
+
+    vi.useFakeTimers();
+    fireEvent.change(slider, { target: { value: '32' } });
+
+    expect(slider.value).toBe('32');
+    expect(screen.getByText('32字')).toBeTruthy();
+    expect(previewListener).toHaveBeenCalledWith(expect.objectContaining({ detail: { lyricsLineMaxChars: 32 } }));
+    expect(setSettings).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(240);
+      await Promise.resolve();
+    });
+
+    expect(setSettings).toHaveBeenCalledWith({ lyricsLineMaxChars: 32 });
 
     window.removeEventListener('lyrics:display-settings-changed', previewListener);
   });

@@ -96,6 +96,17 @@ export const EchoRemoteIcon = createNavIcon(
   </>,
 );
 
+export const EchoConnectIcon = createNavIcon(
+  'EchoConnectIcon',
+  <>
+    <path d="M6.1 17.9a8.2 8.2 0 0 1 11.8 0" />
+    <path d="M8.8 15.2a4.5 4.5 0 0 1 6.4 0" />
+    <path d="M11 12.9a1.5 1.5 0 0 1 2 0" />
+    <rect x="4.8" y="4.9" width="14.4" height="7.6" rx="2.2" />
+    <path d="M8.3 8.7h7.4" />
+  </>,
+);
+
 export const EchoStreamingIcon = createNavIcon(
   'EchoStreamingIcon',
   <>

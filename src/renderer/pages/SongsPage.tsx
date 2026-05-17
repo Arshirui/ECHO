@@ -150,7 +150,8 @@ export const SongsPage = (): JSX.Element => {
   const initialSongsState = initialSongsStateRef.current;
   const initialSnapshot = initialSongsState.snapshot;
   const [tracks, setTracks] = useState<LibraryTrack[]>(() => initialSnapshot?.items ?? []);
-  const [page, setPage] = useState(1);
+  const [loadedStartIndex, setLoadedStartIndex] = useState(0);
+  const [locatedCurrentTrackIndex, setLocatedCurrentTrackIndex] = useState<number | null>(null);
   const [total, setTotal] = useState(() => initialSnapshot?.total ?? 0);
   const [hasMore, setHasMore] = useState(() => (initialSnapshot ? initialSnapshot.items.length < initialSnapshot.total : false));
   const [searchInput, setSearchInput] = useState('');
@@ -181,6 +182,7 @@ export const SongsPage = (): JSX.Element => {
   const [tagEditorError, setTagEditorError] = useState<string | null>(null);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const requestIdRef = useRef(0);
+  const locateRequestIdRef = useRef(0);
   const likedRequestIdRef = useRef(0);
   const duplicateRequestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
@@ -196,6 +198,11 @@ export const SongsPage = (): JSX.Element => {
     () => ({ type: 'songs' as const, label: '歌曲列表', search: search || undefined, sort, hideDuplicates }),
     [hideDuplicates, search, sort],
   );
+  const currentTrackLoadedIndex = useMemo(
+    () => (currentTrackId ? tracks.findIndex((track) => track.id === currentTrackId) : -1),
+    [currentTrackId, tracks],
+  );
+  const currentTrackAbsoluteIndex = currentTrackLoadedIndex >= 0 ? loadedStartIndex + currentTrackLoadedIndex : locatedCurrentTrackIndex;
   const mergeLikedTrackIds = useCallback((patch: Record<string, boolean>): void => {
     setLikedTrackIds((current) => {
       const next = { ...current, ...patch };
@@ -281,8 +288,8 @@ export const SongsPage = (): JSX.Element => {
   }, [isSortOpen]);
 
   const loadTracks = useCallback(
-    async (nextPage: number, mode: 'replace' | 'append') => {
-      if (mode === 'append' && isLoadingRef.current) {
+    async (nextPage: number, mode: 'replace' | 'append' | 'prepend') => {
+      if (mode !== 'replace' && isLoadingRef.current) {
         return;
       }
 
@@ -295,6 +302,8 @@ export const SongsPage = (): JSX.Element => {
       if (mode === 'replace') {
         setListVersion((current) => current + 1);
         setVisibleTrackIds([]);
+        setLoadedStartIndex(0);
+        setLocatedCurrentTrackIndex(null);
       }
 
       try {
@@ -302,7 +311,8 @@ export const SongsPage = (): JSX.Element => {
 
         if (!library) {
           setTracks([]);
-          setPage(1);
+          setLoadedStartIndex(0);
+          setLocatedCurrentTrackIndex(null);
           setTotal(0);
           setHasMore(false);
           clearListMetadataCache();
@@ -328,10 +338,25 @@ export const SongsPage = (): JSX.Element => {
           return;
         }
 
-        setTracks((current) => (mode === 'append' ? [...current, ...result.items] : result.items));
-        setPage(result.page);
+        const nextLoadedStartIndex = (result.page - 1) * result.pageSize;
+        setTracks((current) => {
+          if (mode === 'append') {
+            return [...current, ...result.items];
+          }
+
+          if (mode === 'prepend') {
+            return [...result.items, ...current];
+          }
+
+          return result.items;
+        });
+        if (mode !== 'append') {
+          setLoadedStartIndex(nextLoadedStartIndex);
+        }
         setTotal(result.total);
-        setHasMore(result.hasMore);
+        if (mode !== 'prepend') {
+          setHasMore(result.hasMore);
+        }
         if (shouldUseFirstPageSnapshot) {
           finishSongsStartupSqliteLoadDiagnostics({
             sqliteQueryMs: queryMs,
@@ -416,9 +441,102 @@ export const SongsPage = (): JSX.Element => {
 
   const handleLoadMore = useCallback((): void => {
     if (!isLoading && hasMore) {
-      void loadTracks(page + 1, 'append');
+      const nextPage = Math.floor((loadedStartIndex + tracks.length) / pageSize) + 1;
+      void loadTracks(nextPage, 'append');
     }
-  }, [hasMore, isLoading, loadTracks, page]);
+  }, [hasMore, isLoading, loadTracks, loadedStartIndex, tracks.length]);
+
+  const handleLoadPrevious = useCallback((): void => {
+    if (!isLoading && loadedStartIndex > 0) {
+      const previousPage = Math.max(1, Math.floor(loadedStartIndex / pageSize));
+      void loadTracks(previousPage, 'prepend');
+    }
+  }, [isLoading, loadTracks, loadedStartIndex]);
+
+  useEffect(() => {
+    if (!followCurrentTrack || !currentTrackId) {
+      locateRequestIdRef.current += 1;
+      setLocatedCurrentTrackIndex(null);
+      return;
+    }
+
+    if (currentTrackLoadedIndex >= 0) {
+      locateRequestIdRef.current += 1;
+      setLocatedCurrentTrackIndex(loadedStartIndex + currentTrackLoadedIndex);
+      return;
+    }
+
+    if (sort === 'random') {
+      locateRequestIdRef.current += 1;
+      setStatusMessage('随机排序没有稳定位置，当前播放歌曲只能在已加载列表内定位。');
+      return;
+    }
+
+    const library = window.echo?.library;
+    if (!library?.locateTrackInTracks) {
+      return;
+    }
+
+    const requestId = locateRequestIdRef.current + 1;
+    locateRequestIdRef.current = requestId;
+    setStatusMessage('正在定位当前播放歌曲...');
+
+    void library
+      .locateTrackInTracks(currentTrackId, {
+        pageSize,
+        search,
+        sort,
+        hideDuplicates,
+        duplicateMode: 'strict',
+      })
+      .then((result) => {
+        if (locateRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        if (!result.found) {
+          setLocatedCurrentTrackIndex(null);
+          if (result.reason === 'filtered') {
+            setStatusMessage('当前播放歌曲不在当前搜索或隐藏重复歌曲结果中。');
+          } else if (result.reason === 'unsupported-sort') {
+            setStatusMessage('随机排序没有稳定位置，当前播放歌曲只能在已加载列表内定位。');
+          } else {
+            setStatusMessage('当前播放歌曲不在歌曲库列表中。');
+          }
+          return;
+        }
+
+        requestIdRef.current += 1;
+        isLoadingRef.current = false;
+        setIsLoading(false);
+        clearListMetadataCache();
+        setListVersion((current) => current + 1);
+        setVisibleTrackIds([]);
+        setTracks(result.items);
+        setLoadedStartIndex((result.page - 1) * result.pageSize);
+        setLocatedCurrentTrackIndex(result.index);
+        setTotal(result.total);
+        setHasMore(result.hasMore);
+        setError(null);
+        setStatusMessage(null);
+      })
+      .catch((locateError) => {
+        if (locateRequestIdRef.current === requestId) {
+          setLocatedCurrentTrackIndex(null);
+          setStatusMessage(null);
+          setError(locateError instanceof Error ? locateError.message : String(locateError));
+        }
+      });
+  }, [
+    clearListMetadataCache,
+    currentTrackId,
+    currentTrackLoadedIndex,
+    followCurrentTrack,
+    hideDuplicates,
+    loadedStartIndex,
+    search,
+    sort,
+  ]);
 
   const handleImportFolder = (): void => {
     window.dispatchEvent(new Event('app:navigate:import-folder'));
@@ -495,7 +613,8 @@ export const SongsPage = (): JSX.Element => {
     try {
       const result = await library.clearTracks();
       setTracks([]);
-      setPage(1);
+      setLoadedStartIndex(0);
+      setLocatedCurrentTrackIndex(null);
       setTotal(0);
       setHasMore(false);
       setVisibleTrackIds([]);
@@ -966,10 +1085,13 @@ export const SongsPage = (): JSX.Element => {
         tracks={tracks}
         currentTrackId={currentTrackId}
         canLoadMore={hasMore && !isLoading}
+        canLoadPrevious={loadedStartIndex > 0 && !isLoading}
         totalCount={total}
         loadedCount={tracks.length}
+        loadedStartIndex={loadedStartIndex}
         isLoadingMore={isLoading}
         onEndReached={handleLoadMore}
+        onStartReached={handleLoadPrevious}
         onAddToQueue={handleAddTrackToQueue}
         duplicateHiddenCounts={duplicateHiddenCounts}
         onShowVersions={(track) => void handleShowVersions(track)}
@@ -979,6 +1101,7 @@ export const SongsPage = (): JSX.Element => {
         onVisibleTrackIdsChange={setVisibleTrackIds}
         onPlay={handlePlayTrack}
         followCurrentTrack={followCurrentTrack}
+        currentTrackIndex={currentTrackAbsoluteIndex}
       />
 
       {error || statusMessage || duplicateMessage || showIndexLoading || isMaintainingLibrary || isClearing ? (

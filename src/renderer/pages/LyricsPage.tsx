@@ -72,6 +72,7 @@ type LyricsDisplaySettings = Pick<
   | "lyricsOffsetControlsEnabled"
   | "lyricsSecondaryFontSizePx"
   | "lyricsLineSpacingPercent"
+  | "lyricsLineMaxChars"
   | "lyricsContextOpacityPercent"
   | "lyricsCoverOpacityPercent"
   | "lyricsSmartReadableColorsEnabled"
@@ -110,6 +111,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsOffsetControlsEnabled: false,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
+  lyricsLineMaxChars: 0,
   lyricsContextOpacityPercent: 49,
   lyricsCoverOpacityPercent: 100,
   lyricsSmartReadableColorsEnabled: false,
@@ -433,6 +435,7 @@ const selectLyricsDisplaySettings = (
   lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackLyricsDisplaySettings.lyricsSecondaryFontSizePx,
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackLyricsDisplaySettings.lyricsLineSpacingPercent,
+  lyricsLineMaxChars: settings.lyricsLineMaxChars ?? fallbackLyricsDisplaySettings.lyricsLineMaxChars,
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackLyricsDisplaySettings.lyricsContextOpacityPercent,
   lyricsCoverOpacityPercent: settings.lyricsCoverOpacityPercent,
   lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
@@ -477,6 +480,7 @@ const lyricsDisplaySettingsKeys = [
   "lyricsOffsetControlsEnabled",
   "lyricsSecondaryFontSizePx",
   "lyricsLineSpacingPercent",
+  "lyricsLineMaxChars",
   "lyricsContextOpacityPercent",
   "lyricsCoverOpacityPercent",
   "lyricsSmartReadableColorsEnabled",
@@ -829,6 +833,9 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
           : "none",
         "--lyrics-font-size": `${lyricsDisplaySettings.lyricsFontSizePx}px`,
         "--lyrics-secondary-font-size": `${lyricsDisplaySettings.lyricsSecondaryFontSizePx}px`,
+        "--lyrics-line-max-width": lyricsDisplaySettings.lyricsLineMaxChars && lyricsDisplaySettings.lyricsLineMaxChars > 0
+          ? `${lyricsDisplaySettings.lyricsLineMaxChars}em`
+          : "100%",
         "--lyrics-line-spacing": (
           (lyricsDisplaySettings.lyricsLineSpacingPercent ?? fallbackLyricsDisplaySettings.lyricsLineSpacingPercent ?? 110) / 100
         ).toFixed(2),
@@ -856,6 +863,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       lyricsDisplaySettings.lyricsCoverBrightnessPercent,
       lyricsDisplaySettings.lyricsCoverOpacityPercent,
       lyricsDisplaySettings.lyricsFontSizePx,
+      lyricsDisplaySettings.lyricsLineMaxChars,
       lyricsDisplaySettings.lyricsSecondaryFontSizePx,
       lyricsDisplaySettings.lyricsLineSpacingPercent,
       lyricsDisplaySettings.lyricsContextOpacityPercent,

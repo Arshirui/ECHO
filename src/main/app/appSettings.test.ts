@@ -70,6 +70,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsFontSizePx).toBe(40);
     expect(settings.lyricsSecondaryFontSizePx).toBe(22);
     expect(settings.lyricsLineSpacingPercent).toBe(110);
+    expect(settings.lyricsLineMaxChars).toBe(0);
     expect(settings.lyricsContextOpacityPercent).toBe(49);
     expect(settings.lyricsColor).toBe('#314054');
     expect(settings.lyricsSmartReadableColorsEnabled).toBe(false);
@@ -528,6 +529,7 @@ describe('app settings normalization', () => {
         lyricsWordHighlightEnabled: false,
         lyricsFontSizePx: 999,
         lyricsLineSpacingPercent: 999,
+        lyricsLineMaxChars: 999,
         lyricsContextOpacityPercent: 1000,
         lyricsColor: 'red',
         lyricsSmartReadableColorsEnabled: 'yes' as never,
@@ -566,6 +568,7 @@ describe('app settings normalization', () => {
       lyricsWordHighlightEnabled: false,
       lyricsFontSizePx: 56,
       lyricsLineSpacingPercent: 150,
+      lyricsLineMaxChars: 80,
       lyricsContextOpacityPercent: 100,
       lyricsColor: '#314054',
       lyricsSmartReadableColorsEnabled: false,
@@ -583,6 +586,7 @@ describe('app settings normalization', () => {
       normalizeSettings({
         lyricsFontSizePx: 12,
         lyricsLineSpacingPercent: 20,
+        lyricsLineMaxChars: -1,
         lyricsAutoAcceptScore: 0.1,
         lyricsContextOpacityPercent: 64.4,
         lyricsPlayerBarDrawerOpacityPercent: 12,
@@ -600,6 +604,7 @@ describe('app settings normalization', () => {
     ).toMatchObject({
       lyricsFontSizePx: 22,
       lyricsLineSpacingPercent: 60,
+      lyricsLineMaxChars: 0,
       lyricsAutoAcceptScore: 0.3,
       lyricsContextOpacityPercent: 64,
       lyricsPlayerBarDrawerOpacityPercent: 20,

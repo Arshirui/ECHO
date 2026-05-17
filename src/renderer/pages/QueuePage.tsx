@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DragEvent } from 'react';
+import type { DragEvent, MouseEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Disc3,
@@ -17,12 +17,17 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { LibraryTrack, PlaybackHistoryEntry } from '../../shared/types/library';
+import type { EditableTrackTags, LibraryTrack, PlaybackHistoryEntry } from '../../shared/types/library';
 import { likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../hooks/useLikedMedia';
 import { usePlaybackFollowCurrentTrack } from '../hooks/usePlaybackFollowCurrentTrack';
 import type { QueueItem, RepeatMode } from '../stores/PlaybackQueueProvider';
 import { useI18n } from '../i18n/I18nProvider';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { openAlbumDetailForTrack } from '../utils/albumNavigation';
+import { OsuTimingPanel } from '../components/library/OsuTimingPanel';
+import { TrackContextMenu } from '../components/library/TrackContextMenu';
+import type { TrackMenuAction } from '../components/library/TrackContextMenu';
+import { TrackTagEditorDrawer } from '../components/library/TrackTagEditorDrawer';
 
 const formatDuration = (duration: number): string => {
   if (!Number.isFinite(duration) || duration <= 0) {
@@ -87,6 +92,11 @@ const trackFromHistory = (entry: PlaybackHistoryEntry): LibraryTrack => ({
   fieldSources: {},
 });
 
+type TrackMenuState = {
+  track: LibraryTrack;
+  position: { x: number; y: number };
+};
+
 export const QueuePage = (): JSX.Element => {
   const { t } = useI18n();
   const queue = usePlaybackQueue();
@@ -96,7 +106,14 @@ export const QueuePage = (): JSX.Element => {
   const [isGeneratingHistoryQueue, setIsGeneratingHistoryQueue] = useState(false);
   const [draggedQueueId, setDraggedQueueId] = useState<string | null>(null);
   const [dropTargetQueueId, setDropTargetQueueId] = useState<string | null>(null);
+  const [trackMenu, setTrackMenu] = useState<TrackMenuState | null>(null);
+  const [osuTimingTrack, setOsuTimingTrack] = useState<LibraryTrack | null>(null);
+  const [editingTrack, setEditingTrack] = useState<LibraryTrack | null>(null);
+  const [isTagEditorOpen, setIsTagEditorOpen] = useState(false);
+  const [tagEditorError, setTagEditorError] = useState<string | null>(null);
+  const [isSavingTags, setIsSavingTags] = useState(false);
   const queueListRef = useRef<HTMLDivElement | null>(null);
+  const tagEditorCloseTimerRef = useRef<number | null>(null);
   const currentIndex = useMemo(
     () => (queue.currentQueueId ? queue.items.findIndex((item) => item.queueId === queue.currentQueueId) : -1),
     [queue.currentQueueId, queue.items],
@@ -116,6 +133,7 @@ export const QueuePage = (): JSX.Element => {
   const isNowPlayingLiked = nowPlaying && !isNowPlayingTemporary ? likedTrackIds[nowPlaying.id] === true : false;
   const nowPlayingTags = qualityTags(nowPlaying);
   const sourceLabel = queue.currentItem?.source.label ?? t('queue.now.sourceFallback');
+  const queueMenuSource = useMemo(() => ({ type: 'manual' as const, label: t('queue.header.title') }), [t]);
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => queueListRef.current,
@@ -171,6 +189,210 @@ export const QueuePage = (): JSX.Element => {
       window.dispatchEvent(new Event(likedChangedEvent));
     });
   }, [nowPlaying, runQueueAction]);
+
+  const handleOpenTrackMenu = useCallback((track: LibraryTrack, position: { x: number; y: number }): void => {
+    setTrackMenu({ track, position });
+  }, []);
+
+  const handleTrackContextMenu = useCallback(
+    (event: MouseEvent<HTMLElement>, track: LibraryTrack): void => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleOpenTrackMenu(track, { x: event.clientX, y: event.clientY });
+    },
+    [handleOpenTrackMenu],
+  );
+
+  const handleNowPlayingMoreClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      if (!nowPlaying) {
+        return;
+      }
+
+      event.stopPropagation();
+      const rect = event.currentTarget.getBoundingClientRect();
+      handleOpenTrackMenu(nowPlaying, { x: rect.right - 12, y: rect.bottom + 8 });
+    },
+    [handleOpenTrackMenu, nowPlaying],
+  );
+
+  const closeTagEditor = useCallback((): void => {
+    setIsTagEditorOpen(false);
+    if (tagEditorCloseTimerRef.current !== null) {
+      window.clearTimeout(tagEditorCloseTimerRef.current);
+    }
+    tagEditorCloseTimerRef.current = window.setTimeout(() => {
+      setEditingTrack(null);
+      tagEditorCloseTimerRef.current = null;
+    }, 280);
+  }, []);
+
+  const handleSaveTags = useCallback(
+    async (
+      track: LibraryTrack,
+      tags: EditableTrackTags,
+      coverPath: string | null,
+      coverUrl: string | null,
+      coverMimeType: string | null,
+    ): Promise<void> => {
+      const library = window.echo?.library;
+
+      if (!library?.updateTrackTags) {
+        setTagEditorError('Desktop bridge unavailable. Open ECHO Next in Electron to edit embedded tags.');
+        return;
+      }
+
+      setIsSavingTags(true);
+      setTagEditorError(null);
+
+      try {
+        const updatedTrack = await library.updateTrackTags({ trackId: track.id, tags, coverPath, coverUrl, coverMimeType });
+        queue.updateTrackSnapshot(updatedTrack.id, updatedTrack);
+        window.dispatchEvent(new Event('library:changed'));
+        closeTagEditor();
+      } catch (saveError) {
+        setTagEditorError(saveError instanceof Error ? saveError.message : String(saveError));
+      } finally {
+        setIsSavingTags(false);
+      }
+    },
+    [closeTagEditor, queue],
+  );
+
+  const handleTrackMenuAction = useCallback(
+    async (action: TrackMenuAction, track: LibraryTrack): Promise<void> => {
+      const library = window.echo?.library;
+      setTrackMenu(null);
+
+      if (!library && action !== 'play-next' && action !== 'add-to-queue' && action !== 'remove-from-queue' && action !== 'open-osu-timing') {
+        setActionError('Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.');
+        return;
+      }
+
+      try {
+        setActionError(null);
+
+        if (
+          (track.mediaType === 'remote' || track.isTemporary) &&
+          (action === 'edit-tags' ||
+            action === 'open-osu-timing' ||
+            action === 'copy-path' ||
+            action === 'open-system' ||
+            action === 'copy-cover' ||
+            action === 'save-cover' ||
+            action === 'delete-song')
+        ) {
+          setActionError('This queued item does not support library file actions.');
+          return;
+        }
+
+        switch (action) {
+          case 'play-next':
+            queue.playTrackNext(track, queueMenuSource);
+            return;
+          case 'add-to-queue':
+            queue.appendToQueue(track, queueMenuSource);
+            return;
+          case 'toggle-liked':
+            if (track.isTemporary) {
+              setActionError('Temporary local files cannot be liked until they are imported.');
+              return;
+            }
+            await library?.toggleTrackLiked(track.id);
+            window.dispatchEvent(new Event(likedTracksChangedEvent));
+            window.dispatchEvent(new Event(likedChangedEvent));
+            return;
+          case 'remove-from-queue':
+            queue.removeTrackFromQueue(track.id);
+            return;
+          case 'open-osu-timing':
+            setOsuTimingTrack(track);
+            return;
+          case 'edit-tags':
+            setTagEditorError(null);
+            if (tagEditorCloseTimerRef.current !== null) {
+              window.clearTimeout(tagEditorCloseTimerRef.current);
+              tagEditorCloseTimerRef.current = null;
+            }
+            setIsTagEditorOpen(false);
+            setEditingTrack(track);
+            window.requestAnimationFrame(() => setIsTagEditorOpen(true));
+            return;
+          case 'go-to-album':
+            if (!(await openAlbumDetailForTrack(track))) {
+              setActionError(`Album not found: ${track.album || 'Unknown Album'}`);
+            }
+            return;
+          case 'show-in-folder':
+            if (track.isTemporary) {
+              await library?.openPathInFolder?.(track.path);
+              return;
+            }
+            await library?.openTrackInFolder(track.id);
+            return;
+          case 'copy-path':
+            await library?.copyTrackPath(track.id);
+            return;
+          case 'open-system':
+            await library?.openTrackWithSystem(track.id);
+            return;
+          case 'copy-name-artist':
+            await library?.copyTrackNameArtist(track.id);
+            return;
+          case 'copy-cover':
+            if (!(await library?.copyTrackCover(track.id))) {
+              setActionError('This track does not have cover art to copy.');
+            }
+            return;
+          case 'save-cover':
+            if (!(await library?.saveTrackCover(track.id))) {
+              setActionError('No cover art was saved for this track.');
+            }
+            return;
+          case 'delete-song':
+            if (!window.confirm(`Delete the music file?\n${track.title}`)) {
+              return;
+            }
+            await library?.deleteTrackFile(track.id);
+            queue.removeTrackFromQueue(track.id);
+            window.dispatchEvent(new Event('library:changed'));
+            return;
+          case 'add-to-playlist':
+            {
+              const playlists = await library!.getPlaylists();
+              let playlist: (typeof playlists)[number] | null = playlists[0] ?? null;
+              if (playlists.length > 1) {
+                const names = playlists.map((item, index) => `${index + 1}. ${item.name}`).join('\n');
+                const choice = window.prompt(`Choose playlist number:\n${names}`, '1');
+                const index = Number(choice) - 1;
+                playlist = Number.isInteger(index) ? playlists[index] ?? null : null;
+              }
+
+              if (!playlist) {
+                const name = window.prompt('No playlists yet. Enter a name to create one:');
+                if (!name?.trim()) {
+                  return;
+                }
+                playlist = await library!.createPlaylist({ name });
+              }
+
+              if (!playlist) {
+                return;
+              }
+
+              await library!.addTrackToPlaylist(playlist.id, track.id);
+              window.dispatchEvent(new Event('library:playlists-changed'));
+            }
+            return;
+          default:
+            setActionError('This track action is not available yet.');
+        }
+      } catch (actionError) {
+        setActionError(actionError instanceof Error ? actionError.message : String(actionError));
+      }
+    },
+    [queue, queueMenuSource],
+  );
 
   const handlePlayItemNext = useCallback(
     (item: QueueItem): void => {
@@ -353,7 +575,14 @@ export const QueuePage = (): JSX.Element => {
           >
             <FolderOpen size={17} />
           </button>
-          <button className="queue-icon-button" type="button" aria-label={t('queue.action.more')} title={t('queue.action.more')} disabled={!nowPlaying}>
+          <button
+            className="queue-icon-button"
+            type="button"
+            aria-label={t('queue.action.more')}
+            title={t('queue.action.more')}
+            disabled={!nowPlaying}
+            onClick={handleNowPlayingMoreClick}
+          >
             <MoreHorizontal size={18} />
           </button>
         </div>
@@ -423,10 +652,12 @@ export const QueuePage = (): JSX.Element => {
                       data-drop-target={dropTargetQueueId === item.queueId && draggedQueueId !== item.queueId}
                       draggable
                       role="listitem"
+                      onContextMenu={(event) => handleTrackContextMenu(event, item.track)}
                       onDragEnd={handleDragEnd}
                       onDragOver={(event) => handleDragOver(event, item)}
                       onDragStart={(event) => handleDragStart(event, item)}
                       onDrop={(event) => handleDrop(event, item)}
+                      onDoubleClick={() => void runQueueAction(() => queue.playQueueItem(item.queueId))}
                     >
                       <span className="queue-drag-handle" aria-label={t('queue.action.dragLabel', { title: item.track.title })} title={t('queue.action.dragTitle')}>
                         <GripVertical size={17} />
@@ -443,7 +674,7 @@ export const QueuePage = (): JSX.Element => {
                       </div>
                       <span className="queue-row-source">{item.source.label}</span>
                       <span className="queue-row-duration">{formatDuration(item.track.duration)}</span>
-                      <div className="queue-row-actions">
+                      <div className="queue-row-actions" onDoubleClick={(event) => event.stopPropagation()}>
                         <button
                           className="queue-icon-button"
                           type="button"
@@ -489,6 +720,35 @@ export const QueuePage = (): JSX.Element => {
 
         {actionError ? <p className="queue-error">{actionError}</p> : null}
       </section>
+
+      {trackMenu ? (
+        <TrackContextMenu
+          track={trackMenu.track}
+          position={trackMenu.position}
+          liked={!trackMenu.track.isTemporary && likedTrackIds[trackMenu.track.id] === true}
+          onAction={(action, track) => void handleTrackMenuAction(action, track)}
+          onClose={() => setTrackMenu(null)}
+        />
+      ) : null}
+
+      <TrackTagEditorDrawer
+        track={editingTrack}
+        isOpen={isTagEditorOpen}
+        isSaving={isSavingTags}
+        error={tagEditorError}
+        onClose={closeTagEditor}
+        onSave={(track, tags, coverPath, coverUrl, coverMimeType) => void handleSaveTags(track, tags, coverPath, coverUrl, coverMimeType)}
+      />
+
+      <OsuTimingPanel
+        track={osuTimingTrack}
+        isOpen={Boolean(osuTimingTrack)}
+        onClose={() => setOsuTimingTrack(null)}
+        onTrackUpdated={(updatedTrack) => {
+          setOsuTimingTrack(updatedTrack);
+          queue.updateTrackSnapshot(updatedTrack.id, updatedTrack);
+        }}
+      />
     </div>
   );
 };

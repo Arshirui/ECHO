@@ -15,6 +15,8 @@ import { getAppSettings } from './appSettings';
 import { ensureDataProtection } from './dataProtection';
 import { disposeBackgroundPlaybackShortcuts, initializeBackgroundPlaybackShortcuts } from './backgroundPlaybackShortcuts';
 import { getAccountService } from '../accounts/AccountService';
+import { disposeConnectReceiverService } from '../connect/ConnectReceiverService';
+import { disposeConnectService } from '../connect/ConnectService';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AccountStatus } from '../../shared/types/accounts';
 
@@ -100,6 +102,8 @@ export const registerAppLifecycle = (): void => {
     savePlaybackMemoryNow();
     disposeLastFmIntegration();
     disposeDiscordPresenceIntegration();
+    await disposeConnectReceiverService();
+    await disposeConnectService();
     await disposeSmtcIntegration();
     disposeBackgroundPlaybackShortcuts();
     getCrashReportService().closeSession();

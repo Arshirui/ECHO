@@ -197,6 +197,7 @@ export const defaultSettings: AppSettings = {
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
+  lyricsLineMaxChars: 0,
   lyricsContextOpacityPercent: 49,
   lyricsColor: defaultLyricsColor,
   lyricsSmartReadableColorsEnabled: false,
@@ -549,6 +550,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const lyricsFontSizePx = Number(settings.lyricsFontSizePx);
   const lyricsSecondaryFontSizePx = Number(settings.lyricsSecondaryFontSizePx);
   const lyricsLineSpacingPercent = Number(settings.lyricsLineSpacingPercent);
+  const lyricsLineMaxChars = Number(settings.lyricsLineMaxChars);
   const lyricsContextOpacityPercent = Number(settings.lyricsContextOpacityPercent);
   const lyricsPlayerBarDrawerOpacityPercent = Number(settings.lyricsPlayerBarDrawerOpacityPercent);
   const lyricsCoverOpacityPercent = Number(settings.lyricsCoverOpacityPercent);
@@ -668,6 +670,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsLineSpacingPercent: Number.isFinite(lyricsLineSpacingPercent)
       ? Math.round(clamp(lyricsLineSpacingPercent, 60, 150))
       : defaultSettings.lyricsLineSpacingPercent,
+    lyricsLineMaxChars: Number.isFinite(lyricsLineMaxChars)
+      ? Math.round(clamp(lyricsLineMaxChars, 0, 80))
+      : defaultSettings.lyricsLineMaxChars,
     lyricsContextOpacityPercent: Number.isFinite(lyricsContextOpacityPercent)
       ? Math.round(clamp(lyricsContextOpacityPercent, 0, 100))
       : defaultSettings.lyricsContextOpacityPercent,

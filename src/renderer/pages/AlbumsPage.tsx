@@ -433,7 +433,7 @@ export const AlbumsPage = (): JSX.Element => {
   }
 
   return (
-    <div ref={pageRootRef} className="albums-page">
+    <div className="albums-page">
       <header className="songs-header">
         <div className="songs-title-group">
           <h1>{t('library.albums.title')}</h1>
@@ -490,54 +490,56 @@ export const AlbumsPage = (): JSX.Element => {
         </div>
       </div>
 
-      <section ref={albumWallRef} className="album-wall" aria-label={t('library.albums.listAria')}>
-        {albums.map((album) => {
-          const shouldShowCover = Boolean(album.coverThumb && failedCoverUrls[album.id] !== album.coverThumb);
+      <div ref={pageRootRef} className="media-wall-scroll-shell page-scroll-container">
+        <section ref={albumWallRef} className="album-wall" aria-label={t('library.albums.listAria')}>
+          {albums.map((album) => {
+            const shouldShowCover = Boolean(album.coverThumb && failedCoverUrls[album.id] !== album.coverThumb);
 
-          return (
-            <article
-              className="album-card"
-              key={album.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => openAlbumDetail(album)}
-              onContextMenu={(event) => handleOpenAlbumMenu(event, album)}
-              onKeyDown={(event) => handleAlbumKeyDown(event, album)}
-            >
-              <div className="album-cover" data-empty={!shouldShowCover} aria-hidden="true">
-                {shouldShowCover ? (
-                  <img
-                    alt=""
-                    decoding="async"
-                    draggable={false}
-                    height={320}
-                    loading="lazy"
-                    src={album.coverThumb!}
-                    width={320}
-                    onError={() => handleAlbumCoverError(album)}
-                  />
-                ) : (
-                  <Disc3 size={24} />
-                )}
-              </div>
-              <div className="album-copy">
-                <strong>{album.title}</strong>
-                <span>{album.albumArtist}</span>
-                <small>{t('library.albums.card.tracks', { count: album.trackCount })}</small>
-              </div>
-            </article>
-          );
-        })}
-        {/* TODO: If 3000/10000 album smoke tests still show scroll jank, replace this paged wall with @tanstack/react-virtual grid virtualization. */}
-      </section>
-      <InfiniteScrollSentinel canLoadMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMoreAlbums} />
+            return (
+              <article
+                className="album-card"
+                key={album.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openAlbumDetail(album)}
+                onContextMenu={(event) => handleOpenAlbumMenu(event, album)}
+                onKeyDown={(event) => handleAlbumKeyDown(event, album)}
+              >
+                <div className="album-cover" data-empty={!shouldShowCover} aria-hidden="true">
+                  {shouldShowCover ? (
+                    <img
+                      alt=""
+                      decoding="async"
+                      draggable={false}
+                      height={320}
+                      loading="lazy"
+                      src={album.coverThumb!}
+                      width={320}
+                      onError={() => handleAlbumCoverError(album)}
+                    />
+                  ) : (
+                    <Disc3 size={24} />
+                  )}
+                </div>
+                <div className="album-copy">
+                  <strong>{album.title}</strong>
+                  <span>{album.albumArtist}</span>
+                  <small>{t('library.albums.card.tracks', { count: album.trackCount })}</small>
+                </div>
+              </article>
+            );
+          })}
+          {/* TODO: If 3000/10000 album smoke tests still show scroll jank, replace this paged wall with @tanstack/react-virtual grid virtualization. */}
+        </section>
+        <InfiniteScrollSentinel canLoadMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMoreAlbums} />
 
-      {error || isLoading ? (
-        <div className="list-footer">
-          <span>{error ?? t('library.albums.loading')}</span>
-        </div>
-      ) : null}
-      <MediaWallScrollSpacer height={spacerHeight} />
+        {error || isLoading ? (
+          <div className="list-footer">
+            <span>{error ?? t('library.albums.loading')}</span>
+          </div>
+        ) : null}
+        <MediaWallScrollSpacer height={spacerHeight} />
+      </div>
       {albumMenu ? (
         <AlbumContextMenu
           album={albumMenu.album}

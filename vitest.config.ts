@@ -5,7 +5,7 @@ const maxWorkers = Math.max(2, Math.min(12, Math.floor(cpus().length / 2)));
 
 export default defineConfig({
   test: {
-    exclude: [...configDefaults.exclude, 'out/**'],
+    exclude: [...configDefaults.exclude, 'out/**', '.codex-backups/**'],
     globalSetup: ['./scripts/vitest-global-setup.mjs'],
     maxWorkers,
   },

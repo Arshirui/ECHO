@@ -500,6 +500,7 @@ export const ArtistTrackList = ({
                 key={track.id}
                 data-index={virtualRow.index}
                 style={{ transform: `translateY(${virtualRow.start - scrollMargin}px)` }}
+                onContextMenu={(event) => handleTrackContextMenu(event, track)}
               >
                 <div
                   className="artist-track-row"

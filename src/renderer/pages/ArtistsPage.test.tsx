@@ -137,7 +137,7 @@ describe('ArtistsPage', () => {
     expect(screen.getByText('安田')).toBeTruthy();
   });
 
-  it('loads the next artist page when the page surface scrolls to the spacer bottom', async () => {
+  it('loads the next artist page when the artist wall scrolls to the spacer bottom', async () => {
     const getArtists = vi
       .fn()
       .mockResolvedValueOnce(page([artist('1')], { page: 1, total: 2, hasMore: true }))
@@ -149,7 +149,7 @@ describe('ArtistsPage', () => {
     await screen.findByLabelText('Artist list');
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(1));
 
-    const pageSurface = container.querySelector('.page-surface') as HTMLElement;
+    const pageSurface = container.querySelector('.media-wall-scroll-shell') as HTMLElement;
     const sentinel = container.querySelector('.infinite-scroll-sentinel')!;
     setScrollablePageSurface(pageSurface);
     setSentinelReach(pageSurface, sentinel);
@@ -212,7 +212,7 @@ describe('ArtistsPage', () => {
     expect(getArtists).toHaveBeenNthCalledWith(3, { page: 1, pageSize: 96, search: '', sort: 'default' });
   });
 
-  it('search and sort reset the page surface scroll position', async () => {
+  it('search and sort reset the artist wall scroll position', async () => {
     const getArtists = vi
       .fn()
       .mockResolvedValueOnce(page([artist('1')], { total: 120, hasMore: true }))
@@ -223,7 +223,7 @@ describe('ArtistsPage', () => {
     const { container } = renderArtistsPage();
     await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(1));
 
-    const pageSurface = container.querySelector('.page-surface') as HTMLElement;
+    const pageSurface = container.querySelector('.media-wall-scroll-shell') as HTMLElement;
     setScrollablePageSurface(pageSurface);
     pageSurface.scrollTop = 640;
 
@@ -246,7 +246,7 @@ describe('ArtistsPage', () => {
     const { container } = renderArtistsPage();
 
     await screen.findByText('Artist 1');
-    const pageSurface = container.querySelector('.page-surface') as HTMLElement;
+    const pageSurface = container.querySelector('.media-wall-scroll-shell') as HTMLElement;
     setScrollablePageSurface(pageSurface);
     pageSurface.scrollTop = 580;
     fireEvent.click(screen.getByText('Artist 1').closest('[role="button"]')!);

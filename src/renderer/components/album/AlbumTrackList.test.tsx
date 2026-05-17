@@ -113,6 +113,19 @@ describe('AlbumTrackList', () => {
     expect(onPlayTrack).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }));
   });
 
+  it('opens the shared track menu from row right click', async () => {
+    const getAlbumTracks = vi.fn().mockResolvedValue(page([track('1')]));
+    const onOpenTrackMenu = vi.fn();
+    installLibrary(getAlbumTracks);
+
+    render(<AlbumTrackList albumId="album-1" currentTrackId={null} onOpenTrackMenu={onOpenTrackMenu} onPlayTrack={vi.fn()} />);
+
+    const row = await screen.findByRole('listitem');
+    fireEvent.contextMenu(row, { clientX: 240, clientY: 160 });
+
+    expect(onOpenTrackMenu).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }), { x: 240, y: 160 });
+  });
+
   it('renders the compact album summary and empty state', async () => {
     const getAlbumTracks = vi.fn().mockResolvedValue(page([]));
     installLibrary(getAlbumTracks);

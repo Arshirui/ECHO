@@ -10,6 +10,7 @@ import type { AppSettings } from '../shared/types/appSettings';
 import type { UpdateStatus } from '../shared/types/updates';
 import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
+import type { ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus, ConnectStartRequest } from '../shared/types/connect';
 import type { EqPreset, EqSavePresetRequest, EqSetBandFrequencyRequest, EqSetBandGainRequest, EqState } from '../shared/types/eq';
 import type { GlobalShortcutAction, GlobalShortcutValidationResult } from '../shared/types/globalShortcuts';
 import type {
@@ -38,6 +39,7 @@ import type {
   LibraryScanMode,
   LibrarySummary,
   LibraryTrack,
+  LibraryTrackLocateResult,
   ArtistImageCacheClearResult,
   ArtistImageCacheEntry,
   ArtistImageCacheSummary,
@@ -177,6 +179,7 @@ export type EchoApi = {
     cancelScan: (jobId: string) => Promise<LibraryScanStatus>;
     getTrack: (trackId: string) => Promise<LibraryTrack | null>;
     getTracks: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryTrack>>;
+    locateTrackInTracks: (trackId: string, query?: LibraryPageQuery) => Promise<LibraryTrackLocateResult>;
     refreshDuplicateTracks: (mode?: DuplicateTrackMode) => Promise<DuplicateTrackIndexSummary>;
     getDuplicateTrackVersions: (trackId: string) => Promise<DuplicateTrackMember[]>;
     getDuplicateHiddenCounts: (trackIds: string[], mode?: DuplicateTrackMode) => Promise<Record<string, number>>;
@@ -312,6 +315,23 @@ export type EchoApi = {
     setBackgroundPaused: (paused: boolean) => Promise<RemoteBackgroundGlobalStatus>;
     getBackgroundGlobalStatus: () => Promise<RemoteBackgroundGlobalStatus>;
     updateRuntimeLimits: (sourceId: string, limits: RemoteRuntimeLimits) => Promise<RemoteBackgroundJobStatus>;
+  };
+  connect: {
+    listDevices: () => Promise<ConnectDevice[]>;
+    refresh: () => Promise<ConnectDevice[]>;
+    getStatus: () => Promise<ConnectSessionStatus>;
+    connect: (request: ConnectStartRequest) => Promise<ConnectSessionStatus>;
+    disconnect: () => Promise<ConnectSessionStatus>;
+    play: () => Promise<ConnectSessionStatus>;
+    pause: () => Promise<ConnectSessionStatus>;
+    stop: () => Promise<ConnectSessionStatus>;
+    seek: (positionSeconds: number) => Promise<ConnectSessionStatus>;
+    setVolume: (volumePercent: number) => Promise<ConnectSessionStatus>;
+    onStatus: (handler: (status: ConnectSessionStatus) => void) => () => void;
+    getReceiverStatus: () => Promise<ConnectReceiverStatus>;
+    setReceiverEnabled: (enabled: boolean) => Promise<ConnectReceiverStatus>;
+    stopReceiverPlayback: () => Promise<ConnectReceiverStatus>;
+    onReceiverStatus: (handler: (status: ConnectReceiverStatus) => void) => () => void;
   };
   streaming: {
     search: (request: StreamingSearchRequest) => Promise<StreamingSearchResult>;

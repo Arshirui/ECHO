@@ -383,6 +383,45 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .window-control:hover {
   grid-column: 1;
 }
 
+.app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) {
+  --player-height: 0px;
+  grid-template-rows: var(--titlebar-height) minmax(0, 1fr) 0;
+}
+
+.app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .page-surface--standalone {
+  grid-row: 1 / 4;
+}
+
+.app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 12;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 620px) minmax(0, 1fr);
+  grid-row: auto;
+  grid-column: auto;
+  padding: 6px 28px 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-now {
+  display: none;
+}
+
+.app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-center {
+  grid-column: 2;
+}
+
+.app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .output-status {
+  grid-column: 3;
+  justify-self: end;
+}
+
 .page-surface--standalone {
   grid-column: 1;
 }
@@ -730,9 +769,27 @@ html[data-theme="dark"] .app-shell--wallpaper-ready .player-bar {
     grid-template-rows: var(--titlebar-height) minmax(0, 1fr) var(--player-height);
   }
 
+  .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) {
+    --player-height: 0px;
+    grid-template-rows: var(--titlebar-height) minmax(0, 1fr) 0;
+  }
+
   .app-shell--lyrics .page-surface--standalone,
   .app-shell:has(.lyrics-page) .page-surface--standalone {
     grid-row: 1 / 3;
+  }
+
+  .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .page-surface--standalone {
+    grid-row: 1 / 4;
+  }
+
+  .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-bar {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 6px 12px 8px;
+  }
+
+  .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-center {
+    grid-column: 1;
   }
 
   .app-shell--lyrics .player-bar,

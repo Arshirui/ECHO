@@ -272,6 +272,116 @@ const looksLikeRomanizationText = (value: string): boolean =>
   !hasEastAsianScript(value) &&
   /^[\p{Script=Latin}\d\s'"’.,!?():;+\-/&]+$/u.test(value);
 
+const englishLyricWordSignals = new Set([
+  'a',
+  'about',
+  'again',
+  'all',
+  'always',
+  'am',
+  'and',
+  'are',
+  'away',
+  'baby',
+  'be',
+  'been',
+  'but',
+  'can',
+  'cant',
+  'come',
+  'could',
+  'day',
+  'do',
+  'dont',
+  'down',
+  'dream',
+  'feel',
+  'feeling',
+  'for',
+  'from',
+  'get',
+  'girl',
+  'go',
+  'good',
+  'got',
+  'had',
+  'have',
+  'heart',
+  'hello',
+  'here',
+  'how',
+  'i',
+  'if',
+  'im',
+  'in',
+  'is',
+  'it',
+  'its',
+  'just',
+  'know',
+  'let',
+  'like',
+  'love',
+  'make',
+  'me',
+  'mistake',
+  'my',
+  'never',
+  'night',
+  'no',
+  'not',
+  'now',
+  'of',
+  'on',
+  'one',
+  'out',
+  'say',
+  'see',
+  'she',
+  'so',
+  'some',
+  'take',
+  'that',
+  'the',
+  'there',
+  'this',
+  'time',
+  'to',
+  'up',
+  'wait',
+  'wanna',
+  'want',
+  'was',
+  'we',
+  'what',
+  'when',
+  'where',
+  'who',
+  'will',
+  'with',
+  'world',
+  'would',
+  'yeah',
+  'you',
+  'your',
+]);
+
+const normalizeEnglishSignalWord = (value: string): string => value.toLowerCase().replace(/[’']/gu, '');
+
+const looksLikeEnglishLyricText = (value: string): boolean => {
+  if (!hasLatin(value) || hasEastAsianScript(value)) {
+    return false;
+  }
+
+  const words = value.match(/\p{Script=Latin}+(?:[’']\p{Script=Latin}+)?/gu) ?? [];
+  if (words.length === 0) {
+    return false;
+  }
+
+  const signalCount = words.filter((word) => englishLyricWordSignals.has(normalizeEnglishSignalWord(word))).length;
+  return signalCount >= Math.max(1, Math.ceil(words.length * 0.5));
+};
+
 const looksLikeTranslationText = (primaryText: string, value: string): boolean => {
   if (!hasHan(value) || hasKana(value) || hasHangul(value)) {
     return false;
@@ -338,6 +448,24 @@ const primaryLineScore = (line: LyricLine): number => {
 };
 
 const selectPrimaryLineIndex = (group: LyricLine[]): number => {
+  const englishPrimaryIndex = group.findIndex((line, index) => {
+    const text = normalizeLineText(line.text) ?? '';
+    return (
+      looksLikeEnglishLyricText(text) &&
+      group.some((candidate, candidateIndex) => {
+        if (candidateIndex === index) {
+          return false;
+        }
+
+        const candidateText = normalizeLineText(candidate.text) ?? '';
+        return looksLikeTranslationText(text, candidateText);
+      })
+    );
+  });
+  if (englishPrimaryIndex >= 0) {
+    return englishPrimaryIndex;
+  }
+
   let primaryIndex = 0;
   let primaryScore = primaryLineScore(group[0]);
 

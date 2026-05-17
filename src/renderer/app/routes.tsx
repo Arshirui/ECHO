@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { AlbumsPage } from '../pages/AlbumsPage';
 import { ArtistsPage } from '../pages/ArtistsPage';
+import { ConnectPage } from '../pages/ConnectPage';
 import { DownloadsPage } from '../pages/DownloadsPage';
 import { FoldersPage } from '../pages/FoldersPage';
 import { HistoryPage } from '../pages/HistoryPage';
@@ -17,6 +18,7 @@ import {
   EchoAlbumsIcon,
   EchoArtistsIcon,
   EchoAudioSettingsIcon,
+  EchoConnectIcon,
   EchoDownloadsIcon,
   EchoFoldersIcon,
   EchoHistoryIcon,
@@ -42,6 +44,7 @@ export type AppRouteId =
   | 'artists'
   | 'folders'
   | 'remote'
+  | 'connect'
   | 'streaming'
   | 'queue'
   | 'history'
@@ -153,6 +156,16 @@ export const appRoutes: AppRoute[] = [
     icon: EchoRemoteIcon,
     placement: 'main',
     element: <RemoteSourcesPanel />,
+  },
+  {
+    id: 'connect',
+    label: 'Connect',
+    labelKey: 'route.connect.label',
+    description: 'DLNA and AirPlay wireless playback.',
+    descriptionKey: 'route.connect.description',
+    icon: EchoConnectIcon,
+    placement: 'main',
+    element: <ConnectPage />,
   },
   {
     id: 'streaming',

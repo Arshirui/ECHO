@@ -62,6 +62,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsFontSizePx'
   | 'lyricsSecondaryFontSizePx'
   | 'lyricsLineSpacingPercent'
+  | 'lyricsLineMaxChars'
   | 'lyricsContextOpacityPercent'
   | 'lyricsColor'
   | 'lyricsSmartReadableColorsEnabled'
@@ -99,6 +100,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsFontSizePx: 40,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
+  lyricsLineMaxChars: 0,
   lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
   lyricsSmartReadableColorsEnabled: false,
@@ -261,6 +263,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsFontSizePx: settings.lyricsFontSizePx,
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackSettings.lyricsSecondaryFontSizePx,
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackSettings.lyricsLineSpacingPercent,
+  lyricsLineMaxChars: settings.lyricsLineMaxChars ?? fallbackSettings.lyricsLineMaxChars,
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent,
   lyricsColor: settings.lyricsColor,
   lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
@@ -299,6 +302,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   // Settings embeds only persistent toggles; drawer-only tools such as search, rematch, and visual tuning stay in the drawer.
   const showFullControls = variant === 'drawer';
   const lyricsContextOpacityPercent = effectiveSettings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent;
+  const lyricsLineMaxChars = effectiveSettings.lyricsLineMaxChars ?? fallbackSettings.lyricsLineMaxChars ?? 0;
   const enabledProviderSet = new Set(effectiveSettings.lyricsEnabledProviders ?? defaultLyricsEnabledProviders);
   const orderedLyricsSourceOptions = useMemo(() => {
     const orderedIds = [
@@ -1347,6 +1351,26 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               step={1}
               value={effectiveSettings.lyricsLineSpacingPercent}
               onChange={(event) => patchSettingsDebounced({ lyricsLineSpacingPercent: Number(event.currentTarget.value) })}
+            />
+          </label>
+          ) : null}
+
+          {showFullControls ? (
+          <label className="lyrics-drawer-range" hidden={!isLyricsStyleControlsOpen}>
+            <span>
+              <strong>
+                <Type size={15} />
+                每行字数
+              </strong>
+              <em>{lyricsLineMaxChars > 0 ? `${lyricsLineMaxChars}字` : '自动'}</em>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={80}
+              step={1}
+              value={lyricsLineMaxChars}
+              onChange={(event) => patchSettingsDebounced({ lyricsLineMaxChars: Number(event.currentTarget.value) })}
             />
           </label>
           ) : null}

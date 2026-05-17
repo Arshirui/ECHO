@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import type { AudioPlaybackState } from '../../shared/types/audio';
+import type { ConnectReceiverStatus } from '../../shared/types/connect';
 import type { LibraryTrack } from '../../shared/types/library';
 import type { LocalFileResolveResult, PlaybackStatus } from '../../shared/types/playback';
 import type { PlayableTrack } from '../../shared/types/remoteSources';
@@ -333,6 +334,62 @@ const toPlayableTrack = (track: LibraryTrack): PlayableTrack => {
 
 const manualSource: QueueSource = { type: 'manual', label: 'Manual queue' };
 
+const receiverTrackIdPrefix = 'dlna-receiver:';
+
+const isActiveReceiverStatus = (status: ConnectReceiverStatus): boolean =>
+  Boolean(status.currentUri && ['ready', 'loading', 'playing', 'paused'].includes(status.state));
+
+const receiverStatusToPlaybackState = (status: ConnectReceiverStatus): AudioPlaybackState => {
+  switch (status.state) {
+    case 'loading':
+    case 'playing':
+    case 'paused':
+    case 'stopped':
+    case 'error':
+      return status.state;
+    default:
+      return 'stopped';
+  }
+};
+
+const createReceiverTrackSnapshot = (status: ConnectReceiverStatus): LibraryTrack | null => {
+  if (!status.currentUri || !status.metadata) {
+    return null;
+  }
+
+  return {
+    id: `${receiverTrackIdPrefix}${status.currentUri}`,
+    mediaType: 'remote',
+    isTemporary: true,
+    path: status.currentUri,
+    sourceId: null,
+    remotePath: status.currentUri,
+    stableKey: status.currentUri,
+    title: status.metadata.title,
+    artist: status.metadata.artist,
+    album: status.metadata.album ?? '',
+    albumArtist: status.metadata.albumArtist ?? status.metadata.artist,
+    trackNo: null,
+    discNo: null,
+    year: null,
+    genre: null,
+    duration: status.durationSeconds || status.metadata.durationSeconds || 0,
+    codec: null,
+    sampleRate: null,
+    bitDepth: null,
+    bitrate: null,
+    coverId: null,
+    coverThumb: status.metadata.coverHttpUrl || null,
+    fieldSources: {
+      title: 'dlna',
+      artist: 'dlna',
+      album: 'dlna',
+      albumArtist: 'dlna',
+      cover: 'dlna',
+    },
+  };
+};
+
 let queueIdCounter = 0;
 
 const createQueueId = (trackId: string): string => {
@@ -494,6 +551,40 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       history,
     });
   }, [currentQueueId, currentTrackId, history, items, lastPlayedTrack]);
+
+  useEffect(() => {
+    const unsubscribe = window.echo?.connect?.onReceiverStatus?.((status) => {
+      if (status.enabled && isActiveReceiverStatus(status)) {
+        const receiverTrack = createReceiverTrackSnapshot(status);
+        if (!receiverTrack) {
+          return;
+        }
+        setCurrentQueueId(null);
+        setLastPlayedTrack(receiverTrack);
+        setCurrentTrackIdInternal(receiverTrack.id);
+        setPlaybackStatusSnapshot({
+          playbackStatus: {
+            state: receiverStatusToPlaybackState(status),
+            currentTrackId: receiverTrack.id,
+            positionMs: Math.round(status.positionSeconds * 1000),
+            durationMs: Math.round((status.durationSeconds || receiverTrack.duration) * 1000),
+            filePath: receiverTrack.path,
+          },
+          error: status.error,
+        });
+        return;
+      }
+
+      if (currentTrackIdRef.current?.startsWith(receiverTrackIdPrefix)) {
+        setCurrentQueueId(null);
+        setCurrentTrackIdInternal(null);
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [setCurrentQueueId, setCurrentTrackIdInternal, setLastPlayedTrack]);
 
   const currentItem = useMemo(() => findItemByQueueId(items, currentQueueId), [currentQueueId, items]);
   const currentTrack = useMemo(() => {

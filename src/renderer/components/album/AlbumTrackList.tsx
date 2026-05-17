@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { Heart, Play } from 'lucide-react';
 import type { LibraryPage, LibraryTrack } from '../../../shared/types/library';
 import { useLikedTrackIds } from '../../hooks/useLikedMedia';
@@ -8,6 +9,7 @@ type AlbumTrackListProps = {
   currentTrackId: string | null;
   onFirstTrackChange?: (track: LibraryTrack | null, isLoading: boolean) => void;
   onLoadedTracksChange?: (tracks: LibraryTrack[], total: number, isLoading: boolean) => void;
+  onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
   onPlayTrack: (track: LibraryTrack) => void | Promise<void>;
   onToggleTrackLiked?: (track: LibraryTrack) => void | Promise<void>;
   summary?: {
@@ -51,6 +53,7 @@ export const AlbumTrackList = ({
   currentTrackId,
   onFirstTrackChange,
   onLoadedTracksChange,
+  onOpenTrackMenu,
   onPlayTrack,
   onToggleTrackLiked,
   summary,
@@ -135,6 +138,19 @@ export const AlbumTrackList = ({
     }
   }, [hasMore, loadTracks, page]);
 
+  const handleTrackContextMenu = useCallback(
+    (event: MouseEvent<HTMLElement>, track: LibraryTrack): void => {
+      if (!onOpenTrackMenu) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onOpenTrackMenu(track, { x: event.clientX, y: event.clientY });
+    },
+    [onOpenTrackMenu],
+  );
+
   return (
     <section className="album-track-section" aria-label="Album tracks">
       <div className="album-track-toolbar">
@@ -168,6 +184,7 @@ export const AlbumTrackList = ({
               role="listitem"
               type="button"
               onClick={() => void onPlayTrack(track)}
+              onContextMenu={(event) => handleTrackContextMenu(event, track)}
             >
               <span className="album-track-number">
                 <span>{trackNumber}</span>
