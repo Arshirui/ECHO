@@ -111,9 +111,15 @@ export const scoreLyricsDuration = (queryDuration?: number | null, candidateDura
   return 0.04;
 };
 
-const candidateVersionFlags = (candidate: Omit<LyricsSearchCandidate, 'id' | 'score'>): LyricsVersionFlags => {
+const candidateVersionFlags = (
+  candidate: Omit<LyricsSearchCandidate, 'id' | 'score'>,
+  queryFlags: LyricsVersionFlags,
+): LyricsVersionFlags => {
   const flags = extractLyricsVersionFlags(candidate.title, candidate.album, candidate.artist);
-  if (candidate.instrumental) {
+  const queryWantsInstrumental = queryFlags.instrumental || queryFlags.karaoke || queryFlags.offVocal;
+  const candidateHasInstrumentalLabel = flags.instrumental || flags.karaoke || flags.offVocal;
+
+  if (candidate.instrumental && (queryWantsInstrumental || candidateHasInstrumentalLabel)) {
     flags.instrumental = true;
   }
 
@@ -161,7 +167,7 @@ export const evaluateLyricsCandidate = (
   const artistScore = similarity(normalized.rawArtist, candidate.artist);
   const albumScore = normalized.rawAlbum && candidate.album ? similarity(normalized.rawAlbum, candidate.album) : 0.5;
   const durationScore = scoreLyricsDuration(normalized.durationSeconds, candidate.durationSeconds);
-  const flags = candidateVersionFlags(candidate);
+  const flags = candidateVersionFlags(candidate, normalized.versionFlags);
   const versionScore = scoreLyricsVersion(normalized.versionFlags, flags);
   const hasSynced = candidate.hasSynced || candidate.instrumental;
   const weights = hasSynced
@@ -233,7 +239,7 @@ export const evaluateLyricsCandidate = (
   const hasStrongTitle = titleScore >= 0.98;
   const hasStrongVersionLabelMatch = titleScore >= 0.82 && artistScore >= 0.98 && hasCloseDuration && score >= 0.8;
   const hasInstrumentalMismatch =
-    (flags.karaoke || flags.offVocal) &&
+    (flags.instrumental || flags.karaoke || flags.offVocal) &&
     !(normalized.versionFlags.instrumental || normalized.versionFlags.karaoke || normalized.versionFlags.offVocal);
   const hasArtistMismatch = artistScore < 0.75 && !(hasStrongTitle && hasCloseDuration);
   const hasUnsafeVersionMismatch = versionConflict || versionScore < 0.9;

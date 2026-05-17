@@ -311,7 +311,7 @@ export class RemoteBackgroundJobQueue {
       if (job.kind === 'metadata' || job.kind === 'duration-backfill') {
         const updated = await this.runMetadataJob(track, job.kind);
         if (updated) {
-          this.enqueueTrack(updated, ['cover']);
+          this.enqueueTrack(updated, ['cover', 'lyrics', 'mv']);
         }
       } else if (job.kind === 'cover') {
         const covered = await this.runCoverJob(track);

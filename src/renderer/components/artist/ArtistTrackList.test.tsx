@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { LibraryPage, LibraryTrack } from '../../../shared/types/library';
+import { I18nProvider } from '../../i18n/I18nProvider';
 import { ArtistTrackList } from './ArtistTrackList';
 
 const queueMock = {
@@ -55,6 +56,8 @@ const installLibrary = (getArtistTracks: ReturnType<typeof vi.fn>): void => {
   } as unknown as Window['echo'];
 };
 
+const renderWithI18n = (element: JSX.Element) => render(<I18nProvider>{element}</I18nProvider>);
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -68,7 +71,7 @@ describe('ArtistTrackList', () => {
     const onPlayNext = vi.fn();
     installLibrary(vi.fn().mockResolvedValue(page([track()])));
 
-    render(
+    renderWithI18n(
       <ArtistTrackList
         artistId="artist-1"
         artistName="Archouchou"
@@ -101,7 +104,7 @@ describe('ArtistTrackList', () => {
   it('uses the artist track total for virtual height before every row is loaded', async () => {
     installLibrary(vi.fn().mockResolvedValue(page([track()], { total: 80, hasMore: false })));
 
-    const { container } = render(
+    const { container } = renderWithI18n(
       <main className="page-surface">
         <ArtistTrackList
           artistId="artist-1"
