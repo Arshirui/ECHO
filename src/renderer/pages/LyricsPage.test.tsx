@@ -146,6 +146,7 @@ const makeAppSettings = (
   lyricsLineSpacingPercent: 110,
   lyricsContextOpacityPercent: 49,
   lyricsColor: "#314054",
+  lyricsSmartReadableColorsEnabled: false,
   lyricsBackgroundMode: "theme",
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -385,6 +386,9 @@ const mockEcho = (
         };
       }),
     },
+    library: {
+      resolveLyricsBackgroundCover: vi.fn().mockResolvedValue(null),
+    },
   } as unknown as Window["echo"];
 
   return {
@@ -406,17 +410,18 @@ describe("LyricsPage", () => {
   it("keeps MV immersive lyrics color driven by the lyrics color variable", () => {
     const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
 
-    expect(css).toContain(".lyrics-page:has(.lyrics-mv-background) .lyrics-line {\n  color: var(--lyrics-color);");
-    expect(css).toContain('.lyrics-page:has(.lyrics-mv-background) .lyrics-line[data-active="true"] {\n  color: var(--lyrics-color);');
-    expect(css).toContain('.lyrics-page:has(.lyrics-mv-background[data-lyrics-readability="true"]) .lyrics-line span');
+    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line \{\s*color: var\(--lyrics-color\);/);
+    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line\[data-active="true"\] \{\s*color: var\(--lyrics-color\);/);
+    expect(css).toContain('.lyrics-page:has(.lyrics-mv-panel[data-lyrics-readability="true"]) .lyrics-line span');
+    expect(css).toContain('.lyrics-page:has(.lyrics-mv-panel[data-lyrics-readability="true"]) .lyrics-line[data-word-highlight="true"] .lyrics-word');
     expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line(?:\[data-active="true"\])? \{\s*color: #fff;/);
   });
 
   it("keeps MV immersive lyrics on the normal lyrics size scale", () => {
     const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
 
-    expect(css).toContain('.lyrics-page:has(.lyrics-mv-background) .lyrics-line span {\n  max-width: min(100%, 1120px);\n  font-size: calc(var(--lyrics-font-size) * 0.9);');
-    expect(css).toContain('.lyrics-page:has(.lyrics-mv-background) .lyrics-line[data-active="true"] span {\n  font-size: calc(var(--lyrics-font-size) * 1.25);');
+    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line span \{\s*max-width: min\(100%, 1120px\);\s*font-size: calc\(var\(--lyrics-font-size\) \* 0\.9\);/);
+    expect(css).toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\) \.lyrics-line\[data-active="true"\] span \{\s*font-size: calc\(var\(--lyrics-font-size\) \* 1\.25\);/);
     expect(css).not.toMatch(/\.lyrics-page:has\(\.lyrics-mv-background\)[\s\S]*font-size: calc\(var\(--lyrics-font-size\) \* 1\.5\);/);
   });
 
@@ -424,10 +429,10 @@ describe("LyricsPage", () => {
     const css = readFileSync("src/renderer/styles/lyrics.css", "utf8");
     const regularMvSelector = '.lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="true"][data-immersive-active="false"]) .lyrics-backdrop::before';
 
-    expect(css).toContain(`${regularMvSelector} {\n  background: none;`);
+    expect(css).toMatch(new RegExp(`${regularMvSelector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{\\s*background: none;`));
     expect(css).toContain('.lyrics-page[data-background="cover"]:has(.lyrics-mv-panel[data-mv-enabled="true"][data-immersive-active="false"]) .lyrics-backdrop::after');
     expect(css).toContain('brightness(var(--lyrics-cover-brightness)) saturate(1.04);');
-    expect(css).toContain('.lyrics-page[data-background="customWallpaper"]:has(.lyrics-mv-panel[data-mv-enabled="true"][data-immersive-active="false"]) .lyrics-backdrop {\n  background: transparent;');
+    expect(css).toMatch(/\.lyrics-page\[data-background="customWallpaper"\]:has\(\.lyrics-mv-panel\[data-mv-enabled="true"\]\[data-immersive-active="false"\]\) \.lyrics-backdrop \{\s*background: transparent;/);
   });
 
   it("shows current song information when a track is playing", async () => {
@@ -949,6 +954,37 @@ describe("LyricsPage", () => {
     );
   });
 
+  it("uses a high resolution network cover for cover-following lyrics background when available", async () => {
+    const track = makeTrack({ coverId: "cover 1" });
+    mockEcho(track, 0, { lyricsBackgroundMode: "cover" });
+    window.echo.library.resolveLyricsBackgroundCover = vi.fn().mockResolvedValue({
+      coverUrl: "echo-image://remote/https%3A%2F%2Fp.music.126.net%2Fcover.jpg%3Fparam%3D2000y2000",
+      provider: "netease-cloud-music",
+      confidence: 0.96,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    expect(page.style.getPropertyValue("--lyrics-cover")).toBe(
+      'url("echo-cover://original/cover%201")',
+    );
+    await waitFor(() =>
+      expect(page.style.getPropertyValue("--lyrics-cover")).toBe(
+        'url("echo-image://remote/https%3A%2F%2Fp.music.126.net%2Fcover.jpg%3Fparam%3D2000y2000")',
+      ),
+    );
+    expect(window.echo.library.resolveLyricsBackgroundCover).toHaveBeenCalledWith("track-1");
+  });
+
   it("loads lyrics through the lyrics bridge when trackId changes", async () => {
     const track = makeTrack();
     mockEcho(track);
@@ -1458,6 +1494,49 @@ describe("LyricsPage", () => {
     expect(container.querySelector(".lyrics-empty")).toBeNull();
   });
 
+  it("hides streaming provider pure-music placeholders when configured", async () => {
+    const track = makeTrack({
+      mediaType: "streaming",
+      provider: "netease",
+      providerTrackId: "netease-track-1",
+    });
+    mockEcho(track);
+    window.echo.streaming = {
+      getLyrics: vi.fn().mockResolvedValue({
+        provider: "netease",
+        providerTrackId: "netease-track-1",
+        status: "available",
+        plainLyrics: null,
+        syncedLyrics: null,
+        instrumental: true,
+        lines: [
+          {
+            timeMs: 0,
+            text: "\u6b64\u6b4c\u66f2\u4e3a\u6ca1\u6709\u586b\u8bcd\u7684\u7eaf\u97f3\u4e50\uff0c\u8bf7\u60a8\u6b23\u8d4f",
+          },
+        ],
+        sourceLabel: "NetEase",
+      }),
+    } as unknown as Window["echo"]["streaming"];
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(window.echo.streaming?.getLyrics).toHaveBeenCalledWith({
+        provider: "netease",
+        providerTrackId: "netease-track-1",
+      }),
+    );
+    expect(container.querySelector(".lyrics-empty")).toBeNull();
+    expect(container.textContent).not.toContain("\u6b64\u6b4c\u66f2\u4e3a\u6ca1\u6709\u586b\u8bcd\u7684\u7eaf\u97f3\u4e50");
+  });
+
   it("lets users switch lyrics source without clearing the current lyrics first", async () => {
     const track = makeTrack();
     mockEcho(track);
@@ -1653,6 +1732,54 @@ describe("LyricsPage", () => {
     );
   });
 
+  it("keeps manual lyrics color when smart readable colors are disabled", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, {
+      lyricsColor: "#FF3366",
+      lyricsSmartReadableColorsEnabled: false,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    expect(page.dataset.smartReadable).toBeUndefined();
+    expect(page.style.getPropertyValue("--lyrics-color")).toBe("#FF3366");
+    expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toBe("");
+  });
+
+  it("applies smart readable colors immediately when enabled", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, {
+      lyricsColor: "#FFFFFF",
+      lyricsSmartReadableColorsEnabled: true,
+      lyricsBackgroundMode: "cover",
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    await waitFor(() => expect(page.dataset.smartReadable).toBe("true"));
+    expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toMatch(/^rgb\(/);
+    expect(page.style.getPropertyValue("--lyrics-smart-secondary-color")).toMatch(/^rgb\(/);
+    expect(document.documentElement.dataset.lyricsSmartReadable).toBe("true");
+  });
+
   it("applies lyrics display settings from settings change events immediately", async () => {
     const track = makeTrack();
     mockEcho(track);
@@ -1673,6 +1800,7 @@ describe("LyricsPage", () => {
         detail: {
           lyricsFontSizePx: 52,
           lyricsColor: "#FFFFFF",
+          lyricsSmartReadableColorsEnabled: true,
           lyricsBackgroundMode: "cover",
           lyricsCoverOpacityPercent: 24,
           lyricsCoverBlurPx: 4,
@@ -1689,7 +1817,9 @@ describe("LyricsPage", () => {
       expect(page.style.getPropertyValue("--lyrics-font-size")).toBe("52px"),
     );
     expect(page.dataset.background).toBe("cover");
+    expect(page.dataset.smartReadable).toBe("true");
     expect(page.style.getPropertyValue("--lyrics-color")).toBe("#FFFFFF");
+    expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toMatch(/^rgb\(/);
     expect(page.style.getPropertyValue("--lyrics-cover-opacity")).toBe("0.24");
     expect(page.style.getPropertyValue("--lyrics-cover-blur")).toBe("4px");
     expect(page.style.getPropertyValue("--lyrics-cover-brightness")).toBe(

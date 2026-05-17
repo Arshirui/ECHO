@@ -686,7 +686,7 @@ export class NeteaseStreamingProvider implements StreamingProvider {
     const romanizationLyrics = text(asRecord(data.romalrc).lyric);
     const split = splitLyricsByKind(lyricText);
     const lines = linesFromLyrics(split.syncedLyrics, split.plainLyrics, translationLyrics, romanizationLyrics);
-    const instrumental = data.nolyric === true || data.needDesc === true;
+    const instrumental = data.nolyric === true || data.needDesc === true || (!split.syncedLyrics && !split.plainLyrics && Boolean(lyricText));
 
     return {
       provider,
@@ -696,6 +696,7 @@ export class NeteaseStreamingProvider implements StreamingProvider {
       syncedLyrics: split.syncedLyrics,
       translationLyrics,
       romanizationLyrics,
+      instrumental,
       lines,
       sourceLabel: '网易云音乐',
     };

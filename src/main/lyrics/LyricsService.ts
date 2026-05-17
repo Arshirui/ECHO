@@ -513,6 +513,7 @@ const preferredSecondaryFields = (settings: LyricsSettings): Array<'translation'
 export class LyricsService {
   private readonly matchEngine: LyricsMatchEngine;
   private readonly secondaryLyricsRefreshMisses = new Set<string>();
+  private readonly wordTimingRefreshMisses = new Set<string>();
 
   constructor(
     private readonly database: EchoDatabase,
@@ -541,7 +542,8 @@ export class LyricsService {
     const settings = safeSettings(this.readAppSettings);
     const cached = this.findCachedLyricsWithRepair(query);
     if (cached) {
-      const enrichedCached = await this.fillCachedRomanization(query, cached);
+      const wordTimedCached = await this.refreshCachedNeteaseWordTimings(query, cached, settings);
+      const enrichedCached = await this.fillCachedRomanization(query, wordTimedCached);
       return this.refreshCachedLyricsForPreferredSecondary(query, enrichedCached, settings);
     }
 
@@ -1242,6 +1244,60 @@ export class LyricsService {
       return this.writeLyricsCacheWithRepair(query, await this.fillLyricsRomanization(lyrics));
     } catch {
       this.secondaryLyricsRefreshMisses.add(refreshKey);
+      return cached;
+    }
+  }
+
+  private async refreshCachedNeteaseWordTimings(
+    query: LyricsQuery,
+    cached: TrackLyrics,
+    settings: LyricsSettings,
+  ): Promise<TrackLyrics> {
+    if (
+      cached.provider !== 'netease' ||
+      cached.kind !== 'synced' ||
+      cached.lines.some((line) => line.words?.length) ||
+      !query.trackId ||
+      !settings.lyricsNetworkEnabled ||
+      !settings.lyricsAutoSearch ||
+      settings.lyricsEnabledProviders?.includes('netease') !== true
+    ) {
+      return cached;
+    }
+
+    const trackId = query.trackId;
+    const refreshKey = `${cacheKeyFor(query, cached.provider)}:word-timings`;
+    if (this.wordTimingRefreshMisses.has(refreshKey)) {
+      return cached;
+    }
+
+    try {
+      const result = await this.matchEngine.match(query, {
+        enabledProviders: ['netease'],
+        networkEnabled: true,
+        providerTimeoutMs: settings.lyricsProviderTimeoutMs,
+        totalMatchTimeoutMs: settings.lyricsTotalMatchTimeoutMs,
+        autoAcceptScore: settings.lyricsAutoAcceptScore,
+        coverAutoAcceptScore: settings.lyricsCoverAutoAcceptScore,
+        deepSearchEnabled: settings.lyricsDeepSearchEnabled,
+        collectAllCandidates: false,
+        preferredSecondaryFields: preferredSecondaryFields(settings),
+        isRejected: (provider, providerLyricsId) => this.hasRejectedProviderLyrics(trackId, provider, providerLyricsId),
+      });
+      if (!result.accepted) {
+        this.wordTimingRefreshMisses.add(refreshKey);
+        return cached;
+      }
+
+      const lyrics = providerResultToTrackLyrics(query, result.accepted.providerResult, result.accepted.score);
+      if (!lyrics || !lyrics.lines.some((line) => line.words?.length)) {
+        this.wordTimingRefreshMisses.add(refreshKey);
+        return cached;
+      }
+
+      return this.writeLyricsCacheWithRepair(query, await this.fillLyricsRomanization(lyrics));
+    } catch {
+      this.wordTimingRefreshMisses.add(refreshKey);
       return cached;
     }
   }

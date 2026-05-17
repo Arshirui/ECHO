@@ -487,31 +487,84 @@ void testAsioSampleConversion()
     asio_write_sample_for_tests(bytes.data(), ASIOSTInt16LSB, 0, 1.0f);
     require(reinterpret_cast<int16_t*>(bytes.data())[0] == 32767, "ASIO int16 LSB conversion");
 
-    std::fill(bytes.begin(), bytes.end(), 0);
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
     asio_write_sample_for_tests(bytes.data(), ASIOSTInt16MSB, 0, 1.0f);
     require(bytes[0] == 0x7f && bytes[1] == 0xff, "ASIO int16 MSB conversion");
 
-    std::fill(bytes.begin(), bytes.end(), 0);
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
     asio_write_sample_for_tests(bytes.data(), ASIOSTInt24LSB, 0, 1.0f);
     require(bytes[0] == 0xff && bytes[1] == 0xff && bytes[2] == 0x7f, "ASIO int24 LSB conversion");
 
-    std::fill(bytes.begin(), bytes.end(), 0);
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
     asio_write_sample_for_tests(bytes.data(), ASIOSTInt32LSB24, 0, 1.0f);
     require(reinterpret_cast<int32_t*>(bytes.data())[0] == 0x7fffff00, "ASIO int32 LSB 24-bit aligned conversion");
 
-    std::fill(bytes.begin(), bytes.end(), 0);
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
     asio_write_sample_for_tests(bytes.data(), ASIOSTFloat32LSB, 0, 0.5f);
     require(std::abs(reinterpret_cast<float*>(bytes.data())[0] - 0.5f) <= nearTolerance, "ASIO float32 LSB conversion");
 
-    std::fill(bytes.begin(), bytes.end(), 0);
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
     asio_write_sample_for_tests(bytes.data(), ASIOSTFloat64LSB, 0, -0.5f);
     require(std::abs(reinterpret_cast<double*>(bytes.data())[0] + 0.5) <= nearTolerance, "ASIO float64 LSB conversion");
 
-    std::fill(bytes.begin(), bytes.end(), 0);
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
     asio_write_sample_for_tests(bytes.data(), ASIOSTFloat32MSB, 0, 1.0f);
     require(bytes[0] == 0x3f && bytes[1] == 0x80 && bytes[2] == 0x00 && bytes[3] == 0x00, "ASIO float32 MSB conversion");
 
     require(std::string(asio_error_name_for_tests(ASE_InvalidMode)) == "ASE_InvalidMode", "ASIO error name helper");
+}
+
+void testAsioNativeDsdConversion()
+{
+    const std::vector<uint8_t> source { 0x80, 0x01 };
+    std::vector<unsigned char> bytes(16, 0);
+
+    asio_write_native_dsd_samples_for_tests(
+        bytes.data(),
+        ASIOSTDSDInt8MSB1,
+        16,
+        source.data(),
+        2,
+        1,
+        0,
+        0);
+    require(bytes[0] == 0x01 && bytes[1] == 0x80, "ASIO native DSD MSB must reverse DSF byte order");
+
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
+    asio_write_native_dsd_samples_for_tests(
+        bytes.data(),
+        ASIOSTDSDInt8LSB1,
+        16,
+        source.data(),
+        2,
+        1,
+        0,
+        0);
+    require(bytes[0] == 0x80 && bytes[1] == 0x01, "ASIO native DSD LSB normally preserves DSF byte order");
+
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
+    asio_write_native_dsd_samples_for_tests(
+        bytes.data(),
+        ASIOSTDSDInt8LSB1,
+        16,
+        source.data(),
+        2,
+        1,
+        0,
+        1);
+    require(bytes[0] == 0x01 && bytes[1] == 0x80, "ASIO native DSD compatibility mode must reverse packed DSF bytes");
+
+    std::fill(bytes.begin(), bytes.end(), static_cast<unsigned char>(0));
+    asio_write_native_dsd_samples_for_tests(
+        bytes.data(),
+        ASIOSTDSDInt8NER8,
+        8,
+        source.data(),
+        1,
+        1,
+        0,
+        1);
+    require(bytes[0] == 1 && bytes[1] == 0 && bytes[7] == 0, "ASIO native DSD NER8 expands MSB-first bits in compatibility mode");
 }
 #endif
 
@@ -629,6 +682,7 @@ int main()
         { "ASIO buffer candidate generation", testAsioBufferCandidateGeneration },
         { "ASIO sample-rate pivot candidate generation", testAsioSampleRatePivotCandidateGeneration },
         { "ASIO sample conversion", testAsioSampleConversion },
+        { "ASIO native DSD conversion", testAsioNativeDsdConversion },
 #endif
         { "framed stdin shutdown", testFramedStdinShutdown },
         { "cleanup emits shutdown ack once", testCleanupEmitsShutdownAckOnce },

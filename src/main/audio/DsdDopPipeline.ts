@@ -127,6 +127,26 @@ export const packDop24Le = (
   return output;
 };
 
+export const packNativeDsdBytes = (
+  channelBlocks: Buffer[],
+  byteOffset: number,
+  byteCount: number,
+): Buffer => {
+  const channels = channelBlocks.length;
+  const output = Buffer.allocUnsafe(byteCount * channels);
+  let outputOffset = 0;
+
+  for (let byteIndex = 0; byteIndex < byteCount; byteIndex += 1) {
+    const sourceOffset = byteOffset + byteIndex;
+    for (const block of channelBlocks) {
+      output[outputOffset] = block[sourceOffset] ?? 0x69;
+      outputOffset += 1;
+    }
+  }
+
+  return output;
+};
+
 export const createDsfDopStream = (filePath: string, info: DsfDopInfo, startSeconds = 0): Readable => {
   const sourceBytesPerChannel = Math.ceil(info.sampleCount / 8);
   const requestedByteOffset = Math.max(0, Math.floor(startSeconds * info.nativeSampleRate / 8));
@@ -168,6 +188,51 @@ export const createDsfDopStream = (filePath: string, info: DsfDopInfo, startSeco
         const packed = packDop24Le(chunks, byteOffset, alignedByteCount, dopFrameIndex);
         dopFrameIndex += alignedByteCount / dopFrameSourceBytes;
         yield packed;
+      }
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+  }
+
+  return Readable.from(generate());
+};
+
+export const createDsfNativeDsdStream = (filePath: string, info: DsfDopInfo, startSeconds = 0): Readable => {
+  const sourceBytesPerChannel = Math.ceil(info.sampleCount / 8);
+  const requestedByteOffset = Math.max(0, Math.floor(startSeconds * info.nativeSampleRate / 8));
+  const firstBlock = Math.floor(requestedByteOffset / info.blockSizePerChannel);
+  const firstBlockOffset = requestedByteOffset % info.blockSizePerChannel;
+
+  async function* generate(): AsyncGenerator<Buffer> {
+    const blockStride = info.blockSizePerChannel * info.channels;
+    const availableBlocks = Math.ceil(sourceBytesPerChannel / info.blockSizePerChannel);
+
+    const handle = await fs.open(filePath, 'r');
+    try {
+      for (let blockIndex = firstBlock; blockIndex < availableBlocks; blockIndex += 1) {
+        const groupOffset = info.dataOffset + blockIndex * blockStride;
+        const groupSize = Math.min(blockStride, info.dataOffset + info.dataBytes - groupOffset);
+        if (groupSize <= 0) {
+          break;
+        }
+
+        const chunks: Buffer[] = [];
+        for (let channel = 0; channel < info.channels; channel += 1) {
+          const start = groupOffset + channel * info.blockSizePerChannel;
+          const length = Math.min(info.blockSizePerChannel, Math.max(0, info.dataOffset + info.dataBytes - start));
+          const buffer = Buffer.alloc(length);
+          const { bytesRead } = await handle.read(buffer, 0, length, start);
+          chunks.push(bytesRead === length ? buffer : buffer.subarray(0, bytesRead));
+        }
+
+        const byteOffset = blockIndex === firstBlock ? firstBlockOffset : 0;
+        const remainingSourceBytes = sourceBytesPerChannel - blockIndex * info.blockSizePerChannel - byteOffset;
+        const byteCount = Math.min(info.blockSizePerChannel - byteOffset, remainingSourceBytes);
+        if (byteCount <= 0) {
+          break;
+        }
+
+        yield packNativeDsdBytes(chunks, byteOffset, byteCount);
       }
     } finally {
       await handle.close().catch(() => undefined);

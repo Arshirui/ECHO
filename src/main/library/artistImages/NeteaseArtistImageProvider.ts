@@ -5,6 +5,22 @@ import type { ArtistImageCandidate, ArtistImageProvider } from './ArtistImageTyp
 
 const providerName = 'netease';
 
+const unique = (values: Array<string | null | undefined>): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    if (!value || seen.has(value)) {
+      continue;
+    }
+
+    seen.add(value);
+    result.push(value);
+  }
+
+  return result;
+};
+
 const unwrapStreamingImageUrl = (url: string | null | undefined): string | null => {
   if (!url) {
     return null;
@@ -22,9 +38,32 @@ const unwrapStreamingImageUrl = (url: string | null | undefined): string | null 
   }
 };
 
-const normalizeNeteaseImageUrl = (url: string): string => {
+export const isNeteaseDefaultArtistImageUrl = (url: string | null | undefined): boolean => {
+  if (!url) {
+    return true;
+  }
+
+  const normalized = url.toLocaleLowerCase();
+  return /(?:default|nopic|no_pic|placeholder|avatar_default|artist_default|singer_default)/u.test(normalized)
+    || /\/(?:0|default)\.(?:jpg|jpeg|png|webp)(?:[?#]|$)/u.test(normalized);
+};
+
+const normalizeNeteaseImageUrl = (url: string, size: number): string => {
   const normalized = url.startsWith('//') ? `https:${url}` : url.replace(/^http:\/\//iu, 'https://');
-  return normalized.includes('?') ? normalized : `${normalized}?param=500y500`;
+  const withoutParam = normalized.replace(/([?&])param=\d+y\d+(&?)/iu, (_match, prefix: string, suffix: string) =>
+    suffix ? prefix : '',
+  ).replace(/[?&]$/u, '');
+  return `${withoutParam}${withoutParam.includes('?') ? '&' : '?'}param=${size}y${size}`;
+};
+
+const neteaseImageUrlVariants = (url: string): Array<{ url: string; quality: number }> => {
+  const normalized = url.startsWith('//') ? `https:${url}` : url.replace(/^http:\/\//iu, 'https://');
+  return unique([1200, 1000, 600, 500].map((size) => normalizeNeteaseImageUrl(normalized, size)).concat(normalized))
+    .filter((candidate) => !isNeteaseDefaultArtistImageUrl(candidate))
+    .map((candidate) => ({
+      url: candidate,
+      quality: Number(candidate.match(/[?&]param=(\d+)y\d+/iu)?.[1] ?? 0),
+    }));
 };
 
 const artistSourceUrl = (artist: StreamingArtist): string | null =>
@@ -46,27 +85,33 @@ export class NeteaseArtistImageProvider implements ArtistImageProvider {
     });
 
     return result.artists
-      .map((artist): ArtistImageCandidate | null => {
+      .flatMap((artist): ArtistImageCandidate[] => {
         const imageUrl = unwrapStreamingImageUrl(artist.coverUrl ?? artist.avatarUrl);
         if (!imageUrl) {
-          return null;
+          return [];
         }
 
-        return {
+        const confidence = artistImageConfidence(input.artistName, artist.name);
+        return neteaseImageUrlVariants(imageUrl).map((variant) => ({
           provider: providerName,
           providerArtistId: artist.providerArtistId,
           artistName: artist.name,
-          imageUrl: normalizeNeteaseImageUrl(imageUrl),
-          confidence: artistImageConfidence(input.artistName, artist.name),
+          imageUrl: variant.url,
+          confidence,
+          quality: variant.quality,
           sourceUrl: artistSourceUrl(artist),
           sourceRef: artist.id,
-        };
+        }));
       })
-      .filter((candidate): candidate is ArtistImageCandidate => Boolean(candidate))
       .sort((left, right) => {
         const scoreDelta = right.confidence - left.confidence;
         if (scoreDelta !== 0) {
           return scoreDelta;
+        }
+
+        const qualityDelta = (right.quality ?? 0) - (left.quality ?? 0);
+        if (qualityDelta !== 0) {
+          return qualityDelta;
         }
 
         return left.artistName.localeCompare(right.artistName);

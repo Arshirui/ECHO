@@ -49,6 +49,7 @@ import type {
   BpmAnalysisResult,
   BpmAnalysisJobStatus,
   BpmAnalysisStartOptions,
+  LyricsBackgroundCoverResult,
   NetworkApplyOptions,
   NetworkApplyResult,
   NetworkCandidateList,
@@ -268,6 +269,7 @@ export type EchoApi = {
       trackId: string,
       options?: Omit<NetworkTagCandidateSearchRequest, 'trackId'>,
     ) => Promise<NetworkTagCandidate[]>;
+    resolveLyricsBackgroundCover: (trackId: string) => Promise<LyricsBackgroundCoverResult | null>;
     applyNetworkMissingOnly: (candidateId: string, options?: NetworkApplyOptions) => Promise<NetworkApplyResult>;
     applyNetworkSelected: (candidateId: string, options?: NetworkApplyOptions) => Promise<NetworkApplyResult>;
     rejectNetworkCandidate: (candidateId: string) => Promise<NetworkApplyResult>;

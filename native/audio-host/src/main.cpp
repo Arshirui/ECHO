@@ -157,6 +157,8 @@ struct Options
     bool startupPrebufferTimeoutMsSpecified = false;
     bool framedStdin = false;
     bool dopOutput = false;
+    bool asioNativeDsdOutput = false;
+    int nativeDsdSampleRate = 0;
     bool useJuceOutput = false;
     bool decodePcm = false;
     double decodeStartSeconds = 0.0;
@@ -176,6 +178,7 @@ enum class StdinFrameType : uint8_t
     Shutdown = 4,
     SetVolume = 5,
     Dop24Le = 6,
+    NativeDsdRaw = 7,
 };
 
 struct StdinFrameHeader
@@ -330,6 +333,10 @@ Options parseOptions(const std::vector<juce::String>& args)
         {
             options.dopOutput = true;
         }
+        else if (arg == "-asio-native-dsd-output")
+        {
+            options.asioNativeDsdOutput = true;
+        }
         else if (arg == "-juce-output")
         {
             options.useJuceOutput = true;
@@ -351,6 +358,10 @@ Options parseOptions(const std::vector<juce::String>& args)
         else if (arg == "-sr" && i + 1 < args.size())
         {
             options.sampleRate = std::max(1, parseInt(args[++i], options.sampleRate));
+        }
+        else if (arg == "-native-dsd-sr" && i + 1 < args.size())
+        {
+            options.nativeDsdSampleRate = std::max(0, parseInt(args[++i], options.nativeDsdSampleRate));
         }
         else if (arg == "-ch" && i + 1 < args.size())
         {
@@ -1780,6 +1791,247 @@ private:
     std::chrono::steady_clock::time_point prebufferDeadline {};
 };
 
+class NativeDsdRingSource final
+{
+public:
+    NativeDsdRingSource(
+        int channelCount,
+        int capacityByteFrames,
+        int startupPrebufferByteFramesToUse,
+        int startupPrebufferTimeoutMsToUse)
+        : channels(std::max(1, channelCount)),
+          startupPrebufferByteFrames(std::max(0, startupPrebufferByteFramesToUse)),
+          startupPrebufferTimeoutMs(std::max(0, startupPrebufferTimeoutMsToUse)),
+          fifo(std::max(1, capacityByteFrames)),
+          buffer(static_cast<size_t>(std::max(1, capacityByteFrames) * std::max(1, channelCount)), 0x69u)
+    {
+    }
+
+    uint32_t renderInterleaved(uint8_t* output, uint32_t byteFrameCount, uint32_t outputChannels)
+    {
+        if (output == nullptr || byteFrameCount == 0 || outputChannels == 0)
+            return 0;
+
+        std::memset(output, 0x69, static_cast<size_t>(byteFrameCount) * outputChannels);
+
+        if (shouldHoldForStartupPrebuffer())
+            return 0;
+
+        uint32_t byteFramesReadTotal = 0;
+        uint32_t outputOffset = 0;
+        uint32_t byteFramesNeeded = byteFrameCount;
+
+        {
+            std::lock_guard<std::mutex> lock(fifoMutex);
+
+            while (byteFramesNeeded > 0)
+            {
+                int start1 = 0;
+                int size1 = 0;
+                int start2 = 0;
+                int size2 = 0;
+                fifo.prepareToRead(static_cast<int>(byteFramesNeeded), start1, size1, start2, size2);
+
+                const int byteFramesRead = size1 + size2;
+                if (byteFramesRead <= 0)
+                {
+                    if (
+                        ! inputEnded.load(std::memory_order_acquire)
+                        && sessionHasAudio.load(std::memory_order_acquire))
+                    {
+                        underrunCallbacks.fetch_add(1, std::memory_order_relaxed);
+                        underrunFrames.fetch_add(static_cast<uint64_t>(byteFramesNeeded) * 8u, std::memory_order_relaxed);
+                    }
+                    break;
+                }
+
+                copyToInterleaved(start1, size1, output + static_cast<size_t>(outputOffset) * outputChannels, outputChannels);
+                copyToInterleaved(
+                    start2,
+                    size2,
+                    output + static_cast<size_t>(outputOffset + static_cast<uint32_t>(size1)) * outputChannels,
+                    outputChannels);
+                fifo.finishedRead(byteFramesRead);
+
+                byteFramesReadTotal += static_cast<uint32_t>(byteFramesRead);
+                outputOffset += static_cast<uint32_t>(byteFramesRead);
+                byteFramesNeeded -= static_cast<uint32_t>(byteFramesRead);
+            }
+        }
+
+        if (byteFramesReadTotal > 0)
+            framesPlayed.fetch_add(static_cast<uint64_t>(byteFramesReadTotal) * 8u, std::memory_order_relaxed);
+
+        return byteFramesReadTotal;
+    }
+
+    bool push(const uint8_t* samples, int byteFrameCount)
+    {
+        if (byteFrameCount > 0)
+            sessionHasAudio.store(true, std::memory_order_release);
+
+        int written = 0;
+
+        while (written < byteFrameCount && ! stopRequested.load(std::memory_order_relaxed))
+        {
+            int start1 = 0;
+            int size1 = 0;
+            int start2 = 0;
+            int size2 = 0;
+            {
+                std::lock_guard<std::mutex> lock(fifoMutex);
+                fifo.prepareToWrite(byteFrameCount - written, start1, size1, start2, size2);
+
+                const int byteFramesWritable = size1 + size2;
+                if (byteFramesWritable > 0)
+                {
+                    copyFromInput(samples + static_cast<size_t>(written) * channels, start1, size1);
+                    copyFromInput(samples + static_cast<size_t>(written + size1) * channels, start2, size2);
+                    fifo.finishedWrite(byteFramesWritable);
+                    written += byteFramesWritable;
+                    continue;
+                }
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(4));
+        }
+
+        return written == byteFrameCount;
+    }
+
+    void beginSession()
+    {
+        {
+            std::lock_guard<std::mutex> lock(fifoMutex);
+            fifo.reset();
+            prebufferDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(std::max(1, startupPrebufferTimeoutMs));
+        }
+
+        framesPlayed.store(0, std::memory_order_relaxed);
+        underrunCallbacks.store(0, std::memory_order_relaxed);
+        underrunFrames.store(0, std::memory_order_relaxed);
+        inputEnded.store(false, std::memory_order_release);
+        sessionHasAudio.store(false, std::memory_order_release);
+        prebuffering.store(startupPrebufferByteFrames > 0, std::memory_order_release);
+    }
+
+    void markInputEnded()
+    {
+        inputEnded.store(true, std::memory_order_release);
+    }
+
+    void requestStop()
+    {
+        stopRequested.store(true, std::memory_order_release);
+    }
+
+    bool isDrained() const
+    {
+        std::lock_guard<std::mutex> lock(fifoMutex);
+        return inputEnded.load(std::memory_order_acquire) && fifo.getNumReady() == 0;
+    }
+
+    bool hasInputEnded() const
+    {
+        return inputEnded.load(std::memory_order_acquire);
+    }
+
+    int getReadyByteFrames() const
+    {
+        std::lock_guard<std::mutex> lock(fifoMutex);
+        return fifo.getNumReady();
+    }
+
+    uint64_t getReadyFrames() const
+    {
+        return static_cast<uint64_t>(getReadyByteFrames()) * 8u;
+    }
+
+    uint64_t getFramesPlayed() const
+    {
+        return framesPlayed.load(std::memory_order_relaxed);
+    }
+
+    uint64_t getUnderrunCallbacks() const
+    {
+        return underrunCallbacks.load(std::memory_order_relaxed);
+    }
+
+    uint64_t getUnderrunFrames() const
+    {
+        return underrunFrames.load(std::memory_order_relaxed);
+    }
+
+private:
+    void copyFromInput(const uint8_t* source, int startByteFrame, int byteFrameCount)
+    {
+        if (byteFrameCount <= 0)
+            return;
+
+        std::memcpy(
+            buffer.data() + static_cast<size_t>(startByteFrame * channels),
+            source,
+            static_cast<size_t>(byteFrameCount * channels));
+    }
+
+    void copyToInterleaved(int startByteFrame, int byteFrameCount, uint8_t* output, uint32_t outputChannels) const
+    {
+        if (byteFrameCount <= 0 || output == nullptr || outputChannels == 0)
+            return;
+
+        const uint8_t* source = buffer.data() + static_cast<size_t>(startByteFrame * channels);
+        for (int byteFrame = 0; byteFrame < byteFrameCount; ++byteFrame)
+        {
+            for (uint32_t channel = 0; channel < outputChannels; ++channel)
+            {
+                const int sourceChannel = std::min<int>(static_cast<int>(channel), channels - 1);
+                output[static_cast<size_t>(byteFrame) * outputChannels + channel] =
+                    source[static_cast<size_t>(byteFrame) * channels + sourceChannel];
+            }
+        }
+    }
+
+    bool shouldHoldForStartupPrebuffer()
+    {
+        if (! prebuffering.load(std::memory_order_acquire))
+            return false;
+
+        int readyByteFrames = 0;
+        std::chrono::steady_clock::time_point deadline;
+        {
+            std::lock_guard<std::mutex> lock(fifoMutex);
+            readyByteFrames = fifo.getNumReady();
+            deadline = prebufferDeadline;
+        }
+        const bool enoughData = readyByteFrames >= startupPrebufferByteFrames;
+        const bool timedOut = startupPrebufferTimeoutMs <= 0 || std::chrono::steady_clock::now() >= deadline;
+        const bool ended = inputEnded.load(std::memory_order_acquire);
+
+        if (enoughData || timedOut || ended)
+        {
+            prebuffering.store(false, std::memory_order_release);
+            return false;
+        }
+
+        return true;
+    }
+
+    const int channels;
+    const int startupPrebufferByteFrames;
+    const int startupPrebufferTimeoutMs;
+    juce::AbstractFifo fifo;
+    std::vector<uint8_t> buffer;
+    mutable std::mutex fifoMutex;
+    std::atomic<bool> inputEnded { false };
+    std::atomic<bool> sessionHasAudio { false };
+    std::atomic<bool> prebuffering { false };
+    std::atomic<bool> stopRequested { false };
+    std::atomic<uint64_t> framesPlayed { 0 };
+    std::atomic<uint64_t> underrunCallbacks { 0 };
+    std::atomic<uint64_t> underrunFrames { 0 };
+    std::chrono::steady_clock::time_point prebufferDeadline {};
+};
+
 class EqControlServer final
 {
 public:
@@ -2206,6 +2458,105 @@ void framedDopStdinReader(DopRingSource& source, int channels, std::atomic<bool>
     source.markInputEnded();
 }
 
+void pushNativeDsdPayload(NativeDsdRingSource& source, int channels, std::vector<char>& pending, const std::vector<char>& payload)
+{
+    const size_t frameBytes = static_cast<size_t>(channels);
+    pending.insert(pending.end(), payload.begin(), payload.end());
+
+    const size_t byteFrameCount = pending.size() / frameBytes;
+    if (byteFrameCount == 0)
+        return;
+
+    const auto* samples = reinterpret_cast<const uint8_t*>(pending.data());
+    if (! source.push(samples, static_cast<int>(byteFrameCount)))
+        return;
+
+    pending.erase(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(byteFrameCount * frameBytes));
+}
+
+void handleFramedNativeDsdStdinPayload(
+    NativeDsdRingSource& source,
+    int channels,
+    std::atomic<bool>& shutdownRequested,
+    uint32_t& currentSessionId,
+    bool& hasSession,
+    std::vector<char>& pendingNativeDsd,
+    const StdinFrameHeader& header,
+    const std::vector<char>& payload)
+{
+    const auto type = static_cast<StdinFrameType>(header.type);
+
+    if (type == StdinFrameType::BeginSession)
+    {
+        currentSessionId = header.sessionId;
+        hasSession = true;
+        pendingNativeDsd.clear();
+        source.beginSession();
+        return;
+    }
+
+    if (type == StdinFrameType::NativeDsdRaw)
+    {
+        if (hasSession && header.sessionId == currentSessionId)
+            pushNativeDsdPayload(source, channels, pendingNativeDsd, payload);
+        return;
+    }
+
+    if (type == StdinFrameType::EndSession)
+    {
+        if (hasSession && header.sessionId == currentSessionId)
+        {
+            pendingNativeDsd.clear();
+            source.markInputEnded();
+        }
+        return;
+    }
+
+    if (type == StdinFrameType::Shutdown)
+    {
+        shutdownRequested.store(true, std::memory_order_release);
+        source.markInputEnded();
+        source.requestStop();
+    }
+}
+
+void framedNativeDsdStdinReader(NativeDsdRingSource& source, int channels, std::atomic<bool>& shutdownRequested)
+{
+    configurePcmReaderThread();
+
+#if JUCE_WINDOWS
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
+
+    uint32_t currentSessionId = 0;
+    bool hasSession = false;
+    std::vector<char> pendingNativeDsd;
+
+    while (std::cin.good() && ! shutdownRequested.load(std::memory_order_acquire))
+    {
+        StdinFrameHeader header;
+        if (! readFrameHeader(header))
+            break;
+
+        std::vector<char> payload(header.payloadBytes);
+        if (header.payloadBytes > 0 && ! readExact(payload.data(), payload.size()))
+            break;
+
+        handleFramedNativeDsdStdinPayload(
+            source,
+            channels,
+            shutdownRequested,
+            currentSessionId,
+            hasSession,
+            pendingNativeDsd,
+            header,
+            payload);
+    }
+
+    shutdownRequested.store(true, std::memory_order_release);
+    source.markInputEnded();
+}
+
 int waitForInitialPcm(PcmRingAudioSource& source, int targetFrames, int timeoutMs)
 {
     if (targetFrames <= 0)
@@ -2507,6 +2858,12 @@ uint32_t legacyDopRenderCallback(void* userData, uint32_t* output, uint32_t fram
 {
     auto* source = static_cast<DopRingSource*>(userData);
     return source != nullptr ? source->renderInterleaved(output, frameCount, channels) : 0;
+}
+
+uint32_t legacyNativeDsdRenderCallback(void* userData, uint8_t* output, uint32_t byteFrameCount, uint32_t channels)
+{
+    auto* source = static_cast<NativeDsdRingSource*>(userData);
+    return source != nullptr ? source->renderInterleaved(output, byteFrameCount, channels) : 0;
 }
 
 void writeWasapiNotificationEvent(const wasapi_host_notification* notification)
@@ -2833,6 +3190,48 @@ void cleanupLegacyAsioDopAndAck(
         }
     }
 }
+
+void cleanupLegacyAsioNativeDsdAndAck(
+    NativeDsdRingSource& source,
+    asio_runtime*& runtime,
+    bool& shutdownAckSent)
+{
+    source.requestStop();
+
+    if (runtime != nullptr)
+    {
+        try
+        {
+            asio_stop(runtime);
+        }
+        catch (const std::exception& error)
+        {
+            logLine(std::string("legacy ASIO native DSD stop cleanup failed: ") + error.what());
+        }
+        catch (...)
+        {
+            logLine("legacy ASIO native DSD stop cleanup failed");
+        }
+        runtime = nullptr;
+    }
+
+    if (! shutdownAckSent)
+    {
+        shutdownAckSent = true;
+        try
+        {
+            writeJsonLine("{\"event\":\"shutdown-ack\"}");
+        }
+        catch (const std::exception& error)
+        {
+            logLine(std::string("shutdown-ack write failed: ") + error.what());
+        }
+        catch (...)
+        {
+            logLine("shutdown-ack write failed");
+        }
+    }
+}
 #endif
 
 int runLegacyWasapiExclusiveHost(const Options& options)
@@ -2861,11 +3260,6 @@ int runLegacyWasapiExclusiveHost(const Options& options)
 
     std::atomic<bool> shutdownRequested { false };
     std::thread reader;
-
-    if (options.framedStdin)
-        reader = std::thread(framedStdinReader, std::ref(source), options.channels, std::ref(shutdownRequested));
-    else
-        reader = std::thread(stdinReader, std::ref(source), options.channels);
 
     wasapi_exclusive_runtime* runtime = nullptr;
     wasapi_exclusive_ready_info readyInfo {};
@@ -2901,13 +3295,16 @@ int runLegacyWasapiExclusiveHost(const Options& options)
         }
         shutdownRequested.store(true, std::memory_order_release);
         source.requestStop();
-        if (reader.joinable())
-            reader.join();
         eqControlServer.stop();
         throw std::runtime_error(
             std::string("WASAPI exclusive open failed: ")
             + (error[0] != '\0' ? error : "failed to start legacy WASAPI exclusive output"));
     }
+
+    if (options.framedStdin)
+        reader = std::thread(framedStdinReader, std::ref(source), options.channels, std::ref(shutdownRequested));
+    else
+        reader = std::thread(stdinReader, std::ref(source), options.channels);
 
     const int actualSampleRate = static_cast<int>(readyInfo.sampleRate > 0 ? readyInfo.sampleRate : options.sampleRate);
     const int actualDeviceBufferFrames = static_cast<int>(std::max<uint32_t>(1, readyInfo.bufferFrameCount));
@@ -3349,6 +3746,12 @@ int runLegacyAsioDopHost(const Options& options)
     (void)options;
     throw std::runtime_error("ASIO DoP open failed: ASIO support is disabled at build time (ECHO_ENABLE_ASIO=OFF)");
 }
+
+int runLegacyAsioNativeDsdHost(const Options& options)
+{
+    (void)options;
+    throw std::runtime_error("ASIO native DSD open failed: ASIO support is disabled at build time (ECHO_ENABLE_ASIO=OFF)");
+}
 #else
 int runLegacyAsioHost(const Options& options)
 {
@@ -3661,6 +4064,152 @@ int runLegacyAsioDopHost(const Options& options)
     cleanupLegacyAsioDopAndAck(source, runtime, shutdownAckSent);
     return 0;
 }
+
+int runLegacyAsioNativeDsdHost(const Options& options)
+{
+    const auto descriptor = selectDevice(options);
+    logLine("Using legacy ASIO SDK native DSD device index " + std::to_string(descriptor.index) + ": " + descriptor.name.toStdString());
+
+    const int requestedDeviceBufferFrames = std::max(0, options.bufferSize);
+    const int plannedNativeSampleRate = options.nativeDsdSampleRate > 0 ? options.nativeDsdSampleRate : options.sampleRate;
+    const int fifoCapacityFrames = getFifoCapacityFrames(options, plannedNativeSampleRate);
+    const int startupPrebufferFrames = getStartupPrebufferFrames(options, plannedNativeSampleRate);
+    const int fifoCapacityByteFrames = std::max(1, (fifoCapacityFrames + 7) / 8);
+    const int startupPrebufferByteFrames = std::max(0, (startupPrebufferFrames + 7) / 8);
+    const int startupPrebufferTimeoutMs = getStartupPrebufferTimeoutMs(options);
+
+    NativeDsdRingSource source(
+        options.channels,
+        fifoCapacityByteFrames,
+        startupPrebufferByteFrames,
+        startupPrebufferTimeoutMs);
+
+    std::atomic<bool> shutdownRequested { false };
+    std::thread reader(framedNativeDsdStdinReader, std::ref(source), options.channels, std::ref(shutdownRequested));
+
+    asio_runtime* runtime = nullptr;
+    asio_ready_info readyInfo {};
+    char error[1024] {};
+    const auto startResult = asio_start_native_dsd(
+        descriptor.name.toRawUTF8(),
+        -1,
+        static_cast<uint32_t>(plannedNativeSampleRate),
+        static_cast<uint32_t>(options.channels),
+        static_cast<uint32_t>(requestedDeviceBufferFrames),
+        static_cast<uint32_t>(options.asioOutputChannelStart),
+        legacyNativeDsdRenderCallback,
+        &source,
+        &runtime,
+        &readyInfo,
+        error,
+        sizeof(error));
+
+    if (startResult != 0 || runtime == nullptr)
+    {
+        shutdownRequested.store(true, std::memory_order_release);
+        source.requestStop();
+        if (reader.joinable())
+            reader.join();
+        throw std::runtime_error(
+            std::string("ASIO native DSD open failed: ")
+            + (error[0] != '\0' ? error : "failed to start legacy ASIO SDK native DSD output"));
+    }
+
+    const int actualSampleRate = static_cast<int>(readyInfo.sampleRate > 0 ? readyInfo.sampleRate : plannedNativeSampleRate);
+    const int actualDeviceBufferFrames = static_cast<int>(std::max<uint32_t>(1, readyInfo.bufferFrameCount));
+    const int openedDeviceBufferFrames = actualDeviceBufferFrames;
+    const int reportedRequestedDeviceBufferFrames = static_cast<int>(std::max<uint32_t>(
+        1,
+        readyInfo.requestedBufferFrameCount > 0 ? readyInfo.requestedBufferFrameCount : readyInfo.bufferFrameCount));
+    const uint64_t reportedFifoCapacityFrames = static_cast<uint64_t>(fifoCapacityByteFrames) * 8u;
+    const uint64_t reportedStartupPrebufferFrames = static_cast<uint64_t>(startupPrebufferByteFrames) * 8u;
+
+    logLine("ready event writing");
+    writeJsonLine(
+        std::string("{\"ready\":true,\"sampleRate\":") + std::to_string(actualSampleRate)
+        + ",\"hardwareSampleRate\":" + std::to_string(actualSampleRate)
+        + ",\"sharedDeviceSampleRate\":0"
+        + ",\"sharedSampleRate\":0"
+        + ",\"channels\":" + std::to_string(static_cast<int>(readyInfo.channels > 0 ? readyInfo.channels : options.channels))
+        + ",\"exclusive\":false"
+        + ",\"asio\":true"
+        + ",\"nativeDsd\":true"
+        + ",\"eqControlPort\":0"
+        + ",\"deviceBufferFrames\":" + std::to_string(actualDeviceBufferFrames)
+        + ",\"nativeActualBufferFrames\":" + std::to_string(actualDeviceBufferFrames)
+        + ",\"actualBufferFrames\":" + std::to_string(actualDeviceBufferFrames)
+        + ",\"requestedDeviceBufferFrames\":" + std::to_string(reportedRequestedDeviceBufferFrames)
+        + ",\"openedDeviceBufferFrames\":" + std::to_string(openedDeviceBufferFrames)
+        + ",\"bufferSizeFallback\":" + std::string(openedDeviceBufferFrames != reportedRequestedDeviceBufferFrames ? "true" : "false")
+        + ",\"fifoCapacityFrames\":" + std::to_string(reportedFifoCapacityFrames)
+        + ",\"startupPrebufferFrames\":" + std::to_string(reportedStartupPrebufferFrames)
+        + ",\"startupPrebufferTimeoutMs\":" + std::to_string(startupPrebufferTimeoutMs)
+        + ",\"dspActive\":false"
+        + ",\"backend\":\"asio\""
+        + ",\"backendImpl\":\"legacy-asio-sdk-native-dsd\""
+        + ",\"format\":\"" + jsonEscape(juce::String::fromUTF8(readyInfo.format)) + "\""
+        + ",\"asioInputChannels\":" + std::to_string(readyInfo.inputChannels)
+        + ",\"asioOutputChannels\":" + std::to_string(readyInfo.outputChannels)
+        + ",\"asioOutputChannelStart\":" + std::to_string(readyInfo.outputChannelStart)
+        + ",\"asioPreferredBufferFrames\":" + std::to_string(readyInfo.preferredBufferFrames)
+        + ",\"asioMinBufferFrames\":" + std::to_string(readyInfo.minBufferFrames)
+        + ",\"asioMaxBufferFrames\":" + std::to_string(readyInfo.maxBufferFrames)
+        + ",\"asioGranularity\":" + std::to_string(readyInfo.granularity)
+        + ",\"deviceType\":\"ASIO\",\"deviceName\":\""
+        + jsonEscape(juce::String::fromUTF8(readyInfo.deviceName[0] != '\0' ? readyInfo.deviceName : descriptor.name.toRawUTF8())) + "\"}");
+
+    uint64_t lastReported = std::numeric_limits<uint64_t>::max();
+    bool endedReported = false;
+    bool shutdownAckSent = false;
+
+    while (! shutdownRequested.load(std::memory_order_acquire) && (! source.isDrained() || options.framedStdin))
+    {
+        const auto frames = source.getFramesPlayed();
+        if (frames != lastReported)
+        {
+            writeJsonLine(
+                std::string("{\"pos\":") + std::to_string(frames)
+                + ",\"bufferedFrames\":" + std::to_string(source.getReadyFrames())
+                + ",\"underrunCallbacks\":" + std::to_string(source.getUnderrunCallbacks())
+                + ",\"underrunFrames\":" + std::to_string(source.getUnderrunFrames())
+                + "}");
+            lastReported = frames;
+        }
+
+        if (source.isDrained())
+        {
+            if (! endedReported)
+            {
+                writeJsonLine("{\"event\":\"ended\"}");
+                endedReported = true;
+            }
+        }
+        else
+        {
+            endedReported = false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(33));
+    }
+
+    if (reader.joinable())
+        reader.join();
+
+    const auto finalFrames = source.getFramesPlayed();
+    if (finalFrames != lastReported)
+        writeJsonLine(
+            std::string("{\"pos\":") + std::to_string(finalFrames)
+            + ",\"bufferedFrames\":" + std::to_string(source.getReadyFrames())
+            + ",\"underrunCallbacks\":" + std::to_string(source.getUnderrunCallbacks())
+            + ",\"underrunFrames\":" + std::to_string(source.getUnderrunFrames())
+            + "}");
+
+    if (! endedReported)
+        writeJsonLine("{\"event\":\"ended\"}");
+
+    cleanupLegacyAsioNativeDsdAndAck(source, runtime, shutdownAckSent);
+    return 0;
+}
 #endif
 #endif
 
@@ -3764,6 +4313,9 @@ int runHost(const Options& options)
     if (options.dopOutput && ! options.exclusive && ! options.asio)
         throw std::runtime_error("DoP output requires WASAPI exclusive or ASIO");
 
+    if (options.asioNativeDsdOutput && (! options.dopOutput || ! options.asio))
+        throw std::runtime_error("ASIO native DSD output requires ASIO DoP output");
+
     if (options.dopOutput && options.useJuceOutput)
         throw std::runtime_error("DoP output requires legacy integer output, not JUCE output");
 
@@ -3779,6 +4331,8 @@ int runHost(const Options& options)
     if (options.dopOutput && options.asio)
     {
 #if JUCE_WINDOWS
+        if (options.asioNativeDsdOutput)
+            return runLegacyAsioNativeDsdHost(options);
         return runLegacyAsioDopHost(options);
 #else
         throw std::runtime_error("ASIO DoP open failed: legacy ASIO SDK backend is only available on Windows");

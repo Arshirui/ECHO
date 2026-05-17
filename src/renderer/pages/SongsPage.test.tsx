@@ -87,10 +87,13 @@ vi.mock('../components/library/TrackList', () => ({
 const renderSongsPage = async (): Promise<void> => {
   const { SongsPage } = await import('./SongsPage');
   const { PlaybackQueueProvider } = await import('../stores/PlaybackQueueProvider');
+  const { I18nProvider } = await import('../i18n/I18nProvider');
   render(
-    <PlaybackQueueProvider>
-      <SongsPage />
-    </PlaybackQueueProvider>,
+    <I18nProvider>
+      <PlaybackQueueProvider>
+        <SongsPage />
+      </PlaybackQueueProvider>
+    </I18nProvider>,
   );
 };
 

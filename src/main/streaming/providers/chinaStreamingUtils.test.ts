@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { linesFromLyrics } from './chinaStreamingUtils';
+import { linesFromLyrics, splitLyricsByKind } from './chinaStreamingUtils';
 
 describe('chinaStreamingUtils', () => {
   it('folds same-timestamp embedded alternates before returning streaming lyrics', () => {
@@ -34,5 +34,12 @@ describe('chinaStreamingUtils', () => {
       { timeMs: 10000, text: 'Hello' },
       { timeMs: 20000, text: 'World' },
     ]);
+  });
+
+  it('treats provider pure-music placeholders as non-lyrics', () => {
+    expect(splitLyricsByKind('[00:00.00]\u6b64\u6b4c\u66f2\u4e3a\u6ca1\u6709\u586b\u8bcd\u7684\u7eaf\u97f3\u4e50\uff0c\u8bf7\u60a8\u6b23\u8d4f')).toEqual({
+      syncedLyrics: null,
+      plainLyrics: null,
+    });
   });
 });

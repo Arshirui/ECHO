@@ -563,10 +563,7 @@ static void make_format(uint32_t sampleRate, uint32_t channels, wasapi_sample_fo
 }
 
 static HRESULT activate_audio_client(IMMDevice* device, IAudioClient** outClient) {
-    if (outClient == NULL) return E_POINTER;
-    *outClient = NULL;
-    if (device == NULL) return E_POINTER;
-    return device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)outClient);
+    return echo_wasapi_timeout::activate_audio_client_with_timeout(device, outClient);
 }
 
 static int choose_exact_format(
@@ -578,35 +575,6 @@ static int choose_exact_format(
         WASAPI_FORMAT_FLOAT32,
         WASAPI_FORMAT_PCM24_IN_32,
         WASAPI_FORMAT_PCM16,
-        WASAPI_FORMAT_PCM32
-    };
-
-    if (audioClient == NULL || outFormat == NULL) return 0;
-
-    for (size_t i = 0; i < sizeof(kinds) / sizeof(kinds[0]); ++i) {
-        wasapi_format_desc candidate;
-        make_format(sampleRate, channels, kinds[i], &candidate);
-        HRESULT hr = audioClient->IsFormatSupported(
-            AUDCLNT_SHAREMODE_EXCLUSIVE,
-            (WAVEFORMATEX*)&candidate.wave,
-            NULL);
-        if (hr == S_OK) {
-            *outFormat = candidate;
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-static int choose_exact_dop_format(
-    IAudioClient* audioClient,
-    uint32_t sampleRate,
-    uint32_t channels,
-    wasapi_format_desc* outFormat) {
-    static const wasapi_sample_format kinds[] = {
-        WASAPI_FORMAT_PCM24_PACKED,
-        WASAPI_FORMAT_PCM24_IN_32,
         WASAPI_FORMAT_PCM32
     };
 
@@ -694,7 +662,11 @@ done:
     return hr;
 }
 
-static int enumerate_devices(std::vector<wasapi_exclusive_device_info>& devices, char* error, size_t errorLen) {
+static int enumerate_devices(
+    std::vector<wasapi_exclusive_device_info>& devices,
+    char* error,
+    size_t errorLen,
+    bool probeRates = true) {
     IMMDeviceEnumerator* enumerator = NULL;
     IMMDeviceCollection* collection = NULL;
     IMMDevice* defaultDevice = NULL;
@@ -748,8 +720,8 @@ static int enumerate_devices(std::vector<wasapi_exclusive_device_info>& devices,
         if (FAILED(get_device_name(device, info.name, sizeof(info.name))) || info.name[0] == '\0') {
             snprintf(info.name, sizeof(info.name), "WASAPI Device %u", (unsigned int)i);
         }
-        info.highestSampleRate = highest_supported_rate(device, 2);
-        info.sharedSampleRate = shared_mix_rate(device);
+        info.highestSampleRate = probeRates ? highest_supported_rate(device, 2) : 0;
+        info.sharedSampleRate = probeRates ? shared_mix_rate(device) : 0;
         info.isDefault = (defaultId != NULL && wcscmp(defaultId, id) == 0) ? 1 : 0;
         devices.push_back(info);
 
@@ -867,7 +839,11 @@ static HRESULT initialize_exclusive_client(
     HRESULT hr = activate_audio_client(device, &client);
     if (FAILED(hr)) return hr;
 
-    if (SUCCEEDED(client->GetDevicePeriod(&defaultPeriod, &minPeriod)) && minPeriod > bufferDuration) {
+    hr = echo_wasapi_timeout::get_device_period_with_timeout(client, &defaultPeriod, &minPeriod);
+    if (hr == E_PENDING) {
+        return hr;
+    }
+    if (SUCCEEDED(hr) && minPeriod > bufferDuration) {
         bufferDuration = minPeriod;
     }
 
@@ -922,6 +898,71 @@ static HRESULT initialize_exclusive_client(
     *outClient = client;
     *outBufferFrames = bufferFrames;
     return S_OK;
+}
+
+static HRESULT initialize_exclusive_client_for_render_mode(
+    IMMDevice* device,
+    uint32_t sampleRate,
+    uint32_t channels,
+    uint32_t requestedBufferFrames,
+    wasapi_render_mode renderMode,
+    wasapi_format_desc* outFormat,
+    IAudioClient** outClient,
+    uint32_t* outBufferFrames) {
+    static const wasapi_sample_format pcmKinds[] = {
+        WASAPI_FORMAT_FLOAT32,
+        WASAPI_FORMAT_PCM24_IN_32,
+        WASAPI_FORMAT_PCM16,
+        WASAPI_FORMAT_PCM32
+    };
+    static const wasapi_sample_format dopKinds[] = {
+        WASAPI_FORMAT_PCM24_PACKED,
+        WASAPI_FORMAT_PCM24_IN_32,
+        WASAPI_FORMAT_PCM32
+    };
+
+    if (outFormat == NULL || outClient == NULL || outBufferFrames == NULL) return E_POINTER;
+    *outClient = NULL;
+    *outBufferFrames = 0;
+    memset(outFormat, 0, sizeof(*outFormat));
+
+    const wasapi_sample_format* kinds = renderMode == WASAPI_RENDER_DOP ? dopKinds : pcmKinds;
+    const size_t kindCount = renderMode == WASAPI_RENDER_DOP
+        ? sizeof(dopKinds) / sizeof(dopKinds[0])
+        : sizeof(pcmKinds) / sizeof(pcmKinds[0]);
+    HRESULT lastUnsupported = AUDCLNT_E_UNSUPPORTED_FORMAT;
+
+    for (size_t i = 0; i < kindCount; ++i) {
+        wasapi_format_desc candidate;
+        IAudioClient* client = NULL;
+        uint32_t bufferFrames = 0;
+        make_format(sampleRate, channels, kinds[i], &candidate);
+
+        HRESULT hr = initialize_exclusive_client(
+            device,
+            &candidate,
+            requestedBufferFrames,
+            &client,
+            &bufferFrames);
+        if (SUCCEEDED(hr)) {
+            *outFormat = candidate;
+            *outClient = client;
+            *outBufferFrames = bufferFrames;
+            return S_OK;
+        }
+
+        if (hr == E_PENDING) {
+            return hr;
+        }
+
+        if (hr != AUDCLNT_E_UNSUPPORTED_FORMAT) {
+            return hr;
+        }
+
+        lastUnsupported = hr;
+    }
+
+    return lastUnsupported;
 }
 
 static float clamp_sample(float sample) {
@@ -1150,7 +1191,7 @@ static int wasapi_exclusive_start_impl(
         return -4;
     }
 
-    if (enumerate_devices(devices, error, errorLen) != 0 || devices.empty()) {
+    if (enumerate_devices(devices, error, errorLen, false) != 0 || devices.empty()) {
         com_scope_leave(&com);
         return -1;
     }
@@ -1161,23 +1202,15 @@ static int wasapi_exclusive_start_impl(
         return -1;
     }
 
-    hr = activate_audio_client(device, &audioClient);
-    if (FAILED(hr)) {
-        set_error(error, errorLen, "Failed to activate IAudioClient", hr);
-        goto done;
-    }
-
-    if (!(renderMode == WASAPI_RENDER_DOP
-        ? choose_exact_dop_format(audioClient, sampleRate, channels, &format)
-        : choose_exact_format(audioClient, sampleRate, channels, &format))) {
-        set_error(error, errorLen, "WASAPI exclusive format unsupported", S_OK);
-        result = -4;
-        goto done;
-    }
-    audioClient->Release();
-    audioClient = NULL;
-
-    hr = initialize_exclusive_client(device, &format, requestedBufferFrames, &audioClient, &bufferFrames);
+    hr = initialize_exclusive_client_for_render_mode(
+        device,
+        sampleRate,
+        channels,
+        requestedBufferFrames,
+        renderMode,
+        &format,
+        &audioClient,
+        &bufferFrames);
     if (FAILED(hr)) {
         result = classify_initialize_failure(hr);
         set_error(

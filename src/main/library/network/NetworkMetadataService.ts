@@ -7,6 +7,7 @@ import type {
   NetworkMetadataDiagnostics,
   NetworkMetadataScanJobStatus,
   NetworkApplyOptions,
+  LyricsBackgroundCoverResult,
   NetworkTagCandidate,
   NetworkTagCandidateSearchRequest,
 } from '../../../shared/types/library';
@@ -14,7 +15,8 @@ import type { NetworkMetadataProvider } from './NetworkMetadataProvider';
 import { NetworkMetadataJobQueue } from './NetworkMetadataJobQueue';
 import { NetworkMetadataMerge } from './NetworkMetadataMerge';
 import { NetworkMetadataStore } from './NetworkMetadataStore';
-import { matchScore } from './matchScore';
+import { highResolutionCoverUrl } from './HighResolutionCover';
+import { matchScore, NETWORK_VISIBLE_CANDIDATE_THRESHOLD } from './matchScore';
 import type { NetworkApplyResult, NetworkProviderName, StoredNetworkCoverCandidate, StoredNetworkMetadataCandidate } from './networkTypes';
 import { CoverArtArchiveProvider } from './providers/CoverArtArchiveProvider';
 import { MockMetadataProvider } from './providers/MockMetadataProvider';
@@ -328,6 +330,48 @@ export class NetworkMetadataService {
       }
 
       return candidates;
+    });
+  }
+
+  async resolveLyricsBackgroundCover(
+    trackId: string,
+    providerNames?: NetworkProviderName[],
+  ): Promise<LyricsBackgroundCoverResult | null> {
+    return this.queue.run(async () => {
+      const track = this.store.getTrackLookup(trackId);
+      if (!track) {
+        return null;
+      }
+
+      const providers = this.providers.filter(
+        (provider) =>
+          provider.name !== 'mock' &&
+          (!providerNames?.length || providerNames.includes(provider.name)),
+      );
+      const candidates: LyricsBackgroundCoverResult[] = [];
+
+      await Promise.all(
+        providers.map(async (provider) => {
+          try {
+            const metadataCandidates = await provider.findMetadata(track);
+            for (const candidate of metadataCandidates) {
+              const confidence = matchScore(track, candidate);
+              const coverUrl = highResolutionCoverUrl(candidate.provider, candidate.coverUrl);
+              if (coverUrl && confidence >= NETWORK_VISIBLE_CANDIDATE_THRESHOLD) {
+                candidates.push({
+                  coverUrl,
+                  provider: candidate.provider,
+                  confidence,
+                });
+              }
+            }
+          } catch {
+            // Background artwork is best-effort; local cover fallback remains in place.
+          }
+        }),
+      );
+
+      return candidates.sort((left, right) => right.confidence - left.confidence)[0] ?? null;
     });
   }
 

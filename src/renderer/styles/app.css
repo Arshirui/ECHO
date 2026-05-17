@@ -766,6 +766,7 @@
 }
 
 .settings-search {
+  position: relative;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
@@ -790,6 +791,62 @@
 
 .settings-search input::placeholder {
   color: var(--theme-field-placeholder);
+}
+
+.settings-search-results {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 8px);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 10px;
+  background: var(--theme-panel-bg);
+  box-shadow: 0 18px 42px rgba(26, 39, 58, 0.18);
+}
+
+.settings-search-result {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 10px;
+  color: var(--theme-page-text);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-search-result:hover,
+.settings-search-result[aria-selected="true"] {
+  border-color: var(--theme-panel-border);
+  background: var(--theme-list-row-bg-hover);
+}
+
+.settings-search-result span {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 820;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-search-result small,
+.settings-search-empty {
+  color: var(--theme-muted-text);
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.35;
+}
+
+.settings-search-empty {
+  margin: 0;
+  padding: 9px 10px;
 }
 
 .settings-body {
@@ -1419,19 +1476,91 @@
   font-weight: 820;
 }
 
-.settings-update-notes pre {
+.settings-update-markdown {
   max-height: 220px;
-  margin: 0;
   overflow: auto;
   padding: 12px;
   color: #2e4056;
   border: 1px solid var(--theme-panel-border);
   border-radius: 12px;
   background: var(--theme-panel-bg-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.settings-update-markdown > * {
+  margin: 0;
+}
+
+.settings-update-markdown > * + * {
+  margin-top: 8px;
+}
+
+.settings-update-markdown h3,
+.settings-update-markdown h4,
+.settings-update-markdown h5 {
+  color: #26384f;
+  font-weight: 880;
+  letter-spacing: 0;
+}
+
+.settings-update-markdown h3 {
+  font-size: 15px;
+}
+
+.settings-update-markdown h4 {
+  font-size: 14px;
+}
+
+.settings-update-markdown h5 {
+  font-size: 13px;
+}
+
+.settings-update-markdown ul,
+.settings-update-markdown ol {
+  display: grid;
+  gap: 4px;
+  padding-left: 20px;
+}
+
+.settings-update-markdown a {
+  color: #2f6f9f;
+  font-weight: 780;
+  text-decoration: none;
+}
+
+.settings-update-markdown a:hover {
+  text-decoration: underline;
+}
+
+.settings-update-markdown code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(65, 91, 125, 0.1);
   font-family: var(--echo-mono-font-family, "Cascadia Code", Consolas, monospace);
+}
+
+.settings-update-markdown pre {
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid rgba(66, 91, 121, 0.12);
+  border-radius: 8px;
+  background: rgba(232, 239, 247, 0.76);
+}
+
+.settings-update-markdown pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.settings-update-markdown blockquote {
+  padding-left: 10px;
+  color: #52657b;
+  border-left: 3px solid rgba(75, 112, 154, 0.28);
 }
 
 .plain-page-header {
@@ -3537,6 +3666,7 @@
     0 14px 42px rgba(86, 112, 209, 0.22);
 }
 
+.audio-current-output-card--gold,
 .audio-current-output-card--asio {
   border-color: rgba(255, 198, 93, 0.7);
   background:
@@ -3592,6 +3722,7 @@
   font-weight: 860;
 }
 
+.audio-current-output-card--gold > em,
 .audio-current-output-card--asio > em {
   color: #ffe4a8;
   border-color: rgba(255, 211, 113, 0.38);
@@ -3608,7 +3739,7 @@
 
 .audio-section-note {
   margin: -4px 0 2px;
-  color: rgba(255, 236, 198, 0.68);
+  color: var(--audio-drawer-muted-text);
   font-size: 12px;
   font-weight: 720;
   line-height: 1.45;
@@ -3619,10 +3750,78 @@
   color: rgba(255, 225, 169, 0.86);
 }
 
+.audio-output-user-note {
+  gap: 8px;
+  margin-top: 2px;
+  padding: 12px;
+  color: var(--audio-drawer-muted-text);
+  border: 1px solid var(--theme-glass-bg-soft);
+  border-radius: 14px;
+  background: var(--theme-glass-bg-muted);
+}
+
+.audio-output-user-note .audio-drawer-section-title {
+  margin: 0 0 2px;
+}
+
+.audio-output-user-note p {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
 .audio-drawer-options {
   order: 5;
   gap: 12px;
   padding-top: 10px;
+}
+
+.audio-drawer-options-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 12px;
+  color: var(--audio-drawer-text);
+  border: 1px solid var(--theme-glass-bg);
+  border-radius: 13px;
+  background: var(--theme-glass-bg-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.audio-drawer-options-toggle:hover {
+  background: var(--theme-glass-bg-raised);
+}
+
+.audio-drawer-options-toggle > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.audio-drawer-options-toggle strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 880;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-drawer-options-toggle > svg:last-child {
+  transition: transform 160ms ease;
+}
+
+.audio-drawer-options--open .audio-drawer-options-toggle > svg:last-child {
+  transform: rotate(180deg);
+}
+
+.audio-drawer-options-body {
+  display: grid;
+  gap: 12px;
 }
 
 .audio-drawer-options summary {
@@ -3779,7 +3978,16 @@
   transform: translateX(26px);
 }
 
-.audio-drawer-options > p {
+.audio-toggle-row--section-control {
+  margin-top: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-glass-bg-soft);
+  border-radius: 13px;
+  background: var(--theme-glass-bg-muted);
+}
+
+.audio-drawer-options > p,
+.audio-drawer-options-body > p {
   margin: -6px 0 4px;
   color: var(--audio-drawer-muted-text);
   font-size: 12px;
@@ -5255,6 +5463,13 @@
 
 .setting-row:hover {
   background: linear-gradient(90deg, rgba(236, 242, 248, 0.54), transparent 82%);
+}
+
+.setting-row[data-search-highlight="true"],
+#settings-row-library-folders[data-search-highlight="true"] {
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(92, 124, 250, 0.16), rgba(92, 124, 250, 0.04) 78%, transparent);
+  box-shadow: 0 0 0 3px rgba(92, 124, 250, 0.14);
 }
 
 .setting-info h3 {

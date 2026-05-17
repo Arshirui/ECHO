@@ -19,7 +19,16 @@ import {
 } from './ArtistImageMatching';
 import { NeteaseArtistImageProvider } from './NeteaseArtistImageProvider';
 import { QQMusicArtistImageProvider } from './QQMusicArtistImageProvider';
-import type { ArtistImageCandidate, ArtistImageLookupInput, ArtistImageProvider, ArtistImageUpdatedPayload } from './ArtistImageTypes';
+import { WikipediaArtistImageProvider } from './WikipediaArtistImageProvider';
+import {
+  ARTIST_IMAGE_CACHE_SOURCE_VERSION,
+  artistImageCacheSourceHash,
+  isCurrentArtistImageCacheSourceHash,
+  type ArtistImageCandidate,
+  type ArtistImageLookupInput,
+  type ArtistImageProvider,
+  type ArtistImageUpdatedPayload,
+} from './ArtistImageTypes';
 
 type DbRow = Record<string, unknown>;
 
@@ -58,6 +67,7 @@ type ArtistImageCacheServiceOptions = {
 
 const maxImageBytes = 5 * 1024 * 1024;
 const imageRequestTimeoutMs = 8000;
+const minAcceptedImageSide = 240;
 const defaultProvider = 'qqmusic';
 const cacheStatuses = new Set<ArtistImageCacheStatus>([
   'pending',
@@ -83,6 +93,7 @@ const hashText = (value: string): string => createHash('sha256').update(value).d
 const defaultArtistImageProviders = (): ArtistImageProvider[] => [
   new QQMusicArtistImageProvider(),
   new NeteaseArtistImageProvider(),
+  new WikipediaArtistImageProvider(),
 ];
 
 const isSupportedImageMimeType = (value: string | null | undefined): value is string => {
@@ -139,7 +150,7 @@ export class ArtistImageCacheService {
     options: ArtistImageCacheServiceOptions,
   ) {
     this.providers = options.providers?.length ? options.providers : defaultArtistImageProviders();
-    this.concurrency = Math.max(1, Math.min(2, Math.floor(options.concurrency ?? 2)));
+    this.concurrency = Math.max(1, Math.min(6, Math.floor(options.concurrency ?? 4)));
     this.fetchImage = options.fetchImage ?? this.downloadImage;
     this.onUpdated = options.onUpdated ?? null;
     this.cacheRoot = resolve(options.cacheRoot);
@@ -352,7 +363,7 @@ export class ArtistImageCacheService {
     }
 
     const existing = this.getCacheEntry(artist.artistKey);
-    if (!force && existing && nonRetryStatuses.has(existing.status)) {
+    if (!force && existing && this.isReusableCacheEntry(existing)) {
       return false;
     }
 
@@ -368,6 +379,18 @@ export class ArtistImageCacheService {
     });
 
     return true;
+  }
+
+  private isReusableCacheEntry(entry: ArtistImageCacheEntry): boolean {
+    if (!nonRetryStatuses.has(entry.status)) {
+      return false;
+    }
+
+    if (!isCurrentArtistImageCacheSourceHash(entry.sourceHash)) {
+      return false;
+    }
+
+    return entry.status !== 'matched' || Boolean(entry.largePath || entry.mediumPath || entry.thumbPath);
   }
 
   private drainQueue(): void {
@@ -439,7 +462,14 @@ export class ArtistImageCacheService {
     const providerErrors = results.filter((result) => result.error);
     const candidates = results
       .flatMap((result) => result.candidates)
-      .sort((left, right) => right.confidence - left.confidence);
+      .sort((left, right) => {
+        const confidenceDelta = right.confidence - left.confidence;
+        if (confidenceDelta !== 0) {
+          return confidenceDelta;
+        }
+
+        return (right.quality ?? 0) - (left.quality ?? 0);
+      });
     const bestLowConfidence = candidates.find((candidate) => candidate.confidence < ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE) ?? null;
     const autoMatchCandidates = candidates.filter((candidate) => candidate.confidence >= ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE);
     const downloadErrors: Array<{ candidate: ArtistImageCandidate; error: unknown }> = [];
@@ -452,7 +482,7 @@ export class ArtistImageCacheService {
           provider: candidate.provider,
           providerArtistId: candidate.providerArtistId,
           sourceUrl: candidate.sourceUrl ?? candidate.imageUrl,
-          sourceHash: downloaded.sourceHash,
+          sourceHash: artistImageCacheSourceHash(downloaded.sourceHash),
           thumbPath: paths.thumbPath,
           mediumPath: paths.mediumPath,
           largePath: paths.largePath,
@@ -518,30 +548,33 @@ export class ArtistImageCacheService {
   }
 
   private async searchProvider(provider: ArtistImageProvider, artist: ResolvedArtist): Promise<ProviderLookupResult> {
-    const previous = this.providerLocks.get(provider.name) ?? Promise.resolve();
-    let lock: Promise<void> | null = null;
-
     try {
-      const result = previous
-        .catch(() => undefined)
-        .then(async () => {
-          await this.waitForProviderRateLimit(provider);
-          return provider.searchArtistImage({
-            artistKey: artist.artistKey,
-            artistName: artist.artistName,
-          });
-        });
-      lock = result.then(
-        () => undefined,
-        () => undefined,
-      );
-      this.providerLocks.set(provider.name, lock);
-      const candidates = await result;
+      await this.reserveProviderRequest(provider);
+      const candidates = await provider.searchArtistImage({
+        artistKey: artist.artistKey,
+        artistName: artist.artistName,
+      });
       return { provider, candidates, error: null };
     } catch (error) {
       return { provider, candidates: [], error };
+    }
+  }
+
+  private async reserveProviderRequest(provider: ArtistImageProvider): Promise<void> {
+    const previous = this.providerLocks.get(provider.name) ?? Promise.resolve();
+    const lock = previous
+      .catch(() => undefined)
+      .then(() => this.waitForProviderRateLimit(provider));
+    const storedLock = lock.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.providerLocks.set(provider.name, storedLock);
+
+    try {
+      await lock;
     } finally {
-      if (lock && this.providerLocks.get(provider.name) === lock) {
+      if (this.providerLocks.get(provider.name) === storedLock) {
         this.providerLocks.delete(provider.name);
       }
     }
@@ -602,6 +635,12 @@ export class ArtistImageCacheService {
     }> = {},
   ): ArtistImageCacheEntry {
     const timestamp = nowIso();
+    const sourceHash = fields.sourceHash
+      ? artistImageCacheSourceHash(fields.sourceHash)
+      : status === 'matched'
+        ? null
+        : ARTIST_IMAGE_CACHE_SOURCE_VERSION;
+
     this.database
       .prepare(
         `INSERT INTO artist_image_cache (
@@ -630,7 +669,7 @@ export class ArtistImageCacheService {
         fields.provider ?? this.getCacheEntry(artist.artistKey)?.provider ?? this.providers[0]?.name ?? defaultProvider,
         fields.providerArtistId ?? null,
         fields.sourceUrl ?? null,
-        fields.sourceHash ?? null,
+        sourceHash,
         fields.thumbPath ?? null,
         fields.mediumPath ?? null,
         fields.largePath ?? null,
@@ -831,10 +870,18 @@ export class ArtistImageCacheService {
 
     try {
       const source = sharp(Buffer.from(data)).rotate();
+      const metadata = await source.metadata();
+      const width = metadata.width ?? 0;
+      const height = metadata.height ?? 0;
+
+      if (width > 0 && height > 0 && Math.min(width, height) < minAcceptedImageSide) {
+        throw new ArtistImageDownloadError('artist_image_too_small', 'not_found');
+      }
+
       await Promise.all([
-        source.clone().resize(128, 128, { fit: 'cover', position: 'centre' }).webp({ quality: 76, effort: 4 }).toFile(tempThumbPath),
-        source.clone().resize(320, 320, { fit: 'cover', position: 'centre' }).webp({ quality: 82, effort: 4 }).toFile(tempMediumPath),
-        source.clone().resize(768, 768, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 84, effort: 4 }).toFile(tempLargePath),
+        source.clone().resize(192, 192, { fit: 'cover', position: 'centre' }).webp({ quality: 88, effort: 5 }).toFile(tempThumbPath),
+        source.clone().resize(384, 384, { fit: 'cover', position: 'centre' }).webp({ quality: 90, effort: 5 }).toFile(tempMediumPath),
+        source.clone().resize(1024, 1024, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 92, effort: 5 }).toFile(tempLargePath),
       ]);
       await rename(tempThumbPath, thumbPath);
       await rename(tempMediumPath, mediumPath);

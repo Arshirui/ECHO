@@ -568,6 +568,12 @@ export type NetworkTagCandidateSearchRequest = {
   providers?: NetworkTagProvider[];
 };
 
+export type LyricsBackgroundCoverResult = {
+  coverUrl: string;
+  provider: NetworkTagProvider;
+  confidence: number;
+};
+
 export type LibraryAlbum = {
   id: string;
   mediaType?: 'local' | 'remote';

@@ -1,6 +1,7 @@
 import type { LyricsQuery } from '../../shared/types/lyrics';
 import { asRecord, fetchJsonWithTimeout, number, text } from '../library/network/providers/providerFetch';
 import type { LyricsProvider, LyricsProviderCapability, LyricsProviderResult, LyricsProviderSearchRequest } from './LyricsProvider';
+import { isInstrumentalLyricsText } from './instrumentalPlaceholders';
 import { parseSyncedLyrics } from './lyricsParser';
 
 const neteaseHeaders = {
@@ -110,13 +111,17 @@ export class NeteaseLyricsProvider implements LyricsProvider {
 
   private async fetchLyrics(song: NeteaseSong, request: LyricsProviderSearchRequest): Promise<LyricsProviderResult | null> {
     try {
-      const params = new URLSearchParams({ id: song.id, lv: '1', kv: '1', tv: '-1', rv: '-1' });
+      const params = new URLSearchParams({ id: song.id, lv: '1', kv: '1', tv: '1', yv: '1', rv: '1' });
       const data = asRecord(
         await fetchJsonWithTimeout(`https://music.163.com/api/song/lyric?${params.toString()}`, request.signal, neteaseHeaders, request.timeoutMs),
       );
-      const providerText = splitLyricsByKind(lyricText(data.lrc));
-      const karaokeLyrics = lyricText(data.klyric) ?? lyricText(data.yrc);
-      const instrumental = data.nolyric === true || data.needDesc === true;
+      const primaryLyricsText = lyricText(data.lrc);
+      const isPlaceholderInstrumental = isInstrumentalLyricsText(primaryLyricsText);
+      const providerText = isPlaceholderInstrumental
+        ? { syncedLyrics: null, plainLyrics: null }
+        : splitLyricsByKind(primaryLyricsText);
+      const karaokeLyrics = lyricText(data.yrc) ?? lyricText(data.klyric);
+      const instrumental = data.nolyric === true || data.needDesc === true || isPlaceholderInstrumental;
 
       if (!instrumental && !providerText.syncedLyrics && !providerText.plainLyrics && !karaokeLyrics) {
         return null;

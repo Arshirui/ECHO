@@ -64,6 +64,7 @@ const renderPanel = (
   clockPositionSeconds = 0,
   clockPlaybackRate = 1,
   hideFallbackTrackInfo = false,
+  smartReadableColorsEnabled = false,
 ) => {
   window.echo = {
     playback: {
@@ -94,6 +95,7 @@ const renderPanel = (
       artist="Test Artist"
       coverUrl="echo-cover://thumb/test"
       hideFallbackTrackInfo={hideFallbackTrackInfo}
+      smartReadableColorsEnabled={smartReadableColorsEnabled}
       isAudioPlaying={isAudioPlaying}
       audioClock={makeAudioClock(clockPositionSeconds, clockPlaybackRate, {
         state: isAudioPlaying ? 'playing' : 'paused',
@@ -443,6 +445,25 @@ describe('MvPanel', () => {
     });
 
     expect(background.dataset.lyricsReadability).toBe('true');
+    expect(container.querySelector('.lyrics-mv-panel')?.getAttribute('data-lyrics-readability')).toBe('true');
+  });
+
+  it('keeps the lyrics readability marker when immersive MV is disabled', async () => {
+    const { container } = renderPanel(makeVideo(), true, {
+      ...defaultMvSettings,
+      immersiveBackground: false,
+      lyricsReadabilityEnhanced: true,
+    });
+
+    const panel = await waitFor(() => {
+      const element = container.querySelector('.lyrics-mv-panel') as HTMLElement | null;
+      expect(element).toBeTruthy();
+      expect(element?.dataset.lyricsReadability).toBe('true');
+      return element!;
+    });
+
+    expect(container.querySelector('.lyrics-mv-background')).toBeNull();
+    expect(panel.dataset.immersiveActive).toBe('false');
   });
 
   it('leaves the immersive MV readability marker absent by default', async () => {
@@ -458,6 +479,23 @@ describe('MvPanel', () => {
     });
 
     expect(background.dataset.lyricsReadability).toBeUndefined();
+  });
+
+  it('marks MV readability when smart readable colors are enabled', async () => {
+    const { container } = renderPanel(makeVideo(), true, {
+      ...defaultMvSettings,
+      immersiveBackground: true,
+      lyricsReadabilityEnhanced: false,
+    }, 0, 1, false, true);
+
+    const background = await waitFor(() => {
+      const element = container.querySelector('.lyrics-mv-background') as HTMLElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    expect(background.dataset.lyricsReadability).toBe('true');
+    expect(container.querySelector('.lyrics-mv-panel')?.getAttribute('data-lyrics-readability')).toBe('true');
   });
 
   it('clears the previous MV as soon as the track changes', async () => {

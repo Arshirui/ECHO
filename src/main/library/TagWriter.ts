@@ -58,10 +58,11 @@ const { parentPort, workerData } = module['require']('node:worker_threads');
 `;
 
 const tagWriteQueues = new Map<string, Promise<void>>();
+let globalTagWriteQueue: Promise<void> = Promise.resolve();
 
 export const writeEmbeddedTrackTags = async (request: TagWriteRequest): Promise<void> => {
   const previousWrite = tagWriteQueues.get(request.filePath) ?? Promise.resolve();
-  const nextWrite = previousWrite.catch(() => undefined).then(() => runTagWriterWorker(request));
+  const nextWrite = previousWrite.catch(() => undefined).then(() => enqueueGlobalTagWrite(request));
   const queuedWrite = nextWrite.finally(() => {
     if (tagWriteQueues.get(request.filePath) === queuedWrite) {
       tagWriteQueues.delete(request.filePath);
@@ -71,6 +72,13 @@ export const writeEmbeddedTrackTags = async (request: TagWriteRequest): Promise<
   tagWriteQueues.set(request.filePath, queuedWrite);
   void queuedWrite.catch(() => undefined);
 
+  return nextWrite;
+};
+
+const enqueueGlobalTagWrite = (request: TagWriteRequest): Promise<void> => {
+  const nextWrite = globalTagWriteQueue.catch(() => undefined).then(() => runTagWriterWorker(request));
+  globalTagWriteQueue = nextWrite;
+  void globalTagWriteQueue.catch(() => undefined);
   return nextWrite;
 };
 

@@ -38,6 +38,7 @@ import {
 } from '../stores/libraryScanSession';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useI18n } from '../i18n/I18nProvider';
+import { usePlaybackFollowCurrentTrack } from '../hooks/usePlaybackFollowCurrentTrack';
 import type { TranslationKey } from '../i18n/locales';
 import { openAlbumDetailForTrack } from '../utils/albumNavigation';
 
@@ -227,6 +228,7 @@ export const FoldersPage = (): JSX.Element => {
   const bulkRequestIdRef = useRef(0);
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const { currentTrackId, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeTrackFromQueue } = usePlaybackQueue();
+  const followCurrentTrack = usePlaybackFollowCurrentTrack();
 
   const selectedOverview = useMemo(
     () => (selected ? overviews.find((overview) => overview.id === selected.folderId) ?? null : null),
@@ -1006,6 +1008,7 @@ export const FoldersPage = (): JSX.Element => {
           onEndReached={handleLoadMore}
           onOpenTrackMenu={handleOpenTrackMenu}
           onPlay={(track) => void handlePlayTrack(track)}
+          followCurrentTrack={followCurrentTrack}
         />
 
         {error || message || isLoadingTracks || isBulkLoading ? (

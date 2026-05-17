@@ -157,6 +157,17 @@ vi.mock('../utils/echoBridge', () => ({
     getSettings: getDownloadSettingsMock,
     chooseOutputDirectory: chooseDownloadOutputDirectoryMock,
   }),
+  getDiscordPresenceBridge: () => ({
+    getStatus: vi.fn().mockResolvedValue({ available: true, connected: false, enabled: false, lastError: null }),
+    setEnabled: vi.fn().mockResolvedValue({ available: true, connected: false, enabled: true, lastError: null }),
+  }),
+  getLastFmBridge: () => ({
+    getStatus: vi.fn().mockResolvedValue({ activeTrack: null, authPending: false, connected: false, enabled: false, lastError: null, username: null }),
+    setEnabled: vi.fn().mockResolvedValue({ activeTrack: null, authPending: false, connected: false, enabled: true, lastError: null, username: null }),
+    startAuth: vi.fn(),
+    completeAuth: vi.fn(),
+    disconnect: vi.fn(),
+  }),
   getLibraryBridge: () => ({
     clearCache: clearCacheMock,
     getDuplicateIndexSummary: vi.fn().mockResolvedValue({
@@ -232,6 +243,59 @@ afterEach(() => {
 });
 
 describe('SettingsPage', () => {
+  it('jumps from global settings search to a matching section', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const searchInput = screen.getByPlaceholderText('settings.header.searchPlaceholder') as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: '外观' } });
+    fireEvent.click(screen.getByRole('option', { name: /settings\.nav\.appearance\.label/ }));
+
+    expect(searchInput.value).toBe('');
+    expect(screen.getByText('settings.appearance.theme.title')).toBeTruthy();
+  });
+
+  it('opens the first global settings search result with Enter', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const searchInput = screen.getByPlaceholderText('settings.header.searchPlaceholder') as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: '壁纸' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(searchInput.value).toBe('');
+    expect(screen.getByText('settings.appearance.theme.title')).toBeTruthy();
+  });
+
+  it('finds status aliases and jumps to the exact Discord presence row', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const searchInput = screen.getByPlaceholderText('settings.header.searchPlaceholder') as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: '状态' } });
+    fireEvent.click(screen.getByRole('option', { name: /settings\.integrations\.discord\.title/ }));
+
+    expect(searchInput.value).toBe('');
+    const row = screen.getByText('settings.integrations.discord.title').closest('.setting-row') as HTMLElement;
+    expect(row.id).toBe('settings-row-discord-presence');
+    expect(row.getAttribute('data-search-highlight')).toBe('true');
+  });
+
   it('saves the dark theme from Settings and marks the selected chip', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);

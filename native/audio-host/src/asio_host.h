@@ -17,6 +17,12 @@ typedef unsigned int (*asio_dop_render_callback)(
     unsigned int frameCount,
     unsigned int channels);
 
+typedef unsigned int (*asio_native_dsd_render_callback)(
+    void* userData,
+    uint8_t* output,
+    unsigned int byteFrameCount,
+    unsigned int channels);
+
 typedef struct asio_device_info {
     char name[512];
     int isDefault;
@@ -73,6 +79,20 @@ int asio_start_dop(
     char* error,
     size_t errorLen);
 
+int asio_start_native_dsd(
+    const char* targetDeviceName,
+    int targetDeviceIndex,
+    uint32_t requestedSampleRate,
+    uint32_t sourceChannels,
+    uint32_t requestedBufferFrames,
+    uint32_t outputChannelStart,
+    asio_native_dsd_render_callback callback,
+    void* userData,
+    asio_runtime** outRuntime,
+    asio_ready_info* outInfo,
+    char* error,
+    size_t errorLen);
+
 int asio_open_control_panel(
     const char* targetDeviceName,
     int targetDeviceIndex,
@@ -103,6 +123,16 @@ void asio_write_sample_for_tests(
     long sampleType,
     long frameIndex,
     float sample);
+
+void asio_write_native_dsd_samples_for_tests(
+    void* buffer,
+    long sampleType,
+    uint32_t frameCount,
+    const uint8_t* source,
+    uint32_t sourceByteFrames,
+    uint32_t sourceChannels,
+    uint32_t sourceChannel,
+    int forcePackedMsb);
 #endif
 
 #endif

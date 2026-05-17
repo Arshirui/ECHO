@@ -184,6 +184,7 @@ const echoApi: EchoApi = {
     showNetworkCandidates: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryNetworkShowCandidates, trackId),
     searchNetworkTagCandidates: (trackId, options) =>
       ipcRenderer.invoke(IpcChannels.LibrarySearchNetworkTagCandidates, { trackId, ...options }),
+    resolveLyricsBackgroundCover: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryResolveLyricsBackgroundCover, trackId),
     applyNetworkMissingOnly: (candidateId, options) =>
       ipcRenderer.invoke(IpcChannels.LibraryNetworkApplyMissingOnly, { candidateId, ...options }),
     applyNetworkSelected: (candidateId, options) =>

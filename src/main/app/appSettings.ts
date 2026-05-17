@@ -140,6 +140,7 @@ export const defaultSettings: AppSettings = {
   audioUseJuceOutput: true,
   audioUseJuceDecode: false,
   audioDsdOutputMode: 'pcm',
+  audioAsioNativeDsdExperimentalEnabled: false,
   audioAsioUnavailableFallbackEnabled: false,
   audioSoxrFallbackEnabled: true,
   albumMergeStrategy: 'standard',
@@ -191,6 +192,7 @@ export const defaultSettings: AppSettings = {
   lyricsLineSpacingPercent: 110,
   lyricsContextOpacityPercent: 49,
   lyricsColor: defaultLyricsColor,
+  lyricsSmartReadableColorsEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -566,6 +568,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     audioUseJuceOutput: sourceAppMemoryVersion < appMemoryVersion ? true : settings.audioUseJuceOutput !== false,
     audioUseJuceDecode: settings.audioUseJuceDecode === true,
     audioDsdOutputMode: settings.audioDsdOutputMode === 'dop' ? 'dop' : 'pcm',
+    audioAsioNativeDsdExperimentalEnabled: settings.audioAsioNativeDsdExperimentalEnabled === true,
     audioAsioUnavailableFallbackEnabled: settings.audioAsioUnavailableFallbackEnabled === true,
     audioSoxrFallbackEnabled: settings.audioSoxrFallbackEnabled !== false,
     albumMergeStrategy,
@@ -648,6 +651,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       ? Math.round(clamp(lyricsContextOpacityPercent, 0, 100))
       : defaultSettings.lyricsContextOpacityPercent,
     lyricsColor: normalizeLyricsColor(settings.lyricsColor),
+    lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
     lyricsBackgroundMode: normalizeLyricsBackgroundMode(settings.lyricsBackgroundMode),
     lyricsCustomWallpaperPath: normalizeLyricsWallpaperPath(settings.lyricsCustomWallpaperPath),
     lyricsCoverOpacityPercent: Number.isFinite(lyricsCoverOpacityPercent)

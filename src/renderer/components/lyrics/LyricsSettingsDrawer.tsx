@@ -61,6 +61,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsLineSpacingPercent'
   | 'lyricsContextOpacityPercent'
   | 'lyricsColor'
+  | 'lyricsSmartReadableColorsEnabled'
   | 'lyricsBackgroundMode'
   | 'lyricsCustomWallpaperPath'
   | 'lyricsCoverOpacityPercent'
@@ -93,6 +94,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsLineSpacingPercent: 110,
   lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
+  lyricsSmartReadableColorsEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -210,6 +212,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackSettings.lyricsLineSpacingPercent,
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent,
   lyricsColor: settings.lyricsColor,
+  lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
   lyricsBackgroundMode: settings.lyricsBackgroundMode,
   lyricsCustomWallpaperPath: settings.lyricsCustomWallpaperPath,
   lyricsCoverOpacityPercent: settings.lyricsCoverOpacityPercent,
@@ -224,7 +227,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const [isBusy, setIsBusy] = useState(false);
   const [currentLyricsProviderLabel, setCurrentLyricsProviderLabel] = useState(providerLabelFor(null));
   const [draggingSourceId, setDraggingSourceId] = useState<LyricsProviderId | null>(null);
-  const [isLyricsStyleControlsOpen, setIsLyricsStyleControlsOpen] = useState(false);
+  const [isLyricsStyleControlsOpen, setIsLyricsStyleControlsOpen] = useState(true);
   const [isBackgroundControlsOpen, setIsBackgroundControlsOpen] = useState(true);
   const [lyricsReadabilityEnhanced, setLyricsReadabilityEnhanced] = useState(false);
   const [lyricsSearchQuery, setLyricsSearchQuery] = useState('');
@@ -1249,6 +1252,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <ImageIcon size={17} />
             <h3>歌词背景</h3>
           </div>
+
+          <label className="audio-toggle-row lyrics-smart-readable-toggle">
+            <span>
+              <EyeOff size={17} />
+              <strong>智能可读颜色</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsSmartReadableColorsEnabled === true}
+              disabled={isBusy || !effectiveSettings.lyricsEnabled}
+              onChange={(event) => void patchSettings({ lyricsSmartReadableColorsEnabled: event.currentTarget.checked })}
+            />
+          </label>
+          <p>根据封面、壁纸或 MV 画面自动选择高对比文字色，并按需增加轻遮罩、描边和阴影。关闭时继续使用手动歌词颜色。</p>
 
           <label className="audio-toggle-row lyrics-readability-toggle">
             <span>

@@ -280,32 +280,32 @@ export const ArtistsPage = (): JSX.Element => {
     void library.refreshVisibleArtistImages(candidates.map((artist) => ({ id: artist.id, name: artist.name }))).catch(() => undefined);
   }, [artistImagesAutoFetch, artists]);
 
-  const handleArtistCoverError = useCallback((artist: LibraryArtist): void => {
-    if (!artist.coverThumb) {
+  const handleArtistCoverError = useCallback((artist: LibraryArtist, failedUrl: string | null): void => {
+    if (!failedUrl) {
       return;
     }
 
     setFailedCoverUrls((current) =>
-      current[artist.id] === artist.coverThumb
+      current[artist.id] === failedUrl
         ? current
         : {
             ...current,
-            [artist.id]: artist.coverThumb!,
+            [artist.id]: failedUrl,
           },
     );
   }, []);
 
-  const handleArtistAvatarError = useCallback((artist: LibraryArtist): void => {
-    if (!artist.avatarThumbUrl) {
+  const handleArtistAvatarError = useCallback((artist: LibraryArtist, failedUrl: string | null): void => {
+    if (!failedUrl) {
       return;
     }
 
     setFailedAvatarUrls((current) =>
-      current[artist.id] === artist.avatarThumbUrl
+      current[artist.id] === failedUrl
         ? current
         : {
             ...current,
-            [artist.id]: artist.avatarThumbUrl!,
+            [artist.id]: failedUrl,
           },
     );
   }, []);
@@ -420,13 +420,17 @@ export const ArtistsPage = (): JSX.Element => {
 
       <section ref={artistWallRef} className="artist-wall" aria-label={t('library.artists.listAria')}>
         {artists.map((artist) => {
+          const avatarImageUrl = artist.avatarUrl ?? artist.avatarThumbUrl ?? null;
           const shouldShowAvatar = Boolean(
-            artist.avatarThumbUrl && failedAvatarUrls[artist.id] !== artist.avatarThumbUrl,
+            avatarImageUrl && failedAvatarUrls[artist.id] !== avatarImageUrl,
           );
           const shouldShowCover = Boolean(
             !shouldShowAvatar && artistWallAlbumArtwork && artist.coverThumb && failedCoverUrls[artist.id] !== artist.coverThumb,
           );
-          const imageUrl = shouldShowAvatar ? artist.avatarThumbUrl : shouldShowCover ? artist.coverThumb : null;
+          const imageUrl = shouldShowAvatar ? avatarImageUrl : shouldShowCover ? artist.coverThumb : null;
+          const avatarSrcSet = shouldShowAvatar && artist.avatarThumbUrl && artist.avatarUrl && artist.avatarThumbUrl !== artist.avatarUrl
+            ? `${artist.avatarThumbUrl} 192w, ${artist.avatarUrl} 1024w`
+            : undefined;
 
           return (
             <article
@@ -444,15 +448,17 @@ export const ArtistsPage = (): JSX.Element => {
                     alt=""
                     decoding="async"
                     draggable={false}
-                    height={320}
+                    height={384}
                     loading="lazy"
+                    sizes="124px"
                     src={imageUrl}
-                    width={320}
+                    srcSet={avatarSrcSet}
+                    width={384}
                     onError={() => {
                       if (shouldShowAvatar) {
-                        handleArtistAvatarError(artist);
+                        handleArtistAvatarError(artist, imageUrl);
                       } else {
-                        handleArtistCoverError(artist);
+                        handleArtistCoverError(artist, imageUrl);
                       }
                     }}
                   />

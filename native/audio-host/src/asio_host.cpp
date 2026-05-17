@@ -52,11 +52,16 @@ struct asio_runtime
     uint32_t sourceChannels = 0;
     float* scratch = nullptr;
     uint32_t* dopScratch = nullptr;
+    uint8_t* nativeDsdScratch = nullptr;
     HWND sysRefWindow = nullptr;
     asio_render_callback callback = nullptr;
     asio_dop_render_callback dopCallback = nullptr;
+    asio_native_dsd_render_callback nativeDsdCallback = nullptr;
     void* userData = nullptr;
     bool dopMode = false;
+    bool nativeDsdMode = false;
+    bool nativeDsdFormatApplied = false;
+    bool nativeDsdForcePackedMsb = false;
     bool initialized = false;
     bool buffersCreated = false;
     bool started = false;
@@ -352,6 +357,106 @@ void write_asio_dop_sample(void* buffer, ASIOSampleType type, long frameIndex, u
     }
 }
 
+unsigned char reverse_bits(unsigned char byte)
+{
+    byte = static_cast<unsigned char>(((byte & 0xf0u) >> 4) | ((byte & 0x0fu) << 4));
+    byte = static_cast<unsigned char>(((byte & 0xccu) >> 2) | ((byte & 0x33u) << 2));
+    byte = static_cast<unsigned char>(((byte & 0xaau) >> 1) | ((byte & 0x55u) << 1));
+    return byte;
+}
+
+bool asio_native_dsd_sample_type_supported(ASIOSampleType type)
+{
+    switch (type)
+    {
+        case ASIOSTDSDInt8LSB1:
+        case ASIOSTDSDInt8MSB1:
+        case ASIOSTDSDInt8NER8:
+            return true;
+        default:
+            return false;
+    }
+}
+
+uint32_t asio_native_dsd_source_byte_frames_for_type(ASIOSampleType type, uint32_t frameCount)
+{
+    switch (type)
+    {
+        case ASIOSTDSDInt8LSB1:
+        case ASIOSTDSDInt8MSB1:
+        case ASIOSTDSDInt8NER8:
+            return (frameCount + 7u) / 8u;
+        default:
+            return 0;
+    }
+}
+
+uint32_t asio_native_dsd_output_bytes_for_type(ASIOSampleType type, uint32_t frameCount)
+{
+    switch (type)
+    {
+        case ASIOSTDSDInt8LSB1:
+        case ASIOSTDSDInt8MSB1:
+            return (frameCount + 7u) / 8u;
+        case ASIOSTDSDInt8NER8:
+            return frameCount;
+        default:
+            return 0;
+    }
+}
+
+void write_asio_native_dsd_samples(
+    void* buffer,
+    ASIOSampleType type,
+    uint32_t frameCount,
+    const uint8_t* source,
+    uint32_t sourceByteFrames,
+    uint32_t sourceChannels,
+    uint32_t sourceChannel,
+    bool forcePackedMsb)
+{
+    auto* bytes = static_cast<unsigned char*>(buffer);
+    const uint32_t outputBytes = asio_native_dsd_output_bytes_for_type(type, frameCount);
+    const unsigned char silence = 0x69;
+    const bool useMsbBitOrder = forcePackedMsb || type == ASIOSTDSDInt8MSB1;
+
+    if (type == ASIOSTDSDInt8NER8)
+    {
+        for (uint32_t frame = 0; frame < frameCount; ++frame)
+        {
+            unsigned char value = silence;
+            const uint32_t sourceByteFrame = frame / 8u;
+            const uint32_t sourceBit = useMsbBitOrder ? 7u - (frame % 8u) : frame % 8u;
+            if (
+                source != nullptr &&
+                sourceChannels > 0 &&
+                sourceChannel < sourceChannels &&
+                sourceByteFrame < sourceByteFrames)
+            {
+                value = source[static_cast<size_t>(sourceByteFrame) * sourceChannels + sourceChannel];
+            }
+
+            bytes[frame] = static_cast<unsigned char>((value >> sourceBit) & 0x01u);
+        }
+        return;
+    }
+
+    for (uint32_t byteFrame = 0; byteFrame < outputBytes; ++byteFrame)
+    {
+        unsigned char value = silence;
+        if (
+            source != nullptr &&
+            sourceChannels > 0 &&
+            sourceChannel < sourceChannels &&
+            byteFrame < sourceByteFrames)
+        {
+            value = source[static_cast<size_t>(byteFrame) * sourceChannels + sourceChannel];
+        }
+
+        bytes[byteFrame] = useMsbBitOrder ? reverse_bits(value) : value;
+    }
+}
+
 bool asio_sample_type_supported(ASIOSampleType type)
 {
     switch (type)
@@ -418,6 +523,9 @@ const char* asio_sample_type_name(ASIOSampleType type)
         case ASIOSTInt32MSB18: return "int32msb18";
         case ASIOSTInt32MSB20: return "int32msb20";
         case ASIOSTInt32MSB24: return "int32msb24";
+        case ASIOSTDSDInt8LSB1: return "dsd8lsb1";
+        case ASIOSTDSDInt8MSB1: return "dsd8msb1";
+        case ASIOSTDSDInt8NER8: return "dsd8ner8";
         default: return "unsupported";
     }
 }
@@ -851,6 +959,14 @@ bool resolve_device_name(
     return true;
 }
 
+bool should_force_native_dsd_packed_msb(const char* selectedUtf8)
+{
+    if (selectedUtf8 == nullptr)
+        return false;
+
+    return contains_icase(selectedUtf8, "TEAC");
+}
+
 void render_asio_output(long bufferIndex)
 {
     asio_runtime* runtime = activeRuntime;
@@ -859,6 +975,51 @@ void render_asio_output(long bufferIndex)
 
     const auto frames = static_cast<uint32_t>(std::max<long>(1, runtime->bufferSize));
     const auto sourceChannels = static_cast<uint32_t>(std::max<uint32_t>(1, runtime->sourceChannels));
+
+    if (runtime->nativeDsdMode)
+    {
+        if (runtime->nativeDsdScratch == nullptr)
+            return;
+
+        uint32_t sourceByteFramesNeeded = 0;
+        for (long channel = 0; channel < runtime->outputChannelCount; ++channel)
+        {
+            const long asioIndex = runtime->outputChannelOffset + channel;
+            sourceByteFramesNeeded = std::max(
+                sourceByteFramesNeeded,
+                asio_native_dsd_source_byte_frames_for_type(runtime->channelInfos[asioIndex].type, frames));
+        }
+        sourceByteFramesNeeded = std::max<uint32_t>(1, sourceByteFramesNeeded);
+
+        std::memset(
+            runtime->nativeDsdScratch,
+            0x69,
+            static_cast<size_t>(sourceByteFramesNeeded) * sourceChannels);
+        if (runtime->nativeDsdCallback != nullptr)
+            runtime->nativeDsdCallback(runtime->userData, runtime->nativeDsdScratch, sourceByteFramesNeeded, sourceChannels);
+
+        for (long channel = 0; channel < runtime->outputChannelCount; ++channel)
+        {
+            const long asioIndex = runtime->outputChannelOffset + channel;
+            void* output = runtime->bufferInfos[asioIndex].buffers[bufferIndex];
+            const ASIOSampleType sampleType = runtime->channelInfos[asioIndex].type;
+            const auto sourceChannel = static_cast<uint32_t>(std::min<long>(channel, static_cast<long>(sourceChannels) - 1));
+
+            write_asio_native_dsd_samples(
+                output,
+                sampleType,
+                frames,
+                runtime->nativeDsdScratch,
+                sourceByteFramesNeeded,
+                sourceChannels,
+                sourceChannel,
+                runtime->nativeDsdForcePackedMsb);
+        }
+
+        if (runtime->postOutput)
+            ASIOOutputReady();
+        return;
+    }
 
     if (runtime->dopMode)
     {
@@ -1014,20 +1175,23 @@ bool populate_channel_infos(asio_runtime* runtime, char* error, size_t errorLen)
             return false;
         }
 
-        const bool supportedOutputSampleType = runtime->dopMode
-            ? asio_dop_sample_type_supported(runtime->channelInfos[i].type)
-            : asio_sample_type_supported(runtime->channelInfos[i].type);
+        const bool supportedOutputSampleType = runtime->nativeDsdMode
+            ? asio_native_dsd_sample_type_supported(runtime->channelInfos[i].type)
+            : runtime->dopMode
+                ? asio_dop_sample_type_supported(runtime->channelInfos[i].type)
+                : asio_sample_type_supported(runtime->channelInfos[i].type);
         if (! runtime->channelInfos[i].isInput && ! supportedOutputSampleType)
         {
             char message[256] {};
             snprintf(
                 message,
                 sizeof(message),
-                "unsupported ASIO output sample type driver=\"%s\" channel=%ld type=%ld dop=%d",
+                "unsupported ASIO output sample type driver=\"%s\" channel=%ld type=%ld dop=%d nativeDsd=%d",
                 runtime->selectedName,
                 i,
                 static_cast<long>(runtime->channelInfos[i].type),
-                runtime->dopMode ? 1 : 0);
+                runtime->dopMode ? 1 : 0,
+                runtime->nativeDsdMode ? 1 : 0);
             set_error(error, errorLen, message);
             return false;
         }
@@ -1219,6 +1383,48 @@ std::string output_format_summary(const asio_runtime* runtime)
 
     return asio_sample_type_name(firstType);
 }
+bool set_asio_io_format(ASIOIoFormatType formatType, const char* label, char* error, size_t errorLen)
+{
+    ASIOIoFormat format {};
+    format.FormatType = formatType;
+
+    const ASIOError result = ASIOFuture(kAsioSetIoFormat, &format);
+    if (result == ASE_SUCCESS || result == ASE_OK)
+        return true;
+
+    char message[256] {};
+    snprintf(
+        message,
+        sizeof(message),
+        "ASIO %s format switch failed error=%s(%ld)",
+        label != nullptr ? label : "I/O",
+        asio_error_name(result),
+        static_cast<long>(result));
+    set_error(error, errorLen, message);
+    return false;
+}
+
+bool enable_asio_native_dsd_format(char* error, size_t errorLen)
+{
+    ASIOIoFormat format {};
+    format.FormatType = kASIODSDFormat;
+
+    const ASIOError canResult = ASIOFuture(kAsioCanDoIoFormat, &format);
+    if (canResult != ASE_SUCCESS && canResult != ASE_OK)
+    {
+        char message[256] {};
+        snprintf(
+            message,
+            sizeof(message),
+            "ASIO native DSD format unsupported error=%s(%ld)",
+            asio_error_name(canResult),
+            static_cast<long>(canResult));
+        set_error(error, errorLen, message);
+        return false;
+    }
+
+    return set_asio_io_format(kASIODSDFormat, "native DSD", error, errorLen);
+}
 } // namespace
 
 int asio_list_devices(asio_device_info** outDevices, uint32_t* outCount)
@@ -1343,7 +1549,9 @@ static int asio_start_impl(
     uint32_t outputChannelStart,
     asio_render_callback callback,
     asio_dop_render_callback dopCallback,
+    asio_native_dsd_render_callback nativeDsdCallback,
     bool dopMode,
+    bool nativeDsdMode,
     void* userData,
     asio_runtime** outRuntime,
     asio_ready_info* outInfo,
@@ -1352,8 +1560,13 @@ static int asio_start_impl(
 {
     if (outRuntime == nullptr || outInfo == nullptr)
         return -1;
-    if ((! dopMode && callback == nullptr) || (dopMode && dopCallback == nullptr))
+    if (
+        (! dopMode && ! nativeDsdMode && callback == nullptr) ||
+        (dopMode && dopCallback == nullptr) ||
+        (nativeDsdMode && nativeDsdCallback == nullptr))
+    {
         return -1;
+    }
 
     *outRuntime = nullptr;
     memset(outInfo, 0, sizeof(*outInfo));
@@ -1401,7 +1614,10 @@ static int asio_start_impl(
     runtime->requestedSampleRate = requestedSampleRate;
     runtime->callback = callback;
     runtime->dopCallback = dopCallback;
+    runtime->nativeDsdCallback = nativeDsdCallback;
     runtime->dopMode = dopMode;
+    runtime->nativeDsdMode = nativeDsdMode;
+    runtime->nativeDsdForcePackedMsb = nativeDsdMode && should_force_native_dsd_packed_msb(selectedUtf8);
     runtime->userData = userData;
     runtime->driverInfo.asioVersion = 2;
     runtime->sysRefWindow = create_asio_host_window();
@@ -1436,6 +1652,20 @@ static int asio_start_impl(
     runtime->initialized = true;
     fprintf(stderr, "[echo-audio-host] ASIOInit completed: %s\n", selectedUtf8);
 
+    if (runtime->nativeDsdMode)
+    {
+        fprintf(stderr, "[echo-audio-host] ASIO native DSD format switch starting: %s\n", selectedUtf8);
+        if (! enable_asio_native_dsd_format(error, errorLen))
+        {
+            asio_stop(runtime);
+            return -1;
+        }
+        runtime->nativeDsdFormatApplied = true;
+        fprintf(stderr, "[echo-audio-host] ASIO native DSD format switch completed: %s\n", selectedUtf8);
+        if (runtime->nativeDsdForcePackedMsb)
+            fprintf(stderr, "[echo-audio-host] ASIO native DSD packed-bit-order compatibility enabled for driver: %s\n", selectedUtf8);
+    }
+
     long availableInputChannels = 0;
     long availableOutputChannels = 0;
     fprintf(stderr, "[echo-audio-host] ASIOGetChannels starting: %s\n", selectedUtf8);
@@ -1466,6 +1696,21 @@ static int asio_start_impl(
         asio_sample_rate_to_uint32(actualRate),
         asio_error_name(sampleRateResult),
         static_cast<long>(sampleRateResult));
+    if (runtime->nativeDsdMode && (sampleRateResult != ASE_OK || asio_sample_rate_to_uint32(actualRate) != requestedSampleRate))
+    {
+        char message[256] {};
+        snprintf(
+            message,
+            sizeof(message),
+            "ASIO native DSD sample-rate negotiation failed requested=%u actual=%u result=%s(%ld)",
+            requestedSampleRate,
+            asio_sample_rate_to_uint32(actualRate),
+            asio_error_name(sampleRateResult),
+            static_cast<long>(sampleRateResult));
+        set_error(error, errorLen, message);
+        asio_stop(runtime);
+        return -1;
+    }
     if (! refresh_asio_buffer_size(runtime, "after-rate-negotiation", error, errorLen))
     {
         asio_stop(runtime);
@@ -1525,7 +1770,20 @@ static int asio_start_impl(
     }
     fprintf(stderr, "[echo-audio-host] ASIOCreateBuffers completed: buffer=%ld\n", runtime->bufferSize);
 
-    if (runtime->dopMode)
+    if (runtime->nativeDsdMode)
+    {
+        runtime->nativeDsdScratch = static_cast<uint8_t*>(calloc(
+            static_cast<size_t>(std::max<long>(1, runtime->bufferSize)) * runtime->sourceChannels,
+            sizeof(uint8_t)));
+        if (runtime->nativeDsdScratch == nullptr)
+        {
+            set_error(error, errorLen, "failed to allocate ASIO native DSD render scratch buffer");
+            activeRuntime = nullptr;
+            asio_stop(runtime);
+            return -1;
+        }
+    }
+    else if (runtime->dopMode)
     {
         runtime->dopScratch = static_cast<uint32_t*>(calloc(
             static_cast<size_t>(runtime->bufferSize) * runtime->sourceChannels,
@@ -1609,6 +1867,8 @@ int asio_start(
         outputChannelStart,
         callback,
         nullptr,
+        nullptr,
+        false,
         false,
         userData,
         outRuntime,
@@ -1640,6 +1900,41 @@ int asio_start_dop(
         outputChannelStart,
         nullptr,
         callback,
+        nullptr,
+        true,
+        false,
+        userData,
+        outRuntime,
+        outInfo,
+        error,
+        errorLen);
+}
+
+int asio_start_native_dsd(
+    const char* targetDeviceName,
+    int targetDeviceIndex,
+    uint32_t requestedSampleRate,
+    uint32_t sourceChannels,
+    uint32_t requestedBufferFrames,
+    uint32_t outputChannelStart,
+    asio_native_dsd_render_callback callback,
+    void* userData,
+    asio_runtime** outRuntime,
+    asio_ready_info* outInfo,
+    char* error,
+    size_t errorLen)
+{
+    return asio_start_impl(
+        targetDeviceName,
+        targetDeviceIndex,
+        requestedSampleRate,
+        sourceChannels,
+        requestedBufferFrames,
+        outputChannelStart,
+        nullptr,
+        nullptr,
+        callback,
+        false,
         true,
         userData,
         outRuntime,
@@ -1667,6 +1962,11 @@ void asio_stop(asio_runtime* runtime)
 
     if (runtime->initialized)
     {
+        if (runtime->nativeDsdFormatApplied)
+        {
+            set_asio_io_format(kASIOPCMFormat, "PCM", nullptr, 0);
+            runtime->nativeDsdFormatApplied = false;
+        }
         ASIOExit();
         runtime->initialized = false;
     }
@@ -1684,6 +1984,8 @@ void asio_stop(asio_runtime* runtime)
     runtime->scratch = nullptr;
     free(runtime->dopScratch);
     runtime->dopScratch = nullptr;
+    free(runtime->nativeDsdScratch);
+    runtime->nativeDsdScratch = nullptr;
     free(runtime);
 }
 
@@ -1734,6 +2036,27 @@ uint32_t asio_build_sample_rate_pivot_candidates_for_tests(
 void asio_write_sample_for_tests(void* buffer, long sampleType, long frameIndex, float sample)
 {
     write_asio_sample(buffer, static_cast<ASIOSampleType>(sampleType), frameIndex, sample);
+}
+
+void asio_write_native_dsd_samples_for_tests(
+    void* buffer,
+    long sampleType,
+    uint32_t frameCount,
+    const uint8_t* source,
+    uint32_t sourceByteFrames,
+    uint32_t sourceChannels,
+    uint32_t sourceChannel,
+    int forcePackedMsb)
+{
+    write_asio_native_dsd_samples(
+        buffer,
+        static_cast<ASIOSampleType>(sampleType),
+        frameCount,
+        source,
+        sourceByteFrames,
+        sourceChannels,
+        sourceChannel,
+        forcePackedMsb != 0);
 }
 #endif
 

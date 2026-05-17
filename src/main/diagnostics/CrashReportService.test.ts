@@ -424,6 +424,42 @@ describe('CrashReportService', () => {
     }
   });
 
+  it('explains ASIO NotPresent failures as device unavailable instead of generic pipeline errors', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-05-17T02:25:57.363Z'));
+      const service = new CrashReportService(tempDir);
+      service.initialize();
+
+      service.reportAudioError({
+        message: 'echo-audio-host runtime_error; mode="asio"; nativeMessage="ASIO open failed: ASIOInit failed driver=\\"TEAC ASIO USB DRIVER\\" error=ASE_NotPresent(-1000) driverMessage=\\"No device found.\\""',
+        phase: 'output-start',
+        severity: 'recoverable',
+        details: {
+          outputMode: 'asio',
+          candidate: { index: 2, name: 'TEAC ASIO USB DRIVER', outputMode: 'asio' },
+          requestedOutputSampleRate: 44100,
+        },
+        audioStatus: createAudioStatus({
+          outputMode: 'asio',
+          outputDeviceId: 'asio:2',
+          outputDeviceName: 'TEAC ASIO USB DRIVER',
+          requestedOutputSampleRate: 44100,
+          warnings: ['file_sample_rate_unknown_using_44100_fallback'],
+        }) as never,
+      });
+
+      const report = readFileSync(join(service.getSessionDir()!, 'audio-crash-report.md'), 'utf8');
+
+      expect(report).toContain('asio_device_not_present');
+      expect(report).toContain('the selected ASIO driver loaded, but the driver reported that its hardware device is not currently present');
+      expect(report).toContain('enable ASIO unavailable guard');
+      expect(report).not.toContain('does not match a specialized diagnosis rule yet');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('opens the dedicated audio crash report file', async () => {
     const service = new CrashReportService(tempDir);
     service.initialize();

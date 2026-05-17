@@ -4,6 +4,7 @@ import { Film, Music2 } from 'lucide-react';
 import type { AudioPlaybackState } from '../../../shared/types/audio';
 import type { MvSettings, TrackVideo } from '../../../shared/types/mv';
 import type { StreamingMvItem, StreamingProviderName } from '../../../shared/types/streaming';
+import { sampleVideoElement } from './lyricsReadableColor';
 
 export type MvAudioClock = {
   positionSeconds: number;
@@ -23,6 +24,7 @@ type MvPanelProps = {
   artist: string;
   coverUrl: string | null;
   hideFallbackTrackInfo?: boolean;
+  smartReadableColorsEnabled?: boolean;
   isAudioPlaying: boolean;
   audioClock: MvAudioClock;
 };
@@ -75,6 +77,7 @@ const mvSyncDriftThresholdSeconds = 0.8;
 const mvSyncCorrectionCooldownMs = 1000;
 const playbackSeekedEvent = 'playback:seeked';
 const mvEndedBeforeAudioEvent = 'mv:ended-before-audio';
+const lyricsSmartReadableVideoSampleEvent = 'lyrics:smart-readable-video-sample';
 const mvSettingsKeys = [
   'enabled',
   'autoSearch',
@@ -277,6 +280,7 @@ export const MvPanel = ({
   coverUrl,
   hideFallbackTrackInfo = false,
   isAudioPlaying,
+  smartReadableColorsEnabled = false,
   streamingTarget = null,
   title,
   trackId,
@@ -586,6 +590,7 @@ export const MvPanel = ({
   );
   const adaptiveStream = isAdaptiveStream(selectedVideo);
   const showImmersiveBackground = Boolean(settings.immersiveBackground !== false && showVideo);
+  const isLyricsReadabilityEnhanced = settings.lyricsReadabilityEnhanced === true || smartReadableColorsEnabled;
   const immersiveBackgroundStyle = useMemo(
     () =>
       ({
@@ -849,8 +854,56 @@ export const MvPanel = ({
     };
   }, [adaptiveStream, applyVideoPlaybackRate, showImmersiveBackground, syncVideoToAudio, videoMediaUrl]);
 
+  useEffect(() => {
+    if (!smartReadableColorsEnabled || !showImmersiveBackground || !showVideo) {
+      return undefined;
+    }
+
+    let disposed = false;
+    const publishSample = async (): Promise<void> => {
+      const videoElement = backgroundVideoRef.current;
+      if (!videoElement || videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        return;
+      }
+
+      const sample = await sampleVideoElement(videoElement);
+      if (!disposed) {
+        window.dispatchEvent(new CustomEvent(lyricsSmartReadableVideoSampleEvent, {
+          detail: { trackId, sample },
+        }));
+      }
+    };
+
+    void publishSample();
+    const intervalId = window.setInterval(() => {
+      void publishSample();
+    }, 1500);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [showImmersiveBackground, showVideo, smartReadableColorsEnabled, trackId, videoMediaUrl]);
+
+  useEffect(() => {
+    if (!smartReadableColorsEnabled || (showImmersiveBackground && showVideo)) {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent(lyricsSmartReadableVideoSampleEvent, {
+      detail: { trackId, sample: null },
+    }));
+  }, [showImmersiveBackground, showVideo, smartReadableColorsEnabled, trackId]);
+
   if (!hasLoadedSettings || !isMvEnabled) {
-    return <section className="lyrics-mv-panel" aria-label="MV" data-mv-enabled="false" />;
+    return (
+      <section
+        className="lyrics-mv-panel"
+        aria-label="MV"
+        data-lyrics-readability={isLyricsReadabilityEnhanced ? 'true' : undefined}
+        data-mv-enabled="false"
+      />
+    );
   }
 
   return (
@@ -859,7 +912,7 @@ export const MvPanel = ({
         <div
           className="lyrics-mv-background"
           aria-hidden="true"
-          data-lyrics-readability={settings.lyricsReadabilityEnhanced === true ? 'true' : undefined}
+          data-lyrics-readability={isLyricsReadabilityEnhanced ? 'true' : undefined}
           style={immersiveBackgroundStyle}
           onPointerDown={(event) => {
             if (event.button !== 0) {
@@ -912,6 +965,7 @@ export const MvPanel = ({
         className="lyrics-mv-panel"
         aria-label="MV"
         data-immersive-active={showImmersiveBackground ? 'true' : 'false'}
+        data-lyrics-readability={isLyricsReadabilityEnhanced ? 'true' : undefined}
         data-mv-enabled="true"
       >
       <div className="lyrics-mv-ambient" style={coverUrl ? { backgroundImage: `url("${coverUrl}")` } : undefined} />

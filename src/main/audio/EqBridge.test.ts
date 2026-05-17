@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -173,6 +173,42 @@ describe('EqBridge protocol validation', () => {
 
     const reloaded = new EqBridge(dir);
     expect(reloaded.listPresets().some((preset) => preset.name === 'Desk Headphones')).toBe(true);
+  });
+
+  it('restores the last EQ enabled state and curve after restart', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'echo-next-eq-'));
+    tempDirs.push(dir);
+    const bridge = new EqBridge(dir);
+
+    await bridge.setPreset('rock');
+    await bridge.setEnabled(true);
+    await bridge.setBandGain({ band: 0, gainDb: 3.5 });
+    await bridge.setPreamp(-3);
+
+    const reloaded = new EqBridge(dir);
+
+    expect(reloaded.getState()).toMatchObject({
+      enabled: true,
+      preampDb: -3,
+      presetId: 'custom',
+      presetName: 'Custom',
+    });
+    expect(reloaded.getState().bands[0].gainDb).toBe(3.5);
+  });
+
+  it('falls back to disabled Flat EQ when persisted state is malformed', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'echo-next-eq-'));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, 'eq-state.json'), JSON.stringify({ enabled: true, bands: [{ gainDb: 999 }] }), 'utf8');
+
+    const bridge = new EqBridge(dir);
+
+    expect(bridge.getState()).toMatchObject({
+      enabled: false,
+      preampDb: 0,
+      presetId: 'flat',
+      presetName: 'Flat',
+    });
   });
 
   it('selects a newly saved preset in the bridge state', () => {

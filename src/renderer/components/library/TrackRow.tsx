@@ -1,6 +1,7 @@
 import { memo, useCallback, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import { Download, ListPlus, Loader2, MoreHorizontal, Music2 } from 'lucide-react';
+import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { LibraryTrack } from '../../../shared/types/library';
 
 export type HifiTagKind = 'flac' | 'lossless' | 'depth' | 'rate' | 'bitrate' | 'bpm' | 'dsf' | 'hires';
@@ -64,7 +65,7 @@ const tagsFromTrack = (track: LibraryTrack): HifiTag[] => {
     });
   }
 
-  if (track.bpm) {
+  if (isReliableBpmAnalysis(track.bpm, track.bpmConfidence, track.analysisStatus)) {
     tags.push({
       label: `${Math.round(track.bpm)} BPM`,
       kind: 'bpm',

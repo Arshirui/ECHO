@@ -68,6 +68,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsLineSpacingPercent).toBe(110);
     expect(settings.lyricsContextOpacityPercent).toBe(49);
     expect(settings.lyricsColor).toBe('#314054');
+    expect(settings.lyricsSmartReadableColorsEnabled).toBe(false);
     expect(settings.lyricsBackgroundMode).toBe('theme');
     expect(settings.lyricsCustomWallpaperPath).toBeNull();
     expect(settings.lyricsCoverOpacityPercent).toBe(100);
@@ -438,6 +439,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ audioAsioUnavailableFallbackEnabled: 'yes' as never }).audioAsioUnavailableFallbackEnabled).toBe(false);
   });
 
+  it('keeps ASIO native DSD experiment disabled until explicitly enabled', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).audioAsioNativeDsdExperimentalEnabled).toBe(false);
+    expect(normalizeSettings({ audioAsioNativeDsdExperimentalEnabled: true }).audioAsioNativeDsdExperimentalEnabled).toBe(true);
+    expect(normalizeSettings({ audioAsioNativeDsdExperimentalEnabled: false }).audioAsioNativeDsdExperimentalEnabled).toBe(false);
+    expect(normalizeSettings({ audioAsioNativeDsdExperimentalEnabled: 'yes' as never }).audioAsioNativeDsdExperimentalEnabled).toBe(false);
+  });
+
   it('keeps SOXR fallback enabled by default for stable playback', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -495,6 +505,7 @@ describe('app settings normalization', () => {
         lyricsLineSpacingPercent: 999,
         lyricsContextOpacityPercent: 1000,
         lyricsColor: 'red',
+        lyricsSmartReadableColorsEnabled: 'yes' as never,
         lyricsBackgroundMode: 'album' as never,
         lyricsCustomWallpaperPath: 'D:\\Outside\\wallpaper.png',
         lyricsCoverOpacityPercent: -10,
@@ -528,6 +539,7 @@ describe('app settings normalization', () => {
       lyricsLineSpacingPercent: 150,
       lyricsContextOpacityPercent: 100,
       lyricsColor: '#314054',
+      lyricsSmartReadableColorsEnabled: false,
       lyricsBackgroundMode: 'theme',
       lyricsCustomWallpaperPath: null,
       lyricsCoverOpacityPercent: 0,
@@ -544,6 +556,7 @@ describe('app settings normalization', () => {
         lyricsAutoAcceptScore: 0.1,
         lyricsContextOpacityPercent: 64.4,
         lyricsColor: '#ff3366',
+        lyricsSmartReadableColorsEnabled: true,
         lyricsBackgroundMode: 'cover',
         lyricsCoverOpacityPercent: 64.4,
         lyricsCoverBlurPx: 12.5,
@@ -556,6 +569,7 @@ describe('app settings normalization', () => {
       lyricsAutoAcceptScore: 0.3,
       lyricsContextOpacityPercent: 64,
       lyricsColor: '#FF3366',
+      lyricsSmartReadableColorsEnabled: true,
       lyricsBackgroundMode: 'cover',
       lyricsCoverOpacityPercent: 64,
       lyricsCoverBlurPx: 13,

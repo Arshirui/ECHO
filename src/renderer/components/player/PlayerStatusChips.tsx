@@ -1,4 +1,5 @@
 import type { AudioStatus } from '../../../shared/types/audio';
+import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { LibraryTrack } from '../../../shared/types/library';
 
 type PlayerStatusChipsProps = {
@@ -73,7 +74,7 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const channels = channelLabel(status?.channels);
   const formattedRate = formatSpecRate(sampleRate);
   const playbackRate = status?.playbackRate ?? 1;
-  const bpm = track?.bpm ?? null;
+  const bpm = isReliableBpmAnalysis(track?.bpm, track?.bpmConfidence, track?.analysisStatus) ? (track?.bpm ?? null) : null;
   const displayBpm = bpm ? Math.round(bpm * playbackRate) : null;
   const chips: Chip[] = [
     status?.sampleRateMismatch ? { label: 'Rate Mismatch', className: 'tag-warning' } : null,

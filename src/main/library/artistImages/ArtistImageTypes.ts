@@ -1,5 +1,17 @@
 import type { ArtistImageCacheEntry } from '../../../shared/types/library';
 
+export const ARTIST_IMAGE_CACHE_SOURCE_VERSION = 'artist-image-cache-v2';
+export const ARTIST_IMAGE_CACHE_SOURCE_HASH_PREFIX = `${ARTIST_IMAGE_CACHE_SOURCE_VERSION}:`;
+
+export const artistImageCacheSourceHash = (sourceHash: string): string =>
+  sourceHash.startsWith(ARTIST_IMAGE_CACHE_SOURCE_HASH_PREFIX)
+    ? sourceHash
+    : `${ARTIST_IMAGE_CACHE_SOURCE_HASH_PREFIX}${sourceHash}`;
+
+export const isCurrentArtistImageCacheSourceHash = (sourceHash: string | null | undefined): boolean =>
+  typeof sourceHash === 'string'
+    && (sourceHash === ARTIST_IMAGE_CACHE_SOURCE_VERSION || sourceHash.startsWith(ARTIST_IMAGE_CACHE_SOURCE_HASH_PREFIX));
+
 export type ArtistImageLookupInput = {
   artistId?: string;
   artistKey?: string;
@@ -14,6 +26,7 @@ export type ArtistImageCandidate = {
   artistName: string;
   imageUrl: string;
   confidence: number;
+  quality?: number;
   sourceUrl?: string | null;
   sourceRef?: string | null;
 };

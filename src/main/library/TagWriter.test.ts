@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const workerMockState = vi.hoisted(() => ({
   workers: [] as Array<{
@@ -7,6 +7,7 @@ const workerMockState = vi.hoisted(() => ({
     options: { eval?: boolean; workerData?: unknown };
     instance: EventEmitter;
   }>,
+  autoComplete: true,
 }));
 
 vi.mock('node:worker_threads', () => ({
@@ -14,15 +15,28 @@ vi.mock('node:worker_threads', () => ({
     constructor(source: string, options: { eval?: boolean; workerData?: unknown }) {
       super();
       workerMockState.workers.push({ source, options, instance: this });
-      queueMicrotask(() => {
-        this.emit('message', { ok: true });
-        this.emit('exit', 0);
-      });
+      if (workerMockState.autoComplete) {
+        queueMicrotask(() => {
+          this.emit('message', { ok: true });
+          this.emit('exit', 0);
+        });
+      }
     }
   },
 }));
 
+const flushQueuedWrites = async (): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+};
+
 describe('writeEmbeddedTrackTags', () => {
+  beforeEach(() => {
+    workerMockState.workers.length = 0;
+    workerMockState.autoComplete = true;
+  });
+
   it('runs embedded tag writes in a worker', async () => {
     const { writeEmbeddedTrackTags } = await import('./TagWriter');
 
@@ -58,5 +72,54 @@ describe('writeEmbeddedTrackTags', () => {
     expect(workerMockState.workers[0].source).toContain('applyCoverArt');
     expect(workerMockState.workers[0].source).toContain('import(taglibWasmModuleUrl)');
     expect(workerMockState.workers[0].source).not.toContain("import('taglib-wasm')");
+  });
+
+  it('serializes embedded tag writes globally', async () => {
+    workerMockState.autoComplete = false;
+    const { writeEmbeddedTrackTags } = await import('./TagWriter');
+
+    const firstWrite = writeEmbeddedTrackTags({
+      filePath: 'D:/Music/song-1.wav',
+      tags: {
+        title: 'One',
+        artist: 'Artist',
+        album: 'Album',
+        albumArtist: 'Album Artist',
+        trackNo: 1,
+        discNo: 1,
+        year: 2026,
+        genre: 'Pop',
+      },
+      coverData: null,
+    });
+    const secondWrite = writeEmbeddedTrackTags({
+      filePath: 'D:/Music/song-2.wav',
+      tags: {
+        title: 'Two',
+        artist: 'Artist',
+        album: 'Album',
+        albumArtist: 'Album Artist',
+        trackNo: 2,
+        discNo: 1,
+        year: 2026,
+        genre: 'Pop',
+      },
+      coverData: null,
+    });
+
+    await flushQueuedWrites();
+
+    expect(workerMockState.workers).toHaveLength(1);
+
+    workerMockState.workers[0].instance.emit('message', { ok: true });
+    workerMockState.workers[0].instance.emit('exit', 0);
+    await firstWrite;
+    await flushQueuedWrites();
+
+    expect(workerMockState.workers).toHaveLength(2);
+
+    workerMockState.workers[1].instance.emit('message', { ok: true });
+    workerMockState.workers[1].instance.emit('exit', 0);
+    await secondWrite;
   });
 });

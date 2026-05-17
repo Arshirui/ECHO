@@ -651,6 +651,18 @@ html:not([data-theme="dark"]) .app-shell:has(.lyrics-page) .output-status > span
   text-shadow: none;
 }
 
+html[data-lyrics-smart-readable="true"] .app-shell:has(.lyrics-page) .player-track-copy strong {
+  color: var(--lyrics-smart-primary-color);
+  text-shadow: var(--lyrics-smart-shadow);
+}
+
+html[data-lyrics-smart-readable="true"] .app-shell:has(.lyrics-page) .player-track-copy > span,
+html[data-lyrics-smart-readable="true"] .app-shell:has(.lyrics-page) .progress-row,
+html[data-lyrics-smart-readable="true"] .app-shell:has(.lyrics-page) .output-status > span {
+  color: var(--lyrics-smart-secondary-color);
+  text-shadow: var(--lyrics-smart-shadow);
+}
+
 .player-bar .icon-button {
   color: var(--theme-button-text);
   border-color: var(--echo-polish-border);

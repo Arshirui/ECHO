@@ -54,6 +54,19 @@ describe('lyricsParser', () => {
     ]);
   });
 
+  it('parses NetEase YRC word timings', () => {
+    expect(parseSyncedLyrics('[1000,1200](1000,300,0)Hello (1300,400,0)world')).toEqual([
+      {
+        timeMs: 1000,
+        text: 'Hello world',
+        words: [
+          { text: 'Hello ', startMs: 1000, endMs: 1300 },
+          { text: 'world', startMs: 1300, endMs: 1700 },
+        ],
+      },
+    ]);
+  });
+
   it('drops word timings with non-increasing timestamps but keeps the lyric line', () => {
     expect(parseSyncedLyrics('[00:01.00]<00:01.50>Hello <00:01.20>world')).toEqual([
       { timeMs: 1000, text: 'Hello world' },
@@ -236,6 +249,37 @@ describe('lyricsParser', () => {
         words: [
           { text: 'Hello ', startMs: 1000, endMs: 1500 },
           { text: 'world', startMs: 1500, endMs: null },
+        ],
+      },
+    ]);
+  });
+
+  it('uses provider NetEase YRC lyrics as word-highlight synced text', () => {
+    const lyrics = providerResultToTrackLyrics(
+      { title: 'Song', artist: 'Artist' },
+      {
+        provider: 'netease',
+        providerLyricsId: 'netease:yrc',
+        title: 'Song',
+        artist: 'Artist',
+        album: null,
+        durationSeconds: null,
+        instrumental: false,
+        plainLyrics: null,
+        syncedLyrics: '[00:01.00]Plain synced',
+        karaokeLyrics: '[1000,1200](1000,300,0)Hello (1300,400,0)world',
+      },
+      1,
+    );
+
+    expect(lyrics?.syncedText).toBe('[1000,1200](1000,300,0)Hello (1300,400,0)world');
+    expect(lyrics?.lines).toEqual([
+      {
+        timeMs: 1000,
+        text: 'Hello world',
+        words: [
+          { text: 'Hello ', startMs: 1000, endMs: 1300 },
+          { text: 'world', startMs: 1300, endMs: 1700 },
         ],
       },
     ]);

@@ -43,7 +43,7 @@ const progressEmitIntervalMs = 500;
 const postDownloadImportRetryMs = 5000;
 const maxCommandOutputBytes = 1024 * 1024 * 4;
 const ytDlpFileName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
-const outputTemplate = '%(title).180B [%(id)s].%(ext)s';
+const outputTemplate = '%(title).180B.%(ext)s';
 
 const searchProvidersForScope = (scope: DownloadSearchScope | undefined): DownloadSearchProvider[] => {
   if (scope === 'youtube' || scope === 'bilibili') {
@@ -1166,7 +1166,6 @@ export class DownloadService extends EventEmitter {
       '--newline',
       '--no-playlist',
       '--no-mtime',
-      '--restrict-filenames',
       ...this.headerArgs(this.jobOptions.get(jobId)?.requestHeaders ?? {}),
       '-f',
       'bestaudio/best',

@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer';
 import type { LyricsQuery } from '../../shared/types/lyrics';
 import { asRecord, fetchJsonWithTimeout, number, text } from '../library/network/providers/providerFetch';
 import type { LyricsProvider, LyricsProviderCapability, LyricsProviderResult, LyricsProviderSearchRequest } from './LyricsProvider';
+import { isInstrumentalLyricsText } from './instrumentalPlaceholders';
 import { parseSyncedLyrics } from './lyricsParser';
 
 const qqHeaders = {
@@ -255,10 +256,14 @@ export class QQMusicLyricsProvider implements LyricsProvider {
       const data = asRecord(
         await fetchJsonWithTimeout(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?${params.toString()}`, request.signal, qqHeaders, request.timeoutMs),
       );
-      const providerText = splitLyricsByKind(maybeDecodeBase64(data.lyric));
+      const primaryLyricsText = maybeDecodeBase64(data.lyric);
+      const isPlaceholderInstrumental = isInstrumentalLyricsText(primaryLyricsText);
+      const providerText = isPlaceholderInstrumental
+        ? { syncedLyrics: null, plainLyrics: null }
+        : splitLyricsByKind(primaryLyricsText);
       const karaokeLyrics = maybeDecodeBase64(data.qrc) ?? maybeDecodeBase64(data.karaoke);
 
-      if (!providerText.syncedLyrics && !providerText.plainLyrics && !karaokeLyrics) {
+      if (!isPlaceholderInstrumental && !providerText.syncedLyrics && !providerText.plainLyrics && !karaokeLyrics) {
         return null;
       }
 
@@ -269,7 +274,7 @@ export class QQMusicLyricsProvider implements LyricsProvider {
         artist: song.artist,
         album: song.album,
         durationSeconds: song.durationSeconds,
-        instrumental: false,
+        instrumental: isPlaceholderInstrumental,
         plainLyrics: providerText.plainLyrics,
         syncedLyrics: providerText.syncedLyrics,
         karaokeLyrics,

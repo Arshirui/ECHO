@@ -125,6 +125,10 @@ const normalizeOutputSettings = (value: unknown): AudioOutputSettings => {
     output.dsdOutputMode = input.dsdOutputMode;
   }
 
+  if (typeof input.asioNativeDsdExperimentalEnabled === 'boolean') {
+    output.asioNativeDsdExperimentalEnabled = input.asioNativeDsdExperimentalEnabled;
+  }
+
   if (typeof input.asioUnavailableFallbackEnabled === 'boolean') {
     output.asioUnavailableFallbackEnabled = input.asioUnavailableFallbackEnabled;
   }

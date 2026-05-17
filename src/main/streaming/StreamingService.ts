@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import electron from 'electron';
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
 import { getAppSettings } from '../app/appSettings';
+import { BPM_CONFIDENCE_THRESHOLD } from '../../shared/constants/audioAnalysis';
 import type { BpmAnalysisResult } from '../../shared/types/library';
 import type {
   StreamingLyricsResult,
@@ -41,7 +42,6 @@ const providerTimeoutMs = 10 * 1000;
 const likedSongsSyncTimeoutMs = 45 * 1000;
 const searchCacheVersion = 'v2';
 const lyricsCacheVersion = 'v3';
-const bpmConfidenceThreshold = 0.42;
 const playlistImportPageSize = 500;
 const likedSongsSyncPageSize = 100;
 const maxPlaylistImportTracks = 20_000;
@@ -343,13 +343,13 @@ export class StreamingService {
 
       const track = await this.getTrack(request.provider, request.providerTrackId).catch(() => null);
       const result = await this.bpmAnalyzer.analyze(source.url, track?.duration ?? undefined, { headers: source.headers });
-      const status = result.confidence >= bpmConfidenceThreshold ? 'complete' : 'low_confidence';
+      const status = result.confidence >= BPM_CONFIDENCE_THRESHOLD ? 'complete' : 'low_confidence';
 
       return {
         trackId,
-        bpm: result.bpm > 0 ? result.bpm : null,
+        bpm: result.bpm > 0 && status === 'complete' ? result.bpm : null,
         confidence: result.confidence,
-        beatOffsetMs: result.beatOffsetMs >= 0 ? result.beatOffsetMs : null,
+        beatOffsetMs: result.beatOffsetMs >= 0 && status === 'complete' ? result.beatOffsetMs : null,
         status,
         error: null,
         updatedAt,

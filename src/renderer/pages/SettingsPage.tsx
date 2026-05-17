@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import {
   Captions,
   Check,
@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileText,
   FolderOpen,
+  Github,
   Globe2,
   Headphones,
   Info,
@@ -197,6 +198,15 @@ type SettingsNavItem = {
   icon: LucideIcon;
 };
 
+type SettingsSearchResult = {
+  id: string;
+  sectionKey: SettingsNavKey;
+  title: string;
+  description: string;
+  targetId?: string;
+  score: number;
+};
+
 type FontPickerTarget = 'main' | 'chinese';
 type AlbumMergeStrategy = AppSettings['albumMergeStrategy'];
 type AccountBusyAction = 'save' | 'check' | 'clear' | 'browser' | 'login';
@@ -280,6 +290,8 @@ type SettingSectionProps = {
 
 type SettingRowProps = {
   className?: string;
+  id?: string;
+  highlighted?: boolean;
   title: string;
   description?: string;
   children: ReactNode;
@@ -338,6 +350,339 @@ const settingsNavItems: SettingsNavItem[] = [
   { key: 'about', labelKey: 'settings.nav.about.label', descriptionKey: 'settings.nav.about.description', icon: Info },
   { key: 'danger', labelKey: 'settings.nav.danger.label', descriptionKey: 'settings.nav.danger.description', icon: Trash2 },
 ];
+
+const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
+  general: ['general', 'language', 'locale', 'tray', 'window size', 'backup', 'settings backup', '通用', '语言', '简繁', '繁简', '托盘', '窗口尺寸', '备份'],
+  playback: [
+    'playback',
+    'audio',
+    'output',
+    'device',
+    'asio',
+    'wasapi',
+    'exclusive',
+    'juce',
+    'dsd',
+    'dop',
+    'soxr',
+    'speed',
+    'follow current',
+    '播放',
+    '音频',
+    '输出',
+    '设备',
+    '独占',
+    '采样率',
+    '重启音频',
+    '变速',
+    '当前播放',
+  ],
+  shortcuts: ['shortcuts', 'hotkeys', 'keyboard', 'global shortcut', 'record shortcut', '快捷键', '热键', '键盘', '全局快捷键'],
+  lyrics: ['lyrics', 'lrc', 'karaoke', 'offset', 'provider', 'romaji', '歌词', '逐字', '偏移', '音译', '罗马音', '歌词源'],
+  integrations: [
+    'integrations',
+    'account',
+    'login',
+    'last.fm',
+    'discord',
+    'smtc',
+    'youtube',
+    'spotify',
+    'bilibili',
+    'netease',
+    'qq music',
+    '集成',
+    '账号',
+    '登录',
+    '账户',
+    '网易云',
+    'QQ 音乐',
+    '哔哩哔哩',
+    '会员',
+  ],
+  remote: ['remote', 'webdav', 'subsonic', 'jellyfin', 'emby', 'navidrome', 'server', '远程', '网盘', '服务器', '媒体库', '云端'],
+  eq: ['eq', 'equalizer', 'balance', 'preamp', 'channel', '均衡器', '均衡', '声道', '平衡', '预放大'],
+  appearance: [
+    'appearance',
+    'theme',
+    'dark',
+    'light',
+    'system',
+    'wallpaper',
+    'font',
+    'density',
+    'artist avatar',
+    'artist image',
+    'cover',
+    'transparent',
+    '外观',
+    '主题',
+    '深色',
+    '浅色',
+    '跟随系统',
+    '壁纸',
+    '字体',
+    '密度',
+    '艺术家头像',
+    '艺术家封面',
+    '封面',
+    '透明',
+    '背景',
+  ],
+  library: [
+    'library',
+    'folder',
+    'scan',
+    'cache',
+    'download',
+    'metadata',
+    'duplicate',
+    'bpm',
+    'embedded tags',
+    'artist images',
+    '曲库',
+    '资料库',
+    '文件夹',
+    '扫描',
+    '缓存',
+    '下载',
+    '元数据',
+    '重复歌曲',
+    '内嵌标签',
+    'BPM',
+  ],
+  about: ['about', 'version', 'update', 'diagnostics', 'crash', 'repository', '关于', '版本', '更新', '诊断', '崩溃', '仓库'],
+  danger: ['danger', 'reset', 'clear cache', 'delete cache', 'restore defaults', '危险', '重置', '清空缓存', '恢复默认'],
+};
+
+const normalizeSettingsSearchText = (value: string): string => value.trim().toLocaleLowerCase();
+
+const compactSettingsSearchText = (value: string): string => normalizeSettingsSearchText(value).replace(/\s+/gu, '');
+
+const settingsSearchKeywordAliases: Record<string, string[]> = {
+  status: ['state', 'connected', 'connection', 'presence', 'running', 'enabled', 'disabled', 'error', 'login', '健康', '状态', '狀態', '连接', '連線', '在线', '启用', '啟用'],
+  状态: ['status', 'state', 'presence', 'connected', 'connection', 'running', 'enabled', 'disabled', 'error', '狀態', '连接', '在线', '启用'],
+  狀態: ['status', 'state', 'presence', 'connected', 'connection', 'running', 'enabled', 'disabled', 'error', '状态', '連線', '在線', '啟用'],
+  presence: ['discord', 'rich presence', 'status', '状态', '狀態'],
+};
+
+const expandSettingsSearchQuery = (query: string): string[] => {
+  const normalized = normalizeSettingsSearchText(query);
+  const compact = compactSettingsSearchText(query);
+  const expansions = new Set([normalized, compact]);
+
+  [normalized, compact].forEach((token) => {
+    settingsSearchKeywordAliases[token]?.forEach((alias) => {
+      expansions.add(normalizeSettingsSearchText(alias));
+      expansions.add(compactSettingsSearchText(alias));
+    });
+  });
+
+  return [...expansions].filter(Boolean);
+};
+
+const rankSettingsSearch = (query: string, terms: string[]): number => {
+  const queries = expandSettingsSearchQuery(query);
+  const normalizedTerms = terms.flatMap((term) => [normalizeSettingsSearchText(term), compactSettingsSearchText(term)]).filter(Boolean);
+
+  let bestScore = 0;
+  queries.forEach((candidateQuery, queryIndex) => {
+    normalizedTerms.forEach((term, termIndex) => {
+      if (!candidateQuery || !term) {
+        return;
+      }
+
+      const aliasPenalty = queryIndex === 0 ? 0 : 8;
+      const termPenalty = Math.min(termIndex, 8);
+      if (term === candidateQuery) {
+        bestScore = Math.max(bestScore, 120 - aliasPenalty - termPenalty);
+      } else if (term.startsWith(candidateQuery)) {
+        bestScore = Math.max(bestScore, 95 - aliasPenalty - termPenalty);
+      } else if (term.includes(candidateQuery)) {
+        bestScore = Math.max(bestScore, 75 - aliasPenalty - termPenalty);
+      } else if (candidateQuery.length >= 2 && candidateQuery.includes(term)) {
+        bestScore = Math.max(bestScore, 45 - aliasPenalty - termPenalty);
+      }
+    });
+  });
+
+  return bestScore;
+};
+
+const isSafeMarkdownHref = (href: string): boolean => {
+  const trimmed = href.trim();
+  return /^(https?:\/\/|mailto:|#|\/(?!\/))/iu.test(trimmed);
+};
+
+const parseMarkdownInline = (text: string, keyPrefix: string): ReactNode[] => {
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let textBuffer = '';
+
+  const flushText = (): void => {
+    if (textBuffer) {
+      nodes.push(textBuffer);
+      textBuffer = '';
+    }
+  };
+
+  while (cursor < text.length) {
+    if (text.startsWith('`', cursor)) {
+      const end = text.indexOf('`', cursor + 1);
+      if (end > cursor + 1) {
+        flushText();
+        nodes.push(<code key={`${keyPrefix}-code-${cursor}`}>{text.slice(cursor + 1, end)}</code>);
+        cursor = end + 1;
+        continue;
+      }
+    }
+
+    if (text.startsWith('**', cursor)) {
+      const end = text.indexOf('**', cursor + 2);
+      if (end > cursor + 2) {
+        flushText();
+        nodes.push(<strong key={`${keyPrefix}-strong-${cursor}`}>{parseMarkdownInline(text.slice(cursor + 2, end), `${keyPrefix}-strong-${cursor}`)}</strong>);
+        cursor = end + 2;
+        continue;
+      }
+    }
+
+    if (text[cursor] === '[') {
+      const labelEnd = text.indexOf(']', cursor + 1);
+      const hrefStart = labelEnd >= 0 && text[labelEnd + 1] === '(' ? labelEnd + 2 : -1;
+      const hrefEnd = hrefStart >= 0 ? text.indexOf(')', hrefStart) : -1;
+
+      if (labelEnd > cursor + 1 && hrefStart >= 0 && hrefEnd > hrefStart) {
+        const label = text.slice(cursor + 1, labelEnd);
+        const href = text.slice(hrefStart, hrefEnd).trim();
+        flushText();
+        nodes.push(
+          isSafeMarkdownHref(href) ? (
+            <a key={`${keyPrefix}-link-${cursor}`} href={href} target="_blank" rel="noreferrer">
+              {parseMarkdownInline(label, `${keyPrefix}-link-${cursor}`)}
+            </a>
+          ) : (
+            <span key={`${keyPrefix}-link-${cursor}`}>{parseMarkdownInline(label, `${keyPrefix}-link-${cursor}`)}</span>
+          ),
+        );
+        cursor = hrefEnd + 1;
+        continue;
+      }
+    }
+
+    textBuffer += text[cursor];
+    cursor += 1;
+  }
+
+  flushText();
+  return nodes;
+};
+
+const ReleaseNotesMarkdown = ({ markdown }: { markdown: string }): JSX.Element => {
+  const lines = markdown.replace(/\r\n?/gu, '\n').split('\n');
+  const blocks: ReactNode[] = [];
+  let index = 0;
+
+  const pushParagraph = (paragraphLines: string[], key: string): void => {
+    const paragraph = paragraphLines.join(' ').trim();
+    if (paragraph) {
+      blocks.push(<p key={key}>{parseMarkdownInline(paragraph, key)}</p>);
+    }
+  };
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith('```')) {
+      const codeLines: string[] = [];
+      const blockKey = `code-${index}`;
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith('```')) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) {
+        index += 1;
+      }
+      blocks.push(
+        <pre key={blockKey}>
+          <code>{codeLines.join('\n')}</code>
+        </pre>,
+      );
+      continue;
+    }
+
+    const headingMatch = /^(#{1,3})\s+(.+)$/u.exec(trimmed);
+    if (headingMatch) {
+      const headingLevel = headingMatch[1].length;
+      const headingText = headingMatch[2].trim();
+      const headingKey = `heading-${index}`;
+      blocks.push(
+        headingLevel === 1 ? (
+          <h3 key={headingKey}>{parseMarkdownInline(headingText, headingKey)}</h3>
+        ) : headingLevel === 2 ? (
+          <h4 key={headingKey}>{parseMarkdownInline(headingText, headingKey)}</h4>
+        ) : (
+          <h5 key={headingKey}>{parseMarkdownInline(headingText, headingKey)}</h5>
+        ),
+      );
+      index += 1;
+      continue;
+    }
+
+    const listMatch = /^(\s*)([-*+]|\d+\.)\s+(.+)$/u.exec(line);
+    if (listMatch) {
+      const ordered = /\d+\./u.test(listMatch[2]);
+      const items: ReactNode[] = [];
+      const listKey = `list-${index}`;
+      while (index < lines.length) {
+        const itemMatch = /^(\s*)([-*+]|\d+\.)\s+(.+)$/u.exec(lines[index]);
+        if (!itemMatch || /\d+\./u.test(itemMatch[2]) !== ordered) {
+          break;
+        }
+        items.push(<li key={`${listKey}-item-${index}`}>{parseMarkdownInline(itemMatch[3].trim(), `${listKey}-item-${index}`)}</li>);
+        index += 1;
+      }
+      blocks.push(ordered ? <ol key={listKey}>{items}</ol> : <ul key={listKey}>{items}</ul>);
+      continue;
+    }
+
+    if (trimmed.startsWith('>')) {
+      const quoteLines: string[] = [];
+      const quoteKey = `quote-${index}`;
+      while (index < lines.length && lines[index].trim().startsWith('>')) {
+        quoteLines.push(lines[index].trim().replace(/^>\s?/u, ''));
+        index += 1;
+      }
+      blocks.push(<blockquote key={quoteKey}>{parseMarkdownInline(quoteLines.join(' '), quoteKey)}</blockquote>);
+      continue;
+    }
+
+    const paragraphLines = [line.trim()];
+    const paragraphKey = `paragraph-${index}`;
+    index += 1;
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !lines[index].trim().startsWith('```') &&
+      !/^(#{1,3})\s+(.+)$/u.test(lines[index].trim()) &&
+      !/^(\s*)([-*+]|\d+\.)\s+(.+)$/u.test(lines[index]) &&
+      !lines[index].trim().startsWith('>')
+    ) {
+      paragraphLines.push(lines[index].trim());
+      index += 1;
+    }
+    pushParagraph(paragraphLines, paragraphKey);
+  }
+
+  return <div className="settings-update-markdown">{blocks}</div>;
+};
 
 const formatRate = (value: number | null): string => {
   if (!value) {
@@ -437,8 +782,8 @@ const SettingSection = ({ id, activeKey, icon: Icon, title, children }: SettingS
   );
 };
 
-const SettingRow = ({ className, title, description, children }: SettingRowProps): JSX.Element => (
-  <div className={`setting-row ${className ?? ''}`.trim()}>
+const SettingRow = ({ className, highlighted, id, title, description, children }: SettingRowProps): JSX.Element => (
+  <div className={`setting-row ${className ?? ''}`.trim()} id={id} data-search-highlight={highlighted ? 'true' : undefined}>
     <div className="setting-info">
       <h3>{title}</h3>
       {description ? <p>{description}</p> : null}
@@ -764,6 +1109,7 @@ export const SettingsPage = (): JSX.Element => {
   const { locale, localeOptions, setLocale, t } = useI18n();
   const [activeSection, setActiveSection] = useState<SettingsNavKey>('general');
   const [settingsQuery, setSettingsQuery] = useState('');
+  const [highlightedSettingId, setHighlightedSettingId] = useState<string | null>(null);
   const [status, setStatus] = useState<AudioStatus | null>(null);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [outputMode, setOutputMode] = useState<AudioOutputMode>('shared');
@@ -830,15 +1176,178 @@ export const SettingsPage = (): JSX.Element => {
   const [dangerMessage, setDangerMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const settingsSearchEntries = useMemo(() => {
+    const sectionEntries: Array<{
+      id: string;
+      sectionKey: SettingsNavKey;
+      targetId?: string;
+      title: string;
+      description: string;
+      terms: string[];
+    }> = settingsNavItems.map((item) => {
+      const title = t(item.labelKey);
+      const description = t(item.descriptionKey);
+      return {
+        id: `section-${item.key}`,
+        sectionKey: item.key,
+        title,
+        description,
+        terms: [title, description, ...(settingsSearchAliases[item.key] ?? [])],
+      };
+    });
+
+    const rowEntries: Array<{
+      id: string;
+      sectionKey: SettingsNavKey;
+      targetId: string;
+      title: string;
+      description: string;
+      terms: string[];
+    }> = [
+      {
+        id: 'row-discord-presence',
+        sectionKey: 'integrations',
+        targetId: 'settings-row-discord-presence',
+        title: t('settings.integrations.discord.title'),
+        description: t('settings.integrations.discord.description'),
+        terms: [
+          t('settings.integrations.discord.title'),
+          t('settings.integrations.discord.description'),
+          t('settings.integrations.discord.action.refresh'),
+          'discord',
+          'discord status',
+          'discord presence',
+          'discord rich presence',
+          'rich presence',
+          'presence',
+          'status',
+          'state',
+          'connected',
+          'connection',
+          'playing status',
+          '状态',
+          '狀態',
+          'discord 状态',
+          'discord 狀態',
+          '播放状态',
+          '連線狀態',
+          '连接状态',
+        ],
+      },
+      {
+        id: 'row-smtc',
+        sectionKey: 'integrations',
+        targetId: 'settings-row-smtc',
+        title: t('settings.integrations.smtc.title'),
+        description: t('settings.integrations.smtc.description'),
+        terms: [t('settings.integrations.smtc.title'), t('settings.integrations.smtc.description'), 'smtc', 'media session', 'system media controls', '系统媒体控制', '狀態列', '状态栏'],
+      },
+      {
+        id: 'row-lastfm',
+        sectionKey: 'integrations',
+        targetId: 'settings-row-lastfm',
+        title: t('settings.integrations.lastfm.title'),
+        description: t('settings.integrations.lastfm.description'),
+        terms: [t('settings.integrations.lastfm.title'), t('settings.integrations.lastfm.description'), 'last.fm', 'lastfm', 'scrobble', 'status', '状态', '账号状态', 'login status'],
+      },
+      {
+        id: 'row-account-startup-refresh',
+        sectionKey: 'integrations',
+        targetId: 'settings-row-account-startup-refresh',
+        title: '启动时刷新账号登录状态',
+        description: '仅检查以前登录过的账号，从未登录过的平台会保持静默。',
+        terms: ['启动时刷新账号登录状态', '账号状态', '登录状态', 'account status', 'login status', 'startup account refresh', 'youtube', 'bilibili', 'spotify', '状态'],
+      },
+      {
+        id: 'row-audio-status',
+        sectionKey: 'playback',
+        targetId: 'settings-row-audio-status',
+        title: t('settings.playback.audioStatus.title'),
+        description: t('audioDrawer.note.engine'),
+        terms: [t('settings.playback.audioStatus.title'), t('audioDrawer.note.engine'), 'audio status', 'engine status', '状态', '音频状态', '采样率', 'dac', 'wasapi', 'asio', 'juce'],
+      },
+      {
+        id: 'row-output-device',
+        sectionKey: 'playback',
+        targetId: 'settings-row-output-device',
+        title: t('settings.playback.outputDevice.title'),
+        description: t('settings.playback.outputDevice.description'),
+        terms: [t('settings.playback.outputDevice.title'), t('settings.playback.outputDevice.description'), 'output', 'device', 'dac', 'asio', 'wasapi', 'exclusive', '输出设备'],
+      },
+      {
+        id: 'row-theme',
+        sectionKey: 'appearance',
+        targetId: 'settings-row-theme',
+        title: t('settings.appearance.theme.title'),
+        description: t('settings.appearance.theme.description'),
+        terms: [t('settings.appearance.theme.title'), t('settings.appearance.theme.description'), 'theme', 'dark', 'light', 'system', '主题', '深色', '浅色'],
+      },
+      {
+        id: 'row-wallpaper',
+        sectionKey: 'appearance',
+        targetId: 'settings-row-wallpaper',
+        title: '自定义壁纸',
+        description: '保存原图文件，不压缩、不转码；默认完整显示不裁切。',
+        terms: ['自定义壁纸', '保存原图文件，不压缩、不转码；默认完整显示不裁切。', 'wallpaper', 'background', 'opacity', 'blur', '壁纸', '背景', '透明度'],
+      },
+      {
+        id: 'row-library-folders',
+        sectionKey: 'library',
+        targetId: 'settings-row-library-folders',
+        title: '曲库文件夹',
+        description: '管理本地音乐来源和扫描入口。',
+        terms: ['曲库文件夹', '管理本地音乐来源和扫描入口。', 'library folders', 'scan', 'folder', '曲库', '文件夹', '扫描'],
+      },
+      {
+        id: 'row-diagnostics',
+        sectionKey: 'about',
+        targetId: 'settings-row-diagnostics',
+        title: 'Diagnostics / 崩溃报告',
+        description: '本地生成诊断包用于排查闪退、白屏、扫描失败和播放异常；不会自动上传。',
+        terms: ['Diagnostics / 崩溃报告', '本地生成诊断包用于排查闪退、白屏、扫描失败和播放异常；不会自动上传。', 'diagnostics', 'crash', 'logs', 'status', '诊断', '崩溃', '日志', '状态'],
+      },
+    ];
+
+    return [...rowEntries, ...sectionEntries];
+  }, [t]);
+
+  const settingsSearchResults = useMemo<SettingsSearchResult[]>(() => {
+    const query = normalizeSettingsSearchText(settingsQuery);
+
+    if (!query) {
+      return [];
+    }
+
+    const results: SettingsSearchResult[] = [];
+    settingsSearchEntries.forEach((entry) => {
+      const score = rankSettingsSearch(query, entry.terms);
+      if (score <= 0) {
+        return;
+      }
+
+      results.push({
+        id: entry.id,
+        sectionKey: entry.sectionKey,
+        targetId: entry.targetId,
+        title: entry.title,
+        description: entry.description,
+        score,
+      });
+    });
+
+    return results.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title, locale));
+  }, [locale, settingsQuery, settingsSearchEntries]);
+
   const visibleNavItems = useMemo(() => {
-    const query = settingsQuery.trim().toLowerCase();
+    const query = normalizeSettingsSearchText(settingsQuery);
 
     if (!query) {
       return settingsNavItems;
     }
 
-    return settingsNavItems.filter((item) => `${t(item.labelKey)} ${t(item.descriptionKey)}`.toLowerCase().includes(query));
-  }, [settingsQuery, t]);
+    const resultKeys = new Set(settingsSearchResults.map((item) => item.sectionKey));
+    return settingsNavItems.filter((item) => resultKeys.has(item.key));
+  }, [settingsQuery, settingsSearchResults]);
 
   const compatibleDevices = useMemo(
     () => devices.filter((device) => (outputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')),
@@ -1193,6 +1702,7 @@ export const SettingsPage = (): JSX.Element => {
         useJuceOutput: appSettings?.audioUseJuceOutput !== false,
         useJuceDecode: appSettings?.audioUseJuceDecode === true,
         dsdOutputMode: appSettings?.audioDsdOutputMode === 'dop' ? 'dop' : 'pcm',
+        asioNativeDsdExperimentalEnabled: appSettings?.audioAsioNativeDsdExperimentalEnabled === true,
         asioUnavailableFallbackEnabled: appSettings?.audioAsioUnavailableFallbackEnabled === true,
         soxrFallbackEnabled: appSettings?.audioSoxrFallbackEnabled !== false,
       };
@@ -1215,6 +1725,7 @@ export const SettingsPage = (): JSX.Element => {
     },
     [
       appSettings?.audioAsioUnavailableFallbackEnabled,
+      appSettings?.audioAsioNativeDsdExperimentalEnabled,
       appSettings?.audioSoxrFallbackEnabled,
       appSettings?.audioDsdOutputMode,
       appSettings?.audioUseJuceDecode,
@@ -1226,9 +1737,30 @@ export const SettingsPage = (): JSX.Element => {
     ],
   );
 
-  const handleNavClick = (key: SettingsNavKey): void => {
+  const jumpToSettingsSection = (key: SettingsNavKey, options: { clearSearch?: boolean; targetId?: string } = {}): void => {
     setActiveSection(key);
-    document.getElementById(`settings-sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (options.clearSearch) {
+      setSettingsQuery('');
+    }
+    setHighlightedSettingId(options.targetId ?? null);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        document.getElementById(options.targetId ?? `settings-sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+  };
+
+  const handleNavClick = (key: SettingsNavKey): void => {
+    jumpToSettingsSection(key);
+  };
+
+  const handleSettingsSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
+    if (event.key !== 'Enter' || settingsSearchResults.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    jumpToSettingsSection(settingsSearchResults[0].sectionKey, { clearSearch: true, targetId: settingsSearchResults[0].targetId });
   };
 
   const handleOutputModeChange = (nextMode: AudioOutputMode): void => {
@@ -1296,6 +1828,23 @@ export const SettingsPage = (): JSX.Element => {
 
     try {
       setStatus(await audio.setOutput({ dsdOutputMode: nextDsdOutputMode }));
+    } catch (audioError) {
+      setError(audioError instanceof Error ? audioError.message : String(audioError));
+    }
+  };
+
+  const handleAsioNativeDsdExperimentalToggle = async (): Promise<void> => {
+    const nextEnabled = !(appSettings?.audioAsioNativeDsdExperimentalEnabled ?? false);
+    patchAppSettings({ audioAsioNativeDsdExperimentalEnabled: nextEnabled });
+
+    const audio = getAudioBridge();
+    if (!audio) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to change audio output.');
+      return;
+    }
+
+    try {
+      setStatus(await audio.setOutput({ asioNativeDsdExperimentalEnabled: nextEnabled }));
     } catch (audioError) {
       setError(audioError instanceof Error ? audioError.message : String(audioError));
     }
@@ -2652,8 +3201,30 @@ export const SettingsPage = (): JSX.Element => {
             type="search"
             value={settingsQuery}
             onChange={(event) => setSettingsQuery(event.target.value)}
+            onKeyDown={handleSettingsSearchKeyDown}
             placeholder={t('settings.header.searchPlaceholder')}
           />
+          {settingsQuery.trim() ? (
+            <div className="settings-search-results" role="listbox" aria-label={t('settings.header.searchPlaceholder')}>
+              {settingsSearchResults.length ? (
+                settingsSearchResults.slice(0, 6).map((result, index) => (
+                  <button
+                    className="settings-search-result"
+                    key={result.id}
+                    type="button"
+                    role="option"
+                    aria-selected={index === 0}
+                    onClick={() => jumpToSettingsSection(result.sectionKey, { clearSearch: true, targetId: result.targetId })}
+                  >
+                    <span>{result.title}</span>
+                    <small>{result.description}</small>
+                  </button>
+                ))
+              ) : (
+                <p className="settings-search-empty">没有匹配的设置</p>
+              )}
+            </div>
+          ) : null}
         </label>
       </header>
 
@@ -2757,7 +3328,12 @@ export const SettingsPage = (): JSX.Element => {
                   ))}
                 </div>
               </SettingRow>
-              <SettingRow title={t('settings.playback.outputDevice.title')} description={t('settings.playback.outputDevice.description')}>
+              <SettingRow
+                id="settings-row-output-device"
+                highlighted={highlightedSettingId === 'settings-row-output-device'}
+                title={t('settings.playback.outputDevice.title')}
+                description={t('settings.playback.outputDevice.description')}
+              >
                 <StyledSelect
                   className="settings-select-control"
                   value={selectedDeviceId}
@@ -2812,6 +3388,13 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() => void handleDsdDopToggle()}
                 />
               </SettingRow>
+              <SettingRow title="ASIO 原生 DSD 实验" description="默认关闭。仅在 ASIO + 本地 DSF + DoP 开启且无 EQ/音量/变速/DSP 时尝试；失败会退回现有 DoP/PCM。">
+                <ToggleButton
+                  active={appSettings?.audioAsioNativeDsdExperimentalEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() => void handleAsioNativeDsdExperimentalToggle()}
+                />
+              </SettingRow>
               <SettingRow title="ASIO unavailable guard" description="Default off. When enabled, ECHO skips the same ASIO device briefly after the driver says No device found, then uses safe shared output.">
                 <ToggleButton
                   active={appSettings?.audioAsioUnavailableFallbackEnabled ?? false}
@@ -2851,6 +3434,8 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--audio-status"
+                id="settings-row-audio-status"
+                highlighted={highlightedSettingId === 'settings-row-audio-status'}
                 title={t('settings.playback.audioStatus.title')}
                 description={t('settings.playback.audioStatus.description')}
               >
@@ -2941,7 +3526,12 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Link2} id="integrations" title={t('settings.nav.integrations.label')}>
-              <SettingRow title={t('settings.integrations.discord.title')} description={t('settings.integrations.discord.description')}>
+              <SettingRow
+                id="settings-row-discord-presence"
+                highlighted={highlightedSettingId === 'settings-row-discord-presence'}
+                title={t('settings.integrations.discord.title')}
+                description={t('settings.integrations.discord.description')}
+              >
                 <div className="settings-chip-row">
                   <StatusText tone={discordPresenceStatus?.enabled ? 'good' : 'muted'}>{discordPresenceLabel}</StatusText>
                   <button className="settings-action-button" type="button" onClick={() => void refreshDiscordPresenceStatus()}>
@@ -2954,14 +3544,24 @@ export const SettingsPage = (): JSX.Element => {
                   />
                 </div>
               </SettingRow>
-              <SettingRow title={t('settings.integrations.smtc.title')} description={t('settings.integrations.smtc.description')}>
+              <SettingRow
+                id="settings-row-smtc"
+                highlighted={highlightedSettingId === 'settings-row-smtc'}
+                title={t('settings.integrations.smtc.title')}
+                description={t('settings.integrations.smtc.description')}
+              >
                 <ToggleButton
                   active={appSettings?.smtcEnabled ?? true}
                   disabled={!appSettings}
                   onClick={() => patchAppSettings({ smtcEnabled: !(appSettings?.smtcEnabled ?? true) })}
                 />
               </SettingRow>
-              <SettingRow title={t('settings.integrations.lastfm.title')} description={t('settings.integrations.lastfm.description')}>
+              <SettingRow
+                id="settings-row-lastfm"
+                highlighted={highlightedSettingId === 'settings-row-lastfm'}
+                title={t('settings.integrations.lastfm.title')}
+                description={t('settings.integrations.lastfm.description')}
+              >
                 <div className="settings-chip-row">
                   <StatusText tone={lastFmStatus?.enabled ? 'good' : 'muted'}>{lastFmLabel}</StatusText>
                   <ToggleButton active={lastFmStatus?.enabled ?? appSettings?.lastFmEnabled ?? false} disabled={!appSettings} onClick={() => void handleLastFmToggle()} />
@@ -3009,7 +3609,12 @@ export const SettingsPage = (): JSX.Element => {
               <SettingRow title={t('settings.integrations.lastfm.scrobbling.title')} description={t('settings.integrations.lastfm.scrobbling.description')}>
                 <ToggleButton active={lastFmStatus?.scrobbleEnabled ?? true} disabled={!lastFmStatus} onClick={() => void handleLastFmScrobbleToggle()} />
               </SettingRow>
-              <SettingRow title="启动时刷新账号登录状态" description="仅检查以前登录过的账号，从未登录过的平台会保持静默。">
+              <SettingRow
+                id="settings-row-account-startup-refresh"
+                highlighted={highlightedSettingId === 'settings-row-account-startup-refresh'}
+                title="启动时刷新账号登录状态"
+                description="仅检查以前登录过的账号，从未登录过的平台会保持静默。"
+              >
                 <ToggleButton
                   active={appSettings?.autoAccountCheckOnStartup ?? true}
                   disabled={!appSettings}
@@ -3086,7 +3691,12 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Palette} id="appearance" title={t('settings.nav.appearance.label')}>
-              <SettingRow title={t('settings.appearance.theme.title')} description={t('settings.appearance.theme.description')}>
+              <SettingRow
+                id="settings-row-theme"
+                highlighted={highlightedSettingId === 'settings-row-theme'}
+                title={t('settings.appearance.theme.title')}
+                description={t('settings.appearance.theme.description')}
+              >
                 <div className="settings-chip-row">
                   {themeModeOptions.map((option) => (
                     <ChipButton
@@ -3184,6 +3794,8 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
+                id="settings-row-wallpaper"
+                highlighted={highlightedSettingId === 'settings-row-wallpaper'}
                 title="自定义壁纸"
                 description="保存原图文件，不压缩、不转码；默认完整显示不裁切。"
               >
@@ -3332,7 +3944,9 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Download} id="library" title={t('settings.nav.library.label')}>
-              <LibraryFoldersPanel />
+              <div id="settings-row-library-folders" data-search-highlight={highlightedSettingId === 'settings-row-library-folders' ? 'true' : undefined}>
+                <LibraryFoldersPanel />
+              </div>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
                 title="下载路径"
@@ -3750,14 +4364,22 @@ export const SettingsPage = (): JSX.Element => {
                       {updateBusy ? '检查中...' : '检查更新'}
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleOpenRepository()}>
-                      <ExternalLink size={15} />
-                      github.com/moekotori/echo
+                      <Github size={15} />
+                      ECHO NEXT
                     </button>
+                    <a className="settings-action-button" href="https://qm.qq.com/q/KrJE8PIqSQ" target="_blank" rel="noreferrer">
+                      <ExternalLink size={15} />
+                      加入 QQ 群聊
+                    </a>
+                    <a className="settings-action-button" href="https://discord.gg/g7v4WMRq3K" target="_blank" rel="noreferrer">
+                      <ExternalLink size={15} />
+                      加入 Discord
+                    </a>
                   </div>
                   {updateStatus?.releaseNotes ? (
                     <div className="settings-update-notes">
                       <em>更新日志</em>
-                      <pre>{updateStatus.releaseNotes}</pre>
+                      <ReleaseNotesMarkdown markdown={updateStatus.releaseNotes} />
                     </div>
                   ) : (
                     <p className="settings-inline-note">更新日志会在 GitHub Release 返回 release notes 后显示。</p>
@@ -3767,6 +4389,8 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
+                id="settings-row-diagnostics"
+                highlighted={highlightedSettingId === 'settings-row-diagnostics'}
                 title="Diagnostics / 崩溃报告"
                 description="本地生成诊断包用于排查闪退、白屏、扫描失败和播放异常；不会自动上传。"
               >

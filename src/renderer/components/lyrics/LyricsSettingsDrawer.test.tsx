@@ -41,6 +41,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsLineSpacingPercent: 110,
   lyricsContextOpacityPercent: 49,
   lyricsColor: '#314054',
+  lyricsSmartReadableColorsEnabled: false,
   lyricsBackgroundMode: 'theme',
   lyricsCustomWallpaperPath: null,
   lyricsCoverOpacityPercent: 100,
@@ -475,7 +476,7 @@ describe('LyricsSettingsDrawer', () => {
     expect(setSettings).toHaveBeenCalledWith({ lyricsSecondaryFontSizePx: 24 });
   });
 
-  it('keeps lyrics style controls collapsed by default', async () => {
+  it('keeps lyrics style controls open by default', async () => {
     window.echo = {
       app: {
         getSettings: vi.fn().mockResolvedValue(makeSettings()),
@@ -487,13 +488,13 @@ describe('LyricsSettingsDrawer', () => {
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
     await waitFor(() => expect(container.querySelector('.lyrics-style-toggle input')).toBeTruthy());
-    expect((container.querySelector('.lyrics-style-toggle input') as HTMLInputElement).checked).toBe(false);
-    expect(container.querySelector('.lyrics-drawer-range[hidden]')).toBeTruthy();
+    expect((container.querySelector('.lyrics-style-toggle input') as HTMLInputElement).checked).toBe(true);
+    expect(container.querySelector('.lyrics-drawer-range[hidden]')).toBeNull();
     expect(container.textContent).toContain('包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。');
 
     fireEvent.click(container.querySelector('.lyrics-style-toggle input') as HTMLInputElement);
 
-    expect(container.querySelector('.lyrics-drawer-range[hidden]')).toBeNull();
+    expect(container.querySelector('.lyrics-drawer-range[hidden]')).toBeTruthy();
   });
 
   it('toggles lyrics readability enhancement from the lyrics background section', async () => {
@@ -525,6 +526,41 @@ describe('LyricsSettingsDrawer', () => {
     expect(settingsChangedListener).toHaveBeenCalledWith(expect.objectContaining({ detail: { lyricsReadabilityEnhanced: true } }));
 
     window.removeEventListener('settings:changed', settingsChangedListener);
+  });
+
+  it('toggles smart readable colors from the lyrics background section', async () => {
+    const setSettings = vi.fn(async (patch: Partial<AppSettings>) => makeSettings(patch));
+    const settingsChangedListener = vi.fn();
+    const displaySettingsChangedListener = vi.fn();
+    window.addEventListener('settings:changed', settingsChangedListener);
+    window.addEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-smart-readable-toggle input')).toBeTruthy());
+    const toggle = container.querySelector('.lyrics-smart-readable-toggle input') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+
+    expect(toggle.checked).toBe(true);
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsSmartReadableColorsEnabled: true }));
+    expect(settingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsSmartReadableColorsEnabled: true } }),
+    );
+    expect(displaySettingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsSmartReadableColorsEnabled: true } }),
+    );
+
+    window.removeEventListener('settings:changed', settingsChangedListener);
+    window.removeEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
   });
 
   it('shows the current track lyrics provider instead of enabled sources', async () => {

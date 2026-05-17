@@ -43,9 +43,18 @@ describe('TrackRow', () => {
     expect(screen.getByText('24bit / 96kHz')).toBeTruthy();
     expect(screen.getByText('900kbps')).toBeTruthy();
     expect(screen.getByText('2:58')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Like Afraid' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Add to queue Afraid' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'More Afraid' })).toBeTruthy();
+  });
+
+  it('only shows BPM tags once the analysis is reliable', () => {
+    const { rerender } = render(<TrackRow isPlaying={false} track={track({ bpm: 128, bpmConfidence: 0.92, analysisStatus: 'complete' })} />);
+
+    expect(screen.getByText('128 BPM')).toBeTruthy();
+
+    rerender(<TrackRow isPlaying={false} track={track({ bpm: 128, bpmConfidence: 0.2, analysisStatus: 'low_confidence' })} />);
+
+    expect(screen.queryByText('128 BPM')).toBeNull();
   });
 
   it('handles missing cover and playing state safely', () => {
@@ -88,7 +97,7 @@ describe('TrackRow', () => {
     fireEvent.doubleClick(screen.getByRole('listitem'));
     expect(onPlay).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Like Afraid' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add to queue Afraid' }));
     expect(onPlay).not.toHaveBeenCalled();
   });
 

@@ -89,6 +89,29 @@ const defaultState = (): EqState => ({
   clippingRisk: false,
 });
 
+const normalizeState = (value: unknown): EqState | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const input = value as Partial<EqState>;
+  const preampDb = Number(input.preampDb ?? 0);
+  const bands = validateBands(input.bands);
+
+  if (!Number.isFinite(preampDb) || !bands) {
+    return null;
+  }
+
+  return {
+    enabled: input.enabled === true,
+    preampDb: clamp(preampDb, eqMinPreampDb, eqMaxPreampDb),
+    bands,
+    presetId: typeof input.presetId === 'string' && input.presetId.trim() ? input.presetId.trim().slice(0, 64) : 'flat',
+    presetName: typeof input.presetName === 'string' && input.presetName.trim() ? input.presetName.trim().slice(0, 64) : 'Flat',
+    clippingRisk: false,
+  };
+};
+
 const monoModes = new Set<ChannelBalanceMonoMode>(['off', 'sum', 'left', 'right']);
 
 const defaultChannelBalanceState = (): ChannelBalanceState => ({
@@ -207,10 +230,13 @@ export class EqBridge extends EventEmitter {
   private pending: PendingRequest[] = [];
   private receiveBuffer = '';
   private readonly presetPath: string;
+  private readonly statePath: string;
 
   constructor(userDataPath = getUserDataPath()) {
     super();
     this.presetPath = join(userDataPath, 'eq-presets.json');
+    this.statePath = join(userDataPath, 'eq-state.json');
+    this.state = this.readPersistedState();
     try {
       this.channelBalanceState = normalizeChannelBalancePatch(getAppSettings().channelBalance, defaultChannelBalanceState());
     } catch {
@@ -306,6 +332,7 @@ export class EqBridge extends EventEmitter {
 
   async setEnabled(enabled: boolean): Promise<EqState> {
     this.state = { ...this.state, enabled };
+    this.persistState();
     await this.sendNative({ type: 'eq:set-enabled', enabled });
     return this.emitState();
   }
@@ -318,6 +345,7 @@ export class EqBridge extends EventEmitter {
     const gainDb = clamp(Number(request.gainDb), eqMinGainDb, eqMaxGainDb);
     const bands = this.state.bands.map((band, index) => (index === request.band ? { ...band, gainDb } : band));
     this.state = { ...this.state, bands, presetId: 'custom', presetName: 'Custom' };
+    this.persistState();
     await this.sendNative({ type: 'eq:set-band-gain', band: request.band, gainDb });
     return this.emitState();
   }
@@ -335,6 +363,7 @@ export class EqBridge extends EventEmitter {
 
     const bands = this.state.bands.map((band, index) => (index === request.band ? { ...band, frequencyHz } : band));
     this.state = { ...this.state, bands, presetId: 'custom', presetName: 'Custom' };
+    this.persistState();
     await this.sendNative({ type: 'eq:set-band-frequency', band: request.band, frequencyHz });
     return this.emitState();
   }
@@ -342,6 +371,7 @@ export class EqBridge extends EventEmitter {
   async setPreamp(preampDb: number): Promise<EqState> {
     const safePreampDb = clamp(Number(preampDb), eqMinPreampDb, eqMaxPreampDb);
     this.state = { ...this.state, preampDb: safePreampDb, presetId: 'custom', presetName: 'Custom' };
+    this.persistState();
     await this.sendNative({ type: 'eq:set-preamp', preampDb: safePreampDb });
     return this.emitState();
   }
@@ -361,6 +391,7 @@ export class EqBridge extends EventEmitter {
       presetName: preset.name,
       clippingRisk: false,
     };
+    this.persistState();
     await this.sendNative({ type: 'eq:set-preset', preampDb: preset.preampDb, bands: preset.bands });
     return this.emitState();
   }
@@ -375,6 +406,7 @@ export class EqBridge extends EventEmitter {
       presetName: flat.name,
       clippingRisk: false,
     };
+    this.persistState();
     await this.sendNative({ type: 'eq:set-preset', preampDb: flat.preampDb, bands: flat.bands });
     return this.emitState();
   }
@@ -435,6 +467,7 @@ export class EqBridge extends EventEmitter {
       presetName: preset.name,
       clippingRisk: false,
     };
+    this.persistState();
     this.emitState();
     return preset;
   }
@@ -607,6 +640,27 @@ export class EqBridge extends EventEmitter {
   private writeUserPresets(presets: EqPreset[]): void {
     mkdirSync(dirname(this.presetPath), { recursive: true });
     writeFileSync(this.presetPath, JSON.stringify(presets, null, 2), 'utf8');
+  }
+
+  private readPersistedState(): EqState {
+    if (!existsSync(this.statePath)) {
+      return defaultState();
+    }
+
+    try {
+      return normalizeState(JSON.parse(readFileSync(this.statePath, 'utf8'))) ?? defaultState();
+    } catch {
+      return defaultState();
+    }
+  }
+
+  private persistState(): void {
+    try {
+      mkdirSync(dirname(this.statePath), { recursive: true });
+      writeFileSync(this.statePath, `${JSON.stringify(this.getState(), null, 2)}\n`, 'utf8');
+    } catch {
+      // Persistence is best-effort; audio controls should still work if the profile path is unavailable.
+    }
   }
 }
 

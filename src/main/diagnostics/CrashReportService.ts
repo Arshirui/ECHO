@@ -224,6 +224,10 @@ const compactWarnings = (record: AudioCrashRecord): string[] => {
 };
 
 const classifyAudioFailure = (message: string): string => {
+  if (/ASIO/iu.test(message) && /(?:ASE_NotPresent|No device found)/iu.test(message)) {
+    return 'asio_device_not_present';
+  }
+
   if (message.includes('timeout_waiting_for_ready')) {
     return 'host_ready_timeout';
   }
@@ -285,7 +289,7 @@ const createAudioTimelineMarkdown = (records: AudioCrashRecord[]): string[] => {
   records.forEach((record, index) => {
     const warnings = compactWarnings(record);
     const recoverySignals = warnings.filter((warning) =>
-      /fell_back|fallback|recovered|safe_mode|default_device|skipped_same_device/iu.test(warning),
+      /fell_back|fallback|recovered|safe_mode|default_device|skipped_same_device|temporarily_unavailable/iu.test(warning),
     );
     const time = record.timestamp.split('T')[1]?.replace('Z', '') ?? record.timestamp;
     lines.push(
@@ -314,7 +318,7 @@ const createAudioCorrelationMarkdown = (records: AudioCrashRecord[]): string[] =
   const warningSet = collectDistinct(records.flatMap(compactWarnings));
   const hasAsioFailure = modes.includes('asio') || records.some((record) => /ASIO| -asio\b|mode="asio"/u.test(record.message));
   const hasSharedFailure = modes.includes('shared') || records.some((record) => /mode="shared"|WASAPI|Windows Audio/u.test(record.message));
-  const hasFallbackSignals = warningSet.some((warning) => /fell_back|fallback|recovered|safe_mode|default_device/iu.test(warning));
+  const hasFallbackSignals = warningSet.some((warning) => /fell_back|fallback|recovered|safe_mode|default_device|temporarily_unavailable/iu.test(warning));
   const hasDsdPcm = warningSet.some((warning) => warning.startsWith('dsd_source_decoded_to_pcm'));
   const likelySingleIncident = records.length > 1 && (hasFallbackSignals || (hasAsioFailure && hasSharedFailure));
 
@@ -324,7 +328,7 @@ const createAudioCorrelationMarkdown = (records: AudioCrashRecord[]): string[] =
     `- Output modes involved: ${modes.join(', ') || 'n/a'}`,
     `- Devices involved: ${devices.map((device) => truncateText(device, 72)).join(' | ') || 'n/a'}`,
     `- Requested/actual rate transitions: ${rates.join(', ') || 'n/a'}`,
-    `- Recovery/fallback signals: ${warningSet.filter((warning) => /fell_back|fallback|recovered|safe_mode|default_device|skipped_same_device/iu.test(warning)).join(', ') || 'n/a'}`,
+    `- Recovery/fallback signals: ${warningSet.filter((warning) => /fell_back|fallback|recovered|safe_mode|default_device|skipped_same_device|temporarily_unavailable/iu.test(warning)).join(', ') || 'n/a'}`,
   );
 
   if (hasDsdPcm) {
@@ -363,7 +367,13 @@ const explainAudioError = (record: AudioCrashRecord | null): string[] => {
     return lines;
   }
 
-  if (message.includes('timeout_waiting_for_ready')) {
+  if (classifyAudioFailure(message) === 'asio_device_not_present') {
+    lines.push(
+      '- Direct cause: the selected ASIO driver loaded, but the driver reported that its hardware device is not currently present.',
+      '- Most likely reasons: the DAC/interface is unplugged or powered off, Windows still has a stale ASIO driver registration, the vendor control panel cannot see the device, or another driver state change happened while ECHO was opening ASIO.',
+      '- What to try: power-cycle or replug the interface, confirm the TEAC ASIO control panel can see the device, switch ECHO to Shared output once, or enable ASIO unavailable guard so ECHO skips this ASIO device briefly and uses safe shared output.',
+    );
+  } else if (message.includes('timeout_waiting_for_ready')) {
     lines.push(
       '- Direct cause: the native audio host was launched, but it did not send its ready event before the timeout.',
       '- Most likely reasons: the ASIO/WASAPI driver was slow or stuck during initialization, the device was busy in another app, the requested sample rate or buffer size was rejected slowly, or the driver needed more time while closing a previous stream.',

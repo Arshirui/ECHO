@@ -751,7 +751,7 @@ describe('Library Core', () => {
     expect(linkedItem.sourceProvider).toBe('local');
     expect(linkedItem.sourceItemId).toBeNull();
     expect(linkedItem.track?.id).toBe(localTrack.id);
-    expect(linkedItem.track?.mediaType).toBeUndefined();
+    expect(linkedItem.track?.mediaType).toBe('local');
     expect(linkedItem.unavailable).toBe(false);
     expect(linkedItem.titleSnapshot).toBe('Cloud Song');
     harness.cleanup();
@@ -2135,6 +2135,39 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('keeps mixed same-title albums from leaking unrelated tracks into an artist page', async () => {
+    const harness = createHarness({ coverExtractor: new FakeCoverExtractor() });
+    harness.setAlbumMergeStrategy('sameTitleAndCover');
+    const adoTrack = writeAudioFile(harness.folder, 'Ado.flac');
+    const c418Track = writeAudioFile(harness.folder, 'C418.flac');
+    const yoneTrack = writeAudioFile(harness.folder, 'Yone.flac');
+    harness.metadataService.overrides.set(
+      adoTrack,
+      baseMetadata({ title: 'New Genesis', artist: 'Ado', album: 'Web Stream', albumArtist: 'Ado' }),
+    );
+    harness.metadataService.overrides.set(
+      c418Track,
+      baseMetadata({ title: 'Minecraft', artist: 'C418', album: 'Web Stream', albumArtist: 'C418' }),
+    );
+    harness.metadataService.overrides.set(
+      yoneTrack,
+      baseMetadata({ title: 'Kaeru', artist: 'YONEDA', album: 'Web Stream', albumArtist: 'YONEDA' }),
+    );
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const [artist] = harness.service.getArtists({ search: 'Ado', pageSize: 1 }).items;
+    const tracks = harness.service.getArtistTracks(artist.id, { page: 1, pageSize: 10 });
+    const albums = harness.service.getArtistAlbums(artist.id, { page: 1, pageSize: 10 });
+    const [mergedAlbum] = harness.service.getAlbums({ search: 'Web Stream', pageSize: 1 }).items;
+
+    expect(artist).toMatchObject({ name: 'Ado', trackCount: 1, albumCount: 0 });
+    expect(tracks.items.map((track) => track.title)).toEqual(['New Genesis']);
+    expect(albums.total).toBe(0);
+    expect(mergedAlbum).toMatchObject({ title: 'Web Stream', albumArtist: 'Various Artists', trackCount: 3 });
+    harness.cleanup();
+  });
+
   it('splits collaboration artists into shared artist entries without splitting Japanese group punctuation', async () => {
     const harness = createHarness();
     const duet = writeAudioFile(harness.folder, 'Duet.flac');
@@ -2305,6 +2338,29 @@ describe('Library Core', () => {
     expect(serializedTrack).not.toContain('base64');
     expect(serializedAlbum).not.toContain('base64');
     expect(serializedAlbumDetail).not.toContain('base64');
+    harness.cleanup();
+  });
+
+  it('does not fall back to compressed derivatives for original cover assets', async () => {
+    const coverExtractor = new FakeCoverExtractor({ source: 'embedded', mimeType: 'image/png' });
+    const harness = createHarness({ coverExtractor });
+    writeAudioFile(harness.folder, 'Original Cover Only.flac');
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const track = harness.service.getTracks({ pageSize: 1 }).items[0];
+    const largeAsset = track.coverId ? harness.service.resolveCoverAsset(track.coverId, 'large') : null;
+    const originalAsset = track.coverId ? harness.service.resolveCoverAsset(track.coverId, 'original') : null;
+
+    expect(largeAsset?.filePath.endsWith('large.webp')).toBe(true);
+    expect(originalAsset?.filePath.endsWith('original.svg')).toBe(true);
+
+    const database = createDatabase(harness.databasePath);
+    database.prepare('UPDATE covers SET original_ref = NULL, cover_original = NULL WHERE id = ?').run(track.coverId);
+    database.close();
+
+    expect(harness.service.resolveCoverAsset(track.coverId!, 'large')?.filePath.endsWith('large.webp')).toBe(true);
+    expect(harness.service.resolveCoverAsset(track.coverId!, 'original')).toBeNull();
     harness.cleanup();
   });
 

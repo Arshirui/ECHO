@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Download, FolderPlus, ListFilter, Play, RotateCw, Search, Trash2, X } from 'lucide-react';
-import type { AppSettings } from '../../shared/types/appSettings';
 import type { DuplicateTrackIndexSummary, DuplicateTrackMember, EditableTrackTags, LibraryScanStatus, LibrarySort, LibraryTrack } from '../../shared/types/library';
 import { TrackContextMenu } from '../components/library/TrackContextMenu';
 import type { TrackMenuAction } from '../components/library/TrackContextMenu';
@@ -19,6 +18,7 @@ import {
   type SongsFirstPageSnapshot,
 } from '../stores/songsFirstPageSnapshot';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { usePlaybackFollowCurrentTrack } from '../hooks/usePlaybackFollowCurrentTrack';
 import { openAlbumDetailForTrack } from '../utils/albumNavigation';
 
 const pageSize = 100;
@@ -164,7 +164,7 @@ export const SongsPage = (): JSX.Element => {
   const [duplicateHiddenCounts, setDuplicateHiddenCounts] = useState<Record<string, number>>({});
   const [likedTrackIds, setLikedTrackIds] = useState<Record<string, boolean>>({});
   const [visibleTrackIds, setVisibleTrackIds] = useState<string[]>([]);
-  const [followCurrentTrack, setFollowCurrentTrack] = useState(false);
+  const followCurrentTrack = usePlaybackFollowCurrentTrack();
   const [likedRefreshVersion, setLikedRefreshVersion] = useState(0);
   const [versionMembers, setVersionMembers] = useState<DuplicateTrackMember[]>([]);
   const [versionTrack, setVersionTrack] = useState<LibraryTrack | null>(null);
@@ -244,8 +244,6 @@ export const SongsPage = (): JSX.Element => {
 
         const localSort = readStoredSort();
         const nextSort = (settings.appMemoryVersion ?? 0) < 1 && localSort !== 'default' ? localSort : (settings.songsSort ?? 'default');
-
-        setFollowCurrentTrack(settings.playbackFollowCurrentTrack === true);
 
         if (validSortValues.has(nextSort)) {
           setSort(nextSort);
@@ -415,24 +413,6 @@ export const SongsPage = (): JSX.Element => {
     window.addEventListener('settings:changed', handleSettingsChanged);
     return () => window.removeEventListener('settings:changed', handleSettingsChanged);
   }, [loadDuplicateSettings]);
-
-  useEffect(() => {
-    const handleSettingsChanged = (event: Event): void => {
-      const patch = (event as CustomEvent<Partial<AppSettings>>).detail;
-
-      if (patch && typeof patch === 'object' && 'playbackFollowCurrentTrack' in patch) {
-        setFollowCurrentTrack(patch.playbackFollowCurrentTrack === true);
-        return;
-      }
-
-      void window.echo?.app?.getSettings?.().then((settings) => {
-        setFollowCurrentTrack(settings.playbackFollowCurrentTrack === true);
-      }).catch(() => undefined);
-    };
-
-    window.addEventListener('settings:changed', handleSettingsChanged);
-    return () => window.removeEventListener('settings:changed', handleSettingsChanged);
-  }, []);
 
   const handleLoadMore = useCallback((): void => {
     if (!isLoading && hasMore) {

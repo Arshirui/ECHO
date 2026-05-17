@@ -74,6 +74,7 @@ import type {
   MissingMetadataField,
   MissingMetadataScanResult,
   NetworkApplyOptions,
+  LyricsBackgroundCoverResult,
   NetworkMetadataScanJobStatus,
   NetworkTagCandidate,
   NetworkTagCandidateSearchRequest,
@@ -111,6 +112,7 @@ export class LibraryService {
   private artistsDirty = false;
   private groupingRefreshTimer: NodeJS.Timeout | null = null;
   private groupingRefreshQueued = false;
+  private artistImageStartupTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly store: LibraryStore,
@@ -128,10 +130,11 @@ export class LibraryService {
     private readonly readAppSettings: () => AppSettings = getAppSettingsSafe,
     private readonly scanConcurrency: ScanConcurrencyRecommendation = getRecommendedScanConcurrency(),
   ) {
-    const artistImageStartupTimer = setTimeout(() => {
+    this.artistImageStartupTimer = setTimeout(() => {
+      this.artistImageStartupTimer = null;
       this.syncArtistImageBackfillState();
     }, 0);
-    artistImageStartupTimer.unref?.();
+    this.artistImageStartupTimer.unref?.();
   }
 
   addFolder(folderPath: string): LibraryFolder {
@@ -1106,6 +1109,17 @@ export class LibraryService {
     return this.networkMetadataService.searchNetworkTagCandidates(request);
   }
 
+  async resolveLyricsBackgroundCover(
+    trackId: string,
+    providerNames?: AppSettings['networkMetadataProviders'],
+  ): Promise<LyricsBackgroundCoverResult | null> {
+    if (!this.networkMetadataService) {
+      return null;
+    }
+
+    return this.networkMetadataService.resolveLyricsBackgroundCover(trackId, providerNames);
+  }
+
   async applyNetworkMissingOnly(candidateId: string, options?: NetworkApplyOptions): Promise<NetworkApplyResult> {
     if (!this.networkMetadataService) {
       throw new Error('Network metadata service is unavailable');
@@ -1392,6 +1406,11 @@ export class LibraryService {
   }
 
   close(): void {
+    if (this.artistImageStartupTimer) {
+      clearTimeout(this.artistImageStartupTimer);
+      this.artistImageStartupTimer = null;
+    }
+
     this.closeDatabase();
   }
 
@@ -1451,10 +1470,11 @@ export class LibraryService {
     errorPrefix: string;
   }): void {
     const attemptWrite = async (): Promise<void> => {
-      if (await isFileActiveInAudioSession(request.filePath)) {
-        setTimeout(() => {
+      if (await shouldDelayEmbeddedTagWriteForAudio(request.filePath)) {
+        const retryTimer = setTimeout(() => {
           void attemptWrite();
         }, 5000);
+        retryTimer.unref?.();
         return;
       }
 
@@ -1470,9 +1490,10 @@ export class LibraryService {
       }
     };
 
-    setTimeout(() => {
+    const startTimer = setTimeout(() => {
       void attemptWrite();
     }, 250);
+    startTimer.unref?.();
   }
 
   private syncTrackFileStat(trackId: string): void {
@@ -1498,11 +1519,19 @@ export class LibraryService {
   }
 }
 
-const isFileActiveInAudioSession = async (filePath: string): Promise<boolean> => {
+const shouldDelayEmbeddedTagWriteForAudio = async (filePath: string): Promise<boolean> => {
   try {
     const { getAudioSession } = await import('../audio/AudioSession');
     const status = getAudioSession().getStatus();
-    return resolve(status.currentFilePath ?? '') === resolve(filePath) && status.state !== 'idle' && status.state !== 'stopped' && status.state !== 'error';
+    const audioPipelineBusy = status.state === 'loading' || status.state === 'playing';
+    const currentFileHeld =
+      resolve(status.currentFilePath ?? '') === resolve(filePath) &&
+      status.state !== 'idle' &&
+      status.state !== 'stopped' &&
+      status.state !== 'ended' &&
+      status.state !== 'error';
+
+    return audioPipelineBusy || currentFileHeld;
   } catch {
     return false;
   }

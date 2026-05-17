@@ -47,6 +47,7 @@ export type AppSettings = {
   audioUseJuceOutput?: boolean;
   audioUseJuceDecode?: boolean;
   audioDsdOutputMode?: AudioDsdOutputMode;
+  audioAsioNativeDsdExperimentalEnabled?: boolean;
   audioAsioUnavailableFallbackEnabled?: boolean;
   audioSoxrFallbackEnabled?: boolean;
   albumMergeStrategy: 'standard' | 'sameTitleAndCover';
@@ -98,6 +99,7 @@ export type AppSettings = {
   lyricsLineSpacingPercent?: number;
   lyricsContextOpacityPercent?: number;
   lyricsColor: string;
+  lyricsSmartReadableColorsEnabled?: boolean;
   lyricsBackgroundMode: LyricsBackgroundMode;
   lyricsCustomWallpaperPath: string | null;
   lyricsCoverOpacityPercent: number;

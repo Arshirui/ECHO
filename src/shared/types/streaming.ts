@@ -158,6 +158,7 @@ export type StreamingLyricsResult = {
   syncedLyrics: string | null;
   translationLyrics?: string | null;
   romanizationLyrics?: string | null;
+  instrumental?: boolean;
   lines: StreamingLyricsLine[];
   sourceLabel: string | null;
 };

@@ -492,6 +492,9 @@ describe('DownloadService', () => {
     const completedJob = await waitForJob(service, job.id);
     expect(commandRunner).toHaveBeenCalledWith(ytDlpPath, ['--dump-json', '--no-playlist', 'https://www.youtube.com/watch?v=probe']);
     expect(streamingCommandRunner).toHaveBeenCalled();
+    const downloadArgs = streamingCommandRunner.mock.calls[0]?.[1] ?? [];
+    expect(downloadArgs).toEqual(expect.arrayContaining(['-o', '%(title).180B.%(ext)s']));
+    expect(downloadArgs).not.toContain('--restrict-filenames');
     expect(completedJob.title).toBe('Probe Song');
     expect(completedJob.durationSeconds).toBe(245);
     expect(completedJob.thumbnailUrl).toBe('https://img.example/cover.jpg');

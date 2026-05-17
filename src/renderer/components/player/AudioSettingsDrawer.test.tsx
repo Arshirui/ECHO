@@ -177,7 +177,17 @@ const setNavigatorUserAgent = (userAgent: string): void => {
   });
 };
 
+const openAdvancedControls = (): void => {
+  const toggle = screen.getByRole('button', { name: /advancedOutput/ });
+
+  if (toggle.getAttribute('aria-expanded') !== 'true') {
+    fireEvent.click(toggle);
+  }
+};
+
 const openBufferControls = (): void => {
+  openAdvancedControls();
+
   const toggle = document.querySelector('.audio-buffer-collapse-button');
 
   if (!(toggle instanceof HTMLButtonElement)) {
@@ -231,12 +241,33 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     expect(screen.getByRole('button', { name: /TEAC ASIO/ })).toBeTruthy();
   });
 
+  it('keeps advanced output collapsed by default and remembers when opened', () => {
+    renderDrawer(baseStatus);
+
+    const advancedToggle = screen.getByRole('button', { name: /advancedOutput/ });
+    expect(advancedToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('checkbox', { name: /JUCE Main Output/ })).toBeNull();
+
+    fireEvent.click(advancedToggle);
+
+    expect(advancedToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(window.localStorage.getItem('echo-next.audio-advanced-output-open')).toBe('true');
+    expect(screen.getByRole('checkbox', { name: /JUCE Main Output/ })).toBeTruthy();
+
+    cleanup();
+    renderDrawer(baseStatus);
+
+    expect(screen.getByRole('button', { name: /advancedOutput/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('checkbox', { name: /JUCE Main Output/ })).toBeTruthy();
+  });
+
   it('shows the active FFmpeg to JUCE output chain', () => {
     renderDrawer({
       ...baseStatus,
       useJuceOutputRequested: true,
       activeOutputBackendImpl: 'juce-wasapi-shared',
     });
+    openAdvancedControls();
 
     expect(screen.getByRole('checkbox', { name: /JUCE Main Output/ })).toHaveProperty('checked', true);
     expect(screen.getByText('FFmpeg decode -> JUCE output')).toBeTruthy();
@@ -250,6 +281,7 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
       activeDecodeBackendImpl: 'juce-wav',
       activeOutputBackendImpl: 'juce-wasapi-shared',
     });
+    openAdvancedControls();
 
     expect(screen.getByRole('checkbox', { name: /JUCE Decode Experiment/ })).toHaveProperty('checked', true);
     expect(screen.getByText('JUCE decode -> JUCE output')).toBeTruthy();
@@ -338,6 +370,7 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
       dsdNativeSampleRate: 2822400,
       dsdTransportSampleRate: 176400,
     });
+    openAdvancedControls();
 
     expect(screen.getByRole('checkbox', { name: /DSD DoP Direct Pilot/ })).toHaveProperty('checked', true);
     expect(screen.getByText('DSF bitstream -> DoP -> exclusive')).toBeTruthy();
@@ -366,6 +399,7 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
       dsdOutputModeRequested: 'dop',
     });
     renderDrawer(baseStatus, setOutput);
+    openAdvancedControls();
 
     fireEvent.click(screen.getByRole('checkbox', { name: /DSD DoP Direct Pilot/ }));
 
@@ -383,6 +417,7 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
       useJuceOutputRequested: true,
       activeOutputBackendImpl: 'juce-wasapi-shared',
     }, setOutput);
+    openAdvancedControls();
 
     fireEvent.click(screen.getByRole('checkbox', { name: /JUCE Main Output/ }));
 
@@ -396,6 +431,7 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
       useJuceDecodeRequested: true,
     });
     renderDrawer(baseStatus, setOutput);
+    openAdvancedControls();
 
     fireEvent.click(screen.getByRole('checkbox', { name: /JUCE Decode Experiment/ }));
 
@@ -429,6 +465,18 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     await waitFor(() => expect(setOutput).toHaveBeenCalledWith({ outputMode: 'exclusive', latencyProfile: 'balanced' }));
   });
 
+  it('highlights WASAPI exclusive current output in gold', () => {
+    renderDrawer({
+      ...baseStatus,
+      outputMode: 'exclusive',
+      outputBackend: 'wasapi-exclusive',
+      outputDeviceName: 'USB DAC Exclusive',
+    });
+
+    expect(document.querySelector('.audio-current-output-card--gold')).toBeTruthy();
+    expect(document.querySelector('.audio-current-output-card--asio')).toBeNull();
+  });
+
   it('shows ASIO buffer controls only in ASIO mode', () => {
     renderDrawer({
       ...baseStatus,
@@ -443,6 +491,7 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
 
     expect(screen.getByRole('heading', { name: 'ASIO buffer' })).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /128/ }).length).toBeGreaterThan(0);
+    expect(document.querySelector('.audio-current-output-card--gold')).toBeTruthy();
     expect(document.querySelector('.audio-current-output-card--asio')).toBeTruthy();
     expect(screen.getByText('recommended')).toBeTruthy();
     expect(screen.getByText('5 ms')).toBeTruthy();
@@ -553,6 +602,7 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
         onStatusChange={onStatusChange}
       />,
     );
+    openAdvancedControls();
 
     fireEvent.click(screen.getByRole('button', { name: 'resetEngine' }));
 
@@ -591,6 +641,7 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     });
 
     await waitFor(() => expect(screen.getAllByText('TEAC ASIO').length).toBeGreaterThan(0));
+    openAdvancedControls();
     fireEvent.click(screen.getByRole('checkbox', { name: /rememberOutput/ }));
 
     const remembered = JSON.parse(window.localStorage.getItem('echo-next.audio-output-memory') ?? '{}');

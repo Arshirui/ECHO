@@ -1375,6 +1375,19 @@ export const registerLibraryIpc = (): void => {
       });
     },
   );
+  ipcMain.handle(IpcChannels.LibraryResolveLyricsBackgroundCover, (_event, trackId: unknown) =>
+    {
+      const settings = getAppSettings();
+      if (!settings.networkMetadataEnabled) {
+        return null;
+      }
+
+      return getLibraryService().resolveLyricsBackgroundCover(
+        requireText(trackId, 'trackId'),
+        settings.networkMetadataProviders,
+      );
+    },
+  );
   ipcMain.handle(IpcChannels.LibraryNetworkApplyMissingOnly, (_event, request: unknown) => {
     const { candidateId, options } = normalizeNetworkApplyRequest(request);
     return getLibraryService().applyNetworkMissingOnly(candidateId, options);

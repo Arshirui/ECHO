@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { Import } from 'lucide-react';
 import type { AudioStatus } from '../../../shared/types/audio';
+import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { PlaybackStatus } from '../../../shared/types/playback';
 import { streamingProviderNames, type StreamingProviderName } from '../../../shared/types/streaming';
 import { likedChangedEvent, likedTracksChangedEvent } from '../../hooks/useLikedMedia';
@@ -19,7 +20,7 @@ import { PlayerStatusChips } from './PlayerStatusChips';
 import { PlayerTransport } from './PlayerTransport';
 import { PlayerVolumeControl } from './PlayerVolumeControl';
 import { formatAudioHostError, shouldSuppressAudioHostError } from './audioErrorFormat';
-import { applyMediaSessionSnapshot, clearMediaSession } from './mediaSession';
+import { applyMediaSessionSnapshot } from './mediaSession';
 import { titleFromPath } from './playerFormat';
 
 type PlayerBarProps = {
@@ -39,6 +40,8 @@ const maxStaleStatusRegressionSeconds = 2.5;
 const seekAnchorMaxAgeSeconds = 3;
 const isStreamingProviderName = (provider: string | null | undefined): provider is StreamingProviderName =>
   streamingProviderNames.includes(provider as StreamingProviderName);
+const isVerifiedAudioAnalysisBpm = (track: { bpm?: number | null; bpmConfidence?: number | null; analysisStatus?: string | null; fieldSources?: Record<string, string> } | null): boolean =>
+  Boolean(track?.fieldSources?.bpm === 'audio_analysis' && isReliableBpmAnalysis(track.bpm, track.bpmConfidence, track.analysisStatus));
 
 const deferNonCriticalPlaybackTask = (callback: () => void): (() => void) => {
   let cancelled = false;
@@ -80,8 +83,11 @@ const deferNonCriticalPlaybackTask = (callback: () => void): (() => void) => {
   };
 };
 
+const originalCoverUrlFromThumb = (coverUrl: string | null): string | null =>
+  coverUrl?.replace(/^echo-cover:\/\/(?:thumb|album|large)\//u, 'echo-cover://original/') ?? null;
+
 const playerArtworkUrl = (track: { coverId: string | null; coverThumb: string | null } | null): string | null =>
-  track?.coverId ? `echo-cover://album/${encodeURIComponent(track.coverId)}` : (track?.coverThumb ?? null);
+  track?.coverId ? `echo-cover://original/${encodeURIComponent(track.coverId)}` : originalCoverUrlFromThumb(track?.coverThumb ?? null);
 
 const isAudioStatusForPlayback = (audioStatus: AudioStatus, playbackStatus: PlaybackStatus | null): boolean => {
   if (!playbackStatus?.currentTrackId && !playbackStatus?.filePath) {
@@ -131,7 +137,6 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const sharedPlaybackStatus = useSharedPlaybackStatus();
   const setQueueCurrentTrackId = queue.setCurrentTrackId;
   const appendToQueue = queue.appendToQueue;
-  const updateCurrentTrackSnapshot = queue.updateCurrentTrackSnapshot;
   const updateTrackSnapshot = queue.updateTrackSnapshot;
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus | null>(null);
@@ -287,6 +292,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     Boolean(streamingTrackProviderTrackId);
   const streamingTrackQuality = currentTrack?.streamingQuality;
   const streamingTrackBpm = currentTrack?.bpm ?? null;
+  const streamingTrackBpmConfidence = currentTrack?.bpmConfidence ?? null;
   const streamingTrackAnalysisStatus = currentTrack?.analysisStatus ?? null;
   const isSpotifyCurrentTrack = isSpotifyTrack(currentTrack);
 
@@ -463,25 +469,35 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
 
   useEffect(() => {
     const library = window.echo?.library;
-    const existingJobId = currentTrack ? bpmAnalysisJobIdsRef.current.get(currentTrack.id) : undefined;
+    const analysisTrack = currentTrack;
+    const existingJobId = analysisTrack ? bpmAnalysisJobIdsRef.current.get(analysisTrack.id) : undefined;
     const canAnalyzeCurrentTrack =
-      currentTrack &&
-      !currentTrack.isTemporary &&
-      (currentTrack.mediaType ?? 'local') === 'local' &&
-      !currentTrack.bpm &&
-      currentTrack.analysisStatus !== 'analyzing' &&
-      currentTrack.analysisStatus !== 'complete';
+      analysisTrack &&
+      !analysisTrack.isTemporary &&
+      (analysisTrack.mediaType ?? 'local') === 'local' &&
+      analysisTrack.analysisStatus !== 'analyzing' &&
+      !isVerifiedAudioAnalysisBpm(analysisTrack);
     const shouldStartAnalysis = isPlaying;
-    const shouldContinueAnalysis = Boolean(existingJobId);
+    const shouldContinueAnalysis = Boolean(existingJobId && existingJobId !== 'done');
 
     if (
       !library?.startBpmAnalysis ||
       !library.getBpmAnalysisStatus ||
-      !library.getTrack ||
-      !canAnalyzeCurrentTrack ||
-      (!shouldStartAnalysis && !shouldContinueAnalysis)
+      !library.getTrack
     ) {
       return;
+    }
+
+    if (!analysisTrack) {
+      return undefined;
+    }
+
+    if (existingJobId === 'done') {
+      return undefined;
+    }
+
+    if ((!canAnalyzeCurrentTrack && !shouldContinueAnalysis) || (!shouldStartAnalysis && !shouldContinueAnalysis)) {
+      return undefined;
     }
 
     let cancelled = false;
@@ -489,12 +505,12 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
     let cancelDeferredTask: (() => void) | null = null;
 
     const refreshAnalyzedTrack = async (): Promise<void> => {
-      const refreshed = await library.getTrack(currentTrack.id);
-      if (cancelled || !refreshed || refreshed.id !== currentTrack.id) {
+      const refreshed = await library.getTrack(analysisTrack.id);
+      if (cancelled || !refreshed || refreshed.id !== analysisTrack.id) {
         return;
       }
 
-      updateTrackSnapshot(currentTrack.id, {
+      updateTrackSnapshot(analysisTrack.id, {
         bpm: refreshed.bpm,
         bpmConfidence: refreshed.bpmConfidence,
         beatOffsetMs: refreshed.beatOffsetMs,
@@ -518,7 +534,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
             }
 
             await refreshAnalyzedTrack();
-            bpmAnalysisJobIdsRef.current.set(currentTrack.id, 'done');
+            bpmAnalysisJobIdsRef.current.set(analysisTrack.id, 'done');
           } catch {
             // Playback should not surface background BPM analysis failures.
           }
@@ -526,29 +542,29 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       }, bpmAnalysisStatusPollMs);
     };
 
-    if (existingJobId === 'done') {
-      return undefined;
-    }
-
     if (existingJobId) {
       pollJob(existingJobId);
     } else {
       cancelDeferredTask = deferNonCriticalPlaybackTask(() => {
         void (async () => {
           try {
-            const job = await library.startBpmAnalysis({ trackIds: [currentTrack.id] });
+            const job = await library.startBpmAnalysis({ trackIds: [analysisTrack.id] });
             if (cancelled) {
               return;
             }
 
+            updateTrackSnapshot(analysisTrack.id, {
+              analysisStatus: 'analyzing',
+            });
+
             if (job.status === 'queued' || job.status === 'running') {
-              bpmAnalysisJobIdsRef.current.set(currentTrack.id, job.id);
+              bpmAnalysisJobIdsRef.current.set(analysisTrack.id, job.id);
               pollJob(job.id);
               return;
             }
 
             await refreshAnalyzedTrack();
-            bpmAnalysisJobIdsRef.current.set(currentTrack.id, 'done');
+            bpmAnalysisJobIdsRef.current.set(analysisTrack.id, 'done');
           } catch {
             // Disabled analysis or analyzer errors should never interrupt playback.
           }
@@ -571,9 +587,10 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
       isPlaying &&
       streamingTrackMediaType === 'streaming' &&
       streamingTrackProvider !== 'spotify' &&
-      !streamingTrackBpm &&
+      !isReliableBpmAnalysis(streamingTrackBpm, streamingTrackBpmConfidence, streamingTrackAnalysisStatus) &&
       streamingTrackAnalysisStatus !== 'analyzing' &&
-      streamingTrackAnalysisStatus !== 'complete' &&
+      (streamingTrackAnalysisStatus !== 'complete' ||
+        !isReliableBpmAnalysis(streamingTrackBpm, streamingTrackBpmConfidence, streamingTrackAnalysisStatus)) &&
       isStreamingProviderName(streamingTrackProvider) &&
       Boolean(streamingTrackProviderTrackId);
 
@@ -589,12 +606,13 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
 
     const quality = streamingTrackQuality;
     const analysisKey = `${provider}:${providerTrackId}:${quality ?? 'standard'}`;
-    if (streamingBpmAnalysisTrackIdsRef.current.has(analysisKey)) {
+    const pendingAnalysisKeys = streamingBpmAnalysisTrackIdsRef.current;
+    if (pendingAnalysisKeys.has(analysisKey)) {
       return;
     }
 
     const analyzedStreamingTrackId = streamingTrackId;
-    streamingBpmAnalysisTrackIdsRef.current.add(analysisKey);
+    pendingAnalysisKeys.add(analysisKey);
     let started = false;
     const cancelDeferredTask = deferNonCriticalPlaybackTask(() => {
       started = true;
@@ -618,20 +636,21 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
           });
         })
         .catch(() => {
-          streamingBpmAnalysisTrackIdsRef.current.delete(analysisKey);
+          pendingAnalysisKeys.delete(analysisKey);
         });
     });
 
     return () => {
       cancelDeferredTask();
       if (!started) {
-        streamingBpmAnalysisTrackIdsRef.current.delete(analysisKey);
+        pendingAnalysisKeys.delete(analysisKey);
       }
     };
   }, [
     isPlaying,
     streamingTrackAnalysisStatus,
     streamingTrackBpm,
+    streamingTrackBpmConfidence,
     streamingTrackId,
     streamingTrackMediaType,
     streamingTrackProvider,

@@ -12,7 +12,7 @@ import { NativeOutputBridge, isNativeOutputBridgeAvailable } from './NativeOutpu
 import { PlaybackClock } from './PlaybackClock';
 import { isCueTrackPath } from './CueSheet';
 import { isDsdCodec, isDsdFilePath, isDsfFilePath, resolveDsdDopTransportSampleRate, resolveDsdPcmOutputSampleRate, shouldProbeDsdNativeSampleRate } from './DsdProbe';
-import { createDsfDopStream, readDsfDopInfo } from './DsdDopPipeline';
+import { createDsfDopStream, createDsfNativeDsdStream, readDsfDopInfo } from './DsdDopPipeline';
 import type {
   AudioDeviceInfo,
   AudioDiagnostics,
@@ -469,6 +469,55 @@ const shouldAttemptDsdDop = (
 ): boolean => getDsdDopDisabledWarning(filePath, inputHeaders, probe, outputSettings, outputMode) === null &&
   normalizeDsdOutputMode(outputSettings.dsdOutputMode) === 'dop';
 
+const isDsdPlaybackCandidate = (filePath: string, probe: AudioProbeResult): boolean =>
+  isDsdFilePath(filePath) || isDsdCodec(probe.codec);
+
+const getAsioNativeDsdDisabledWarning = (
+  filePath: string,
+  inputHeaders: Record<string, string> | null | undefined,
+  probe: AudioProbeResult,
+  outputSettings: AudioOutputSettings,
+  outputMode: AudioOutputMode,
+): string | null => {
+  if (outputSettings.asioNativeDsdExperimentalEnabled !== true) {
+    return null;
+  }
+
+  if (!isDsdPlaybackCandidate(filePath, probe)) {
+    return null;
+  }
+
+  if (normalizeDsdOutputMode(outputSettings.dsdOutputMode) !== 'dop') {
+    return 'asio_native_dsd_requires_dop';
+  }
+
+  if (outputMode !== 'asio') {
+    return 'asio_native_dsd_requires_asio';
+  }
+
+  const dopDisabledWarning = getDsdDopDisabledWarning(filePath, inputHeaders, probe, outputSettings, outputMode);
+  if (dopDisabledWarning) {
+    return `asio_native_dsd_blocked:${dopDisabledWarning}`;
+  }
+
+  if (!probe.fileSampleRate || ![2_822_400, 5_644_800, 11_289_600].includes(probe.fileSampleRate)) {
+    return 'asio_native_dsd_format_unsupported';
+  }
+
+  return null;
+};
+
+const shouldAttemptAsioNativeDsd = (
+  filePath: string,
+  inputHeaders: Record<string, string> | null | undefined,
+  probe: AudioProbeResult,
+  outputSettings: AudioOutputSettings,
+  outputMode: AudioOutputMode,
+): boolean =>
+  outputSettings.asioNativeDsdExperimentalEnabled === true &&
+  isDsfFilePath(filePath) &&
+  getAsioNativeDsdDisabledWarning(filePath, inputHeaders, probe, outputSettings, outputMode) === null;
+
 const outputDeviceStartRefusedPatterns = [
   /Couldn't open the output device/iu,
   /Device didn't start correctly/iu,
@@ -799,6 +848,7 @@ export class AudioSession extends EventEmitter {
     useJuceOutput: true,
     useJuceDecode: false,
     dsdOutputMode: 'pcm',
+    asioNativeDsdExperimentalEnabled: false,
     asioUnavailableFallbackEnabled: false,
     soxrFallbackEnabled: true,
     volume: 1,
@@ -1049,6 +1099,7 @@ export class AudioSession extends EventEmitter {
       bufferSizeFrames: nextBufferSizeFrames,
       useJuceDecode: settings.useJuceDecode ?? this.outputSettings.useJuceDecode ?? false,
       dsdOutputMode: normalizeDsdOutputMode(settings.dsdOutputMode ?? this.outputSettings.dsdOutputMode),
+      asioNativeDsdExperimentalEnabled: settings.asioNativeDsdExperimentalEnabled ?? this.outputSettings.asioNativeDsdExperimentalEnabled ?? false,
       asioUnavailableFallbackEnabled: settings.asioUnavailableFallbackEnabled ?? this.outputSettings.asioUnavailableFallbackEnabled ?? false,
       soxrFallbackEnabled: settings.soxrFallbackEnabled ?? this.outputSettings.soxrFallbackEnabled ?? true,
       volume: Math.max(0, Math.min(1, Number(settings.volume ?? this.outputSettings.volume) || 0)),
@@ -1250,13 +1301,59 @@ export class AudioSession extends EventEmitter {
           ready.actualDeviceSampleRate ?? 'n/a'
         }`,
       );
-      const activePlan = this.currentPlan ?? plan;
+      let activePlan = this.currentPlan ?? plan;
       this.logAudioTransition(activePlan, {
         hostReused,
         hostRestartReason,
         preparedLocalProbeUsed: Boolean(preparedProbe),
         preparedLocalProbeAgeMs: preparedProbe?.ageMs ?? null,
       });
+      if (activePlan.dsdOutputMode === 'native') {
+        try {
+          const info = await readDsfDopInfo(request.filePath);
+          const nativeDsdStream = createDsfNativeDsdStream(request.filePath, info, request.startSeconds ?? 0);
+          this.currentDsdNativeSampleRate = info.nativeSampleRate;
+          this.currentDsdTransportSampleRate = null;
+          this.currentActiveDsdOutputMode = 'native';
+          this.currentDecodeBackendImpl = 'dsf-bitstream-native-dsd';
+          this.assertCurrentRun(token);
+          const sessionId = bridge.beginSession?.({
+            startSeconds: request.startSeconds ?? 0,
+            playbackRate: 1,
+            durationSeconds: probe.durationSeconds,
+          });
+          const writable = bridge.createSessionWritable?.(sessionId) ?? bridge.writable;
+          if (!writable) {
+            throw new Error('native output bridge did not expose a writable native DSD stream');
+          }
+
+          this.startBitstreamRun(nativeDsdStream, writable, token);
+          this.state = 'playing';
+          this.hostStatus = 'ready';
+          this.resetWatchdogProgress();
+          this.emitStatus();
+          return this.getStatus();
+        } catch (error) {
+          const nativeDsdError = error instanceof Error ? error : new Error(String(error));
+          this.addOutputWarning(`asio_native_dsd_fell_back_to_dop:${nativeDsdError.message.slice(0, 96)}`);
+          await this.stopResourcesGracefully('asio-native-dsd-fallback-to-dop');
+          this.currentOutputSettings = {
+            ...this.currentOutputSettings,
+            asioNativeDsdExperimentalEnabled: false,
+          };
+          this.currentActiveDsdOutputMode = null;
+          this.currentDsdNativeSampleRate = null;
+          this.currentDsdTransportSampleRate = null;
+          ({ bridge, plan, ready, hostReused, hostRestartReason } = await this.startOutputBridgeForProbe(
+            probe,
+            token,
+            request.startSeconds ?? 0,
+          ));
+          this.assertCurrentRun(token);
+          this.applyReadyResult(ready);
+          activePlan = this.currentPlan ?? plan;
+        }
+      }
       if (activePlan.dsdOutputMode === 'dop') {
         try {
           const info = await readDsfDopInfo(request.filePath);
@@ -1919,6 +2016,7 @@ export class AudioSession extends EventEmitter {
         resolveBufferSizeFrames(output, this.outputSettings.bufferSizeFrames),
         'playback_request',
       ),
+      asioNativeDsdExperimentalEnabled: output?.asioNativeDsdExperimentalEnabled ?? this.outputSettings.asioNativeDsdExperimentalEnabled ?? false,
       asioUnavailableFallbackEnabled: output?.asioUnavailableFallbackEnabled ?? this.outputSettings.asioUnavailableFallbackEnabled ?? false,
       useJuceDecode: output?.useJuceDecode ?? this.outputSettings.useJuceDecode ?? false,
       dsdOutputMode: normalizeDsdOutputMode(output?.dsdOutputMode ?? this.outputSettings.dsdOutputMode),
@@ -2152,8 +2250,21 @@ export class AudioSession extends EventEmitter {
     )
       ? resolveDsdDopTransportSampleRate(probe)
       : null;
-    const dsdOutputMode: AudioDsdOutputMode = dsdDopTransportSampleRate ? 'dop' : 'pcm';
-    const sourceOutputSampleRate = dsdDopTransportSampleRate ?? dsdPcmOutputSampleRate ?? sourceSampleRate;
+    const asioNativeDsdSampleRate = shouldAttemptAsioNativeDsd(
+      probe.filePath,
+      this.currentInputHeaders,
+      probe,
+      outputSettings,
+      outputMode,
+    )
+      ? fileSampleRate
+      : null;
+    const dsdOutputMode: Exclude<ActiveDsdOutputMode, null> = asioNativeDsdSampleRate
+      ? 'native'
+      : dsdDopTransportSampleRate
+        ? 'dop'
+        : 'pcm';
+    const sourceOutputSampleRate = asioNativeDsdSampleRate ?? dsdDopTransportSampleRate ?? dsdPcmOutputSampleRate ?? sourceSampleRate;
     const explicitRequestedSampleRate = normalizePositiveInteger(outputSettings.requestedOutputSampleRate);
     const residentOutputSampleRate =
       outputMode !== 'shared' ? normalizePositiveInteger(planOptions.residentOutputSampleRate) : null;
@@ -2166,7 +2277,7 @@ export class AudioSession extends EventEmitter {
       residentOutputSampleRate ??
       (outputMode === 'shared'
         ? explicitRequestedSampleRate ?? sharedDeviceSampleRate ?? currentReadySampleRate ?? fallbackSharedMixSampleRate
-        : dsdDopTransportSampleRate ?? dsdPcmOutputSampleRate ?? explicitRequestedSampleRate ?? sourceOutputSampleRate);
+        : asioNativeDsdSampleRate ?? dsdDopTransportSampleRate ?? dsdPcmOutputSampleRate ?? explicitRequestedSampleRate ?? sourceOutputSampleRate);
     const decoderOutputSampleRate =
       outputMode === 'shared'
         ? requestedOutputSampleRate
@@ -2190,7 +2301,18 @@ export class AudioSession extends EventEmitter {
       warnings.push(dsdDopDisabledWarning);
     }
 
-    if (dsdOutputMode !== 'dop' && dsdPcmOutputSampleRate && fileSampleRate !== null && fileSampleRate !== decoderOutputSampleRate) {
+    const asioNativeDsdDisabledWarning = getAsioNativeDsdDisabledWarning(
+      probe.filePath,
+      this.currentInputHeaders,
+      probe,
+      outputSettings,
+      outputMode,
+    );
+    if (asioNativeDsdDisabledWarning) {
+      warnings.push(asioNativeDsdDisabledWarning);
+    }
+
+    if (dsdOutputMode === 'pcm' && dsdPcmOutputSampleRate && fileSampleRate !== null && fileSampleRate !== decoderOutputSampleRate) {
       warnings.push(`dsd_source_decoded_to_pcm:${fileSampleRate}->${decoderOutputSampleRate}`);
     }
 
@@ -2220,14 +2342,14 @@ export class AudioSession extends EventEmitter {
       );
     }
 
-    const fileToDecoderResampling = dsdOutputMode === 'dop'
+    const fileToDecoderResampling = dsdOutputMode !== 'pcm'
       ? false
       : fileSampleRate !== null && fileSampleRate !== decoderOutputSampleRate;
-    const outputSideResampling = dsdOutputMode === 'dop'
+    const outputSideResampling = dsdOutputMode !== 'pcm'
       ? false
       : actualDeviceSampleRate !== null && actualDeviceSampleRate !== decoderOutputSampleRate;
     const sharedModeResampling =
-      dsdOutputMode === 'dop'
+      dsdOutputMode !== 'pcm'
         ? false
         : outputMode === 'shared' &&
           fileSampleRate !== null &&
@@ -2240,7 +2362,7 @@ export class AudioSession extends EventEmitter {
     }
 
     const bitPerfectCandidate =
-      dsdOutputMode === 'dop'
+      dsdOutputMode !== 'pcm'
         ? true
         : outputMode !== 'shared' &&
           fileSampleRate !== null &&
@@ -2256,8 +2378,8 @@ export class AudioSession extends EventEmitter {
       actualDeviceSampleRate,
       sharedDeviceSampleRate,
       dsdOutputMode,
-      dsdNativeSampleRate: dsdOutputMode === 'dop' ? fileSampleRate : null,
-      dsdTransportSampleRate: dsdDopTransportSampleRate,
+      dsdNativeSampleRate: dsdOutputMode !== 'pcm' ? fileSampleRate : null,
+      dsdTransportSampleRate: dsdOutputMode === 'dop' ? dsdDopTransportSampleRate : null,
       outputMode,
       resampling,
       bitPerfectCandidate,
@@ -2278,7 +2400,7 @@ export class AudioSession extends EventEmitter {
     const readyDevice = ready.device;
     this.currentOutputBackend = typeof readyDevice.backend === 'string' ? readyDevice.backend : null;
     this.currentOutputBackendImpl = typeof readyDevice.backendImpl === 'string' ? readyDevice.backendImpl : null;
-    this.currentActiveDsdOutputMode = this.currentPlan?.dsdOutputMode === 'dop' ? 'dop' : null;
+    this.currentActiveDsdOutputMode = this.currentPlan?.dsdOutputMode !== 'pcm' ? this.currentPlan?.dsdOutputMode ?? null : null;
     this.currentDsdNativeSampleRate = this.currentPlan?.dsdNativeSampleRate ?? null;
     this.currentDsdTransportSampleRate = this.currentPlan?.dsdTransportSampleRate ?? null;
     this.currentOutputDeviceType = typeof readyDevice.deviceType === 'string' ? readyDevice.deviceType : null;
@@ -2716,6 +2838,7 @@ export class AudioSession extends EventEmitter {
         this.currentOutputSettings.useJuceOutput === true,
       );
       const isDsdDopOutput = this.currentPlan.dsdOutputMode === 'dop';
+      const isAsioNativeDsdOutput = this.currentPlan.dsdOutputMode === 'native';
 
       const startOptions = this.createNativeOutputStartOptions({
         requestedOutputSampleRate: this.currentPlan.requestedOutputSampleRate,
@@ -2739,7 +2862,9 @@ export class AudioSession extends EventEmitter {
         playbackRate: this.currentOutputSettings.playbackRate,
         playbackSpeedMode: this.currentOutputSettings.playbackSpeedMode,
         durationSeconds: probe.durationSeconds,
-        inputFormat: isDsdDopOutput ? 'dop24le' : 'pcm-f32le',
+        inputFormat: isAsioNativeDsdOutput ? 'dsd-native-raw' : isDsdDopOutput ? 'dop24le' : 'pcm-f32le',
+        asioNativeDsdOutput: isAsioNativeDsdOutput,
+        nativeDsdSampleRate: isAsioNativeDsdOutput ? this.currentPlan.dsdNativeSampleRate : null,
       });
       const reusableBridge = this.bridge;
       if (!useDirectSoundBackend && reusableBridge?.canReuseFor?.(startOptions) && this.currentReadyResult) {
@@ -2804,6 +2929,17 @@ export class AudioSession extends EventEmitter {
           channels: probe.channels,
         });
         await this.stopBridgeGracefully(bridge, 'output-start-failed');
+        if (this.currentPlan?.dsdOutputMode === 'native' && this.currentOutputSettings.dsdOutputMode === 'dop') {
+          this.addOutputWarning(`asio_native_dsd_fell_back_to_dop:${lastError.message.slice(0, 96)}`);
+          this.currentOutputSettings = {
+            ...this.currentOutputSettings,
+            asioNativeDsdExperimentalEnabled: false,
+          };
+          this.currentActiveDsdOutputMode = null;
+          this.currentDsdNativeSampleRate = null;
+          this.currentDsdTransportSampleRate = null;
+          return this.startOutputBridgeForProbe(probe, token, startSeconds);
+        }
         if (this.currentPlan?.dsdOutputMode === 'dop' && this.currentOutputSettings.dsdOutputMode === 'dop') {
           this.addOutputWarning(`dsd_dop_fell_back_to_pcm:${lastError.message.slice(0, 96)}`);
           this.currentOutputSettings = {

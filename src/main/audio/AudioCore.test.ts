@@ -336,6 +336,9 @@ class FakeBridge extends EventEmitter {
       bufferSizeFrames: Number.isFinite(Number(options.bufferSizeFrames)) ? Math.round(Number(options.bufferSizeFrames)) : null,
       latencyProfile: options.latencyProfile ?? null,
       playbackSpeedMode: options.playbackSpeedMode ?? null,
+      inputFormat: options.inputFormat ?? 'pcm-f32le',
+      asioNativeDsdOutput: options.asioNativeDsdOutput === true,
+      nativeDsdSampleRate: options.nativeDsdSampleRate ?? null,
     }) === JSON.stringify({
       outputMode: startOutputMode,
       deviceIndex: Number.isInteger(Number(this.startOptions?.deviceIndex)) ? Number(this.startOptions?.deviceIndex) : null,
@@ -348,6 +351,9 @@ class FakeBridge extends EventEmitter {
       bufferSizeFrames: Number.isFinite(Number(this.startOptions?.bufferSizeFrames)) ? Math.round(Number(this.startOptions?.bufferSizeFrames)) : null,
       latencyProfile: this.startOptions?.latencyProfile ?? null,
       playbackSpeedMode: this.startOptions?.playbackSpeedMode ?? null,
+      inputFormat: this.startOptions?.inputFormat ?? 'pcm-f32le',
+      asioNativeDsdOutput: this.startOptions?.asioNativeDsdOutput === true,
+      nativeDsdSampleRate: this.startOptions?.nativeDsdSampleRate ?? null,
     });
   }
 
@@ -2125,6 +2131,134 @@ describe('Audio Core sample-rate regression guard', () => {
       await rm(tempDir, { recursive: true, force: true });
       session.dispose();
     }
+  });
+
+  it('uses ASIO native DSD only when the experimental switch is enabled', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'echo-native-dsd-'));
+    const filePath = join(tempDir, 'native-dsd.dsf');
+    await writeFile(filePath, createDsfDopFixture());
+    const { bridges, decoder, session } = createSessionHarness([dsdProbe(filePath)]);
+
+    try {
+      const status = await session.playLocalFile({
+        filePath,
+        output: {
+          outputMode: 'asio',
+          dsdOutputMode: 'dop',
+          asioNativeDsdExperimentalEnabled: true,
+          useJuceOutput: true,
+        },
+      });
+      for (let attempt = 0; attempt < 10 && bridges[0].sessionChunks.length === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+
+      expect(bridges[0].startOptions).toMatchObject({
+        asio: true,
+        useJuceOutput: false,
+        inputFormat: 'dsd-native-raw',
+        asioNativeDsdOutput: true,
+        nativeDsdSampleRate: 2822400,
+        requestedOutputSampleRate: 2822400,
+      });
+      expect(decoder.decodeRequests).toHaveLength(0);
+      expect(bridges[0].sessionChunks.map((item) => [...item.chunk])).toEqual([[1, 5, 2, 6, 3, 7, 4, 8]]);
+      expect(status.activeDecodeBackendImpl).toBe('dsf-bitstream-native-dsd');
+      expect(status.dsdOutputModeRequested).toBe('dop');
+      expect(status.activeDsdOutputMode).toBe('native');
+      expect(status.dsdNativeSampleRate).toBe(2822400);
+      expect(status.dsdTransportSampleRate).toBeNull();
+      expect(status.warnings).not.toContain('dsd_source_decoded_to_pcm:2822400->176400');
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+      session.dispose();
+    }
+  });
+
+  it('falls back from ASIO native DSD to existing ASIO DoP when native startup fails', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'echo-native-dsd-fallback-'));
+    const filePath = join(tempDir, 'native-dsd-fallback.dsf');
+    await writeFile(filePath, createDsfDopFixture());
+    const failingBridge = new ConfigurableStartupFailingBridge('ASIO native DSD open failed: unsupported format');
+    const fallbackBridge = new FakeBridge();
+    const bridgeQueue = [failingBridge, fallbackBridge];
+    const session = new AudioSession({
+      decoder: new FakeDecoder(new Map([[filePath, dsdProbe(filePath)]])),
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridgeQueue.shift() as unknown as FakeBridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+
+    try {
+      const status = await session.playLocalFile({
+        filePath,
+        output: {
+          outputMode: 'asio',
+          dsdOutputMode: 'dop',
+          asioNativeDsdExperimentalEnabled: true,
+        },
+      });
+      for (let attempt = 0; attempt < 10 && fallbackBridge.sessionChunks.length === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+
+      expect(failingBridge.startOptions).toMatchObject({
+        asio: true,
+        inputFormat: 'dsd-native-raw',
+        asioNativeDsdOutput: true,
+        requestedOutputSampleRate: 2822400,
+      });
+      expect(fallbackBridge.startOptions).toMatchObject({
+        asio: true,
+        inputFormat: 'dop24le',
+        requestedOutputSampleRate: 176400,
+      });
+      expect(fallbackBridge.sessionChunks.map((item) => [...item.chunk])).toEqual([
+        [1, 2, 0x05, 5, 6, 0x05, 3, 4, 0xfa, 7, 8, 0xfa],
+      ]);
+      expect(status.activeDsdOutputMode).toBe('dop');
+      expect(status.activeDecodeBackendImpl).toBe('dsf-bitstream-dop');
+      expect(status.warnings.some((warning) => warning.startsWith('asio_native_dsd_fell_back_to_dop:'))).toBe(true);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+      session.dispose();
+    }
+  });
+
+  it('does not enter ASIO native DSD outside ASIO even when the switch is enabled', async () => {
+    const sharedDevice: AudioDeviceInfo = {
+      id: 'shared:0',
+      index: 0,
+      name: 'Speakers',
+      outputMode: 'shared',
+      sampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      isDefault: true,
+    };
+    const { bridges, decoder, session } = createSessionHarness([dsdProbe('shared-native-dsd-disabled.dsf')], [48000], [sharedDevice]);
+
+    const status = await session.playLocalFile({
+      filePath: 'shared-native-dsd-disabled.dsf',
+      output: {
+        outputMode: 'shared',
+        dsdOutputMode: 'dop',
+        asioNativeDsdExperimentalEnabled: true,
+      },
+    });
+
+    expect(bridges[0].startOptions).toMatchObject({
+      inputFormat: 'pcm-f32le',
+      asioNativeDsdOutput: false,
+      requestedOutputSampleRate: 48000,
+    });
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({
+      filePath: 'shared-native-dsd-disabled.dsf',
+      decoderOutputSampleRate: 48000,
+    });
+    expect(status.activeDsdOutputMode).toBeNull();
+    expect(status.warnings).toContain('asio_native_dsd_requires_asio');
+    expect(status.warnings).toContain('dsd_dop_requires_exclusive_or_asio');
   });
 
   it('keeps DoP disabled in shared mode and falls back to PCM with a visible warning', async () => {
@@ -4154,7 +4288,49 @@ describe('NativeOutputBridge host arguments', () => {
 
     expect(spawned[0].args).toEqual(expect.arrayContaining(['-sr', '96000', '-ch', '2', '-asio']));
     expect(spawned[0].args).not.toContain('-exclusive');
+    expect(spawned[0].args).not.toContain('-asio-native-dsd-output');
     expect(spawned[0].args).not.toContain('-buffer');
+  });
+
+  it('passes ASIO native DSD host arguments only for the native DSD input format', async () => {
+    const spawned: string[][] = [];
+    const fakeSpawn = (_file: string, args: string[]): ChildProcessWithoutNullStreams => {
+      spawned.push(args);
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stdout.write('{"ready":true,"sampleRate":2822400,"backend":"asio","backendImpl":"legacy-asio-sdk-native-dsd","deviceType":"ASIO","deviceName":"TEAC ASIO","nativeDsd":true}\n');
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+
+    await bridge.start({
+      requestedOutputSampleRate: 2822400,
+      channels: 2,
+      asio: true,
+      inputFormat: 'dsd-native-raw',
+      asioNativeDsdOutput: true,
+      nativeDsdSampleRate: 2822400,
+    });
+
+    expect(spawned[0]).toEqual(
+      expect.arrayContaining(['-asio', '-dop-output', '-asio-native-dsd-output', '-native-dsd-sr', '2822400']),
+    );
+    bridge.stop();
   });
 
   it('passes ASIO output channel start only when explicitly requested', async () => {

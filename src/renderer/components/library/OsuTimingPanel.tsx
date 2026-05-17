@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { ClipboardCopy, Music2, Play, RotateCw, Volume2, X } from 'lucide-react';
+import { BPM_CONFIDENCE_THRESHOLD } from '../../../shared/constants/audioAnalysis';
 import type { BpmAnalysisJobStatus, LibraryTrack } from '../../../shared/types/library';
 import { formatOsuTimingPoint, getBeatLengthMs } from '../../utils/osuTiming';
 
@@ -12,7 +13,6 @@ type OsuTimingPanelProps = {
   onTrackUpdated?: (track: LibraryTrack) => void;
 };
 
-const bpmConfidenceThreshold = 0.42;
 const analysisPollMs = 1000;
 const offsetSteps = [-10, -5, -1, 1, 5, 10];
 
@@ -147,7 +147,7 @@ export const OsuTimingPanel = ({ track, isOpen, onClose, onTrackUpdated }: OsuTi
   const missingOffset = !hasDetectedOffset;
   const lowConfidence =
     activeTrack?.analysisStatus === 'low_confidence' ||
-    (isFiniteNumber(activeTrack?.bpmConfidence) && activeTrack.bpmConfidence < bpmConfidenceThreshold);
+    (isFiniteNumber(activeTrack?.bpmConfidence) && activeTrack.bpmConfidence < BPM_CONFIDENCE_THRESHOLD);
 
   const timingLine = useMemo(() => {
     if (!isFinitePositive(bpm)) {

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { applyTagsToFile } from 'taglib-wasm';
+import { BPM_CONFIDENCE_THRESHOLD } from '../../../shared/constants/audioAnalysis';
 import type { LibraryStore } from '../LibraryStore';
 import type { BpmAnalysisJobStatus, BpmAnalysisStartOptions, LibraryTrack } from '../libraryTypes';
 import { BpmAnalyzer } from './BpmAnalyzer';
@@ -9,7 +10,6 @@ type MutableJobStatus = BpmAnalysisJobStatus;
 
 const maxStoredErrors = 100;
 const defaultLimit = 100;
-const confidenceThreshold = 0.42;
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -76,7 +76,7 @@ export class BpmAnalysisJobQueue {
           }
 
           const result = await this.analyzer.analyze(track.path, track.duration);
-          const status = result.confidence >= confidenceThreshold ? 'complete' : 'low_confidence';
+          const status = result.confidence >= BPM_CONFIDENCE_THRESHOLD ? 'complete' : 'low_confidence';
           const bpm = result.bpm > 0 ? result.bpm : null;
           const beatOffsetMs = result.beatOffsetMs >= 0 ? result.beatOffsetMs : null;
           this.store.updateTrackBpmAnalysis(track.id, {
@@ -90,7 +90,7 @@ export class BpmAnalysisJobQueue {
               this.pushError(job, `${track.path}: tag: ${error instanceof Error ? error.message : String(error)}`);
             });
           }
-          job.updatedTracks += bpm ? 1 : 0;
+          job.updatedTracks += bpm && status === 'complete' ? 1 : 0;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           this.store.updateTrackBpmAnalysis(track.id, {

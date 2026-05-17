@@ -6,6 +6,22 @@ import type { ArtistImageCandidate, ArtistImageProvider } from './ArtistImageTyp
 const providerName = 'qqmusic';
 const qqReferer = 'https://y.qq.com/';
 
+const unique = (values: Array<string | null | undefined>): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    if (!value || seen.has(value)) {
+      continue;
+    }
+
+    seen.add(value);
+    result.push(value);
+  }
+
+  return result;
+};
+
 const unwrapStreamingImageUrl = (url: string | null | undefined): string | null => {
   if (!url) {
     return null;
@@ -21,6 +37,42 @@ const unwrapStreamingImageUrl = (url: string | null | undefined): string | null 
   } catch {
     return null;
   }
+};
+
+export const isQqDefaultArtistImageUrl = (url: string | null | undefined): boolean => {
+  if (!url) {
+    return true;
+  }
+
+  const normalized = url.toLocaleLowerCase();
+  return /(?:default|nopic|no_pic|placeholder|avatar_default|singer_default|artist_default)/u.test(normalized)
+    || /\/(?:0|default)\.(?:jpg|jpeg|png|webp)(?:[?#]|$)/u.test(normalized);
+};
+
+const normalizeQqArtistImageUrl = (url: string): string => {
+  const normalized = url.startsWith('//') ? `https:${url}` : url.replace(/^http:\/\//iu, 'https://');
+  return normalized.replace(/T001R\d+x\d+M000/iu, 'T001R500x500M000');
+};
+
+const qqArtistImageUrlVariants = (url: string, artistMid: string | null | undefined): Array<{ url: string; quality: number }> => {
+  const normalized = normalizeQqArtistImageUrl(url);
+  if (isQqDefaultArtistImageUrl(normalized)) {
+    return [];
+  }
+
+  const midFromUrl = normalized.match(/T001R\d+x\d+M000([^./?#]+)\.(?:jpg|jpeg|png|webp)/iu)?.[1] ?? null;
+  const mid = midFromUrl || artistMid;
+  const byMid = mid
+    ? [800, 500, 300].map((size) => `https://y.gtimg.cn/music/photo_new/T001R${size}x${size}M000${mid}.jpg`)
+    : [];
+  const byRewrite = [800, 500, 300].map((size) => normalized.replace(/T001R\d+x\d+M000/iu, `T001R${size}x${size}M000`));
+
+  return unique([...byMid, ...byRewrite, normalized])
+    .filter((candidate) => !isQqDefaultArtistImageUrl(candidate))
+    .map((candidate) => ({
+      url: candidate,
+      quality: Number(candidate.match(/T001R(\d+)x\d+M000/iu)?.[1] ?? 0),
+    }));
 };
 
 const artistSourceUrl = (artist: StreamingArtist): string | null =>
@@ -112,27 +164,33 @@ export class QQMusicArtistImageProvider implements ArtistImageProvider {
     const artists = result.artists.length > 0 ? result.artists : await legacyArtistSearch(input.artistName);
 
     return artists
-      .map((artist): ArtistImageCandidate | null => {
+      .flatMap((artist): ArtistImageCandidate[] => {
         const imageUrl = unwrapStreamingImageUrl(artist.avatarUrl ?? artist.coverUrl);
         if (!imageUrl) {
-          return null;
+          return [];
         }
 
-        return {
+        const confidence = artistImageConfidence(input.artistName, artist.name);
+        return qqArtistImageUrlVariants(imageUrl, artist.providerArtistId).map((variant) => ({
           provider: providerName,
           providerArtistId: artist.providerArtistId,
           artistName: artist.name,
-          imageUrl,
-          confidence: artistImageConfidence(input.artistName, artist.name),
+          imageUrl: variant.url,
+          confidence,
+          quality: variant.quality,
           sourceUrl: artistSourceUrl(artist),
           sourceRef: artist.id,
-        };
+        }));
       })
-      .filter((candidate): candidate is ArtistImageCandidate => Boolean(candidate))
       .sort((left, right) => {
         const scoreDelta = right.confidence - left.confidence;
         if (scoreDelta !== 0) {
           return scoreDelta;
+        }
+
+        const qualityDelta = (right.quality ?? 0) - (left.quality ?? 0);
+        if (qualityDelta !== 0) {
+          return qualityDelta;
         }
 
         return left.artistName.localeCompare(right.artistName);

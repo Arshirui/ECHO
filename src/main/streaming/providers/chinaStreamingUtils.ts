@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { isInstrumentalLyricsText } from '../../lyrics/instrumentalPlaceholders';
 import { normalizeSyncedLyricAlternates, parsePlainLyrics, parseSyncedLyrics } from '../../lyrics/lyricsParser';
 
 export const asRecord = (value: unknown): Record<string, unknown> =>
@@ -80,7 +81,7 @@ export const maybeDecodeBase64 = (value: unknown): string | null => {
 };
 
 export const splitLyricsByKind = (value: string | null): { syncedLyrics: string | null; plainLyrics: string | null } => {
-  if (!value) {
+  if (!value || isInstrumentalLyricsText(value)) {
     return { syncedLyrics: null, plainLyrics: null };
   }
 

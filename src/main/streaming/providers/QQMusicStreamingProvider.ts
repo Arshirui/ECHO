@@ -356,17 +356,20 @@ export class QQMusicStreamingProvider implements StreamingProvider {
     const data = asRecord(await jsonFetch(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?${params.toString()}`, { headers: qqHeaders(accountCookie()) }));
     const translationLyrics = maybeDecodeBase64(data.trans);
     const romanizationLyrics = maybeDecodeBase64(data.roma);
-    const split = splitLyricsByKind(maybeDecodeBase64(data.lyric));
+    const lyricText = maybeDecodeBase64(data.lyric);
+    const split = splitLyricsByKind(lyricText);
     const lines = linesFromLyrics(split.syncedLyrics, split.plainLyrics, translationLyrics, romanizationLyrics);
+    const instrumental = !split.syncedLyrics && !split.plainLyrics && Boolean(lyricText);
 
     return {
       provider,
       providerTrackId: input.providerTrackId,
-      status: split.syncedLyrics || split.plainLyrics || lines.length > 0 ? 'available' : 'missing',
+      status: instrumental || split.syncedLyrics || split.plainLyrics || lines.length > 0 ? 'available' : 'missing',
       plainLyrics: split.plainLyrics,
       syncedLyrics: split.syncedLyrics,
       translationLyrics,
       romanizationLyrics,
+      instrumental,
       lines,
       sourceLabel: 'QQ 音乐',
     };

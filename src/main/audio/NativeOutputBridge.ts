@@ -281,6 +281,7 @@ const frameTypeEndSession = 3;
 const frameTypeShutdown = 4;
 const frameTypeSetVolume = 5;
 const frameTypeDop24Le = 6;
+const frameTypeNativeDsdRaw = 7;
 
 const createFrameHeader = (type: number, sessionId: number, payloadBytes: number): Buffer => {
   const header = Buffer.alloc(16);
@@ -342,6 +343,8 @@ const createReuseKey = (options: NativeOutputStartOptions): string => {
     latencyProfile: options.latencyProfile ?? null,
     playbackSpeedMode: options.playbackSpeedMode ?? null,
     inputFormat: options.inputFormat ?? 'pcm-f32le',
+    asioNativeDsdOutput: options.asioNativeDsdOutput === true,
+    nativeDsdSampleRate: options.nativeDsdSampleRate ?? null,
   });
 };
 
@@ -358,6 +361,11 @@ class FramedSessionWritable extends Writable {
   override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
     if (this.sessionClosed) {
       callback();
+      return;
+    }
+
+    if (this.owner.inputFormat === 'dsd-native-raw') {
+      this.owner.writeNativeDsdFrame(this.sessionId, chunk, callback);
       return;
     }
 
@@ -735,6 +743,19 @@ export class NativeOutputBridge extends EventEmitter {
     this.writeFrame(frameTypeDop24Le, sessionId, chunk, callback);
   }
 
+  writeNativeDsdFrame(sessionId: number, chunk: Buffer, callback: (error?: Error | null) => void): void {
+    if (!chunk.length) {
+      callback();
+      return;
+    }
+
+    if (sessionId === this.currentSessionId) {
+      this.currentSessionHasPcm = true;
+    }
+
+    this.writeFrame(frameTypeNativeDsdRaw, sessionId, chunk, callback);
+  }
+
   stop(): void {
     this.clearReadyTimer();
     this.stopRequested = true;
@@ -919,6 +940,14 @@ export class NativeOutputBridge extends EventEmitter {
 
     if (options.inputFormat === 'dop24le') {
       args.push('-dop-output');
+    }
+
+    if (options.inputFormat === 'dsd-native-raw' || options.asioNativeDsdOutput === true) {
+      args.push('-dop-output', '-asio-native-dsd-output');
+      const nativeDsdSampleRate = Number(options.nativeDsdSampleRate);
+      if (Number.isFinite(nativeDsdSampleRate) && nativeDsdSampleRate > 0) {
+        args.push('-native-dsd-sr', String(Math.round(nativeDsdSampleRate)));
+      }
     }
 
     const sharedBackend = normalizeSharedBackendForHost(options.sharedBackend);

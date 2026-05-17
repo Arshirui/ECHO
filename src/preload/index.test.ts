@@ -108,8 +108,10 @@ describe('preload SMTC API', () => {
 
   it('exposes the dropped import path classifier', async () => {
     await exposedApi!.library.classifyImportPaths(['D:\\Music']);
+    await exposedApi!.library.resolveLyricsBackgroundCover('track-1');
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryClassifyImportPaths, ['D:\\Music']);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryResolveLyricsBackgroundCover, 'track-1');
   });
 
   it('serializes dropped files for library import', async () => {

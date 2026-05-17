@@ -27,6 +27,13 @@ import type { PlaybackStatus } from "../../shared/types/playback";
 import { decodeTextFileBytes } from "../../shared/utils/decodeTextFile";
 import { LyricsView } from "../components/lyrics/LyricsView";
 import { MvPanel, type MvAudioClock } from "../components/lyrics/MvPanel";
+import {
+  createReadableLyricsColorVars,
+  readableLyricsCssVarNames,
+  sampleImageUrl,
+  type ReadableColorSample,
+  type ReadableLyricsCssVars,
+} from "../components/lyrics/lyricsReadableColor";
 import type { LyricLine, LyricsState } from "../components/lyrics/lyricsTypes";
 import { PlayerStatusChips } from "../components/player/PlayerStatusChips";
 import { titleFromPath } from "../components/player/playerFormat";
@@ -68,6 +75,7 @@ type LyricsDisplaySettings = Pick<
   | "lyricsLineSpacingPercent"
   | "lyricsContextOpacityPercent"
   | "lyricsCoverOpacityPercent"
+  | "lyricsSmartReadableColorsEnabled"
   | "lyricsCoverBlurPx"
   | "lyricsCoverBrightnessPercent"
   | "lyricsBackgroundScalePercent"
@@ -103,6 +111,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsLineSpacingPercent: 110,
   lyricsContextOpacityPercent: 49,
   lyricsCoverOpacityPercent: 100,
+  lyricsSmartReadableColorsEnabled: false,
   lyricsCoverBlurPx: 10,
   lyricsCoverBrightnessPercent: 100,
   lyricsBackgroundScalePercent: 100,
@@ -174,6 +183,15 @@ const streamingLyricsToState = (
     .map((text) => ({ timeMs: -1, text }));
   const lines = directLines.length > 0 ? directLines : fallbackLines;
   const hasTimedLines = lines.some((line) => line.timeMs >= 0);
+
+  if (result.instrumental === true) {
+    return {
+      kind: "instrumental",
+      source: result.provider === "netease" || result.provider === "qqmusic" ? result.provider : "online",
+      lines: [],
+      offsetMs: fallbackOffsetMs,
+    };
+  }
 
   if (result.status === "missing" || lines.length === 0) {
     return emptyLyrics(fallbackOffsetMs);
@@ -394,6 +412,7 @@ const selectLyricsDisplaySettings = (
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackLyricsDisplaySettings.lyricsLineSpacingPercent,
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackLyricsDisplaySettings.lyricsContextOpacityPercent,
   lyricsCoverOpacityPercent: settings.lyricsCoverOpacityPercent,
+  lyricsSmartReadableColorsEnabled: settings.lyricsSmartReadableColorsEnabled === true,
   lyricsCoverBlurPx: settings.lyricsCoverBlurPx,
   lyricsCoverBrightnessPercent: settings.lyricsCoverBrightnessPercent,
   lyricsBackgroundScalePercent: settings.lyricsBackgroundScalePercent,
@@ -401,6 +420,18 @@ const selectLyricsDisplaySettings = (
 
 const cssUrl = (value: string): string =>
   `url("${value.replace(/["\\]/g, "\\$&")}")`;
+const lyricsSmartReadableVideoSampleEvent = "lyrics:smart-readable-video-sample";
+
+type LyricsSmartReadableVideoSampleDetail = {
+  trackId?: string | null;
+  sample?: ReadableColorSample | null;
+};
+
+const getCurrentDocumentThemeMode = (): "light" | "dark" =>
+  typeof document !== "undefined" && document.documentElement.dataset.theme === "dark"
+    ? "dark"
+    : "light";
+
 const lyricsDisplaySettingsKeys = [
   "lyricsEnabled",
   "lyricsNetworkEnabled",
@@ -424,6 +455,7 @@ const lyricsDisplaySettingsKeys = [
   "lyricsLineSpacingPercent",
   "lyricsContextOpacityPercent",
   "lyricsCoverOpacityPercent",
+  "lyricsSmartReadableColorsEnabled",
   "lyricsCoverBlurPx",
   "lyricsCoverBrightnessPercent",
   "lyricsBackgroundScalePercent",
@@ -653,6 +685,10 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     useState<LyricsDisplaySettings>(fallbackLyricsDisplaySettings);
   const [isLyricsDisplaySettingsReady, setIsLyricsDisplaySettingsReady] =
     useState(false);
+  const [imageReadableSample, setImageReadableSample] = useState<ReadableColorSample | null>(null);
+  const [mvReadableSample, setMvReadableSample] = useState<ReadableColorSample | null>(null);
+  const [documentThemeMode, setDocumentThemeMode] = useState<"light" | "dark">(getCurrentDocumentThemeMode);
+  const [networkBackgroundCoverUrl, setNetworkBackgroundCoverUrl] = useState<string | null>(null);
   const lyricsAutoAcceptScoreRef = useRef(fallbackLyricsDisplaySettings.lyricsAutoAcceptScore);
   const lyricsDisplaySettingsLoadVersionRef = useRef(0);
   const [isWindowMaximized, setIsWindowMaximized] = useState(isWindowApproximatelyMaximized);
@@ -723,10 +759,39 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   const lyricsWallpaperUrl = lyricsDisplaySettings.lyricsCustomWallpaperPath
     ? `echo-wallpaper://lyrics/custom?path=${encodeURIComponent(lyricsDisplaySettings.lyricsCustomWallpaperPath)}`
     : null;
+  const lyricsBackgroundCoverUrl = networkBackgroundCoverUrl ?? backgroundCoverUrl;
+  const lyricsSmartReadableEnabled = lyricsDisplaySettings.lyricsSmartReadableColorsEnabled === true;
+  const lyricsSmartReadableImageUrl = lyricsSmartReadableEnabled
+    ? effectiveLyricsBackgroundMode === "cover"
+      ? lyricsBackgroundCoverUrl
+      : effectiveLyricsBackgroundMode === "customWallpaper"
+        ? lyricsWallpaperUrl
+        : null
+    : null;
+  const smartReadableColors = useMemo<ReadableLyricsCssVars | null>(
+    () => {
+      if (!lyricsSmartReadableEnabled) {
+        return null;
+      }
+
+      return createReadableLyricsColorVars({
+        sample: mvReadableSample ?? imageReadableSample,
+        userColor: lyricsDisplaySettings.lyricsColor,
+        themeMode: documentThemeMode,
+      });
+    },
+    [
+      documentThemeMode,
+      imageReadableSample,
+      lyricsDisplaySettings.lyricsColor,
+      lyricsSmartReadableEnabled,
+      mvReadableSample,
+    ],
+  );
   const lyricsPageStyle = useMemo(
     () =>
       ({
-        "--lyrics-cover": backgroundCoverUrl ? cssUrl(backgroundCoverUrl) : "none",
+        "--lyrics-cover": lyricsBackgroundCoverUrl ? cssUrl(lyricsBackgroundCoverUrl) : "none",
         "--lyrics-wallpaper": lyricsWallpaperUrl
           ? cssUrl(lyricsWallpaperUrl)
           : "none",
@@ -746,9 +811,10 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         "--lyrics-cover-brightness": `${lyricsDisplaySettings.lyricsCoverBrightnessPercent}%`,
         "--lyrics-background-scale": (effectiveLyricsBackgroundScalePercent / 100).toFixed(2),
         "--lyrics-background-bleed": `-${lyricsDisplaySettings.lyricsCoverBlurPx * 2}px`,
+        ...(smartReadableColors ?? {}),
       }) as CSSProperties,
     [
-      backgroundCoverUrl,
+      lyricsBackgroundCoverUrl,
       effectiveLyricsBackgroundScalePercent,
       lyricsDisplaySettings.lyricsColor,
       lyricsDisplaySettings.lyricsCoverBlurPx,
@@ -759,8 +825,122 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
       lyricsDisplaySettings.lyricsLineSpacingPercent,
       lyricsDisplaySettings.lyricsContextOpacityPercent,
       lyricsWallpaperUrl,
+      smartReadableColors,
     ],
   );
+
+  useEffect(() => {
+    if (typeof document === "undefined" || typeof MutationObserver === "undefined") {
+      return undefined;
+    }
+
+    const root = document.documentElement;
+    const syncThemeMode = (): void => setDocumentThemeMode(getCurrentDocumentThemeMode());
+    const observer = new MutationObserver(syncThemeMode);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    syncThemeMode();
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (effectiveLyricsBackgroundMode !== "cover" || !currentTrack?.id || !backgroundCoverUrl) {
+      setNetworkBackgroundCoverUrl(null);
+      return undefined;
+    }
+
+    const library = window.echo?.library;
+    if (!library?.resolveLyricsBackgroundCover) {
+      setNetworkBackgroundCoverUrl(null);
+      return undefined;
+    }
+
+    let disposed = false;
+    setNetworkBackgroundCoverUrl(null);
+    void library
+      .resolveLyricsBackgroundCover(currentTrack.id)
+      .then((result) => {
+        if (!disposed) {
+          setNetworkBackgroundCoverUrl(result?.coverUrl ?? null);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setNetworkBackgroundCoverUrl(null);
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [backgroundCoverUrl, currentTrack?.id, effectiveLyricsBackgroundMode]);
+
+  useEffect(() => {
+    if (!lyricsSmartReadableEnabled || !lyricsSmartReadableImageUrl) {
+      setImageReadableSample(null);
+      return undefined;
+    }
+
+    let disposed = false;
+    setImageReadableSample(null);
+    void sampleImageUrl(lyricsSmartReadableImageUrl).then((sample) => {
+      if (!disposed) {
+        setImageReadableSample(sample);
+      }
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [lyricsSmartReadableEnabled, lyricsSmartReadableImageUrl]);
+
+  useEffect(() => {
+    setMvReadableSample(null);
+  }, [lyricsSmartReadableEnabled, trackId]);
+
+  useEffect(() => {
+    const handleVideoSample = (event: Event): void => {
+      if (!lyricsSmartReadableEnabled || !(event instanceof CustomEvent)) {
+        return;
+      }
+
+      const detail = event.detail as LyricsSmartReadableVideoSampleDetail | null;
+      if (detail?.trackId && trackId && detail.trackId !== trackId) {
+        return;
+      }
+
+      setMvReadableSample(detail?.sample ?? null);
+    };
+
+    window.addEventListener(lyricsSmartReadableVideoSampleEvent, handleVideoSample);
+    return () => window.removeEventListener(lyricsSmartReadableVideoSampleEvent, handleVideoSample);
+  }, [lyricsSmartReadableEnabled, trackId]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    const root = document.documentElement;
+    const clearSmartReadableRootVars = (): void => {
+      delete root.dataset.lyricsSmartReadable;
+      for (const name of readableLyricsCssVarNames) {
+        root.style.removeProperty(name);
+      }
+    };
+
+    if (!lyricsSmartReadableEnabled || !smartReadableColors) {
+      clearSmartReadableRootVars();
+      return clearSmartReadableRootVars;
+    }
+
+    root.dataset.lyricsSmartReadable = "true";
+    for (const [name, value] of Object.entries(smartReadableColors)) {
+      root.style.setProperty(name, value);
+    }
+
+    return clearSmartReadableRootVars;
+  }, [lyricsSmartReadableEnabled, smartReadableColors]);
 
   const handleOpenAlbumDetail = useCallback((): void => {
     if (!currentTrack || isAlbumNavigating) {
@@ -1886,6 +2066,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     <div
       className="lyrics-page"
       data-background={effectiveLyricsBackgroundMode}
+      data-smart-readable={lyricsSmartReadableEnabled ? "true" : undefined}
       data-album-transition={isAlbumNavigating ? "true" : undefined}
       data-custom-lrc-dragging={isCustomLyricsDragging}
       data-window-maximized={isWindowMaximized}
@@ -1975,6 +2156,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
           lyricsDisplaySettings.lyricsHeaderHidden &&
           lyricsDisplaySettings.lyricsMvAutoShowTrackInfoDisabled
         }
+        smartReadableColorsEnabled={lyricsSmartReadableEnabled}
         isAudioPlaying={state === "playing"}
         audioClock={mvAudioClock}
       />

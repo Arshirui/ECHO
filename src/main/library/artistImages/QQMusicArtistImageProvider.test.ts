@@ -47,8 +47,31 @@ describe('QQMusicArtistImageProvider', () => {
       provider: 'qqmusic',
       providerArtistId: 'remote-arika',
       artistName: 'Arika',
-      imageUrl: 'https://y.gtimg.cn/music/photo_new/T001R150x150M000arika.jpg',
+      imageUrl: 'https://y.gtimg.cn/music/photo_new/T001R800x800M000arika.jpg',
+      quality: 800,
       confidence: 0.96,
     });
+  });
+
+  it('filters obvious default artist image URLs', async () => {
+    const streamingProvider = {
+      search: vi.fn().mockResolvedValue({
+        artists: [
+          {
+            id: 'qqmusic:artist:empty',
+            provider: 'qqmusic',
+            providerArtistId: 'empty',
+            name: 'Empty Artist',
+            avatarUrl: 'https://y.gtimg.cn/music/photo_new/singer_default.png',
+            coverUrl: null,
+          },
+        ],
+      }),
+    };
+    const provider = new QQMusicArtistImageProvider(streamingProvider as never);
+
+    const candidates = await provider.searchArtistImage({ artistName: 'Empty Artist', artistKey: 'empty artist' });
+
+    expect(candidates).toEqual([]);
   });
 });

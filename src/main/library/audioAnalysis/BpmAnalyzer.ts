@@ -33,6 +33,8 @@ const frameSize = 1024;
 const hopSize = 512;
 const minBpm = 60;
 const maxBpm = 200;
+const stableMinBpm = 80;
+const stableMaxBpm = 180;
 
 const defaultLogger = (message: string): void => {
   console.warn(message);
@@ -49,12 +51,14 @@ const appendTailLine = (lines: string[], line: string): void => {
   }
 };
 
+const clamp = (value: number, minimum = 0, maximum = 1): number => Math.max(minimum, Math.min(maximum, value));
+
 const normalizeBpm = (bpm: number): number => {
   let normalized = bpm;
-  while (normalized < 80) {
+  while (normalized < stableMinBpm) {
     normalized *= 2;
   }
-  while (normalized > 180) {
+  while (normalized > stableMaxBpm) {
     normalized /= 2;
   }
   return normalized;
@@ -66,6 +70,16 @@ const median = (values: number[]): number => {
   }
   const sorted = [...values].sort((left, right) => left - right);
   return sorted[Math.floor(sorted.length / 2)];
+};
+
+const percentile = (values: number[], ratio: number): number => {
+  if (!values.length) {
+    return 0;
+  }
+
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.max(0, Math.min(sorted.length - 1, Math.round((sorted.length - 1) * ratio)));
+  return sorted[index];
 };
 
 const readInt16Pcm = (buffer: Buffer): Float32Array => {
@@ -98,6 +112,10 @@ const onsetEnvelope = (samples: Float32Array): Float32Array => {
     envelope[frame] = Math.max(0, energy[frame] - baseline * 1.12);
   }
 
+  for (let frame = 1; frame < frameCount - 1; frame += 1) {
+    envelope[frame] = envelope[frame - 1] * 0.2 + envelope[frame] * 0.6 + envelope[frame + 1] * 0.2;
+  }
+
   const peak = Math.max(...envelope);
   if (peak > 0) {
     for (let frame = 0; frame < envelope.length; frame += 1) {
@@ -108,37 +126,43 @@ const onsetEnvelope = (samples: Float32Array): Float32Array => {
   return envelope;
 };
 
-const estimateTempo = (envelope: Float32Array): BpmAnalyzerResult => {
-  const envelopeRate = sampleRate / hopSize;
-  const minLag = Math.max(1, Math.floor((60 * envelopeRate) / maxBpm));
-  const maxLag = Math.ceil((60 * envelopeRate) / minBpm);
-  let bestLag = minLag;
-  let bestScore = 0;
-  let secondScore = 0;
-  const lagScores: number[] = [];
+type TempoCandidate = {
+  bpm: number;
+  lag: number;
+  score: number;
+  autocorrelation: number;
+};
 
-  for (let lag = minLag; lag <= maxLag; lag += 1) {
-    let score = 0;
-    for (let index = lag; index < envelope.length; index += 1) {
-      score += envelope[index] * envelope[index - lag];
-    }
-    lagScores.push(score);
-    if (score > bestScore) {
-      secondScore = bestScore;
-      bestScore = score;
-      bestLag = lag;
-    } else if (score > secondScore) {
-      secondScore = score;
+const tempoEquivalent = (left: number, right: number): boolean => {
+  for (const multiplier of [0.5, 1, 2]) {
+    const expected = right * multiplier;
+    if (Math.abs(left - expected) / Math.max(1, expected) <= 0.035) {
+      return true;
     }
   }
 
-  const rawBpm = 60 * envelopeRate / bestLag;
-  const bpm = normalizeBpm(rawBpm);
+  return false;
+};
+
+const interpolatedScore = (scores: Float32Array, lag: number): number => {
+  if (lag < 1 || lag >= scores.length - 1) {
+    return 0;
+  }
+
+  const left = Math.floor(lag);
+  const fraction = lag - left;
+  return scores[left] * (1 - fraction) + scores[left + 1] * fraction;
+};
+
+const phaseFit = (envelope: Float32Array, bpm: number, envelopeRate: number): { offsetMs: number; fit: number } => {
   const beatPeriodFrames = Math.max(1, Math.round((60 / bpm) * envelopeRate));
   const phaseScores = new Float32Array(beatPeriodFrames);
 
   for (let index = 0; index < envelope.length; index += 1) {
-    phaseScores[index % beatPeriodFrames] += envelope[index];
+    const value = envelope[index];
+    if (value > 0.08) {
+      phaseScores[index % beatPeriodFrames] += value;
+    }
   }
 
   let bestPhase = 0;
@@ -150,15 +174,101 @@ const estimateTempo = (envelope: Float32Array): BpmAnalyzerResult => {
     }
   }
 
-  const scoreMean = lagScores.reduce((total, score) => total + score, 0) / Math.max(1, lagScores.length);
-  const peakRatio = bestScore > 0 ? Math.max(0, Math.min(1, (bestScore - Math.max(secondScore, scoreMean)) / bestScore)) : 0;
-  const onsetDensity = Array.from(envelope).filter((value) => value > 0.2).length / Math.max(1, envelope.length);
-  const confidence = Math.max(0, Math.min(1, peakRatio * 0.75 + Math.min(0.25, onsetDensity)));
+  let totalWeight = 0;
+  let alignedWeight = 0;
+  const tolerance = Math.max(1, beatPeriodFrames * 0.18);
+  for (let index = 0; index < envelope.length; index += 1) {
+    const value = envelope[index];
+    if (value <= 0.08) {
+      continue;
+    }
+
+    const phase = (index - bestPhase + beatPeriodFrames) % beatPeriodFrames;
+    const distance = Math.min(phase, beatPeriodFrames - phase);
+    totalWeight += value;
+    alignedWeight += value * clamp(1 - distance / tolerance);
+  }
 
   return {
-    bpm: Math.round(bpm * 100) / 100,
+    offsetMs: Math.round((bestPhase / envelopeRate) * 1000),
+    fit: totalWeight > 0 ? alignedWeight / totalWeight : 0,
+  };
+};
+
+const estimateTempo = (envelope: Float32Array): BpmAnalyzerResult => {
+  const envelopeRate = sampleRate / hopSize;
+  const minLag = Math.max(1, Math.floor((60 * envelopeRate) / maxBpm));
+  const maxLag = Math.ceil((60 * envelopeRate) / minBpm);
+  const lagScores = new Float32Array(maxLag + 1);
+  const candidates: TempoCandidate[] = [];
+
+  for (let lag = minLag; lag <= maxLag; lag += 1) {
+    let numerator = 0;
+    let leftEnergy = 0;
+    let rightEnergy = 0;
+    for (let index = lag; index < envelope.length; index += 1) {
+      const left = envelope[index];
+      const right = envelope[index - lag];
+      numerator += left * right;
+      leftEnergy += left * left;
+      rightEnergy += right * right;
+    }
+    lagScores[lag] = leftEnergy > 0 && rightEnergy > 0 ? numerator / Math.sqrt(leftEnergy * rightEnergy) : 0;
+  }
+
+  for (let lag = minLag; lag <= maxLag; lag += 1) {
+    const rawBpm = 60 * envelopeRate / lag;
+    const bpm = normalizeBpm(rawBpm);
+    const autocorrelation = lagScores[lag];
+    const harmonicScore =
+      autocorrelation * 0.58 +
+      interpolatedScore(lagScores, lag / 2) * 0.14 +
+      interpolatedScore(lagScores, lag * 2) * 0.2 +
+      interpolatedScore(lagScores, lag * 3) * 0.08;
+    const centerPreference = bpm >= 90 && bpm <= 170 ? 1 : 0.94;
+    candidates.push({
+      bpm,
+      lag,
+      score: harmonicScore * centerPreference,
+      autocorrelation,
+    });
+  }
+
+  const best = candidates.reduce<TempoCandidate | null>((currentBest, candidate) => {
+    if (!currentBest || candidate.score > currentBest.score) {
+      return candidate;
+    }
+    return currentBest;
+  }, null);
+
+  if (!best) {
+    return {
+      bpm: 0,
+      confidence: 0,
+      beatOffsetMs: 0,
+    };
+  }
+
+  const competingScores = candidates
+    .filter((candidate) => !tempoEquivalent(candidate.bpm, best.bpm))
+    .map((candidate) => candidate.score);
+  const backgroundScore = percentile(competingScores, 0.82);
+  const contrast = best.score > 0 ? clamp((best.score - backgroundScore) / best.score) : 0;
+  const prominentOnsets = Array.from(envelope).filter((value) => value > 0.18);
+  const onsetDensity = prominentOnsets.length / Math.max(1, envelope.length);
+  const onsetPeak = percentile(Array.from(envelope), 0.95);
+  const onsetMedian = percentile(Array.from(envelope), 0.5);
+  const onsetClarity = onsetPeak > 0 ? clamp((onsetPeak - onsetMedian) / onsetPeak) : 0;
+  const { fit, offsetMs } = phaseFit(envelope, best.bpm, envelopeRate);
+  const densityPenalty = onsetDensity < 0.006 || onsetDensity > 0.45 ? 0.72 : 1;
+  const periodicStrength = clamp(best.autocorrelation / 0.48);
+  const rhythmicStability = Math.sqrt(clamp(fit * 0.52 + periodicStrength * 0.36 + onsetClarity * 0.12));
+  const confidence = clamp(rhythmicStability * (0.82 + contrast * 0.18) * densityPenalty);
+
+  return {
+    bpm: Math.round(best.bpm * 100) / 100,
     confidence: Math.round(confidence * 1000) / 1000,
-    beatOffsetMs: Math.round((bestPhase / envelopeRate) * 1000),
+    beatOffsetMs: offsetMs,
   };
 };
 

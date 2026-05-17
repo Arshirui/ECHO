@@ -5,6 +5,8 @@ const timestampPattern = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
 const leadingTimestampsPattern = /^\s*(?:(?:\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\])\s*)+/;
 const angleTimestampPattern = /<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>/g;
 const enhancedTimestampPattern = /<\d{1,2}:\d{2}(?:[.:]\d{1,3})?>/g;
+const neteaseYrcLinePattern = /^\s*\[(\d+),(\d+)\](.*)$/;
+const neteaseYrcWordPattern = /\((\d+),(\d+)(?:,\d+)?\)/g;
 
 const fractionToMs = (fraction: string | undefined): number => {
   if (!fraction) {
@@ -97,6 +99,57 @@ const attachWordTimings = (
   }
 
   return { ...line, words };
+};
+
+const parseNeteaseYrcLine = (line: string): LyricLine | null => {
+  const lineMatch = line.match(neteaseYrcLinePattern);
+  if (!lineMatch) {
+    return null;
+  }
+
+  const timeMs = Number(lineMatch[1]);
+  if (!Number.isFinite(timeMs) || timeMs < 0) {
+    return null;
+  }
+
+  const content = lineMatch[3] ?? '';
+  const matches = [...content.matchAll(neteaseYrcWordPattern)];
+  if (matches.length === 0) {
+    const text = cleanLyricText(content);
+    return text ? { timeMs, ...splitInlineTranslation(text) } : null;
+  }
+
+  const segments: TimedSegment[] = [];
+  for (let index = 0; index < matches.length; index += 1) {
+    const match = matches[index];
+    if (match.index === undefined) {
+      return null;
+    }
+
+    const rawStartMs = Number(match[1]);
+    const durationMs = Number(match[2]);
+    if (!Number.isFinite(rawStartMs) || !Number.isFinite(durationMs) || rawStartMs < 0 || durationMs < 0) {
+      return null;
+    }
+
+    const textStart = match.index + match[0].length;
+    const textEnd = matches[index + 1]?.index ?? content.length;
+    const text = content.slice(textStart, textEnd);
+    const startMs = rawStartMs < timeMs && timeMs - rawStartMs > 1000 ? timeMs + rawStartMs : rawStartMs;
+
+    segments.push({
+      text,
+      startMs,
+      endMs: durationMs > 0 ? startMs + durationMs : null,
+    });
+  }
+
+  const text = cleanLyricText(content.replace(neteaseYrcWordPattern, ''));
+  if (!text) {
+    return null;
+  }
+
+  return { timeMs, ...attachWordTimings(splitInlineTranslation(text), normalizeWordTimings(segments)) };
 };
 
 const parseAngleEnhancedWordTimings = (content: string): LyricWordTiming[] | undefined => {
@@ -397,6 +450,12 @@ export const parseSyncedLyrics = (lrcText: string): LyricLine[] => {
   for (const rawLine of lrcText.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || metadataTagPattern.test(line)) {
+      continue;
+    }
+
+    const neteaseYrcLine = parseNeteaseYrcLine(line);
+    if (neteaseYrcLine) {
+      lines.push(neteaseYrcLine);
       continue;
     }
 

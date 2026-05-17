@@ -10,7 +10,7 @@ export type SharedStabilityTier = 'standard' | 'recovery' | 'emergency';
 export type AudioResamplerEngine = 'default' | 'soxr';
 export type FfmpegToolchainSource = 'explicit' | 'bundled' | 'dev-bundled' | 'system';
 export type AudioDsdOutputMode = 'pcm' | 'dop';
-export type ActiveDsdOutputMode = 'pcm' | 'dop' | null;
+export type ActiveDsdOutputMode = 'pcm' | 'dop' | 'native' | null;
 
 export type ChannelBalanceState = {
   enabled: boolean;
@@ -66,6 +66,7 @@ export type AudioOutputSettings = {
   useJuceOutput?: boolean;
   useJuceDecode?: boolean;
   dsdOutputMode?: AudioDsdOutputMode;
+  asioNativeDsdExperimentalEnabled?: boolean;
   asioUnavailableFallbackEnabled?: boolean;
   soxrFallbackEnabled?: boolean;
   volume?: number;

@@ -73,7 +73,8 @@ describe('China lyrics providers', () => {
       romanizationLyrics: '[00:01.00]Romanized',
       sourceLabel: 'NetEase',
     });
-    expect(String(fetchMock.mock.calls[1][0])).toContain('rv=-1');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('yv=1');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('rv=1');
   });
 
   it('maps NetEase nolyric responses to instrumental results', async () => {
@@ -140,6 +141,45 @@ describe('China lyrics providers', () => {
       providerLyricsId: 'netease:789',
       syncedLyrics: null,
       karaokeLyrics: '[00:01.00]<00:01.00>Hello <00:01.50>world',
+    });
+  });
+
+  it('keeps NetEase YRC word lyrics before ordinary karaoke lyrics', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockJsonResponse({
+            result: {
+              songs: [
+                {
+                  id: 790,
+                  name: 'Echo Song',
+                  duration: 120000,
+                  artists: [{ name: 'Echo Artist' }],
+                  album: { name: 'Echo Album' },
+                },
+              ],
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockJsonResponse({
+            lrc: { lyric: '[00:01.00]Plain line' },
+            yrc: { lyric: '[1000,1200](1000,300,0)Hello (1300,400,0)world' },
+            klyric: { lyric: '[00:01.00]<00:01.00>Less <00:01.50>precise' },
+          }),
+        ),
+    );
+
+    const [candidate] = await new NeteaseLyricsProvider().search(request);
+
+    expect(candidate).toMatchObject({
+      provider: 'netease',
+      providerLyricsId: 'netease:790',
+      syncedLyrics: '[00:01.00]Plain line',
+      karaokeLyrics: '[1000,1200](1000,300,0)Hello (1300,400,0)world',
     });
   });
 

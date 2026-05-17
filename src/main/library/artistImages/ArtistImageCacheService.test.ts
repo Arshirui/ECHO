@@ -6,7 +6,7 @@ import { createDatabase, type EchoDatabase } from '../../database/createDatabase
 import { LibraryStore } from '../LibraryStore';
 import { ArtistImageCacheService } from './ArtistImageCacheService';
 import { artistImageKeyForName } from './ArtistImageMatching';
-import type { ArtistImageCandidate, ArtistImageProvider } from './ArtistImageTypes';
+import { artistImageCacheSourceHash, type ArtistImageCandidate, type ArtistImageProvider } from './ArtistImageTypes';
 
 const tempRoots: string[] = [];
 
@@ -19,8 +19,8 @@ const makeTempRoot = (): string => {
 
 const validPng = (): Uint8Array =>
   Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
-    'base64',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="#446688"/><circle cx="256" cy="210" r="110" fill="#d8e9f7"/><rect x="104" y="326" width="304" height="150" rx="75" fill="#1f8f84"/></svg>',
+    'utf8',
   );
 
 const insertArtist = (database: EchoDatabase, id: string, name: string): string => {
@@ -127,6 +127,7 @@ describe('ArtistImageCacheService', () => {
       thumbPath: 'D:/cache/thumb.webp',
       mediumPath: 'D:/cache/medium.webp',
       largePath: 'D:/cache/large.webp',
+      sourceHash: artistImageCacheSourceHash('old'),
       confidence: 0.96,
     });
     const providerSearch = vi.fn();
@@ -139,12 +140,32 @@ describe('ArtistImageCacheService', () => {
     database.close();
   });
 
+  it('refreshes old matched caches without the current image cache version', async () => {
+    const database = createDatabase(':memory:');
+    const artistKey = insertArtist(database, 'artist-1', 'Echo Artist');
+    insertCache(database, artistKey, 'matched', {
+      thumbPath: 'D:/cache/thumb.webp',
+      mediumPath: 'D:/cache/medium.webp',
+      largePath: 'D:/cache/large.webp',
+      confidence: 0.96,
+    });
+    const providerSearch = vi.fn().mockResolvedValue([]);
+    const service = createService(database, createProvider(providerSearch));
+
+    const result = service.refreshVisibleArtistImages([{ id: 'artist-1', name: 'Echo Artist' }]);
+
+    expect(result).toEqual({ queued: 1, skipped: 0 });
+    await waitFor(() => providerSearch.mock.calls.length === 1);
+    await waitFor(() => service.getJobStatus().active === 0);
+    database.close();
+  });
+
   it('does not retry not_found or error rows during the next enqueue', () => {
     const database = createDatabase(':memory:');
     const missingKey = insertArtist(database, 'artist-1', 'Missing Artist');
     const errorKey = insertArtist(database, 'artist-2', 'Error Artist');
-    insertCache(database, missingKey, 'not_found', { failureReason: 'no_result' });
-    insertCache(database, errorKey, 'error', { failureReason: 'network' });
+    insertCache(database, missingKey, 'not_found', { failureReason: 'no_result', sourceHash: artistImageCacheSourceHash('no-result') });
+    insertCache(database, errorKey, 'error', { failureReason: 'network', sourceHash: artistImageCacheSourceHash('network') });
     const providerSearch = vi.fn();
     const service = createService(database, createProvider(providerSearch));
 
@@ -286,7 +307,7 @@ describe('ArtistImageCacheService', () => {
     database.close();
   });
 
-  it('serializes same-provider searches while artist workers run concurrently', async () => {
+  it('paces same-provider searches without waiting for the previous search to finish', async () => {
     const database = createDatabase(':memory:');
     insertArtist(database, 'artist-1', 'Artist One');
     insertArtist(database, 'artist-2', 'Artist Two');
@@ -302,13 +323,11 @@ describe('ArtistImageCacheService', () => {
       { id: 'artist-1', name: 'Artist One' },
       { id: 'artist-2', name: 'Artist Two' },
     ], { force: true });
-    await waitFor(() => providerSearch.mock.calls.length === 1);
+    await waitFor(() => providerSearch.mock.calls.length === 2);
 
     expect(service.getJobStatus()).toMatchObject({ active: 2, queued: 0 });
 
     searches[0]!.resolve([]);
-    await waitFor(() => providerSearch.mock.calls.length === 2);
-
     expect(searches.map((search) => search.artistName)).toEqual(['Artist One', 'Artist Two']);
     searches[1]!.resolve([]);
     await waitFor(() => service.getJobStatus().active === 0);
@@ -493,6 +512,7 @@ describe('ArtistImageCacheService', () => {
       thumbPath: 'D:/cache/thumb.webp',
       mediumPath: 'D:/cache/medium.webp',
       largePath: 'D:/cache/large.webp',
+      sourceHash: artistImageCacheSourceHash('old'),
       confidence: 0.96,
     });
     const store = new LibraryStore(database);
@@ -513,6 +533,7 @@ describe('ArtistImageCacheService', () => {
       thumbPath: 'D:/outside/thumb.webp',
       mediumPath: 'D:/outside/medium.webp',
       largePath: 'D:/outside/large.webp',
+      sourceHash: artistImageCacheSourceHash('old'),
       confidence: 0.96,
     });
     const providerSearch = vi.fn();

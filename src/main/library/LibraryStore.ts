@@ -2,11 +2,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import type { EchoDatabase } from '../database/createDatabase';
+import { BPM_ANALYSIS_VERSION } from '../../shared/constants/audioAnalysis';
 import { chineseSearchVariants } from './ChineseSearchVariants';
 import { buildTrackSearchTerms } from './SearchIndexTokens';
 import { normalizeAlbumTitleForLooseMerge, type AlbumKeyInput, type AlbumMergeStrategy, type AlbumService } from './AlbumService';
 import { updateCoverPathsInDatabase } from './CoverCacheManager';
 import { DuplicateTrackService } from './duplicates/DuplicateTrackService';
+import { isCurrentArtistImageCacheSourceHash } from './artistImages/ArtistImageTypes';
 import type {
   CoverSource,
   CoverResult,
@@ -58,6 +60,7 @@ type AlbumIndexStats = {
   albumKey: string;
   title: string;
   albumArtist: string;
+  albumArtistKeys: Set<string>;
   year: number | null;
   trackCount: number;
   duration: number;
@@ -86,6 +89,8 @@ type LooseAlbumCluster = {
 
 const defaultPageSize = 100;
 const maxPageSize = 500;
+const variousArtistsDisplayName = 'Various Artists';
+const variousArtistsKey = 'various artists';
 const likedSongsSourcePlaylistId = 'liked-tracks';
 const likedAlbumsSourcePlaylistId = 'liked-albums';
 const neteaseDailyRecommendSourcePlaylistId = 'daily-recommend';
@@ -408,6 +413,12 @@ const normalizeArtistDisplayName = (value: unknown): string =>
 
 const artistKeyForName = (name: string): string => name.normalize('NFKC').toLocaleLowerCase();
 
+const displayAlbumArtistForKeys = (preferredName: string, artistKeys: Set<string>): string =>
+  artistKeys.size > 1 ? variousArtistsDisplayName : preferredName;
+
+const albumArtistCreditForTrack = (albumArtist: string, fallbackArtist: string): string =>
+  normalizeArtistDisplayName(albumArtist || fallbackArtist) || 'Unknown Artist';
+
 const splitArtistNames = (value: unknown): string[] => {
   const normalized = normalizeArtistDisplayName(value);
 
@@ -441,6 +452,14 @@ export class LibraryStore {
     private readonly database: EchoDatabase,
     private readonly readSearchOptions: () => LibraryStoreSearchOptions = () => ({ chineseCrossScriptSearchEnabled: true }),
   ) {
+    this.database.function('echo_artist_matches', { deterministic: true }, (value: unknown, key: unknown) => {
+      const targetKey = typeof key === 'string' ? key : '';
+      if (!targetKey) {
+        return 0;
+      }
+
+      return splitArtistNames(value).some((name) => artistKeyForName(name) === targetKey) ? 1 : 0;
+    });
     this.backfillSearchTerms();
   }
 
@@ -695,7 +714,7 @@ export class LibraryStore {
     const startedAt = performance.now();
     const folder = this.requireFolder(query.folderId);
     const folderPath = this.resolveFolderScopedPath(folder, query.path);
-    const { page, pageSize, search, sort, sourceProvider } = pageFromQuery(query);
+    const { page, pageSize, search, sort } = pageFromQuery(query);
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const scope = this.folderTrackScope(folder.id, folderPath, query.recursive !== false);
@@ -1180,10 +1199,20 @@ export class LibraryStore {
     const rows = this.allRows(
       `${baseColumns}
        WHERE tracks.missing = 0
-         AND (? = 1 OR tracks.bpm IS NULL OR tracks.analysis_status IN ('none', 'error', 'low_confidence'))
+         AND (
+           ? = 1
+           OR tracks.bpm IS NULL
+           OR tracks.analysis_status IN ('none', 'error', 'low_confidence')
+           OR (
+             tracks.analysis_status = 'complete'
+             AND tracks.analysis_version < ?
+             AND tracks.field_sources_json LIKE '%"bpm":"audio_analysis"%'
+           )
+         )
        ORDER BY tracks.updated_at DESC, tracks.title COLLATE NOCASE
        LIMIT ?`,
       force ? 1 : 0,
+      BPM_ANALYSIS_VERSION,
       safeLimit,
     );
     return rows.map((row) => this.mapTrack(row));
@@ -1224,7 +1253,7 @@ export class LibraryStore {
         bpm_confidence = ?,
         beat_offset_ms = ?,
         analysis_status = ?,
-        analysis_version = 1,
+        analysis_version = ?,
         analysis_error = ?,
         analysis_updated_at = ?,
         field_sources_json = ?,
@@ -1234,6 +1263,7 @@ export class LibraryStore {
       update.confidence,
       update.beatOffsetMs,
       update.status,
+      BPM_ANALYSIS_VERSION,
       update.error ?? null,
       timestamp,
       JSON.stringify(fieldSources),
@@ -1884,7 +1914,6 @@ export class LibraryStore {
             sourceName,
             position,
           });
-          linkAlbum(artist, albumId, sourceName);
           considerCover(artist, albumId, coverId);
         }
       });
@@ -1992,6 +2021,8 @@ export class LibraryStore {
       const trackId = String(track.id);
       const title = String(track.album || '');
       const albumArtist = String(track.album_artist || '');
+      const trackAlbumArtist = albumArtistCreditForTrack(albumArtist, String(track.artist || ''));
+      const trackAlbumArtistKey = artistKeyForName(trackAlbumArtist);
       const year = numberOrNull(track.year);
       const fieldSources = parseJsonObject(track.field_sources_json);
       const keyInput: AlbumKeyInput = {
@@ -2013,7 +2044,8 @@ export class LibraryStore {
           id: randomUUID(),
           albumKey: standardAlbumKey,
           title: title || 'Unknown Album',
-          albumArtist: albumArtist || String(track.artist || 'Unknown Artist'),
+          albumArtist: trackAlbumArtist,
+          albumArtistKeys: new Set<string>(),
           year,
           trackCount: 0,
           duration: 0,
@@ -2030,6 +2062,8 @@ export class LibraryStore {
         textOrNull(track.cover_album_path),
       );
 
+      standardGroup.albumArtistKeys.add(trackAlbumArtistKey);
+      standardGroup.albumArtist = displayAlbumArtistForKeys(standardGroup.albumArtist, standardGroup.albumArtistKeys);
       standardGroup.trackCount += 1;
       standardGroup.duration += Number(track.duration ?? 0);
       standardGroup.coverId = standardGroup.coverId ?? textOrNull(track.cover_id);
@@ -2072,12 +2106,17 @@ export class LibraryStore {
           albumKey,
           title: standardGroup.title,
           albumArtist: standardGroup.albumArtist,
+          albumArtistKeys: new Set(standardGroup.albumArtistKeys),
           year: standardGroup.year,
           trackCount: 0,
           duration: 0,
           coverId: standardGroup.coverId,
         };
 
+      for (const artistKey of standardGroup.albumArtistKeys) {
+        stats.albumArtistKeys.add(artistKey);
+      }
+      stats.albumArtist = displayAlbumArtistForKeys(stats.albumArtist, stats.albumArtistKeys);
       stats.trackCount += standardGroup.trackCount;
       stats.duration += standardGroup.duration;
       stats.coverId = stats.coverId ?? standardGroup.coverId;
@@ -2174,7 +2213,7 @@ export class LibraryStore {
 
   getTracks(query?: LibraryPageQuery): LibraryPage<LibraryTrack> {
     const startedAt = performance.now();
-    const { page, pageSize, search, sort, sourceProvider } = pageFromQuery(query);
+    const { page, pageSize, search, sort } = pageFromQuery(query);
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const hideDuplicates = query?.hideDuplicates === true;
@@ -2384,7 +2423,7 @@ export class LibraryStore {
 
   getAlbums(query?: LibraryPageQuery): LibraryPage<LibraryAlbum> {
     const startedAt = performance.now();
-    const { page, pageSize, search, sort, sourceProvider } = pageFromQuery(query);
+    const { page, pageSize, search, sort } = pageFromQuery(query);
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const searchFilter = buildSearchFilter(search, [
@@ -2569,6 +2608,7 @@ export class LibraryStore {
         artists.cover_id,
         artist_image_cache.status AS avatar_status,
         artist_image_cache.provider AS avatar_provider,
+        artist_image_cache.source_hash AS avatar_source_hash,
         artist_image_cache.thumb_path AS avatar_thumb_path,
         artist_image_cache.medium_path AS avatar_medium_path,
         artist_image_cache.large_path AS avatar_large_path
@@ -2590,6 +2630,7 @@ export class LibraryStore {
         MIN(remote_artist_rows.cover_id) AS cover_id,
         artist_image_cache.status AS avatar_status,
         artist_image_cache.provider AS avatar_provider,
+        artist_image_cache.source_hash AS avatar_source_hash,
         artist_image_cache.thumb_path AS avatar_thumb_path,
         artist_image_cache.medium_path AS avatar_medium_path,
         artist_image_cache.large_path AS avatar_large_path
@@ -2673,7 +2714,7 @@ export class LibraryStore {
   }
 
   getArtists(query?: LibraryPageQuery): LibraryPage<LibraryArtist> {
-    const { page, pageSize, search, sort, sourceProvider } = pageFromQuery(query);
+    const { page, pageSize, search, sort } = pageFromQuery(query);
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const searchFilter = buildSearchFilter(search, [
@@ -2689,7 +2730,7 @@ export class LibraryStore {
       SELECT
         id, media_type, source_id, provider, artist_key, name, sort_name, role,
         track_count, album_count, cover_id, avatar_status, avatar_provider,
-        avatar_thumb_path, avatar_medium_path, avatar_large_path
+        avatar_source_hash, avatar_thumb_path, avatar_medium_path, avatar_large_path
        FROM library_artists
        ${whereSql}
        ${orderSql}
@@ -2715,7 +2756,7 @@ export class LibraryStore {
        SELECT
         id, media_type, source_id, provider, artist_key, name, sort_name, role,
         track_count, album_count, cover_id, avatar_status, avatar_provider,
-        avatar_thumb_path, avatar_medium_path, avatar_large_path
+        avatar_source_hash, avatar_thumb_path, avatar_medium_path, avatar_large_path
        FROM library_artists
        WHERE id = ?`,
       artistId,
@@ -2795,6 +2836,13 @@ export class LibraryStore {
     }
 
     const orderSql = this.artistTrackOrderSql(sort);
+    const artistKey = artistKeyForName(artist.name);
+    const trackCreditValueSql = "COALESCE(NULLIF(TRIM(tracks.album_artist), ''), tracks.artist)";
+    const trackCreditFilterSql =
+      artistKey === variousArtistsKey
+        ? ''
+        : `AND (echo_artist_matches(tracks.artist, ?) OR echo_artist_matches(${trackCreditValueSql}, ?))`;
+    const trackCreditParams = artistKey === variousArtistsKey ? [] : [artistKey, artistKey];
     const totalRow = this.getRow(
       `SELECT COUNT(*) AS total
        FROM (
@@ -2803,6 +2851,7 @@ export class LibraryStore {
          INNER JOIN tracks ON tracks.id = artist_tracks.track_id
          WHERE artist_tracks.artist_id = ?
            AND tracks.missing = 0
+           ${trackCreditFilterSql}
          UNION
          SELECT tracks.id
          FROM artist_albums
@@ -2810,9 +2859,12 @@ export class LibraryStore {
          INNER JOIN tracks ON tracks.id = album_tracks.track_id
          WHERE artist_albums.artist_id = ?
            AND tracks.missing = 0
+           ${trackCreditFilterSql}
        ) AS artist_track_ids`,
       artist.id,
+      ...trackCreditParams,
       artist.id,
+      ...trackCreditParams,
     );
     const rows = this.allRows(
       `SELECT
@@ -2828,6 +2880,7 @@ export class LibraryStore {
         INNER JOIN tracks ON tracks.id = artist_tracks.track_id
         WHERE artist_tracks.artist_id = ?
           AND tracks.missing = 0
+          ${trackCreditFilterSql}
         UNION
         SELECT tracks.id
         FROM artist_albums
@@ -2835,6 +2888,7 @@ export class LibraryStore {
         INNER JOIN tracks ON tracks.id = album_tracks.track_id
         WHERE artist_albums.artist_id = ?
           AND tracks.missing = 0
+          ${trackCreditFilterSql}
       ) AS artist_track_ids
       INNER JOIN tracks ON tracks.id = artist_track_ids.id
       WHERE 1 = 1
@@ -2842,7 +2896,9 @@ export class LibraryStore {
       ${orderSql}
       LIMIT ? OFFSET ?`,
       artist.id,
+      ...trackCreditParams,
       artist.id,
+      ...trackCreditParams,
       pageSize,
       offset,
     );
@@ -2917,12 +2973,36 @@ export class LibraryStore {
     }
 
     const orderSql = this.albumOrderSql(sort);
+    const artistKey = artistKeyForName(artist.name);
+    const albumCreditValueSql = "COALESCE(NULLIF(TRIM(tracks.album_artist), ''), tracks.artist)";
+    const albumCreditFilterSql =
+      artistKey === variousArtistsKey
+        ? ''
+        : `AND EXISTS (
+            SELECT 1
+            FROM album_tracks
+            INNER JOIN tracks ON tracks.id = album_tracks.track_id
+            WHERE album_tracks.album_id = albums.id
+              AND tracks.missing = 0
+              AND echo_artist_matches(${albumCreditValueSql}, ?)
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM album_tracks
+            INNER JOIN tracks ON tracks.id = album_tracks.track_id
+            WHERE album_tracks.album_id = albums.id
+              AND tracks.missing = 0
+              AND NOT echo_artist_matches(${albumCreditValueSql}, ?)
+          )`;
+    const albumCreditParams = artistKey === variousArtistsKey ? [] : [artistKey, artistKey];
     const totalRow = this.getRow(
       `SELECT COUNT(*) AS total
        FROM artist_albums
        INNER JOIN albums ON albums.id = artist_albums.album_id
-       WHERE artist_albums.artist_id = ?`,
+       WHERE artist_albums.artist_id = ?
+         ${albumCreditFilterSql}`,
       artist.id,
+      ...albumCreditParams,
     );
     const rows = this.allRows(
       `SELECT
@@ -2931,9 +3011,11 @@ export class LibraryStore {
       FROM artist_albums
       INNER JOIN albums ON albums.id = artist_albums.album_id
       WHERE artist_albums.artist_id = ?
+      ${albumCreditFilterSql}
       ${orderSql}
       LIMIT ? OFFSET ?`,
       artist.id,
+      ...albumCreditParams,
       pageSize,
       offset,
     );
@@ -4637,10 +4719,11 @@ export class LibraryStore {
     const artistKey = String(row.artist_key ?? '');
     const avatarStatus = artistImageStatusOrNull(row.avatar_status);
     const avatarProvider = textOrNull(row.avatar_provider);
+    const avatarSourceHash = textOrNull(row.avatar_source_hash);
     const avatarThumbPath = textOrNull(row.avatar_thumb_path);
     const avatarMediumPath = textOrNull(row.avatar_medium_path);
     const avatarLargePath = textOrNull(row.avatar_large_path);
-    const hasMatchedAvatar = avatarStatus === 'matched';
+    const hasMatchedAvatar = avatarStatus === 'matched' && isCurrentArtistImageCacheSourceHash(avatarSourceHash);
 
     return {
       id: String(row.id),
@@ -4749,7 +4832,7 @@ export class LibraryStore {
           ? [albumPath, thumbPath, largePath]
           : variant === 'large'
             ? [largePath, albumPath, thumbPath]
-            : [originalRef, largePath, albumPath, thumbPath];
+            : [originalRef];
     const filePath = candidates.find((candidate): candidate is string => Boolean(candidate)) ?? null;
 
     return filePath

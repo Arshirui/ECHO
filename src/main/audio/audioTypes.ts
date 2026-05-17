@@ -2,7 +2,7 @@ import type { Readable } from 'node:stream';
 import type {
   AudioDeviceInfo,
   AudioDiagnostics,
-  AudioDsdOutputMode,
+  ActiveDsdOutputMode,
   AudioLatencyProfile,
   AudioOutputMode,
   AudioOutputSettings,
@@ -46,7 +46,7 @@ export type SampleRatePlan = {
   requestedOutputSampleRate: number;
   actualDeviceSampleRate: number | null;
   sharedDeviceSampleRate: number | null;
-  dsdOutputMode: AudioDsdOutputMode;
+  dsdOutputMode: Exclude<ActiveDsdOutputMode, null>;
   dsdNativeSampleRate: number | null;
   dsdTransportSampleRate: number | null;
   outputMode: AudioOutputMode;
@@ -105,7 +105,9 @@ export type NativeOutputStartOptions = {
   playbackRate?: number;
   playbackSpeedMode?: AudioOutputSettings['playbackSpeedMode'];
   durationSeconds?: number;
-  inputFormat?: 'pcm-f32le' | 'dop24le';
+  inputFormat?: 'pcm-f32le' | 'dop24le' | 'dsd-native-raw';
+  asioNativeDsdOutput?: boolean;
+  nativeDsdSampleRate?: number | null;
 };
 
 export type NativeOutputTelemetry = {
@@ -155,6 +157,7 @@ export type NativeBridgeReadyMessage = Record<string, unknown> & {
   asioMaxBufferFrames?: number;
   asioGranularity?: number;
   asioOutputChannelStart?: number;
+  nativeDsd?: boolean;
 };
 
 export type NativeBridgeReadyResult = {
