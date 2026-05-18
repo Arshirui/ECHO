@@ -36,6 +36,73 @@ export type LibraryDatabaseDeleteResult = {
   removedDatabaseFiles: string[];
 };
 
+export type LibraryDatabaseHealthStatus = 'ok' | 'corrupt' | 'unreadable';
+
+export type LibraryDatabaseHealthInfo = {
+  status: LibraryDatabaseHealthStatus;
+  databasePath: string;
+  checkedAt: string;
+  message?: string;
+  detail?: string;
+};
+
+export type LibraryDatabaseSnapshotInfo = {
+  id: string;
+  path: string;
+  createdAt: string | null;
+  reason: string | null;
+  copied: string[];
+  skipped: string[];
+  libraryHealth: LibraryDatabaseHealthInfo;
+  libraryBackupMethod: 'none' | 'sqlite-backup' | 'file-copy';
+  databasePath: string | null;
+  databaseSizeBytes: number | null;
+};
+
+export type LibraryDatabaseArchiveInfo = {
+  id: string;
+  path: string;
+  createdAt: string | null;
+  reason: string | null;
+  copied: string[];
+  databasePath: string | null;
+  databaseSizeBytes: number | null;
+};
+
+export type LibraryDatabaseMaintenanceEventInfo = {
+  createdAt: string;
+  action: 'manual-repair' | 'manual-delete' | 'manual-restore' | 'scan-health-failed';
+  databasePath: string;
+  archivePath?: string | null;
+  removedDatabaseFiles?: string[];
+  restoredSnapshotId?: string;
+  health?: LibraryDatabaseHealthInfo;
+  error?: string;
+};
+
+export type LibraryDatabaseProtectionStatus = {
+  dataProtectionPath: string;
+  databasePath: string;
+  databaseSizeBytes: number | null;
+  health: LibraryDatabaseHealthInfo;
+  snapshots: LibraryDatabaseSnapshotInfo[];
+  latestHealthySnapshot: LibraryDatabaseSnapshotInfo | null;
+  latestArchive: LibraryDatabaseArchiveInfo | null;
+  maintenanceEvents: LibraryDatabaseMaintenanceEventInfo[];
+  canRestoreSnapshot: boolean;
+  hasRunningScan: boolean;
+  recommendedAction: 'none' | 'restore-snapshot' | 'rebuild-empty-database';
+  unrecoverableReason?: string;
+};
+
+export type LibraryDatabaseRestoreResult = {
+  databasePath: string;
+  archivePath: string | null;
+  restoredSnapshot: LibraryDatabaseSnapshotInfo;
+  restoredDatabaseFiles: string[];
+  health: LibraryDatabaseHealthInfo;
+};
+
 export type ArtistImageCacheStatus = 'pending' | 'loading' | 'matched' | 'not_found' | 'error' | 'rate_limited';
 
 export type ArtistImageCacheEntry = {
@@ -778,20 +845,6 @@ export type LibraryPage<T> = {
   items: T[];
   page: number;
   pageSize: number;
-  total: number;
-  hasMore: boolean;
-};
-
-export type LibraryTrackLocateReason = 'found' | 'not-found' | 'filtered' | 'unsupported-sort';
-
-export type LibraryTrackLocateResult = {
-  found: boolean;
-  reason: LibraryTrackLocateReason;
-  track: LibraryTrack | null;
-  items: LibraryTrack[];
-  page: number;
-  pageSize: number;
-  index: number;
   total: number;
   hasMore: boolean;
 };

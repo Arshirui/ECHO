@@ -647,6 +647,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const handleNavigateSongs = (): void => {
       navigateRoute('songs');
     };
+    const handleNavigateSettings = (): void => {
+      navigateRoute('settings');
+    };
     const handleNavigateNowPlaying = (): void => {
       navigateRoute('queue');
     };
@@ -687,6 +690,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
     window.addEventListener('app:navigate:import-folder', handleNavigateImportFolder);
     window.addEventListener('app:navigate:songs', handleNavigateSongs);
+    window.addEventListener('app:navigate:settings', handleNavigateSettings);
     window.addEventListener('app:navigate:queue', handleNavigateQueue);
     window.addEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
     window.addEventListener('app:navigate:lyrics', handleNavigateLyrics);
@@ -696,6 +700,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     return () => {
       window.removeEventListener('app:navigate:import-folder', handleNavigateImportFolder);
       window.removeEventListener('app:navigate:songs', handleNavigateSongs);
+      window.removeEventListener('app:navigate:settings', handleNavigateSettings);
       window.removeEventListener('app:navigate:queue', handleNavigateQueue);
       window.removeEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
       window.removeEventListener('app:navigate:lyrics', handleNavigateLyrics);

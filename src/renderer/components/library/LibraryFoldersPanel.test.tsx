@@ -247,6 +247,15 @@ describe('LibraryFoldersPanel', () => {
     expect(screen.getByDisplayValue('D:\\Music')).toBeTruthy();
   });
 
+  it('shows the disaster recovery hint when folder loading hits a corrupt database', async () => {
+    libraryMock.getFolders.mockRejectedValue(new Error('database disk image is malformed'));
+    libraryMock.getSummary.mockResolvedValue(summary());
+
+    render(<LibraryFoldersPanel />);
+
+    expect(await screen.findByText(/归档坏库并重建空库/)).toBeTruthy();
+  });
+
   it('supports manual path input and add-and-scan', async () => {
     libraryMock.getFolders.mockResolvedValue([]);
     libraryMock.addFolder.mockResolvedValue(baseFolder());

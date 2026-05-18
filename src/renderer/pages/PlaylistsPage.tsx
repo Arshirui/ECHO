@@ -6,7 +6,6 @@ import type { StreamingAudioQuality, StreamingProviderName } from '../../shared/
 import { TrackList } from '../components/library/TrackList';
 import { TrackContextMenu, type TrackMenuAction } from '../components/library/TrackContextMenu';
 import { likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../hooks/useLikedMedia';
-import { usePlaybackFollowCurrentTrack } from '../hooks/usePlaybackFollowCurrentTrack';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { resolvePlaylistForTrackAdd } from '../utils/appPrompt';
 import { getDownloadsBridge, getStreamingBridge } from '../utils/echoBridge';
@@ -194,7 +193,6 @@ export const PlaylistsPage = (): JSX.Element => {
   const qualityMenuRef = useRef<HTMLDivElement | null>(null);
   const playlistMenuRef = useRef<HTMLDivElement | null>(null);
   const { currentTrackId, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeTrackFromQueue } = usePlaybackQueue();
-  const followCurrentTrack = usePlaybackFollowCurrentTrack();
   const selectedPlaylist = useMemo(
     () => playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? playlists[0] ?? null,
     [playlists, selectedPlaylistId],
@@ -1324,7 +1322,6 @@ export const PlaylistsPage = (): JSX.Element => {
               onToggleLiked={(track) => void handleToggleLiked(track)}
               onOpenTrackMenu={handleOpenTrackMenu}
               onPlay={handleTrackPlay}
-              followCurrentTrack={followCurrentTrack}
             />
           </>
         ) : (

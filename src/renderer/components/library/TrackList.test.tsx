@@ -145,35 +145,4 @@ describe('TrackList', () => {
     expect(onEndReached).toHaveBeenCalledTimes(2);
   });
 
-  it('scrolls the virtual list to the current track when follow current is enabled', async () => {
-    const scrollTo = vi.fn();
-    Element.prototype.scrollTo = scrollTo;
-    const tracks = Array.from({ length: 12 }, (_, index) => track(index + 1));
-
-    render(<TrackList currentTrackId="track-8" followCurrentTrack tracks={tracks} />);
-
-    await vi.waitFor(() => expect(scrollTo).toHaveBeenCalled());
-  });
-
-  it('does not pull the scroll position back when the loaded window changes around the same current track', async () => {
-    const scrollTo = vi.fn();
-    Element.prototype.scrollTo = scrollTo;
-    const tracks = Array.from({ length: 12 }, (_, index) => track(index + 1));
-    const { rerender } = render(
-      <TrackList currentTrackId="track-8" followCurrentTrack tracks={tracks} totalCount={100} currentTrackIndex={7} />,
-    );
-
-    await vi.waitFor(() => expect(scrollTo).toHaveBeenCalled());
-    const initialScrollCallCount = scrollTo.mock.calls.length;
-
-    const expandedTracks = Array.from({ length: 20 }, (_, index) => track(index + 1));
-    rerender(<TrackList currentTrackId="track-8" followCurrentTrack tracks={expandedTracks} totalCount={100} currentTrackIndex={7} />);
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(scrollTo).toHaveBeenCalledTimes(initialScrollCallCount);
-
-    rerender(<TrackList currentTrackId="track-9" followCurrentTrack tracks={expandedTracks} totalCount={100} currentTrackIndex={8} />);
-
-    await vi.waitFor(() => expect(scrollTo.mock.calls.length).toBeGreaterThan(initialScrollCallCount));
-  });
 });

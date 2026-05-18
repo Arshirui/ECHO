@@ -5,6 +5,7 @@ import { SettingsPage } from './SettingsPage';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadSettings } from '../../shared/types/downloads';
 import { createDefaultGlobalShortcuts, createRecommendedGlobalShortcuts } from '../../shared/types/globalShortcuts';
+import type { LibraryDatabaseProtectionStatus } from '../../shared/types/library';
 import type { MvSettings } from '../../shared/types/mv';
 
 const settings: AppSettings = {
@@ -69,7 +70,6 @@ const settings: AppSettings = {
   playerVolume: 1,
   backgroundSpacePauseEnabled: false,
   globalShortcuts: createDefaultGlobalShortcuts(),
-  playbackFollowCurrentTrack: false,
   playbackSpeed: 1,
   playbackSpeedMode: 'nightcore',
   scanPerformanceMode: 'balanced',
@@ -91,6 +91,11 @@ const getSettingsMock = vi.fn();
 const setSettingsMock = vi.fn();
 const resetSettingsMock = vi.fn();
 const clearCacheMock = vi.fn();
+const getDatabaseProtectionStatusMock = vi.fn();
+const createDatabaseSnapshotMock = vi.fn();
+const restoreDatabaseSnapshotMock = vi.fn();
+const openDataProtectionFolderMock = vi.fn();
+const repairDatabaseMock = vi.fn();
 const chooseLyricsWallpaperMock = vi.fn();
 const chooseAppWallpaperMock = vi.fn();
 const openExternalUrlMock = vi.fn();
@@ -114,6 +119,44 @@ const downloadSettings: DownloadSettings = {
   bindMvAfterImport: true,
   outputDirectory: 'D:\\Downloads',
 };
+
+const healthyDatabaseProtectionStatus: LibraryDatabaseProtectionStatus = {
+  dataProtectionPath: 'D:\\Echo\\data-protection',
+  databasePath: 'D:\\Echo\\echo-library.sqlite',
+  databaseSizeBytes: 4096,
+  health: {
+    status: 'ok',
+    databasePath: 'D:\\Echo\\echo-library.sqlite',
+    checkedAt: '2026-05-18T00:00:00.000Z',
+  },
+  snapshots: [
+    {
+      id: '2026-05-18T00-00-00-000Z-startup',
+      path: 'D:\\Echo\\data-protection\\snapshots\\2026-05-18T00-00-00-000Z-startup',
+      createdAt: '2026-05-18T00:00:00.000Z',
+      reason: 'startup',
+      copied: ['echo-library.sqlite'],
+      skipped: ['echo-library.sqlite-wal', 'echo-library.sqlite-shm'],
+      libraryHealth: {
+        status: 'ok',
+        databasePath: 'D:\\Echo\\data-protection\\snapshots\\2026-05-18T00-00-00-000Z-startup\\echo-library.sqlite',
+        checkedAt: '2026-05-18T00:00:00.000Z',
+      },
+      libraryBackupMethod: 'sqlite-backup',
+      databasePath: 'D:\\Echo\\data-protection\\snapshots\\2026-05-18T00-00-00-000Z-startup\\echo-library.sqlite',
+      databaseSizeBytes: 4096,
+    },
+  ],
+  latestHealthySnapshot: null,
+  latestArchive: null,
+  maintenanceEvents: [],
+  canRestoreSnapshot: false,
+  hasRunningScan: false,
+  recommendedAction: 'none',
+};
+
+healthyDatabaseProtectionStatus.latestHealthySnapshot = healthyDatabaseProtectionStatus.snapshots[0];
+healthyDatabaseProtectionStatus.canRestoreSnapshot = true;
 
 const playbackStatus = {
   host: 'ready',
@@ -221,6 +264,11 @@ vi.mock('../utils/echoBridge', () => ({
   }),
   getLibraryBridge: () => ({
     clearCache: clearCacheMock,
+    getDatabaseProtectionStatus: getDatabaseProtectionStatusMock,
+    createDatabaseSnapshot: createDatabaseSnapshotMock,
+    restoreDatabaseSnapshot: restoreDatabaseSnapshotMock,
+    openDataProtectionFolder: openDataProtectionFolderMock,
+    repairDatabase: repairDatabaseMock,
     getArtistImageJobStatus: getArtistImageJobStatusMock,
     kickoffArtistImageBackfill: kickoffArtistImageBackfillMock,
     getDuplicateIndexSummary: vi.fn().mockResolvedValue({
@@ -277,6 +325,22 @@ beforeEach(() => {
   vi.clearAllMocks();
   getDownloadSettingsMock.mockResolvedValue(downloadSettings);
   chooseDownloadOutputDirectoryMock.mockResolvedValue({ ...downloadSettings, outputDirectory: 'E:\\Music Downloads' });
+  getDatabaseProtectionStatusMock.mockResolvedValue(healthyDatabaseProtectionStatus);
+  createDatabaseSnapshotMock.mockResolvedValue(healthyDatabaseProtectionStatus);
+  restoreDatabaseSnapshotMock.mockResolvedValue({
+    databasePath: healthyDatabaseProtectionStatus.databasePath,
+    archivePath: 'D:\\Echo\\data-protection\\corrupt-archives\\old',
+    restoredSnapshot: healthyDatabaseProtectionStatus.snapshots[0],
+    restoredDatabaseFiles: ['echo-library.sqlite'],
+    health: healthyDatabaseProtectionStatus.health,
+  });
+  repairDatabaseMock.mockResolvedValue({
+    databasePath: healthyDatabaseProtectionStatus.databasePath,
+    archivePath: 'D:\\Echo\\data-protection\\corrupt-archives\\bad',
+    removedDatabaseFiles: ['echo-library.sqlite'],
+    readyForRescan: true,
+  });
+  openDataProtectionFolderMock.mockResolvedValue(undefined);
   audioGetStatusMock.mockResolvedValue(null);
   audioListDevicesMock.mockResolvedValue([]);
   audioSetOutputMock.mockResolvedValue(null);
@@ -357,6 +421,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   window.localStorage.clear();
+  window.sessionStorage.clear();
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.themeMode;
   delete document.documentElement.dataset.themePreset;
@@ -452,6 +517,141 @@ describe('SettingsPage', () => {
 
     expect(searchInput.value).toBe('');
     expect(screen.getByText('显示中文翻译')).toBeTruthy();
+  });
+
+  it('shows database protection health in danger settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.danger\\.label');
+
+    await waitFor(() => expect(getDatabaseProtectionStatusMock).toHaveBeenCalled());
+    expect(screen.getByText('曲库数据库安全')).toBeTruthy();
+    expect(screen.getAllByText('健康').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /恢复最近健康快照/ })).toBeTruthy();
+  });
+
+  it('shows recovery steps for corrupt status and ignores wrong restore confirmation word', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    getDatabaseProtectionStatusMock.mockResolvedValue({
+      ...healthyDatabaseProtectionStatus,
+      health: {
+        ...healthyDatabaseProtectionStatus.health,
+        status: 'corrupt',
+        message: 'database disk image is malformed',
+      },
+      recommendedAction: 'restore-snapshot',
+    });
+    vi.spyOn(window, 'prompt').mockReturnValue('取消');
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.danger\\.label');
+    await screen.findByText('疑似损坏');
+
+    fireEvent.click(screen.getByRole('button', { name: /恢复最近健康快照/ }));
+
+    expect(restoreDatabaseSnapshotMock).not.toHaveBeenCalled();
+    expect(screen.getByText('确认词不匹配，已取消。')).toBeTruthy();
+  });
+
+  it('shows disaster recovery when no healthy snapshot can be restored', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    getDatabaseProtectionStatusMock.mockResolvedValue({
+      ...healthyDatabaseProtectionStatus,
+      health: {
+        ...healthyDatabaseProtectionStatus.health,
+        status: 'corrupt',
+        message: 'database disk image is malformed',
+      },
+      latestHealthySnapshot: null,
+      canRestoreSnapshot: false,
+      recommendedAction: 'rebuild-empty-database',
+      unrecoverableReason: '当前数据库不可用，且没有可恢复的健康快照。',
+    });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.danger\\.label');
+
+    await screen.findByText('疑似损坏');
+    expect(screen.getByText(/数据库无法从健康快照恢复/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /归档坏库并重建空库/ })).toBeTruthy();
+  });
+
+  it('does not rebuild an unrecoverable database when the confirmation word is wrong', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    getDatabaseProtectionStatusMock.mockResolvedValue({
+      ...healthyDatabaseProtectionStatus,
+      health: {
+        ...healthyDatabaseProtectionStatus.health,
+        status: 'corrupt',
+      },
+      latestHealthySnapshot: null,
+      canRestoreSnapshot: false,
+      recommendedAction: 'rebuild-empty-database',
+      unrecoverableReason: '当前数据库不可用，且没有可恢复的健康快照。',
+    });
+    vi.spyOn(window, 'prompt').mockReturnValue('取消');
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.danger\\.label');
+    fireEvent.click(await screen.findByRole('button', { name: /归档坏库并重建空库/ }));
+
+    expect(repairDatabaseMock).not.toHaveBeenCalled();
+    expect(screen.getByText('确认词不匹配，已取消。')).toBeTruthy();
+  });
+
+  it('rebuilds an unrecoverable database after the exact confirmation word', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    const unrecoverableStatus: LibraryDatabaseProtectionStatus = {
+      ...healthyDatabaseProtectionStatus,
+      health: {
+        ...healthyDatabaseProtectionStatus.health,
+        status: 'corrupt',
+      },
+      latestHealthySnapshot: null,
+      canRestoreSnapshot: false,
+      recommendedAction: 'rebuild-empty-database',
+      unrecoverableReason: '当前数据库不可用，且没有可恢复的健康快照。',
+    };
+    getDatabaseProtectionStatusMock.mockResolvedValueOnce(unrecoverableStatus).mockResolvedValueOnce({
+      ...healthyDatabaseProtectionStatus,
+      latestHealthySnapshot: null,
+      canRestoreSnapshot: false,
+    });
+    vi.spyOn(window, 'prompt').mockReturnValue('重建空库');
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.danger\\.label');
+    fireEvent.click(await screen.findByRole('button', { name: /归档坏库并重建空库/ }));
+
+    await waitFor(() => expect(repairDatabaseMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getDatabaseProtectionStatusMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText(/已归档坏库并重建为空库/)).toBeTruthy();
   });
 
   it('saves the dark theme from Settings and marks the selected chip', async () => {
@@ -666,23 +866,6 @@ describe('SettingsPage', () => {
 
     await waitFor(() => expect(within(autoSearchToggle).getByRole('button').getAttribute('aria-pressed')).toBe('false'));
     expect(screen.getByRole('button', { name: '4K' }).className).toContain('active');
-  });
-
-  it('saves the follow current playback setting from Settings', async () => {
-    Element.prototype.scrollIntoView = vi.fn();
-    getSettingsMock.mockResolvedValue(settings);
-    setSettingsMock.mockResolvedValue({ ...settings, playbackFollowCurrentTrack: true });
-    resetSettingsMock.mockResolvedValue(settings);
-    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
-
-    render(<SettingsPage />);
-
-    await screen.findByText('route.settings.label');
-    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
-    const row = screen.getByText('settings.playback.followCurrent.title').closest('.setting-row') as HTMLElement;
-    fireEvent.click(within(row).getByRole('button'));
-
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ playbackFollowCurrentTrack: true }));
   });
 
   it('shows ReplayGain playback controls and starts missing loudness analysis', async () => {

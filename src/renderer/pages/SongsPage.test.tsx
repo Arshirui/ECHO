@@ -172,17 +172,6 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
   window.echo = {
     library: {
       getTracks: vi.fn().mockResolvedValue(makePage(tracks)),
-      locateTrackInTracks: vi.fn().mockResolvedValue({
-        found: false,
-        reason: 'not-found',
-        track: null,
-        items: [],
-        page: 1,
-        pageSize: 100,
-        index: -1,
-        total: tracks.length,
-        hasMore: false,
-      }),
       getTrack: vi.fn((trackId: string) => Promise.resolve(tracks.find((track) => track.id === trackId) ?? null)),
       getAlbums: vi.fn(),
       getAlbumTracks: vi.fn(),
@@ -248,6 +237,12 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
       clearCache: vi.fn(),
       startBpmAnalysis: vi.fn(),
       getBpmAnalysisStatus: vi.fn(),
+      updateTrackTags: vi.fn(({ trackId }) =>
+        Promise.resolve({
+          ...(tracks.find((track) => track.id === trackId) ?? makeTrack({ id: trackId })),
+          title: 'Song One Edited',
+        }),
+      ),
     },
     playback: {
       getStatus: vi.fn().mockResolvedValue({
@@ -269,7 +264,6 @@ const installEcho = (tracks: LibraryTrack[] = []) => {
       getSettings: vi.fn().mockResolvedValue({
         duplicateTracksEnabled: false,
         duplicateTracksMode: 'strict',
-        playbackFollowCurrentTrack: false,
       }),
       setSettings: vi.fn().mockResolvedValue({
         duplicateTracksEnabled: true,
@@ -351,6 +345,15 @@ describe('SongsPage', () => {
     expect(window.echo.library.scanFolder).not.toHaveBeenCalled();
     expect(window.echo.library.refreshAlbumGrouping).not.toHaveBeenCalled();
     expect(window.echo.library.startBpmAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('shows the disaster recovery hint when the song list hits a corrupt database', async () => {
+    installEcho();
+    vi.mocked(window.echo.library.getTracks).mockRejectedValue(new Error('SQLITE_CORRUPT: file is not a database'));
+
+    await renderSongsPage();
+
+    expect(await screen.findByText(/归档坏库并重建空库/)).toBeTruthy();
   });
 
   it('restores the remembered song sort mode', async () => {
@@ -651,57 +654,6 @@ describe('SongsPage', () => {
     expect(screen.getByTestId('track-list').getAttribute('data-loaded-count')).toBe('100');
   });
 
-  it('locates the current playback track in a target song-list page without loading every track', async () => {
-    const firstPageTrack = makeTrack({ id: 'track-1', title: 'First Page Song' });
-    const locatedTrack = makeTrack({ id: 'track-206', title: 'Located Song' });
-    window.localStorage.setItem(
-      'echo-next:playback-queue',
-      JSON.stringify({
-        version: 1,
-        items: [
-          {
-            queueId: 'queue-1',
-            track: locatedTrack,
-            source: { type: 'album', label: 'Album', albumId: 'album-1' },
-            addedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
-        currentQueueId: 'queue-1',
-        currentTrackId: locatedTrack.id,
-        lastPlayedTrack: locatedTrack,
-        history: [],
-      }),
-    );
-    installEcho([firstPageTrack]);
-    vi.mocked(window.echo.app.getSettings).mockResolvedValue({
-      duplicateTracksEnabled: false,
-      duplicateTracksMode: 'strict',
-      playbackFollowCurrentTrack: true,
-    } as Awaited<ReturnType<NonNullable<Window['echo']>['app']['getSettings']>>);
-    vi.mocked(window.echo.library.getTracks).mockResolvedValue(makePagedResult([firstPageTrack], { total: 300, hasMore: true }));
-    vi.mocked(window.echo.library.locateTrackInTracks).mockResolvedValue({
-      found: true,
-      reason: 'found',
-      track: locatedTrack,
-      items: [locatedTrack],
-      page: 3,
-      pageSize: 100,
-      index: 200,
-      total: 300,
-      hasMore: false,
-    });
-
-    await renderSongsPage();
-
-    await screen.findByText('Located Song');
-    expect(window.echo.library.locateTrackInTracks).toHaveBeenCalledWith(
-      locatedTrack.id,
-      expect.objectContaining({ pageSize: 100, search: '', sort: 'default', hideDuplicates: false, duplicateMode: 'strict' }),
-    );
-    expect(screen.getByTestId('track-list').getAttribute('data-loaded-start-index')).toBe('200');
-    expect(screen.getByTestId('track-list').getAttribute('data-current-track-index')).toBe('200');
-  });
-
   it('loads duplicate badges only for visible song rows', async () => {
     const tracks = Array.from({ length: 5 }, (_, index) => makeTrack({ id: `track-${index + 1}`, title: `Song ${index + 1}` }));
     installEcho(tracks);
@@ -804,6 +756,30 @@ describe('SongsPage', () => {
 
     await waitFor(() => expect(window.echo.library.getTracks).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('Song Two')).toBeTruthy();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(trackList.scrollTop).toBe(640);
+  });
+
+  it('keeps the song list scroll position after saving tags from the context menu', async () => {
+    const originalTrack = makeTrack({ id: 'track-1', title: 'Song One' });
+    const updatedTrack = makeTrack({ id: 'track-1', title: 'Song One Edited' });
+    installEcho([originalTrack]);
+    vi.mocked(window.echo.library.updateTrackTags).mockResolvedValue(updatedTrack);
+
+    await renderSongsPage();
+    await screen.findByText('Song One');
+    const trackList = screen.getByTestId('track-list');
+
+    const row = await screen.findByRole('button', { name: 'Song One' });
+    fireEvent.contextMenu(row, { clientX: 240, clientY: 180 });
+    await waitFor(() => expect(screen.getAllByRole('menuitem').length).toBeGreaterThan(6));
+    fireEvent.click(screen.getAllByRole('menuitem')[6]);
+    trackList.scrollTop = 640;
+    vi.mocked(window.echo.library.getTracks).mockResolvedValueOnce(makePagedResult([updatedTrack]));
+    fireEvent.click(await screen.findByRole('button', { name: '保存标签' }));
+
+    await waitFor(() => expect(window.echo.library.updateTrackTags).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(window.echo.library.getTracks).toHaveBeenCalledTimes(2));
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(trackList.scrollTop).toBe(640);
   });

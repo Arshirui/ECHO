@@ -45,7 +45,6 @@ describe('app settings normalization', () => {
     expect(settings.backgroundSpacePauseEnabled).toBe(false);
     expect(settings.globalShortcuts?.playPause).toEqual({ enabled: false, accelerator: null });
     expect(settings.globalShortcuts?.nextTrack).toEqual({ enabled: false, accelerator: null });
-    expect(settings.playbackFollowCurrentTrack).toBe(false);
     expect(settings.hideToTrayOnClose).toBe(true);
     expect(settings.networkMetadataProviders).toEqual(['qq-music']);
     expect(settings.audioAnalysisEnabled).toBe(true);
@@ -388,14 +387,6 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ scanPerformanceMode: 'low' }).scanPerformanceMode).toBe('low');
     expect(normalizeSettings({ scanPerformanceMode: 'performance' }).scanPerformanceMode).toBe('performance');
     expect(normalizeSettings({ scanPerformanceMode: 'turbo' as never }).scanPerformanceMode).toBe('balanced');
-  });
-
-  it('normalizes the playback follow-current-track setting as opt-in', async () => {
-    const { normalizeSettings } = await import('./appSettings');
-
-    expect(normalizeSettings({}).playbackFollowCurrentTrack).toBe(false);
-    expect(normalizeSettings({ playbackFollowCurrentTrack: true }).playbackFollowCurrentTrack).toBe(true);
-    expect(normalizeSettings({ playbackFollowCurrentTrack: 'yes' as never }).playbackFollowCurrentTrack).toBe(false);
   });
 
   it('migrates the legacy background space pause setting to disabled', async () => {

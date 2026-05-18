@@ -530,6 +530,61 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(store.findTrackCoverStateCalls).toBe(0);
   });
 
+  it('notifies when a scan job settles so renderer library views can refresh after completion', async () => {
+    const root = makeTempRoot();
+    const [file] = makeFiles(root, 1);
+    const store = new FakeStore();
+    const onScanSettled = vi.fn();
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([file]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      { coverCacheDir: join(root, 'custom-cache'), onScanSettled },
+    );
+
+    const job = queue.scanFolder(baseFolder(root));
+    await queue.waitForIdle(job.id);
+
+    expect(onScanSettled).toHaveBeenCalledTimes(1);
+    expect(onScanSettled).toHaveBeenCalledWith(expect.objectContaining({ id: job.id, status: 'completed' }));
+  });
+
+  it('defers grouping refresh while scan pressure should stay low, then refreshes when idle', async () => {
+    vi.useFakeTimers();
+    const root = makeTempRoot();
+    const [file] = makeFiles(root, 1);
+    const store = new FakeStore();
+    const onDeferredGroupingRefresh = vi.fn();
+    let deferGrouping = true;
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([file]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      {
+        coverCacheDir: join(root, 'custom-cache'),
+        shouldDeferGroupingRefresh: () => deferGrouping,
+        onDeferredGroupingRefresh,
+      },
+    );
+
+    const job = queue.scanFolder(baseFolder(root));
+    await queue.waitForIdle(job.id);
+
+    expect(store.refreshAlbumsCalls).toBe(0);
+    expect(store.refreshArtistsCalls).toBe(0);
+
+    deferGrouping = false;
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(store.refreshAlbumsCalls).toBe(1);
+    expect(store.refreshArtistsCalls).toBe(1);
+    expect(onDeferredGroupingRefresh).toHaveBeenCalledTimes(1);
+  });
+
   it('marks files missing when they disappear from a scan', async () => {
     const root = makeTempRoot();
     const [keptFile, deletedFile] = makeFiles(root, 2);

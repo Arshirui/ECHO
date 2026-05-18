@@ -4,12 +4,16 @@ import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  createManualLibraryDatabaseSnapshot,
   createDataProtectionSnapshot,
   ensureDataProtection,
+  getLibraryDatabaseProtectionStatus,
   getProtectedUserDataPath,
   initializeProtectedUserDataPath,
   isProtectedLibraryAvailable,
   migrateLegacyProtectedData,
+  recordLibraryDatabaseMaintenanceEvent,
+  restoreProtectedLibraryDatabaseSnapshot,
   restoreMissingProtectedData,
   writeDataProtectionManifest,
 } from './dataProtection';
@@ -168,6 +172,100 @@ describe('dataProtection', () => {
     expect(snapshot.libraryBackupMethod).toBe('sqlite-backup');
     expect(manifest.libraryHealth.status).toBe('ok');
     expect(manifest.libraryBackupMethod).toBe('sqlite-backup');
+  });
+
+  it('lists the latest healthy snapshot while ignoring bad snapshots', async () => {
+    createHealthyLibrary(join(tempDir, 'echo-library.sqlite'));
+    const healthy = await createDataProtectionSnapshot('startup', tempDir, new Date('2026-05-17T00:00:00.000Z'));
+    writeFileSync(join(tempDir, 'echo-library.sqlite'), 'bad newer snapshot', 'utf8');
+    await createDataProtectionSnapshot('startup', tempDir, new Date('2026-05-18T00:00:00.000Z'));
+
+    const status = getLibraryDatabaseProtectionStatus(tempDir);
+
+    expect(status.snapshots).toHaveLength(2);
+    expect(status.latestHealthySnapshot?.id).toBe(healthy.snapshotPath.split(/[\\/]/u).pop());
+    expect(status.canRestoreSnapshot).toBe(true);
+  });
+
+  it('recommends restoring a healthy snapshot when the current database is corrupt', async () => {
+    createHealthyLibrary(join(tempDir, 'echo-library.sqlite'));
+    await createManualLibraryDatabaseSnapshot(tempDir);
+    writeFileSync(join(tempDir, 'echo-library.sqlite'), 'bad current database', 'utf8');
+
+    const status = getLibraryDatabaseProtectionStatus(tempDir);
+
+    expect(status.health.status).toBe('corrupt');
+    expect(status.latestHealthySnapshot?.libraryHealth.status).toBe('ok');
+    expect(status.recommendedAction).toBe('restore-snapshot');
+    expect(status.unrecoverableReason).toBeUndefined();
+  });
+
+  it('recommends rebuilding an empty database when corrupt and no healthy snapshot exists', () => {
+    writeFileSync(join(tempDir, 'echo-library.sqlite'), 'bad current database', 'utf8');
+
+    const status = getLibraryDatabaseProtectionStatus(tempDir);
+
+    expect(status.health.status).toBe('corrupt');
+    expect(status.latestHealthySnapshot).toBeNull();
+    expect(status.recommendedAction).toBe('rebuild-empty-database');
+    expect(status.unrecoverableReason).toContain('没有可恢复的健康快照');
+  });
+
+  it('keeps recommending empty rebuild after a failed snapshot restore event', async () => {
+    createHealthyLibrary(join(tempDir, 'echo-library.sqlite'));
+    const statusWithSnapshot = await createManualLibraryDatabaseSnapshot(tempDir);
+    const snapshotId = statusWithSnapshot.latestHealthySnapshot?.id ?? 'snapshot-id';
+    writeFileSync(join(tempDir, 'echo-library.sqlite'), 'bad current database', 'utf8');
+    recordLibraryDatabaseMaintenanceEvent(
+      {
+        action: 'manual-restore',
+        databasePath: join(tempDir, 'echo-library.sqlite'),
+        archivePath: null,
+        removedDatabaseFiles: ['echo-library.sqlite'],
+        restoredSnapshotId: snapshotId,
+        health: {
+          status: 'corrupt',
+          databasePath: join(tempDir, 'echo-library.sqlite'),
+          checkedAt: '2026-05-18T00:00:00.000Z',
+          message: 'quick_check failed',
+        },
+      },
+      tempDir,
+    );
+
+    const status = getLibraryDatabaseProtectionStatus(tempDir);
+
+    expect(status.latestHealthySnapshot?.id).toBe(snapshotId);
+    expect(status.recommendedAction).toBe('rebuild-empty-database');
+    expect(status.unrecoverableReason).toContain('恢复后仍未通过数据库检查');
+  });
+
+  it('archives the current database and restores a healthy enumerated snapshot', async () => {
+    createHealthyLibrary(join(tempDir, 'echo-library.sqlite'));
+    const statusWithSnapshot = await createManualLibraryDatabaseSnapshot(tempDir);
+    const snapshotId = statusWithSnapshot.latestHealthySnapshot?.id;
+    expect(snapshotId).toBeTruthy();
+    writeFileSync(join(tempDir, 'echo-library.sqlite'), 'bad current database', 'utf8');
+
+    const result = restoreProtectedLibraryDatabaseSnapshot(snapshotId!, tempDir);
+    const restoredDatabase = new Database(join(tempDir, 'echo-library.sqlite'), { readonly: true });
+    const row = restoredDatabase.prepare<[string], { title: string }>('SELECT title FROM tracks WHERE id = ?').get('track-1');
+    restoredDatabase.close();
+
+    expect(result.health.status).toBe('ok');
+    expect(result.archivePath).toBeTruthy();
+    expect(existsSync(join(result.archivePath!, 'echo-library.sqlite'))).toBe(true);
+    expect(row?.title).toBe('Song');
+    expect(getLibraryDatabaseProtectionStatus(tempDir).maintenanceEvents[0]).toEqual(
+      expect.objectContaining({ action: 'manual-restore', restoredSnapshotId: snapshotId }),
+    );
+  });
+
+  it('does not restore a snapshot id that the main process did not enumerate', async () => {
+    createHealthyLibrary(join(tempDir, 'echo-library.sqlite'));
+    await createManualLibraryDatabaseSnapshot(tempDir);
+
+    expect(() => restoreProtectedLibraryDatabaseSnapshot('..\\echo-library.sqlite', tempDir)).toThrow(/找不到这个曲库数据库快照/u);
   });
 
   it('archives and removes a corrupt library even when a healthy snapshot exists', async () => {

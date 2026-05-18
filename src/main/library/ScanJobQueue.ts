@@ -56,10 +56,16 @@ type ScanJobQueueOptions = {
   getAlbumMergeStrategy?: () => AlbumMergeStrategy;
   checkDatabaseHealth?: (status: LibraryScanStatus) => void;
   fileIdentityService?: FileIdentityService;
+  shouldReduceScanPressure?: () => boolean | Promise<boolean>;
+  shouldDeferGroupingRefresh?: () => boolean | Promise<boolean>;
+  onScanSettled?: (status: LibraryScanStatus) => void;
+  onDeferredGroupingRefresh?: () => void;
 };
 
 const progressFlushIntervalMs = 300;
 const progressFlushFileDelta = 64;
+const cacheCheckYieldFileDelta = 256;
+const deferredGroupingRefreshDelayMs = 1000;
 const maxStoredScanErrors = 200;
 const maxLocalScanPathCount = 1000;
 const temporaryExtensions = new Set(['.tmp', '.temp', '.part', '.crdownload', '.download', '.swp']);
@@ -83,7 +89,12 @@ export class ScanJobQueue {
   private readonly getAlbumMergeStrategy: () => AlbumMergeStrategy;
   private readonly checkDatabaseHealth: (status: LibraryScanStatus) => void;
   private readonly fileIdentityService: FileIdentityService;
+  private readonly shouldReduceScanPressure: () => boolean | Promise<boolean>;
+  private readonly shouldDeferGroupingRefresh: () => boolean | Promise<boolean>;
+  private readonly onScanSettled: (status: LibraryScanStatus) => void;
+  private readonly onDeferredGroupingRefresh: () => void;
   private coverCacheDir: string;
+  private deferredGroupingRefreshTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly store: LibraryStore,
@@ -98,6 +109,10 @@ export class ScanJobQueue {
     this.getAlbumMergeStrategy = options.getAlbumMergeStrategy ?? (() => 'standard');
     this.checkDatabaseHealth = options.checkDatabaseHealth ?? (() => undefined);
     this.fileIdentityService = options.fileIdentityService ?? new FileIdentityService();
+    this.shouldReduceScanPressure = options.shouldReduceScanPressure ?? (() => false);
+    this.shouldDeferGroupingRefresh = options.shouldDeferGroupingRefresh ?? (() => false);
+    this.onScanSettled = options.onScanSettled ?? (() => undefined);
+    this.onDeferredGroupingRefresh = options.onDeferredGroupingRefresh ?? (() => undefined);
     this.coverCacheDir = options.coverCacheDir;
   }
 
@@ -109,10 +124,18 @@ export class ScanJobQueue {
     this.coverCacheDir = coverCacheDir;
   }
 
+  dispose(): void {
+    if (this.deferredGroupingRefreshTimer) {
+      clearTimeout(this.deferredGroupingRefreshTimer);
+      this.deferredGroupingRefreshTimer = null;
+    }
+  }
+
   scanFolder(folder: LibraryFolder, options: LibraryScanOptions = {}): LibraryScanStatus {
     const job = this.store.createScanJob(folder.id);
-    const run = this.runJob(job.id, folder, options.mode ?? 'normal').finally(() => {
+    const run = this.runJob(job.id, folder, options.mode ?? 'normal', options.deferGroupingRefresh === true).finally(() => {
       this.runningJobs.delete(job.id);
+      this.notifyScanSettled(job.id);
     });
 
     this.runningJobs.set(job.id, run);
@@ -128,6 +151,7 @@ export class ScanJobQueue {
     const job = this.store.createScanJob(folder.id);
     const run = this.runPathsJob(job.id, folder, paths, options.mode ?? 'normal', options.deferGroupingRefresh === true).finally(() => {
       this.runningJobs.delete(job.id);
+      this.notifyScanSettled(job.id);
     });
 
     this.runningJobs.set(job.id, run);
@@ -164,7 +188,7 @@ export class ScanJobQueue {
     await this.runningJobs.get(jobId);
   }
 
-  private async runJob(jobId: string, folder: LibraryFolder, mode: LibraryScanMode): Promise<void> {
+  private async runJob(jobId: string, folder: LibraryFolder, mode: LibraryScanMode, deferGroupingRefresh: boolean): Promise<void> {
     const progress = this.createProgressReporter(jobId);
     const errors: string[] = [];
 
@@ -176,7 +200,7 @@ export class ScanJobQueue {
       });
 
       const files = await this.discoverFiles(jobId, folder, errors, progress);
-      await this.runFilesJob(jobId, folder, files, mode, progress, errors, true);
+      await this.runFilesJob(jobId, folder, files, mode, progress, errors, true, deferGroupingRefresh);
     } catch (error) {
       this.finishFailedOrCancelledJob(jobId, progress, errors, error, {
         processedFiles: 0,
@@ -241,6 +265,7 @@ export class ScanJobQueue {
     let updatedTracks = 0;
     let removedTracks = 0;
     let coverCount = 0;
+    const reducedScanPressure = await this.resolveBooleanOption(this.shouldReduceScanPressure);
 
     try {
       progress.flushNow({
@@ -253,9 +278,11 @@ export class ScanJobQueue {
       const coverRepairItems: CoverRepairItem[] = [];
       const identityUpdateItems: IdentityUpdateItem[] = [];
       const cacheStatesByPath = this.store.getTrackCacheStatesByFolder(folder.id);
+      let checkedFiles = 0;
 
       for (const file of files) {
         this.throwIfCancelled(jobId);
+        checkedFiles += 1;
 
         const existing = cacheStatesByPath.get(resolve(file.path)) ?? null;
 
@@ -264,7 +291,7 @@ export class ScanJobQueue {
 
         if (unchanged && !forceReadEmbeddedTags) {
           if (this.hasCompleteCoverCache(existing)) {
-            if (!this.hasIdentityObservation(existing)) {
+            if (!reducedScanPressure && !this.hasIdentityObservation(existing)) {
               identityUpdateItems.push({
                 file,
                 state: existing,
@@ -277,6 +304,9 @@ export class ScanJobQueue {
               processedFiles,
               skippedFiles,
             });
+            if (checkedFiles % cacheCheckYieldFileDelta === 0) {
+              await yieldToMainLoop();
+            }
             continue;
           }
 
@@ -301,6 +331,9 @@ export class ScanJobQueue {
           file,
           existingTrackId: existing?.id ?? null,
         });
+        if (checkedFiles % cacheCheckYieldFileDelta === 0) {
+          await yieldToMainLoop();
+        }
       }
 
       progress.flushNow({
@@ -313,12 +346,15 @@ export class ScanJobQueue {
       const parsedItems: ParsedScanItem[] = [];
       const coverTimestamp = new Date().toISOString();
 
-      await this.processWithConcurrency(changedFiles, this.metadataConcurrency, async (item) => {
+      const metadataConcurrency = reducedScanPressure ? 1 : this.metadataConcurrency;
+      const coverConcurrency = reducedScanPressure ? 1 : this.coverConcurrency;
+
+      await this.processWithConcurrency(changedFiles, metadataConcurrency, async (item) => {
         this.throwIfCancelled(jobId);
 
         try {
           const metadata = await this.metadataReader.read(item.file.path);
-          const identity = this.observeFileIdentity(item.file.path);
+          const identity = reducedScanPressure ? null : this.observeFileIdentity(item.file.path);
           this.collectWorkerMessages(errors, item.file.path, 'metadata', metadata.warnings, metadata.errors);
           let cover: CoverResult | null = null;
 
@@ -365,7 +401,7 @@ export class ScanJobQueue {
         errors,
       });
 
-      await this.processWithConcurrency(coverRepairItems, this.coverConcurrency, async (item) => {
+      await this.processWithConcurrency(coverRepairItems, coverConcurrency, async (item) => {
         this.throwIfCancelled(jobId);
 
         try {
@@ -391,7 +427,7 @@ export class ScanJobQueue {
           errors.push(`${item.file.path}: cover: ${error instanceof Error ? error.message : String(error)}`);
         }
 
-        if (!this.hasIdentityObservation(item.state)) {
+        if (!reducedScanPressure && !this.hasIdentityObservation(item.state)) {
           item.identity = this.observeFileIdentity(item.file.path);
         }
 
@@ -406,7 +442,7 @@ export class ScanJobQueue {
         await yieldToMainLoop();
       });
 
-      await this.processWithConcurrency(identityUpdateItems, this.metadataConcurrency, async (item) => {
+      await this.processWithConcurrency(identityUpdateItems, metadataConcurrency, async (item) => {
         this.throwIfCancelled(jobId);
         item.identity = this.observeFileIdentity(item.file.path);
         await yieldToMainLoop();
@@ -414,6 +450,7 @@ export class ScanJobQueue {
 
       this.throwIfCancelled(jobId);
       await yieldToMainLoop();
+      const deferGroupingForPressure = !deferGroupingRefresh && (await this.resolveBooleanOption(this.shouldDeferGroupingRefresh));
 
       this.store.transaction(() => {
         const timestamp = new Date().toISOString();
@@ -480,7 +517,7 @@ export class ScanJobQueue {
           coverCount,
           errors,
         });
-        if (!deferGroupingRefresh) {
+        if (!deferGroupingRefresh && !deferGroupingForPressure) {
           this.store.refreshAlbums(this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
           this.store.refreshArtists();
         }
@@ -510,6 +547,9 @@ export class ScanJobQueue {
           finishedAt: new Date().toISOString(),
         });
       });
+      if (deferGroupingForPressure) {
+        this.scheduleDeferredGroupingRefresh();
+      }
       this.checkDatabaseHealth(this.getScanStatus(jobId));
     } catch (error) {
       this.finishFailedOrCancelledJob(jobId, progress, errors, error, {
@@ -783,6 +823,57 @@ export class ScanJobQueue {
         existsSync(state.albumPath) &&
         existsSync(state.largePath),
     );
+  }
+
+  private notifyScanSettled(jobId: string): void {
+    const status = this.store.getScanJob(jobId);
+    if (!status) {
+      return;
+    }
+
+    try {
+      this.onScanSettled(status);
+    } catch {
+      // Scan completion notifications are best-effort; the persisted status is the source of truth.
+    }
+  }
+
+  private async resolveBooleanOption(option: () => boolean | Promise<boolean>): Promise<boolean> {
+    try {
+      return (await option()) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  private scheduleDeferredGroupingRefresh(): void {
+    if (this.deferredGroupingRefreshTimer) {
+      return;
+    }
+
+    this.deferredGroupingRefreshTimer = setTimeout(() => {
+      this.deferredGroupingRefreshTimer = null;
+      void this.runDeferredGroupingRefresh();
+    }, deferredGroupingRefreshDelayMs);
+    this.deferredGroupingRefreshTimer.unref?.();
+  }
+
+  private async runDeferredGroupingRefresh(): Promise<void> {
+    if (this.hasRunningJobs() || (await this.resolveBooleanOption(this.shouldDeferGroupingRefresh))) {
+      this.scheduleDeferredGroupingRefresh();
+      return;
+    }
+
+    try {
+      this.store.transaction(() => {
+        this.store.refreshAlbums(this.albumService, undefined, { albumMergeStrategy: this.getAlbumMergeStrategy() });
+        this.store.refreshArtists();
+      });
+      this.onDeferredGroupingRefresh();
+    } catch (error) {
+      console.warn(`Deferred library grouping refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.scheduleDeferredGroupingRefresh();
+    }
   }
 
   private shouldForceReadEmbeddedTags(mode: LibraryScanMode, state: StoredTrackCoverState | null): boolean {

@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LibraryLabState, LibraryMoveCandidate, LibraryMoveRepairResult } from '../../../shared/types/library';
 import { getLibraryLabBridge } from '../../utils/echoBridge';
@@ -102,6 +103,7 @@ const canApplyCandidate = (
 };
 
 export const LibraryDiagnosticsPanel = (): JSX.Element => {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [labState, setLabState] = useState<LibraryLabState>(emptyState);
   const [candidates, setCandidates] = useState<LibraryMoveCandidate[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
@@ -158,6 +160,10 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
 
   useEffect(() => {
     let cancelled = false;
+    if (!isExpanded) {
+      return undefined;
+    }
+
     if (!bridge) {
       setError('Library Lab API is unavailable');
       return;
@@ -182,7 +188,7 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
     return () => {
       cancelled = true;
     };
-  }, [bridge, refreshMoveCandidates]);
+  }, [bridge, isExpanded, refreshMoveCandidates]);
 
   const handleToggle = (key: 'watcher' | 'autoRescan' | 'moveCandidate' | 'moveRepair', enabled: boolean): void => {
     if (!bridge) {
@@ -281,7 +287,7 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
   };
 
   return (
-    <section className="settings-cache-panel settings-library-lab-panel" aria-labelledby="library-lab-title">
+    <section className="settings-cache-panel settings-library-lab-panel" aria-labelledby="library-lab-title" data-expanded={isExpanded}>
       <div className="settings-cache-header">
         <div>
           <h3 id="library-lab-title">Library Lab</h3>
@@ -289,8 +295,20 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
             这些功能用于开发测试实时媒体库行为。默认关闭，不会影响普通用户。请只在测试分支或测试曲库中使用。
           </p>
         </div>
+        <button
+          className="settings-collapse-toggle settings-library-lab-toggle"
+          type="button"
+          aria-controls="library-lab-body"
+          aria-expanded={isExpanded}
+          onClick={() => setIsExpanded((current) => !current)}
+        >
+          <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
+          <ChevronDown size={16} aria-hidden="true" />
+        </button>
       </div>
 
+      {isExpanded ? (
+        <div id="library-lab-body" className="settings-library-lab-body">
       <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
         <label className="settings-inline-toggle">
           <span>Enable Library Watcher</span>
@@ -474,6 +492,8 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
           </tbody>
         </table>
       </div>
+        </div>
+      ) : null}
     </section>
   );
 };

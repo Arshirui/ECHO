@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
+import type { LibraryDatabaseProtectionStatus, LibraryDatabaseRepairResult, LibraryDatabaseRestoreResult } from '../../shared/types/library';
 
 const handlers: Record<string, (...args: unknown[]) => unknown> = {};
 const handleMock = vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
@@ -16,6 +18,13 @@ const openPathMock = vi.fn();
 const showItemInFolderMock = vi.fn();
 const trashItemMock = vi.fn();
 const getLibraryServiceMock = vi.fn();
+const closeDatabaseUserMocks = vi.hoisted(() => ({
+  library: vi.fn(),
+  remote: vi.fn(),
+  lyrics: vi.fn(),
+  mv: vi.fn(),
+  streaming: vi.fn(),
+}));
 const appSettingsMock = vi.hoisted(() => ({
   current: {
     networkMetadataEnabled: false,
@@ -50,6 +59,24 @@ vi.mock('electron', () => ({
 
 vi.mock('../library/LibraryService', () => ({
   getLibraryService: getLibraryServiceMock,
+  closeDefaultLibraryService: closeDatabaseUserMocks.library,
+}));
+
+vi.mock('../library/remote/RemoteSourceService', () => ({
+  closeDefaultRemoteSourceService: closeDatabaseUserMocks.remote,
+}));
+
+vi.mock('../lyrics/LyricsService', () => ({
+  closeDefaultLyricsService: closeDatabaseUserMocks.lyrics,
+}));
+
+vi.mock('../mv/MvService', () => ({
+  closeDefaultMvService: closeDatabaseUserMocks.mv,
+}));
+
+vi.mock('../streaming/StreamingService', () => ({
+  closeDefaultStreamingService: closeDatabaseUserMocks.streaming,
+  getStreamingService: vi.fn(),
 }));
 
 vi.mock('../app/appSettings', () => ({
@@ -69,6 +96,13 @@ const makeTempRoot = (): string => {
   mkdirSync(root, { recursive: true });
   tempRoots.push(root);
   return root;
+};
+
+const createHealthyLibrary = (root: string): void => {
+  const database = new Database(join(root, 'echo-library.sqlite'));
+  database.exec('CREATE TABLE tracks (id TEXT PRIMARY KEY, title TEXT)');
+  database.prepare('INSERT INTO tracks (id, title) VALUES (?, ?)').run('track-1', 'Song');
+  database.close();
 };
 
 const installLibraryService = () => {
@@ -202,7 +236,6 @@ const installLibraryService = () => {
     getScanStatus: vi.fn(),
     cancelScan: vi.fn(),
     getTracks: vi.fn(),
-    locateTrackInTracks: vi.fn(() => ({ found: false, reason: 'not-found', track: null, items: [], page: 1, pageSize: 100, index: -1, total: 0, hasMore: false })),
     getDuplicateHiddenCounts: vi.fn(() => ({ 'track-1': 1, 'track-2': 0 })),
     getAlbums: vi.fn(),
     getAlbum: vi.fn(),
@@ -246,6 +279,7 @@ const installLibraryService = () => {
     refreshAlbumGrouping: vi.fn(() => ({ songCount: 2, albumCount: 1, artistCount: 2, folderCount: 1, totalDuration: 2, lastScanAt: null })),
     getDiagnostics: vi.fn(),
     clearCache: vi.fn(() => ({ scannedCount: 1, removedCount: 1, deletedCoverCacheFiles: 2, freedCoverCacheBytes: 128 })),
+    hasRunningJobs: vi.fn(() => false),
     updateTrackTags: vi.fn(),
     recordTrackPlayback: vi.fn(),
     deleteTrack: vi.fn(),
@@ -272,6 +306,9 @@ describe('library IPC', () => {
     showItemInFolderMock.mockReset();
     trashItemMock.mockReset();
     getLibraryServiceMock.mockReset();
+    Object.values(closeDatabaseUserMocks).forEach((mock) => mock.mockReset());
+    const { app } = await import('electron');
+    vi.mocked(app.getPath).mockImplementation((name: string) => (name === 'downloads' ? 'D:\\Downloads' : 'D:\\UserData'));
     appSettingsMock.current = {
       networkMetadataEnabled: false,
       networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
@@ -500,29 +537,6 @@ describe('library IPC', () => {
     expect(service.getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 50, sort: 'fileModifiedAsc' });
   });
 
-  it('locates a song-list track through IPC with a normalized query', async () => {
-    const service = installLibraryService();
-
-    await handlers[IpcChannels.LibraryLocateTrackInTracks]!(null, 'track-1', {
-      page: 9,
-      pageSize: 50,
-      search: 'needle',
-      sort: 'artist',
-      hideDuplicates: true,
-      duplicateMode: 'strict',
-      extra: true,
-    });
-
-    expect(service.locateTrackInTracks).toHaveBeenCalledWith('track-1', {
-      page: 9,
-      pageSize: 50,
-      search: 'needle',
-      sort: 'artist',
-      hideDuplicates: true,
-      duplicateMode: 'strict',
-    });
-  });
-
   it('registers artist detail IPC handlers with normalized queries', async () => {
     const service = installLibraryService();
     service.getArtist.mockReturnValue({
@@ -608,6 +622,90 @@ describe('library IPC', () => {
     });
     expect(service.resolveLibraryFolderPath).toHaveBeenCalledWith({ folderId: 'folder-1', path: 'D:\\Music' });
     expect(openPathMock).toHaveBeenCalledWith('D:\\Music');
+  });
+
+  it('returns database protection status and can create a manual snapshot', async () => {
+    const root = makeTempRoot();
+    const { app } = await import('electron');
+    vi.mocked(app.getPath).mockImplementation(() => root);
+    createHealthyLibrary(root);
+
+    const status = await handlers[IpcChannels.LibraryCreateDatabaseSnapshot]!() as LibraryDatabaseProtectionStatus;
+
+    expect(status.health.status).toBe('ok');
+    expect(status.latestHealthySnapshot?.libraryHealth.status).toBe('ok');
+    expect(status.latestHealthySnapshot?.id).toContain('manual-library-database-snapshot');
+  });
+
+  it('rejects database restore while a scan is running', async () => {
+    const service = installLibraryService();
+    service.hasRunningJobs.mockReturnValue(true);
+
+    expect(() => handlers[IpcChannels.LibraryRestoreDatabaseSnapshot]!(null, 'snapshot-id')).toThrow(/扫描仍在运行/u);
+    expect(closeDatabaseUserMocks.library).not.toHaveBeenCalled();
+  });
+
+  it('rejects disaster rebuild while a scan is running', async () => {
+    const service = installLibraryService();
+    service.hasRunningJobs.mockReturnValue(true);
+
+    expect(() => handlers[IpcChannels.LibraryRepairDatabase]!()).toThrow(/扫描仍在运行/u);
+    expect(closeDatabaseUserMocks.library).not.toHaveBeenCalled();
+    expect(closeDatabaseUserMocks.remote).not.toHaveBeenCalled();
+    expect(closeDatabaseUserMocks.lyrics).not.toHaveBeenCalled();
+    expect(closeDatabaseUserMocks.mv).not.toHaveBeenCalled();
+    expect(closeDatabaseUserMocks.streaming).not.toHaveBeenCalled();
+  });
+
+  it('archives a corrupt database and closes database users before rebuilding an empty library', async () => {
+    const root = makeTempRoot();
+    const { app } = await import('electron');
+    vi.mocked(app.getPath).mockImplementation(() => root);
+    writeFileSync(join(root, 'echo-library.sqlite'), 'bad current database', 'utf8');
+    writeFileSync(join(root, 'echo-library.sqlite-wal'), 'bad wal', 'utf8');
+    writeFileSync(join(root, 'echo-library.sqlite-shm'), 'bad shm', 'utf8');
+
+    const result = handlers[IpcChannels.LibraryRepairDatabase]!() as LibraryDatabaseRepairResult;
+
+    expect(result.readyForRescan).toBe(true);
+    expect(result.removedDatabaseFiles).toEqual(expect.arrayContaining(['echo-library.sqlite', 'echo-library.sqlite-wal', 'echo-library.sqlite-shm']));
+    expect(result.archivePath).toBeTruthy();
+    expect(existsSync(join(result.archivePath!, 'echo-library.sqlite'))).toBe(true);
+    expect(existsSync(join(root, 'echo-library.sqlite'))).toBe(false);
+    expect(closeDatabaseUserMocks.lyrics).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.mv).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.streaming).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.remote).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.library).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores a healthy snapshot through IPC and closes database users first', async () => {
+    const root = makeTempRoot();
+    const { app } = await import('electron');
+    vi.mocked(app.getPath).mockImplementation(() => root);
+    createHealthyLibrary(root);
+    const status = await handlers[IpcChannels.LibraryCreateDatabaseSnapshot]!() as LibraryDatabaseProtectionStatus;
+    writeFileSync(join(root, 'echo-library.sqlite'), 'bad current database', 'utf8');
+    const snapshotId = status.latestHealthySnapshot?.id ?? '';
+
+    const result = await handlers[IpcChannels.LibraryRestoreDatabaseSnapshot]!(null, snapshotId) as LibraryDatabaseRestoreResult;
+
+    expect(result.health.status).toBe('ok');
+    expect(closeDatabaseUserMocks.lyrics).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.mv).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.streaming).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.remote).toHaveBeenCalledTimes(1);
+    expect(closeDatabaseUserMocks.library).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not accept renderer-provided snapshot paths', async () => {
+    const root = makeTempRoot();
+    const { app } = await import('electron');
+    vi.mocked(app.getPath).mockImplementation(() => root);
+    createHealthyLibrary(root);
+    await handlers[IpcChannels.LibraryCreateDatabaseSnapshot]!();
+
+    expect(() => handlers[IpcChannels.LibraryRestoreDatabaseSnapshot]!(null, '..\\echo-library.sqlite')).toThrow(/找不到这个曲库数据库快照/u);
   });
 
   it('opens an arbitrary file path in its folder', async () => {

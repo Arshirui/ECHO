@@ -7,9 +7,17 @@ import {
   checkpointWal,
   type DatabaseHealthResult,
 } from '../database/health';
-import type { LibraryDatabaseDeleteResult, LibraryDatabaseRepairResult } from '../../shared/types/library';
+import type {
+  LibraryDatabaseArchiveInfo,
+  LibraryDatabaseDeleteResult,
+  LibraryDatabaseMaintenanceEventInfo,
+  LibraryDatabaseProtectionStatus,
+  LibraryDatabaseRepairResult,
+  LibraryDatabaseRestoreResult,
+  LibraryDatabaseSnapshotInfo,
+} from '../../shared/types/library';
 
-type DataProtectionReason = 'startup' | 'update-install';
+type DataProtectionReason = 'startup' | 'update-install' | 'manual-library-database-snapshot';
 type ProtectedEntryKind = 'file' | 'directory';
 
 type ProtectedEntry = {
@@ -32,10 +40,11 @@ type RestoreResult = {
 
 type LibraryDatabaseMaintenanceEvent = {
   createdAt: string;
-  action: 'manual-repair' | 'manual-delete' | 'scan-health-failed';
+  action: 'manual-repair' | 'manual-delete' | 'manual-restore' | 'scan-health-failed';
   databasePath: string;
   archivePath?: string | null;
   removedDatabaseFiles?: string[];
+  restoredSnapshotId?: string;
   health?: DatabaseHealthResult;
   scan?: {
     jobId: string;
@@ -343,6 +352,195 @@ const fileSize = (path: string): number => {
   } catch {
     return 0;
   }
+};
+
+const fileSizeOrNull = (path: string): number | null => (existsSync(path) ? fileSize(path) : null);
+
+const listArchivePaths = (userDataPath: string): string[] => {
+  const archivesPath = getCorruptArchivesPath(userDataPath);
+  if (!existsSync(archivesPath)) {
+    return [];
+  }
+
+  return readdirSync(archivesPath)
+    .map((entry) => join(archivesPath, entry))
+    .filter((entryPath) => {
+      try {
+        return statSync(entryPath).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .sort()
+    .reverse();
+};
+
+const isLibraryBackupMethod = (value: unknown): value is LibraryDatabaseSnapshotInfo['libraryBackupMethod'] =>
+  value === 'none' || value === 'sqlite-backup' || value === 'file-copy';
+
+const getSnapshotInfo = (snapshotPath: string): LibraryDatabaseSnapshotInfo => {
+  const manifest = safeReadJson<{
+    reason?: string;
+    createdAt?: string;
+    copied?: string[];
+    skipped?: string[];
+    libraryHealth?: DatabaseHealthResult;
+    libraryBackupMethod?: string;
+  }>(join(snapshotPath, 'snapshot.json'));
+  const databasePath = libraryPathFor(snapshotPath);
+  const health = existsSync(databasePath) ? checkDatabaseHealth(databasePath) : manifest?.libraryHealth ?? checkDatabaseHealth(databasePath);
+
+  return {
+    id: basename(snapshotPath),
+    path: snapshotPath,
+    createdAt: manifest?.createdAt ?? null,
+    reason: manifest?.reason ?? null,
+    copied: Array.isArray(manifest?.copied) ? manifest.copied : [],
+    skipped: Array.isArray(manifest?.skipped) ? manifest.skipped : [],
+    libraryHealth: health,
+    libraryBackupMethod: isLibraryBackupMethod(manifest?.libraryBackupMethod) ? manifest.libraryBackupMethod : 'none',
+    databasePath: existsSync(databasePath) ? databasePath : null,
+    databaseSizeBytes: fileSizeOrNull(databasePath),
+  };
+};
+
+const getArchiveInfo = (archivePath: string): LibraryDatabaseArchiveInfo => {
+  const manifest = safeReadJson<{
+    reason?: string;
+    createdAt?: string;
+    copied?: string[];
+  }>(join(archivePath, 'archive.json'));
+  const databasePath = libraryPathFor(archivePath);
+
+  return {
+    id: basename(archivePath),
+    path: archivePath,
+    createdAt: manifest?.createdAt ?? null,
+    reason: manifest?.reason ?? null,
+    copied: Array.isArray(manifest?.copied) ? manifest.copied : [],
+    databasePath: existsSync(databasePath) ? databasePath : null,
+    databaseSizeBytes: fileSizeOrNull(databasePath),
+  };
+};
+
+const getRestorableHealthySnapshot = (snapshots: LibraryDatabaseSnapshotInfo[]): LibraryDatabaseSnapshotInfo | null =>
+  snapshots.find((snapshot) => snapshot.libraryHealth.status === 'ok' && snapshot.databasePath && snapshot.copied.includes(libraryFileName)) ?? null;
+
+const getSnapshotById = (userDataPath: string, snapshotId: string): LibraryDatabaseSnapshotInfo | null =>
+  listSnapshotPaths(userDataPath)
+    .map(getSnapshotInfo)
+    .find((snapshot) => snapshot.id === snapshotId) ?? null;
+
+const toMaintenanceEventInfo = (event: LibraryDatabaseMaintenanceEvent): LibraryDatabaseMaintenanceEventInfo => ({
+  createdAt: event.createdAt,
+  action: event.action,
+  databasePath: event.databasePath,
+  archivePath: event.archivePath,
+  removedDatabaseFiles: event.removedDatabaseFiles,
+  restoredSnapshotId: event.restoredSnapshotId,
+  health: event.health,
+  error: event.error,
+});
+
+export const getLibraryDatabaseProtectionStatus = (
+  userDataPath = app.getPath('userData'),
+  hasRunningScan = false,
+): LibraryDatabaseProtectionStatus => {
+  const databasePath = libraryPathFor(userDataPath);
+  const snapshots = listSnapshotPaths(userDataPath).map(getSnapshotInfo);
+  const latestHealthySnapshot = getRestorableHealthySnapshot(snapshots);
+  const health = checkDatabaseHealth(databasePath);
+  const maintenanceEvents = readLibraryDatabaseMaintenanceEvents(userDataPath).slice(-maxLibraryMaintenanceEvents).reverse().map(toMaintenanceEventInfo);
+  const latestRestoreEvent = maintenanceEvents.find((event) => event.action === 'manual-restore');
+  const latestRestoreFailed = latestRestoreEvent?.health ? latestRestoreEvent.health.status !== 'ok' : false;
+  const recommendedAction: LibraryDatabaseProtectionStatus['recommendedAction'] =
+    health.status === 'ok'
+      ? 'none'
+      : !latestHealthySnapshot || latestRestoreFailed
+        ? 'rebuild-empty-database'
+        : 'restore-snapshot';
+  const unrecoverableReason =
+    recommendedAction === 'rebuild-empty-database'
+      ? latestRestoreFailed
+        ? '最近一次健康快照恢复后仍未通过数据库检查。'
+        : '当前数据库不可用，且没有可恢复的健康快照。'
+      : undefined;
+
+  return {
+    dataProtectionPath: getDataProtectionPath(userDataPath),
+    databasePath,
+    databaseSizeBytes: fileSizeOrNull(databasePath),
+    health,
+    snapshots,
+    latestHealthySnapshot,
+    latestArchive: listArchivePaths(userDataPath).map(getArchiveInfo)[0] ?? null,
+    maintenanceEvents,
+    canRestoreSnapshot: Boolean(latestHealthySnapshot),
+    hasRunningScan,
+    recommendedAction,
+    unrecoverableReason,
+  };
+};
+
+export const createManualLibraryDatabaseSnapshot = async (
+  userDataPath = app.getPath('userData'),
+): Promise<LibraryDatabaseProtectionStatus> => {
+  const health = checkDatabaseHealth(libraryPathFor(userDataPath));
+  if (existsSync(libraryPathFor(userDataPath)) && health.status !== 'ok') {
+    throw new Error('曲库数据库当前不健康，已拒绝创建新的健康快照。');
+  }
+
+  await createDataProtectionSnapshot('manual-library-database-snapshot', userDataPath);
+  return getLibraryDatabaseProtectionStatus(userDataPath);
+};
+
+export const restoreProtectedLibraryDatabaseSnapshot = (
+  snapshotId: string,
+  userDataPath = app.getPath('userData'),
+): LibraryDatabaseRestoreResult => {
+  const snapshot = getSnapshotById(userDataPath, snapshotId);
+  if (!snapshot) {
+    throw new Error('找不到这个曲库数据库快照，已拒绝恢复。');
+  }
+  if (snapshot.libraryHealth.status !== 'ok' || !snapshot.databasePath || !snapshot.copied.includes(libraryFileName)) {
+    throw new Error('这个快照不是可恢复的健康曲库数据库快照。');
+  }
+
+  mkdirSync(userDataPath, { recursive: true });
+  const replacedDatabaseFiles = [libraryFileName, libraryWalFileName, libraryShmFileName].filter((name) =>
+    existsSync(join(userDataPath, name)),
+  );
+  const archivePath = archiveLibraryTriplet(userDataPath, 'manual-library-database-restore');
+  removeLibraryTriplet(userDataPath);
+  const restoredDatabaseFiles = copyLibraryTriplet(snapshot.path, userDataPath);
+  const health = checkDatabaseHealth(libraryPathFor(userDataPath));
+
+  recordLibraryDatabaseMaintenanceEvent(
+    {
+      action: 'manual-restore',
+      databasePath: libraryPathFor(userDataPath),
+      archivePath,
+      removedDatabaseFiles: replacedDatabaseFiles,
+      restoredSnapshotId: snapshot.id,
+      health,
+    },
+    userDataPath,
+  );
+
+  if (!restoredDatabaseFiles.includes(libraryFileName)) {
+    throw new Error('快照复制失败，曲库数据库文件没有恢复。');
+  }
+  if (health.status !== 'ok') {
+    throw new Error(`快照已复制，但恢复后的曲库数据库仍未通过检查：${health.message ?? health.status}`);
+  }
+
+  return {
+    databasePath: libraryPathFor(userDataPath),
+    archivePath,
+    restoredSnapshot: snapshot,
+    restoredDatabaseFiles,
+    health,
+  };
 };
 
 const directoryEntryCount = (path: string): number => {

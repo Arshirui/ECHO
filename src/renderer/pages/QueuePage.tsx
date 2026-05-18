@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import type { EditableTrackTags, LibraryPlaylist, LibraryTrack, PlaybackHistoryEntry } from '../../shared/types/library';
 import { likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../hooks/useLikedMedia';
-import { usePlaybackFollowCurrentTrack } from '../hooks/usePlaybackFollowCurrentTrack';
 import type { QueueItem, RepeatMode } from '../stores/PlaybackQueueProvider';
 import { useI18n } from '../i18n/I18nProvider';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
@@ -101,7 +100,6 @@ type TrackMenuState = {
 export const QueuePage = (): JSX.Element => {
   const { t } = useI18n();
   const queue = usePlaybackQueue();
-  const followCurrentTrack = usePlaybackFollowCurrentTrack();
   const [actionError, setActionError] = useState<string | null>(null);
   const [isGeneratingRandomQueue, setIsGeneratingRandomQueue] = useState(false);
   const [isGeneratingHistoryQueue, setIsGeneratingHistoryQueue] = useState(false);
@@ -142,13 +140,6 @@ export const QueuePage = (): JSX.Element => {
     overscan: 12,
   });
 
-  useEffect(() => {
-    if (!followCurrentTrack || !queue.currentQueueId || currentIndex < 0) {
-      return;
-    }
-
-    rowVirtualizer.scrollToIndex(0, { align: 'start', behavior: 'smooth' });
-  }, [currentIndex, followCurrentTrack, queue.currentQueueId, rowVirtualizer]);
   const repeatLabels: Record<RepeatMode, string> = useMemo(
     () => ({
       off: t('queue.repeat.off'),

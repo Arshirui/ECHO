@@ -19,10 +19,14 @@ import {
   type SongsFirstPageSnapshot,
 } from '../stores/songsFirstPageSnapshot';
 import { isPlaybackCancellationError, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
-import { usePlaybackFollowCurrentTrack } from '../hooks/usePlaybackFollowCurrentTrack';
 import { openAlbumDetailForTrack } from '../utils/albumNavigation';
 import { openArtistDetailForTrack } from '../utils/artistNavigation';
 import { resolvePlaylistForTrackAdd } from '../utils/appPrompt';
+import {
+  getLibraryDatabaseRecoveryMessage,
+  isLibraryDatabaseCorruptionError,
+  openLibraryDatabaseRecoverySettings,
+} from '../utils/databaseRecovery';
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 100;
@@ -32,6 +36,9 @@ const getSongsScrollElement = (): HTMLElement | null => document.querySelector('
 const readSongsScrollTop = (): number => getSongsScrollElement()?.scrollTop ?? 0;
 const isPreserveScrollLibraryEvent = (event: Event): boolean =>
   event instanceof CustomEvent && event.detail && typeof event.detail === 'object' && event.detail.preserveScroll === true;
+const dispatchLibraryChangedPreservingScroll = (): void => {
+  window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: true } }));
+};
 const sortOptions: Array<{ value: LibrarySort; label: string }> = [
   { value: 'default', label: '默认排序' },
   { value: 'createdAsc', label: '创建时间 (正序)' },
@@ -166,7 +173,6 @@ export const SongsPage = (): JSX.Element => {
   const initialSnapshot = initialSongsState.snapshot;
   const [tracks, setTracks] = useState<LibraryTrack[]>(() => initialSnapshot?.items ?? []);
   const [loadedStartIndex, setLoadedStartIndex] = useState(0);
-  const [locatedCurrentTrackIndex, setLocatedCurrentTrackIndex] = useState<number | null>(null);
   const [total, setTotal] = useState(() => initialSnapshot?.total ?? 0);
   const [hasMore, setHasMore] = useState(() => (initialSnapshot ? initialSnapshot.items.length < initialSnapshot.total : false));
   const [searchInput, setSearchInput] = useState('');
@@ -182,7 +188,6 @@ export const SongsPage = (): JSX.Element => {
   const [likedTrackIds, setLikedTrackIds] = useState<Record<string, boolean>>({});
   const [selectedTrackIds, setSelectedTrackIds] = useState<Record<string, boolean>>({});
   const [visibleTrackIds, setVisibleTrackIds] = useState<string[]>([]);
-  const followCurrentTrack = usePlaybackFollowCurrentTrack();
   const [likedRefreshVersion, setLikedRefreshVersion] = useState(0);
   const [versionMembers, setVersionMembers] = useState<DuplicateTrackMember[]>([]);
   const [versionTrack, setVersionTrack] = useState<LibraryTrack | null>(null);
@@ -190,7 +195,8 @@ export const SongsPage = (): JSX.Element => {
   const [isClearing, setIsClearing] = useState(false);
   const [listVersion, setListVersion] = useState(0);
   const [, setStatusMessage] = useState<string | null>(null);
-  const [, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [databaseRecoveryAvailable, setDatabaseRecoveryAvailable] = useState(false);
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [trackMenu, setTrackMenu] = useState<TrackMenuState | null>(null);
   const [osuTimingTrack, setOsuTimingTrack] = useState<LibraryTrack | null>(null);
@@ -199,7 +205,6 @@ export const SongsPage = (): JSX.Element => {
   const [tagEditorError, setTagEditorError] = useState<string | null>(null);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const requestIdRef = useRef(0);
-  const locateRequestIdRef = useRef(0);
   const likedRequestIdRef = useRef(0);
   const duplicateRequestIdRef = useRef(0);
   const visibleRemoteHydrationRequestIdRef = useRef(0);
@@ -218,12 +223,17 @@ export const SongsPage = (): JSX.Element => {
     () => ({ type: 'songs' as const, label: sourceMode === 'remote' ? '网盘歌曲' : '歌曲列表', search: search || undefined, sort, hideDuplicates }),
     [hideDuplicates, search, sort, sourceMode],
   );
-  const currentTrackLoadedIndex = useMemo(
-    () => (currentTrackId ? tracks.findIndex((track) => track.id === currentTrackId) : -1),
-    [currentTrackId, tracks],
-  );
+  const reportSongsError = useCallback((value: unknown): void => {
+    if (isLibraryDatabaseCorruptionError(value)) {
+      setError(getLibraryDatabaseRecoveryMessage());
+      setDatabaseRecoveryAvailable(true);
+      return;
+    }
+
+    setError(value instanceof Error ? value.message : String(value));
+    setDatabaseRecoveryAvailable(false);
+  }, []);
   const selectedTracks = useMemo(() => tracks.filter((track) => selectedTrackIds[track.id] === true), [selectedTrackIds, tracks]);
-  const currentTrackAbsoluteIndex = currentTrackLoadedIndex >= 0 ? loadedStartIndex + currentTrackLoadedIndex : locatedCurrentTrackIndex;
   const mergeLikedTrackIds = useCallback((patch: Record<string, boolean>): void => {
     setLikedTrackIds((current) => {
       const next = { ...current, ...patch };
@@ -345,13 +355,13 @@ export const SongsPage = (): JSX.Element => {
       isLoadingRef.current = true;
       setIsLoading(true);
       setError(null);
+      setDatabaseRecoveryAvailable(false);
       setStatusMessage(null);
       if (mode === 'replace' && !options.preserveListInstance) {
         setListVersion((current) => current + 1);
         setVisibleTrackIds([]);
         setSelectedTrackIds({});
         setLoadedStartIndex(0);
-        setLocatedCurrentTrackIndex(null);
       }
 
       try {
@@ -360,11 +370,11 @@ export const SongsPage = (): JSX.Element => {
         if (!library) {
           setTracks([]);
           setLoadedStartIndex(0);
-          setLocatedCurrentTrackIndex(null);
           setTotal(0);
           setHasMore(false);
           clearListMetadataCache();
           setError('Desktop bridge unavailable. Open ECHO Next in Electron to read the library.');
+          setDatabaseRecoveryAvailable(false);
           return;
         }
 
@@ -427,7 +437,7 @@ export const SongsPage = (): JSX.Element => {
         }
       } catch (loadError) {
         if (requestIdRef.current === requestId) {
-          setError(loadError instanceof Error ? loadError.message : String(loadError));
+          reportSongsError(loadError);
         }
       } finally {
         if (requestIdRef.current === requestId) {
@@ -436,7 +446,7 @@ export const SongsPage = (): JSX.Element => {
         }
       }
     },
-    [clearListMetadataCache, hideDuplicates, search, sort, sourceMode],
+    [clearListMetadataCache, hideDuplicates, reportSongsError, search, sort, sourceMode],
   );
 
   useEffect(() => {
@@ -541,93 +551,6 @@ export const SongsPage = (): JSX.Element => {
     }
   }, [isLoading, loadTracks, loadedStartIndex]);
 
-  useEffect(() => {
-    if (!followCurrentTrack || !currentTrackId) {
-      locateRequestIdRef.current += 1;
-      setLocatedCurrentTrackIndex(null);
-      return;
-    }
-
-    if (currentTrackLoadedIndex >= 0) {
-      locateRequestIdRef.current += 1;
-      setLocatedCurrentTrackIndex(loadedStartIndex + currentTrackLoadedIndex);
-      return;
-    }
-
-    if (sort === 'random') {
-      locateRequestIdRef.current += 1;
-      setStatusMessage('随机排序没有稳定位置，当前播放歌曲只能在已加载列表内定位。');
-      return;
-    }
-
-    const library = window.echo?.library;
-    if (!library?.locateTrackInTracks) {
-      return;
-    }
-
-    const requestId = locateRequestIdRef.current + 1;
-    locateRequestIdRef.current = requestId;
-    setStatusMessage('正在定位当前播放歌曲...');
-
-    void library
-      .locateTrackInTracks(currentTrackId, {
-        pageSize,
-        search,
-        sort,
-        sourceProvider: sourceMode,
-        hideDuplicates,
-        duplicateMode: 'strict',
-      })
-      .then((result) => {
-        if (locateRequestIdRef.current !== requestId) {
-          return;
-        }
-
-        if (!result.found) {
-          setLocatedCurrentTrackIndex(null);
-          if (result.reason === 'filtered') {
-            setStatusMessage('当前播放歌曲不在当前搜索或隐藏重复歌曲结果中。');
-          } else if (result.reason === 'unsupported-sort') {
-            setStatusMessage('随机排序没有稳定位置，当前播放歌曲只能在已加载列表内定位。');
-          } else {
-            setStatusMessage('当前播放歌曲不在歌曲库列表中。');
-          }
-          return;
-        }
-
-        requestIdRef.current += 1;
-        isLoadingRef.current = false;
-        setIsLoading(false);
-        clearListMetadataCache();
-        setListVersion((current) => current + 1);
-        setVisibleTrackIds([]);
-        setTracks(result.items);
-        setLoadedStartIndex((result.page - 1) * result.pageSize);
-        setLocatedCurrentTrackIndex(result.index);
-        setTotal(result.total);
-        setHasMore(result.hasMore);
-        setError(null);
-        setStatusMessage(null);
-      })
-      .catch((locateError) => {
-        if (locateRequestIdRef.current === requestId) {
-          setLocatedCurrentTrackIndex(null);
-          setStatusMessage(null);
-          setError(locateError instanceof Error ? locateError.message : String(locateError));
-        }
-      });
-  }, [
-    clearListMetadataCache,
-    currentTrackId,
-    currentTrackLoadedIndex,
-    followCurrentTrack,
-    hideDuplicates,
-    loadedStartIndex,
-    search,
-    sourceMode,
-    sort,
-  ]);
-
   const handleImportFolder = (): void => {
     window.dispatchEvent(new Event('app:navigate:import-folder'));
   };
@@ -728,7 +651,6 @@ export const SongsPage = (): JSX.Element => {
       const result = await library.clearTracks();
       setTracks([]);
       setLoadedStartIndex(0);
-      setLocatedCurrentTrackIndex(null);
       setTotal(0);
       setHasMore(false);
       setVisibleTrackIds([]);
@@ -1188,7 +1110,7 @@ export const SongsPage = (): JSX.Element => {
                 setEditingTrack(result.track);
               }
               setStatusMessage(`已从内嵌标签重新加载：${result.track.title}`);
-              window.dispatchEvent(new Event('library:changed'));
+              dispatchLibraryChangedPreservingScroll();
             }
             return;
           case 'go-to-album':
@@ -1278,7 +1200,7 @@ export const SongsPage = (): JSX.Element => {
       try {
         const updatedTrack = await library.updateTrackTags({ trackId: track.id, tags, coverPath, coverUrl, coverMimeType });
         setTracks((current) => current.map((item) => (item.id === updatedTrack.id ? updatedTrack : item)));
-        window.dispatchEvent(new Event('library:changed'));
+        dispatchLibraryChangedPreservingScroll();
         closeTagEditor();
       } catch (saveError) {
         setTagEditorError(saveError instanceof Error ? saveError.message : String(saveError));
@@ -1382,6 +1304,17 @@ export const SongsPage = (): JSX.Element => {
         </div>
       ) : null}
 
+      {error ? (
+        <div className="library-database-recovery-callout">
+          <p className="audio-error">{error}</p>
+          {databaseRecoveryAvailable ? (
+            <button className="settings-action-button" type="button" onClick={openLibraryDatabaseRecoverySettings}>
+              去恢复助手
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <TrackList
         key={listVersion}
         tracks={tracks}
@@ -1407,8 +1340,6 @@ export const SongsPage = (): JSX.Element => {
         onOpenTrackMenu={handleOpenTrackMenu}
         onVisibleTrackIdsChange={setVisibleTrackIds}
         onPlay={handlePlayTrack}
-        followCurrentTrack={followCurrentTrack}
-        currentTrackIndex={currentTrackAbsoluteIndex}
       />
 
       {trackMenu ? (
@@ -1432,7 +1363,7 @@ export const SongsPage = (): JSX.Element => {
         onTrackUpdated={(updatedTrack) => {
           setEditingTrack(updatedTrack);
           setTracks((current) => current.map((item) => (item.id === updatedTrack.id ? updatedTrack : item)));
-          window.dispatchEvent(new Event('library:changed'));
+          dispatchLibraryChangedPreservingScroll();
         }}
       />
 

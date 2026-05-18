@@ -282,7 +282,6 @@ export const defaultSettings: AppSettings = {
   replayGainAnalyzeMissingOnScan: false,
   backgroundSpacePauseEnabled: false,
   globalShortcuts: createDefaultGlobalShortcuts(),
-  playbackFollowCurrentTrack: false,
   playbackSpeed: 1,
   playbackSpeedMode: 'nightcore',
   scanPerformanceMode: 'balanced',
@@ -894,7 +893,6 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       settings.replayGainAnalyzeMissingOnScanOptIn === true && settings.replayGainAnalyzeMissingOnScan === true,
     backgroundSpacePauseEnabled: false,
     globalShortcuts: normalizeGlobalShortcuts(settings.globalShortcuts),
-    playbackFollowCurrentTrack: settings.playbackFollowCurrentTrack === true,
     playbackSpeed: Number.isFinite(playbackSpeed)
       ? Math.max(0.5, Math.min(2, playbackSpeed))
       : defaultSettings.playbackSpeed,

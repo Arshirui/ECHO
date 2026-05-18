@@ -25,6 +25,8 @@ import type {
   LibraryCleanupResult,
   LibraryDatabaseDeleteResult,
   LibraryDatabaseRepairResult,
+  LibraryDatabaseProtectionStatus,
+  LibraryDatabaseRestoreResult,
   LibraryMaintenanceCleanupResult,
   LibraryDiagnostics,
   LibraryLabState,
@@ -47,7 +49,6 @@ import type {
   LibraryScanMode,
   LibrarySummary,
   LibraryTrack,
-  LibraryTrackLocateResult,
   ArtistImageCacheClearResult,
   ArtistImageCacheEntry,
   ArtistImageCacheSummary,
@@ -190,7 +191,6 @@ export type EchoApi = {
     cancelScan: (jobId: string) => Promise<LibraryScanStatus>;
     getTrack: (trackId: string) => Promise<LibraryTrack | null>;
     getTracks: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryTrack>>;
-    locateTrackInTracks: (trackId: string, query?: LibraryPageQuery) => Promise<LibraryTrackLocateResult>;
     refreshDuplicateTracks: (mode?: DuplicateTrackMode) => Promise<DuplicateTrackIndexSummary>;
     getDuplicateTrackVersions: (trackId: string) => Promise<DuplicateTrackMember[]>;
     getDuplicateHiddenCounts: (trackIds: string[], mode?: DuplicateTrackMode) => Promise<Record<string, number>>;
@@ -283,6 +283,10 @@ export type EchoApi = {
     clearCache: () => Promise<LibraryCacheClearResult>;
     repairDatabase: () => Promise<LibraryDatabaseRepairResult>;
     deleteDatabase: () => Promise<LibraryDatabaseDeleteResult>;
+    getDatabaseProtectionStatus: () => Promise<LibraryDatabaseProtectionStatus>;
+    createDatabaseSnapshot: () => Promise<LibraryDatabaseProtectionStatus>;
+    restoreDatabaseSnapshot: (snapshotId: string) => Promise<LibraryDatabaseRestoreResult>;
+    openDataProtectionFolder: () => Promise<void>;
     repairMissingMetadata: (trackId: string) => Promise<NetworkRepairResult>;
     scanMissingMetadata: (options?: number | MissingMetadataScanOptions) => Promise<MissingMetadataScanResult>;
     startMissingMetadataScan: (options?: number | MissingMetadataScanOptions) => Promise<NetworkMetadataScanJobStatus>;

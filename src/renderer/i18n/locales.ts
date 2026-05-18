@@ -898,8 +898,6 @@ export type TranslationKey =
   | 'settings.playback.audioStatus.title'
   | 'settings.playback.automix.description'
   | 'settings.playback.automix.title'
-  | 'settings.playback.followCurrent.description'
-  | 'settings.playback.followCurrent.title'
   | 'settings.playback.outputDevice.description'
   | 'settings.playback.outputDevice.empty'
   | 'settings.playback.outputDevice.title'
@@ -1885,8 +1883,6 @@ const zhCN: TranslationMap = {
   'settings.playback.audioStatus.title': '音频状态',
   'settings.playback.automix.description': '默认关闭。开启后，连续队列会提前准备下一首，并用原生双 Deck 引擎避开尾部空白、智能衔接切歌。',
   'settings.playback.automix.title': 'Automix 智能过渡',
-  'settings.playback.followCurrent.description': '开启后，切歌时会自动把左侧当前列表滚动到正在播放的歌曲位置。',
-  'settings.playback.followCurrent.title': '定位当前播放歌曲',
   'settings.playback.outputDevice.description': '来自 echo-audio-host 的设备列表；没有设备时保持默认输出。',
   'settings.playback.outputDevice.empty': '无可用设备',
   'settings.playback.outputDevice.title': '输出设备',
@@ -3278,8 +3274,6 @@ const jaJP: TranslationMap = {
   'settings.playback.troubleshooting.title': '音声トラブルシューティング',
   'settings.playback.wireless.title': 'ワイヤレス再生',
   'settings.playback.wireless.description': '今後の HiFi エンジン段階で接続します。現段階では gapless / automix / ストリーミングは移行しません。',
-  'settings.playback.followCurrent.title': '再生中の曲へ移動',
-  'settings.playback.followCurrent.description': '有効にすると、曲変更時に左側の現在リストを再生中の曲へ自動スクロールします。',
   'settings.playback.audioStatus.title': '音声状態',
   'settings.playback.audioStatus.description': 'サンプルレート欄を分けて表示し、旧 ECHO の排他モード 48k 固定の再発を避けます。',
   'settings.playback.automix.description': '既定ではオフです。有効にすると、連続キューで次の曲を先に準備し、ネイティブのデュアル Deck エンジンで終端の無音を避けながら自然につなぎます。',
@@ -4173,8 +4167,6 @@ const enUS: TranslationMap = {
   'settings.playback.troubleshooting.title': 'Audio Troubleshooting',
   'settings.playback.wireless.title': 'Wireless Playback',
   'settings.playback.wireless.description': 'This will connect in a later HiFi engine phase. The current phase does not migrate gapless / automix / streaming.',
-  'settings.playback.followCurrent.title': 'Follow Current Track',
-  'settings.playback.followCurrent.description': 'When enabled, the current list scrolls to the playing track after track changes.',
   'settings.shortcuts.action.clear': 'Clear',
   'settings.shortcuts.action.bossKey.description': 'Hide the window immediately and lower ECHO volume to 0.',
   'settings.shortcuts.action.bossKey.title': 'Boss Key',

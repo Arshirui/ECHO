@@ -206,7 +206,6 @@ export type AppSettings = {
   replayGainAnalyzeMissingOnScan?: boolean;
   backgroundSpacePauseEnabled?: boolean;
   globalShortcuts?: GlobalShortcutSettings;
-  playbackFollowCurrentTrack?: boolean;
   playbackSpeed: number;
   playbackSpeedMode: PlaybackSpeedMode;
   scanPerformanceMode: ScanPerformanceMode;

@@ -1976,51 +1976,6 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
-  it('locates a track page and absolute index using the current song-list query', async () => {
-    const harness = createHarness();
-    const alpha = writeAudioFile(harness.folder, 'Alpha.flac', new Date('2024-01-01T00:00:00.000Z'));
-    const bravo = writeAudioFile(harness.folder, 'Bravo.flac', new Date('2024-02-01T00:00:00.000Z'));
-    const charlie = writeAudioFile(harness.folder, 'Charlie.flac', new Date('2024-03-01T00:00:00.000Z'));
-    const delta = writeAudioFile(harness.folder, 'Delta.flac', new Date('2024-04-01T00:00:00.000Z'));
-    harness.metadataService.overrides.set(alpha, baseMetadata({ title: 'Alpha', artist: 'Zulu', album: 'Gamma', duration: 60, bitrate: 320000 }));
-    harness.metadataService.overrides.set(bravo, baseMetadata({ title: 'Bravo', artist: 'Yankee', album: 'Beta', duration: 120, bitrate: 640000 }));
-    harness.metadataService.overrides.set(charlie, baseMetadata({ title: 'Charlie', artist: 'Xray', album: 'Alpha', duration: 180, bitrate: 960000 }));
-    harness.metadataService.overrides.set(delta, baseMetadata({ title: 'Delta', artist: 'Whiskey', album: 'Delta', duration: 240, bitrate: 1280000 }));
-    harness.addFolder();
-
-    await harness.scanFolder();
-
-    const sorts = ['default', 'artist', 'album', 'durationAsc', 'fileModifiedDesc', 'recent', 'qualityDesc'] as const;
-    for (const sort of sorts) {
-      const ordered = harness.service.getTracks({ pageSize: 10, sort }).items;
-      const target = ordered[2]!;
-      const expectedPage = harness.service.getTracks({ page: 2, pageSize: 2, sort });
-      const located = harness.service.locateTrackInTracks(target.id, { pageSize: 2, sort });
-
-      expect(located).toMatchObject({
-        found: true,
-        reason: 'found',
-        page: 2,
-        index: 2,
-        total: 4,
-      });
-      expect(located.items.map((track) => track.id)).toEqual(expectedPage.items.map((track) => track.id));
-      expect(located.track?.id).toBe(target.id);
-    }
-
-    const titleDescending = harness.service.getTracks({ page: 1, pageSize: 2, sort: 'titleDesc' });
-    const titleLocated = harness.service.locateTrackInTracks(titleDescending.items[1]!.id, { pageSize: 2, sort: 'titleDesc' });
-    const filtered = harness.service.locateTrackInTracks(titleDescending.items[1]!.id, { pageSize: 2, search: 'Alpha', sort: 'titleDesc' });
-    const missing = harness.service.locateTrackInTracks('missing-track', { pageSize: 2, sort: 'default' });
-    const random = harness.service.locateTrackInTracks(titleDescending.items[1]!.id, { pageSize: 2, sort: 'random' });
-
-    expect(titleLocated).toMatchObject({ found: true, reason: 'found', page: 1, index: 1 });
-    expect(filtered).toMatchObject({ found: false, reason: 'filtered', total: 1 });
-    expect(missing).toMatchObject({ found: false, reason: 'not-found' });
-    expect(random).toMatchObject({ found: false, reason: 'unsupported-sort' });
-    harness.cleanup();
-  });
-
   it('getTracks sorts mixed Chinese and Latin titles naturally before pagination', async () => {
     const harness = createHarness();
     const zFile = writeAudioFile(harness.folder, 'z.flac');

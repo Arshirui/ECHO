@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, Import, Loader2 } from 'lucide-react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { AudioStatus } from '../../../shared/types/audio';
 import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { ConnectReceiverStatus } from '../../../shared/types/connect';
@@ -16,6 +17,7 @@ import {
 } from '../../integrations/spotify/spotifyPlayback';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
+import { openArtistDetailByName } from '../../utils/artistNavigation';
 import { PlayerProgress } from './PlayerProgress';
 import { PlayerSpeedControl } from './PlayerSpeedControl';
 import { PlayerStatusChips } from './PlayerStatusChips';
@@ -246,7 +248,15 @@ const rememberLyricsViewMode = (mode: 'lyrics' | 'mv'): void => {
   }
 };
 
-const PlayerMarqueeText = ({ kind, text }: { kind: 'title' | 'subtitle'; text: string }): JSX.Element => {
+const PlayerMarqueeText = ({
+  kind,
+  text,
+  onClick,
+}: {
+  kind: 'title' | 'subtitle';
+  text: string;
+  onClick?: () => void;
+}): JSX.Element => {
   const textRef = useRef<HTMLElement | null>(null);
   const innerRef = useRef<HTMLSpanElement | null>(null);
   const [isOverflowing, setIsOverflowing] = useState(false);
@@ -294,11 +304,42 @@ const PlayerMarqueeText = ({ kind, text }: { kind: 'title' | 'subtitle'; text: s
   const commonProps = {
     className: 'player-marquee',
     'data-overflow': isOverflowing ? 'true' : undefined,
+    'data-clickable': onClick ? 'true' : undefined,
     ref: textRef,
     title: text,
   };
 
-  return kind === 'title' ? <strong {...commonProps}>{content}</strong> : <span {...commonProps}>{content}</span>;
+  const handleClick = (): void => {
+    if (!onClick || window.getSelection()?.toString()) {
+      return;
+    }
+
+    onClick();
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
+    if (!onClick || (event.key !== 'Enter' && event.key !== ' ')) {
+      return;
+    }
+
+    event.preventDefault();
+    onClick();
+  };
+
+  return kind === 'title' ? (
+    <strong {...commonProps}>{content}</strong>
+  ) : (
+    <span
+      {...commonProps}
+      aria-label={onClick ? `打开艺人详情：${text}` : undefined}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+    >
+      {content}
+    </span>
+  );
 };
 
 const isTextEditingElement = (target: EventTarget | null): boolean => {
@@ -542,6 +583,17 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
   const streamingTrackBpmConfidence = currentTrack?.bpmConfidence ?? null;
   const streamingTrackAnalysisStatus = currentTrack?.analysisStatus ?? null;
   const isSpotifyCurrentTrack = isSpotifyTrack(currentTrack);
+  const currentLibraryArtistName = currentTrack?.artist?.trim() || currentTrack?.albumArtist?.trim() || '';
+  const canOpenCurrentArtist = Boolean(currentLibraryArtistName);
+  const handleOpenCurrentArtist = useCallback((): void => {
+    if (!currentLibraryArtistName) {
+      return;
+    }
+
+    void openArtistDetailByName(currentLibraryArtistName).catch((error) => {
+      console.warn('Failed to open artist detail from player bar', error);
+    });
+  }, [currentLibraryArtistName]);
 
   const clearStreamingDownloadNoticeTimer = useCallback((): void => {
     if (streamingDownloadNoticeTimerRef.current !== null) {
@@ -1562,7 +1614,7 @@ export const PlayerBar = ({ onOpenAudioSettings }: PlayerBarProps): JSX.Element 
         </button>
         <div className="player-track-copy">
           <PlayerMarqueeText kind="title" text={title} />
-          <PlayerMarqueeText kind="subtitle" text={artist} />
+          <PlayerMarqueeText kind="subtitle" text={artist} onClick={canOpenCurrentArtist ? handleOpenCurrentArtist : undefined} />
           <PlayerStatusChips status={audioStatus} state={state} track={currentTrack} />
         </div>
       </div>

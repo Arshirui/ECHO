@@ -49,7 +49,14 @@ import type { LastCrashSummary } from '../../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
 import type { DownloadSettings } from '../../shared/types/downloads';
 import type { LastFmStatus } from '../../shared/types/lastfm';
-import type { ArtistImageCacheSummary, ArtistImageJobStatus, BpmAnalysisJobStatus, ReplayGainAnalysisJobStatus, DuplicateTrackIndexSummary } from '../../shared/types/library';
+import type {
+  ArtistImageCacheSummary,
+  ArtistImageJobStatus,
+  BpmAnalysisJobStatus,
+  DuplicateTrackIndexSummary,
+  LibraryDatabaseProtectionStatus,
+  ReplayGainAnalysisJobStatus,
+} from '../../shared/types/library';
 import type { UpdateStatus } from '../../shared/types/updates';
 import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
@@ -519,6 +526,23 @@ const settingsNavItems: SettingsNavItem[] = [
   { key: 'danger', labelKey: 'settings.nav.danger.label', descriptionKey: 'settings.nav.danger.description', icon: Trash2 },
 ];
 
+const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
+const settingsNavKeys = new Set<SettingsNavKey>(settingsNavItems.map((item) => item.key));
+
+const readInitialSettingsSection = (): SettingsNavKey => {
+  if (typeof window === 'undefined') {
+    return 'general';
+  }
+
+  const pendingSection = window.sessionStorage.getItem(pendingSettingsSectionStorageKey);
+  if (pendingSection && settingsNavKeys.has(pendingSection as SettingsNavKey)) {
+    window.sessionStorage.removeItem(pendingSettingsSectionStorageKey);
+    return pendingSection as SettingsNavKey;
+  }
+
+  return 'general';
+};
+
 const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
   general: ['general', 'language', 'locale', 'tray', 'window size', 'backup', 'settings backup', '通用', '语言', '简繁', '繁简', '托盘', '窗口尺寸', '备份'],
   playback: [
@@ -534,7 +558,6 @@ const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
     'dop',
     'soxr',
     'speed',
-    'follow current',
     '播放',
     '音频',
     '输出',
@@ -646,7 +669,7 @@ const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
     'BPM',
   ],
   about: ['about', 'version', 'update', 'diagnostics', 'crash', 'repository', '关于', '版本', '更新', '诊断', '崩溃', '仓库'],
-  danger: ['danger', 'reset', 'clear cache', 'delete cache', 'restore defaults', 'rebuild database', 'repair database', 'delete database', '危险', '重置', '清空缓存', '恢复默认', '重建数据库', '修复数据库', '删除数据库'],
+  danger: ['danger', 'reset', 'clear cache', 'delete cache', 'restore defaults', 'rebuild database', 'repair database', 'delete database', 'database recovery', 'database snapshot', 'database health', '危险', '重置', '清空缓存', '恢复默认', '重建数据库', '修复数据库', '删除数据库', '数据库恢复', '曲库恢复', '健康快照'],
 };
 
 const normalizeSettingsSearchText = (value: string): string => value.trim().toLocaleLowerCase();
@@ -2442,6 +2465,32 @@ const formatUpdateBytes = (bytes: number | null | undefined): string => {
   return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
 };
 
+const formatProtectionTimestamp = (value: string | null | undefined): string => {
+  if (!value) {
+    return '暂无';
+  }
+
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+
+  return new Date(timestamp).toLocaleString();
+};
+
+const getDatabaseHealthLabel = (status: LibraryDatabaseProtectionStatus['health']['status'] | undefined): string => {
+  switch (status) {
+    case 'ok':
+      return '健康';
+    case 'corrupt':
+      return '疑似损坏';
+    case 'unreadable':
+      return '无法读取';
+    default:
+      return '待检查';
+  }
+};
+
 const SettingSection = ({ id, activeKey, icon: Icon, title, children }: SettingSectionProps): JSX.Element => {
   const isActive = activeKey === id;
 
@@ -2789,7 +2838,7 @@ export const SettingsPage = (): JSX.Element => {
     canLeft: false,
     canRight: false,
   });
-  const [activeSection, setActiveSection] = useState<SettingsNavKey>('general');
+  const [activeSection, setActiveSection] = useState<SettingsNavKey>(() => readInitialSettingsSection());
   const [settingsQuery, setSettingsQuery] = useState('');
   const [highlightedSettingId, setHighlightedSettingId] = useState<string | null>(null);
   const [status, setStatus] = useState<AudioStatus | null>(null);
@@ -2863,6 +2912,8 @@ export const SettingsPage = (): JSX.Element => {
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackFontFamilies);
   const [fontPickerTarget, setFontPickerTarget] = useState<FontPickerTarget | null>(null);
   const [fontPickerQuery, setFontPickerQuery] = useState('');
+  const [databaseProtectionStatus, setDatabaseProtectionStatus] = useState<LibraryDatabaseProtectionStatus | null>(null);
+  const [databaseProtectionBusyAction, setDatabaseProtectionBusyAction] = useState<'refresh' | 'snapshot' | 'restore' | 'open' | null>(null);
   const [dangerBusy, setDangerBusy] = useState(false);
   const [dangerMessage, setDangerMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -3244,6 +3295,21 @@ export const SettingsPage = (): JSX.Element => {
     }
   }, []);
 
+  const refreshDatabaseProtectionStatus = useCallback(async () => {
+    const library = getLibraryBridge();
+    if (!library?.getDatabaseProtectionStatus) {
+      setDatabaseProtectionStatus(null);
+      return;
+    }
+
+    try {
+      setDatabaseProtectionStatus(await library.getDatabaseProtectionStatus());
+    } catch (statusError) {
+      setDatabaseProtectionStatus(null);
+      setError(statusError instanceof Error ? statusError.message : String(statusError));
+    }
+  }, []);
+
   useEffect(() => {
     const app = getAppBridge();
     void app?.getSettings().then((settings) => {
@@ -3513,6 +3579,16 @@ export const SettingsPage = (): JSX.Element => {
     });
   }, [activeSection]);
 
+  useEffect(() => {
+    if (activeSection !== 'danger') {
+      return undefined;
+    }
+
+    return scheduleSettingsIdleTask(() => {
+      void refreshDatabaseProtectionStatus();
+    });
+  }, [activeSection, refreshDatabaseProtectionStatus]);
+
   const refreshSettingsHorizontalScroll = useCallback((): void => {
     const scrollShell = settingsScrollShellRef.current;
     if (!scrollShell) {
@@ -3655,6 +3731,21 @@ export const SettingsPage = (): JSX.Element => {
       });
     });
   };
+
+  useEffect(() => {
+    const handleOpenSettingsSection = (event: Event): void => {
+      const detail = (event as CustomEvent<{ section?: unknown }>).detail;
+      const section = typeof detail?.section === 'string' && settingsNavKeys.has(detail.section as SettingsNavKey)
+        ? detail.section as SettingsNavKey
+        : 'danger';
+      jumpToSettingsSection(section, { clearSearch: true });
+    };
+
+    window.addEventListener('settings:open-section', handleOpenSettingsSection);
+    return () => {
+      window.removeEventListener('settings:open-section', handleOpenSettingsSection);
+    };
+  }, []);
 
   const handleNavClick = (key: SettingsNavKey): void => {
     jumpToSettingsSection(key);
@@ -5276,6 +5367,132 @@ export const SettingsPage = (): JSX.Element => {
       });
   };
 
+  const requireDangerConfirmWord = (word: string, message: string): boolean => {
+    const input = window.prompt(`${message}\n\n请输入「${word}」继续。`);
+    if (input?.trim() === word) {
+      return true;
+    }
+
+    setDangerMessage('确认词不匹配，已取消。');
+    return false;
+  };
+
+  const handleRefreshDatabaseProtectionStatus = async (): Promise<void> => {
+    try {
+      setDatabaseProtectionBusyAction('refresh');
+      setDangerMessage(null);
+      setError(null);
+      await refreshDatabaseProtectionStatus();
+    } finally {
+      setDatabaseProtectionBusyAction(null);
+    }
+  };
+
+  const handleCreateDatabaseSnapshot = async (): Promise<void> => {
+    const library = getLibraryBridge();
+    if (!library?.createDatabaseSnapshot) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to create a database snapshot.');
+      return;
+    }
+
+    try {
+      setDatabaseProtectionBusyAction('snapshot');
+      setDangerMessage(null);
+      setError(null);
+      const nextStatus = await library.createDatabaseSnapshot();
+      setDatabaseProtectionStatus(nextStatus);
+      setDangerMessage('已创建新的健康快照。');
+    } catch (snapshotError) {
+      setDangerMessage(null);
+      setError(snapshotError instanceof Error ? snapshotError.message : String(snapshotError));
+    } finally {
+      setDatabaseProtectionBusyAction(null);
+    }
+  };
+
+  const handleRestoreDatabaseSnapshot = async (): Promise<void> => {
+    const snapshot = databaseProtectionStatus?.latestHealthySnapshot;
+    if (!snapshot) {
+      setDangerMessage('没有可恢复的健康快照。');
+      return;
+    }
+    if (!requireDangerConfirmWord('恢复曲库', '恢复最近健康快照会先归档当前数据库，再复制快照数据库；音乐文件不会被删除。')) {
+      return;
+    }
+
+    const library = getLibraryBridge();
+    if (!library?.restoreDatabaseSnapshot) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to restore the library database.');
+      return;
+    }
+
+    try {
+      setDatabaseProtectionBusyAction('restore');
+      setDangerBusy(true);
+      setDangerMessage(null);
+      setError(null);
+      const result = await library.restoreDatabaseSnapshot(snapshot.id);
+      setDangerMessage(`已从健康快照恢复曲库数据库。当前库检查：${getDatabaseHealthLabel(result.health.status)}。`);
+      window.dispatchEvent(new Event('library:changed'));
+      await refreshDatabaseProtectionStatus();
+    } catch (restoreError) {
+      setDangerMessage(null);
+      setError(restoreError instanceof Error ? restoreError.message : String(restoreError));
+    } finally {
+      setDangerBusy(false);
+      setDatabaseProtectionBusyAction(null);
+    }
+  };
+
+  const handleRebuildEmptyLibraryDatabase = async (): Promise<void> => {
+    if (!requireDangerConfirmWord('重建空库', '数据库无法从健康快照恢复。此操作会先归档当前坏库和数据库三件套，再重建为空库；音乐文件不会被删除。')) {
+      return;
+    }
+
+    const library = getLibraryBridge();
+    if (!library?.repairDatabase) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to rebuild the library database.');
+      return;
+    }
+
+    try {
+      setDatabaseProtectionBusyAction('restore');
+      setDangerBusy(true);
+      setDangerMessage(null);
+      setError(null);
+      const result = await library.repairDatabase();
+      const archived = result.archivePath ? `已归档坏库：${result.archivePath}` : '没有发现可归档的数据库文件。';
+      setDangerMessage(`已归档坏库并重建为空库。${archived} 请重新添加曲库文件夹并扫描；如果重扫后再次报错，请导出诊断。`);
+      window.dispatchEvent(new Event('library:changed'));
+      await refreshDatabaseProtectionStatus();
+    } catch (rebuildError) {
+      setDangerMessage(null);
+      setError(rebuildError instanceof Error ? rebuildError.message : String(rebuildError));
+    } finally {
+      setDangerBusy(false);
+      setDatabaseProtectionBusyAction(null);
+    }
+  };
+
+  const handleOpenDataProtectionFolder = async (): Promise<void> => {
+    const library = getLibraryBridge();
+    if (!library?.openDataProtectionFolder) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to open the data protection folder.');
+      return;
+    }
+
+    try {
+      setDatabaseProtectionBusyAction('open');
+      setDangerMessage(null);
+      setError(null);
+      await library.openDataProtectionFolder();
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : String(openError));
+    } finally {
+      setDatabaseProtectionBusyAction(null);
+    }
+  };
+
   const handleClearLibraryCache = async (): Promise<void> => {
     if (!window.confirm('清空曲库缓存？这会移除曲库索引、扫描缓存和封面缓存，不会删除你的音乐文件。')) {
       return;
@@ -5306,6 +5523,10 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleRepairLibraryDatabase = async (): Promise<void> => {
+    if (!requireDangerConfirmWord('重建曲库', '重建会归档并移除当前曲库数据库索引，随后需要重新扫描；音乐文件不会被删除。')) {
+      return;
+    }
+
     if (!window.confirm('重建曲库数据库？这会归档当前曲库数据库并删除正在使用的数据库索引，不会删除你的音乐文件。重建后需要重新添加歌曲文件夹并扫描。')) {
       return;
     }
@@ -5325,6 +5546,7 @@ export const SettingsPage = (): JSX.Element => {
       const archived = result.archivePath ? `已归档旧数据库：${result.archivePath}` : '没有发现旧数据库文件。';
       setDangerMessage(`曲库数据库已重建为空库。${archived} 请重新添加歌曲文件夹并扫描；如果重扫后再次报错，请直接导出诊断。`);
       window.dispatchEvent(new Event('library:changed'));
+      await refreshDatabaseProtectionStatus();
     } catch (repairError) {
       setDangerMessage(null);
       setError(repairError instanceof Error ? repairError.message : String(repairError));
@@ -5334,6 +5556,10 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleDeleteLibraryDatabase = async (): Promise<void> => {
+    if (!requireDangerConfirmWord('删除曲库', '删除会归档并移除当前数据库文件；音乐文件不会被删除。')) {
+      return;
+    }
+
     if (!window.confirm('删除曲库数据库？这会归档并删除当前数据库文件，不会主动重建数据库，也不会删除你的音乐文件。删除后请重启 ECHO Next，再重新添加歌曲文件夹并扫描。')) {
       return;
     }
@@ -5354,6 +5580,7 @@ export const SettingsPage = (): JSX.Element => {
       const removed = result.removedDatabaseFiles.length > 0 ? `已删除 ${result.removedDatabaseFiles.join('、')}。` : '没有需要删除的数据库文件。';
       setDangerMessage(`曲库数据库已删除。${removed}${archived} 请重启 ECHO Next 后重新添加歌曲文件夹并扫描。`);
       window.dispatchEvent(new Event('library:changed'));
+      await refreshDatabaseProtectionStatus();
     } catch (deleteError) {
       setDangerMessage(null);
       setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
@@ -5456,6 +5683,46 @@ export const SettingsPage = (): JSX.Element => {
   const activeNavItems = visibleNavItems.length ? visibleNavItems : settingsNavItems;
   const formatBool = (value: boolean): string => (value ? t('common.yes') : t('common.no'));
   const activeFontValue = fontPickerTarget === 'chinese' ? appearancePreferences.chineseFontFamily : appearancePreferences.mainFontFamily;
+  const databaseHealthStatus = databaseProtectionStatus?.health.status;
+  const latestHealthySnapshot = databaseProtectionStatus?.latestHealthySnapshot ?? null;
+  const databaseProtectionBusy = databaseProtectionBusyAction !== null || dangerBusy;
+  const databaseRecommendedAction = databaseProtectionStatus?.recommendedAction ?? 'none';
+  const databaseUnrecoverable = databaseRecommendedAction === 'rebuild-empty-database';
+  const databaseHealthLabel = getDatabaseHealthLabel(databaseHealthStatus);
+  const databaseProtectionDescription = !databaseProtectionStatus
+    ? '正在读取数据库健康状态、健康快照和最近维护记录。'
+    : databaseHealthStatus === 'ok'
+    ? '当前数据库检查正常。这里会保留健康快照、坏库归档和最近维护记录。'
+    : databaseUnrecoverable
+    ? '数据库无法从健康快照恢复。音乐文件不会被删除；请先导出诊断和查看保护目录，再确认归档坏库并重建空库。'
+    : '检测到数据库不可用时，先尝试恢复健康快照；恢复会先归档当前数据库，音乐文件不会被删除。';
+  const databaseRecoverySteps = databaseUnrecoverable
+    ? [
+        '先确认扫描没有运行；扫描中会拒绝恢复、重建和删除。',
+        '优先导出诊断并打开保护目录，保留坏库归档线索。',
+        '输入确认词“重建空库”后，归档坏库并重建空库，再重新添加曲库文件夹并扫描。',
+      ]
+    : [
+        '先确认扫描没有运行；扫描中会拒绝恢复、重建和删除。',
+        '优先点“恢复最近健康快照”，它只接受主进程枚举出的快照。',
+        '没有健康快照或恢复后仍损坏时，使用“归档坏库并重建空库”。',
+      ];
+  const databasePrimaryActionLabel = databaseUnrecoverable ? '归档坏库并重建空库' : '恢复最近健康快照';
+  const databasePrimaryActionBusyLabel = databaseUnrecoverable ? '重建中...' : '恢复中...';
+  const databasePrimaryActionDisabled =
+    databaseProtectionBusy ||
+    databaseProtectionStatus?.hasRunningScan ||
+    (databaseUnrecoverable ? !databaseProtectionStatus : !latestHealthySnapshot);
+  const handleDatabasePrimaryRecoveryAction = databaseUnrecoverable
+    ? handleRebuildEmptyLibraryDatabase
+    : handleRestoreDatabaseSnapshot;
+  const databasePathLabel = databaseProtectionStatus?.databasePath ?? '待加载';
+  const databaseSnapshotLabel = latestHealthySnapshot
+    ? `${formatProtectionTimestamp(latestHealthySnapshot.createdAt)} · ${formatUpdateBytes(latestHealthySnapshot.databaseSizeBytes)}`
+    : '暂无健康快照';
+  const databaseArchiveLabel = databaseProtectionStatus?.latestArchive
+    ? `${formatProtectionTimestamp(databaseProtectionStatus.latestArchive.createdAt)} · ${formatUpdateBytes(databaseProtectionStatus.latestArchive.databaseSizeBytes)}`
+    : '暂无坏库归档';
   const formatLastFmTimestamp = (value: string | null | undefined): string => {
     if (!value) {
       return t('settings.integrations.lastfm.never');
@@ -5882,13 +6149,6 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow title={t('settings.playback.wireless.title')} description={t('settings.playback.wireless.description')}>
                 <ToggleButton />
-              </SettingRow>
-              <SettingRow title={t('settings.playback.followCurrent.title')} description={t('settings.playback.followCurrent.description')}>
-                <ToggleButton
-                  active={appSettings?.playbackFollowCurrentTrack ?? false}
-                  disabled={!appSettings}
-                  onClick={() => patchAppSettings({ playbackFollowCurrentTrack: !(appSettings?.playbackFollowCurrentTrack ?? false) })}
-                />
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--audio-status"
@@ -7372,6 +7632,83 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Trash2} id="danger" title={t('settings.nav.danger.label')}>
+              <div className="settings-database-protection" data-health={databaseHealthStatus ?? 'unknown'}>
+                <header>
+                  <div>
+                    <span className="section-kicker">曲库数据库安全</span>
+                    <h3>恢复助手</h3>
+                    <p>{databaseProtectionDescription}</p>
+                  </div>
+                  <span className={`settings-database-health settings-database-health--${databaseHealthStatus ?? 'unknown'}`}>
+                    {databaseHealthLabel}
+                  </span>
+                </header>
+                <div className="settings-database-grid">
+                  <span>
+                    <em>当前数据库</em>
+                    <strong>{formatUpdateBytes(databaseProtectionStatus?.databaseSizeBytes)}</strong>
+                    <small title={databasePathLabel}>{databasePathLabel}</small>
+                  </span>
+                  <span>
+                    <em>最近健康快照</em>
+                    <strong>{databaseSnapshotLabel}</strong>
+                    <small>{latestHealthySnapshot?.id ?? '可手动创建'}</small>
+                  </span>
+                  <span>
+                    <em>最近坏库归档</em>
+                    <strong>{databaseArchiveLabel}</strong>
+                    <small>{databaseProtectionStatus?.latestArchive?.id ?? '恢复/重建前会自动归档'}</small>
+                  </span>
+                </div>
+                {databaseHealthStatus && databaseHealthStatus !== 'ok' ? (
+                  <ol className="settings-database-steps">
+                    {databaseRecoverySteps.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ol>
+                ) : null}
+                {databaseUnrecoverable && databaseProtectionStatus?.unrecoverableReason ? (
+                  <p className="settings-inline-error">{databaseProtectionStatus.unrecoverableReason}</p>
+                ) : null}
+                <div className="settings-database-actions">
+                  <button className="settings-action-button" type="button" disabled={databaseProtectionBusyAction === 'refresh'} onClick={() => void handleRefreshDatabaseProtectionStatus()}>
+                    <RotateCw size={15} />
+                    {databaseProtectionBusyAction === 'refresh' ? '检查中...' : '检查健康'}
+                  </button>
+                  <button className="settings-action-button" type="button" disabled={databaseProtectionBusy} onClick={() => void handleCreateDatabaseSnapshot()}>
+                    <Save size={15} />
+                    {databaseProtectionBusyAction === 'snapshot' ? '创建中...' : '创建健康快照'}
+                  </button>
+                  <button
+                    className="settings-danger-button"
+                    type="button"
+                    disabled={databasePrimaryActionDisabled}
+                    onClick={() => void handleDatabasePrimaryRecoveryAction()}
+                  >
+                    <ShieldAlert size={15} />
+                    {databaseProtectionBusyAction === 'restore' ? databasePrimaryActionBusyLabel : databasePrimaryActionLabel}
+                  </button>
+                  <button className="settings-action-button" type="button" disabled={databaseProtectionBusyAction === 'open'} onClick={() => void handleOpenDataProtectionFolder()}>
+                    <FolderOpen size={15} />
+                    打开保护目录
+                  </button>
+                  <button className="settings-action-button" type="button" disabled={diagnosticsBusy} onClick={() => void handleDiagnosticsExport()}>
+                    <FileText size={15} />
+                    {diagnosticsBusy ? '导出中...' : '导出诊断'}
+                  </button>
+                </div>
+                {databaseProtectionStatus?.hasRunningScan ? <p className="settings-inline-error">曲库扫描正在运行，恢复、重建和删除会被拒绝。请等扫描结束后再操作。</p> : null}
+                {databaseProtectionStatus?.maintenanceEvents.length ? (
+                  <div className="settings-database-events">
+                    {databaseProtectionStatus.maintenanceEvents.slice(0, 3).map((event) => (
+                      <span key={`${event.createdAt}-${event.action}`}>
+                        <em>{formatProtectionTimestamp(event.createdAt)}</em>
+                        <strong>{event.action}</strong>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <SettingRow title={t('settings.danger.clearCache.title')} description={t('settings.danger.clearCache.description')}>
                 <button className="settings-danger-button" type="button" disabled={dangerBusy} onClick={() => void handleClearLibraryCache()}>
                   {dangerBusy ? '处理中...' : '清空曲库缓存'}

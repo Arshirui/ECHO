@@ -8,6 +8,11 @@ import {
   subscribeLibraryScanStatuses,
   type ScanStatusByFolder,
 } from '../../stores/libraryScanSession';
+import {
+  getLibraryDatabaseRecoveryMessage,
+  isLibraryDatabaseCorruptionError,
+  openLibraryDatabaseRecoverySettings,
+} from '../../utils/databaseRecovery';
 import { getLibraryBridge } from '../../utils/echoBridge';
 
 type LibraryFoldersPanelProps = {
@@ -89,17 +94,13 @@ const formatFolderError = (error: unknown): string => {
   return message || '导入失败';
 };
 
-const isLibraryDatabaseSchemaError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error);
-  return /DatabaseHealthError|malformed database schema|database disk image is malformed|SQLITE_CORRUPT|file is not a database/i.test(message);
-};
-
 export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelProps): JSX.Element => {
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
   const [folderPath, setFolderPath] = useState('');
   const [scanStatuses, setScanStatuses] = useState<ScanStatusByFolder>(getLibraryScanStatuses);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [databaseRecoveryAvailable, setDatabaseRecoveryAvailable] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const refreshFolders = useCallback(async () => {
@@ -109,13 +110,21 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
       if (!library) {
         setFolders([]);
         setError('桌面桥接不可用。请在 ECHO Next 桌面端管理曲库文件夹。');
+        setDatabaseRecoveryAvailable(false);
         return;
       }
 
       setFolders(await library.getFolders());
       setError(null);
+      setDatabaseRecoveryAvailable(false);
     } catch (refreshError) {
+      if (isLibraryDatabaseCorruptionError(refreshError)) {
+        setError(getLibraryDatabaseRecoveryMessage());
+        setDatabaseRecoveryAvailable(true);
+        return;
+      }
       setError(formatFolderError(refreshError));
+      setDatabaseRecoveryAvailable(false);
     }
   }, []);
 
@@ -140,6 +149,7 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
 
       if (!library) {
         setError('桌面桥接不可用。请在 ECHO Next 桌面端扫描文件夹。');
+        setDatabaseRecoveryAvailable(false);
         return;
       }
 
@@ -160,7 +170,7 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
   );
 
   const importFolderPath = useCallback(
-    async (selectedPath: string, repaired = false): Promise<void> => {
+    async (selectedPath: string): Promise<void> => {
       const normalizedPath = selectedPath.trim();
 
       if (!normalizedPath) {
@@ -175,6 +185,7 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
 
         if (!library) {
           setError('桌面桥接不可用。请在 ECHO Next 桌面端导入文件夹。');
+          setDatabaseRecoveryAvailable(false);
           return;
         }
 
@@ -184,18 +195,13 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
         await refreshFolders();
         await startScan(folder.id, alreadyImported ? '文件夹已存在，开始重新扫描' : '文件夹已添加，开始扫描');
       } catch (importError) {
-        if (!repaired && isLibraryDatabaseSchemaError(importError) && window.confirm('曲库数据库损坏，重新添加和重扫都会失败。是否备份旧数据库、重建为空库，然后重新添加这个文件夹并扫描？')) {
-          try {
-            await getLibraryBridge()?.repairDatabase?.();
-            setMessage('曲库数据库已修复，正在重新添加并扫描文件夹。如果再次报错，请导出诊断。');
-            await importFolderPath(normalizedPath, true);
-            return;
-          } catch (repairError) {
-            setError(formatFolderError(repairError));
-            return;
-          }
+        if (isLibraryDatabaseCorruptionError(importError)) {
+          setError(getLibraryDatabaseRecoveryMessage());
+          setDatabaseRecoveryAvailable(true);
+          return;
         }
         setError(formatFolderError(importError));
+        setDatabaseRecoveryAvailable(false);
       }
     },
     [folders, refreshFolders, startScan],
@@ -377,7 +383,16 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
       </div>
 
       {message ? <p className="audio-file-path">{message}</p> : null}
-      {error ? <p className="audio-error">{error}</p> : null}
+      {error ? (
+        <div className="library-database-recovery-callout">
+          <p className="audio-error">{error}</p>
+          {databaseRecoveryAvailable ? (
+            <button className="settings-action-button" type="button" onClick={openLibraryDatabaseRecoverySettings}>
+              去恢复助手
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {folders.length === 0 ? (
         <p className="audio-empty">还没有导入曲库文件夹。</p>

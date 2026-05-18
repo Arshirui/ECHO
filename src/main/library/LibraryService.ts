@@ -53,7 +53,6 @@ import type {
   LibraryScanOptions,
   LibrarySummary,
   LibraryTrack,
-  LibraryTrackLocateResult,
   LibraryCleanupResult,
   LibraryMaintenanceCleanupResult,
   LibraryMoveCandidate,
@@ -127,6 +126,18 @@ type LibraryServiceDependencies = {
   coverConcurrency?: number;
   artistImageCacheDir?: string;
   artistImageProviders?: ArtistImageProvider[];
+};
+
+const broadcastLibraryChanged = (): void => {
+  const windows = (electron as unknown as {
+    BrowserWindow?: {
+      getAllWindows: () => Array<{ webContents: { send: (channel: string, payload?: unknown) => void } }>;
+    };
+  }).BrowserWindow?.getAllWindows() ?? [];
+
+  for (const window of windows) {
+    window.webContents.send(IpcChannels.LibraryChanged);
+  }
 };
 
 export class LibraryService {
@@ -257,16 +268,6 @@ export class LibraryService {
 
   getTracks(query?: LibraryPageQuery): LibraryPage<LibraryTrack> {
     return this.store.getTracks(query);
-  }
-
-  locateTrackInTracks(trackId: string, query?: LibraryPageQuery): LibraryTrackLocateResult {
-    const result = this.store.locateTrackInTracks(trackId, query);
-    if (!result.track) {
-      const track = this.getTrack(trackId);
-      return track ? { ...result, track } : result;
-    }
-
-    return result;
   }
 
   refreshDuplicateTracks(mode: DuplicateTrackMode = 'strict'): DuplicateTrackIndexSummary {
@@ -1687,6 +1688,7 @@ export class LibraryService {
       clearTimeout(this.groupingRefreshTimer);
       this.groupingRefreshTimer = null;
     }
+    (this.scanJobQueue as { dispose?: () => void }).dispose?.();
 
     this.closeDatabase();
   }
@@ -1696,15 +1698,7 @@ export class LibraryService {
   }
 
   private notifyLibraryChanged(): void {
-    const windows = (electron as unknown as {
-      BrowserWindow?: {
-        getAllWindows: () => Array<{ webContents: { send: (channel: string, payload?: unknown) => void } }>;
-      };
-    }).BrowserWindow?.getAllWindows() ?? [];
-
-    for (const window of windows) {
-      window.webContents.send(IpcChannels.LibraryChanged);
-    }
+    broadcastLibraryChanged();
   }
 
   private previewRescanPathsFromWatcher(folderId: string, paths: string[]): number {
@@ -2092,6 +2086,14 @@ export const createLibraryService = (
     metadataConcurrency: scanConcurrency.metadataConcurrency,
     coverConcurrency: scanConcurrency.coverConcurrency,
     getAlbumMergeStrategy: () => readSettings().albumMergeStrategy,
+    shouldReduceScanPressure: shouldDelayGroupingRefreshForAudio,
+    shouldDeferGroupingRefresh: shouldDelayGroupingRefreshForAudio,
+    onScanSettled: (scanStatus) => {
+      if (scanStatus.status === 'completed') {
+        broadcastLibraryChanged();
+      }
+    },
+    onDeferredGroupingRefresh: broadcastLibraryChanged,
     checkDatabaseHealth: (scanStatus) => {
       try {
         assertDatabaseHealthy(databasePath);

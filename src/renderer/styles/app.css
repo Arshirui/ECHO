@@ -1281,6 +1281,115 @@
   color: var(--theme-danger-text);
 }
 
+.settings-database-protection {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--theme-panel-border-strong);
+  border-radius: 8px;
+  background: var(--theme-panel-bg-muted);
+}
+
+.settings-database-protection > header,
+.settings-database-actions,
+.settings-database-events {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-database-protection h3,
+.settings-database-protection p {
+  margin: 0;
+}
+
+.settings-database-protection header > div {
+  display: grid;
+  min-width: min(420px, 100%);
+  gap: 5px;
+}
+
+.settings-database-protection p,
+.settings-database-grid small,
+.settings-database-steps {
+  color: var(--theme-muted-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-database-health {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 999px;
+  background: var(--theme-chip-bg);
+  color: var(--theme-heading-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.settings-database-health--corrupt,
+.settings-database-health--unreadable {
+  color: var(--theme-danger-text);
+  border-color: rgba(219, 71, 71, 0.28);
+  background: rgba(219, 71, 71, 0.08);
+}
+
+.settings-database-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-database-grid > span,
+.settings-database-events > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.settings-database-grid em,
+.settings-database-events em {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.settings-database-grid strong,
+.settings-database-events strong {
+  overflow: hidden;
+  color: var(--theme-heading-text);
+  font-size: 13px;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-database-grid small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-database-steps {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+@media (max-width: 760px) {
+  .settings-database-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .settings-select-field select {
   min-width: 240px;
   min-height: 38px;
@@ -2476,6 +2585,23 @@
   font-weight: 720;
 }
 
+.library-database-recovery-callout {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid rgba(219, 71, 71, 0.22);
+  border-radius: 8px;
+  background: rgba(219, 71, 71, 0.06);
+}
+
+.library-database-recovery-callout .audio-error {
+  flex: 1 1 260px;
+}
+
 .audio-device-table {
   display: grid;
   overflow: auto;
@@ -2690,8 +2816,8 @@
   min-width: 0;
   overflow: hidden;
   gap: 5px;
-  -webkit-user-select: none;
-  user-select: none;
+  -webkit-user-select: text !important;
+  user-select: text !important;
 }
 
 .player-track-copy * {
@@ -2730,6 +2856,16 @@
   overflow: hidden;
   text-overflow: clip;
   white-space: nowrap;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.player-track-copy .player-marquee[data-clickable="true"] {
+  cursor: pointer;
+}
+
+.player-track-copy .player-marquee[data-clickable="true"]:hover {
+  color: var(--color-accent);
 }
 
 .player-marquee-inner {
@@ -2739,6 +2875,8 @@
   text-overflow: ellipsis;
   vertical-align: top;
   white-space: nowrap;
+  -webkit-user-select: text !important;
+  user-select: text !important;
 }
 
 .player-marquee[data-overflow="true"] .player-marquee-inner {
@@ -6557,6 +6695,23 @@ html[data-theme="dark"] .settings-lyrics-panel .lyrics-source-filters button[dat
   margin-top: 14px;
   gap: 12px;
   overflow: hidden;
+}
+
+.settings-library-lab-toggle {
+  justify-self: end;
+}
+
+.settings-library-lab-toggle svg {
+  transition: transform 0.16s ease;
+}
+
+.settings-library-lab-panel[data-expanded="true"] .settings-library-lab-toggle svg {
+  transform: rotate(180deg);
+}
+
+.settings-library-lab-body {
+  display: grid;
+  gap: 12px;
 }
 
 .settings-library-lab-status {

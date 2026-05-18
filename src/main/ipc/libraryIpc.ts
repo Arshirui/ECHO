@@ -35,7 +35,13 @@ import type {
   LibraryScanMode,
 } from '../../shared/types/library';
 import { getAppSettings } from '../app/appSettings';
-import { deleteProtectedLibraryDatabase, repairProtectedLibraryDatabase } from '../app/dataProtection';
+import {
+  createManualLibraryDatabaseSnapshot,
+  deleteProtectedLibraryDatabase,
+  getLibraryDatabaseProtectionStatus,
+  repairProtectedLibraryDatabase,
+  restoreProtectedLibraryDatabaseSnapshot,
+} from '../app/dataProtection';
 import { closeDefaultLibraryService, getLibraryService } from '../library/LibraryService';
 import { closeDefaultRemoteSourceService } from '../library/remote/RemoteSourceService';
 import { closeDefaultLyricsService } from '../lyrics/LyricsService';
@@ -72,6 +78,20 @@ const closeLibraryDatabaseUsers = (): void => {
   closeDefaultStreamingService();
   closeDefaultRemoteSourceService();
   closeDefaultLibraryService();
+};
+
+const isLibraryScanRunning = (): boolean => {
+  try {
+    return getLibraryService().hasRunningJobs();
+  } catch {
+    return false;
+  }
+};
+
+const assertNoRunningLibraryScan = (): void => {
+  if (isLibraryScanRunning()) {
+    throw new Error('曲库扫描仍在运行，已拒绝恢复、重建或删除数据库。请等待扫描结束后再试。');
+  }
 };
 
 const requireText = (value: unknown, name: string): string => {
@@ -1173,9 +1193,6 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetTracks, (_event, query: unknown) =>
     getLibraryService().getTracks(normalizeQuery(query)),
   );
-  ipcMain.handle(IpcChannels.LibraryLocateTrackInTracks, (_event, trackId: unknown, query: unknown) =>
-    getLibraryService().locateTrackInTracks(requireText(trackId, 'trackId'), normalizeQuery(query)),
-  );
   ipcMain.handle(IpcChannels.LibraryRefreshDuplicateTracks, (_event, mode: unknown) =>
     getLibraryService().refreshDuplicateTracks(normalizeDuplicateMode(mode)),
   );
@@ -1512,11 +1529,33 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryPruneInvalidTracks, () => getLibraryService().pruneInvalidTracks());
   ipcMain.handle(IpcChannels.LibraryClearTracks, () => getLibraryService().clearTracks());
   ipcMain.handle(IpcChannels.LibraryClearCache, () => getLibraryService().clearCache());
+  ipcMain.handle(IpcChannels.LibraryGetDatabaseProtectionStatus, () =>
+    getLibraryDatabaseProtectionStatus(app.getPath('userData'), isLibraryScanRunning()),
+  );
+  ipcMain.handle(IpcChannels.LibraryCreateDatabaseSnapshot, async () => {
+    assertNoRunningLibraryScan();
+    return createManualLibraryDatabaseSnapshot(app.getPath('userData'));
+  });
+  ipcMain.handle(IpcChannels.LibraryRestoreDatabaseSnapshot, (_event, snapshotId: unknown) => {
+    assertNoRunningLibraryScan();
+    closeLibraryDatabaseUsers();
+    return restoreProtectedLibraryDatabaseSnapshot(requireText(snapshotId, 'snapshotId'), app.getPath('userData'));
+  });
+  ipcMain.handle(IpcChannels.LibraryOpenDataProtectionFolder, async () => {
+    const status = getLibraryDatabaseProtectionStatus(app.getPath('userData'), isLibraryScanRunning());
+    mkdirSync(status.dataProtectionPath, { recursive: true });
+    const errorMessage = await shell.openPath(status.dataProtectionPath);
+    if (errorMessage) {
+      throw new Error(errorMessage);
+    }
+  });
   ipcMain.handle(IpcChannels.LibraryRepairDatabase, () => {
+    assertNoRunningLibraryScan();
     closeLibraryDatabaseUsers();
     return repairProtectedLibraryDatabase(app.getPath('userData'));
   });
   ipcMain.handle(IpcChannels.LibraryDeleteDatabase, () => {
+    assertNoRunningLibraryScan();
     closeLibraryDatabaseUsers();
     return deleteProtectedLibraryDatabase(app.getPath('userData'));
   });

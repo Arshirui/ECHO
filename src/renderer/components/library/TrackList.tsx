@@ -30,19 +30,16 @@ type TrackListProps = {
   onToggleLiked?: (track: LibraryTrack) => void;
   onOpenTrackMenu?: (track: LibraryTrack, position: { x: number; y: number }) => void;
   onVisibleTrackIdsChange?: (trackIds: string[]) => void;
-  followCurrentTrack?: boolean;
-  currentTrackIndex?: number | null;
 };
 
 const rowHeight = 76;
 const loadAheadRows = 12;
 
-export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, selectedTrackIds = {}, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange, followCurrentTrack = false, currentTrackIndex = null }: TrackListProps): JSX.Element => {
+export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, canLoadPrevious = false, totalCount, loadedCount = tracks.length, loadedStartIndex = 0, isLoadingMore = false, onEndReached, onStartReached, onPlay, selectedTrackIds = {}, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, downloadingTrackIds = {}, downloadProgressByTrackId = {}, duplicateHiddenCounts = {}, onShowVersions, onOpenTrackMenu, onVisibleTrackIdsChange }: TrackListProps): JSX.Element => {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   const loadRequestedRef = useRef(false);
   const loadPreviousRequestedRef = useRef(false);
   const visibleTrackIdsKeyRef = useRef('');
-  const lastFollowScrollKeyRef = useRef('');
   const virtualCount = Math.max(totalCount ?? tracks.length, tracks.length);
   const safeLoadedStartIndex = Math.max(0, Math.min(loadedStartIndex, Math.max(0, virtualCount - tracks.length)));
   const loadedBoundary = Math.min(virtualCount, safeLoadedStartIndex + Math.min(loadedCount, tracks.length));
@@ -108,29 +105,6 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, ca
     requestLoadMore(lastVirtualIndex);
     requestLoadPrevious(firstVirtualIndex);
   }, [firstVirtualIndex, lastVirtualIndex, requestLoadMore, requestLoadPrevious]);
-
-  useEffect(() => {
-    if (!followCurrentTrack || !currentTrackId) {
-      lastFollowScrollKeyRef.current = '';
-      return;
-    }
-
-    const loadedCurrentTrackIndex = tracks.findIndex((track) => track.id === currentTrackId);
-    const targetIndex = loadedCurrentTrackIndex >= 0 ? safeLoadedStartIndex + loadedCurrentTrackIndex : currentTrackIndex ?? -1;
-
-    if (targetIndex < 0) {
-      return;
-    }
-
-    const followScrollKey = `${currentTrackId}:${targetIndex}`;
-
-    if (lastFollowScrollKeyRef.current === followScrollKey) {
-      return;
-    }
-
-    lastFollowScrollKeyRef.current = followScrollKey;
-    rowVirtualizer.scrollToIndex(targetIndex, { align: 'center', behavior: 'smooth' });
-  }, [currentTrackId, currentTrackIndex, followCurrentTrack, rowVirtualizer, safeLoadedStartIndex, tracks]);
 
   useEffect(() => {
     if (!onVisibleTrackIdsChange) {

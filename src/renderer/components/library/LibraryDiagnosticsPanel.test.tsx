@@ -122,6 +122,9 @@ const createApi = (state: LibraryLabState = baseState, candidates: LibraryMoveCa
 
 const input = (label: string): HTMLInputElement => screen.getByLabelText(label) as HTMLInputElement;
 const button = (name: string): HTMLButtonElement => screen.getByRole('button', { name }) as HTMLButtonElement;
+const openLab = async (): Promise<void> => {
+  fireEvent.click(await screen.findByRole('button', { name: 'Expand' }));
+};
 
 afterEach(() => {
   cleanup();
@@ -130,11 +133,20 @@ afterEach(() => {
 });
 
 describe('LibraryDiagnosticsPanel', () => {
+  it('keeps Library Lab collapsed by default', async () => {
+    const api = createApi();
+    render(<LibraryDiagnosticsPanel />);
+
+    expect(await screen.findByRole('button', { name: 'Expand', expanded: false })).toBeTruthy();
+    expect(screen.queryByLabelText('Enable Library Watcher')).toBeNull();
+    expect(api.getState).not.toHaveBeenCalled();
+  });
+
   it('keeps all Lab toggles off by default', async () => {
     createApi();
     render(<LibraryDiagnosticsPanel />);
 
-    await screen.findByText('Library Lab');
+    await openLab();
 
     expect(input('Enable Library Watcher').checked).toBe(false);
     expect(input('Enable Auto Rescan for add/change').checked).toBe(false);
@@ -148,6 +160,7 @@ describe('LibraryDiagnosticsPanel', () => {
     const api = createApi();
     render(<LibraryDiagnosticsPanel />);
 
+    await openLab();
     fireEvent.click(await screen.findByLabelText('Enable Library Watcher'));
 
     await waitFor(() => expect(button('Start Watcher').disabled).toBe(false));
@@ -159,7 +172,7 @@ describe('LibraryDiagnosticsPanel', () => {
     createApi({ ...baseState, moveCandidateEnabled: true }, [highCandidate]);
     render(<LibraryDiagnosticsPanel />);
 
-    await screen.findByText('Library Lab');
+    await openLab();
 
     expect(screen.queryByRole('button', { name: 'Dry Run Selected Move' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Apply Selected Move' })).toBeNull();
@@ -169,6 +182,7 @@ describe('LibraryDiagnosticsPanel', () => {
     createApi({ ...baseState, moveCandidateEnabled: true, moveRepairLabEnabled: true }, [highCandidate]);
     render(<LibraryDiagnosticsPanel />);
 
+    await openLab();
     await screen.findByLabelText(`Select move candidate ${highCandidate.candidateId}`);
     expect(button('Apply Selected Move').disabled).toBe(true);
 
@@ -182,6 +196,7 @@ describe('LibraryDiagnosticsPanel', () => {
     createApi({ ...baseState, moveCandidateEnabled: true, moveRepairLabEnabled: true }, [ambiguousCandidate]);
     render(<LibraryDiagnosticsPanel />);
 
+    await openLab();
     await screen.findByLabelText(`Select move candidate ${ambiguousCandidate.candidateId}`);
 
     expect(button('Dry Run Selected Move').disabled).toBe(true);
@@ -193,6 +208,7 @@ describe('LibraryDiagnosticsPanel', () => {
     createApi({ ...baseState, moveCandidateEnabled: true, moveRepairLabEnabled: true }, [lowCandidate]);
     render(<LibraryDiagnosticsPanel />);
 
+    await openLab();
     await screen.findByLabelText(`Select move candidate ${lowCandidate.candidateId}`);
 
     expect(button('Dry Run Selected Move').disabled).toBe(true);
@@ -204,6 +220,7 @@ describe('LibraryDiagnosticsPanel', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     render(<LibraryDiagnosticsPanel />);
 
+    await openLab();
     await screen.findByLabelText(`Select move candidate ${highCandidate.candidateId}`);
     fireEvent.click(button('Dry Run Selected Move'));
     await waitFor(() => expect(button('Apply Selected Move').disabled).toBe(false));
@@ -218,6 +235,7 @@ describe('LibraryDiagnosticsPanel', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<LibraryDiagnosticsPanel />);
 
+    await openLab();
     await screen.findByLabelText(`Select move candidate ${highCandidate.candidateId}`);
     fireEvent.click(button('Dry Run Selected Move'));
     await waitFor(() => expect(button('Apply Selected Move').disabled).toBe(false));
@@ -233,6 +251,7 @@ describe('LibraryDiagnosticsPanel', () => {
     api.startWatcher.mockRejectedValueOnce(new Error('watch failed'));
     render(<LibraryDiagnosticsPanel />);
 
+    await openLab();
     await waitFor(() => expect(button('Start Watcher').disabled).toBe(false));
     fireEvent.click(button('Start Watcher'));
 
@@ -243,6 +262,7 @@ describe('LibraryDiagnosticsPanel', () => {
     const api = createApi({ ...baseState, moveCandidateEnabled: true, moveRepairLabEnabled: true }, [highCandidate]);
     render(<LibraryDiagnosticsPanel />);
 
+    await openLab();
     await screen.findByLabelText(`Select move candidate ${highCandidate.candidateId}`);
     fireEvent.click(button('Refresh Diagnostics'));
     await waitFor(() => expect(api.refreshDiagnostics).toHaveBeenCalled());
@@ -267,6 +287,7 @@ describe('LibraryDiagnosticsPanel', () => {
     });
     render(<LibraryDiagnosticsPanel />);
 
+    await openLab();
     await screen.findByText('lastMetadataBackfillCount');
     expect(screen.getByText('placeholderTrackCount')).toBeTruthy();
     expect(screen.getByText('lastSkippedByCacheCount')).toBeTruthy();
@@ -277,7 +298,8 @@ describe('LibraryDiagnosticsPanel', () => {
     const api = createApi({ ...baseState, placeholderTrackCount: 2 });
     render(<LibraryDiagnosticsPanel />);
 
-    await screen.findByText('Library Lab');
+    await openLab();
+    await waitFor(() => expect(button('Backfill Placeholder Metadata').disabled).toBe(false));
     fireEvent.click(button('Backfill Placeholder Metadata'));
 
     await waitFor(() => expect(api.backfillPlaceholderMetadata).toHaveBeenCalledTimes(1));
@@ -303,6 +325,7 @@ describe('LibraryDiagnosticsPanel', () => {
     });
     render(<LibraryDiagnosticsPanel />);
 
+    await openLab();
     expect(await screen.findByText('C:\\Music\\deleted.flac')).toBeTruthy();
     expect(screen.getByText('unlink')).toBeTruthy();
   });
