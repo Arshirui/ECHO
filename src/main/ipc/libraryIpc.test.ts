@@ -25,6 +25,23 @@ const closeDatabaseUserMocks = vi.hoisted(() => ({
   mv: vi.fn(),
   streaming: vi.fn(),
 }));
+const databaseManagerMock = vi.hoisted(() => ({
+  closeAllUsers: vi.fn(),
+  getState: vi.fn(() => ({
+    databasePath: 'D:\\UserData\\echo-library.sqlite',
+    openConnections: 0,
+    connectionServiceNames: [],
+    maintenanceInProgress: false,
+    activeMaintenanceReason: null,
+    lastCloseReason: null,
+    lastCheckpointAt: null,
+    lastCheckpointReason: null,
+    lastCheckpointHealth: null,
+    protected: false,
+    protectionRecoveryAction: null,
+  })),
+  runExclusiveMaintenance: vi.fn((_reason: string, action: () => unknown) => Promise.resolve().then(action)),
+}));
 const appSettingsMock = vi.hoisted(() => ({
   current: {
     networkMetadataEnabled: false,
@@ -81,6 +98,10 @@ vi.mock('../streaming/StreamingService', () => ({
 
 vi.mock('../app/appSettings', () => ({
   getAppSettings: () => appSettingsMock.current,
+}));
+
+vi.mock('../database/LibraryDatabaseManager', () => ({
+  getLibraryDatabaseManager: () => databaseManagerMock,
 }));
 
 const resetHandlers = (): void => {
@@ -307,6 +328,10 @@ describe('library IPC', () => {
     trashItemMock.mockReset();
     getLibraryServiceMock.mockReset();
     Object.values(closeDatabaseUserMocks).forEach((mock) => mock.mockReset());
+    databaseManagerMock.closeAllUsers.mockReset();
+    databaseManagerMock.getState.mockClear();
+    databaseManagerMock.runExclusiveMaintenance.mockClear();
+    databaseManagerMock.runExclusiveMaintenance.mockImplementation((_reason: string, action: () => unknown) => Promise.resolve().then(action));
     const { app } = await import('electron');
     vi.mocked(app.getPath).mockImplementation((name: string) => (name === 'downloads' ? 'D:\\Downloads' : 'D:\\UserData'));
     appSettingsMock.current = {
@@ -665,7 +690,7 @@ describe('library IPC', () => {
     writeFileSync(join(root, 'echo-library.sqlite-wal'), 'bad wal', 'utf8');
     writeFileSync(join(root, 'echo-library.sqlite-shm'), 'bad shm', 'utf8');
 
-    const result = handlers[IpcChannels.LibraryRepairDatabase]!() as LibraryDatabaseRepairResult;
+    const result = await handlers[IpcChannels.LibraryRepairDatabase]!() as LibraryDatabaseRepairResult;
 
     expect(result.readyForRescan).toBe(true);
     expect(result.removedDatabaseFiles).toEqual(expect.arrayContaining(['echo-library.sqlite', 'echo-library.sqlite-wal', 'echo-library.sqlite-shm']));
@@ -685,6 +710,7 @@ describe('library IPC', () => {
     vi.mocked(app.getPath).mockImplementation(() => root);
     createHealthyLibrary(root);
     const status = await handlers[IpcChannels.LibraryCreateDatabaseSnapshot]!() as LibraryDatabaseProtectionStatus;
+    Object.values(closeDatabaseUserMocks).forEach((mock) => mock.mockClear());
     writeFileSync(join(root, 'echo-library.sqlite'), 'bad current database', 'utf8');
     const snapshotId = status.latestHealthySnapshot?.id ?? '';
 
@@ -704,8 +730,7 @@ describe('library IPC', () => {
     vi.mocked(app.getPath).mockImplementation(() => root);
     createHealthyLibrary(root);
     await handlers[IpcChannels.LibraryCreateDatabaseSnapshot]!();
-
-    expect(() => handlers[IpcChannels.LibraryRestoreDatabaseSnapshot]!(null, '..\\echo-library.sqlite')).toThrow(/找不到这个曲库数据库快照/u);
+    await expect(handlers[IpcChannels.LibraryRestoreDatabaseSnapshot]!(null, '..\\echo-library.sqlite')).rejects.toThrow(/找不到这个曲库数据库快照/u);
   });
 
   it('opens an arbitrary file path in its folder', async () => {

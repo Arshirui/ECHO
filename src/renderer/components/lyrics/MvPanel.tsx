@@ -76,7 +76,7 @@ const isUnplayableSearchCandidate = (video: TrackVideo | null): boolean =>
   Boolean(video && video.sourceType === 'search_candidate' && (!video.playableInApp || !video.mediaUrl));
 
 const summarizeMvLoadError = (message: string): string => {
-  if (/database disk image is malformed|DatabaseHealthError|SQLITE_CORRUPT|file is not a database/i.test(message)) {
+  if (/MV database is temporarily unavailable|database disk image is malformed|DatabaseHealthError|SQLITE_CORRUPT|file is not a database/i.test(message)) {
     return 'MV 数据库不可读';
   }
   if (/network|fetch|timeout|ECONN|ENOTFOUND/i.test(message)) {
@@ -88,7 +88,7 @@ const summarizeMvLoadError = (message: string): string => {
 
 const isMvDatabaseLoadError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
-  return /database disk image is malformed|DatabaseHealthError|SQLITE_CORRUPT|file is not a database/i.test(message);
+  return /MV database is temporarily unavailable|database disk image is malformed|DatabaseHealthError|SQLITE_CORRUPT|file is not a database/i.test(message);
 };
 
 const getUnavailableReason = ({
@@ -472,14 +472,17 @@ export const MvPanel = ({
   );
 
   const resolveNetworkVideo = useCallback(async (video: TrackVideo | null): Promise<TrackVideo | null> => {
-    if (!video || video.provider === 'local' || !window.echo?.mv?.resolveStreams) {
+    if (!video || video.temporary || video.provider === 'local' || !window.echo?.mv?.resolveStreams) {
       return video;
     }
 
     try {
       const resolved = await window.echo.mv.resolveStreams(video.id);
       return resolved.video;
-    } catch {
+    } catch (resolveError) {
+      if (isMvDatabaseLoadError(resolveError)) {
+        throw resolveError;
+      }
       return video;
     }
   }, []);
@@ -507,6 +510,25 @@ export const MvPanel = ({
 
     await mvApi.searchNetworkCandidates?.(trackId);
     return null;
+  }, [artist, coverUrl, currentTrack, title, trackId]);
+
+  const getTemporaryPlayableForActiveTrack = useCallback(async (options: { forceSnapshot?: boolean } = {}): Promise<TrackVideo | null> => {
+    const mvApi = window.echo?.mv;
+    if (!trackId || !mvApi?.getTemporaryPlayableForSnapshot) {
+      return null;
+    }
+
+    const request = snapshotSearchRequestForTrack({
+      artist,
+      audioClock: audioClockRef.current,
+      coverUrl,
+      currentTrack,
+      fallbackMediaType: options.forceSnapshot ? 'local' : 'remote',
+      title,
+      trackId,
+    });
+
+    return mvApi.getTemporaryPlayableForSnapshot(request);
   }, [artist, coverUrl, currentTrack, title, trackId]);
 
   const loadSelected = useCallback(async (options: { preserveCurrent?: boolean } = {}): Promise<void> => {
@@ -562,7 +584,7 @@ export const MvPanel = ({
       if (requestRef.current === requestId) {
         if (isMvDatabaseLoadError(loadError)) {
           try {
-            const fallbackVideo = await searchCandidatesForActiveTrack({ forceSnapshot: true });
+            const fallbackVideo = await getTemporaryPlayableForActiveTrack({ forceSnapshot: true });
             const resolvedFallbackVideo = await resolveNetworkVideo(fallbackVideo);
             if (requestRef.current === requestId && resolvedFallbackVideo?.playableInApp && resolvedFallbackVideo.mediaUrl) {
               setSelectedVideo(resolvedFallbackVideo);
@@ -582,7 +604,7 @@ export const MvPanel = ({
         setIsLoading(false);
       }
     }
-  }, [loadSettings, resolveNetworkVideo, searchCandidatesForActiveTrack, streamingTarget, trackId]);
+  }, [getTemporaryPlayableForActiveTrack, loadSettings, resolveNetworkVideo, searchCandidatesForActiveTrack, streamingTarget, trackId]);
 
   useEffect(() => {
     if (!streamingTarget) {
@@ -649,8 +671,29 @@ export const MvPanel = ({
         setSelectedVideo(resolvedVideo);
       }
     })()
-      .catch((loadError) => {
+      .catch(async (loadError) => {
         if (requestRef.current === requestId) {
+          if (isMvDatabaseLoadError(loadError) && window.echo?.mv?.getTemporaryPlayableForSnapshot) {
+            try {
+              const temporaryVideo = await window.echo.mv.getTemporaryPlayableForSnapshot({
+                trackId: effectiveTrackId,
+                title,
+                artist,
+                durationSeconds: audioClockRef.current.durationSeconds,
+                coverThumb: coverUrl,
+                mediaType: 'streaming',
+                query: [title, artist].filter(Boolean).join(' '),
+              });
+              if (requestRef.current === requestId && temporaryVideo?.playableInApp && temporaryVideo.mediaUrl) {
+                setSelectedVideo(temporaryVideo);
+                setError(null);
+                return;
+              }
+            } catch {
+              // Keep the original database error visible if temporary playback cannot recover.
+            }
+          }
+
           setError(loadError instanceof Error ? loadError.message : String(loadError));
           setSelectedVideo(null);
         }
@@ -738,10 +781,12 @@ export const MvPanel = ({
         shouldSurfaceSelectedFallback,
         videoError,
       });
+  const temporaryPlaybackNotice = showVideo && selectedVideo?.temporary ? '临时 MV 播放中，数据库待修复' : null;
+  const mvNotice = unavailableReason ?? temporaryPlaybackNotice;
 
   useEffect(() => {
     setUnavailableNoticeDismissed(false);
-  }, [trackId, unavailableReason]);
+  }, [trackId, mvNotice]);
   const immersiveBackgroundStyle = useMemo(
     () =>
       ({
@@ -1059,10 +1104,10 @@ export const MvPanel = ({
 
   return (
     <>
-      {unavailableReason && !isUnavailableNoticeDismissed ? (
+      {mvNotice && !isUnavailableNoticeDismissed ? (
         <div className="lyrics-mv-unavailable-reason" aria-live="polite">
           <span>MV 不可用</span>
-          <strong>{unavailableReason}</strong>
+          <strong>{mvNotice}</strong>
           <button
             type="button"
             className="lyrics-mv-unavailable-close"

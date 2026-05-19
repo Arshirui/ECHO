@@ -42,6 +42,7 @@ import {
   repairProtectedLibraryDatabase,
   restoreProtectedLibraryDatabaseSnapshot,
 } from '../app/dataProtection';
+import { getLibraryDatabaseManager } from '../database/LibraryDatabaseManager';
 import { closeDefaultLibraryService, getLibraryService } from '../library/LibraryService';
 import { closeDefaultRemoteSourceService } from '../library/remote/RemoteSourceService';
 import { closeDefaultLyricsService } from '../lyrics/LyricsService';
@@ -78,7 +79,13 @@ const closeLibraryDatabaseUsers = (): void => {
   closeDefaultStreamingService();
   closeDefaultRemoteSourceService();
   closeDefaultLibraryService();
+  getLibraryDatabaseManager().closeAllUsers('manual-library-maintenance');
 };
+
+const getDatabaseProtectionStatusForRenderer = () => ({
+  ...getLibraryDatabaseProtectionStatus(app.getPath('userData'), isLibraryScanRunning()),
+  managerState: getLibraryDatabaseManager().getState(),
+});
 
 const isLibraryScanRunning = (): boolean => {
   try {
@@ -1529,20 +1536,28 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryPruneInvalidTracks, () => getLibraryService().pruneInvalidTracks());
   ipcMain.handle(IpcChannels.LibraryClearTracks, () => getLibraryService().clearTracks());
   ipcMain.handle(IpcChannels.LibraryClearCache, () => getLibraryService().clearCache());
-  ipcMain.handle(IpcChannels.LibraryGetDatabaseProtectionStatus, () =>
-    getLibraryDatabaseProtectionStatus(app.getPath('userData'), isLibraryScanRunning()),
-  );
+  ipcMain.handle(IpcChannels.LibraryGetDatabaseProtectionStatus, () => getDatabaseProtectionStatusForRenderer());
   ipcMain.handle(IpcChannels.LibraryCreateDatabaseSnapshot, async () => {
     assertNoRunningLibraryScan();
-    return createManualLibraryDatabaseSnapshot(app.getPath('userData'));
+    const manager = getLibraryDatabaseManager();
+    const status = await manager.runExclusiveMaintenance('manual-library-database-snapshot', async () => {
+      closeLibraryDatabaseUsers();
+      return createManualLibraryDatabaseSnapshot(app.getPath('userData'));
+    });
+    return {
+      ...status,
+      managerState: manager.getState(),
+    };
   });
   ipcMain.handle(IpcChannels.LibraryRestoreDatabaseSnapshot, (_event, snapshotId: unknown) => {
     assertNoRunningLibraryScan();
-    closeLibraryDatabaseUsers();
-    return restoreProtectedLibraryDatabaseSnapshot(requireText(snapshotId, 'snapshotId'), app.getPath('userData'));
+    return getLibraryDatabaseManager().runExclusiveMaintenance('manual-library-database-restore', () => {
+      closeLibraryDatabaseUsers();
+      return restoreProtectedLibraryDatabaseSnapshot(requireText(snapshotId, 'snapshotId'), app.getPath('userData'));
+    });
   });
   ipcMain.handle(IpcChannels.LibraryOpenDataProtectionFolder, async () => {
-    const status = getLibraryDatabaseProtectionStatus(app.getPath('userData'), isLibraryScanRunning());
+    const status = getDatabaseProtectionStatusForRenderer();
     mkdirSync(status.dataProtectionPath, { recursive: true });
     const errorMessage = await shell.openPath(status.dataProtectionPath);
     if (errorMessage) {
@@ -1551,13 +1566,17 @@ export const registerLibraryIpc = (): void => {
   });
   ipcMain.handle(IpcChannels.LibraryRepairDatabase, () => {
     assertNoRunningLibraryScan();
-    closeLibraryDatabaseUsers();
-    return repairProtectedLibraryDatabase(app.getPath('userData'));
+    return getLibraryDatabaseManager().runExclusiveMaintenance('manual-library-database-repair', () => {
+      closeLibraryDatabaseUsers();
+      return repairProtectedLibraryDatabase(app.getPath('userData'));
+    });
   });
   ipcMain.handle(IpcChannels.LibraryDeleteDatabase, () => {
     assertNoRunningLibraryScan();
-    closeLibraryDatabaseUsers();
-    return deleteProtectedLibraryDatabase(app.getPath('userData'));
+    return getLibraryDatabaseManager().runExclusiveMaintenance('manual-library-database-delete', () => {
+      closeLibraryDatabaseUsers();
+      return deleteProtectedLibraryDatabase(app.getPath('userData'));
+    });
   });
   ipcMain.handle(IpcChannels.LibraryNetworkRepairMissingMetadata, (_event, trackId: unknown) =>
     {

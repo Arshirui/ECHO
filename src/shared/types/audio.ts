@@ -1,4 +1,4 @@
-export type AudioOutputMode = 'shared' | 'exclusive' | 'asio';
+export type AudioOutputMode = 'shared' | 'exclusive' | 'asio' | 'system';
 export type AudioSharedBackend = 'auto' | 'windows' | 'directsound';
 
 export type AudioPlaybackState = 'idle' | 'loading' | 'playing' | 'paused' | 'stopped' | 'ended' | 'error';
@@ -66,7 +66,7 @@ export type AudioDeviceInfo = {
   id: string;
   index: number;
   name: string;
-  outputMode: Exclude<AudioOutputMode, 'exclusive'>;
+  outputMode: Exclude<AudioOutputMode, 'exclusive' | 'system'>;
   sampleRate: number | null;
   sharedDeviceSampleRate: number | null;
   isDefault: boolean;

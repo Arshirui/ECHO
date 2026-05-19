@@ -5,6 +5,62 @@ import { ipcRenderer } from 'electron';
 
 const listeners = new Map<string, (...args: unknown[]) => void>();
 let exposedApi: EchoApi | null = null;
+let fakeAudioInstances: FakeAudio[] = [];
+
+const createTestLocalStorage = (): Storage => {
+  const values = new Map<string, string>();
+  return {
+    get length() {
+      return values.size;
+    },
+    clear: vi.fn(() => values.clear()),
+    getItem: vi.fn((key: string) => values.get(key) ?? null),
+    key: vi.fn((index: number) => [...values.keys()][index] ?? null),
+    removeItem: vi.fn((key: string) => values.delete(key)),
+    setItem: vi.fn((key: string, value: string) => values.set(key, String(value))),
+  };
+};
+
+class FakeAudio {
+  preload = '';
+  src = '';
+  volume = 1;
+  playbackRate = 1;
+  currentTime = 0;
+  duration = 12;
+  error: MediaError | null = null;
+  readonly play = vi.fn(async () => {
+    this.emit('playing');
+  });
+  readonly pause = vi.fn(() => {
+    this.emit('pause');
+  });
+  readonly load = vi.fn(() => {
+    this.emit('loadstart');
+    this.emit('loadedmetadata');
+  });
+  private readonly eventListeners = new Map<string, Set<() => void>>();
+
+  constructor() {
+    fakeAudioInstances.push(this);
+  }
+
+  addEventListener(event: string, listener: () => void): void {
+    const listenersForEvent = this.eventListeners.get(event) ?? new Set<() => void>();
+    listenersForEvent.add(listener);
+    this.eventListeners.set(event, listenersForEvent);
+  }
+
+  removeAttribute(name: string): void {
+    if (name === 'src') {
+      this.src = '';
+    }
+  }
+
+  private emit(event: string): void {
+    this.eventListeners.get(event)?.forEach((listener) => listener());
+  }
+}
 
 vi.mock('electron', () => ({
   contextBridge: {
@@ -28,7 +84,16 @@ vi.mock('electron', () => ({
 describe('preload SMTC API', () => {
   beforeEach(async () => {
     listeners.clear();
+    fakeAudioInstances = [];
     exposedApi = null;
+    vi.stubGlobal('window', {
+      localStorage: createTestLocalStorage(),
+      setInterval: globalThis.setInterval,
+      clearInterval: globalThis.clearInterval,
+    });
+    window.localStorage.clear();
+    vi.stubGlobal('Audio', FakeAudio);
+    vi.mocked(ipcRenderer.invoke).mockReset();
     vi.resetModules();
     await import('./index');
   });
@@ -132,6 +197,45 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PlaybackOpenLocalAudioFiles);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PlaybackResolveLocalAudioFiles, ['D:\\Music\\song.flac']);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryOpenPathInFolder, 'D:\\Music\\song.flac');
+  });
+
+  it('routes remembered system audio playback through HTMLAudio instead of native IPC', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/test-token');
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    const status = await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\song.mp3',
+      trackId: 'track-1',
+      probe: { durationSeconds: 10 },
+    });
+
+    expect(ipcRenderer.invoke).not.toHaveBeenCalledWith(
+      IpcChannels.PlaybackPlayLocalFile,
+      expect.anything(),
+    );
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AudioCreateSystemStreamUrl, {
+      url: 'D:\\Music\\song.mp3',
+      headers: undefined,
+      mimeType: null,
+    });
+    expect(fakeAudioInstances).toHaveLength(1);
+    expect(fakeAudioInstances[0].src).toBe('echo-audio://system/test-token');
+    expect(fakeAudioInstances[0].play).toHaveBeenCalledTimes(1);
+    expect(status).toMatchObject({
+      state: 'playing',
+      currentTrackId: 'track-1',
+      durationMs: 12_000,
+      filePath: 'D:\\Music\\song.mp3',
+    });
   });
 
   it('subscribes to system local audio file open events and unsubscribes cleanly', () => {
@@ -254,6 +358,12 @@ describe('preload SMTC API', () => {
     await exposedApi!.mv.setSettings({ maxQuality: '2160p' });
     await exposedApi!.mv.findLocalCandidates('track-1');
     await exposedApi!.mv.searchNetworkCandidates('track-1');
+    await exposedApi!.mv.getTemporaryPlayableForSnapshot({
+      trackId: 'track-1',
+      title: 'Song',
+      artist: 'Artist',
+      mediaType: 'local',
+    });
     await exposedApi!.mv.getCandidates('track-1');
     await exposedApi!.mv.resolveStreams('video-1');
     await exposedApi!.mv.setQuality('video-1', 'auto');
@@ -270,6 +380,12 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvSetSettings, { maxQuality: '2160p' });
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvFindLocalCandidates, 'track-1');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvSearchNetworkCandidates, 'track-1', undefined);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvGetTemporaryPlayableForSnapshot, {
+      trackId: 'track-1',
+      title: 'Song',
+      artist: 'Artist',
+      mediaType: 'local',
+    });
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvGetCandidates, 'track-1');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvResolveStreams, 'video-1');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MvSetQuality, 'video-1', 'auto');

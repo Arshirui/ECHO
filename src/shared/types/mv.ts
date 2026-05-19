@@ -77,6 +77,7 @@ export type TrackVideo = {
   score: number;
   selected: boolean;
   playableInApp: boolean;
+  temporary?: boolean;
   rawProviderJson: unknown | null;
   createdAt: string;
   updatedAt: string;

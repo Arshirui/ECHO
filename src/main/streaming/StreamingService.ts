@@ -1,6 +1,5 @@
-import { join } from 'node:path';
-import electron from 'electron';
-import { createDatabase, type EchoDatabase } from '../database/createDatabase';
+import type { EchoDatabase } from '../database/createDatabase';
+import { getLibraryDatabaseManager, type LibraryDatabaseConnection } from '../database/LibraryDatabaseManager';
 import { getAppSettings } from '../app/appSettings';
 import { assertProtectedLibraryAvailable } from '../app/dataProtection';
 import { BPM_CONFIDENCE_THRESHOLD } from '../../shared/constants/audioAnalysis';
@@ -780,18 +779,13 @@ export const createStreamingService = (database: EchoDatabase): StreamingService
 };
 
 let defaultStreamingService: StreamingService | null = null;
-let defaultStreamingDatabase: EchoDatabase | null = null;
+let defaultStreamingDatabaseConnection: LibraryDatabaseConnection | null = null;
 
 export const getStreamingService = (): StreamingService => {
   assertProtectedLibraryAvailable();
   if (!defaultStreamingService) {
-    const electronApp = (electron as unknown as { app?: { getPath: (name: string) => string } }).app;
-    if (!electronApp) {
-      throw new Error('Electron app module is unavailable outside the Electron main process');
-    }
-
-    defaultStreamingDatabase = createDatabase(join(electronApp.getPath('userData'), 'echo-library.sqlite'));
-    defaultStreamingService = createStreamingService(defaultStreamingDatabase);
+    defaultStreamingDatabaseConnection = getLibraryDatabaseManager().openServiceConnection('streaming');
+    defaultStreamingService = createStreamingService(defaultStreamingDatabaseConnection.database);
   }
 
   return defaultStreamingService;
@@ -799,10 +793,10 @@ export const getStreamingService = (): StreamingService => {
 
 export const closeDefaultStreamingService = (): void => {
   defaultStreamingService = null;
-  if (!defaultStreamingDatabase) {
+  if (!defaultStreamingDatabaseConnection) {
     return;
   }
 
-  defaultStreamingDatabase.close();
-  defaultStreamingDatabase = null;
+  defaultStreamingDatabaseConnection.close();
+  defaultStreamingDatabaseConnection = null;
 };

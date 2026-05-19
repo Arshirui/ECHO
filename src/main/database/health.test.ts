@@ -29,14 +29,24 @@ describe('database health', () => {
     opened.close();
   });
 
-  it('quarantines a malformed database before creating a clean replacement', () => {
+  it('throws on a malformed database by default without replacing user data', () => {
     const databasePath = join(root, 'library.sqlite');
     writeFileSync(databasePath, 'not sqlite', 'utf8');
     writeFileSync(`${databasePath}-wal`, 'stale wal', 'utf8');
     writeFileSync(`${databasePath}-shm`, 'stale shm', 'utf8');
 
     expect(checkDatabaseHealth(databasePath).status).toBe('corrupt');
-    const opened = createDatabase(databasePath);
+    expect(() => createDatabase(databasePath)).toThrow(/not a database|malformed|corrupt/i);
+    expect(readdirSync(root)).toEqual(expect.arrayContaining(['library.sqlite', 'library.sqlite-wal', 'library.sqlite-shm']));
+  });
+
+  it('quarantines a malformed database only when explicitly requested', () => {
+    const databasePath = join(root, 'library.sqlite');
+    writeFileSync(databasePath, 'not sqlite', 'utf8');
+    writeFileSync(`${databasePath}-wal`, 'stale wal', 'utf8');
+    writeFileSync(`${databasePath}-shm`, 'stale shm', 'utf8');
+
+    const opened = createDatabase(databasePath, { corruptionPolicy: 'quarantine-for-test-or-manual' });
 
     expect(opened.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tracks'").get()).toBeTruthy();
     opened.close();

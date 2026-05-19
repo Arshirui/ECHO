@@ -118,6 +118,33 @@ describe('WindowsSmtcService', () => {
     );
   });
 
+  it('falls back quietly when the helper stdin pipe breaks', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const host = createFakeHost();
+    const writes: string[] = [];
+    host.stdin.on('data', (chunk) => writes.push(chunk.toString()));
+    const service = new WindowsSmtcService({
+      spawnHost: vi.fn(() => host as never),
+      hostExists: () => true,
+      resolveHostPath: () => 'D:\\Echo\\echo-smtc-host.exe',
+      coverCache: { resolve: vi.fn(async () => null) },
+      logger,
+    });
+
+    await service.initialize();
+    host.stdin.emit('error', new Error('write EPIPE'));
+    await service.setPlaybackState('playing');
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[SMTC] Windows SMTC host stdin closed; using no-op bridge mode',
+      expect.objectContaining({
+        hostPath: 'D:\\Echo\\echo-smtc-host.exe',
+        error: 'write EPIPE',
+      }),
+    );
+    expect(writes.join('')).not.toContain('"type":"setPlaybackState"');
+  });
+
   it('disposes the helper gracefully without force killing when it exits', async () => {
     const host = createFakeHost();
     const writes: string[] = [];

@@ -109,6 +109,7 @@ const renderPanel = (
       setSettings: vi.fn(),
       findLocalCandidates: vi.fn().mockResolvedValue([]),
       searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+      getTemporaryPlayableForSnapshot: vi.fn().mockResolvedValue(null),
       getCandidates: vi.fn().mockResolvedValue([]),
       resolveStreams: vi.fn().mockResolvedValue({ video: selected, variants: [] }),
       setQuality: vi.fn(),
@@ -984,32 +985,17 @@ describe('MvPanel', () => {
     expect(screen.getByText('本地视频格式不支持')).toBeTruthy();
   });
 
-  it('falls back to title and artist snapshot search when selected MV lookup hits a database error', async () => {
+  it('uses temporary MV playback when selected MV lookup hits a database error', async () => {
     const recoveredVideo = makeVideo({
       id: 'snapshot-video',
       provider: 'bilibili',
-      sourceType: 'search_candidate',
+      sourceType: 'stream',
       sourceId: 'BVsnapshot',
-      mediaUrl: 'echo-mv://stream/snapshot-video/bilibili-qn-80',
+      mediaUrl: 'echo-mv://ephemeral/token-1',
       title: 'Recovered MV',
+      temporary: true,
     });
-    const searchNetworkCandidatesForSnapshot = vi.fn().mockResolvedValue([
-      {
-        id: recoveredVideo.id,
-        provider: recoveredVideo.provider,
-        sourceType: recoveredVideo.sourceType,
-        sourceId: recoveredVideo.sourceId,
-        title: recoveredVideo.title,
-        artist: recoveredVideo.artist,
-        url: recoveredVideo.url,
-        providerUrl: recoveredVideo.providerUrl,
-        thumbnailUrl: recoveredVideo.thumbnailUrl,
-        durationSeconds: recoveredVideo.durationSeconds,
-        score: recoveredVideo.score,
-        playableInApp: true,
-      },
-    ]);
-    const selectVideo = vi.fn().mockResolvedValue(recoveredVideo);
+    const getTemporaryPlayableForSnapshot = vi.fn().mockResolvedValue(recoveredVideo);
     window.echo = {
       playback: {
         seek: vi.fn(),
@@ -1020,14 +1006,14 @@ describe('MvPanel', () => {
         setSettings: vi.fn(),
         findLocalCandidates: vi.fn().mockResolvedValue([]),
         searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+        getTemporaryPlayableForSnapshot,
         getCandidates: vi.fn().mockResolvedValue([]),
-        searchNetworkCandidatesForSnapshot,
         resolveStreams: vi.fn().mockResolvedValue({ video: recoveredVideo, variants: [] }),
         setQuality: vi.fn(),
         setOffset: vi.fn(),
         chooseLocalVideo: vi.fn().mockResolvedValue(null),
         bindLocalVideo: vi.fn(),
-        selectVideo,
+        selectVideo: vi.fn(),
         clearSelected: vi.fn(),
         openExternal: vi.fn(),
       },
@@ -1045,7 +1031,7 @@ describe('MvPanel', () => {
     );
 
     await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe(recoveredVideo.mediaUrl));
-    expect(searchNetworkCandidatesForSnapshot).toHaveBeenCalledWith(
+    expect(getTemporaryPlayableForSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         trackId: 'track-1',
         title: 'Test Song',
@@ -1054,7 +1040,8 @@ describe('MvPanel', () => {
         query: 'Test Song Test Artist',
       }),
     );
-    expect(selectVideo).toHaveBeenCalledWith('track-1', recoveredVideo.id);
+    expect(window.echo.mv.selectVideo).not.toHaveBeenCalled();
+    expect(await screen.findByText('临时 MV 播放中，数据库待修复')).toBeTruthy();
     expect(screen.queryByText('MV 数据库不可读')).toBeNull();
   });
 

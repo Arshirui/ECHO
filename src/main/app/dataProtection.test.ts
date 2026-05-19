@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createManualLibraryDatabaseSnapshot,
+  createScanGuardLibraryDatabaseSnapshot,
   createDataProtectionSnapshot,
   ensureDataProtection,
   getLibraryDatabaseProtectionStatus,
@@ -14,9 +15,11 @@ import {
   migrateLegacyProtectedData,
   recordLibraryDatabaseMaintenanceEvent,
   restoreProtectedLibraryDatabaseSnapshot,
+  restoreProtectedLibraryDatabaseFromScanGuard,
   restoreMissingProtectedData,
   writeDataProtectionManifest,
 } from './dataProtection';
+import type { LibraryScanStatus } from '../../shared/types/library';
 
 vi.mock('electron', () => ({
   app: {
@@ -35,6 +38,25 @@ const createHealthyLibrary = (path: string): void => {
   database.prepare('INSERT INTO tracks (id, title) VALUES (?, ?)').run('track-1', 'Song');
   database.close();
 };
+
+const scanStatus = (patch: Partial<LibraryScanStatus> = {}): LibraryScanStatus => ({
+  id: 'scan-1',
+  folderId: 'folder-1',
+  status: 'failed',
+  phase: 'failed',
+  totalFiles: 3,
+  processedFiles: 3,
+  skippedFiles: 0,
+  addedTracks: 1,
+  updatedTracks: 1,
+  removedTracks: 0,
+  coverCount: 1,
+  errorCount: 1,
+  errors: [],
+  startedAt: '2026-05-18T00:00:00.000Z',
+  finishedAt: '2026-05-18T00:01:00.000Z',
+  ...patch,
+});
 
 describe('dataProtection', () => {
   let tempDir: string;
@@ -63,7 +85,7 @@ describe('dataProtection', () => {
     const settingsPath = join(tempDir, 'echo-settings.json');
     const libraryPath = join(tempDir, 'echo-library.sqlite');
     writeFileSync(settingsPath, '{"theme":"dark"}\n', 'utf8');
-    writeFileSync(libraryPath, 'library-v1', 'utf8');
+    createHealthyLibrary(libraryPath);
 
     const snapshot = await createDataProtectionSnapshot('startup', tempDir, new Date('2026-05-16T00:00:00.000Z'));
     expect(snapshot.copied).toEqual(expect.arrayContaining(['echo-settings.json', 'echo-library.sqlite']));
@@ -75,7 +97,26 @@ describe('dataProtection', () => {
 
     expect(restore.restored).toEqual(['echo-library.sqlite']);
     expect(readText(settingsPath)).toBe('{"theme":"light"}\n');
-    expect(readText(libraryPath)).toBe('library-v1');
+    const restoredDatabase = new Database(libraryPath, { readonly: true });
+    expect(restoredDatabase.prepare<[string], { title: string }>('SELECT title FROM tracks WHERE id = ?').get('track-1')).toMatchObject({ title: 'Song' });
+    restoredDatabase.close();
+  });
+
+  it('restores a missing library database from the latest healthy database snapshot', async () => {
+    const libraryPath = join(tempDir, 'echo-library.sqlite');
+    createHealthyLibrary(libraryPath);
+    await createDataProtectionSnapshot('scan-completed-library-snapshot', tempDir, new Date('2026-05-17T00:00:00.000Z'));
+    writeFileSync(libraryPath, 'bad newer database', 'utf8');
+    await createDataProtectionSnapshot('startup', tempDir, new Date('2026-05-18T00:00:00.000Z'));
+    rmSync(libraryPath);
+
+    const restore = restoreMissingProtectedData(tempDir);
+    const restoredDatabase = new Database(libraryPath, { readonly: true });
+    const row = restoredDatabase.prepare<[string], { title: string }>('SELECT title FROM tracks WHERE id = ?').get('track-1');
+    restoredDatabase.close();
+
+    expect(restore.restored).toContain('echo-library.sqlite');
+    expect(row?.title).toBe('Song');
   });
 
   it('migrates stronger legacy echo-next data over a fresh protected directory', async () => {
@@ -261,6 +302,25 @@ describe('dataProtection', () => {
     );
   });
 
+  it('restores the scan guard snapshot after scan-time corruption', async () => {
+    const databasePath = join(tempDir, 'echo-library.sqlite');
+    createHealthyLibrary(databasePath);
+    const guard = await createScanGuardLibraryDatabaseSnapshot(scanStatus({ status: 'running', phase: 'reading_metadata' }), tempDir);
+    expect(guard?.libraryHealth.status).toBe('ok');
+    writeFileSync(databasePath, 'bad after scan', 'utf8');
+
+    const result = restoreProtectedLibraryDatabaseFromScanGuard(guard!, scanStatus(), new Error('database disk image is malformed'), tempDir);
+    const restoredDatabase = new Database(databasePath, { readonly: true });
+    const row = restoredDatabase.prepare<[string], { title: string }>('SELECT title FROM tracks WHERE id = ?').get('track-1');
+    restoredDatabase.close();
+
+    expect(result.health.status).toBe('ok');
+    expect(row?.title).toBe('Song');
+    expect(getLibraryDatabaseProtectionStatus(tempDir).maintenanceEvents[0]).toEqual(
+      expect.objectContaining({ action: 'scan-auto-restore', restoredSnapshotId: guard?.id }),
+    );
+  });
+
   it('does not restore a snapshot id that the main process did not enumerate', async () => {
     createHealthyLibrary(join(tempDir, 'echo-library.sqlite'));
     await createManualLibraryDatabaseSnapshot(tempDir);
@@ -268,20 +328,21 @@ describe('dataProtection', () => {
     expect(() => restoreProtectedLibraryDatabaseSnapshot('..\\echo-library.sqlite', tempDir)).toThrow(/找不到这个曲库数据库快照/u);
   });
 
-  it('archives and removes a corrupt library even when a healthy snapshot exists', async () => {
+  it('archives and protects a corrupt startup library even when a healthy snapshot exists', async () => {
     createHealthyLibrary(join(tempDir, 'echo-library.sqlite'));
     await createDataProtectionSnapshot('startup', tempDir, new Date('2026-05-17T00:00:00.000Z'));
     writeFileSync(join(tempDir, 'echo-library.sqlite'), 'not sqlite', 'utf8');
 
     const result = await ensureDataProtection('startup', tempDir);
 
-    expect(result.recovery.action).toBe('reset');
-    expect(result.libraryHealth.status).toBe('ok');
-    expect(existsSync(join(tempDir, 'echo-library.sqlite'))).toBe(false);
+    expect(result.recovery.action).toBe('archivedOnly');
+    expect(result.libraryHealth.status).toBe('corrupt');
+    expect(readText(join(tempDir, 'echo-library.sqlite'))).toBe('not sqlite');
     expect(existsSync(join(tempDir, 'data-protection', 'corrupt-archives'))).toBe(true);
+    expect(isProtectedLibraryAvailable()).toBe(false);
   });
 
-  it('does not restore old snapshots after a corrupt startup database reset', async () => {
+  it('does not restore old snapshots after a corrupt startup database is protected', async () => {
     createHealthyLibrary(join(tempDir, 'echo-library.sqlite'));
     await createDataProtectionSnapshot('startup', tempDir, new Date('2026-05-17T00:00:00.000Z'));
     writeFileSync(join(tempDir, 'echo-library.sqlite'), 'bad newer snapshot', 'utf8');
@@ -290,19 +351,19 @@ describe('dataProtection', () => {
 
     const result = await ensureDataProtection('startup', tempDir);
 
-    expect(result.recovery.action).toBe('reset');
+    expect(result.recovery.action).toBe('archivedOnly');
     expect(result.recovery.sourceSnapshotPath).toBeUndefined();
-    expect(existsSync(join(tempDir, 'echo-library.sqlite'))).toBe(false);
+    expect(readText(join(tempDir, 'echo-library.sqlite'))).toBe('bad current database');
   });
 
-  it('resets a corrupt library when no healthy snapshot exists', async () => {
+  it('keeps a corrupt library in place when no healthy snapshot exists', async () => {
     writeFileSync(join(tempDir, 'echo-library.sqlite'), 'bad current database', 'utf8');
 
     const result = await ensureDataProtection('startup', tempDir);
 
-    expect(result.recovery.action).toBe('reset');
-    expect(result.libraryHealth.status).toBe('ok');
-    expect(existsSync(join(tempDir, 'echo-library.sqlite'))).toBe(false);
+    expect(result.recovery.action).toBe('archivedOnly');
+    expect(result.libraryHealth.status).toBe('corrupt');
+    expect(readText(join(tempDir, 'echo-library.sqlite'))).toBe('bad current database');
     const archivesPath = join(tempDir, 'data-protection', 'corrupt-archives');
     const archiveNames = readdirSync(archivesPath);
     expect(archiveNames.length).toBeGreaterThan(0);

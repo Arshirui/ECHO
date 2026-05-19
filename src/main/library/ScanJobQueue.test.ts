@@ -551,6 +551,54 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(onScanSettled).toHaveBeenCalledWith(expect.objectContaining({ id: job.id, status: 'completed' }));
   });
 
+  it('creates a recovery snapshot after a successful scan writes library changes', async () => {
+    const root = makeTempRoot();
+    const [file] = makeFiles(root, 1);
+    const store = new FakeStore();
+    const createCompletedScanSnapshot = vi.fn();
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([file]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      { coverCacheDir: join(root, 'custom-cache'), createCompletedScanSnapshot },
+    );
+
+    const job = queue.scanFolder(baseFolder(root));
+    await queue.waitForIdle(job.id);
+
+    expect(createCompletedScanSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ id: job.id, status: 'completed', addedTracks: 1 }),
+    );
+  });
+
+  it('keeps a successful scan completed when the recovery snapshot cannot be written', async () => {
+    const root = makeTempRoot();
+    const [file] = makeFiles(root, 1);
+    const store = new FakeStore();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([file]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      {
+        coverCacheDir: join(root, 'custom-cache'),
+        createCompletedScanSnapshot: () => {
+          throw new Error('snapshot locked');
+        },
+      },
+    );
+
+    const job = queue.scanFolder(baseFolder(root));
+    await queue.waitForIdle(job.id);
+
+    expect(store.getScanJob()).toMatchObject({ id: job.id, status: 'completed', addedTracks: 1 });
+    warn.mockRestore();
+  });
+
   it('defers grouping refresh while scan pressure should stay low, then refreshes when idle', async () => {
     vi.useFakeTimers();
     const root = makeTempRoot();
@@ -1022,6 +1070,42 @@ describe('ScanJobQueue local path rescans', () => {
     expect(status.status).toBe('cancelled');
     expect(status.phase).toBe('cancelled');
     expect(store.upsertedTracks).toEqual([]);
+  });
+
+  it('recovers from a scan guard after database health fails at the end of a scan', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    const filePath = join(folder.path, 'guard.flac');
+    writeFileSync(filePath, 'guard');
+    const store = new FakeStore();
+    const guard = { id: 'scan-guard-1' };
+    const recoverDatabaseFromScanGuard = vi.fn();
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      {
+        coverCacheDir: join(root, 'custom-cache'),
+        createDatabaseScanGuard: () => guard,
+        checkDatabaseHealth: () => {
+          throw new Error('database disk image is malformed');
+        },
+        recoverDatabaseFromScanGuard,
+      },
+    );
+
+    const job = queue.scanPaths(folder, [filePath]);
+    await queue.waitForIdle(job.id);
+
+    expect(store.getScanJob()?.status).toBe('failed');
+    expect(recoverDatabaseFromScanGuard).toHaveBeenCalledWith(
+      guard,
+      expect.objectContaining({ id: job.id, status: 'failed' }),
+      expect.objectContaining({ message: 'database disk image is malformed' }),
+    );
   });
 
   it('writes identity observation for changed files without changing scan semantics', async () => {

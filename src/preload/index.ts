@@ -1,7 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IpcChannels } from '../shared/constants/ipcChannels';
 import type { EchoApi } from './apiTypes';
+import type { AudioOutputSettings, AudioStatus, PlaybackSpeedMode } from '../shared/types/audio';
 import type { GlobalShortcutAction } from '../shared/types/globalShortcuts';
+import type {
+  PlaybackMediaStartRequest,
+  PlaybackResolvedMediaSource,
+  PlaybackStartRequest,
+  PlaybackStatus,
+} from '../shared/types/playback';
 import type { SmtcCommand } from '../shared/types/smtc';
 import type { UpdateStatus } from '../shared/types/updates';
 
@@ -21,6 +28,418 @@ type AutomixAdvancePayload = {
   nextStartSeconds?: number;
 };
 const automixAdvanceHandlers = new Set<(event: AutomixAdvancePayload) => void>();
+
+type SystemPlaybackSource = PlaybackResolvedMediaSource & {
+  trackId?: string | null;
+};
+
+const systemAudioWarning = 'system_audio_compatibility_mode';
+const systemAudioDeviceName = 'Windows default output';
+const audioStatusHandlers = new Set<(status: AudioStatus) => void>();
+const readPersistedSystemAudioMode = (): boolean => {
+  try {
+    const raw = window.localStorage.getItem('echo-next.audio-output-memory');
+    if (!raw) {
+      return false;
+    }
+    const parsed = JSON.parse(raw) as { enabled?: unknown; outputMode?: unknown };
+    return parsed.enabled === true && parsed.outputMode === 'system';
+  } catch {
+    return false;
+  }
+};
+let systemAudioElement: HTMLAudioElement | null = null;
+let systemAudioModeActive = readPersistedSystemAudioMode();
+let systemAudioState: AudioStatus['state'] = 'idle';
+let systemAudioSource: SystemPlaybackSource | null = null;
+let systemAudioObjectUrl: string | null = null;
+let systemAudioError: string | null = null;
+let systemAudioStatusTimer: number | null = null;
+let lastNativeAudioStatus: AudioStatus | null = null;
+let systemOutputSettings: Pick<AudioStatus, 'volume' | 'playbackRate' | 'playbackSpeedMode'> = {
+  volume: 1,
+  playbackRate: 1,
+  playbackSpeedMode: 'nightcore',
+};
+
+const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
+const isRendererReadyUrl = (value: string): boolean => /^(?:blob|data):/iu.test(value.trim());
+
+const createFallbackAudioStatus = (): AudioStatus => ({
+  host: 'ready',
+  state: 'idle',
+  outputDeviceId: null,
+  outputDeviceName: systemAudioDeviceName,
+  outputDeviceType: 'system',
+  outputBackend: 'windows-system-audio',
+  activeOutputBackendImpl: 'electron-html-audio',
+  outputMode: 'system',
+  sharedBackend: 'auto',
+  useJuceOutputRequested: false,
+  useJuceDecodeRequested: false,
+  activeDecodeBackendImpl: 'chromium-media',
+  dsdOutputModeRequested: 'pcm',
+  activeDsdOutputMode: null,
+  dsdNativeSampleRate: null,
+  dsdTransportSampleRate: null,
+  volume: systemOutputSettings.volume,
+  playbackRate: systemOutputSettings.playbackRate,
+  playbackSpeedMode: systemOutputSettings.playbackSpeedMode,
+  currentFilePath: null,
+  currentTrackId: null,
+  durationSeconds: 0,
+  positionSeconds: 0,
+  channels: null,
+  codec: null,
+  bitDepth: null,
+  bitrate: null,
+  fileSampleRate: null,
+  decoderOutputSampleRate: null,
+  requestedOutputSampleRate: null,
+  actualDeviceSampleRate: null,
+  sharedDeviceSampleRate: null,
+  resampling: false,
+  ffmpegPath: null,
+  ffmpegSource: null,
+  ffmpegVersion: null,
+  ffmpegHealthy: false,
+  soxrAvailable: false,
+  resamplerEngine: 'default',
+  resamplerFallbackActive: false,
+  bitPerfectCandidate: false,
+  sampleRateMismatch: false,
+  latencyProfile: 'balanced',
+  eqEnabled: false,
+  channelBalanceEnabled: false,
+  dspActive: false,
+  preampDb: 0,
+  eqPresetName: null,
+  clippingRisk: false,
+  bitPerfectDisabledReason: systemAudioWarning,
+  sharedStabilityTier: null,
+  nativeDeviceBufferFrames: null,
+  nativeRequestedBufferFrames: null,
+  nativeActualBufferFrames: null,
+  nativeOutputLatencyMs: null,
+  nativePositionStalenessMs: null,
+  nativeFifoCapacityFrames: null,
+  nativeStartupPrebufferFrames: null,
+  nativeBufferedFrames: null,
+  nativeBufferedMs: null,
+  nativeUnderrunCallbacks: 0,
+  nativeUnderrunFrames: 0,
+  asioOutputChannelStart: null,
+  lastSharedStabilityRecoveryAt: null,
+  warnings: [systemAudioWarning],
+  error: null,
+});
+
+const finiteSeconds = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+
+const getSystemDurationSeconds = (): number => {
+  const elementDuration = finiteSeconds(systemAudioElement?.duration);
+  const sourceDuration = finiteSeconds(systemAudioSource?.durationSeconds ?? undefined);
+  const probeDuration = finiteSeconds(systemAudioSource?.probe?.durationSeconds);
+
+  return elementDuration ?? sourceDuration ?? probeDuration ?? 0;
+};
+
+const getSystemPositionSeconds = (): number => finiteSeconds(systemAudioElement?.currentTime) ?? 0;
+
+const createSystemAudioStatus = (): AudioStatus => {
+  const base = lastNativeAudioStatus ?? createFallbackAudioStatus();
+  const probe = systemAudioSource?.probe;
+  const warnings = new Set([...(Array.isArray(base.warnings) ? base.warnings : []), systemAudioWarning]);
+
+  return {
+    ...base,
+    host: 'ready',
+    state: systemAudioState,
+    outputDeviceId: null,
+    outputDeviceName: systemAudioDeviceName,
+    outputDeviceType: 'system',
+    outputBackend: 'windows-system-audio',
+    activeOutputBackendImpl: 'electron-html-audio',
+    outputMode: 'system',
+    sharedBackend: 'auto',
+    useJuceOutputRequested: false,
+    useJuceDecodeRequested: false,
+    activeDecodeBackendImpl: 'chromium-media',
+    dsdOutputModeRequested: 'pcm',
+    activeDsdOutputMode: null,
+    dsdNativeSampleRate: null,
+    dsdTransportSampleRate: null,
+    volume: systemOutputSettings.volume,
+    playbackRate: systemOutputSettings.playbackRate,
+    playbackSpeedMode: systemOutputSettings.playbackSpeedMode,
+    currentFilePath: systemAudioSource?.filePath ?? null,
+    currentTrackId: systemAudioSource?.trackId ?? null,
+    durationSeconds: getSystemDurationSeconds(),
+    positionSeconds: getSystemPositionSeconds(),
+    channels: probe?.channels ?? null,
+    codec: probe?.codec ?? null,
+    bitDepth: probe?.bitDepth ?? null,
+    bitrate: probe?.bitrate ?? null,
+    fileSampleRate: probe?.fileSampleRate ?? null,
+    decoderOutputSampleRate: probe?.fileSampleRate ?? null,
+    requestedOutputSampleRate: null,
+    actualDeviceSampleRate: null,
+    sharedDeviceSampleRate: null,
+    resampling: false,
+    bitPerfectCandidate: false,
+    sampleRateMismatch: false,
+    latencyProfile: 'balanced',
+    eqEnabled: false,
+    channelBalanceEnabled: false,
+    dspActive: false,
+    preampDb: 0,
+    eqPresetName: null,
+    clippingRisk: false,
+    audioLevels: undefined,
+    bitPerfectDisabledReason: systemAudioWarning,
+    sharedStabilityTier: null,
+    nativeDeviceBufferFrames: null,
+    nativeRequestedBufferFrames: null,
+    nativeActualBufferFrames: null,
+    nativeOutputLatencyMs: null,
+    nativePositionStalenessMs: null,
+    nativeFifoCapacityFrames: null,
+    nativeStartupPrebufferFrames: null,
+    nativeBufferedFrames: null,
+    nativeBufferedMs: null,
+    nativeUnderrunCallbacks: 0,
+    nativeUnderrunFrames: 0,
+    asioOutputChannelStart: null,
+    lastSharedStabilityRecoveryAt: null,
+    warnings: Array.from(warnings),
+    error: systemAudioError,
+  };
+};
+
+const emitSystemAudioStatus = (): AudioStatus => {
+  const status = createSystemAudioStatus();
+  for (const handler of audioStatusHandlers) {
+    handler(status);
+  }
+  return status;
+};
+
+const startSystemStatusTimer = (): void => {
+  if (systemAudioStatusTimer !== null) {
+    return;
+  }
+
+  systemAudioStatusTimer = window.setInterval(() => {
+    if (systemAudioModeActive && (systemAudioState === 'playing' || systemAudioState === 'loading')) {
+      emitSystemAudioStatus();
+    }
+  }, 500);
+};
+
+const stopSystemStatusTimer = (): void => {
+  if (systemAudioStatusTimer === null) {
+    return;
+  }
+
+  window.clearInterval(systemAudioStatusTimer);
+  systemAudioStatusTimer = null;
+};
+
+const releaseSystemObjectUrl = (): void => {
+  if (systemAudioObjectUrl) {
+    URL.revokeObjectURL(systemAudioObjectUrl);
+    systemAudioObjectUrl = null;
+  }
+};
+
+const applySystemOutputSettings = (settings: Partial<AudioOutputSettings> | null | undefined, base?: AudioStatus | null): void => {
+  const nextVolume = typeof settings?.volume === 'number' && Number.isFinite(settings.volume)
+    ? Math.max(0, Math.min(1, settings.volume))
+    : base?.volume;
+  const nextPlaybackRate = typeof settings?.playbackRate === 'number' && Number.isFinite(settings.playbackRate)
+    ? Math.max(0.5, Math.min(2, settings.playbackRate))
+    : base?.playbackRate;
+  const nextPlaybackSpeedMode: PlaybackSpeedMode =
+    settings?.playbackSpeedMode === 'daycore' || settings?.playbackSpeedMode === 'speed'
+      ? settings.playbackSpeedMode
+      : base?.playbackSpeedMode ?? systemOutputSettings.playbackSpeedMode;
+
+  systemOutputSettings = {
+    volume: nextVolume ?? systemOutputSettings.volume,
+    playbackRate: nextPlaybackRate ?? systemOutputSettings.playbackRate,
+    playbackSpeedMode: nextPlaybackSpeedMode,
+  };
+
+  if (systemAudioElement) {
+    systemAudioElement.volume = systemOutputSettings.volume;
+    systemAudioElement.playbackRate = systemOutputSettings.playbackRate;
+  }
+};
+
+const toSystemPlaybackStatus = (): PlaybackStatus => ({
+  state: systemAudioState,
+  currentTrackId: systemAudioSource?.trackId ?? null,
+  positionMs: Math.round(getSystemPositionSeconds() * 1000),
+  durationMs: Math.round(getSystemDurationSeconds() * 1000),
+  filePath: systemAudioSource?.filePath ?? null,
+});
+
+const ensureSystemAudioElement = (): HTMLAudioElement => {
+  if (systemAudioElement) {
+    return systemAudioElement;
+  }
+
+  const element = new Audio();
+  element.preload = 'auto';
+  element.addEventListener('loadstart', () => {
+    systemAudioState = 'loading';
+    systemAudioError = null;
+    emitSystemAudioStatus();
+  });
+  element.addEventListener('loadedmetadata', () => emitSystemAudioStatus());
+  element.addEventListener('playing', () => {
+    systemAudioState = 'playing';
+    systemAudioError = null;
+    startSystemStatusTimer();
+    emitSystemAudioStatus();
+  });
+  element.addEventListener('pause', () => {
+    if (systemAudioState !== 'stopped' && systemAudioState !== 'ended' && systemAudioState !== 'error') {
+      systemAudioState = 'paused';
+    }
+    stopSystemStatusTimer();
+    emitSystemAudioStatus();
+  });
+  element.addEventListener('ended', () => {
+    systemAudioState = 'ended';
+    stopSystemStatusTimer();
+    emitSystemAudioStatus();
+  });
+  element.addEventListener('error', () => {
+    systemAudioState = 'error';
+    systemAudioError = element.error?.message || 'system_audio_playback_failed';
+    stopSystemStatusTimer();
+    emitSystemAudioStatus();
+  });
+  element.addEventListener('timeupdate', () => emitSystemAudioStatus());
+
+  systemAudioElement = element;
+  applySystemOutputSettings(null);
+  return element;
+};
+
+const resolveSystemSourceUrl = async (source: SystemPlaybackSource): Promise<string> => {
+  releaseSystemObjectUrl();
+
+  const trimmed = source.filePath.trim();
+  if (isRendererReadyUrl(trimmed)) {
+    return trimmed;
+  }
+
+  return ipcRenderer.invoke(IpcChannels.AudioCreateSystemStreamUrl, {
+    url: trimmed,
+    headers: isHttpUrl(trimmed) ? source.inputHeaders : undefined,
+    mimeType: null,
+  }) as Promise<string>;
+};
+
+const playSystemSource = async (source: SystemPlaybackSource, startSeconds?: number): Promise<PlaybackStatus> => {
+  systemAudioModeActive = true;
+  systemAudioSource = source;
+  systemAudioState = 'loading';
+  systemAudioError = null;
+  const element = ensureSystemAudioElement();
+  const sourceUrl = await resolveSystemSourceUrl(source);
+  element.pause();
+  element.src = sourceUrl;
+  element.volume = systemOutputSettings.volume;
+  element.playbackRate = systemOutputSettings.playbackRate;
+  element.load();
+  emitSystemAudioStatus();
+
+  const safeStartSeconds = finiteSeconds(startSeconds) ?? 0;
+  if (safeStartSeconds > 0) {
+    try {
+      element.currentTime = safeStartSeconds;
+    } catch {
+      // Some HTTP streams reject seeking before metadata is ready; playback can still start.
+    }
+  }
+
+  try {
+    await element.play();
+  } catch (error) {
+    systemAudioState = 'error';
+    systemAudioError = error instanceof Error ? error.message : String(error);
+    emitSystemAudioStatus();
+    throw error;
+  }
+
+  return toSystemPlaybackStatus();
+};
+
+const stopSystemPlayback = (
+  state: Extract<AudioStatus['state'], 'stopped' | 'idle'> = 'stopped',
+  emitStatus = true,
+): PlaybackStatus => {
+  stopSystemStatusTimer();
+  if (systemAudioElement) {
+    systemAudioElement.pause();
+    systemAudioElement.removeAttribute('src');
+    systemAudioElement.load();
+  }
+  releaseSystemObjectUrl();
+  systemAudioSource = null;
+  systemAudioState = state;
+  systemAudioError = null;
+  if (emitStatus) {
+    emitSystemAudioStatus();
+  }
+  return toSystemPlaybackStatus();
+};
+
+const isSystemOutputRequest = (settings: unknown): boolean =>
+  Boolean(settings && typeof settings === 'object' && (settings as Partial<AudioOutputSettings>).outputMode === 'system');
+
+const shouldUseSystemAudioMode = (): boolean =>
+  systemAudioModeActive || lastNativeAudioStatus?.outputMode === 'system';
+
+const refreshSystemAudioModeActive = async (): Promise<boolean> => {
+  if (systemAudioModeActive) {
+    return true;
+  }
+
+  try {
+    const status = await ipcRenderer.invoke(IpcChannels.AudioGetStatus) as AudioStatus;
+    lastNativeAudioStatus = status;
+    applySystemOutputSettings(null, status);
+    if (status.outputMode === 'system') {
+      systemAudioModeActive = true;
+      return true;
+    }
+  } catch {
+    // If the native status query fails, fall back to the normal playback IPC path.
+  }
+
+  return false;
+};
+
+const playLocalFileWithSystemAudio = (request: PlaybackStartRequest): Promise<PlaybackStatus> =>
+  playSystemSource(
+    {
+      filePath: request.filePath,
+      probe: request.probe,
+      durationSeconds: request.probe?.durationSeconds ?? null,
+      trackId: request.trackId ?? null,
+    },
+    request.startSeconds,
+  );
+
+const playMediaItemWithSystemAudio = async (request: PlaybackMediaStartRequest): Promise<PlaybackStatus> => {
+  const resolved = await ipcRenderer.invoke(IpcChannels.PlaybackResolveMediaItem, request) as PlaybackResolvedMediaSource;
+  return playSystemSource({ ...resolved, trackId: request.item.trackId }, request.startSeconds);
+};
 
 ipcRenderer.on(IpcChannels.PlaybackLocalAudioFilesOpened, (_event: Electron.IpcRendererEvent, paths: unknown): void => {
   const safePaths = sanitizePathList(paths);
@@ -277,15 +696,64 @@ const echoApi: EchoApi = {
     applyMoveRepair: (candidateId) => ipcRenderer.invoke(IpcChannels.LibraryLabApplyMoveRepair, candidateId),
   },
   playback: {
-    getStatus: () => ipcRenderer.invoke(IpcChannels.PlaybackGetStatus),
-    playLocalFile: (request) => ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, request),
-    playMediaItem: (request) => ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, request),
+    getStatus: () => systemAudioModeActive ? Promise.resolve(toSystemPlaybackStatus()) : ipcRenderer.invoke(IpcChannels.PlaybackGetStatus),
+    playLocalFile: (request) =>
+      shouldUseSystemAudioMode()
+        ? playLocalFileWithSystemAudio(request)
+        : ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, request),
+    playMediaItem: (request) =>
+      shouldUseSystemAudioMode()
+        ? playMediaItemWithSystemAudio(request)
+        : ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, request),
     prepareMediaItem: (request) => ipcRenderer.invoke(IpcChannels.PlaybackPrepareMediaItem, request),
     prepareLocalFile: (request) => ipcRenderer.invoke(IpcChannels.PlaybackPrepareLocalFile, request),
-    play: () => ipcRenderer.invoke(IpcChannels.PlaybackPlay),
-    pause: () => ipcRenderer.invoke(IpcChannels.PlaybackPause),
-    stop: () => ipcRenderer.invoke(IpcChannels.PlaybackStop),
-    seek: (positionSeconds) => ipcRenderer.invoke(IpcChannels.PlaybackSeek, positionSeconds),
+    play: async () => {
+      if (!await refreshSystemAudioModeActive()) {
+        return ipcRenderer.invoke(IpcChannels.PlaybackPlay);
+      }
+
+      const element = ensureSystemAudioElement();
+      if (!element.src) {
+        return toSystemPlaybackStatus();
+      }
+      await element.play();
+      systemAudioState = 'playing';
+      startSystemStatusTimer();
+      emitSystemAudioStatus();
+      return toSystemPlaybackStatus();
+    },
+    pause: async () => {
+      if (!await refreshSystemAudioModeActive()) {
+        return ipcRenderer.invoke(IpcChannels.PlaybackPause);
+      }
+
+      ensureSystemAudioElement().pause();
+      systemAudioState = 'paused';
+      stopSystemStatusTimer();
+      emitSystemAudioStatus();
+      return toSystemPlaybackStatus();
+    },
+    stop: async () => {
+      if (!await refreshSystemAudioModeActive()) {
+        return ipcRenderer.invoke(IpcChannels.PlaybackStop);
+      }
+
+      return stopSystemPlayback('stopped');
+    },
+    seek: async (positionSeconds) => {
+      if (!await refreshSystemAudioModeActive()) {
+        return ipcRenderer.invoke(IpcChannels.PlaybackSeek, positionSeconds);
+      }
+
+      const element = ensureSystemAudioElement();
+      try {
+        element.currentTime = Math.max(0, positionSeconds);
+      } catch {
+        // Non-seekable streams keep playing from their current position.
+      }
+      emitSystemAudioStatus();
+      return toSystemPlaybackStatus();
+    },
     openLocalAudioFile: () => ipcRenderer.invoke(IpcChannels.PlaybackOpenLocalAudioFile),
     openLocalAudioFiles: () => ipcRenderer.invoke(IpcChannels.PlaybackOpenLocalAudioFiles),
     resolveLocalAudioFiles: (paths) => ipcRenderer.invoke(IpcChannels.PlaybackResolveLocalAudioFiles, paths),
@@ -402,6 +870,7 @@ const echoApi: EchoApi = {
     findLocalCandidates: (trackId) => ipcRenderer.invoke(IpcChannels.MvFindLocalCandidates, trackId),
     searchNetworkCandidates: (trackId, query) => ipcRenderer.invoke(IpcChannels.MvSearchNetworkCandidates, trackId, query),
     searchNetworkCandidatesForSnapshot: (request) => ipcRenderer.invoke(IpcChannels.MvSearchNetworkCandidatesForSnapshot, request),
+    getTemporaryPlayableForSnapshot: (request) => ipcRenderer.invoke(IpcChannels.MvGetTemporaryPlayableForSnapshot, request),
     getCandidates: (trackId) => ipcRenderer.invoke(IpcChannels.MvGetCandidates, trackId),
     resolveStreams: (videoId) => ipcRenderer.invoke(IpcChannels.MvResolveStreams, videoId),
     setQuality: (videoId, qualityId) => ipcRenderer.invoke(IpcChannels.MvSetQuality, videoId, qualityId),
@@ -438,14 +907,42 @@ const echoApi: EchoApi = {
     disconnect: () => ipcRenderer.invoke(IpcChannels.LastFmDisconnect),
   },
   audio: {
-    getStatus: () => ipcRenderer.invoke(IpcChannels.AudioGetStatus),
+    getStatus: async () => {
+      if (systemAudioModeActive) {
+        return createSystemAudioStatus();
+      }
+
+      const status = await ipcRenderer.invoke(IpcChannels.AudioGetStatus) as AudioStatus;
+      lastNativeAudioStatus = status;
+      applySystemOutputSettings(null, status);
+      if (status.outputMode === 'system') {
+        systemAudioModeActive = true;
+        return createSystemAudioStatus();
+      }
+      return status;
+    },
     getDiagnostics: () => ipcRenderer.invoke(IpcChannels.AudioGetDiagnostics),
     onStatus: (handler) => {
+      audioStatusHandlers.add(handler);
       const listener = (_event: Electron.IpcRendererEvent, status: unknown): void => {
-        handler(status as Awaited<ReturnType<EchoApi['audio']['getStatus']>>);
+        const nextStatus = status as AudioStatus;
+        lastNativeAudioStatus = nextStatus;
+        applySystemOutputSettings(null, nextStatus);
+        if (systemAudioModeActive || nextStatus.outputMode === 'system') {
+          if (nextStatus.outputMode === 'system') {
+            systemAudioModeActive = true;
+          }
+          handler(createSystemAudioStatus());
+          return;
+        }
+
+        handler(nextStatus as Awaited<ReturnType<EchoApi['audio']['getStatus']>>);
       };
       ipcRenderer.on(IpcChannels.AudioStatus, listener);
-      return () => ipcRenderer.off(IpcChannels.AudioStatus, listener);
+      return () => {
+        audioStatusHandlers.delete(handler);
+        ipcRenderer.off(IpcChannels.AudioStatus, listener);
+      };
     },
     onSessionReset: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, event: unknown): void => {
@@ -455,7 +952,23 @@ const echoApi: EchoApi = {
       return () => ipcRenderer.off(IpcChannels.AudioSessionReset, listener);
     },
     listDevices: () => ipcRenderer.invoke(IpcChannels.AudioListDevices),
-    setOutput: (settings) => ipcRenderer.invoke(IpcChannels.AudioSetOutput, settings),
+    setOutput: async (settings) => {
+      const nextStatus = await ipcRenderer.invoke(IpcChannels.AudioSetOutput, settings) as AudioStatus;
+      lastNativeAudioStatus = nextStatus;
+      applySystemOutputSettings(settings, nextStatus);
+
+      if (isSystemOutputRequest(settings) || nextStatus.outputMode === 'system') {
+        systemAudioModeActive = true;
+        return emitSystemAudioStatus();
+      }
+
+      if (systemAudioModeActive) {
+        stopSystemPlayback('idle', false);
+        systemAudioModeActive = false;
+      }
+
+      return nextStatus;
+    },
     openAsioControlPanel: (settings) => ipcRenderer.invoke(IpcChannels.AudioOpenAsioControlPanel, settings),
     resetEngine: () => ipcRenderer.invoke(IpcChannels.AudioResetEngine),
     forceRestart: (reason) => ipcRenderer.invoke(IpcChannels.AudioForceRestart, reason),

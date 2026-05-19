@@ -46,6 +46,12 @@ const formatThreshold = (threshold: number | undefined): string => `${Math.round
 const thresholdFromPercent = (value: string): number => Math.max(30, Math.min(100, Math.round(Number(value)))) / 100;
 const clampOffset = (value: number): number => Math.max(-10000, Math.min(10000, Math.round(value)));
 const formatOffset = (offsetMs: number): string => (offsetMs === 0 ? '0ms' : `${offsetMs > 0 ? '+' : ''}${offsetMs}ms`);
+const isMvDatabaseError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return /MV 数据库暂时不可读|MV database is temporarily unavailable|database disk image is malformed|DatabaseHealthError|SQLITE_CORRUPT|file is not a database/i.test(message);
+};
+const summarizeMvDatabaseError = (error: unknown): string =>
+  isMvDatabaseError(error) ? 'MV 数据库暂时不可读，请先到曲库恢复里修复数据库。' : error instanceof Error ? error.message : String(error);
 const immersiveBackgroundDefaults = {
   immersiveBackgroundScalePercent: 115,
   immersiveBackgroundOffsetXPercent: 50,
@@ -234,6 +240,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
   const activeTrackTitle = useMemo(() => {
     return activeTrack ? `${activeTrack.title} - ${activeTrack.artist || activeTrack.albumArtist}` : activeTrackId ? activeTrackId : t('mvSettings.status.noActiveTrack');
   }, [activeTrack, activeTrackId, t]);
+  const mvDatabaseUnavailable = Boolean(error && isMvDatabaseError(error));
 
   const qualityLabels = useMemo<Record<MvSettings['maxQuality'], string>>(
     () => ({
@@ -306,14 +313,17 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
   }, [activeTrack, queue, replayAudioOnChange]);
 
   const resolveSelectedStreams = useCallback(async (video: TrackVideo | null): Promise<TrackVideo | null> => {
-    if (!video || video.provider === 'local' || !window.echo?.mv?.resolveStreams) {
+    if (!video || video.temporary || video.provider === 'local' || !window.echo?.mv?.resolveStreams) {
       return video;
     }
 
     try {
       const resolved = await window.echo.mv.resolveStreams(video.id);
       return resolved.video;
-    } catch {
+    } catch (resolveError) {
+      if (isMvDatabaseError(resolveError)) {
+        throw resolveError;
+      }
       return video;
     }
   }, []);
@@ -350,7 +360,11 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
           setCandidates(savedCandidates.filter((candidate) => !candidate.selected).map(videoToCandidate));
         }
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
+        setError(summarizeMvDatabaseError(loadError));
+        if (isMvDatabaseError(loadError)) {
+          setSelectedVideo(null);
+          setCandidates([]);
+        }
       }
     },
     [resolveSelectedStreams],
@@ -708,7 +722,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
         }
         notifyMvChanged(targetTrackId);
       } catch (offsetError) {
-        setError(offsetError instanceof Error ? offsetError.message : String(offsetError));
+        setError(summarizeMvDatabaseError(offsetError));
         void loadCurrentMv(targetTrackId);
       } finally {
         setIsMvOffsetSaving(false);
@@ -740,7 +754,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
               <button
                 type="button"
                 key={step}
-                disabled={isMvOffsetSaving || nextOffsetMs === selectedMvOffsetMs}
+                disabled={isMvOffsetSaving || mvDatabaseUnavailable || nextOffsetMs === selectedMvOffsetMs}
                 title={isForward ? t('mvSettings.offset.earlier', { value: `${step}ms` }) : t('mvSettings.offset.later', { value: `${Math.abs(step)}ms` })}
                 onClick={() => void handleMvOffsetChange(nextOffsetMs)}
               >
@@ -751,7 +765,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
           })}
           <button
             type="button"
-            disabled={isMvOffsetSaving || selectedMvOffsetMs === 0}
+            disabled={isMvOffsetSaving || mvDatabaseUnavailable || selectedMvOffsetMs === 0}
             title={t('mvSettings.offset.reset')}
             onClick={() => void handleMvOffsetChange(0)}
           >
@@ -761,7 +775,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
         </div>
       </section>
     );
-  }, [activeMvTrackId, followMusicProgress, handleMvOffsetChange, isMvOffsetSaving, selectedMvOffsetMs, selectedVideo, t]);
+  }, [activeMvTrackId, followMusicProgress, handleMvOffsetChange, isMvOffsetSaving, mvDatabaseUnavailable, selectedMvOffsetMs, selectedVideo, t]);
 
   const openSelectedProviderUrl = useCallback(
     (event: ReactMouseEvent<HTMLAnchorElement>): void => {
@@ -911,11 +925,11 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
             <h3>{t('mvSettings.binding.title')}</h3>
           </div>
           <div className="mv-settings-actions">
-            <button type="button" onClick={() => void searchNetworkCandidates()} disabled={isBusy || !isMvEnabled}>
+            <button type="button" onClick={() => void searchNetworkCandidates()} disabled={isBusy || !isMvEnabled || mvDatabaseUnavailable}>
               <Globe2 size={15} />
               {t('mvSettings.action.searchNetwork')}
             </button>
-            <button type="button" onClick={() => void chooseLocalVideo()} disabled={isBusy}>
+            <button type="button" onClick={() => void chooseLocalVideo()} disabled={isBusy || mvDatabaseUnavailable}>
               <FolderOpen size={15} />
               {t('mvSettings.action.chooseFile')}
             </button>
@@ -940,7 +954,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
                     <ExternalLink size={15} />
                   </button>
                 ) : null}
-                <button type="button" aria-label={t('mvSettings.action.removeSelected')} title={t('mvSettings.action.removeSelected')} onClick={() => void clearSelected()}>
+                <button type="button" aria-label={t('mvSettings.action.removeSelected')} title={t('mvSettings.action.removeSelected')} onClick={() => void clearSelected()} disabled={mvDatabaseUnavailable}>
                   <X size={15} />
                 </button>
               </div>
@@ -972,7 +986,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
                   onChange={(event) => setCustomMvUrl(event.currentTarget.value)}
                 />
               </label>
-              <button type="submit" aria-label={t('mvSettings.custom.apply')} title={t('mvSettings.custom.apply')} disabled={isBusy || customMvUrl.trim().length === 0}>
+              <button type="submit" aria-label={t('mvSettings.custom.apply')} title={t('mvSettings.custom.apply')} disabled={isBusy || mvDatabaseUnavailable || customMvUrl.trim().length === 0}>
                 <Play size={17} />
               </button>
             </div>
@@ -1012,7 +1026,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
                 }}
               />
             </label>
-            <button type="submit" disabled={isBusy || !isMvEnabled || searchQuery.trim().length === 0}>
+            <button type="submit" disabled={isBusy || !isMvEnabled || mvDatabaseUnavailable || searchQuery.trim().length === 0}>
               <Search size={15} />
               {t('mvSettings.action.searchNetwork')}
             </button>
@@ -1041,7 +1055,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
           {candidates.length > 0 ? (
             <div className="mv-settings-candidates" aria-label={t('mvSettings.aria.candidates')}>
               {candidates.map((candidate) => (
-                <button type="button" key={candidate.id} className="mv-settings-candidate" disabled={isBusy || busyCandidateId !== null} title={candidate.title} onClick={() => void selectCandidate(candidate.id)}>
+                <button type="button" key={candidate.id} className="mv-settings-candidate" disabled={isBusy || mvDatabaseUnavailable || busyCandidateId !== null} title={candidate.title} onClick={() => void selectCandidate(candidate.id)}>
                   <span className="mv-candidate-thumb">
                     {candidate.thumbnailUrl && !failedThumbnailIds.has(candidate.id) ? (
                       <img

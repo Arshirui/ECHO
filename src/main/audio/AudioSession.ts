@@ -395,7 +395,7 @@ const isWritableUsable = (writable: Writable | null): writable is Writable =>
   Boolean(writable && !writable.destroyed && !writable.writableEnded);
 
 const normalizeOutputMode = (value: unknown): AudioOutputMode => {
-  return value === 'exclusive' || value === 'asio' ? value : 'shared';
+  return value === 'exclusive' || value === 'asio' || value === 'system' ? value : 'shared';
 };
 
 const normalizeSharedBackend = (value: unknown): AudioSharedBackend => {
@@ -758,6 +758,10 @@ const createDeviceFromOutputSettings = (settings: AudioOutputSettings): AudioDev
   }
 
   const outputMode = normalizeOutputMode(settings.outputMode);
+  if (outputMode === 'system') {
+    return null;
+  }
+
   const outputModeKey = outputMode === 'asio' ? 'asio' : 'shared';
   const deviceIndex = Number.isInteger(Number(settings.deviceIndex)) ? Number(settings.deviceIndex) : -1;
 
@@ -1432,6 +1436,14 @@ export class AudioSession extends EventEmitter {
 
     this.currentDevice = createDeviceFromOutputSettings(this.currentOutputSettings ?? this.outputSettings);
 
+    if (nextOutputMode === 'system') {
+      this.runToken += 1;
+      await this.stopResourcesGracefully('system-output-mode', true);
+      this.resetSessionAfterForcedStop();
+      this.hostStatus = 'ready';
+      return this.getStatus();
+    }
+
     const outputOnlyChangesVolume =
       previousOutputSettings !== null &&
       Object.keys(settings).every((key) => key === 'volume') &&
@@ -1600,6 +1612,14 @@ export class AudioSession extends EventEmitter {
     this.activeAutomix = null;
     this.currentDecodeBackendImpl = null;
     this.currentOutputSettings = this.createOutputSettingsForRequest(request.output);
+    if (normalizeOutputMode(this.currentOutputSettings.outputMode) === 'system') {
+      this.state = 'error';
+      this.hostStatus = 'ready';
+      this.errorMessage = 'system_audio_requires_renderer';
+      this.addOutputWarning('system_audio_requires_renderer');
+      this.emitStatus();
+      throw new Error('system_audio_requires_renderer');
+    }
     this.currentUseJuceOutputRequested = this.currentOutputSettings.useJuceOutput === true;
     this.currentUseJuceDecodeRequested = this.currentOutputSettings.useJuceDecode === true;
     this.currentDsdOutputModeRequested = normalizeDsdOutputMode(this.currentOutputSettings.dsdOutputMode);

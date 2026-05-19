@@ -71,13 +71,39 @@ export type LibraryDatabaseArchiveInfo = {
 
 export type LibraryDatabaseMaintenanceEventInfo = {
   createdAt: string;
-  action: 'manual-repair' | 'manual-delete' | 'manual-restore' | 'scan-health-failed';
+  action: 'manual-repair' | 'manual-delete' | 'manual-restore' | 'startup-protected' | 'scan-health-failed' | 'scan-auto-restore';
   databasePath: string;
   archivePath?: string | null;
   removedDatabaseFiles?: string[];
   restoredSnapshotId?: string;
   health?: LibraryDatabaseHealthInfo;
+  scan?: {
+    jobId: string;
+    folderId: string;
+    phase: string;
+    totalFiles: number;
+    processedFiles: number;
+    skippedFiles: number;
+    addedTracks: number;
+    updatedTracks: number;
+    removedTracks: number;
+    errorCount: number;
+  };
   error?: string;
+};
+
+export type LibraryDatabaseManagerStateInfo = {
+  databasePath: string;
+  openConnections: number;
+  connectionServiceNames: string[];
+  maintenanceInProgress: boolean;
+  activeMaintenanceReason: string | null;
+  lastCloseReason: string | null;
+  lastCheckpointAt: string | null;
+  lastCheckpointReason: string | null;
+  lastCheckpointHealth: LibraryDatabaseHealthInfo | null;
+  protected: boolean;
+  protectionRecoveryAction: 'none' | 'protected' | 'archivedOnly' | 'autoRestoredFromScanGuard' | 'failed' | null;
 };
 
 export type LibraryDatabaseProtectionStatus = {
@@ -91,8 +117,10 @@ export type LibraryDatabaseProtectionStatus = {
   maintenanceEvents: LibraryDatabaseMaintenanceEventInfo[];
   canRestoreSnapshot: boolean;
   hasRunningScan: boolean;
+  protectionMode?: 'normal' | 'protected' | 'archivedOnly' | 'autoRestoredFromScanGuard';
   recommendedAction: 'none' | 'restore-snapshot' | 'rebuild-empty-database';
   unrecoverableReason?: string;
+  managerState?: LibraryDatabaseManagerStateInfo;
 };
 
 export type LibraryDatabaseRestoreResult = {

@@ -54,6 +54,13 @@ export type PlaybackMediaStartRequest = {
   automix?: PlaybackAutomixOptions;
 };
 
+export type PlaybackResolvedMediaSource = {
+  filePath: string;
+  inputHeaders?: Record<string, string>;
+  probe?: PlaybackProbeHint;
+  durationSeconds: number | null;
+};
+
 export type LocalFileOpenRejectionReason = 'missing' | 'not_file' | 'unsupported';
 
 export type LocalFileOpenRejection = {

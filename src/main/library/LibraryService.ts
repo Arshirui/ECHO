@@ -7,8 +7,16 @@ import electron from 'electron';
 import { SCANNABLE_AUDIO_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import { defaultSettings, getAppSettings, setAppSettings } from '../app/appSettings';
-import { recordLibraryDatabaseMaintenanceEvent } from '../app/dataProtection';
+import {
+  assertProtectedLibraryAvailable,
+  createDataProtectionSnapshot,
+  createScanGuardLibraryDatabaseSnapshot,
+  recordLibraryDatabaseMaintenanceEvent,
+  restoreProtectedLibraryDatabaseFromScanGuard,
+  type LibraryDatabaseScanGuardSnapshot,
+} from '../app/dataProtection';
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
+import { getLibraryDatabaseManager, type LibraryDatabaseConnection } from '../database/LibraryDatabaseManager';
 import { assertDatabaseHealthy } from '../database/health';
 import { AlbumService } from './AlbumService';
 import type { AlbumMergeStrategy } from './AlbumService';
@@ -108,7 +116,6 @@ import { TsCoverExtractor } from './workers/TsCoverExtractor';
 import { TsFileScanner } from './workers/TsFileScanner';
 import { TsMetadataReader } from './workers/TsMetadataReader';
 import { getRemoteSourceService } from './remote/RemoteSourceService';
-import { assertProtectedLibraryAvailable } from '../app/dataProtection';
 import { writeEmbeddedTrackTags } from './TagWriter';
 import { backupPlaylistIfEnabled, type PlaylistBackupReason } from './PlaylistBackup';
 import { NETWORK_AUTO_APPLY_THRESHOLD } from './network/matchScore';
@@ -126,6 +133,10 @@ type LibraryServiceDependencies = {
   coverConcurrency?: number;
   artistImageCacheDir?: string;
   artistImageProviders?: ArtistImageProvider[];
+  databaseConnection?: LibraryDatabaseConnection;
+  closeDatabaseUsersBeforeRecovery?: () => void | Promise<void>;
+  runExclusiveDatabaseMaintenance?: <T>(reason: string, action: () => T | Promise<T>) => Promise<T>;
+  checkpointDatabase?: (reason: string) => void;
 };
 
 const broadcastLibraryChanged = (): void => {
@@ -2046,7 +2057,20 @@ export const createLibraryService = (
   databasePath: string,
   dependencies: LibraryServiceDependencies = {},
 ): LibraryService => {
-  const database = createDatabase(databasePath);
+  const databaseConnection = dependencies.databaseConnection;
+  const database = databaseConnection?.database ?? createDatabase(databasePath);
+  let databaseOpen = true;
+  const closeDatabase = (): void => {
+    if (!databaseOpen) {
+      return;
+    }
+    databaseOpen = false;
+    if (databaseConnection) {
+      databaseConnection.close();
+      return;
+    }
+    database.close();
+  };
   const readSettings = dependencies.appSettings ?? getAppSettingsSafe;
   const store = new LibraryStore(database, () => ({
     chineseCrossScriptSearchEnabled: readSettings().chineseCrossScriptSearchEnabled !== false,
@@ -2094,9 +2118,48 @@ export const createLibraryService = (
       }
     },
     onDeferredGroupingRefresh: broadcastLibraryChanged,
+    createDatabaseScanGuard: (scanStatus) => createScanGuardLibraryDatabaseSnapshot(scanStatus, dirname(databasePath)),
+    createCompletedScanSnapshot: async (scanStatus) => {
+      if (
+        scanStatus.addedTracks === 0 &&
+        scanStatus.updatedTracks === 0 &&
+        scanStatus.removedTracks === 0 &&
+        (scanStatus.coverCount ?? 0) === 0
+      ) {
+        return;
+      }
+
+      await createDataProtectionSnapshot('scan-completed-library-snapshot', dirname(databasePath));
+    },
+    recoverDatabaseFromScanGuard: async (snapshot, scanStatus, error) => {
+      if (!snapshot) {
+        return;
+      }
+      const restore = async (): Promise<void> => {
+        await Promise.resolve(dependencies.closeDatabaseUsersBeforeRecovery?.() ?? closeDatabase());
+        restoreProtectedLibraryDatabaseFromScanGuard(
+          snapshot as LibraryDatabaseScanGuardSnapshot,
+          scanStatus,
+          error,
+          dirname(databasePath),
+        );
+      };
+
+      if (dependencies.runExclusiveDatabaseMaintenance) {
+        await dependencies.runExclusiveDatabaseMaintenance('scan-guard-restore', restore);
+        return;
+      }
+
+      await restore();
+    },
     checkDatabaseHealth: (scanStatus) => {
       try {
         assertDatabaseHealthy(databasePath);
+        if (dependencies.checkpointDatabase) {
+          dependencies.checkpointDatabase('scan-health-check');
+        } else {
+          database.pragma('wal_checkpoint(PASSIVE)');
+        }
       } catch (error) {
         recordLibraryDatabaseMaintenanceEvent({
           action: 'scan-health-failed',
@@ -2147,7 +2210,7 @@ export const createLibraryService = (
     scanJobQueue,
     albumService,
     database,
-    () => database.close(),
+    closeDatabase,
     databasePath,
     coverCacheDir,
     coverExtractor,
@@ -2163,6 +2226,22 @@ export const createLibraryService = (
 
 let defaultLibraryService: LibraryService | null = null;
 
+const closeDefaultDatabaseUsersBeforeRecovery = async (): Promise<void> => {
+  const manager = getLibraryDatabaseManager();
+  const [lyrics, mv, streaming, remote] = await Promise.all([
+    import('../lyrics/LyricsService'),
+    import('../mv/MvService'),
+    import('../streaming/StreamingService'),
+    import('./remote/RemoteSourceService'),
+  ]);
+  lyrics.closeDefaultLyricsService();
+  mv.closeDefaultMvService();
+  streaming.closeDefaultStreamingService();
+  remote.closeDefaultRemoteSourceService();
+  closeDefaultLibraryService();
+  manager.closeAllUsers('scan-recovery');
+};
+
 export const getLibraryService = (): LibraryService => {
   assertProtectedLibraryAvailable();
   if (!defaultLibraryService) {
@@ -2172,7 +2251,19 @@ export const getLibraryService = (): LibraryService => {
       throw new Error('Electron app module is unavailable outside the Electron main process');
     }
 
-    defaultLibraryService = createLibraryService(join(electronApp.getPath('userData'), 'echo-library.sqlite'));
+    const databasePath = join(electronApp.getPath('userData'), 'echo-library.sqlite');
+    const manager = getLibraryDatabaseManager();
+    defaultLibraryService = createLibraryService(databasePath, {
+      databaseConnection: manager.openServiceConnection('library'),
+      closeDatabaseUsersBeforeRecovery: closeDefaultDatabaseUsersBeforeRecovery,
+      runExclusiveDatabaseMaintenance: (reason, action) => manager.runExclusiveMaintenance(reason, action),
+      checkpointDatabase: (reason) => {
+        const health = manager.checkpoint(reason);
+        if (health.status !== 'ok') {
+          throw new Error(health.message ?? `Library database checkpoint failed: ${health.status}`);
+        }
+      },
+    });
     defaultLibraryService.syncLiveLibraryWatcherFromSettings();
   }
 

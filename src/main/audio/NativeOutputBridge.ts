@@ -1,6 +1,6 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams, SpawnOptionsWithStdioTuple } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { performance } from 'node:perf_hooks';
@@ -39,6 +39,7 @@ export type HostBinaryResolveOptions = {
   appPath?: string | null;
   resourcesPath?: string;
   exists?: (path: string) => boolean;
+  isExecutable?: (path: string) => boolean;
   includeMigrationFallback?: boolean;
 };
 
@@ -112,6 +113,19 @@ const getNativeCrashDetails = (reason: string): string[] => {
   const crashName = windowsCrashCodes[unsignedExitCode];
 
   return crashName ? [`exitCodeHex=${formatExitCodeHex(exitCode)}`, `nativeCrash=${crashName}`] : [];
+};
+
+const isLikelyExecutableHostBinary = (path: string): boolean => {
+  if (process.platform !== 'win32') {
+    return true;
+  }
+
+  try {
+    const header = readFileSync(path).subarray(0, 2);
+    return header.length === 2 && header[0] === 0x4d && header[1] === 0x5a;
+  } catch {
+    return false;
+  }
 };
 
 const isNativeHostNotificationEvent = (event: unknown): event is NativeHostNotificationEvent['event'] =>
@@ -198,6 +212,7 @@ export const resolveHostBinary = (options: HostBinaryResolveOptions = {}): strin
   const resourcesPath = options.resourcesPath ?? process.resourcesPath;
   const cwd = options.cwd ?? process.cwd();
   const exists = options.exists ?? existsSync;
+  const isExecutable = options.isExecutable ?? isLikelyExecutableHostBinary;
   const includeMigrationFallback = options.includeMigrationFallback ?? true;
   const candidates: string[] = [];
 
@@ -220,7 +235,7 @@ export const resolveHostBinary = (options: HostBinaryResolveOptions = {}): strin
     candidates.push(join(cwd, '..', 'ECHO', 'electron-app', 'build', exe));
   }
 
-  return candidates.find((candidate) => exists(candidate)) ?? null;
+  return candidates.find((candidate) => exists(candidate) && isExecutable(candidate)) ?? null;
 };
 
 export const isNativeOutputBridgeAvailable = (): boolean => resolveHostBinary() !== null;

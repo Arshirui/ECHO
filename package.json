@@ -99,6 +99,7 @@
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/build/Release/*.node",
+      "node_modules/@lox-audioserver/node-libraop/**/*",
       "node_modules/sharp/**/*",
       "node_modules/taglib-wasm/dist/*.wasm"
     ],
@@ -112,6 +113,10 @@
         {
           "from": "electron-app/build/echo-smtc-host.exe",
           "to": "echo-smtc-host.exe"
+        },
+        {
+          "from": "src/main/connect/airplayRaopHelper.cjs",
+          "to": "airplayRaopHelper.cjs"
         },
         {
           "from": "electron-app/tools",

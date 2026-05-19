@@ -18,9 +18,10 @@ import { getAudioSession } from '../audio/AudioSession';
 import { getEqBridge } from '../audio/EqBridge';
 import { restartWindowsAudioService } from '../audio/WindowsAudioServiceManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
+import { createSystemAudioStreamUrl } from '../protocol/audioProtocol';
 import { enqueueAudioCommand, isAudioCommandTimeoutError } from './audioCommandQueue';
 
-const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
+const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio', 'system']);
 const sharedBackends = new Set<AudioSharedBackend>(['auto', 'windows', 'directsound']);
 const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
 const playbackSpeedModes = new Set<PlaybackSpeedMode>(['nightcore', 'daycore', 'speed']);
@@ -189,6 +190,32 @@ const enqueueAudioStatusCommand = async (fn: () => Promise<AudioStatus> | AudioS
   }
 };
 
+const normalizeSystemStreamRequest = (value: unknown): { url: string; headers?: Record<string, string>; mimeType?: string | null } => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('system audio stream request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  if (typeof input.url !== 'string' || !input.url.trim()) {
+    throw new Error('system audio stream url is required');
+  }
+
+  const headers: Record<string, string> = {};
+  if (input.headers && typeof input.headers === 'object' && !Array.isArray(input.headers)) {
+    Object.entries(input.headers as Record<string, unknown>).forEach(([key, headerValue]) => {
+      if (typeof headerValue === 'string' && key.trim()) {
+        headers[key] = headerValue;
+      }
+    });
+  }
+
+  return {
+    url: input.url,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
+    mimeType: typeof input.mimeType === 'string' && input.mimeType.trim() ? input.mimeType : null,
+  };
+};
+
 export const registerAudioIpc = (): void => {
   getAudioSession().on('status', (status: AudioStatus) => {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -209,6 +236,9 @@ export const registerAudioIpc = (): void => {
   ipcMain.handle(IpcChannels.AudioGetStatus, (): AudioStatus => getAudioSession().getStatus());
   ipcMain.handle(IpcChannels.AudioGetDiagnostics, (): AudioDiagnostics => getAudioSession().getDiagnostics());
   ipcMain.handle(IpcChannels.AudioListDevices, async (): Promise<AudioDeviceInfo[]> => getAudioSession().listDevicesAsync());
+  ipcMain.handle(IpcChannels.AudioCreateSystemStreamUrl, (_event, request: unknown): string =>
+    createSystemAudioStreamUrl(normalizeSystemStreamRequest(request)),
+  );
   ipcMain.handle(IpcChannels.AudioSetOutput, async (_event, settings: unknown): Promise<AudioStatus> => enqueueAudioStatusCommand(async () => {
     try {
       const normalized = normalizeOutputSettings(settings);

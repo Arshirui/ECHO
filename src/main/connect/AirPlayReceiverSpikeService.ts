@@ -277,13 +277,16 @@ class AirPlayRaopHelperModule implements RaopModule {
     if (!existsSync(helperPath)) {
       throw new Error(`AirPlay helper script is missing: ${helperPath}`);
     }
+    const env = { ...process.env };
+    if (this.shouldRunAsNode(nodePath)) {
+      env.ELECTRON_RUN_AS_NODE = '1';
+    } else {
+      delete env.ELECTRON_RUN_AS_NODE;
+    }
 
     this.child = spawn(nodePath, [helperPath], {
       cwd: app.getAppPath(),
-      env: {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: undefined,
-      },
+      env,
       stdio: 'pipe',
       windowsHide: true,
     });
@@ -430,12 +433,15 @@ class AirPlayRaopHelperModule implements RaopModule {
   }
 
   private resolveNodePath(): string {
-    const candidates = [
+    const explicitRuntime = [
       process.env.npm_node_execpath,
       process.env.NODE,
-      'node',
     ].filter((value): value is string => Boolean(value));
-    return candidates[0];
+    return explicitRuntime[0] ?? process.execPath;
+  }
+
+  private shouldRunAsNode(nodePath: string): boolean {
+    return nodePath === process.execPath;
   }
 
   private resolveHelperPath(): string {

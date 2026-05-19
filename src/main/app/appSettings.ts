@@ -475,7 +475,10 @@ const normalizeRememberedAudioOutput = (value: unknown): RememberedAudioOutput =
   }
 
   const input = value as Partial<RememberedAudioOutput>;
-  const outputMode = input.outputMode === 'exclusive' || input.outputMode === 'asio' ? input.outputMode : 'shared';
+  const outputMode =
+    input.outputMode === 'exclusive' || input.outputMode === 'asio' || input.outputMode === 'system'
+      ? input.outputMode
+      : 'shared';
   const sharedBackend =
     input.sharedBackend === 'directsound' || input.sharedBackend === 'windows'
       ? input.sharedBackend

@@ -59,6 +59,9 @@ export const registerMvIpc = (): void => {
   ipcMain.handle(IpcChannels.MvSearchNetworkCandidatesForSnapshot, (_event, request: unknown) =>
     getMvService().searchNetworkCandidatesForSnapshot(normalizeSnapshotSearchRequest(request)),
   );
+  ipcMain.handle(IpcChannels.MvGetTemporaryPlayableForSnapshot, (_event, request: unknown) =>
+    getMvService().getTemporaryPlayableForSnapshot(normalizeSnapshotSearchRequest(request)),
+  );
   ipcMain.handle(IpcChannels.MvGetCandidates, (_event, trackId: unknown) =>
     getMvService().getVideoCandidates(requireText(trackId, 'trackId')),
   );

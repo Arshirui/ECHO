@@ -42,7 +42,10 @@ export const readRememberedAudioOutput = (): RememberedAudioOutput => {
     }
 
     const parsed = JSON.parse(raw) as Partial<RememberedAudioOutput>;
-    const outputMode = parsed.outputMode === 'exclusive' || parsed.outputMode === 'asio' ? parsed.outputMode : 'shared';
+    const outputMode =
+      parsed.outputMode === 'exclusive' || parsed.outputMode === 'asio' || parsed.outputMode === 'system'
+        ? parsed.outputMode
+        : 'shared';
     const sharedBackend = normalizeSharedBackend(parsed.sharedBackend);
     const latencyProfile =
       parsed.latencyProfile === 'stable' || parsed.latencyProfile === 'balanced' || parsed.latencyProfile === 'lowLatency'
@@ -98,9 +101,10 @@ export const loadPersistedRememberedAudioOutput = async (): Promise<RememberedAu
   const rawRemembered = (settings.appMemoryVersion ?? 0) < 1 && localOutput.enabled
     ? localOutput
     : (settings.rememberedAudioOutput ?? { enabled: false, outputMode: 'shared', sharedBackend: 'auto', latencyProfile: 'balanced' });
-  const outputMode = rawRemembered.outputMode === 'exclusive' || rawRemembered.outputMode === 'asio'
-    ? rawRemembered.outputMode
-    : 'shared';
+  const outputMode =
+    rawRemembered.outputMode === 'exclusive' || rawRemembered.outputMode === 'asio' || rawRemembered.outputMode === 'system'
+      ? rawRemembered.outputMode
+      : 'shared';
   const latencyProfile =
     rawRemembered.latencyProfile === 'stable' || rawRemembered.latencyProfile === 'balanced' || rawRemembered.latencyProfile === 'lowLatency'
       ? rawRemembered.latencyProfile

@@ -7,7 +7,13 @@ export const isNativeSharedOutputPlatform = (platform: string): boolean => platf
 export const normalizeAudioOutputModeForPlatform = (
   outputMode: AudioOutputMode,
   platform: string,
-): AudioOutputMode => (isAdvancedNativeOutputPlatform(platform) ? outputMode : 'shared');
+): AudioOutputMode => {
+  if (outputMode === 'system') {
+    return 'system';
+  }
+
+  return isAdvancedNativeOutputPlatform(platform) ? outputMode : 'shared';
+};
 
 export const normalizeAudioSharedBackendForPlatform = (
   sharedBackend: AudioSharedBackend | undefined,

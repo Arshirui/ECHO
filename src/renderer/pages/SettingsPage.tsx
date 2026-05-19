@@ -112,6 +112,10 @@ const deviceMatchesAudioStatus = (device: AudioDeviceInfo, status: AudioStatus |
     return false;
   }
 
+  if (status.outputMode === 'system') {
+    return false;
+  }
+
   const modeMatches = status.outputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared';
   if (!modeMatches) {
     return false;
@@ -258,6 +262,19 @@ const findDuplicateGlobalShortcutAction = (
 
 const normalizeSharedBackend = (value: unknown): AudioSharedBackend =>
   value === 'windows' || value === 'directsound' ? value : 'auto';
+
+const playbackOutputModes: AudioOutputMode[] = ['shared', 'exclusive', 'asio', 'system'];
+
+const getPlaybackOutputModeLabel = (mode: AudioOutputMode, translate: (key: TranslationKey) => string): string =>
+  translate(`settings.playback.outputMode.${mode}` as TranslationKey);
+
+const getCompatiblePlaybackDevices = (devices: AudioDeviceInfo[], outputMode: AudioOutputMode): AudioDeviceInfo[] => {
+  if (outputMode === 'system') {
+    return [];
+  }
+
+  return devices.filter((device) => (outputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared'));
+};
 
 const networkProviderLabels: Record<AppSettings['networkMetadataProviders'][number], string> = {
   'netease-cloud-music': '网易云音乐',
@@ -467,7 +484,7 @@ type SettingRowProps = {
   id?: string;
   highlighted?: boolean;
   title: string;
-  description?: string;
+  description?: ReactNode;
   children: ReactNode;
 };
 
@@ -3169,7 +3186,7 @@ export const SettingsPage = (): JSX.Element => {
   }, [settingsQuery, settingsSearchResults]);
 
   const compatibleDevices = useMemo(
-    () => devices.filter((device) => (outputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')),
+    () => getCompatiblePlaybackDevices(devices, outputMode),
     [devices, outputMode],
   );
   const statusSelectedDevice = useMemo(
@@ -3178,13 +3195,15 @@ export const SettingsPage = (): JSX.Element => {
   );
   const outputDeviceOptions = useMemo(
     () =>
-      compatibleDevices.length === 0
+      outputMode === 'system'
+        ? [{ value: '', label: t('audioDrawer.device.systemDefaultOutput'), disabled: true }]
+        : compatibleDevices.length === 0
         ? [{ value: '', label: t('settings.playback.outputDevice.empty'), disabled: true }]
         : compatibleDevices.map((device) => ({
             value: device.id,
             label: `${device.index} - ${device.name}`,
           })),
-    [compatibleDevices, t],
+    [compatibleDevices, outputMode, t],
   );
   const globalShortcuts = useMemo(
     () => appSettings?.globalShortcuts ?? createDefaultGlobalShortcuts(),
@@ -3659,7 +3678,7 @@ export const SettingsPage = (): JSX.Element => {
   const applyOutputSettings = useCallback(
     async (nextOutputMode = outputMode, nextDeviceId = selectedDeviceId, nextSharedBackend = sharedBackend) => {
       const nextDevice =
-        devices.find((device) => device.id === nextDeviceId && (nextOutputMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared')) ?? null;
+        getCompatiblePlaybackDevices(devices, nextOutputMode).find((device) => device.id === nextDeviceId) ?? null;
       const normalizedSharedBackend = nextOutputMode === 'shared' ? normalizeSharedBackend(nextSharedBackend) : 'auto';
       const output: AudioOutputSettings = {
         outputMode: nextOutputMode,
@@ -3762,7 +3781,7 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleOutputModeChange = (nextMode: AudioOutputMode): void => {
     setOutputMode(nextMode);
-    const nextDevices = devices.filter((device) => (nextMode === 'asio' ? device.outputMode === 'asio' : device.outputMode === 'shared'));
+    const nextDevices = getCompatiblePlaybackDevices(devices, nextMode);
     const nextDeviceId = nextDevices.find((device) => device.isDefault)?.id ?? nextDevices[0]?.id ?? '';
     setSelectedDeviceId(nextDeviceId);
     void applyOutputSettings(nextMode, nextDeviceId, nextMode === 'shared' ? sharedBackend : 'auto');
@@ -3814,8 +3833,12 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleDsdDopToggle = async (): Promise<void> => {
-    const nextDsdOutputMode = appSettings?.audioDsdOutputMode === 'dop' ? 'pcm' : 'dop';
-    patchAppSettings({ audioDsdOutputMode: nextDsdOutputMode });
+    const nextEnabled = appSettings?.audioDsdOutputMode !== 'dop';
+    const nextDsdOutputMode = nextEnabled ? 'dop' : 'pcm';
+    patchAppSettings({
+      audioDsdOutputMode: nextDsdOutputMode,
+      audioAsioNativeDsdExperimentalEnabled: nextEnabled,
+    });
 
     const audio = getAudioBridge();
     if (!audio) {
@@ -3824,7 +3847,7 @@ export const SettingsPage = (): JSX.Element => {
     }
 
     try {
-      setStatus(await audio.setOutput({ dsdOutputMode: nextDsdOutputMode }));
+      setStatus(await audio.setOutput({ dsdOutputMode: nextDsdOutputMode, asioNativeDsdExperimentalEnabled: nextEnabled }));
     } catch (audioError) {
       setError(audioError instanceof Error ? audioError.message : String(audioError));
     }
@@ -3832,7 +3855,11 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleAsioNativeDsdExperimentalToggle = async (): Promise<void> => {
     const nextEnabled = !(appSettings?.audioAsioNativeDsdExperimentalEnabled ?? false);
-    patchAppSettings({ audioAsioNativeDsdExperimentalEnabled: nextEnabled });
+    const nextDsdOutputMode = nextEnabled ? 'dop' : 'pcm';
+    patchAppSettings({
+      audioDsdOutputMode: nextDsdOutputMode,
+      audioAsioNativeDsdExperimentalEnabled: nextEnabled,
+    });
 
     const audio = getAudioBridge();
     if (!audio) {
@@ -3841,7 +3868,7 @@ export const SettingsPage = (): JSX.Element => {
     }
 
     try {
-      setStatus(await audio.setOutput({ asioNativeDsdExperimentalEnabled: nextEnabled }));
+      setStatus(await audio.setOutput({ dsdOutputMode: nextDsdOutputMode, asioNativeDsdExperimentalEnabled: nextEnabled }));
     } catch (audioError) {
       setError(audioError instanceof Error ? audioError.message : String(audioError));
     }
@@ -5905,9 +5932,9 @@ export const SettingsPage = (): JSX.Element => {
             <SettingSection activeKey={activeSection} icon={Zap} id="playback" title={t('settings.nav.playback.label')}>
               <SettingRow title={t('settings.playback.outputMode.title')} description={t('settings.playback.outputMode.description')}>
                 <div className="settings-chip-row">
-                  {(['shared', 'exclusive', 'asio'] as AudioOutputMode[]).map((mode) => (
+                  {playbackOutputModes.map((mode) => (
                     <ChipButton active={outputMode === mode} key={mode} onClick={() => handleOutputModeChange(mode)}>
-                      {mode}
+                      {getPlaybackOutputModeLabel(mode, t)}
                     </ChipButton>
                   ))}
                 </div>
@@ -5977,14 +6004,30 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() => void handleJuceDecodeToggle()}
                 />
               </SettingRow>
-              <SettingRow title="DSD DoP 直出试验" description="默认关闭。本地 DSF 在独占或 ASIO 下尝试 DoP 直出；失败会自动回退 FFmpeg PCM，最终以 DAC 显示为准。">
+              <SettingRow
+                title="DSD DoP 直出试验"
+                description={
+                  <>
+                    默认关闭。本地 DSF 在 ASIO 下尝试 DoP 直出；失败会自动回退 FFmpeg PCM，最终以 DAC 显示为准。
+                    <span className="settings-inline-warning-text">需要使用 ASIO</span>
+                  </>
+                }
+              >
                 <ToggleButton
                   active={appSettings?.audioDsdOutputMode === 'dop'}
                   disabled={!appSettings}
                   onClick={() => void handleDsdDopToggle()}
                 />
               </SettingRow>
-              <SettingRow title="ASIO 原生 DSD 实验" description="默认关闭。仅在 ASIO + 本地 DSF + DoP 开启且无 EQ/音量/变速/DSP 时尝试；失败会退回现有 DoP/PCM。">
+              <SettingRow
+                title="ASIO 原生 DSD 实验"
+                description={
+                  <>
+                    默认关闭。仅在 ASIO + 本地 DSF + DoP 开启且无 EQ/音量/变速/DSP 时尝试；失败会退回现有 DoP/PCM。
+                    <span className="settings-inline-warning-text">需要使用 ASIO</span>
+                  </>
+                }
+              >
                 <ToggleButton
                   active={appSettings?.audioAsioNativeDsdExperimentalEnabled === true}
                   disabled={!appSettings}

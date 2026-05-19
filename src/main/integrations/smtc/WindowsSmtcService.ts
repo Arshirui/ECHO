@@ -53,6 +53,7 @@ export class WindowsSmtcService implements SmtcService {
   private stderrBuffer = '';
   private pendingGracefulStop: Promise<void> | null = null;
   private stoppingGracefully = false;
+  private currentHostPath: string | null = null;
 
   constructor(options: WindowsSmtcServiceOptions | SmtcLogger = {}) {
     if ('info' in options && 'warn' in options) {
@@ -89,6 +90,7 @@ export class WindowsSmtcService implements SmtcService {
         windowsHide: true,
         stdio: 'pipe',
       });
+      this.currentHostPath = hostPath;
       this.bindHostProcess(this.host, hostPath);
       this.logger.info('[SMTC] Windows SMTC host initialized', { hostPath });
     } catch (error) {
@@ -206,6 +208,10 @@ export class WindowsSmtcService implements SmtcService {
   }
 
   private bindHostProcess(host: SmtcHostProcess, hostPath: string): void {
+    host.stdin.on('error', (error: Error) => {
+      this.handleHostWriteFailure(host, hostPath, error);
+    });
+
     host.stdout.on('data', (chunk: Buffer | string) => {
       this.stdoutBuffer = this.consumeLines(this.stdoutBuffer + chunk.toString(), (line) => this.handleStdoutLine(line));
     });
@@ -227,8 +233,11 @@ export class WindowsSmtcService implements SmtcService {
     });
 
     host.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
-      this.host = null;
-      this.initialized = false;
+      if (this.host === host) {
+        this.host = null;
+        this.currentHostPath = null;
+        this.initialized = false;
+      }
       if (!this.disposed && !this.stoppingGracefully) {
         this.unavailable = true;
         this.logger.warn('[SMTC] Windows SMTC host exited unexpectedly', { hostPath, code, signal });
@@ -285,7 +294,30 @@ export class WindowsSmtcService implements SmtcService {
       return;
     }
 
-    host.stdin.write(`${JSON.stringify(message)}\n`);
+    try {
+      host.stdin.write(`${JSON.stringify(message)}\n`, (error: Error | null | undefined) => {
+        if (error) {
+          this.handleHostWriteFailure(host, this.currentHostPath ?? 'unknown', error);
+        }
+      });
+    } catch (error) {
+      this.handleHostWriteFailure(host, this.currentHostPath ?? 'unknown', error);
+    }
+  }
+
+  private handleHostWriteFailure(host: SmtcHostProcess, hostPath: string, error: unknown): void {
+    if (this.host !== host || this.disposed || this.stoppingGracefully) {
+      return;
+    }
+
+    this.host = null;
+    this.currentHostPath = null;
+    this.initialized = false;
+    this.unavailable = true;
+    this.logger.warn('[SMTC] Windows SMTC host stdin closed; using no-op bridge mode', {
+      hostPath,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   private safeNumber(value: number): number {

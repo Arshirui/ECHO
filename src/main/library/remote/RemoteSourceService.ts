@@ -1,9 +1,8 @@
-import { join } from 'node:path';
-import electron from 'electron';
 import { getAppSettings } from '../../app/appSettings';
 import { assertProtectedLibraryAvailable } from '../../app/dataProtection';
 import { createDatabase } from '../../database/createDatabase';
 import type { EchoDatabase } from '../../database/createDatabase';
+import { getLibraryDatabaseManager } from '../../database/LibraryDatabaseManager';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type {
   RemoteDirectoryItem,
@@ -302,13 +301,9 @@ let defaultRemoteSourceService: RemoteSourceService | null = null;
 export const getRemoteSourceService = (): RemoteSourceService => {
   assertProtectedLibraryAvailable();
   if (!defaultRemoteSourceService) {
-    const electronApp = (electron as unknown as { app?: { getPath: (name: string) => string } }).app;
-
-    if (!electronApp) {
-      throw new Error('Electron app module is unavailable outside the Electron main process');
-    }
-
-    defaultRemoteSourceService = createRemoteSourceService(join(electronApp.getPath('userData'), 'echo-library.sqlite'));
+    const databaseConnection = getLibraryDatabaseManager().openServiceConnection('remote-source');
+    const coverCacheDir = resolveConfiguredCoverCacheDir(databaseConnection.databasePath, getAppSettingsSafe());
+    defaultRemoteSourceService = new RemoteSourceService(databaseConnection.database, databaseConnection.close, coverCacheDir);
   }
 
   return defaultRemoteSourceService;

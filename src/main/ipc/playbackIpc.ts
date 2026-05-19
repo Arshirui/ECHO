@@ -8,6 +8,7 @@ import type {
   PlaybackMediaStartRequest,
   PlaybackPrepareLocalFileRequest,
   PlaybackProbeHint,
+  PlaybackResolvedMediaSource,
   PlaybackStartRequest,
   PlaybackStatus,
 } from '../../shared/types/playback';
@@ -26,7 +27,7 @@ import { getStreamingService } from '../streaming/StreamingService';
 import { enqueueAudioCommand, isAudioCommandTimeoutError } from './audioCommandQueue';
 import { normalizePlaybackFilePath } from './playbackPath';
 
-const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio']);
+const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio', 'system']);
 const sharedBackends = new Set<AudioSharedBackend>(['auto', 'windows', 'directsound']);
 const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
 const playbackSpeedModes = new Set<PlaybackSpeedMode>(['nightcore', 'daycore', 'speed']);
@@ -34,12 +35,7 @@ const streamingProviders = new Set<StreamingProviderName>(streamingProviderNames
 const preparedMediaTtlMs = 2 * 60 * 1000;
 const maxExpiredUrlRecoveryAttempts = 1;
 
-type PreparedMediaItem = {
-  filePath: string;
-  inputHeaders?: Record<string, string>;
-  probe?: PlaybackProbeHint;
-  durationSeconds: number | null;
-};
+type PreparedMediaItem = PlaybackResolvedMediaSource;
 
 type ActiveMediaPlayback = {
   key: string;
@@ -960,6 +956,14 @@ export const registerPlaybackIpc = (): void => {
       throw error;
     }
   }));
+  ipcMain.handle(IpcChannels.PlaybackResolveMediaItem, async (_event, rawRequest: unknown): Promise<PlaybackResolvedMediaSource> => {
+    try {
+      return await resolveMediaItemForPlayback(normalizeMediaPlayRequest(rawRequest));
+    } catch (error) {
+      reportPlaybackAudioError(error, 'resolve-media-item-ipc', { request: rawRequest });
+      throw error;
+    }
+  });
   ipcMain.handle(IpcChannels.PlaybackPrepareMediaItem, async (_event, rawRequest: unknown): Promise<void> => {
     try {
       await prepareMediaItem(normalizeMediaPlayRequest(rawRequest));

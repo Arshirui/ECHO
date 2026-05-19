@@ -166,7 +166,7 @@ export class JuceDecodePipeline {
         settleReady(resolve);
       });
       proc.once('error', (error) => {
-        settleReady(() => reject(error));
+        settleReady(() => reject(createJuceDecodeError(`spawn_error:${error.message}`, hostBinary, args, stderrLines)));
       });
       proc.once('close', (code, signal) => {
         if (sawPcm || stopped) {
@@ -184,7 +184,9 @@ export class JuceDecodePipeline {
     proc.stdout.pipe(stream);
 
     const done = new Promise<void>((resolve, reject) => {
-      proc.once('error', reject);
+      proc.once('error', (error) => {
+        reject(createJuceDecodeError(`spawn_error:${error.message}`, hostBinary, args, stderrLines));
+      });
       proc.once('close', (code, signal) => {
         stderr.close();
         if (stopped || code === 0) {

@@ -901,7 +901,11 @@ export type TranslationKey =
   | 'settings.playback.outputDevice.description'
   | 'settings.playback.outputDevice.empty'
   | 'settings.playback.outputDevice.title'
+  | 'settings.playback.outputMode.asio'
   | 'settings.playback.outputMode.description'
+  | 'settings.playback.outputMode.exclusive'
+  | 'settings.playback.outputMode.shared'
+  | 'settings.playback.outputMode.system'
   | 'settings.playback.outputMode.title'
   | 'settings.playback.sharedBackend.description'
   | 'settings.playback.sharedBackend.directSound'
@@ -1886,7 +1890,11 @@ const zhCN: TranslationMap = {
   'settings.playback.outputDevice.description': '来自 echo-audio-host 的设备列表；没有设备时保持默认输出。',
   'settings.playback.outputDevice.empty': '无可用设备',
   'settings.playback.outputDevice.title': '输出设备',
-  'settings.playback.outputMode.description': 'Shared 适合日常使用，Exclusive / ASIO 用于采样率验收和后续 bit-perfect 路径。',
+  'settings.playback.outputMode.asio': 'ASIO',
+  'settings.playback.outputMode.description': 'Shared 适合日常使用，系统音频会交给 Windows 默认输出链路；Exclusive / ASIO 用于采样率验收和后续 bit-perfect 路径。',
+  'settings.playback.outputMode.exclusive': 'Exclusive',
+  'settings.playback.outputMode.shared': 'Shared',
+  'settings.playback.outputMode.system': '系统音频',
   'settings.playback.outputMode.title': '输出模式',
   'settings.playback.sharedBackend.description': 'DirectSound 只作为手动兼容模式，延迟较大；日常播放保持 WASAPI Shared。',
   'settings.playback.sharedBackend.directSound': 'DirectSound 兼容',
@@ -2454,6 +2462,11 @@ const zhTW: TranslationMap = {
   'settings.general.backup.title': '設定參數備份',
   'settings.general.backup.export': '匯出設定',
   'settings.general.backup.import': '匯入設定',
+  'settings.playback.outputMode.asio': 'ASIO',
+  'settings.playback.outputMode.description': 'Shared 適合日常使用，系統音訊會交給 Windows 預設輸出鏈路；Exclusive / ASIO 用於取樣率驗收和後續 bit-perfect 路徑。',
+  'settings.playback.outputMode.exclusive': 'Exclusive',
+  'settings.playback.outputMode.shared': 'Shared',
+  'settings.playback.outputMode.system': '系統音訊',
   'settings.playback.outputMode.title': '輸出模式',
   'settings.playback.speedMode.description': '選擇播放器底部速度滑桿使用的變速方式。',
   'settings.playback.speedMode.title': '變速模式',
@@ -3247,10 +3260,14 @@ const jaJP: TranslationMap = {
   'settings.general.backup.description': '新しいデバイスへの移行や復元のため、ECHO Next の設定をエクスポートまたはインポートします。',
   'settings.general.backup.export': '設定を書き出す',
   'settings.general.backup.import': '設定を読み込む',
+  'settings.playback.outputMode.asio': 'ASIO',
   'settings.playback.outputMode.title': '出力モード',
   'settings.playback.speedMode.description': '下部プレイヤーの速度スライダーで使う変速方式を選びます。',
   'settings.playback.speedMode.title': '変速モード',
-  'settings.playback.outputMode.description': 'Shared は日常利用向け、Exclusive / ASIO はサンプルレート検証と今後の bit-perfect 経路向けです。',
+  'settings.playback.outputMode.description': 'Shared は日常利用向け、システム音声は Windows の既定出力経路に任せます。Exclusive / ASIO はサンプルレート検証と今後の bit-perfect 経路向けです。',
+  'settings.playback.outputMode.exclusive': 'Exclusive',
+  'settings.playback.outputMode.shared': 'Shared',
+  'settings.playback.outputMode.system': 'システム音声',
   'settings.playback.sharedBackend.description': 'DirectSound は手動の互換モードです。遅延が大きいため、普段は WASAPI Shared を使います。',
   'settings.playback.sharedBackend.directSound': 'DirectSound 互換',
   'settings.playback.sharedBackend.title': '共有バックエンド',
@@ -4140,10 +4157,14 @@ const enUS: TranslationMap = {
   'settings.general.backup.description': 'Export or import ECHO Next settings for migration or recovery.',
   'settings.general.backup.export': 'Export Settings',
   'settings.general.backup.import': 'Import Settings',
+  'settings.playback.outputMode.asio': 'ASIO',
   'settings.playback.outputMode.title': 'Output Mode',
   'settings.playback.speedMode.description': 'Choose the mode used by the speed slider in the player bar.',
   'settings.playback.speedMode.title': 'Speed Mode',
-  'settings.playback.outputMode.description': 'Shared is for everyday listening. Exclusive / ASIO are for sample-rate validation and future bit-perfect paths.',
+  'settings.playback.outputMode.description': 'Shared is for everyday listening. System audio hands playback to the Windows default output path. Exclusive / ASIO are for sample-rate validation and future bit-perfect paths.',
+  'settings.playback.outputMode.exclusive': 'Exclusive',
+  'settings.playback.outputMode.shared': 'Shared',
+  'settings.playback.outputMode.system': 'System Audio',
   'settings.playback.sharedBackend.description': 'DirectSound is a manual compatibility mode with high latency; keep WASAPI Shared for daily playback.',
   'settings.playback.sharedBackend.directSound': 'DirectSound Compatibility',
   'settings.playback.sharedBackend.title': 'Shared Backend',

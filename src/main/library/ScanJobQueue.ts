@@ -55,6 +55,9 @@ type ScanJobQueueOptions = {
   coverConcurrency?: number;
   getAlbumMergeStrategy?: () => AlbumMergeStrategy;
   checkDatabaseHealth?: (status: LibraryScanStatus) => void;
+  createDatabaseScanGuard?: (status: LibraryScanStatus) => Promise<unknown | null> | unknown | null;
+  createCompletedScanSnapshot?: (status: LibraryScanStatus) => Promise<void> | void;
+  recoverDatabaseFromScanGuard?: (snapshot: unknown | null, status: LibraryScanStatus, error: unknown) => Promise<void> | void;
   fileIdentityService?: FileIdentityService;
   shouldReduceScanPressure?: () => boolean | Promise<boolean>;
   shouldDeferGroupingRefresh?: () => boolean | Promise<boolean>;
@@ -88,11 +91,15 @@ export class ScanJobQueue {
   private readonly coverConcurrency: number;
   private readonly getAlbumMergeStrategy: () => AlbumMergeStrategy;
   private readonly checkDatabaseHealth: (status: LibraryScanStatus) => void;
+  private readonly createDatabaseScanGuard: (status: LibraryScanStatus) => Promise<unknown | null> | unknown | null;
+  private readonly createCompletedScanSnapshot: (status: LibraryScanStatus) => Promise<void> | void;
+  private readonly recoverDatabaseFromScanGuard: (snapshot: unknown | null, status: LibraryScanStatus, error: unknown) => Promise<void> | void;
   private readonly fileIdentityService: FileIdentityService;
   private readonly shouldReduceScanPressure: () => boolean | Promise<boolean>;
   private readonly shouldDeferGroupingRefresh: () => boolean | Promise<boolean>;
   private readonly onScanSettled: (status: LibraryScanStatus) => void;
   private readonly onDeferredGroupingRefresh: () => void;
+  private readonly pendingDatabaseRecoveries = new Map<string, { snapshot: unknown | null; status: LibraryScanStatus; error: unknown }>();
   private coverCacheDir: string;
   private deferredGroupingRefreshTimer: NodeJS.Timeout | null = null;
 
@@ -108,6 +115,9 @@ export class ScanJobQueue {
     this.coverConcurrency = options.coverConcurrency ?? 2;
     this.getAlbumMergeStrategy = options.getAlbumMergeStrategy ?? (() => 'standard');
     this.checkDatabaseHealth = options.checkDatabaseHealth ?? (() => undefined);
+    this.createDatabaseScanGuard = options.createDatabaseScanGuard ?? (() => null);
+    this.createCompletedScanSnapshot = options.createCompletedScanSnapshot ?? (() => undefined);
+    this.recoverDatabaseFromScanGuard = options.recoverDatabaseFromScanGuard ?? (() => undefined);
     this.fileIdentityService = options.fileIdentityService ?? new FileIdentityService();
     this.shouldReduceScanPressure = options.shouldReduceScanPressure ?? (() => false);
     this.shouldDeferGroupingRefresh = options.shouldDeferGroupingRefresh ?? (() => false);
@@ -133,9 +143,10 @@ export class ScanJobQueue {
 
   scanFolder(folder: LibraryFolder, options: LibraryScanOptions = {}): LibraryScanStatus {
     const job = this.store.createScanJob(folder.id);
-    const run = this.runJob(job.id, folder, options.mode ?? 'normal', options.deferGroupingRefresh === true).finally(() => {
+    const run = this.runJob(job.id, folder, options.mode ?? 'normal', options.deferGroupingRefresh === true).finally(async () => {
       this.runningJobs.delete(job.id);
       this.notifyScanSettled(job.id);
+      await this.recoverPendingDatabaseFailure(job.id);
     });
 
     this.runningJobs.set(job.id, run);
@@ -149,9 +160,10 @@ export class ScanJobQueue {
     }
 
     const job = this.store.createScanJob(folder.id);
-    const run = this.runPathsJob(job.id, folder, paths, options.mode ?? 'normal', options.deferGroupingRefresh === true).finally(() => {
+    const run = this.runPathsJob(job.id, folder, paths, options.mode ?? 'normal', options.deferGroupingRefresh === true).finally(async () => {
       this.runningJobs.delete(job.id);
       this.notifyScanSettled(job.id);
+      await this.recoverPendingDatabaseFailure(job.id);
     });
 
     this.runningJobs.set(job.id, run);
@@ -266,6 +278,7 @@ export class ScanJobQueue {
     let removedTracks = 0;
     let coverCount = 0;
     const reducedScanPressure = await this.resolveBooleanOption(this.shouldReduceScanPressure);
+    const scanGuard = await Promise.resolve(this.createDatabaseScanGuard(this.getScanStatus(jobId)));
 
     try {
       progress.flushNow({
@@ -550,9 +563,27 @@ export class ScanJobQueue {
       if (deferGroupingForPressure) {
         this.scheduleDeferredGroupingRefresh();
       }
-      this.checkDatabaseHealth(this.getScanStatus(jobId));
+      try {
+        const completedStatus = this.getScanStatus(jobId);
+        this.checkDatabaseHealth(completedStatus);
+        try {
+          await Promise.resolve(this.createCompletedScanSnapshot(completedStatus));
+        } catch (snapshotError) {
+          console.warn('[library-scan] Failed to create completed scan recovery snapshot:', snapshotError);
+        }
+      } catch (error) {
+        const status = this.finishFailedOrCancelledJob(jobId, progress, errors, error, {
+          processedFiles,
+          skippedFiles,
+          addedTracks,
+          updatedTracks,
+          removedTracks,
+          coverCount,
+        });
+        this.queueDatabaseRecovery(jobId, scanGuard, status, error);
+      }
     } catch (error) {
-      this.finishFailedOrCancelledJob(jobId, progress, errors, error, {
+      const status = this.finishFailedOrCancelledJob(jobId, progress, errors, error, {
         processedFiles,
         skippedFiles,
         addedTracks,
@@ -560,6 +591,7 @@ export class ScanJobQueue {
         removedTracks,
         coverCount,
       });
+      this.queueDatabaseRecoveryIfUnhealthy(jobId, scanGuard, status);
     }
   }
 
@@ -576,26 +608,48 @@ export class ScanJobQueue {
       removedTracks: number;
       coverCount: number;
     },
-  ): void {
+  ): LibraryScanStatus {
     if (error instanceof ScanCancelledError) {
-      progress.flushNow({
+      return progress.flushNow({
         status: 'cancelled',
         phase: 'cancelled',
         ...counts,
         errors,
         finishedAt: new Date().toISOString(),
       });
-      return;
     }
 
     errors.push(error instanceof Error ? error.message : String(error));
-    progress.flushNow({
+    return progress.flushNow({
       status: 'failed',
       phase: 'failed',
       ...counts,
       errors,
       finishedAt: new Date().toISOString(),
     });
+  }
+
+  private queueDatabaseRecovery(
+    jobId: string,
+    snapshot: unknown | null,
+    status: LibraryScanStatus,
+    error: unknown,
+  ): void {
+    this.pendingDatabaseRecoveries.set(jobId, { snapshot, status, error });
+  }
+
+  private queueDatabaseRecoveryIfUnhealthy(
+    jobId: string,
+    snapshot: unknown | null,
+    status: LibraryScanStatus,
+  ): void {
+    try {
+      this.checkDatabaseHealth(status);
+    } catch (healthError) {
+      this.queueDatabaseRecovery(jobId, snapshot, status, healthError);
+      return;
+    }
+
   }
 
   private async discoverFiles(
@@ -826,15 +880,29 @@ export class ScanJobQueue {
   }
 
   private notifyScanSettled(jobId: string): void {
-    const status = this.store.getScanJob(jobId);
-    if (!status) {
-      return;
-    }
-
     try {
+      const status = this.store.getScanJob(jobId);
+      if (!status) {
+        return;
+      }
+
       this.onScanSettled(status);
     } catch {
       // Scan completion notifications are best-effort; the persisted status is the source of truth.
+    }
+  }
+
+  private async recoverPendingDatabaseFailure(jobId: string): Promise<void> {
+    const recovery = this.pendingDatabaseRecoveries.get(jobId);
+    if (!recovery) {
+      return;
+    }
+
+    this.pendingDatabaseRecoveries.delete(jobId);
+    try {
+      await this.recoverDatabaseFromScanGuard(recovery.snapshot, recovery.status, recovery.error);
+    } catch {
+      // The recovery layer records its own maintenance breadcrumb; scan completion must not crash the app.
     }
   }
 

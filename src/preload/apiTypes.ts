@@ -425,6 +425,7 @@ export type EchoApi = {
     findLocalCandidates: (trackId: string) => Promise<MvMatchCandidate[]>;
     searchNetworkCandidates: (trackId: string, query?: string) => Promise<MvMatchCandidate[]>;
     searchNetworkCandidatesForSnapshot: (request: MvTrackSnapshotSearchRequest) => Promise<MvMatchCandidate[]>;
+    getTemporaryPlayableForSnapshot: (request: MvTrackSnapshotSearchRequest) => Promise<TrackVideo | null>;
     getCandidates: (trackId: string) => Promise<TrackVideo[]>;
     resolveStreams: (videoId: string) => Promise<MvResolvedStreams>;
     setQuality: (videoId: string, qualityId: string) => Promise<TrackVideo>;

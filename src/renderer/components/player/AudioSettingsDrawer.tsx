@@ -199,6 +199,10 @@ const formatMode = (mode: AudioOutputMode | null | undefined, copy: AudioDrawerC
     return copy.exclusive;
   }
 
+  if (mode === 'system') {
+    return copy.systemAudio;
+  }
+
   return copy.shared;
 };
 
@@ -213,7 +217,9 @@ const formatCodecLine = (status: AudioStatus | null, copy: AudioDrawerCopy): str
 };
 
 const isHiResAudio = (status: AudioStatus | null): boolean =>
-  status?.outputMode !== 'shared' && Boolean((status?.bitDepth && status.bitDepth >= 24) || (status?.fileSampleRate && status.fileSampleRate >= 88200));
+  status?.outputMode !== 'shared' &&
+  status?.outputMode !== 'system' &&
+  Boolean((status?.bitDepth && status.bitDepth >= 24) || (status?.fileSampleRate && status.fileSampleRate >= 88200));
 
 const isLosslessCodec = (status: AudioStatus | null): boolean => {
   const codec = status?.codec?.toLocaleLowerCase();
@@ -304,6 +310,10 @@ const getPlaybackChainText = (status: AudioStatus | null, copy: AudioDrawerCopy)
           : isJuceDecodeStandbyVisible(status)
             ? `${copy.ffmpegDecode} (${copy.juceDecodeStandby})`
             : copy.ffmpegDecode;
+
+  if (status?.outputMode === 'system') {
+    return copy.systemAudio;
+  }
 
   if (isActiveJuceBackend(status)) {
     return `${decodeText} -> ${copy.juceOutput}`;
@@ -398,6 +408,10 @@ const getEqSignalText = (status: AudioStatus | null, copy: AudioDrawerCopy): str
 
 const getResampleSignalText = (status: AudioStatus | null, deviceSampleRate: number | null | undefined, copy: AudioDrawerCopy): string => {
   const resamplerSuffix = status?.resamplerEngine === 'soxr' && status.resamplerFallbackActive !== true ? ` / ${copy.soxrResampler}` : '';
+  if (status?.outputMode === 'system') {
+    return copy.systemAudio;
+  }
+
   if (status?.activeDsdOutputMode === 'dop') {
     return formatRatePath(status, deviceSampleRate, copy);
   }
@@ -418,6 +432,10 @@ const getResampleSignalText = (status: AudioStatus | null, deviceSampleRate: num
 };
 
 const getDirectSignalText = (status: AudioStatus | null, deviceSampleRate: number | null | undefined, copy: AudioDrawerCopy): string => {
+  if (status?.outputMode === 'system') {
+    return copy.systemAudio;
+  }
+
   if (status?.outputMode === 'shared') {
     return copy.sharedMixer;
   }
@@ -788,9 +806,14 @@ export const AudioSettingsDrawer = ({
   const asioDevices = useMemo(() => visibleDevices.filter((device) => device.outputMode === 'asio'), [visibleDevices]);
   const advancedNativeOutputAvailable = useMemo(() => supportsAdvancedNativeOutput(), []);
   const wasapiExclusive = outputMode === 'exclusive';
-  const lockWasapiExclusive = !advancedNativeOutputAvailable || outputMode === 'asio';
+  const systemAudioActive = outputMode === 'system' || status?.outputMode === 'system';
+  const lockWasapiExclusive = !advancedNativeOutputAvailable || outputMode === 'asio' || outputMode === 'system';
   const statusDevice = useMemo(() => {
     if (!status) {
+      return null;
+    }
+
+    if (status.outputMode === 'system') {
       return null;
     }
 
@@ -1184,7 +1207,7 @@ export const AudioSettingsDrawer = ({
   );
 
   const applyDevice = (mode: AudioOutputMode, device: AudioDeviceInfo | null): void => {
-    const nextMode = advancedNativeOutputAvailable ? mode : 'shared';
+    const nextMode = mode === 'system' || advancedNativeOutputAvailable ? mode : 'shared';
     const remembered = readRememberedAudioOutput();
     const settings = createOutputSettings(
       nextMode,
@@ -1196,6 +1219,19 @@ export const AudioSettingsDrawer = ({
       settings.bufferSizeFrames = remembered.bufferSizeFrames;
     }
     setOutputMode(nextMode);
+    void applyOutput(settings);
+  };
+
+  const applySystemAudio = (): void => {
+    const remembered = readRememberedAudioOutput();
+    const settings = createOutputSettings(
+      'system',
+      null,
+      status?.latencyProfile ?? remembered.latencyProfile ?? 'balanced',
+      'auto',
+    );
+    setOutputMode('system');
+    setSharedBackend('auto');
     void applyOutput(settings);
   };
 
@@ -1287,23 +1323,30 @@ export const AudioSettingsDrawer = ({
     });
   };
 
-  const toggleDsdDop = (enabled: boolean): void => {
-    const previous = useDsdDop;
+  const toggleDsdDirectChain = (enabled: boolean): void => {
+    const previousDsdDop = useDsdDop;
+    const previousAsioNativeDsd = asioNativeDsdExperimentalEnabled;
     const dsdOutputMode = enabled ? 'dop' : 'pcm';
     setUseDsdDop(enabled);
-    void window.echo?.app.setSettings({ audioDsdOutputMode: dsdOutputMode }).catch(() => undefined);
-    void applyOutput({ dsdOutputMode }).catch(() => {
-      setUseDsdDop(previous);
+    setAsioNativeDsdExperimentalEnabled(enabled);
+    void window.echo?.app
+      .setSettings({
+        audioDsdOutputMode: dsdOutputMode,
+        audioAsioNativeDsdExperimentalEnabled: enabled,
+      })
+      .catch(() => undefined);
+    void applyOutput({ dsdOutputMode, asioNativeDsdExperimentalEnabled: enabled }).catch(() => {
+      setUseDsdDop(previousDsdDop);
+      setAsioNativeDsdExperimentalEnabled(previousAsioNativeDsd);
     });
   };
 
+  const toggleDsdDop = (enabled: boolean): void => {
+    toggleDsdDirectChain(enabled);
+  };
+
   const toggleAsioNativeDsdExperimental = (enabled: boolean): void => {
-    const previous = asioNativeDsdExperimentalEnabled;
-    setAsioNativeDsdExperimentalEnabled(enabled);
-    void window.echo?.app.setSettings({ audioAsioNativeDsdExperimentalEnabled: enabled }).catch(() => undefined);
-    void applyOutput({ asioNativeDsdExperimentalEnabled: enabled }).catch(() => {
-      setAsioNativeDsdExperimentalEnabled(previous);
-    });
+    toggleDsdDirectChain(enabled);
   };
 
   const toggleAsioUnavailableFallback = (enabled: boolean): void => {
@@ -1565,7 +1608,22 @@ export const AudioSettingsDrawer = ({
             <h3>{t('audioDrawer.section.systemDevices')}</h3>
           </div>
           <button
-            className={`audio-device-pill ${!status?.outputDeviceName && outputMode !== 'asio' ? 'active' : ''}`}
+            className={`audio-device-pill ${systemAudioActive ? 'active' : ''}`}
+            type="button"
+            title={copy.systemAudio}
+            disabled={isBusy}
+            onClick={applySystemAudio}
+          >
+            <Waves size={15} />
+            <span>
+              <strong>{copy.systemAudio}</strong>
+              <small>{copy.systemDefaultOutput} / {t('audioDrawer.device.systemSelectedRoute')}</small>
+            </span>
+            <em>Windows</em>
+            {systemAudioActive ? <Check size={15} /> : null}
+          </button>
+          <button
+            className={`audio-device-pill ${!status?.outputDeviceName && outputMode !== 'asio' && outputMode !== 'system' ? 'active' : ''}`}
             type="button"
             title={copy.systemDefaultOutput}
             disabled={isBusy}
@@ -1577,7 +1635,7 @@ export const AudioSettingsDrawer = ({
               <small>{wasapiExclusive ? t('audioDrawer.mode.exclusiveCandidate') : copy.shared} / {t('audioDrawer.device.systemSelectedRoute')}</small>
             </span>
             <em>{wasapiExclusive ? copy.exclusive : copy.shared}</em>
-            {outputMode !== 'asio' && !status?.outputDeviceName ? <Check size={15} /> : null}
+            {outputMode !== 'asio' && outputMode !== 'system' && !status?.outputDeviceName ? <Check size={15} /> : null}
           </button>
           {sharedDevices.length === 0 ? <p className="audio-drawer-empty">{t('audioDrawer.empty.systemDevices')}</p> : null}
           {sharedDevices.map((device) => {
@@ -1785,7 +1843,10 @@ export const AudioSettingsDrawer = ({
                   onChange={(event) => toggleDsdDop(event.currentTarget.checked)}
                 />
               </label>
-              <p>{t('audioDrawer.note.dsdDop')}</p>
+              <p>
+                {t('audioDrawer.note.dsdDop')}
+                <span className="audio-section-note-inline-warning">需要使用 ASIO</span>
+              </p>
 
               <label className="audio-toggle-row">
                 <span>
@@ -1799,7 +1860,10 @@ export const AudioSettingsDrawer = ({
                   onChange={(event) => toggleAsioNativeDsdExperimental(event.currentTarget.checked)}
                 />
               </label>
-              <p>{t('audioDrawer.note.asioNativeDsd')}</p>
+              <p>
+                {t('audioDrawer.note.asioNativeDsd')}
+                <span className="audio-section-note-inline-warning">需要使用 ASIO</span>
+              </p>
 
               <label className="audio-toggle-row">
                 <span>

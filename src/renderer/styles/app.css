@@ -4165,6 +4165,14 @@
   color: rgba(255, 225, 169, 0.86);
 }
 
+.audio-section-note-inline-warning,
+.settings-inline-warning-text {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--theme-warning-text);
+  font-weight: 850;
+}
+
 .audio-output-user-note {
   gap: 8px;
   margin-top: 2px;

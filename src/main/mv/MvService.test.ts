@@ -513,7 +513,7 @@ describe('MvService', () => {
     expect(provider.search).not.toHaveBeenCalled();
   });
 
-  it('resets corrupt MV cache tables and retries network MV persistence', async () => {
+  it('does not reset MV rows when network candidate persistence hits a database error', async () => {
     const candidate: MvMatchCandidate = {
       id: 'bilibili:BV1repair',
       provider: 'bilibili',
@@ -537,6 +537,7 @@ describe('MvService', () => {
       resolve: vi.fn(async () => [makeResolvedVariant()]),
     };
     const { database, service, track } = createHarness([provider]);
+    const selected = service.bindUrl(track.id, 'https://www.bilibili.com/video/BV1existing');
     const originalTransaction = database.transaction.bind(database);
     let failOnce = true;
 
@@ -551,11 +552,11 @@ describe('MvService', () => {
       return originalTransaction(fn as never) as never;
     }) as never);
 
-    const candidates = await service.searchNetworkCandidates(track.id);
+    await expect(service.searchNetworkCandidates(track.id)).rejects.toThrow('MV database is temporarily unavailable');
 
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]).toMatchObject({ provider: 'bilibili', title: 'Echo Song MV' });
-    expect(service.getSelectedVideo(track.id)).toMatchObject({ provider: 'bilibili', selected: true });
+    expect(provider.resolve).not.toHaveBeenCalled();
+    expect(service.getSelectedVideo(track.id)).toMatchObject({ id: selected.id, provider: 'bilibili', selected: true });
+    expect(database.prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM track_videos').get()?.count).toBe(1);
   });
 
   it('keeps selected MV rows when only the stream cache table is corrupt', () => {
@@ -646,11 +647,11 @@ describe('MvService', () => {
     expect(resolved.video.selectedQualityId).toBe('auto');
   });
 
-  it('rebuilds MV cache and hides raw SQLite errors when resolveStreams cannot read video rows', async () => {
-    const { database, service } = createHarness();
+  it('does not drop selected MV rows when resolveStreams cannot read video rows', async () => {
+    const { database, service, track } = createHarness();
+    const video = service.bindUrl(track.id, 'https://www.bilibili.com/video/BV1preserve');
     const originalPrepare = database.prepare.bind(database);
-
-    vi.spyOn(database, 'prepare').mockImplementation(((sql: string) => {
+    const prepareSpy = vi.spyOn(database, 'prepare').mockImplementation(((sql: string) => {
       if (sql.includes('FROM track_videos WHERE id')) {
         throw makeSqliteCorruptError();
       }
@@ -658,7 +659,60 @@ describe('MvService', () => {
       return originalPrepare(sql) as never;
     }) as never);
 
-    await expect(service.resolveStreams('broken-video')).rejects.toThrow('MV cache was rebuilt after SQLite corruption');
+    await expect(service.resolveStreams(video.id)).rejects.toThrow('MV database is temporarily unavailable');
+
+    prepareSpy.mockRestore();
+    expect(database.prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM track_videos').get()?.count).toBe(1);
+  });
+
+  it('returns temporary playable MV streams without writing MV tables', async () => {
+    const candidate: MvMatchCandidate = {
+      id: 'bilibili:BV1temporary',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'Echo Song MV',
+      artist: 'Echo Artist',
+      filePath: null,
+      url: 'https://www.bilibili.com/video/BV1temporary',
+      providerUrl: 'https://www.bilibili.com/video/BV1temporary',
+      thumbnailUrl: null,
+      uploader: 'Echo Channel',
+      availableQualities: [],
+      durationSeconds: 120,
+      score: 0.96,
+      playableInApp: true,
+      reasons: ['Bilibili search'],
+    };
+    const provider: MainMvOnlineProvider = {
+      id: 'bilibili',
+      search: vi.fn(async () => [candidate]),
+      resolve: vi.fn(async () => [makeResolvedVariant({ url: 'https://cdn.example/temp.mp4' })]),
+    };
+    const { database, service, track } = createHarness([provider]);
+
+    const video = await service.getTemporaryPlayableForSnapshot({
+      trackId: track.id,
+      title: track.title,
+      artist: track.artist,
+      durationSeconds: track.duration,
+      mediaType: 'local',
+      query: `${track.title} ${track.artist}`,
+    });
+
+    expect(video).toMatchObject({
+      provider: 'bilibili',
+      sourceType: 'stream',
+      mediaUrl: expect.stringMatching(/^echo-mv:\/\/ephemeral\//u),
+      playableInApp: true,
+      temporary: true,
+    });
+    const token = video?.mediaUrl?.replace(/^echo-mv:\/\/ephemeral\//u, '') ?? '';
+    expect(service.getTemporaryStreamVariantForProtocol(decodeURIComponent(token))).toMatchObject({
+      url: 'https://cdn.example/temp.mp4',
+      mimeType: 'video/mp4',
+    });
+    expect(database.prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM track_videos').get()?.count).toBe(0);
+    expect(database.prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM track_video_streams').get()?.count).toBe(0);
   });
 
   it('uses the configured auto-apply threshold for network MV candidates', async () => {

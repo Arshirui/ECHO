@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const handleMock = vi.fn();
 const getVideoFileForProtocolMock = vi.fn();
 const getStreamVariantForProtocolMock = vi.fn();
+const getTemporaryStreamVariantForProtocolMock = vi.fn();
 const tempRoots: string[] = [];
 
 vi.mock('electron', () => ({
@@ -19,6 +20,7 @@ vi.mock('../mv/MvService', () => ({
   getMvService: () => ({
     getVideoFileForProtocol: getVideoFileForProtocolMock,
     getStreamVariantForProtocol: getStreamVariantForProtocolMock,
+    getTemporaryStreamVariantForProtocol: getTemporaryStreamVariantForProtocolMock,
   }),
 }));
 
@@ -42,6 +44,7 @@ describe('echo-video protocol', () => {
     handleMock.mockClear();
     getVideoFileForProtocolMock.mockReset();
     getStreamVariantForProtocolMock.mockReset();
+    getTemporaryStreamVariantForProtocolMock.mockReset();
     const module = await import('./videoProtocol');
     module.registerVideoProtocolHandler();
   });
@@ -123,6 +126,32 @@ describe('echo-video protocol', () => {
     const response = await handler(new Request('echo-mv://stream/video-1/C:/Users/Moe/video.mp4'));
 
     expect(response.status).toBe(404);
+    expect(getStreamVariantForProtocolMock).not.toHaveBeenCalled();
+  });
+
+  it('proxies temporary MV streams without a database video id', async () => {
+    getTemporaryStreamVariantForProtocolMock.mockReturnValue({
+      videoId: 'ephemeral',
+      variantId: 'token-1',
+      url: 'https://cdn.example/temporary.mp4',
+      headers: { Referer: 'https://www.bilibili.com/video/BV1echo' },
+      mimeType: 'video/mp4',
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('temp', {
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Length': '4',
+        },
+      }),
+    );
+    const handler = handleMock.mock.calls.find(([scheme]) => scheme === 'echo-mv')?.[1] as (request: Request) => Promise<Response>;
+
+    const response = await handler(new Request('echo-mv://ephemeral/token-1'));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('temp');
+    expect(getTemporaryStreamVariantForProtocolMock).toHaveBeenCalledWith('token-1');
     expect(getStreamVariantForProtocolMock).not.toHaveBeenCalled();
   });
 });

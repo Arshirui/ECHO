@@ -22,4 +22,30 @@ describe('audio error formatting', () => {
     expect(shouldSuppressAudioHostError(message)).toBe(false);
     expect(formatAudioHostError(message)).toBeTruthy();
   });
+
+  it('formats invalid executable spawn errors as an audio engine startup problem', () => {
+    const message = "Error invoking remote method 'playback:play-local-file': Error: spawn EFTYPE";
+
+    expect(formatAudioHostError(message)).toContain('音频引擎无法启动');
+  });
+
+  it('formats Windows native access violations without exposing the raw IPC error', () => {
+    const message =
+      "Error invoking remote method 'playback:play-media-item': Error: echo-audio-host exit_code_3221225477; mode=\"shared\"; exitCodeHex=0xC0000005; nativeCrash=access_violation";
+
+    const formatted = formatAudioHostError(message);
+
+    expect(formatted).toContain('音频引擎在启动 Windows 共享输出时崩溃');
+    expect(formatted).not.toContain('Error invoking remote method');
+  });
+
+  it('formats signed native access violation exit codes without exposing the raw IPC error', () => {
+    const message =
+      "Error invoking remote method 'playback:play-media-item': Error: echo-audio-host exit_code_-3221225477; mode=\"shared\"";
+
+    const formatted = formatAudioHostError(message);
+
+    expect(formatted).toContain('音频引擎在启动 Windows 共享输出时崩溃');
+    expect(formatted).not.toContain('Error invoking remote method');
+  });
 });

@@ -1,8 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 import electron from 'electron';
 import type { EchoDatabase } from '../database/createDatabase';
-import { createDatabase } from '../database/createDatabase';
+import { getLibraryDatabaseManager } from '../database/LibraryDatabaseManager';
 import { defaultSettings, getAppSettings } from '../app/appSettings';
 import { assertProtectedLibraryAvailable } from '../app/dataProtection';
 import { getLibraryService } from '../library/LibraryService';
@@ -561,6 +560,7 @@ export class LyricsService {
     private readonly localProvider: LocalProvider = new LocalLyricsProvider(),
     private readonly onlineProvider: OnlineProvider = new LrclibProvider(),
     private readonly readAppSettings: () => AppSettings = getAppSettings,
+    private readonly closeDatabase: () => void = () => this.database.close(),
   ) {
     this.matchEngine = new LyricsMatchEngine([
       adaptLocalProvider(this.localProvider),
@@ -573,7 +573,7 @@ export class LyricsService {
   }
 
   close(): void {
-    this.database.close();
+    this.closeDatabase();
   }
 
   async getLyricsForTrack(trackId: string): Promise<TrackLyrics | null> {
@@ -1415,11 +1415,16 @@ export const getLyricsService = (): LyricsService => {
       throw new Error('Electron app module is unavailable outside the Electron main process');
     }
 
+    const databaseConnection = getLibraryDatabaseManager().openServiceConnection('lyrics');
     defaultLyricsService = new LyricsService(
-      createDatabase(join(electronApp.getPath('userData'), 'echo-library.sqlite')),
+      databaseConnection.database,
       {
         getTrack: (trackId) => getLibraryService().getTrack(trackId),
       },
+      undefined,
+      undefined,
+      undefined,
+      databaseConnection.close,
     );
   }
 

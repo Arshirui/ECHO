@@ -5,6 +5,11 @@ import { runMigrations } from './migrations';
 import { assertDatabaseHealthy, DatabaseHealthError } from './health';
 
 export type EchoDatabase = Database.Database;
+export type DatabaseCorruptionPolicy = 'throw' | 'quarantine-for-test-or-manual';
+
+type CreateDatabaseOptions = {
+  corruptionPolicy?: DatabaseCorruptionPolicy;
+};
 
 const quarantineTimestamp = (): string => new Date().toISOString().replace(/[:.]/g, '-');
 
@@ -51,13 +56,19 @@ export const quarantineCorruptDatabase = (databasePath: string): string => {
   return quarantinedDatabasePath;
 };
 
-export const createDatabase = (databasePath: string): EchoDatabase => {
+export const createDatabase = (databasePath: string, options: CreateDatabaseOptions = {}): EchoDatabase => {
+  const corruptionPolicy = options.corruptionPolicy ?? 'throw';
+
   if (databasePath !== ':memory:') {
     mkdirSync(dirname(databasePath), { recursive: true });
     try {
       assertDatabaseHealthy(databasePath);
     } catch (error) {
-      if (error instanceof DatabaseHealthError && error.health.status === 'corrupt') {
+      if (
+        error instanceof DatabaseHealthError &&
+        error.health.status === 'corrupt' &&
+        corruptionPolicy === 'quarantine-for-test-or-manual'
+      ) {
         const quarantinedPath = quarantineCorruptDatabase(databasePath);
         console.warn(
           `[database] Corrupt SQLite database was quarantined at ${quarantinedPath}; creating a clean database.`,

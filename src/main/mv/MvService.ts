@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { basename, extname, join, resolve } from 'node:path';
 import electron, { shell } from 'electron';
 import type { EchoDatabase } from '../database/createDatabase';
-import { createDatabase } from '../database/createDatabase';
+import { getLibraryDatabaseManager } from '../database/LibraryDatabaseManager';
 import { getAppSettings, setAppSettings } from '../app/appSettings';
 import { assertProtectedLibraryAvailable } from '../app/dataProtection';
 import { getLibraryService } from '../library/LibraryService';
@@ -98,8 +98,17 @@ export type StreamVariantForProtocol = {
   mimeType: string | null;
 };
 
+type EphemeralMvStreamEntry = {
+  token: string;
+  url: string;
+  headers: Record<string, string>;
+  mimeType: string | null;
+  expiresAtMs: number;
+};
+
 const nowIso = (): string => new Date().toISOString();
 const clampOffset = (value: number): number => Math.max(-10000, Math.min(10000, Math.round(value)));
+const ephemeralMvStreamTtlMs = 15 * 60 * 1000;
 
 const fileHashId = (filePath: string): string => `local:${createHash('sha1').update(resolve(filePath)).digest('hex')}`;
 const isSqliteCorruptionError = (error: unknown): boolean => {
@@ -108,34 +117,8 @@ const isSqliteCorruptionError = (error: unknown): boolean => {
   return code === 'SQLITE_CORRUPT' || /database disk image is malformed|database disk image malformed|SQLITE_CORRUPT/i.test(message);
 };
 
-const mvVideoStorageSql = `
-CREATE TABLE IF NOT EXISTS track_videos (
-  id TEXT PRIMARY KEY,
-  track_id TEXT NOT NULL,
-  provider TEXT NOT NULL,
-  source_type TEXT NOT NULL,
-  source_id TEXT,
-  title TEXT,
-  artist TEXT,
-  url TEXT,
-  provider_url TEXT,
-  thumbnail_url TEXT,
-  file_path TEXT,
-  mime_type TEXT,
-  duration_seconds REAL,
-  width INTEGER,
-  height INTEGER,
-  selected_quality_id TEXT,
-  quality_label TEXT,
-  fps REAL,
-  offset_ms INTEGER NOT NULL DEFAULT 0,
-  raw_provider_json TEXT,
-  score REAL NOT NULL DEFAULT 0,
-  selected INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-`;
+const createMvDatabaseUnavailableError = (operation: string): Error =>
+  new Error(`MV database is temporarily unavailable during ${operation}. Try temporary MV playback or repair the library database.`);
 
 const mvStreamStorageSql = `
 CREATE TABLE IF NOT EXISTS track_video_streams (
@@ -164,31 +147,14 @@ CREATE TABLE IF NOT EXISTS track_video_streams (
   UNIQUE(video_id, variant_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_track_videos_track_id ON track_videos(track_id);
-CREATE INDEX IF NOT EXISTS idx_track_videos_track_selected ON track_videos(track_id, selected);
-CREATE INDEX IF NOT EXISTS idx_track_videos_provider_source ON track_videos(provider, source_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_track_videos_one_selected ON track_videos(track_id) WHERE selected = 1;
 CREATE INDEX IF NOT EXISTS idx_track_video_streams_video_id ON track_video_streams(video_id);
 CREATE INDEX IF NOT EXISTS idx_track_video_streams_provider ON track_video_streams(provider, variant_id);
-`;
-
-const mvStorageSql = `
-${mvVideoStorageSql}
-${mvStreamStorageSql}
 `;
 
 const resetMvStreamStorage = (database: EchoDatabase): void => {
   database.exec(`
     DROP TABLE IF EXISTS track_video_streams;
     ${mvStreamStorageSql}
-  `);
-};
-
-const resetMvStorage = (database: EchoDatabase): void => {
-  database.exec(`
-    DROP TABLE IF EXISTS track_video_streams;
-    DROP TABLE IF EXISTS track_videos;
-    ${mvStorageSql}
   `);
 };
 
@@ -277,6 +243,26 @@ const bilibiliRankFromRaw = (variant: TrackVideoStreamRow): number => {
   }
 
   const qn = bilibiliQnFromRaw(variant);
+  return qn ? bilibiliQualityRank(qn) : 0;
+};
+
+const recordFromUnknown = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const bilibiliQnFromResolved = (variant: ResolvedMvStreamVariant): number | null => {
+  const raw = recordFromUnknown(variant.rawProviderJson);
+  const qn = Number(raw?.qn);
+  return Number.isFinite(qn) && qn > 0 ? qn : null;
+};
+
+const bilibiliRankFromResolved = (variant: ResolvedMvStreamVariant): number => {
+  const raw = recordFromUnknown(variant.rawProviderJson);
+  const explicitRank = Number(raw?.qualityRank);
+  if (Number.isFinite(explicitRank) && explicitRank > 0) {
+    return explicitRank;
+  }
+
+  const qn = bilibiliQnFromResolved(variant);
   return qn ? bilibiliQualityRank(qn) : 0;
 };
 
@@ -513,6 +499,7 @@ const sanitizeVariant = (variant: TrackVideoStreamRow): MvQualityVariant => ({
 
 export class MvService {
   private readonly onlineProviderMap: Map<NetworkMvProviderId, MainMvOnlineProvider>;
+  private readonly ephemeralStreams = new Map<string, EphemeralMvStreamEntry>();
 
   constructor(
     private readonly database: EchoDatabase,
@@ -520,12 +507,13 @@ export class MvService {
     private readonly localProvider: LocalMvProvider = new LocalMvProvider(),
     private readonly shellOpener: ShellOpener = shell,
     onlineProviders: MainMvOnlineProvider[] = createOnlineMvProviders(),
+    private readonly closeDatabase: () => void = () => this.database.close(),
   ) {
     this.onlineProviderMap = new Map(onlineProviders.map((provider) => [provider.id, provider]));
   }
 
   close(): void {
-    this.database.close();
+    this.closeDatabase();
   }
 
   getSettings(): MvSettings {
@@ -609,8 +597,8 @@ export class MvService {
       return row ? this.mapRow(row) : null;
     } catch (error) {
       if (isSqliteCorruptionError(error)) {
-        this.repairMvStorage(error);
-        return null;
+        this.reportMvDatabaseUnavailable('getSelectedVideo', error);
+        throw createMvDatabaseUnavailableError('getSelectedVideo');
       }
 
       throw error;
@@ -723,6 +711,76 @@ export class MvService {
     return this.persistNetworkCandidatesWithRepair(track, candidates, settings);
   }
 
+  async getTemporaryPlayableForSnapshot(request: MvTrackSnapshotSearchRequest): Promise<TrackVideo | null> {
+    const settings = this.getSettings();
+    if (settings.enabled === false) {
+      return null;
+    }
+
+    const track = this.trackSnapshotToLibraryTrack(request);
+    const queryOverride = request.query?.trim() || undefined;
+    const enabled = new Set(settings.enabledProviders);
+    const orderedProviders = settings.providerOrder.filter((provider) => enabled.has(provider));
+    const providerResults = await Promise.all(
+      orderedProviders.map(async (providerId) => {
+        const provider = this.onlineProviderMap.get(providerId);
+        if (!provider) {
+          return [];
+        }
+
+        try {
+          return await provider.search(track, settings, queryOverride);
+        } catch {
+          return [];
+        }
+      }),
+    );
+    const candidates = providerResults
+      .flat()
+      .sort((left, right) => {
+        const scoreDelta = right.score - left.score;
+        if (scoreDelta !== 0) {
+          return scoreDelta;
+        }
+        return (right.viewCount ?? -1) - (left.viewCount ?? -1);
+      })
+      .map((candidate) => ({
+        ...candidate,
+        filePath: null,
+        reasons: [...(candidate.reasons ?? []), `temporary:${track.mediaType ?? 'local'}:${track.id}`],
+      }));
+
+    for (const candidate of this.rankAutoCandidates(candidates, settings)) {
+      const providerId = providerName(candidate.provider);
+      if (providerId !== 'bilibili' && providerId !== 'youtube') {
+        continue;
+      }
+
+      const provider = this.onlineProviderMap.get(providerId);
+      if (!provider) {
+        continue;
+      }
+
+      try {
+        const temporaryVideo = this.temporaryVideoFromCandidate(track, candidate, null, null);
+        const variants = await provider.resolve(temporaryVideo, settings);
+        const selected = this.chooseResolvedStreamVariant(providerId, variants, settings);
+        if (!selected?.url || selected.protocol === 'external' || !selected.playableInApp) {
+          continue;
+        }
+
+        const token = this.registerEphemeralStream(selected);
+        const resolvedVideo = this.temporaryVideoFromCandidate(track, candidate, selected, token);
+        this.reportTemporaryMvFallback('getTemporaryPlayableForSnapshot', resolvedVideo);
+        return resolvedVideo;
+      } catch {
+        // Try the next candidate; temporary MV playback should not block audio or lyrics.
+      }
+    }
+
+    return null;
+  }
+
   getVideoCandidates(trackId: string): TrackVideo[] {
     try {
       return this.database
@@ -735,8 +793,8 @@ export class MvService {
         .map((row) => this.mapRow(row));
     } catch (error) {
       if (isSqliteCorruptionError(error)) {
-        this.repairMvStorage(error);
-        return [];
+        this.reportMvDatabaseUnavailable('getVideoCandidates', error);
+        throw createMvDatabaseUnavailableError('getVideoCandidates');
       }
 
       throw error;
@@ -928,8 +986,8 @@ export class MvService {
         throw error;
       }
 
-      this.repairMvStorage(error);
-      throw new Error('MV cache was rebuilt after SQLite corruption. Retry MV search for this track.');
+      this.reportMvDatabaseUnavailable('resolveStreams', error);
+      throw createMvDatabaseUnavailableError('resolveStreams');
     }
   }
 
@@ -1029,6 +1087,25 @@ export class MvService {
     };
   }
 
+  getTemporaryStreamVariantForProtocol(token: string): StreamVariantForProtocol | null {
+    this.pruneExpiredEphemeralStreams();
+    const entry = this.ephemeralStreams.get(token);
+    if (!entry || entry.expiresAtMs <= Date.now()) {
+      if (entry) {
+        this.ephemeralStreams.delete(token);
+      }
+      return null;
+    }
+
+    return {
+      videoId: 'ephemeral',
+      variantId: entry.token,
+      url: entry.url,
+      headers: entry.headers,
+      mimeType: entry.mimeType,
+    };
+  }
+
   private getExistingTrack(trackId: string): LibraryTrack {
     const track = this.library.getTrack(trackId);
     if (!track) {
@@ -1107,6 +1184,50 @@ export class MvService {
         artist: 'snapshot',
         album: 'snapshot',
       },
+    };
+  }
+
+  private temporaryVideoFromCandidate(
+    track: LibraryTrack,
+    candidate: MvMatchCandidate,
+    variant: ResolvedMvStreamVariant | null,
+    token: string | null,
+  ): TrackVideo {
+    const timestamp = nowIso();
+    const provider = providerName(candidate.provider);
+    return {
+      id: token ? `temporary:${token}` : `temporary:${provider}:${sourceIdForCandidate(candidate)}`,
+      trackId: track.id,
+      provider,
+      sourceType: 'stream',
+      sourceId: sourceIdForCandidate(candidate),
+      title: candidate.title,
+      artist: candidate.artist,
+      url: candidate.providerUrl ?? candidate.url,
+      providerUrl: candidate.providerUrl ?? candidate.url,
+      thumbnailUrl: candidate.thumbnailUrl,
+      filePath: null,
+      mediaUrl: token ? `echo-mv://ephemeral/${encodeURIComponent(token)}` : null,
+      mimeType: variant?.mimeType ?? null,
+      durationSeconds: candidate.durationSeconds,
+      width: variant?.width ?? null,
+      height: variant?.height ?? null,
+      selectedQualityId: null,
+      qualityLabel: variant?.label ?? null,
+      fps: variant?.fps ?? null,
+      offsetMs: 0,
+      score: Number(candidate.score ?? 0),
+      selected: true,
+      playableInApp: Boolean(token && variant?.url && variant.playableInApp && variant.protocol !== 'external'),
+      temporary: true,
+      rawProviderJson: {
+        temporary: true,
+        sourceCandidateId: candidate.id,
+        reasons: candidate.reasons,
+        viewCount: candidate.viewCount ?? null,
+      },
+      createdAt: timestamp,
+      updatedAt: timestamp,
     };
   }
 
@@ -1198,8 +1319,8 @@ export class MvService {
         throw error;
       }
 
-      this.repairMvStorage(error);
-      return this.persistNetworkCandidates(track, candidates, settings);
+      this.reportMvDatabaseUnavailable('persistNetworkCandidates', error);
+      throw createMvDatabaseUnavailableError('persistNetworkCandidates');
     }
   }
 
@@ -1213,9 +1334,50 @@ export class MvService {
     return upsertedCandidates;
   }
 
-  private repairMvStorage(error: unknown): void {
-    console.warn('[mv] SQLite MV storage is corrupt; resetting MV cache tables.', error);
-    resetMvStorage(this.database);
+  private reportMvDatabaseUnavailable(operation: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : null;
+    console.warn('[mv] SQLite MV database unavailable; preserving MV rows and allowing temporary playback fallback.', {
+      operation,
+      code,
+      message,
+      database: this.databaseDiagnostics(),
+    });
+  }
+
+  private reportTemporaryMvFallback(operation: string, video: TrackVideo): void {
+    console.warn('[mv] Using temporary MV playback without writing the library database.', {
+      operation,
+      trackId: video.trackId,
+      provider: video.provider,
+      sourceId: video.sourceId,
+      qualityLabel: video.qualityLabel,
+      database: this.databaseDiagnostics(),
+    });
+  }
+
+  private databaseDiagnostics(): { path: string | null; files: Record<string, number | null> } {
+    const databasePath = (this.database as { name?: string }).name ?? null;
+    if (!databasePath || databasePath === ':memory:') {
+      return { path: databasePath, files: {} };
+    }
+
+    const size = (path: string): number | null => {
+      try {
+        return statSync(path).size;
+      } catch {
+        return null;
+      }
+    };
+
+    return {
+      path: databasePath,
+      files: {
+        db: size(databasePath),
+        wal: size(`${databasePath}-wal`),
+        shm: size(`${databasePath}-shm`),
+      },
+    };
   }
 
   private repairMvStreamStorage(error: unknown): void {
@@ -1455,6 +1617,79 @@ export class MvService {
     );
   }
 
+  private chooseResolvedStreamVariant(
+    providerId: NetworkMvProviderId,
+    variants: ResolvedMvStreamVariant[],
+    settings: MvSettings,
+  ): ResolvedMvStreamVariant | null {
+    return (
+      [...variants]
+        .filter((variant) => variant.protocol !== 'external')
+        .filter((variant) => variant.playableInApp === true)
+        .filter((variant) => Boolean(variant.url))
+        .filter((variant) => {
+          if (providerId === 'bilibili') {
+            const qn = bilibiliQnFromResolved(variant);
+            return qn ? qn <= maxBilibiliQnForSettings(settings) : !variant.height || variant.height <= maxQualityHeight(settings.maxQuality);
+          }
+
+          return !variant.height || variant.height <= maxQualityHeight(settings.maxQuality);
+        })
+        .filter((variant) => {
+          if (settings.allow60fps !== false) {
+            return true;
+          }
+
+          const qn = providerId === 'bilibili' ? bilibiliQnFromResolved(variant) : null;
+          return qn !== 116 && (!variant.fps || variant.fps < 55);
+        })
+        .sort((left, right) => {
+          if (providerId === 'bilibili') {
+            const rankDelta = bilibiliRankFromResolved(right) - bilibiliRankFromResolved(left);
+            if (rankDelta !== 0) {
+              return rankDelta;
+            }
+          }
+
+          const heightDelta = (right.height ?? 0) - (left.height ?? 0);
+          if (heightDelta !== 0) {
+            return heightDelta;
+          }
+          const fpsDelta = (right.fps ?? 0) - (left.fps ?? 0);
+          if (fpsDelta !== 0) {
+            return fpsDelta;
+          }
+
+          return (right.codec ?? '').localeCompare(left.codec ?? '');
+        })[0] ?? null
+    );
+  }
+
+  private registerEphemeralStream(variant: ResolvedMvStreamVariant): string {
+    this.pruneExpiredEphemeralStreams();
+    const token = randomUUID();
+    const providerExpiry = variant.expiresAt ? Date.parse(variant.expiresAt) : Number.NaN;
+    const defaultExpiry = Date.now() + ephemeralMvStreamTtlMs;
+    const expiresAtMs = Number.isFinite(providerExpiry) && providerExpiry > Date.now() ? Math.min(providerExpiry, defaultExpiry) : defaultExpiry;
+    this.ephemeralStreams.set(token, {
+      token,
+      url: variant.url!,
+      headers: variant.headers ?? {},
+      mimeType: variant.mimeType,
+      expiresAtMs,
+    });
+    return token;
+  }
+
+  private pruneExpiredEphemeralStreams(): void {
+    const now = Date.now();
+    for (const [token, entry] of this.ephemeralStreams) {
+      if (entry.expiresAtMs <= now) {
+        this.ephemeralStreams.delete(token);
+      }
+    }
+  }
+
   private getRow(videoId: string): TrackVideoRow | null {
     return this.database.prepare<[string], TrackVideoRow>('SELECT * FROM track_videos WHERE id = ?').get(videoId) ?? null;
   }
@@ -1629,11 +1864,16 @@ export const getMvService = (): MvService => {
       throw new Error('Electron app module is unavailable outside the Electron main process');
     }
 
+    const databaseConnection = getLibraryDatabaseManager().openServiceConnection('mv');
     defaultMvService = new MvService(
-      createDatabase(join(electronApp.getPath('userData'), 'echo-library.sqlite')),
+      databaseConnection.database,
       {
         getTrack: (trackId) => getLibraryService().getTrack(trackId),
       },
+      undefined,
+      undefined,
+      undefined,
+      databaseConnection.close,
     );
   }
 

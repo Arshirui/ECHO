@@ -5,6 +5,9 @@ const nonActionableAudioErrorPatterns = [
   /\baudio_session_run_cancelled\b/u,
 ];
 
+const nativeAccessViolationPattern =
+  /\bnativeCrash=access_violation\b|\bexitCodeHex=0xC0000005\b|\becho-audio-host\s+exit_code_-?(?:3221225477|1073741819)\b/iu;
+
 export const shouldSuppressAudioHostError = (error: string | null | undefined): boolean => {
   if (!error) {
     return true;
@@ -34,7 +37,15 @@ export const formatAudioHostError = (error: string | null | undefined): string |
     return '音频引擎无法启动，请检查 native host 是否存在或被安全软件拦截。';
   }
 
-  if (/\becho-audio-host (exit_code_\d+|exit_signal_|exclusive_denied)/.test(error)) {
+  if (/\bspawn\s+EFTYPE\b|\bnot a valid Win32 application\b|%1 is not a valid Win32 application/iu.test(error)) {
+    return '音频引擎无法启动：程序文件不是有效的 Windows 可执行文件。请重新安装或重新打包，避免 echo-audio-host.exe / ffmpeg.exe 被损坏或替换。';
+  }
+
+  if (nativeAccessViolationPattern.test(error)) {
+    return '音频引擎在启动 Windows 共享输出时崩溃。请先重启音频引擎或 Windows 音频服务；仍复现时，可在设置 > 播放把共享后端临时切到 DirectSound 兼容。';
+  }
+
+  if (/\becho-audio-host (exit_code_-?\d+|exit_signal_|exclusive_denied)/u.test(error)) {
     return '音频输出设备启动失败，可能是设备拒绝当前输出模式、采样率或缓冲设置。';
   }
 

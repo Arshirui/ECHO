@@ -103,6 +103,38 @@ export const registerVideoProtocolHandler = (): void => {
       const videoId = decodeURIComponent(videoIdPart ?? '');
       const variantId = decodeURIComponent(variantIdPart ?? '');
 
+      if (url.hostname === 'ephemeral') {
+        const token = videoId;
+        if (!token || variantIdPart || token.includes('/') || token.includes('\\')) {
+          return new Response('', { status: 404 });
+        }
+
+        const variant = getMvService().getTemporaryStreamVariantForProtocol(token);
+        if (!variant) {
+          return new Response('', { status: 404 });
+        }
+
+        const headers = new Headers(variant.headers);
+        const range = request.headers.get('range');
+        if (range) {
+          headers.set('Range', range);
+        }
+
+        const upstream = await fetch(variant.url, {
+          headers,
+          redirect: 'follow',
+        });
+
+        if (!upstream.ok && upstream.status !== 206) {
+          return new Response('', { status: 502 });
+        }
+
+        return new Response(upstream.body, {
+          status: upstream.status,
+          headers: passthroughHeaders(upstream, variant.mimeType),
+        });
+      }
+
       if (
         url.hostname !== 'stream' ||
         !videoId ||

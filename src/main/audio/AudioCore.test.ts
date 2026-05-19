@@ -4334,6 +4334,24 @@ describe('NativeOutputBridge host arguments', () => {
       appPath: null,
       resourcesPath: '',
       exists: (candidate) => candidate === nextHost,
+      isExecutable: () => true,
+    });
+
+    expect(resolved).toBe(nextHost);
+  });
+
+  it('skips host candidates that exist but are not executable binaries', () => {
+    const exe = process.platform === 'win32' ? 'echo-audio-host.exe' : 'echo-audio-host';
+    const resourcesHost = join('tmp', 'packaged', 'resources', exe);
+    const cwd = join('tmp', 'echo-next');
+    const nextHost = join(cwd, 'electron-app', 'build', exe);
+
+    const resolved = resolveHostBinary({
+      cwd,
+      appPath: null,
+      resourcesPath: join('tmp', 'packaged', 'resources'),
+      exists: (candidate) => candidate === resourcesHost || candidate === nextHost,
+      isExecutable: (candidate) => candidate === nextHost,
     });
 
     expect(resolved).toBe(nextHost);

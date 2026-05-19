@@ -3,6 +3,7 @@ import { createMainWindow } from './createMainWindow';
 import { requestAppQuit } from './tray';
 import { getMainWindow } from './windowManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
+import { registerAudioProtocolHandler } from '../protocol/audioProtocol';
 import { registerCoverProtocolHandler } from '../protocol/coverProtocol';
 import { registerVideoProtocolHandler } from '../protocol/videoProtocol';
 import { disposeSmtcIntegration, initializeSmtcIntegration } from '../integrations/smtc/SmtcStatusSync';
@@ -12,7 +13,7 @@ import { savePlaybackMemoryNow } from '../ipc/playbackIpc';
 import { dispatchLocalAudioFilesOpened, parseLocalAudioFileArguments } from './localFileOpen';
 import { initializeAutoUpdater } from './autoUpdater';
 import { getAppSettings } from './appSettings';
-import { checkpointProtectedLibrary, ensureDataProtection } from './dataProtection';
+import { ensureDataProtection } from './dataProtection';
 import { disposeBackgroundPlaybackShortcuts, initializeBackgroundPlaybackShortcuts } from './backgroundPlaybackShortcuts';
 import { getAccountService } from '../accounts/AccountService';
 import { disposeAirPlayReceiverSpikeService } from '../connect/AirPlayReceiverSpikeService';
@@ -26,6 +27,7 @@ import { closeDefaultLyricsService } from '../lyrics/LyricsService';
 import { closeDefaultMvService } from '../mv/MvService';
 import { closeDefaultStreamingService } from '../streaming/StreamingService';
 import { disposeDefaultAudioSessionGracefully } from '../audio/AudioSession';
+import { closeDefaultLibraryDatabaseManager, getLibraryDatabaseManager } from '../database/LibraryDatabaseManager';
 
 const sendAccountStatusesChanged = (statuses: AccountStatus[]): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -52,12 +54,12 @@ const refreshPreviouslyLoggedInAccountsOnStartup = async (): Promise<void> => {
   }
 };
 
-const notifyLibraryDatabaseReset = (): void => {
+const notifyLibraryDatabaseProtected = (): void => {
   void dialog.showMessageBox({
     type: 'warning',
-    title: '曲库数据库已重建',
-    message: 'ECHO Next 检测到音乐库数据库已完全损坏，已删除损坏的数据库文件。',
-    detail: '你的音乐文件没有被删除。请重新添加歌曲文件夹并扫描，ECHO Next 会重新建立曲库索引。',
+    title: '曲库数据库进入保护模式',
+    message: 'ECHO Next 检测到音乐库数据库未通过健康检查，已先归档副本并停止继续写入。',
+    detail: '你的音乐文件不会被删除。请打开设置里的数据库恢复工具，选择恢复健康快照或归档后重建曲库索引。',
     buttons: ['知道了'],
     defaultId: 0,
     noLink: true,
@@ -93,6 +95,7 @@ export const registerAppLifecycle = (): void => {
   app.whenReady().then(async () => {
     getCrashReportService().initialize();
     const dataProtection = await ensureDataProtection('startup');
+    registerAudioProtocolHandler();
     registerCoverProtocolHandler();
     registerVideoProtocolHandler();
     if (dataProtection.libraryHealth.status === 'ok') {
@@ -106,8 +109,8 @@ export const registerAppLifecycle = (): void => {
       });
     }
     createMainWindow();
-    if (dataProtection.recovery.action === 'reset') {
-      notifyLibraryDatabaseReset();
+    if (dataProtection.recovery.action === 'protected' || dataProtection.recovery.action === 'archivedOnly') {
+      notifyLibraryDatabaseProtected();
     }
     initializeBackgroundPlaybackShortcuts();
     const appSettings = getAppSettings();
@@ -147,13 +150,16 @@ export const registerAppLifecycle = (): void => {
     closeDefaultStreamingService();
     closeDefaultRemoteSourceService();
     closeDefaultLibraryService();
-    const checkpoint = checkpointProtectedLibrary();
+    const manager = getLibraryDatabaseManager();
+    manager.closeAllUsers('app-quit');
+    const checkpoint = manager.checkpoint('app-quit');
     if (checkpoint.status !== 'ok') {
       getCrashReportService().getLogger()?.warn('main', '[Lifecycle] library WAL checkpoint failed during shutdown', {
         status: checkpoint.status,
         error: checkpoint.message,
       });
     }
+    closeDefaultLibraryDatabaseManager();
     getCrashReportService().closeSession();
     requestAppQuit();
   };
