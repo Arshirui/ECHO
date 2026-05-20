@@ -1,5 +1,6 @@
 import { ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE, artistImageConfidence } from './ArtistImageMatching';
 import type { ArtistImageCandidate, ArtistImageProvider } from './ArtistImageTypes';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 
 const providerName = 'wikidata';
 const searchLanguages = ['zh', 'ja', 'en'] as const;
@@ -96,7 +97,7 @@ export class WikidataArtistImageProvider implements ArtistImageProvider {
   }
 
   private async searchLanguage(language: string, artistName: string): Promise<WikidataSearchResult[]> {
-    const response = await fetch(wikidataApiUrl({
+    const response = await fetchWithNetworkProxy(wikidataApiUrl({
       action: 'wbsearchentities',
       search: artistName,
       language,
@@ -127,7 +128,7 @@ export class WikidataArtistImageProvider implements ArtistImageProvider {
       return null;
     }
 
-    const response = await fetch(wikidataApiUrl({
+    const response = await fetchWithNetworkProxy(wikidataApiUrl({
       action: 'wbgetentities',
       ids: entityId,
       props: 'claims|labels|descriptions',

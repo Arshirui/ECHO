@@ -40,6 +40,7 @@ import { AlbumOnlineInfoService } from './online/AlbumOnlineInfoService';
 import { BpmAnalysisJobQueue } from './audioAnalysis/BpmAnalysisJobQueue';
 import { ReplayGainAnalysisJobQueue } from './audioAnalysis/ReplayGainAnalysisJobQueue';
 import { ArtistImageCacheService } from './artistImages/ArtistImageCacheService';
+import { fetchWithNetworkProxy } from '../network/networkFetch';
 import type { ArtistImageLookupInput, ArtistImageProvider } from './artistImages/ArtistImageTypes';
 import type { MetadataService } from './MetadataService';
 import type {
@@ -104,6 +105,8 @@ import type {
   ArtistImageQueueResult,
   ArtistImageRefreshResult,
   FieldSources,
+  ArtistInsights,
+  ArtistInsightsOptions,
 } from './libraryTypes';
 import type {
   EmbeddedTrackTagsLoadResult,
@@ -526,6 +529,10 @@ export class LibraryService {
 
   getArtist(artistId: string): LibraryArtist | null {
     return this.store.getArtist(artistId);
+  }
+
+  getArtistInsights(artistId: string, options?: ArtistInsightsOptions): ArtistInsights {
+    return this.store.getArtistInsights(artistId, options);
   }
 
   getArtistTracks(artistId: string, query?: Pick<LibraryPageQuery, 'page' | 'pageSize' | 'sort'>): LibraryPage<LibraryTrack> {
@@ -2420,7 +2427,7 @@ const readCoverImageFromUrl = async (url: string, mimeTypeHint: string | null): 
 
   let response: Response;
   try {
-    response = await fetch(coverUrl, {
+    response = await fetchWithNetworkProxy(coverUrl, {
       headers: {
         Accept: 'image/avif,image/webp,image/png,image/jpeg,*/*',
         Referer: referer,

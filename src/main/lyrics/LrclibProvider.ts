@@ -3,6 +3,7 @@ import type { LyricsQuery, LyricsSearchCandidate, TrackLyrics } from '../../shar
 import type { LyricsProvider, LyricsProviderCapability, LyricsProviderResult, LyricsProviderSearchRequest } from './LyricsProvider';
 import { detectLyricsKind, parsePlainLyrics, parseSyncedLyrics } from './lyricsParser';
 import { scoreLyricsCandidate } from './lyricsScoring';
+import { fetchWithNetworkProxy } from '../network/networkFetch';
 
 export type LrclibRecord = {
   id?: number | string | null;
@@ -71,7 +72,7 @@ const fetchJson = async (url: string, timeoutMs = defaultTimeoutMs, signal?: Abo
   signal?.addEventListener('abort', abort, { once: true });
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithNetworkProxy(url, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json',

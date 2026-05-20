@@ -30,6 +30,7 @@ const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsOffsetControlsEnabled: false,
+  lyricsSmartAlignmentEnabled: false,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
@@ -723,6 +724,34 @@ describe('LyricsSettingsDrawer', () => {
     fireEvent.click(toggle);
 
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsOffsetControlsEnabled: true }));
+  });
+
+  it('lets users enable smart lyrics alignment from the drawer', async () => {
+    const setSettings = vi.fn().mockResolvedValue(makeSettings({ lyricsSmartAlignmentEnabled: true }));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsSmartAlignmentEnabled: false })),
+        setSettings,
+      },
+      lyrics: {
+        getForTrack: vi.fn().mockResolvedValue(null),
+        searchCandidates: vi.fn().mockResolvedValue([]),
+        applyCandidate: vi.fn(),
+        markInstrumental: vi.fn(),
+        rejectCandidate: vi.fn(),
+        setOffset: vi.fn(),
+        clearCache: vi.fn(),
+      },
+      playback: { getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }) },
+      audio: { getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }) },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    const toggle = await screen.findByLabelText(/智能歌词校准/);
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsSmartAlignmentEnabled: true }));
   });
 
   it('expands secondary lyric font size while romanization or translation is enabled', async () => {

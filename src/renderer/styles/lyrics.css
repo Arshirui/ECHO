@@ -1338,6 +1338,7 @@ html[data-theme="dark"] .lyrics-track-album:hover {
 }
 
 .lyrics-offset-controls,
+.lyrics-smart-alignment,
 .mv-offset-controls {
   display: flex;
   width: min(100%, 760px);
@@ -1361,6 +1362,7 @@ html[data-theme="dark"] .lyrics-track-album:hover {
 }
 
 .lyrics-offset-value,
+.lyrics-smart-alignment-suggestion,
 .mv-offset-value {
   display: inline-flex;
   min-width: 64px;
@@ -1377,6 +1379,7 @@ html[data-theme="dark"] .lyrics-track-album:hover {
 }
 
 .lyrics-offset-label,
+.lyrics-smart-alignment-label,
 .mv-offset-label {
   display: inline-flex;
   min-height: 30px;
@@ -1388,6 +1391,7 @@ html[data-theme="dark"] .lyrics-track-album:hover {
 }
 
 .lyrics-offset-controls p,
+.lyrics-smart-alignment p,
 .mv-offset-controls p {
   flex-basis: 100%;
   margin: -2px 0 0;
@@ -1398,6 +1402,7 @@ html[data-theme="dark"] .lyrics-track-album:hover {
 }
 
 .lyrics-offset-buttons,
+.lyrics-smart-alignment-buttons,
 .mv-offset-buttons {
   display: flex;
   min-width: 0;
@@ -1409,11 +1414,13 @@ html[data-theme="dark"] .lyrics-track-album:hover {
 }
 
 .lyrics-offset-buttons::-webkit-scrollbar,
+.lyrics-smart-alignment-buttons::-webkit-scrollbar,
 .mv-offset-buttons::-webkit-scrollbar {
   display: none;
 }
 
 .lyrics-offset-buttons button,
+.lyrics-smart-alignment-buttons button,
 .mv-offset-buttons button {
   display: inline-flex;
   min-height: 30px;
@@ -1436,25 +1443,31 @@ html[data-theme="dark"] .lyrics-track-album:hover {
 }
 
 .lyrics-offset-buttons button:hover,
+.lyrics-smart-alignment-buttons button:hover,
 .mv-offset-buttons button:hover {
   color: var(--theme-page-text);
   background: var(--theme-legacy-surface-a86);
 }
 
 .lyrics-offset-buttons button:disabled,
+.lyrics-smart-alignment-buttons button:disabled,
 .mv-offset-buttons button:disabled {
   cursor: default;
   opacity: 0.5;
 }
 
 .lyrics-offset-buttons svg,
+.lyrics-smart-alignment-buttons svg,
 .mv-offset-buttons svg {
   flex: 0 0 auto;
 }
 
 html[data-theme="dark"] .lyrics-offset-value,
+html[data-theme="dark"] .lyrics-smart-alignment-suggestion,
 html[data-theme="dark"] .lyrics-offset-buttons button,
+html[data-theme="dark"] .lyrics-smart-alignment-buttons button,
 html[data-theme="dark"] .lyrics-offset-label,
+html[data-theme="dark"] .lyrics-smart-alignment-label,
 html[data-theme="dark"] .mv-offset-value,
 html[data-theme="dark"] .mv-offset-label,
 html[data-theme="dark"] .mv-offset-buttons button {
@@ -1467,11 +1480,13 @@ html[data-theme="dark"] .mv-offset-buttons button {
 }
 
 html[data-theme="dark"] .lyrics-offset-controls p,
+html[data-theme="dark"] .lyrics-smart-alignment p,
 html[data-theme="dark"] .mv-offset-controls p {
   color: rgba(229, 237, 255, 0.58);
 }
 
 html[data-theme="dark"] .lyrics-offset-buttons button:hover,
+html[data-theme="dark"] .lyrics-smart-alignment-buttons button:hover,
 html[data-theme="dark"] .mv-offset-buttons button:hover {
   color: var(--theme-panel-bg-strong);
   background: var(--theme-legacy-var(--theme-on-accent)-a14);

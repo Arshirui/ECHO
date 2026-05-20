@@ -6,7 +6,6 @@ import type {
   RemoteRuntimeLimits,
 } from '../../../shared/types/remoteSources';
 import { getLyricsService } from '../../lyrics/LyricsService';
-import { getMvService } from '../../mv/MvService';
 import type { CoverService } from '../CoverService';
 import type { FieldSources, MetadataStatus, ParsedTrackMetadata } from '../libraryTypes';
 import type { RemoteLibraryStore } from './RemoteLibraryStore';
@@ -86,6 +85,7 @@ const coverOnlyChunkYieldMs = 100;
 const lyricsOnlyChunkYieldMs = 75;
 const coverJobCooldownMs = 150;
 const lyricsJobCooldownMs = 150;
+const playbackDeferredKinds = new Set<RemoteBackgroundJobKind>(['cover', 'lyrics', 'mv']);
 
 const limitKeys: Record<RemoteBackgroundJobKind, keyof RemoteRuntimeLimits> = {
   metadata: 'metadataConcurrency',
@@ -761,19 +761,6 @@ export class RemoteBackgroundJobQueue {
     return true;
   }
 
-  private canRunCoverDuringPlayback(job: QueueJob): boolean {
-    if (job.kind !== 'cover') {
-      return true;
-    }
-
-    const track = this.store.getTrack(job.trackId);
-    if (!track) {
-      return false;
-    }
-
-    return (track.provider === 'jellyfin' || track.provider === 'emby' || track.provider === 'subsonic') && Boolean(track.fieldSources.coverArt);
-  }
-
   private normalizeKinds(kinds: RemoteBackgroundJobKind[]): RemoteBackgroundJobKind[] {
     const unique = new Set<RemoteBackgroundJobKind>();
     for (const kind of kinds) {
@@ -806,7 +793,7 @@ export class RemoteBackgroundJobQueue {
       return false;
     }
 
-    if (job.kind === 'cover' && this.playbackActive && !this.canRunCoverDuringPlayback(job)) {
+    if (this.playbackActive && playbackDeferredKinds.has(job.kind)) {
       return false;
     }
 
@@ -841,7 +828,10 @@ export class RemoteBackgroundJobQueue {
 
     if (this.playbackActive) {
       concurrency.metadata = Math.min(concurrency.metadata, 1);
-      concurrency.cover = Math.min(concurrency.cover, 1);
+      concurrency['duration-backfill'] = Math.min(concurrency['duration-backfill'], 1);
+      concurrency.cover = 0;
+      concurrency.lyrics = 0;
+      concurrency.mv = 0;
     }
 
     return concurrency;

@@ -37,7 +37,15 @@ import type { LucideIcon } from 'lucide-react';
 import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioSharedBackend, AudioStatus, ChannelBalanceState, PlaybackSpeedMode } from '../../shared/types/audio';
 import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
 import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
-import type { AppSettings, AppThemeMode, AppThemePreset, AppThemePresetOverrides, AppThemeToneOverride } from '../../shared/types/appSettings';
+import type {
+  AppSettings,
+  AppThemeMode,
+  AppThemePreset,
+  AppThemePresetOverrides,
+  AppThemeToneOverride,
+  NetworkProxyMode,
+  NetworkProxyTestResult,
+} from '../../shared/types/appSettings';
 import type { MvSettings, NetworkMvProviderId } from '../../shared/types/mv';
 import {
   createDefaultGlobalShortcuts,
@@ -493,6 +501,15 @@ const youtubeBrowserOptions: Array<{ value: YouTubeBrowser; label: string }> = [
   { value: 'chrome', label: 'Chrome' },
   { value: 'firefox', label: 'Firefox' },
   { value: 'none', label: '不使用' },
+];
+
+const defaultNetworkProxyBypassRules =
+  '<local>;localhost;127.0.0.1;::1;*.local;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*';
+const networkProxyModeOptions: Array<{ value: NetworkProxyMode; label: string }> = [
+  { value: 'off', label: '关闭' },
+  { value: 'system', label: '系统代理' },
+  { value: 'manual', label: '手动代理' },
+  { value: 'pac', label: 'PAC' },
 ];
 
 type SettingSectionProps = {
@@ -3025,6 +3042,21 @@ export const SettingsPage = (): JSX.Element => {
   const [dangerBusy, setDangerBusy] = useState(false);
   const [dangerMessage, setDangerMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [networkProxyDraft, setNetworkProxyDraft] = useState({
+    mode: 'off' as NetworkProxyMode,
+    proxyUrl: '',
+    pacUrl: '',
+    bypassRules: defaultNetworkProxyBypassRules,
+  });
+  const [networkProxyBusy, setNetworkProxyBusy] = useState<'save' | 'test' | null>(null);
+  const [networkProxyTestResult, setNetworkProxyTestResult] = useState<NetworkProxyTestResult | null>(null);
+  const [onlineArtistInfoDraft, setOnlineArtistInfoDraft] = useState({
+    bandsintownAppId: '',
+    ticketmasterApiKey: '',
+    seatGeekClientId: '',
+    region: '',
+  });
+  const [onlineArtistInfoMessage, setOnlineArtistInfoMessage] = useState<string | null>(null);
 
   const settingsSearchEntries = useMemo(() => {
     const sectionEntries: Array<{
@@ -3076,6 +3108,22 @@ export const SettingsPage = (): JSX.Element => {
           'sandbox',
           '沙箱',
         ],
+      },
+      {
+        id: 'row-network-proxy',
+        sectionKey: 'integrations',
+        targetId: 'settings-row-network-proxy',
+        title: '网络代理',
+        description: '为登录、封面、歌词、MV 和网络元数据请求应用代理；媒体播放流默认不走代理。',
+        terms: ['网络代理', '代理', 'proxy', 'http proxy', 'socks', 'socks5', 'pac', 'vpn', '网络', '歌词', '封面', 'mv', 'metadata'],
+      },
+      {
+        id: 'row-online-artist-info',
+        sectionKey: 'integrations',
+        targetId: 'settings-row-online-artist-info',
+        title: '在线歌手信息',
+        description: '配置演出和歌手补强数据源；不配置时歌手页只显示本地关系。',
+        terms: ['在线歌手信息', '歌手信息', '演出', 'concert', 'event', 'bandsintown', 'ticketmaster', 'seatgeek', 'artist info', 'artist insights'],
       },
       {
         id: 'row-discord-presence',
@@ -3778,6 +3826,25 @@ export const SettingsPage = (): JSX.Element => {
   }, [appSettings?.albumMergeStrategy]);
 
   useEffect(() => {
+    if (!appSettings) {
+      return;
+    }
+
+    setNetworkProxyDraft({
+      mode: appSettings.networkProxyMode ?? 'off',
+      proxyUrl: appSettings.networkProxyUrl ?? '',
+      pacUrl: appSettings.networkProxyPacUrl ?? '',
+      bypassRules: appSettings.networkProxyBypassRules ?? defaultNetworkProxyBypassRules,
+    });
+  }, [
+    appSettings?.networkProxyBypassRules,
+    appSettings?.networkProxyMode,
+    appSettings?.networkProxyPacUrl,
+    appSettings?.networkProxyUrl,
+    appSettings,
+  ]);
+
+  useEffect(() => {
     const displayName = accountStatusByProvider.youtube?.displayName?.toLowerCase() ?? '';
     const savedBrowser = youtubeBrowserOptions.find((option) => option.value !== 'none' && displayName.includes(option.value))?.value;
     if (savedBrowser) {
@@ -4002,6 +4069,24 @@ export const SettingsPage = (): JSX.Element => {
       window.removeEventListener('settings:open-section', handleOpenSettingsSection);
     };
   }, []);
+
+  useEffect(() => {
+    if (!appSettings) {
+      return;
+    }
+
+    setOnlineArtistInfoDraft({
+      bandsintownAppId: appSettings.onlineArtistInfoBandsintownAppId ?? '',
+      ticketmasterApiKey: appSettings.onlineArtistInfoTicketmasterApiKey ?? '',
+      seatGeekClientId: appSettings.onlineArtistInfoSeatGeekClientId ?? '',
+      region: appSettings.onlineArtistInfoRegion ?? '',
+    });
+  }, [
+    appSettings?.onlineArtistInfoBandsintownAppId,
+    appSettings?.onlineArtistInfoRegion,
+    appSettings?.onlineArtistInfoSeatGeekClientId,
+    appSettings?.onlineArtistInfoTicketmasterApiKey,
+  ]);
 
   const handleNavClick = (key: SettingsNavKey): void => {
     jumpToSettingsSection(key);
@@ -4389,6 +4474,130 @@ export const SettingsPage = (): JSX.Element => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
   }, [dispatchSettingsChanged, refreshTaskbarPlaybackStatus]);
+
+  const handleNetworkProxySave = useCallback((): void => {
+    const app = getAppBridge();
+
+    if (!app) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to save proxy settings.');
+      return;
+    }
+
+    if (networkProxyDraft.mode === 'manual' && networkProxyDraft.proxyUrl.trim().length === 0) {
+      setNetworkProxyTestResult({
+        ok: false,
+        mode: networkProxyDraft.mode,
+        message: '请先填写手动代理地址。',
+        resolvedProxy: null,
+        status: null,
+        elapsedMs: 0,
+      });
+      return;
+    }
+
+    if (networkProxyDraft.mode === 'pac' && networkProxyDraft.pacUrl.trim().length === 0) {
+      setNetworkProxyTestResult({
+        ok: false,
+        mode: networkProxyDraft.mode,
+        message: '请先填写 PAC 地址。',
+        resolvedProxy: null,
+        status: null,
+        elapsedMs: 0,
+      });
+      return;
+    }
+
+    setNetworkProxyBusy('save');
+    setNetworkProxyTestResult(null);
+    void app
+      .setSettings({
+        networkProxyMode: networkProxyDraft.mode,
+        networkProxyUrl: networkProxyDraft.proxyUrl.trim() || null,
+        networkProxyPacUrl: networkProxyDraft.pacUrl.trim() || null,
+        networkProxyBypassRules: networkProxyDraft.bypassRules.trim() || defaultNetworkProxyBypassRules,
+      })
+      .then((settings) => {
+        setAppSettings(settings);
+        dispatchSettingsChanged(settings);
+        setNetworkProxyTestResult({
+          ok: true,
+          mode: settings.networkProxyMode ?? 'off',
+          message: '代理设置已保存并应用。',
+          resolvedProxy: null,
+          status: null,
+          elapsedMs: 0,
+        });
+      })
+      .catch((proxyError) => {
+        const message = proxyError instanceof Error ? proxyError.message : String(proxyError);
+        setError(message);
+        setNetworkProxyTestResult({
+          ok: false,
+          mode: networkProxyDraft.mode,
+          message,
+          resolvedProxy: null,
+          status: null,
+          elapsedMs: 0,
+        });
+      })
+      .finally(() => setNetworkProxyBusy(null));
+  }, [dispatchSettingsChanged, networkProxyDraft]);
+
+  const handleNetworkProxyTest = useCallback((): void => {
+    const app = getAppBridge();
+
+    if (!app?.testNetworkProxy) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to test proxy settings.');
+      return;
+    }
+
+    setNetworkProxyBusy('test');
+    setNetworkProxyTestResult(null);
+    void app
+      .testNetworkProxy()
+      .then((result) => setNetworkProxyTestResult(result))
+      .catch((proxyError) => {
+        setNetworkProxyTestResult({
+          ok: false,
+          mode: appSettings?.networkProxyMode ?? 'off',
+          message: proxyError instanceof Error ? proxyError.message : String(proxyError),
+          resolvedProxy: null,
+          status: null,
+          elapsedMs: 0,
+        });
+      })
+      .finally(() => setNetworkProxyBusy(null));
+  }, [appSettings?.networkProxyMode]);
+
+  const handleOnlineArtistInfoSave = useCallback((): void => {
+    const patch: Partial<AppSettings> = {
+      onlineArtistInfoBandsintownAppId: onlineArtistInfoDraft.bandsintownAppId.trim() || null,
+      onlineArtistInfoTicketmasterApiKey: onlineArtistInfoDraft.ticketmasterApiKey.trim() || null,
+      onlineArtistInfoSeatGeekClientId: onlineArtistInfoDraft.seatGeekClientId.trim() || null,
+      onlineArtistInfoRegion: onlineArtistInfoDraft.region.trim() || null,
+    };
+
+    setOnlineArtistInfoMessage('正在保存在线歌手信息配置...');
+    const app = getAppBridge();
+    if (!app) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to save artist info settings.');
+      setOnlineArtistInfoMessage(null);
+      return;
+    }
+
+    void app
+      .setSettings(patch)
+      .then((settings) => {
+        setAppSettings(settings);
+        dispatchSettingsChanged(settings);
+        setOnlineArtistInfoMessage('在线歌手信息配置已保存。演出数据源接入前不会自动联网请求。');
+      })
+      .catch((settingsError) => {
+        const message = settingsError instanceof Error ? settingsError.message : String(settingsError);
+        setError(message);
+        setOnlineArtistInfoMessage(message);
+      });
+  }, [dispatchSettingsChanged, onlineArtistInfoDraft]);
 
   const handleMonoAudioToggle = useCallback((enabled: boolean): void => {
     const eq = getEqBridge();
@@ -7180,6 +7389,165 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Link2} id="integrations" title={t('settings.nav.integrations.label')}>
+              <SettingRow
+                className="setting-row--full"
+                id="settings-row-network-proxy"
+                highlighted={highlightedSettingId === 'settings-row-network-proxy'}
+                title="网络代理"
+                description="给登录页、网络封面、歌词、MV 搜索和元数据补全使用。媒体播放流默认不走代理，避免影响缓冲和 Range 请求。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--network-proxy">
+                  <div className="settings-proxy-grid">
+                    <label className="settings-proxy-field">
+                      <span>模式</span>
+                      <StyledSelect
+                        className="settings-select-control"
+                        value={networkProxyDraft.mode}
+                        options={networkProxyModeOptions}
+                        onChange={(mode) => {
+                          setNetworkProxyDraft((current) => ({ ...current, mode }));
+                          setNetworkProxyTestResult(null);
+                        }}
+                        ariaLabel="网络代理模式"
+                        disabled={!appSettings || networkProxyBusy !== null}
+                        showFilterIcon={false}
+                      />
+                    </label>
+                    <label className="settings-proxy-field">
+                      <span>手动代理地址</span>
+                      <input
+                        type="text"
+                        value={networkProxyDraft.proxyUrl}
+                        placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:7890"
+                        disabled={networkProxyDraft.mode !== 'manual' || networkProxyBusy !== null}
+                        onChange={(event) => {
+                          setNetworkProxyDraft((current) => ({ ...current, proxyUrl: event.target.value }));
+                          setNetworkProxyTestResult(null);
+                        }}
+                      />
+                    </label>
+                    <label className="settings-proxy-field">
+                      <span>PAC 地址</span>
+                      <input
+                        type="text"
+                        value={networkProxyDraft.pacUrl}
+                        placeholder="https://example.com/proxy.pac"
+                        disabled={networkProxyDraft.mode !== 'pac' || networkProxyBusy !== null}
+                        onChange={(event) => {
+                          setNetworkProxyDraft((current) => ({ ...current, pacUrl: event.target.value }));
+                          setNetworkProxyTestResult(null);
+                        }}
+                      />
+                    </label>
+                    <label className="settings-proxy-field settings-proxy-field--wide">
+                      <span>绕过地址</span>
+                      <input
+                        type="text"
+                        value={networkProxyDraft.bypassRules}
+                        disabled={networkProxyDraft.mode === 'off' || networkProxyDraft.mode === 'system' || networkProxyBusy !== null}
+                        onChange={(event) => {
+                          setNetworkProxyDraft((current) => ({ ...current, bypassRules: event.target.value }));
+                          setNetworkProxyTestResult(null);
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <button className="settings-action-button" type="button" disabled={!appSettings || networkProxyBusy !== null} onClick={handleNetworkProxySave}>
+                      <Save size={15} />
+                      {networkProxyBusy === 'save' ? '保存中...' : '保存并应用'}
+                    </button>
+                    <button className="settings-action-button" type="button" disabled={!appSettings || networkProxyBusy !== null} onClick={handleNetworkProxyTest}>
+                      <RotateCw size={15} />
+                      {networkProxyBusy === 'test' ? '测试中...' : '测试连接'}
+                    </button>
+                  </div>
+                  <p className="settings-inline-note">
+                    第一版只默认代理普通联网能力；远程曲库和播放字节流保持直连，避免影响正在播放的稳定性。
+                  </p>
+                  {networkProxyTestResult ? (
+                    <p className={`settings-inline-note settings-proxy-result ${networkProxyTestResult.ok ? 'is-ok' : 'is-error'}`}>
+                      {networkProxyTestResult.message}
+                      {networkProxyTestResult.resolvedProxy ? `；${networkProxyTestResult.resolvedProxy}` : ''}
+                      {networkProxyTestResult.elapsedMs ? `；${networkProxyTestResult.elapsedMs}ms` : ''}
+                    </p>
+                  ) : null}
+                </div>
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full"
+                id="settings-row-online-artist-info"
+                highlighted={highlightedSettingId === 'settings-row-online-artist-info'}
+                title="在线歌手信息"
+                description="配置演出和歌手补强数据源；未配置时歌手页只显示本地关系，不会展示假内容。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--online-artist-info">
+                  <div className="settings-proxy-grid">
+                    <label className="settings-proxy-field">
+                      <span>Bandsintown app_id</span>
+                      <input
+                        type="password"
+                        value={onlineArtistInfoDraft.bandsintownAppId}
+                        placeholder="留空则不启用"
+                        disabled={!appSettings}
+                        onChange={(event) => {
+                          setOnlineArtistInfoDraft((current) => ({ ...current, bandsintownAppId: event.target.value }));
+                          setOnlineArtistInfoMessage(null);
+                        }}
+                      />
+                    </label>
+                    <label className="settings-proxy-field">
+                      <span>Ticketmaster apikey</span>
+                      <input
+                        type="password"
+                        value={onlineArtistInfoDraft.ticketmasterApiKey}
+                        placeholder="留空则不启用"
+                        disabled={!appSettings}
+                        onChange={(event) => {
+                          setOnlineArtistInfoDraft((current) => ({ ...current, ticketmasterApiKey: event.target.value }));
+                          setOnlineArtistInfoMessage(null);
+                        }}
+                      />
+                    </label>
+                    <label className="settings-proxy-field">
+                      <span>SeatGeek client_id</span>
+                      <input
+                        type="password"
+                        value={onlineArtistInfoDraft.seatGeekClientId}
+                        placeholder="留空则不启用"
+                        disabled={!appSettings}
+                        onChange={(event) => {
+                          setOnlineArtistInfoDraft((current) => ({ ...current, seatGeekClientId: event.target.value }));
+                          setOnlineArtistInfoMessage(null);
+                        }}
+                      />
+                    </label>
+                    <label className="settings-proxy-field">
+                      <span>地区过滤</span>
+                      <input
+                        type="text"
+                        value={onlineArtistInfoDraft.region}
+                        placeholder="例如 HK、Tokyo、US；留空为全球"
+                        disabled={!appSettings}
+                        onChange={(event) => {
+                          setOnlineArtistInfoDraft((current) => ({ ...current, region: event.target.value }));
+                          setOnlineArtistInfoMessage(null);
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <button className="settings-action-button" type="button" disabled={!appSettings} onClick={handleOnlineArtistInfoSave}>
+                      <Save size={15} />
+                      保存配置
+                    </button>
+                  </div>
+                  <p className="settings-inline-note">
+                    第一版只保存配置，不发起在线请求；后续接入 Bandsintown、Ticketmaster 和 SeatGeek 时会走后台队列与缓存。
+                  </p>
+                  {onlineArtistInfoMessage ? <p className="settings-inline-note">{onlineArtistInfoMessage}</p> : null}
+                </div>
+              </SettingRow>
               <SettingRow
                 id="settings-row-discord-presence"
                 highlighted={highlightedSettingId === 'settings-row-discord-presence'}

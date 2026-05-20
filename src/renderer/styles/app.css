@@ -1835,6 +1835,68 @@
   box-shadow: none;
 }
 
+.settings-page .settings-cache-panel--network-proxy {
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.settings-proxy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.settings-proxy-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.settings-proxy-field--wide {
+  grid-column: 1 / -1;
+}
+
+.settings-proxy-field > span {
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.settings-proxy-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 12px;
+  color: var(--theme-page-text);
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 8px;
+  background: var(--theme-panel-bg-muted);
+  font-size: 13px;
+  font-weight: 680;
+  outline: none;
+}
+
+.settings-proxy-field input:focus {
+  border-color: var(--theme-accent-border);
+  box-shadow: 0 0 0 3px var(--theme-accent-bg);
+}
+
+.settings-proxy-field input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.settings-proxy-result.is-ok {
+  color: var(--theme-accent-text);
+}
+
+.settings-proxy-result.is-error {
+  color: #a63c3c;
+}
+
 .settings-page .network-metadata-panel {
   border: 0;
   border-radius: 0;

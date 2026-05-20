@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { PluginsPage } from './PluginsPage';
+import { pluginPanelBridgeChannel } from '../../shared/types/plugins';
 import type { PluginSummary } from '../../shared/types/plugins';
 
 const plugins: PluginSummary[] = [
@@ -91,5 +92,41 @@ describe('PluginsPage', () => {
     fireEvent.click(createButtons[0]);
 
     await waitFor(() => expect(pluginsBridge.createExample).toHaveBeenCalledWith('playback-panel'));
+  });
+
+  it('routes sandbox panel bridge requests to the selected plugin only', async () => {
+    render(<PluginsPage />);
+
+    const iframe = await screen.findByTitle('播放状态面板 panel') as HTMLIFrameElement;
+    expect(iframe.contentWindow).toBeTruthy();
+    const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage');
+
+    window.dispatchEvent(new MessageEvent('message', {
+      source: iframe.contentWindow,
+      data: {
+        channel: pluginPanelBridgeChannel,
+        type: 'request',
+        requestId: 'req-1',
+        pluginId: 'echo.playback-panel',
+        action: 'plugin:runCommand',
+        payload: {
+          commandId: 'show-status',
+          args: ['from-panel'],
+        },
+      },
+    }));
+
+    await waitFor(() => expect(pluginsBridge.runCommand).toHaveBeenCalledWith({
+      pluginId: 'echo.playback-panel',
+      commandId: 'show-status',
+      args: ['from-panel'],
+    }));
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      channel: pluginPanelBridgeChannel,
+      type: 'response',
+      requestId: 'req-1',
+      pluginId: 'echo.playback-panel',
+      ok: true,
+    }), '*'));
   });
 });

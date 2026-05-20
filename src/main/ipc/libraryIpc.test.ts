@@ -335,6 +335,7 @@ const installLibraryService = () => {
     getAlbumForTrack: vi.fn(),
     getArtists: vi.fn(),
     getArtist: vi.fn(),
+    getArtistInsights: vi.fn(() => ({ artist: null, nodes: [], edges: [], concerts: { status: 'not_configured', region: null, sources: [], events: [], fetchedAt: null }, generatedAt: '2026-05-20T00:00:00.000Z' })),
     getArtistTracks: vi.fn(),
     getArtistAlbums: vi.fn(),
     enqueueMissingArtistImages: vi.fn(() => ({ queued: 0, skipped: 0 })),
@@ -870,10 +871,12 @@ describe('library IPC', () => {
     service.getArtistAlbums.mockReturnValue({ items: [], page: 1, pageSize: 12, total: 0, hasMore: false });
 
     await handlers[IpcChannels.LibraryGetArtist]!(null, 'artist-1');
+    await handlers[IpcChannels.LibraryGetArtistInsights]!(null, 'artist-1', { limit: 8, includeOnline: true, region: 'HK' });
     await handlers[IpcChannels.LibraryGetArtistTracks]!(null, 'artist-1', { page: 2, pageSize: 50, sort: 'durationDesc', extra: true });
     await handlers[IpcChannels.LibraryGetArtistAlbums]!(null, 'artist-1', { page: 1, pageSize: 12, sort: 'recent' });
 
     expect(service.getArtist).toHaveBeenCalledWith('artist-1');
+    expect(service.getArtistInsights).toHaveBeenCalledWith('artist-1', { limit: 8, includeOnline: true, region: 'HK' });
     expect(service.getArtistTracks).toHaveBeenCalledWith('artist-1', { page: 2, pageSize: 50, sort: 'durationDesc' });
     expect(service.getArtistAlbums).toHaveBeenCalledWith('artist-1', { page: 1, pageSize: 12, sort: 'recent' });
   });

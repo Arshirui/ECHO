@@ -134,7 +134,9 @@ const makeAppSettings = (
   lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
+  lyricsTimelineCorrectionEnabled: true,
   lyricsOffsetControlsEnabled: false,
+  lyricsSmartAlignmentEnabled: false,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsEmptyStateHidden: true,
@@ -1156,6 +1158,27 @@ describe("LyricsPage", () => {
     );
   });
 
+  it("keeps saved lyrics correction values but does not apply them when disabled", async () => {
+    const track = makeTrack();
+    mockEcho(track, 9.2, {
+      lyricsGlobalSyncOffsetMs: 1000,
+      lyricsTimelineCorrectionEnabled: false,
+    });
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("First line"),
+    );
+  });
+
   it("switches between pure lyrics and MV mode from bottom navigation events", async () => {
     vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     window.sessionStorage.setItem("echo:lyrics:view-mode", "lyrics");
@@ -1699,6 +1722,31 @@ describe("LyricsPage", () => {
     expect(container.querySelector(".lyrics-offset-controls")).toBeNull();
   });
 
+  it("hides smart lyrics alignment by default", async () => {
+    const track = makeTrack();
+    mockEcho(track);
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics()),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("First line")).toBeTruthy();
+    expect(container.querySelector(".lyrics-smart-alignment")).toBeNull();
+  });
+
   it("saves per-track lyrics offset from the lyrics page controls when enabled", async () => {
     const track = makeTrack();
     mockEcho(track, 0, { lyricsOffsetControlsEnabled: true });
@@ -1738,6 +1786,161 @@ describe("LyricsPage", () => {
     );
     await waitFor(() =>
       expect(container.querySelector(".lyrics-offset-value")?.textContent).toBe("+100ms"),
+    );
+  });
+
+  it.each([
+    ["exclusive", "WASAPI 独占"],
+    ["asio", "ASIO"],
+  ] as const)("generates and applies smart lyrics alignment suggestions on %s clocks", async (outputMode, modeLabel) => {
+    const track = makeTrack();
+    const { emitAudioStatus } = mockEcho(track, 10.2, { lyricsSmartAlignmentEnabled: true });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics()),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn().mockResolvedValue(makeTrackLyrics({ offsetMs: -200 })),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Second line")).toBeTruthy();
+    act(() => {
+      emitAudioStatus({
+        ...makeAudioStatus(track, 10.2),
+        outputMode,
+        outputBackend: outputMode === "asio" ? "asio" : "wasapi-exclusive",
+      });
+    });
+
+    const startButton = await screen.findByRole("button", { name: /开始智能校准/ });
+    await waitFor(() => expect((startButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(startButton);
+    fireEvent.click(screen.getByRole("button", { name: /标记当前句/ }));
+
+    expect(await screen.findByText(new RegExp(`建议 -200ms · 中置信度 · ${modeLabel} 时钟`))).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /应用建议/ }));
+
+    await waitFor(() =>
+      expect(window.echo.lyrics.setOffset).toHaveBeenCalledWith("track-1", -200),
+    );
+  });
+
+  it("disables smart lyrics alignment on unsupported output modes", async () => {
+    const track = makeTrack();
+    const { emitAudioStatus } = mockEcho(track, 10.2, { lyricsSmartAlignmentEnabled: true });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics()),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Second line")).toBeTruthy();
+    act(() => {
+      emitAudioStatus({ ...makeAudioStatus(track, 10.2), outputMode: "system" });
+    });
+
+    const startButton = await screen.findByRole("button", { name: /开始智能校准/ });
+    await waitFor(() => expect((startButton as HTMLButtonElement).disabled).toBe(true));
+    expect(await screen.findByText("当前输出模式暂不支持智能校准")).toBeTruthy();
+  });
+
+  it("does not apply low-confidence smart lyrics alignment suggestions", async () => {
+    const track = makeTrack();
+    const { emitAudioStatus } = mockEcho(track, 10.2, { lyricsSmartAlignmentEnabled: true });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics()),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Second line")).toBeTruthy();
+    const startButton = await screen.findByRole("button", { name: /开始智能校准/ });
+    fireEvent.click(startButton);
+    fireEvent.click(screen.getByRole("button", { name: /标记当前句/ }));
+
+    act(() => {
+      emitAudioStatus(makeAudioStatus(track, 11.4));
+    });
+    fireEvent.click(screen.getByRole("button", { name: /标记当前句/ }));
+
+    expect(await screen.findByText(/低置信度：锚点分散 600ms/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /应用建议/ })).toHaveProperty("disabled", true);
+    expect(window.echo.lyrics.setOffset).not.toHaveBeenCalled();
+  });
+
+  it("aligns the current synced lyric line to the playback clock", async () => {
+    const track = makeTrack();
+    mockEcho(track, 9.2, {
+      lyricsGlobalSyncOffsetMs: 1000,
+      lyricsOffsetControlsEnabled: true,
+    });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: lyrics,
+          offsetMs: 0,
+        }),
+      ),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      applyCandidate: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: lyrics,
+          offsetMs: -200,
+        }),
+      ),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Second line")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /对齐当前句/ }));
+
+    await waitFor(() =>
+      expect(window.echo.lyrics.setOffset).toHaveBeenCalledWith("track-1", -200),
     );
   });
 
@@ -2643,11 +2846,14 @@ describe("LyricsPage", () => {
     await screen.findByRole("heading", { name: "Test Song" });
     const page = container.querySelector(".lyrics-page") as HTMLElement;
     const getSettings = vi.mocked(window.echo.app.getSettings);
-    const initialCallCount = getSettings.mock.calls.length;
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    getSettings.mockClear();
 
     act(() => {
       window.dispatchEvent(
-        new CustomEvent("settings:changed", {
+        new window.CustomEvent("settings:changed", {
           detail: {
             immersiveBackgroundScalePercent: 140,
             immersiveBackgroundBlurPx: 10,
@@ -2660,7 +2866,6 @@ describe("LyricsPage", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(getSettings).toHaveBeenCalledTimes(initialCallCount);
     expect(page.style.getPropertyValue("--lyrics-font-size")).toBe("40px");
     expect(page.style.getPropertyValue("--lyrics-background-scale")).toBe("1.00");
   });

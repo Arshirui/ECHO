@@ -1521,6 +1521,17 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryGetArtist, (_event, artistId: unknown) =>
     getLibraryService().getArtist(requireText(artistId, 'artistId')),
   );
+  ipcMain.handle(IpcChannels.LibraryGetArtistInsights, (_event, artistId: unknown, options: unknown) =>
+    getLibraryService().getArtistInsights(requireText(artistId, 'artistId'), {
+      limit: options && typeof options === 'object' && typeof (options as { limit?: unknown }).limit === 'number'
+        ? (options as { limit: number }).limit
+        : undefined,
+      includeOnline: Boolean(options && typeof options === 'object' && (options as { includeOnline?: unknown }).includeOnline === true),
+      region: options && typeof options === 'object' && typeof (options as { region?: unknown }).region === 'string'
+        ? (options as { region: string }).region
+        : null,
+    }),
+  );
   ipcMain.handle(IpcChannels.LibraryGetArtistTracks, (_event, artistId: unknown, query: unknown) =>
     getLibraryService().getArtistTracks(requireText(artistId, 'artistId'), normalizeQuery(query)),
   );

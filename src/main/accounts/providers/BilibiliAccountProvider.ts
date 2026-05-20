@@ -1,5 +1,6 @@
 import { AccountProviderBase } from './AccountProviderBase';
 import type { StoredAccountRecord } from './AccountProviderBase';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 
 const userAgent =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ECHO-Next/1.0 Safari/537.36';
@@ -29,7 +30,7 @@ export class BilibiliAccountProvider extends AccountProviderBase {
     }
 
     try {
-      const response = await fetch('https://api.bilibili.com/x/web-interface/nav', {
+      const response = await fetchWithNetworkProxy('https://api.bilibili.com/x/web-interface/nav', {
         headers: {
           Cookie: cookie,
           Referer: 'https://www.bilibili.com/',

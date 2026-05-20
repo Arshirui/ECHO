@@ -5,6 +5,7 @@ import type { CoverVariant } from '../library/libraryTypes';
 import { getAppSettings, getAppWallpaperDirectory, getLyricsWallpaperDirectory } from '../app/appSettings';
 import { getLibraryService } from '../library/LibraryService';
 import { defaultCoverSvg } from '../library/workers/TsCoverExtractor';
+import { fetchWithNetworkProxy } from '../network/networkFetch';
 
 const cacheControlHeader = 'public, max-age=31536000, immutable';
 const wallpaperCacheControlHeader = 'no-store';
@@ -247,7 +248,7 @@ export const registerCoverProtocolHandler = (): void => {
         return missingCoverResponse();
       }
 
-      const upstream = await fetch(targetUrl.toString(), {
+      const upstream = await fetchWithNetworkProxy(targetUrl.toString(), {
         headers: {
           accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
           referer: url.searchParams.get('referer') ?? 'https://www.bilibili.com/',

@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { BrowserWindow, shell } from 'electron';
 import type { AccountLoginStartResult, AccountStatus } from '../../shared/types/accounts';
 import { getAccountService, type AccountService } from './AccountService';
+import { fetchWithNetworkProxy } from '../network/networkFetch';
 
 const spotifyClientId = process.env.ECHO_SPOTIFY_CLIENT_ID?.trim() || '50e367c5148944a897a3af53a86422a9';
 const spotifyAccountsBaseUrl = 'https://accounts.spotify.com';
@@ -187,7 +188,7 @@ const spotifyFetch = async <T>(path: string, options: SpotifyFetchOptions = {}):
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`${spotifyApiBaseUrl}${path}`, {
+  const response = await fetchWithNetworkProxy(`${spotifyApiBaseUrl}${path}`, {
     method: options.method ?? 'GET',
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -205,7 +206,7 @@ const spotifyFetch = async <T>(path: string, options: SpotifyFetchOptions = {}):
 };
 
 const exchangeToken = async (body: URLSearchParams): Promise<SpotifyTokenResponse> => {
-  const response = await fetch(`${spotifyAccountsBaseUrl}/api/token`, {
+  const response = await fetchWithNetworkProxy(`${spotifyAccountsBaseUrl}/api/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',

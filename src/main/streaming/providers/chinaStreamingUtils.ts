@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { isInstrumentalLyricsText } from '../../lyrics/instrumentalPlaceholders';
 import { normalizeSyncedLyricAlternates, parsePlainLyrics, parseSyncedLyrics } from '../../lyrics/lyricsParser';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 
 export const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -38,7 +39,7 @@ export const jsonFetch = async (
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 8000);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithNetworkProxy(url, {
       method: options.method ?? (options.body ? 'POST' : 'GET'),
       signal: controller.signal,
       headers: {

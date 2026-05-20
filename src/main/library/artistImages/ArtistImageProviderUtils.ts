@@ -1,4 +1,5 @@
 import type { ArtistImageCandidate } from './ArtistImageTypes';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 
 export const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -58,7 +59,7 @@ export const requestJson = async (
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 7000);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithNetworkProxy(url, {
       signal: controller.signal,
       redirect: 'follow',
       headers: {
@@ -91,7 +92,7 @@ export const requestText = async (
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 7000);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithNetworkProxy(url, {
       signal: controller.signal,
       redirect: 'follow',
       headers: {

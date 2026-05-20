@@ -112,6 +112,33 @@ const subnetScore = (candidate: string, target: string): number => {
   return score;
 };
 
+const endResponseSafely = (response: ServerResponse, statusCode: number, message = ''): void => {
+  if (response.destroyed || response.writableEnded) {
+    return;
+  }
+
+  if (!response.headersSent) {
+    response.writeHead(statusCode, {
+      'Cache-Control': 'no-store',
+      'Content-Type': 'text/plain; charset=utf-8',
+    });
+  }
+
+  response.end(message);
+};
+
+const pipeFileReadStream = (
+  response: ServerResponse,
+  filePath: string,
+  options: { start?: number; end?: number } = {},
+): void => {
+  const stream = createReadStream(filePath, options);
+  stream.once('error', (error) => {
+    endResponseSafely(response, 500, error instanceof Error ? error.message : String(error));
+  });
+  stream.pipe(response);
+};
+
 export const chooseLocalAddressForRemote = (remoteAddress: string | null | undefined): string => {
   const candidates = Object.values(networkInterfaces())
     .flatMap((items) => items ?? [])
@@ -330,7 +357,7 @@ export class ConnectHttpServer {
         response.end();
         return;
       }
-      createReadStream(record.filePath, { start, end }).pipe(response);
+      pipeFileReadStream(response, record.filePath, { start, end });
       return;
     }
 
@@ -342,7 +369,7 @@ export class ConnectHttpServer {
       response.end();
       return;
     }
-    createReadStream(record.filePath).pipe(response);
+    pipeFileReadStream(response, record.filePath);
   }
 
   private serveTranscodedAudio(record: TranscodeToken, request: IncomingMessage, response: ServerResponse): void {
@@ -368,6 +395,12 @@ export class ConnectHttpServer {
       'Cache-Control': 'private, max-age=0, no-store',
       'Content-Type': 'audio/mpeg',
     });
+    child.once('error', (error) => {
+      endResponseSafely(response, 502, error instanceof Error ? error.message : String(error));
+    });
+    child.stdout.once('error', (error) => {
+      endResponseSafely(response, 502, error instanceof Error ? error.message : String(error));
+    });
     child.stdout.pipe(response);
     response.on('close', () => {
       if (!child.killed) {
@@ -389,7 +422,7 @@ export class ConnectHttpServer {
         response.end();
         return;
       }
-      createReadStream(record.filePath).pipe(response);
+      pipeFileReadStream(response, record.filePath);
       return;
     }
 

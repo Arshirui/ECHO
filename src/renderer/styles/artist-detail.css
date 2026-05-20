@@ -537,6 +537,84 @@
   background: rgba(255, 255, 255, 0.7);
 }
 
+.artist-insight-map {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.3fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.artist-insight-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.artist-insight-node,
+.artist-event-row {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 14px 16px;
+  color: #253449;
+  border: 1px solid var(--theme-legacy-border-soft);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 10px 24px rgba(38, 58, 82, 0.05);
+}
+
+.artist-insight-node-root {
+  align-content: center;
+  color: #ffffff;
+  border-color: transparent;
+  background: linear-gradient(180deg, #5f86ad, #486f98);
+}
+
+.artist-insight-node strong,
+.artist-event-row strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-insight-node span,
+.artist-event-row span,
+.artist-event-row time {
+  overflow: hidden;
+  color: #68778b;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist-insight-node-root span {
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.artist-event-list {
+  display: grid;
+  gap: 10px;
+}
+
+.artist-event-row {
+  grid-template-columns: minmax(0, 1fr) minmax(120px, auto);
+  align-items: center;
+  text-decoration: none;
+}
+
+.artist-event-row span {
+  grid-column: 1;
+}
+
+.artist-event-row time {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-self: end;
+}
+
 .artist-load-more {
   width: fit-content;
   justify-self: center;
@@ -614,6 +692,26 @@ html[data-theme="dark"] .artist-hero-avatar {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
     0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
+html[data-theme="dark"] .artist-insight-node,
+html[data-theme="dark"] .artist-event-row {
+  color: var(--echo-heading-text);
+  border-color: var(--color-border);
+  background: rgba(27, 35, 46, 0.78);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.2);
+}
+
+html[data-theme="dark"] .artist-insight-node-root {
+  color: #ffffff;
+  border-color: transparent;
+  background: linear-gradient(180deg, #4f78a1, #355a80);
+}
+
+html[data-theme="dark"] .artist-insight-node span,
+html[data-theme="dark"] .artist-event-row span,
+html[data-theme="dark"] .artist-event-row time {
+  color: var(--color-muted);
 }
 
 html[data-theme="dark"] .artist-detail-kicker,

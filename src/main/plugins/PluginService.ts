@@ -4,11 +4,17 @@ import { basename, join, resolve } from 'node:path';
 import vm from 'node:vm';
 import { app, shell } from 'electron';
 import type { AudioStatus } from '../../shared/types/audio';
+import { pluginEventNames, pluginLibraryTrackFields } from '../../shared/types/plugins';
 import type {
   PluginCommand,
   PluginCreateExampleKind,
   PluginCreateExampleResult,
   PluginEnableRequest,
+  PluginEventName,
+  PluginLibraryTrack,
+  PluginLibraryTrackField,
+  PluginLibraryTrackPage,
+  PluginLibraryTracksQuery,
   PluginListResult,
   PluginLogEntry,
   PluginManifest,
@@ -61,8 +67,34 @@ const stateFileName = 'plugin-state.json';
 const storageFileName = 'plugin-storage.json';
 const commandTimeoutMs = 2_000;
 const maxLogEntries = 160;
+const maxLogMessageLength = 1_000;
 const maxEventHandlersPerPlugin = 24;
 const playbackStatusThrottleMs = 500;
+const maxPluginLibraryPageSize = 100;
+const defaultPluginLibraryPageSize = 50;
+const maxPluginLibrarySearchLength = 120;
+const maxPluginStorageKeyLength = 96;
+const maxPluginStorageValueBytes = 64 * 1024;
+const maxPluginStorageBytes = 256 * 1024;
+const maxPluginSettingsPatchBytes = 32 * 1024;
+
+const pluginEventSet = new Set<PluginEventName>(pluginEventNames);
+const pluginEventPermissions: Record<PluginEventName, PluginPermission> = {
+  'playback:status': 'playback:read',
+  'library:changed': 'library:read',
+};
+const pluginLibraryTrackFieldSet = new Set<PluginLibraryTrackField>(pluginLibraryTrackFields);
+const defaultPluginLibraryTrackFields: PluginLibraryTrackField[] = [
+  'id',
+  'mediaType',
+  'path',
+  'title',
+  'artist',
+  'album',
+  'duration',
+  'coverThumb',
+  'unavailable',
+];
 
 const exampleTemplates: Record<PluginCreateExampleKind, { id: string; name: string; manifest: PluginManifest; script: string; panel?: string }> = {
   'playback-panel': {
@@ -98,10 +130,35 @@ const exampleTemplates: Record<PluginCreateExampleKind, { id: string; name: stri
     panel: [
       '<!doctype html>',
       '<meta charset="utf-8">',
-      '<style>body{font:14px system-ui;margin:16px;color:#1f2937}code{display:block;margin-top:8px;white-space:pre-wrap}</style>',
+      '<style>body{font:14px system-ui;margin:16px;color:#1f2937}button{margin:8px 0;padding:6px 10px}code{display:block;margin-top:8px;white-space:pre-wrap}</style>',
       '<h1>播放状态面板</h1>',
-      '<p>这个面板是静态沙箱页面。插件脚本会把最近播放状态写入自己的 storage。</p>',
-      '<code>编辑 panel.html / plugin.js 后，在 ECHO Next 插件页点“重载”。</code>',
+      '<p>这个面板运行在 sandbox iframe 中，通过 postMessage bridge 查询宿主。</p>',
+      '<button id="refresh">刷新摘要</button>',
+      '<button id="run">执行状态命令</button>',
+      '<code id="output">等待宿主响应...</code>',
+      '<script>',
+      "const pluginId = 'echo.playback-panel';",
+      "const channel = 'echo:plugin-panel';",
+      'const pending = new Map();',
+      "window.addEventListener('message', (event) => {",
+      '  const message = event.data;',
+      "  if (!message || message.channel !== channel || message.type !== 'response') return;",
+      '  const resolve = pending.get(message.requestId);',
+      '  if (!resolve) return;',
+      '  pending.delete(message.requestId);',
+      '  resolve(message);',
+      '});',
+      'const requestHost = (action, payload) => new Promise((resolve) => {',
+      '  const requestId = `${Date.now()}-${Math.random()}`;',
+      '  pending.set(requestId, resolve);',
+      "  parent.postMessage({ channel, version: 1, type: 'request', requestId, pluginId, action, payload }, '*');",
+      '});',
+      'const output = document.getElementById("output");',
+      'const show = (value) => { output.textContent = JSON.stringify(value, null, 2); };',
+      'document.getElementById("refresh").addEventListener("click", async () => show(await requestHost("plugin:getSummary")));',
+      'document.getElementById("run").addEventListener("click", async () => show(await requestHost("plugin:runCommand", { commandId: "show-status" })));',
+      'requestHost("plugin:getSummary").then(show);',
+      '</script>',
     ].join('\n'),
   },
   'command-tool': {
@@ -153,6 +210,102 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
 const jsonClone = <T>(value: T): T => (value === undefined ? value : JSON.parse(JSON.stringify(value)) as T);
+
+const jsonByteLength = (value: unknown): number => Buffer.byteLength(JSON.stringify(value) ?? 'null', 'utf8');
+
+const assertJsonByteLimit = (value: unknown, limit: number, errorCode: string): void => {
+  if (jsonByteLength(value) > limit) {
+    throw new Error(errorCode);
+  }
+};
+
+const normalizePositiveInteger = (value: unknown, fallback: number, max: number): number => {
+  const normalized = Math.floor(Number(value));
+  return Number.isFinite(normalized) ? Math.min(max, Math.max(1, normalized)) : fallback;
+};
+
+const normalizePluginLibraryTrackFields = (value: unknown): PluginLibraryTrackField[] => {
+  if (!Array.isArray(value)) {
+    return defaultPluginLibraryTrackFields;
+  }
+
+  const fields: PluginLibraryTrackField[] = [];
+  for (const item of value) {
+    if (typeof item === 'string' && pluginLibraryTrackFieldSet.has(item as PluginLibraryTrackField) && !fields.includes(item as PluginLibraryTrackField)) {
+      fields.push(item as PluginLibraryTrackField);
+    }
+  }
+
+  return fields.length > 0 ? fields : defaultPluginLibraryTrackFields;
+};
+
+const pluginLibrarySorts = new Set([
+  'default',
+  'titleAsc',
+  'titleDesc',
+  'artist',
+  'album',
+  'recent',
+  'durationAsc',
+  'durationDesc',
+  'qualityAsc',
+  'qualityDesc',
+  'frequent',
+]);
+const pluginLibrarySourceProviders = new Set(['local', 'netease', 'qqmusic', 'spotify', 'remote']);
+
+const normalizePluginLibraryTracksQuery = (query: unknown): { query: Omit<PluginLibraryTracksQuery, 'fields'>; fields: PluginLibraryTrackField[] } => {
+  const input = isRecord(query) ? query : {};
+  const page = normalizePositiveInteger(input.page, 1, 10_000);
+  const pageSize = normalizePositiveInteger(input.pageSize, defaultPluginLibraryPageSize, maxPluginLibraryPageSize);
+  const search = typeof input.search === 'string' ? input.search.trim().slice(0, maxPluginLibrarySearchLength) : undefined;
+  const sort = typeof input.sort === 'string' && pluginLibrarySorts.has(input.sort) ? input.sort as PluginLibraryTracksQuery['sort'] : undefined;
+  const sourceProvider =
+    typeof input.sourceProvider === 'string' && pluginLibrarySourceProviders.has(input.sourceProvider)
+      ? input.sourceProvider as PluginLibraryTracksQuery['sourceProvider']
+      : undefined;
+
+  return {
+    query: {
+      page,
+      pageSize,
+      ...(search ? { search } : {}),
+      ...(sort ? { sort } : {}),
+      ...(sourceProvider ? { sourceProvider } : {}),
+    },
+    fields: normalizePluginLibraryTrackFields(input.fields),
+  };
+};
+
+const selectPluginLibraryTrackFields = (track: Record<string, unknown>, fields: PluginLibraryTrackField[]): PluginLibraryTrack => {
+  const output: PluginLibraryTrack = {};
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(track, field)) {
+      output[field] = track[field] as never;
+    }
+  }
+  return output;
+};
+
+const toPluginLibraryTrackPage = (page: unknown, fields: PluginLibraryTrackField[]): PluginLibraryTrackPage => {
+  if (!isRecord(page) || !Array.isArray(page.items)) {
+    return {
+      items: [],
+      page: 1,
+      pageSize: defaultPluginLibraryPageSize,
+      total: 0,
+      hasMore: false,
+    };
+  }
+
+  return {
+    items: page.items.filter(isRecord).map((track) => selectPluginLibraryTrackFields(track, fields)),
+    page: normalizePositiveInteger(page.page, 1, 10_000),
+    pageSize: normalizePositiveInteger(page.pageSize, defaultPluginLibraryPageSize, maxPluginLibraryPageSize),
+    total: Math.max(0, Math.floor(Number(page.total ?? 0))),
+    hasMore: page.hasMore === true,
+  };
+};
 
 const timeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
   new Promise<T>((resolvePromise, reject) => {
@@ -447,6 +600,10 @@ export class PluginService {
           if (typeof eventName !== 'string' || typeof handler !== 'function') {
             throw new Error('plugin_event_handler_invalid');
           }
+          if (!pluginEventSet.has(eventName as PluginEventName)) {
+            throw new Error(`plugin_event_not_supported:${eventName}`);
+          }
+          requirePermission(pluginEventPermissions[eventName as PluginEventName]);
           const handlers = runtime.eventHandlers.get(eventName) ?? new Set<(payload: unknown) => unknown>();
           if (handlers.size >= maxEventHandlersPerPlugin) {
             throw new Error('plugin_event_handler_limit');
@@ -500,7 +657,8 @@ export class PluginService {
         },
         getTracks: async (query: unknown) => {
           requirePermission('library:read');
-          return jsonClone(getLibraryService().getTracks(isRecord(query) ? query : undefined));
+          const request = normalizePluginLibraryTracksQuery(query);
+          return jsonClone(toPluginLibraryTrackPage(getLibraryService().getTracks(request.query), request.fields));
         },
       }),
       settings: Object.freeze({
@@ -510,7 +668,9 @@ export class PluginService {
         },
         set: async (patch: unknown) => {
           requirePermission('settings:write');
-          return jsonClone(setAppSettings(isRecord(patch) ? patch : {}));
+          const safePatch = isRecord(patch) ? jsonClone(patch) : {};
+          assertJsonByteLimit(safePatch, maxPluginSettingsPatchBytes, 'plugin_settings_patch_too_large');
+          return jsonClone(setAppSettings(safePatch));
         },
       }),
       storage: Object.freeze({
@@ -531,12 +691,15 @@ export class PluginService {
   }
 
   private writePluginStorageValue(record: PluginRecord, key: string, value: unknown): void {
-    const safeKey = key.trim().slice(0, 96);
+    const safeKey = key.trim().slice(0, maxPluginStorageKeyLength);
     if (!safeKey) {
       throw new Error('plugin_storage_key_invalid');
     }
+    const safeValue = jsonClone(value);
+    assertJsonByteLimit(safeValue, maxPluginStorageValueBytes, 'plugin_storage_value_too_large');
     const storage = this.readPluginStorage(record.directory);
-    storage[safeKey] = jsonClone(value);
+    storage[safeKey] = safeValue;
+    assertJsonByteLimit(storage, maxPluginStorageBytes, 'plugin_storage_quota_exceeded');
     writeFileSync(join(record.directory, storageFileName), `${JSON.stringify(storage, null, 2)}\n`, 'utf8');
   }
 
@@ -678,7 +841,7 @@ export class PluginService {
       id: randomUUID(),
       pluginId,
       level,
-      message,
+      message: message.slice(0, maxLogMessageLength),
       createdAt: new Date().toISOString(),
     });
     if (this.logs.length > maxLogEntries) {

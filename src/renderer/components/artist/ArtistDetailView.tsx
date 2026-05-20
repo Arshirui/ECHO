@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ListPlus, Play, Shuffle } from 'lucide-react';
-import type { LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
+import type { AppSettings } from '../../../shared/types/appSettings';
+import type { ArtistInsights, ArtistInsightEdge, ArtistInsightRelationKind, LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { AlbumDetailView } from '../album/AlbumDetailView';
@@ -29,6 +30,32 @@ const formatDuration = (tracks: LibraryTrack[]): string => {
   return hours > 0 ? `${hours} hr ${rest} min loaded` : `${minutes} min loaded`;
 };
 
+const relationLabels: Record<ArtistInsightRelationKind, string> = {
+  same_album: 'Same album',
+  collaboration: 'Collaboration',
+  same_genre: 'Genre',
+  similar_bpm: 'BPM',
+  playback_adjacent: 'History',
+  online_similar: 'Similar',
+  member: 'Member',
+  external_url: 'Link',
+};
+
+const describeRelation = (edge: ArtistInsightEdge | undefined): string =>
+  edge ? `${relationLabels[edge.kind]} · ${edge.evidence}` : 'Local library signal';
+
+const getConfiguredConcertSources = (settings: Partial<AppSettings> | null | undefined): string[] => {
+  if (!settings) {
+    return [];
+  }
+
+  return [
+    settings.onlineArtistInfoBandsintownAppId ? 'Bandsintown' : null,
+    settings.onlineArtistInfoTicketmasterApiKey ? 'Ticketmaster' : null,
+    settings.onlineArtistInfoSeatGeekClientId ? 'SeatGeek' : null,
+  ].filter((source): source is string => Boolean(source));
+};
+
 export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX.Element => {
   const { appendToQueue, currentTrackId, playTrack, playTrackNext, replaceQueue } = usePlaybackQueue();
   const { isReturning, returnBack } = useAnimatedBackNavigation(onBack);
@@ -39,6 +66,11 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
   const [loadedTrackTotal, setLoadedTrackTotal] = useState(artist.trackCount);
   const [areTracksLoading, setAreTracksLoading] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
+  const [artistInsights, setArtistInsights] = useState<ArtistInsights | null>(null);
+  const [areInsightsLoading, setAreInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [configuredConcertSources, setConfiguredConcertSources] = useState<string[]>([]);
+  const [configuredConcertRegion, setConfiguredConcertRegion] = useState<string | null>(null);
   const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(null);
   const [failedHeroImageUrl, setFailedHeroImageUrl] = useState<string | null>(null);
   const detailRootRef = useRef<HTMLDivElement | null>(null);
@@ -100,6 +132,81 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
   useEffect(() => {
     setSelectedAlbum(null);
     setFailedHeroImageUrl(null);
+  }, [artist.id]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
+      if (isCancelled) {
+        return;
+      }
+
+      setConfiguredConcertSources(getConfiguredConcertSources(settings));
+      setConfiguredConcertRegion(settings?.onlineArtistInfoRegion?.trim() || null);
+    };
+
+    void window.echo?.app?.getSettings?.().then(applySettings).catch(() => applySettings(null));
+
+    const handleSettingsChanged = (event: Event): void => {
+      const detail = event instanceof CustomEvent ? event.detail as Partial<AppSettings> : null;
+      if (
+        detail &&
+        (
+          Object.prototype.hasOwnProperty.call(detail, 'onlineArtistInfoBandsintownAppId') ||
+          Object.prototype.hasOwnProperty.call(detail, 'onlineArtistInfoTicketmasterApiKey') ||
+          Object.prototype.hasOwnProperty.call(detail, 'onlineArtistInfoSeatGeekClientId') ||
+          Object.prototype.hasOwnProperty.call(detail, 'onlineArtistInfoRegion')
+        )
+      ) {
+        applySettings(detail);
+      }
+    };
+
+    window.addEventListener('settings:changed', handleSettingsChanged);
+
+    return () => {
+      isCancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadInsights = async (): Promise<void> => {
+      const library = window.echo?.library;
+      if (!library?.getArtistInsights) {
+        setArtistInsights(null);
+        setInsightsError(null);
+        return;
+      }
+
+      setAreInsightsLoading(true);
+      setInsightsError(null);
+
+      try {
+        const result = await library.getArtistInsights(artist.id, { limit: 12, includeOnline: false });
+        if (!isCancelled) {
+          setArtistInsights(result);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setArtistInsights(null);
+          setInsightsError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        if (!isCancelled) {
+          setAreInsightsLoading(false);
+        }
+      }
+    };
+
+    void loadInsights();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [artist.id]);
 
   useLayoutEffect(() => {
@@ -177,6 +284,17 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
     setSelectedAlbum(album);
   }, []);
   const canPlay = loadedTracks.length > 0;
+  const insightNodes = artistInsights?.nodes.filter((node) => node.id !== displayArtist.id) ?? [];
+  const insightEdges = artistInsights?.edges ?? [];
+  const concertInfo = artistInsights?.concerts ?? null;
+  const concertSourceLabel = concertInfo?.sources.length
+    ? concertInfo.sources.join(' / ')
+    : configuredConcertSources.length
+      ? configuredConcertSources.join(' / ')
+      : 'Provider keys required';
+  const concertEmptyMessage = configuredConcertSources.length
+    ? `在线歌手信息已配置${configuredConcertRegion ? `（${configuredConcertRegion}）` : ''}；演出请求队列和缓存接入后会在这里显示。`
+    : concertInfo?.message ?? 'Configure Bandsintown, Ticketmaster, or SeatGeek keys in Settings to load upcoming concerts.';
 
   if (selectedAlbum) {
     return <AlbumDetailView album={selectedAlbum} onBack={() => setSelectedAlbum(null)} />;
@@ -266,6 +384,65 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
           <span>Loaded Queue</span>
           <strong>{loadedTracks.length > 0 ? formatDuration(loadedTracks) : 'Ready soon'}</strong>
         </div>
+      </section>
+
+      <section className="artist-section artist-insights-section" aria-label="Artist relationship map">
+        <header>
+          <div>
+            <span>Relationship Map</span>
+            <h2>Local network</h2>
+          </div>
+          <small>{areInsightsLoading ? 'Loading local signals' : `${insightNodes.length} linked artists`}</small>
+        </header>
+        {insightsError ? <p className="artist-detail-error">{insightsError}</p> : null}
+        {insightNodes.length > 0 ? (
+          <div className="artist-insight-map">
+            <div className="artist-insight-node artist-insight-node-root">
+              <strong>{displayArtist.name}</strong>
+              <span>{formatCount(displayedTrackCount, 'track')}</span>
+            </div>
+            <div className="artist-insight-links">
+              {insightNodes.map((node) => {
+                const edge = insightEdges.find((item) => item.targetArtistId === node.id);
+                return (
+                  <article className="artist-insight-node" key={node.id}>
+                    <strong>{node.name}</strong>
+                    <span>{describeRelation(edge)}</span>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <p className="artist-detail-empty">
+            {areInsightsLoading ? 'Reading artist relationships...' : 'No local 1-hop relationships found yet.'}
+          </p>
+        )}
+      </section>
+
+      <section className="artist-section artist-events-section" aria-label="Artist events">
+        <header>
+          <div>
+            <span>Events</span>
+            <h2>Concert information</h2>
+          </div>
+          <small>{concertSourceLabel}</small>
+        </header>
+        {concertInfo?.events.length ? (
+          <div className="artist-event-list">
+            {concertInfo.events.map((event) => (
+              <a className="artist-event-row" href={event.url ?? undefined} key={event.id} rel="noreferrer" target="_blank">
+                <strong>{event.title}</strong>
+                <span>{[event.venueName, event.city, event.country].filter(Boolean).join(' · ')}</span>
+                <time dateTime={event.startsAt}>{new Date(event.startsAt).toLocaleDateString()}</time>
+              </a>
+            ))}
+          </div>
+        ) : (
+          <p className="artist-detail-empty">
+            {concertEmptyMessage}
+          </p>
+        )}
       </section>
 
       <ArtistAlbumGrid artistId={displayArtist.id} artistName={displayArtist.name} onAlbumSelect={handleSelectAlbum} />

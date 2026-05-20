@@ -29,6 +29,7 @@ import { closeDefaultStreamingService } from '../streaming/StreamingService';
 import { disposeDefaultAudioSessionGracefully } from '../audio/AudioSession';
 import { closeDefaultLibraryDatabaseManager, getLibraryDatabaseManager } from '../database/LibraryDatabaseManager';
 import { isLibraryRecoveryMode } from './libraryRecoveryMode';
+import { applyNetworkProxySettings } from '../network/proxySettings';
 
 const sendAccountStatusesChanged = (statuses: AccountStatus[]): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -116,6 +117,11 @@ export const registerAppLifecycle = (): void => {
   app.whenReady().then(async () => {
     getCrashReportService().initialize();
     const dataProtection = await ensureDataProtection('startup');
+    await applyNetworkProxySettings(getAppSettings()).catch((error) => {
+      getCrashReportService().getLogger()?.warn('main', '[Lifecycle] failed to apply network proxy settings', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
     registerAudioProtocolHandler();
     registerCoverProtocolHandler();
     registerVideoProtocolHandler();

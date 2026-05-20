@@ -63,6 +63,10 @@ import type {
   StoredTrackCoverState,
   StoredTrackFingerprint,
   TrackWrite,
+  ArtistInsights,
+  ArtistInsightsOptions,
+  ArtistInsightEdge,
+  ArtistInsightNode,
 } from './libraryTypes';
 import { COVER_CACHE_VERSION as currentCoverCacheVersion } from './libraryTypes';
 
@@ -3957,6 +3961,169 @@ export class LibraryStore {
     );
 
     return row ? this.mapArtist(row) : null;
+  }
+
+  getArtistInsights(artistId: string, options: ArtistInsightsOptions = {}): ArtistInsights {
+    const artist = this.getArtist(artistId);
+    const limit = Math.max(4, Math.min(32, Math.floor(Number(options.limit ?? 12))));
+    const generatedAt = new Date().toISOString();
+
+    if (!artist) {
+      return {
+        artist: null,
+        nodes: [],
+        edges: [],
+        concerts: {
+          status: 'not_configured',
+          region: options.region ?? null,
+          sources: [],
+          events: [],
+          fetchedAt: null,
+          message: 'Configure artist event providers in Settings to load concerts.',
+        },
+        generatedAt,
+      };
+    }
+
+    const relationRows = this.allRows(
+      `WITH relation_rows AS (
+        SELECT other.artist_id AS target_id, 'same_album' AS kind, COUNT(DISTINCT current.album_id) AS score
+        FROM artist_albums current
+        INNER JOIN artist_albums other ON other.album_id = current.album_id
+        WHERE current.artist_id = ?
+          AND other.artist_id != current.artist_id
+        GROUP BY other.artist_id
+        UNION ALL
+        SELECT other.artist_id AS target_id, 'collaboration' AS kind, COUNT(DISTINCT current.track_id) AS score
+        FROM artist_tracks current
+        INNER JOIN artist_tracks other ON other.track_id = current.track_id
+        WHERE current.artist_id = ?
+          AND other.artist_id != current.artist_id
+        GROUP BY other.artist_id
+        UNION ALL
+        SELECT artist_tracks.artist_id AS target_id, 'same_genre' AS kind, COUNT(DISTINCT tracks.id) AS score
+        FROM artist_tracks
+        INNER JOIN tracks ON tracks.id = artist_tracks.track_id
+        WHERE artist_tracks.artist_id != ?
+          AND tracks.missing = 0
+          AND lower(trim(COALESCE(tracks.genre, ''))) IN (
+            SELECT DISTINCT lower(trim(COALESCE(current_tracks.genre, '')))
+            FROM artist_tracks current_artist_tracks
+            INNER JOIN tracks current_tracks ON current_tracks.id = current_artist_tracks.track_id
+            WHERE current_artist_tracks.artist_id = ?
+              AND current_tracks.missing = 0
+              AND trim(COALESCE(current_tracks.genre, '')) != ''
+          )
+        GROUP BY artist_tracks.artist_id
+        UNION ALL
+        SELECT artist_bpm.artist_id AS target_id, 'similar_bpm' AS kind, MAX(1, 8 - MIN(ABS(artist_bpm.avg_bpm - current_bpm.avg_bpm))) AS score
+        FROM (
+          SELECT artist_tracks.artist_id, AVG(tracks.bpm) AS avg_bpm
+          FROM artist_tracks
+          INNER JOIN tracks ON tracks.id = artist_tracks.track_id
+          WHERE tracks.missing = 0
+            AND tracks.bpm IS NOT NULL
+          GROUP BY artist_tracks.artist_id
+        ) artist_bpm
+        CROSS JOIN (
+          SELECT AVG(tracks.bpm) AS avg_bpm
+          FROM artist_tracks
+          INNER JOIN tracks ON tracks.id = artist_tracks.track_id
+          WHERE artist_tracks.artist_id = ?
+            AND tracks.missing = 0
+            AND tracks.bpm IS NOT NULL
+        ) current_bpm
+        WHERE artist_bpm.artist_id != ?
+          AND current_bpm.avg_bpm IS NOT NULL
+          AND ABS(artist_bpm.avg_bpm - current_bpm.avg_bpm) <= 8
+        GROUP BY artist_bpm.artist_id
+      )
+      SELECT target_id, kind, SUM(score) AS score
+      FROM relation_rows
+      WHERE target_id IS NOT NULL
+      GROUP BY target_id, kind
+      ORDER BY SUM(score) DESC, target_id
+      LIMIT ?`,
+      artist.id,
+      artist.id,
+      artist.id,
+      artist.id,
+      artist.id,
+      artist.id,
+      limit * 4,
+    ) as Array<{ target_id: string; kind: ArtistInsightEdge['kind']; score: number }>;
+
+    const nodeScores = new Map<string, number>();
+    for (const row of relationRows) {
+      nodeScores.set(row.target_id, (nodeScores.get(row.target_id) ?? 0) + Number(row.score ?? 0));
+    }
+
+    const targetIds = Array.from(nodeScores.entries())
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, limit)
+      .map(([targetId]) => targetId);
+    const allowedTargets = new Set(targetIds);
+    const nodes: ArtistInsightNode[] = [
+      this.mapArtistInsightNode(artist, 'local'),
+      ...targetIds
+        .map((targetId) => this.getArtist(targetId))
+        .filter((target): target is LibraryArtist => Boolean(target))
+        .map((target) => this.mapArtistInsightNode(target, 'local')),
+    ];
+    const edges = relationRows
+      .filter((row) => allowedTargets.has(row.target_id))
+      .map((row): ArtistInsightEdge => ({
+        id: `${artist.id}:${row.target_id}:${row.kind}`,
+        sourceArtistId: artist.id,
+        targetArtistId: row.target_id,
+        kind: row.kind,
+        weight: Math.max(1, Math.min(10, Number(row.score ?? 1))),
+        evidence: this.artistInsightEvidence(row.kind, Number(row.score ?? 1)),
+        source: 'local',
+      }));
+
+    return {
+      artist,
+      nodes,
+      edges,
+      concerts: {
+        status: 'not_configured',
+        region: options.region ?? null,
+        sources: [],
+        events: [],
+        fetchedAt: null,
+        message: 'Configure Bandsintown, Ticketmaster, or SeatGeek keys in Settings to load concerts.',
+      },
+      generatedAt,
+    };
+  }
+
+  private mapArtistInsightNode(artist: LibraryArtist, source: ArtistInsightNode['source']): ArtistInsightNode {
+    return {
+      id: artist.id,
+      name: artist.name,
+      trackCount: artist.trackCount,
+      albumCount: artist.albumCount,
+      coverThumb: artist.coverThumb,
+      avatarUrl: artist.avatarUrl ?? artist.avatarThumbUrl ?? null,
+      source,
+    };
+  }
+
+  private artistInsightEvidence(kind: ArtistInsightEdge['kind'], score: number): string {
+    const count = Math.max(1, Math.round(score));
+    switch (kind) {
+      case 'same_album':
+        return `${count} shared album signal${count === 1 ? '' : 's'}`;
+      case 'collaboration':
+        return `${count} shared track signal${count === 1 ? '' : 's'}`;
+      case 'same_genre':
+        return `${count} shared genre signal${count === 1 ? '' : 's'}`;
+      case 'similar_bpm':
+        return 'Similar average BPM';
+      default:
+        return `${count} local signal${count === 1 ? '' : 's'}`;
+    }
   }
 
   getArtistTracks(artistId: string, query?: Pick<LibraryPageQuery, 'page' | 'pageSize' | 'sort'>): LibraryPage<LibraryTrack> {

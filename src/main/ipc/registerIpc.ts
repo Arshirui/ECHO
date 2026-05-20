@@ -21,6 +21,7 @@ import { ensureCoverCacheDirectory } from '../library/CoverCacheManager';
 import { getLibraryService } from '../library/LibraryService';
 import { setDiscordPresenceEnabled } from '../integrations/discord/getDiscordPresenceService';
 import { getLastFmService } from '../integrations/lastfm/getLastFmService';
+import { applyNetworkProxySettings, testNetworkProxyConnection } from '../network/proxySettings';
 import { registerAudioIpc } from './audioIpc';
 import { registerAccountIpc } from './accountIpc';
 import { registerConnectIpc } from './connectIpc';
@@ -227,6 +228,15 @@ const applyAppSettingsPatch = async (
     }
   }
 
+  if (
+    typeof settingsPatch.networkProxyMode === 'string' ||
+    Object.prototype.hasOwnProperty.call(settingsPatch, 'networkProxyUrl') ||
+    Object.prototype.hasOwnProperty.call(settingsPatch, 'networkProxyBypassRules') ||
+    Object.prototype.hasOwnProperty.call(settingsPatch, 'networkProxyPacUrl')
+  ) {
+    await applyNetworkProxySettings(settings);
+  }
+
   if (typeof settingsPatch.backgroundSpacePauseEnabled === 'boolean' || settingsPatch.globalShortcuts) {
     settings = refreshBackgroundSpaceRegistration() ?? settings;
   }
@@ -357,6 +367,7 @@ export const registerIpc = (): void => {
     refreshTaskbarPlaybackIntegration();
     libraryService.syncLiveLibraryWatcherFromSettings();
     await setDiscordPresenceEnabled(settings.discordRichPresenceEnabled);
+    await applyNetworkProxySettings(settings);
     getLastFmService().disconnect();
     return settings;
   });
@@ -410,6 +421,7 @@ export const registerIpc = (): void => {
   ipcMain.handle(IpcChannels.AppOpenExternalUrl, async (_event: IpcMainInvokeEvent, rawUrl: unknown): Promise<void> => {
     await shell.openExternal(requireExternalHttpUrl(rawUrl));
   });
+  ipcMain.handle(IpcChannels.AppTestNetworkProxy, () => testNetworkProxyConnection(getAppSettings()));
   ipcMain.handle(
     IpcChannels.AppSetCoverCacheDirectory,
     async (_event: IpcMainInvokeEvent, rawRequest: unknown): Promise<CoverCacheMigrationResult | null> => {

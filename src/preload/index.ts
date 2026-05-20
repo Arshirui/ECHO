@@ -923,6 +923,7 @@ const echoApi: EchoApi = {
     },
     openRepository: () => ipcRenderer.invoke(IpcChannels.AppOpenRepository),
     openExternalUrl: (url) => ipcRenderer.invoke(IpcChannels.AppOpenExternalUrl, url),
+    testNetworkProxy: () => ipcRenderer.invoke(IpcChannels.AppTestNetworkProxy),
     validateGlobalShortcut: (accelerator) => ipcRenderer.invoke(IpcChannels.AppValidateGlobalShortcut, accelerator),
     onGlobalShortcutCommand: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, action: unknown): void => {
@@ -1008,6 +1009,7 @@ const echoApi: EchoApi = {
     getAlbumForTrack: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbumForTrack, trackId),
     getArtists: (query) => ipcRenderer.invoke(IpcChannels.LibraryGetArtists, query),
     getArtist: (artistId) => ipcRenderer.invoke(IpcChannels.LibraryGetArtist, artistId),
+    getArtistInsights: (artistId, options) => ipcRenderer.invoke(IpcChannels.LibraryGetArtistInsights, artistId, options),
     getArtistTracks: (artistId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetArtistTracks, artistId, query),
     getArtistAlbums: (artistId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetArtistAlbums, artistId, query),
     enqueueMissingArtistImages: (request) => ipcRenderer.invoke(IpcChannels.LibraryArtistImagesEnqueueMissing, request),

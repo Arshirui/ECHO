@@ -4,6 +4,7 @@ import { mkdir, rename, rm } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import sharp from 'sharp';
 import type { EchoDatabase } from '../../database/createDatabase';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 import type {
   ArtistImageCacheClearResult,
   ArtistImageCacheEntry,
@@ -981,7 +982,7 @@ export class ArtistImageCacheService {
     const timer = setTimeout(() => controller.abort(), imageRequestTimeoutMs);
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithNetworkProxy(url, {
         signal: controller.signal,
         redirect: 'follow',
         headers: {

@@ -10,6 +10,7 @@ import type {
   LibraryTrack,
 } from '../../../shared/types/library';
 import type { AppLocale } from '../../../shared/types/appSettings';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 
 type DbRow = Record<string, unknown>;
 
@@ -149,7 +150,7 @@ const fetchJson = async (url: string, headers: Record<string, string>, timeoutMs
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithNetworkProxy(url, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json',

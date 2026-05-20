@@ -45,8 +45,22 @@ describe('PlayerProgress', () => {
     expect(css).toContain('html[data-theme-preset="darkSideMoon"] .artist-stat-grid div');
     expect(css).toContain('html[data-theme-preset="darkSideMoon"] .album-track-row[data-playing');
     expect(css).toContain('#ed2f3b');
-    expect(css).toContain('#f6d93b');
-    expect(css).toContain('#26a8ed');
-    expect(css).toContain('clip-path: polygon(50% 0, 100% 100%, 0 100%);');
+    expect(css).toContain('#ffd84f');
+    expect(css).toContain('#28b8f0');
+    expect(css).toContain('clip-path: none;');
+  });
+
+  it('keeps the Nyan Cat theme color flow visible without JS timers', () => {
+    const css = readFileSync('src/renderer/styles/theme-presets.css', 'utf8');
+
+    expect(css).toContain('--nyan-page-gradient:');
+    expect(css).toContain('--nyan-surface-gradient:');
+    expect(css).toContain('--nyan-player-gradient:');
+    expect(css).toContain('html[data-theme-preset="nyanCat"] .app-shell {\n  background: var(--echo-polish-app-bg-layer), var(--echo-polish-app-bg);');
+    expect(css).toContain('html[data-theme-preset="nyanCat"] .page-surface:not(:has(.lyrics-page)) {\n  background: var(--echo-polish-page-bg), var(--theme-app-bg);');
+    expect(css).toContain('html[data-theme-preset="nyanCat"] .player-bar {\n  background: var(--echo-polish-player-bg);');
+    expect(css).toContain('animation: nyan-cat-gradient-flow 18s ease-in-out infinite alternate;');
+    expect(css).not.toContain('setInterval');
+    expect(css).not.toContain('requestAnimationFrame');
   });
 });

@@ -586,6 +586,35 @@ describe('SettingsPage', () => {
     expect(row.getAttribute('data-search-highlight')).toBe('true');
   });
 
+  it('saves online artist info provider settings from integrations', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.integrations\\.label');
+    await screen.findByText('在线歌手信息');
+    fireEvent.change(screen.getByLabelText('Bandsintown app_id'), { target: { value: ' echo-next ' } });
+    fireEvent.change(screen.getByLabelText('Ticketmaster apikey'), { target: { value: ' ticketmaster-key ' } });
+    fireEvent.change(screen.getByLabelText('SeatGeek client_id'), { target: { value: ' seatgeek-id ' } });
+    fireEvent.change(screen.getByLabelText('地区过滤'), { target: { value: ' HK ' } });
+    fireEvent.click(screen.getByRole('button', { name: /保存配置/ }));
+
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith({
+        onlineArtistInfoBandsintownAppId: 'echo-next',
+        onlineArtistInfoTicketmasterApiKey: 'ticketmaster-key',
+        onlineArtistInfoSeatGeekClientId: 'seatgeek-id',
+        onlineArtistInfoRegion: 'HK',
+      }),
+    );
+    expect(screen.getByText('在线歌手信息配置已保存。演出数据源接入前不会自动联网请求。')).toBeTruthy();
+  });
+
   it('offers plugin actions from settings without duplicating the full manager', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     const navigatePlugins = vi.fn();

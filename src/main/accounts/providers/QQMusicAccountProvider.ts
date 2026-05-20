@@ -1,5 +1,6 @@
 import { AccountProviderBase } from './AccountProviderBase';
 import type { StoredAccountRecord } from './AccountProviderBase';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 
 const userAgent =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ECHO-Next/1.0 Safari/537.36';
@@ -95,7 +96,7 @@ export class QQMusicAccountProvider extends AccountProviderBase {
           param: {},
         },
       };
-      const response = await fetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+      const response = await fetchWithNetworkProxy('https://u.y.qq.com/cgi-bin/musicu.fcg', {
         method: 'POST',
         headers: {
           Accept: 'application/json,text/plain,*/*',

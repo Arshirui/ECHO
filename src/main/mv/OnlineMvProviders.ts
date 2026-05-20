@@ -10,6 +10,7 @@ import type {
   TrackVideo,
 } from '../../shared/types/mv';
 import { getAccountService } from '../accounts/AccountService';
+import { fetchWithNetworkProxy } from '../network/networkFetch';
 
 export type ResolvedMvStreamVariant = MvQualityVariant & {
   url: string | null;
@@ -413,7 +414,7 @@ class ProviderBase {
   private readonly credentialsReader: (provider: NetworkMvProviderId) => AccountCredentials;
 
   constructor(dependencies: ProviderDependencies = {}) {
-    this.fetchImpl = dependencies.fetchImpl ?? fetch;
+    this.fetchImpl = dependencies.fetchImpl ?? fetchWithNetworkProxy;
     this.credentialsReader = dependencies.getCredentials ?? ((provider) => getAccountService().getCredentials(provider));
   }
 

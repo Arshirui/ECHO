@@ -89,11 +89,17 @@ const jobStatus = (sourceId = 'source-1'): RemoteBackgroundJobStatus => {
   };
 };
 
-const globalStatus = (): RemoteBackgroundGlobalStatus => ({
-  paused: false,
-  playbackActive: false,
-  concurrency: { metadata: 2, cover: 2, lyrics: 1, mv: 1, 'duration-backfill': 1 },
-  updatedAt: null,
+type GlobalStatusOverrides = Partial<Omit<RemoteBackgroundGlobalStatus, 'concurrency'>> & {
+  concurrency?: Partial<Record<RemoteBackgroundJobKind, number>>;
+};
+
+const defaultGlobalConcurrency: Record<RemoteBackgroundJobKind, number> = { metadata: 2, cover: 2, lyrics: 1, mv: 1, 'duration-backfill': 1 };
+
+const globalStatus = (overrides: GlobalStatusOverrides = {}): RemoteBackgroundGlobalStatus => ({
+  paused: overrides.paused ?? false,
+  playbackActive: overrides.playbackActive ?? false,
+  concurrency: { ...defaultGlobalConcurrency, ...(overrides.concurrency ?? {}) },
+  updatedAt: overrides.updatedAt ?? null,
 });
 
 describe('RemoteSourcesPanel', () => {
@@ -260,6 +266,30 @@ describe('RemoteSourcesPanel', () => {
     await waitFor(() => expect(remoteApiMocks.startBackgroundJobs).toHaveBeenCalledWith('source-1', ['cover']));
     await screen.findByText('\u5df2\u52a0\u5165\u4e00\u5c0f\u6279\u7f3a\u5931\u5c01\u9762\u626b\u63cf\u4efb\u52a1\u3002');
     expect(remoteApiMocks.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows playback low-load status while keeping manual background actions clear', async () => {
+    sources = [remoteSource()];
+    const status = jobStatus();
+    remoteApiMocks.getJobStatus.mockResolvedValue({
+      ...status,
+      pending: { ...status.pending, cover: 1, lyrics: 1 },
+    });
+    remoteApiMocks.getBackgroundGlobalStatus.mockResolvedValue(globalStatus({
+      playbackActive: true,
+      concurrency: { metadata: 1, cover: 0, lyrics: 0, mv: 0, 'duration-backfill': 1 },
+    }));
+    render(<RemoteSourcesPanel />);
+
+    await screen.findByText('Mock AList');
+    expect(screen.getByText('\u4f4e\u8d1f\u8f7d\u8fd0\u884c')).toBeTruthy();
+    expect(screen.getByText(/\u64ad\u653e\u4e2d\uff0c\u540e\u53f0\u4efb\u52a1\u5df2\u964d\u4f4e\u8d1f\u8f7d/u)).toBeTruthy();
+    expect(screen.getByText(/\u64ad\u653e\u4e2d\uff0c\u5c01\u9762\u548c\u6b4c\u8bcd\u7b49\u540e\u53f0\u4efb\u52a1/u)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /\u52a0\u8f7d\u5c01\u9762/u }));
+
+    await waitFor(() => expect(remoteApiMocks.startBackgroundJobs).toHaveBeenCalledWith('source-1', ['cover']));
+    await screen.findByText('\u5df2\u52a0\u5165\u7f3a\u5931\u5c01\u9762\u4efb\u52a1\uff1b\u64ad\u653e\u4e2d\u4f1a\u4fdd\u6301\u4f4e\u8d1f\u8f7d\uff0c\u7a7a\u95f2\u540e\u7ee7\u7eed\u5904\u7406\u3002');
   });
 
   it('keeps remote matching and retry actions lightweight', async () => {

@@ -485,6 +485,71 @@ export type LibraryScanOptions = {
   deferGroupingRefresh?: boolean;
 };
 
+export type ArtistInsightRelationKind =
+  | 'same_album'
+  | 'collaboration'
+  | 'same_genre'
+  | 'similar_bpm'
+  | 'playback_adjacent'
+  | 'online_similar'
+  | 'member'
+  | 'external_url';
+
+export type ArtistInsightNode = {
+  id: string;
+  name: string;
+  trackCount: number;
+  albumCount: number;
+  coverThumb: string | null;
+  avatarUrl?: string | null;
+  source: 'local' | 'musicbrainz' | 'lastfm';
+};
+
+export type ArtistInsightEdge = {
+  id: string;
+  sourceArtistId: string;
+  targetArtistId: string;
+  kind: ArtistInsightRelationKind;
+  weight: number;
+  evidence: string;
+  source: 'local' | 'musicbrainz' | 'lastfm';
+};
+
+export type ArtistConcertEvent = {
+  id: string;
+  source: 'bandsintown' | 'ticketmaster' | 'seatgeek';
+  title: string;
+  startsAt: string;
+  venueName: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  url: string | null;
+};
+
+export type ArtistConcertInfo = {
+  status: 'not_configured' | 'loading' | 'ready' | 'unavailable';
+  region: string | null;
+  sources: Array<'bandsintown' | 'ticketmaster' | 'seatgeek'>;
+  events: ArtistConcertEvent[];
+  fetchedAt: string | null;
+  message?: string;
+};
+
+export type ArtistInsightsOptions = {
+  limit?: number;
+  includeOnline?: boolean;
+  region?: string | null;
+};
+
+export type ArtistInsights = {
+  artist: LibraryArtist | null;
+  nodes: ArtistInsightNode[];
+  edges: ArtistInsightEdge[];
+  concerts: ArtistConcertInfo;
+  generatedAt: string;
+};
+
 export type LibrarySort =
   | 'default'
   | 'createdAsc'

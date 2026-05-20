@@ -1,5 +1,6 @@
 import { ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE, artistImageConfidence } from './ArtistImageMatching';
 import type { ArtistImageCandidate, ArtistImageProvider } from './ArtistImageTypes';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 
 const providerName = 'kugou';
 const kugouReferer = 'https://www.kugou.com/';
@@ -81,7 +82,7 @@ const requestJson = async (url: string, timeoutMs = 6000): Promise<unknown> => {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithNetworkProxy(url, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json,text/plain,*/*',

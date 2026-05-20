@@ -38,7 +38,24 @@ const mocks = vi.hoisted(() => {
     fakeAudioSession,
     openPathMock: vi.fn(async () => ''),
     getSummaryMock: vi.fn(() => ({ trackCount: 42, albumCount: 3, artistCount: 2 })),
-    getTracksMock: vi.fn(() => [{ id: 'track-1', title: 'Song' }]),
+    getTracksMock: vi.fn(() => ({
+      items: [{
+        id: 'track-1',
+        mediaType: 'local',
+        path: 'D:\\Music\\Song.flac',
+        title: 'Song',
+        artist: 'Artist',
+        album: 'Album',
+        duration: 180,
+        coverThumb: 'echo-cover://thumb/cover-1',
+        fieldSources: { title: 'embedded' },
+        unavailable: false,
+      }],
+      page: 1,
+      pageSize: 100,
+      total: 1,
+      hasMore: false,
+    })),
     getAppSettingsMock: vi.fn(() => ({ smtcEnabled: true })),
     setAppSettingsMock: vi.fn((patch: Record<string, unknown>) => ({ smtcEnabled: true, ...patch })),
   };
@@ -160,5 +177,68 @@ describe('PluginService', () => {
       lastStatus: { state: string; trackId: string };
     };
     expect(storage.lastStatus).toEqual({ state: 'playing', trackId: 'track-new' });
+  });
+
+  it('caps library track queries and returns only requested fields', async () => {
+    const manifest: PluginManifest = {
+      id: 'echo.library-reader',
+      name: 'Library Reader',
+      version: '0.0.1',
+      apiVersion: 1,
+      entry: 'plugin.js',
+      permissions: ['library:read'],
+    };
+    writePlugin(pluginRoot, manifest, [
+      "echo.commands.register('cache-tracks', async () => {",
+      "  const page = await echo.library.getTracks({",
+      '    pageSize: 500,',
+      "    search: 'x'.repeat(140),",
+      "    fields: ['id', 'title', 'fieldSources', 'unknown']",
+      '  });',
+      "  await echo.storage.set('tracksPage', page);",
+      '});',
+    ].join('\n'));
+
+    service.enable({ pluginId: 'echo.library-reader', trustedPermissions: ['library:read'] });
+    await service.runCommand({ pluginId: 'echo.library-reader', commandId: 'cache-tracks' });
+
+    expect(mocks.getTracksMock).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 100,
+      search: 'x'.repeat(120),
+    });
+    const storage = JSON.parse(readFileSync(join(pluginRoot, 'echo.library-reader', 'plugin-storage.json'), 'utf8')) as {
+      tracksPage: { items: Array<Record<string, unknown>>; pageSize: number };
+    };
+    expect(storage.tracksPage.pageSize).toBe(100);
+    expect(storage.tracksPage.items[0]).toEqual({
+      id: 'track-1',
+      title: 'Song',
+      fieldSources: { title: 'embedded' },
+    });
+  });
+
+  it('rejects oversized storage writes and permissionless event subscriptions', async () => {
+    const manifest: PluginManifest = {
+      id: 'echo.guardrails',
+      name: 'Guardrails',
+      version: '0.0.1',
+      apiVersion: 1,
+      entry: 'plugin.js',
+      permissions: [],
+    };
+    writePlugin(pluginRoot, manifest, [
+      "echo.commands.register('subscribe-library', () => {",
+      "  echo.events.on('library:changed', () => {});",
+      '});',
+      "echo.commands.register('write-large', async () => {",
+      "  await echo.storage.set('large', 'x'.repeat(70 * 1024));",
+      '});',
+    ].join('\n'));
+
+    service.enable({ pluginId: 'echo.guardrails', trustedPermissions: [] });
+
+    await expect(service.runCommand({ pluginId: 'echo.guardrails', commandId: 'subscribe-library' })).rejects.toThrow('plugin_permission_denied:library:read');
+    await expect(service.runCommand({ pluginId: 'echo.guardrails', commandId: 'write-large' })).rejects.toThrow('plugin_storage_value_too_large');
   });
 });

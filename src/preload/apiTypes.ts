@@ -6,7 +6,7 @@ import type {
   AudioStatus,
   ChannelBalanceState,
 } from '../shared/types/audio';
-import type { AppSettings } from '../shared/types/appSettings';
+import type { AppSettings, NetworkProxyTestResult } from '../shared/types/appSettings';
 import type { TaskbarPlaybackStatus } from '../shared/types/taskbarPlayback';
 import type { DataPackageExportResult, SettingsImportResult } from '../shared/types/settingsBackup';
 import type { UpdateStatus } from '../shared/types/updates';
@@ -100,6 +100,8 @@ import type {
   DuplicateTrackMode,
   ExportPlaylistRequest,
   UpdatePlaylistRequest,
+  ArtistInsights,
+  ArtistInsightsOptions,
 } from '../shared/types/library';
 import type {
   LocalFileResolveResult,
@@ -202,6 +204,7 @@ export type EchoApi = {
     onUpdateStatus: (handler: (status: UpdateStatus) => void) => () => void;
     openRepository: () => Promise<void>;
     openExternalUrl: (url: string) => Promise<void>;
+    testNetworkProxy: () => Promise<NetworkProxyTestResult>;
     validateGlobalShortcut: (accelerator: string) => Promise<GlobalShortcutValidationResult>;
     onGlobalShortcutCommand: (handler: (action: GlobalShortcutAction) => void) => () => void;
   };
@@ -271,6 +274,7 @@ export type EchoApi = {
     getAlbumForTrack: (trackId: string) => Promise<LibraryAlbum | null>;
     getArtists: (query?: LibraryPageQuery) => Promise<LibraryPage<LibraryArtist>>;
     getArtist: (artistId: string) => Promise<LibraryArtist | null>;
+    getArtistInsights: (artistId: string, options?: ArtistInsightsOptions) => Promise<ArtistInsights>;
     getArtistTracks: (artistId: string, query?: LibraryPageQuery) => Promise<LibraryPage<LibraryTrack>>;
     getArtistAlbums: (artistId: string, query?: LibraryPageQuery) => Promise<LibraryPage<LibraryAlbum>>;
     enqueueMissingArtistImages: (

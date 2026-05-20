@@ -1,5 +1,6 @@
 import { ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE, artistImageConfidence } from './ArtistImageMatching';
 import type { ArtistImageCandidate, ArtistImageProvider } from './ArtistImageTypes';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 
 const providerName = 'wikipedia';
 const wikipediaLanguages = ['zh', 'ja', 'en'] as const;
@@ -64,7 +65,7 @@ export class WikipediaArtistImageProvider implements ArtistImageProvider {
 
   private async searchLanguage(language: string, artistName: string): Promise<ArtistImageCandidate[]> {
     try {
-      const response = await fetch(summaryUrl(language, artistName), {
+      const response = await fetchWithNetworkProxy(summaryUrl(language, artistName), {
         redirect: 'follow',
         headers: {
           Accept: 'application/json',

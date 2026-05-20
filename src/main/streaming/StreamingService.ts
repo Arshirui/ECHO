@@ -29,6 +29,7 @@ import { StreamingPlaybackResolver } from './StreamingPlaybackResolver';
 import type { StreamingProvider } from './StreamingProvider';
 import { StreamingProviderRegistry } from './StreamingProviderRegistry';
 import { StreamingRateLimiter } from './StreamingRateLimiter';
+import { fetchWithNetworkProxy } from '../network/networkFetch';
 import { MockStreamingProvider } from './providers/MockStreamingProvider';
 import { NeteaseStreamingProvider } from './providers/NeteaseStreamingProvider';
 import { QQMusicStreamingProvider } from './providers/QQMusicStreamingProvider';
@@ -173,7 +174,7 @@ const resolveQqShareLinkTarget = async (url: URL): Promise<StreamingPlaylistUrlT
     return null;
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithNetworkProxy(url.toString(), {
     method: 'GET',
     redirect: 'manual',
     headers: {

@@ -32,11 +32,12 @@ const webContentsInfo = (webContents: WebContents): unknown => ({
 
 export const isClosedPipeWriteError = (error: Error): boolean => {
   const code = (error as NodeJS.ErrnoException).code;
-  if (code === 'EPIPE' || code === 'EOF' || code === 'ERR_STREAM_DESTROYED') {
+  if (code === 'EPIPE' || code === 'EOF' || code === 'ERR_STREAM_DESTROYED' || code === 'ERR_STREAM_WRITE_AFTER_END') {
     return true;
   }
 
-  return /^(?:write\s+)?(?:EOF|EPIPE)$/iu.test(error.message.trim());
+  return /^(?:write\s+)?(?:EOF|EPIPE)$/iu.test(error.message.trim()) ||
+    /write after end|stream (?:has been|was) destroyed|cannot call write after a stream was destroyed/iu.test(error.message);
 };
 
 export const isCleanProcessGoneReason = (reason: string | undefined): boolean => reason === 'clean-exit';

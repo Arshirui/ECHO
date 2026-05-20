@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import type { LyricsQuery } from '../../shared/types/lyrics';
 import { asRecord, fetchJsonWithTimeout, number, text } from '../library/network/providers/providerFetch';
+import { fetchWithNetworkProxy } from '../network/networkFetch';
 import type { LyricsProvider, LyricsProviderCapability, LyricsProviderResult, LyricsProviderSearchRequest } from './LyricsProvider';
 import { isInstrumentalLyricsText } from './instrumentalPlaceholders';
 import { parseSyncedLyrics } from './lyricsParser';
@@ -22,7 +23,7 @@ const fetchJsonBodyWithTimeout = async (
   signal?.addEventListener('abort', abort, { once: true });
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithNetworkProxy(url, {
       method: 'POST',
       signal: controller.signal,
       headers: {

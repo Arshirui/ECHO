@@ -24,6 +24,7 @@ import { NeteaseLyricsProvider } from '../../lyrics/NeteaseLyricsProvider';
 import { QQMusicLyricsProvider } from '../../lyrics/QQMusicLyricsProvider';
 import { LrclibProvider } from '../../lyrics/LrclibProvider';
 import { providerResultToTrackLyrics } from '../../lyrics/LyricsProvider';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 import type { StreamingProvider } from '../StreamingProvider';
 import { asRecord, text } from './chinaStreamingUtils';
 
@@ -45,7 +46,7 @@ const bearerHeaders = async (): Promise<Record<string, string>> => ({
 });
 
 const spotifyApiFetch = async <T>(path: string): Promise<T> => {
-  const response = await fetch(`${spotifyApiBaseUrl}${path}`, {
+  const response = await fetchWithNetworkProxy(`${spotifyApiBaseUrl}${path}`, {
     method: 'GET',
     headers: await bearerHeaders(),
   });
@@ -69,7 +70,7 @@ const spotifyApiFetch = async <T>(path: string): Promise<T> => {
 void spotifyApiFetch;
 
 const spotifyApiFetchJson = async <T>(path: string): Promise<T> => {
-  const response = await fetch(`${spotifyApiBaseUrl}${path}`, {
+  const response = await fetchWithNetworkProxy(`${spotifyApiBaseUrl}${path}`, {
     method: 'GET',
     headers: await bearerHeaders(),
   });

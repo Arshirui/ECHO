@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ArtistDetailView } from './ArtistDetailView';
+import type { AppSettings } from '../../../shared/types/appSettings';
 import type { LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
 
 const queueMock = {
@@ -106,8 +107,13 @@ const track = (id: string): LibraryTrack => ({
   fieldSources: {},
 });
 
-const installLibrary = (getArtist = vi.fn().mockResolvedValue(artist())): void => {
+const installLibrary = (getArtist = vi.fn().mockResolvedValue(artist()), appSettings?: Partial<AppSettings>): void => {
   window.echo = {
+    app: appSettings
+      ? {
+          getSettings: vi.fn().mockResolvedValue(appSettings),
+        }
+      : undefined,
     library: {
       getArtist,
     },
@@ -255,5 +261,17 @@ describe('ArtistDetailView', () => {
 
     expect(pageSurface.scrollTop).toBe(480);
     expect(screen.getByRole('button', { name: 'Open mock album' })).toBeTruthy();
+  });
+
+  it('shows configured concert provider status without loading online events', async () => {
+    installLibrary(vi.fn().mockResolvedValue(artist()), {
+      onlineArtistInfoBandsintownAppId: 'echo-next',
+      onlineArtistInfoRegion: 'HK',
+    });
+
+    render(<ArtistDetailView artist={artist()} onBack={vi.fn()} />);
+
+    await screen.findByText('Bandsintown');
+    expect(screen.getByText('在线歌手信息已配置（HK）；演出请求队列和缓存接入后会在这里显示。')).toBeTruthy();
   });
 });

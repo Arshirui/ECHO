@@ -2,11 +2,13 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState } from "re
 import type { CSSProperties, DragEvent, ReactNode } from "react";
 import {
   ArrowLeft,
+  Check,
   FastForward,
   Disc3,
   Music2,
   Rewind,
   RotateCcw,
+  TimerReset,
   Upload,
   X,
 } from "lucide-react";
@@ -28,8 +30,13 @@ import type {
 import { streamingProviderNames } from "../../shared/types/streaming";
 import type { PlaybackStatus } from "../../shared/types/playback";
 import { decodeTextFileBytes } from "../../shared/utils/decodeTextFile";
-import { LyricsView } from "../components/lyrics/LyricsView";
+import { LyricsView, getActiveLyricIndex } from "../components/lyrics/LyricsView";
 import { MvPanel, type MvAudioClock } from "../components/lyrics/MvPanel";
+import {
+  suggestLyricsSmartAlignment,
+  type LyricsSmartAlignmentAnchor,
+  type LyricsSmartAlignmentOutputMode,
+} from "../components/lyrics/lyricsSmartAlignment";
 import {
   createReadableLyricsColorVars,
   sampleImageUrl,
@@ -120,7 +127,9 @@ type LyricsDisplaySettings = Pick<
   | "lyricsAutoSearch"
   | "lyricsAutoAcceptScore"
   | "lyricsGlobalSyncOffsetMs"
+  | "lyricsTimelineCorrectionEnabled"
   | "lyricsOffsetControlsEnabled"
+  | "lyricsSmartAlignmentEnabled"
   | "lyricsSecondaryFontSizePx"
   | "lyricsLineSpacingPercent"
   | "lyricsLineMaxChars"
@@ -164,7 +173,9 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.5,
   lyricsGlobalSyncOffsetMs: 0,
+  lyricsTimelineCorrectionEnabled: true,
   lyricsOffsetControlsEnabled: false,
+  lyricsSmartAlignmentEnabled: false,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
   lyricsLineMaxChars: 0,
@@ -489,6 +500,33 @@ const shouldUseAudioStatusForCurrentPlayback = (
   );
 };
 
+const smartAlignmentOutputModes = new Set(["shared", "exclusive", "asio"]);
+
+const isSmartAlignmentOutputMode = (
+  outputMode: AudioStatus["outputMode"] | null | undefined,
+): outputMode is LyricsSmartAlignmentOutputMode =>
+  Boolean(outputMode && smartAlignmentOutputModes.has(outputMode));
+
+const smartAlignmentModeLabel = (outputMode: LyricsSmartAlignmentOutputMode): string => {
+  if (outputMode === "asio") {
+    return "ASIO";
+  }
+  if (outputMode === "exclusive") {
+    return "WASAPI 独占";
+  }
+  return "WASAPI 共享";
+};
+
+const smartAlignmentConfidenceLabel = (confidence: "low" | "medium" | "high"): string => {
+  if (confidence === "high") {
+    return "高置信度";
+  }
+  if (confidence === "medium") {
+    return "中置信度";
+  }
+  return "低置信度";
+};
+
 const firstLrcFile = (fileList: FileList | null): File | null => {
   if (!fileList) {
     return null;
@@ -633,7 +671,9 @@ const selectLyricsDisplaySettings = (
   lyricsAutoSearch: settings.lyricsAutoSearch,
   lyricsAutoAcceptScore: settings.lyricsAutoAcceptScore,
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
+  lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
   lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
+  lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled === true,
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackLyricsDisplaySettings.lyricsSecondaryFontSizePx,
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackLyricsDisplaySettings.lyricsLineSpacingPercent,
   lyricsLineMaxChars: settings.lyricsLineMaxChars ?? fallbackLyricsDisplaySettings.lyricsLineMaxChars,
@@ -692,7 +732,9 @@ const lyricsDisplaySettingsKeys = [
   "lyricsAutoSearch",
   "lyricsAutoAcceptScore",
   "lyricsGlobalSyncOffsetMs",
+  "lyricsTimelineCorrectionEnabled",
   "lyricsOffsetControlsEnabled",
+  "lyricsSmartAlignmentEnabled",
   "lyricsSecondaryFontSizePx",
   "lyricsLineSpacingPercent",
   "lyricsLineMaxChars",
@@ -723,9 +765,15 @@ const pickLyricsDisplaySettingsPatch = (
   return patch;
 };
 
+const getSettingsEventDetailObject = (event: Event): Record<string, unknown> | null => {
+  const detail = (event as CustomEvent<unknown>).detail;
+  return detail && typeof detail === "object" && !Array.isArray(detail)
+    ? detail as Record<string, unknown>
+    : null;
+};
+
 const isExplicitObjectSettingsPatch = (event: Event): boolean =>
-  event instanceof CustomEvent &&
-  Boolean(event.detail && typeof event.detail === "object" && !Array.isArray(event.detail));
+  getSettingsEventDetailObject(event) !== null;
 
 const clampPlaybackPosition = (
   positionSeconds: number,
@@ -974,6 +1022,8 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     null,
   );
   const [isLyricsOffsetSaving, setIsLyricsOffsetSaving] = useState(false);
+  const [isSmartAlignmentSessionActive, setIsSmartAlignmentSessionActive] = useState(false);
+  const [smartAlignmentAnchors, setSmartAlignmentAnchors] = useState<LyricsSmartAlignmentAnchor[]>([]);
   const [, setIsCustomLyricsApplying] = useState(false);
   const [isCustomLyricsDragging, setIsCustomLyricsDragging] = useState(false);
   const lyricsRequestRef = useRef(0);
@@ -1086,6 +1136,17 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     [airPlayReceiverStatus?.currentLyricLine, isCurrentAirPlayReceiverTrack],
   );
   const displayedLyrics = liveAirPlayLyrics ?? lyrics;
+  useEffect(() => {
+    setIsSmartAlignmentSessionActive(false);
+    setSmartAlignmentAnchors([]);
+  }, [lyrics.lines, lyrics.source, trackId]);
+  const effectiveDisplayedLyrics = useMemo(
+    () =>
+      lyricsDisplaySettings.lyricsTimelineCorrectionEnabled !== false
+        ? displayedLyrics
+        : { ...displayedLyrics, offsetMs: 0 },
+    [displayedLyrics, lyricsDisplaySettings.lyricsTimelineCorrectionEnabled],
+  );
   const shouldRequestNetworkBackgroundCover =
     lyricsDisplaySettings.lyricsHighResolutionNetworkCoverEnabled === true &&
     lyricsDisplaySettings.lyricsBackgroundMode === "cover" &&
@@ -1562,9 +1623,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
   useEffect(() => {
     const handleSettingsChanged = (event: Event): void => {
-      const patch = pickLyricsDisplaySettingsPatch(
-        event instanceof CustomEvent ? event.detail : null,
-      );
+      const patch = pickLyricsDisplaySettingsPatch(getSettingsEventDetailObject(event));
       if (Object.keys(patch).length > 0) {
         lyricsDisplaySettingsLoadVersionRef.current += 1;
         setLyricsDisplaySettings((current) => ({ ...current, ...patch }));
@@ -1605,9 +1664,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     };
 
     const handleSettingsChanged = (event: Event): void => {
-      const nextValue = pickLyricsReadabilityEnhanced(
-        event instanceof CustomEvent ? event.detail : null,
-      );
+      const nextValue = pickLyricsReadabilityEnhanced(getSettingsEventDetailObject(event));
       if (nextValue !== null) {
         setLyricsReadabilityEnhanced(nextValue);
         return;
@@ -2432,12 +2489,33 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     const offsetSteps = [-500, -100, 100, 500];
     const clampNextOffset = (value: number): number =>
       Math.max(-10000, Math.min(10000, Math.round(value)));
+    const correctionEnabled = lyricsDisplaySettings.lyricsTimelineCorrectionEnabled !== false;
+    const currentPlaybackMs = Math.max(0, lyricsPositionSeconds * 1000);
+    const displayPositionMs = currentPlaybackMs + (correctionEnabled ? lyricsDisplaySettings.lyricsGlobalSyncOffsetMs : 0);
+    const activeLineIndex = getActiveLyricIndex(
+      displayedLyrics.lines,
+      displayPositionMs,
+      correctionEnabled ? lyrics.offsetMs : 0,
+    );
+    const activeLine = activeLineIndex >= 0 ? displayedLyrics.lines[activeLineIndex] : null;
+    const alignedOffsetMs = activeLine
+      ? clampNextOffset(activeLine.timeMs - (currentPlaybackMs + lyricsDisplaySettings.lyricsGlobalSyncOffsetMs))
+      : currentOffsetMs;
 
     return (
       <section className="lyrics-offset-controls" aria-label="Lyrics sync">
         <span className="lyrics-offset-label">Lyrics offset</span>
         <span className="lyrics-offset-value">{formatOffset(currentOffsetMs)}</span>
         <div className="lyrics-offset-buttons">
+          <button
+            type="button"
+            disabled={isLyricsOffsetSaving || !activeLine || alignedOffsetMs === currentOffsetMs}
+            title={activeLine ? "对齐当前句到当前播放位置" : "当前没有可对齐的同步歌词行"}
+            onClick={() => void handleLyricsOffsetChange(alignedOffsetMs)}
+          >
+            <TimerReset size={14} />
+            <span>对齐当前句</span>
+          </button>
           {offsetSteps.map((step) => {
             const nextOffsetMs = clampNextOffset(currentOffsetMs + step);
             const isForward = step > 0;
@@ -2470,9 +2548,172 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   }, [
     handleLyricsOffsetChange,
     isLyricsOffsetSaving,
+    displayedLyrics.lines,
     lyrics.kind,
     lyrics.offsetMs,
+    lyricsDisplaySettings.lyricsGlobalSyncOffsetMs,
     lyricsDisplaySettings.lyricsOffsetControlsEnabled,
+    lyricsDisplaySettings.lyricsTimelineCorrectionEnabled,
+    lyricsPositionSeconds,
+    trackId,
+  ]);
+
+  const lyricsSmartAlignmentControls = useMemo(() => {
+    if (!lyricsDisplaySettings.lyricsSmartAlignmentEnabled) {
+      return null;
+    }
+
+    const outputMode = isSmartAlignmentOutputMode(audioStatus?.outputMode)
+      ? audioStatus.outputMode
+      : null;
+    const hasCachedSyncedLyrics =
+      lyrics.kind === "synced" &&
+      lyrics.source !== "placeholder" &&
+      lyrics.lines.length > 0;
+    const hasCurrentAudioClock =
+      Boolean(
+        audioStatus &&
+          trackId &&
+          audioStatus.currentTrackId === trackId &&
+          Number.isFinite(audioStatus.positionSeconds),
+      );
+    const correctionEnabled = lyricsDisplaySettings.lyricsTimelineCorrectionEnabled !== false;
+    const canUseSmartAlignment =
+      Boolean(trackId) &&
+      hasCachedSyncedLyrics &&
+      correctionEnabled &&
+      hasCurrentAudioClock &&
+      Boolean(outputMode) &&
+      Boolean(window.echo?.lyrics?.setOffset);
+    const unavailableReason =
+      !trackId
+        ? "等待当前歌曲"
+        : !hasCachedSyncedLyrics
+          ? "需要已缓存的同步歌词"
+          : !correctionEnabled
+            ? "时间轴校准总开关已关闭"
+            : !hasCurrentAudioClock
+              ? "等待当前播放时钟"
+              : !outputMode
+                ? "当前输出模式暂不支持智能校准"
+                : !window.echo?.lyrics?.setOffset
+                  ? "歌词校准接口不可用"
+                  : null;
+    const audioPlaybackMs = audioStatus ? Math.max(0, audioStatus.positionSeconds * 1000) : 0;
+    const displayPositionMs = audioPlaybackMs + lyricsDisplaySettings.lyricsGlobalSyncOffsetMs;
+    const activeLineIndex = canUseSmartAlignment
+      ? getActiveLyricIndex(
+          lyrics.lines,
+          displayPositionMs,
+          lyrics.offsetMs,
+        )
+      : -1;
+    const activeLine = activeLineIndex >= 0 ? lyrics.lines[activeLineIndex] : null;
+    const suggestion = suggestLyricsSmartAlignment(smartAlignmentAnchors);
+    const hasSuggestion = Boolean(suggestion);
+    const canApplySuggestion =
+      Boolean(suggestion) &&
+      suggestion?.canApply === true &&
+      !isLyricsOffsetSaving &&
+      canUseSmartAlignment &&
+      suggestion?.offsetMs !== lyrics.offsetMs;
+    const suggestionMessage = suggestion
+      ? suggestion.driftDetected
+        ? `可能存在时间轴漂移（前后差 ${formatOffset(suggestion.driftMs)}），本版只建议整体 offset，低置信度不应用。`
+        : !suggestion.canApply
+          ? suggestion.rejectedAnchors.length > 0
+            ? `低置信度：已排除 ${suggestion.rejectedAnchors.length} 个离群锚点，建议多标记几句后再应用。`
+            : `低置信度：锚点分散 ${suggestion.spreadMs}ms，建议多标记几句后再应用。`
+          : `建议来自 ${suggestion.anchorCount} 个有效锚点。`
+      : null;
+
+    const handleStartSession = (): void => {
+      setSmartAlignmentAnchors([]);
+      setIsSmartAlignmentSessionActive(true);
+    };
+
+    const handleMarkAnchor = (): void => {
+      if (!activeLine || !outputMode || !canUseSmartAlignment) {
+        return;
+      }
+
+      setSmartAlignmentAnchors((current) =>
+        [
+          ...current,
+          {
+            lyricLineTimeMs: activeLine.timeMs,
+            playbackMs: audioPlaybackMs,
+            globalOffsetMs: lyricsDisplaySettings.lyricsGlobalSyncOffsetMs,
+            outputMode,
+          },
+        ].slice(-5),
+      );
+    };
+
+    const handleApplySuggestion = (): void => {
+      if (!suggestion || !canApplySuggestion) {
+        return;
+      }
+      void handleLyricsOffsetChange(suggestion.offsetMs);
+    };
+
+    return (
+      <section className="lyrics-smart-alignment" aria-label="Smart lyrics alignment">
+        <span className="lyrics-smart-alignment-label">智能校准建议</span>
+        <div className="lyrics-smart-alignment-buttons">
+          <button
+            type="button"
+            disabled={!canUseSmartAlignment || isSmartAlignmentSessionActive}
+            onClick={handleStartSession}
+          >
+            <TimerReset size={14} />
+            <span>开始智能校准</span>
+          </button>
+          <button
+            type="button"
+            disabled={!isSmartAlignmentSessionActive || !canUseSmartAlignment || !activeLine}
+            title={activeLine ? `标记：${activeLine.text}` : "当前没有可标记的同步歌词行"}
+            onClick={handleMarkAnchor}
+          >
+            <Disc3 size={14} />
+            <span>标记当前句</span>
+          </button>
+          <button
+            type="button"
+            disabled={!canApplySuggestion}
+            onClick={handleApplySuggestion}
+          >
+            <Check size={14} />
+            <span>应用建议</span>
+          </button>
+        </div>
+        {hasSuggestion && suggestion ? (
+          <span className="lyrics-smart-alignment-suggestion">
+            建议 {formatOffset(suggestion.offsetMs)} · {smartAlignmentConfidenceLabel(suggestion.confidence)} · {smartAlignmentModeLabel(suggestion.outputMode)} 时钟 · 有效 {suggestion.anchorCount} 点
+          </span>
+        ) : null}
+        <p>
+          {unavailableReason ??
+            suggestionMessage ??
+            (isSmartAlignmentSessionActive
+              ? `已标记 ${smartAlignmentAnchors.length} 个锚点，听到当前句时继续标记。`
+              : "开启会话后，听到当前句时点标记，ECHO 会计算建议 offset。")}
+        </p>
+      </section>
+    );
+  }, [
+    audioStatus,
+    handleLyricsOffsetChange,
+    isLyricsOffsetSaving,
+    isSmartAlignmentSessionActive,
+    lyrics.kind,
+    lyrics.lines,
+    lyrics.offsetMs,
+    lyrics.source,
+    lyricsDisplaySettings.lyricsGlobalSyncOffsetMs,
+    lyricsDisplaySettings.lyricsSmartAlignmentEnabled,
+    lyricsDisplaySettings.lyricsTimelineCorrectionEnabled,
+    smartAlignmentAnchors,
     trackId,
   ]);
 
@@ -2722,12 +2963,16 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
 
         {lyricsControls}
         {lyricsOffsetControls}
+        {lyricsSmartAlignmentControls}
         {lyricsDisplaySettings.lyricsEnabled ? (
           <LyricsView
             durationMs={displayDurationSeconds * 1000}
             hideEmptyState={lyricsDisplaySettings.lyricsEmptyStateHidden && !isCurrentAirPlayReceiverTrack}
-            lyrics={displayedLyrics}
-            positionMs={lyricsPositionSeconds * 1000 + lyricsDisplaySettings.lyricsGlobalSyncOffsetMs}
+            lyrics={effectiveDisplayedLyrics}
+            positionMs={
+              lyricsPositionSeconds * 1000 +
+              (lyricsDisplaySettings.lyricsTimelineCorrectionEnabled !== false ? lyricsDisplaySettings.lyricsGlobalSyncOffsetMs : 0)
+            }
             playbackRate={mvAudioClock.playbackRate}
             playbackState={seekPreviewSeconds === null ? mvAudioClock.state : "paused"}
             positionUpdatedAtMs={seekPreviewSeconds === null ? mvAudioClock.updatedAtMs : performance.now()}

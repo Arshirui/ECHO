@@ -140,7 +140,7 @@ const compactAirPlayText = (value: string | null): string =>
     .toLocaleLowerCase();
 
 const comparableAirPlayText = (value: string | null): string =>
-  compactAirPlayText(value?.replace(/\s*[\(（][^()（）]*[\)）]\s*/gu, '') ?? null);
+  compactAirPlayText(value?.replace(/\s*[(（][^()（）]*[)）]\s*/gu, '') ?? null);
 
 const isGenericAirPlayTitle = (title: string | null): boolean => {
   if (!title) {
@@ -188,7 +188,7 @@ const normalizeAirPlayMetadataText = (
     return { title, artist, album };
   }
 
-  const artistParts = artist?.split(/[\/／]/u).map((part) => part.trim()).filter(Boolean) ?? [];
+  const artistParts = artist?.split(/[/／]/u).map((part) => part.trim()).filter(Boolean) ?? [];
   const albumPartIndex = artistParts.findIndex((part) => isAlbumLikeArtistPart(part, album));
   const shouldPreferAlbumTitle =
     isGenericAirPlayTitle(title) || (albumPartIndex >= 0 && !sameText(title, album) && looksLikeAirPlayLyricLine(title));
@@ -293,7 +293,7 @@ type HelperRequest = {
   timer: NodeJS.Timeout;
 };
 
-class AirPlayRaopHelperModule implements RaopModule {
+export class AirPlayRaopHelperModule implements RaopModule {
   private child: ChildProcessWithoutNullStreams | null = null;
   private handler: ((event: RaopEvent) => void) | null = null;
   private logHandler: ((event: unknown) => void) | null = null;
@@ -377,6 +377,9 @@ class AirPlayRaopHelperModule implements RaopModule {
       child.once('error', (error) => {
         clearTimeout(readyTimeout);
         reject(error);
+      });
+      child.stdin.on('error', (error: Error) => {
+        this.handleHelperWriteFailure(child, error);
       });
       child.once('exit', (code, signal) => {
         clearTimeout(readyTimeout);
@@ -471,6 +474,9 @@ class AirPlayRaopHelperModule implements RaopModule {
     if (!child || child.killed) {
       return Promise.reject(new Error('AirPlay helper is not running.'));
     }
+    if (child.stdin.destroyed || child.stdin.writableEnded || !child.stdin.writable) {
+      return Promise.reject(new Error('AirPlay helper stdin is not writable.'));
+    }
 
     const requestId = this.nextRequestId;
     this.nextRequestId += 1;
@@ -480,7 +486,26 @@ class AirPlayRaopHelperModule implements RaopModule {
         reject(new Error(`AirPlay helper request timed out: ${type}`));
       }, 10_000);
       this.pending.set(requestId, { resolve, reject, timer });
-      child.stdin.write(`${JSON.stringify({ ...payload, type, requestId })}\n`);
+      const message = `${JSON.stringify({ ...payload, type, requestId })}\n`;
+      const fail = (error: unknown): void => {
+        const request = this.pending.get(requestId);
+        if (request) {
+          clearTimeout(request.timer);
+          this.pending.delete(requestId);
+          request.reject(error instanceof Error ? error : new Error(String(error)));
+        }
+        this.handleHelperWriteFailure(child, error);
+      };
+
+      try {
+        child.stdin.write(message, (error: Error | null | undefined) => {
+          if (error) {
+            fail(error);
+          }
+        });
+      } catch (error) {
+        fail(error);
+      }
     });
   }
 
@@ -489,6 +514,25 @@ class AirPlayRaopHelperModule implements RaopModule {
       clearTimeout(pending.timer);
       pending.reject(error);
       this.pending.delete(requestId);
+    }
+  }
+
+  private handleHelperWriteFailure(child: ChildProcessWithoutNullStreams, error: unknown): void {
+    if (this.child !== child) {
+      return;
+    }
+
+    const nextError = error instanceof Error ? error : new Error(String(error));
+    this.logHandler?.({ source: 'helper', level: 'error', line: `helper stdin closed: ${nextError.message}` });
+    this.child = null;
+    this.readyPromise = null;
+    this.rejectAll(nextError);
+    try {
+      if (!child.killed) {
+        child.kill();
+      }
+    } catch {
+      // Best-effort cleanup after helper pipe failure.
     }
   }
 
@@ -508,7 +552,14 @@ class AirPlayRaopHelperModule implements RaopModule {
         clearTimeout(timer);
         resolve();
       });
-      child.stdin.end();
+      try {
+        if (!child.stdin.destroyed && !child.stdin.writableEnded) {
+          child.stdin.end();
+        }
+      } catch {
+        clearTimeout(timer);
+        resolve();
+      }
     });
   }
 
@@ -699,7 +750,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     return this.getStatus();
   }
 
-  async seekPlayback(_positionSeconds: number): Promise<AirPlayReceiverStatus> {
+  async seekPlayback(): Promise<AirPlayReceiverStatus> {
     this.addDebugEvent('seek', 'AirPlay receiver seek is not supported by the native backend');
     return this.getStatus();
   }

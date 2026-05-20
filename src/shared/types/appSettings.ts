@@ -13,6 +13,16 @@ export type AppVideoWallpaperPauseMode = 'smart' | 'minimized' | 'never';
 export type AppLocale = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
 export type AppThemeMode = 'light' | 'dark' | 'system';
 export type ReplayGainMode = 'off' | 'track' | 'album';
+export type NetworkProxyMode = 'off' | 'system' | 'manual' | 'pac';
+
+export type NetworkProxyTestResult = {
+  ok: boolean;
+  mode: NetworkProxyMode;
+  message: string;
+  resolvedProxy: string | null;
+  status: number | null;
+  elapsedMs: number;
+};
 export type AppThemePreset =
   | 'classic'
   | 'echoTwilight'
@@ -141,8 +151,16 @@ export type AppSettings = {
   appWallpaperVisualProtectionEnabled?: boolean;
   appWallpaperUnifiedOpacityEnabled: boolean;
   appVideoWallpaperPauseMode?: AppVideoWallpaperPauseMode;
+  networkProxyMode?: NetworkProxyMode;
+  networkProxyUrl?: string | null;
+  networkProxyBypassRules?: string | null;
+  networkProxyPacUrl?: string | null;
   networkMetadataEnabled: boolean;
   networkMetadataProviders: Array<'mock' | 'musicbrainz' | 'cover-art-archive' | 'netease-cloud-music' | 'qq-music'>;
+  onlineArtistInfoBandsintownAppId?: string | null;
+  onlineArtistInfoTicketmasterApiKey?: string | null;
+  onlineArtistInfoSeatGeekClientId?: string | null;
+  onlineArtistInfoRegion?: string | null;
   audioAnalysisEnabled?: boolean;
   lyricsNetworkEnabled: boolean;
   lyricsPreferredProvider: 'lrclib';
@@ -156,7 +174,9 @@ export type AppSettings = {
   lyricsAutoAcceptScore: number;
   lyricsDefaultOffsetMs: number;
   lyricsGlobalSyncOffsetMs: number;
+  lyricsTimelineCorrectionEnabled?: boolean;
   lyricsOffsetControlsEnabled?: boolean;
+  lyricsSmartAlignmentEnabled?: boolean;
   lyricsEnabled: boolean;
   lyricsHeaderHidden: boolean;
   lyricsMvAutoShowTrackInfoDisabled?: boolean;

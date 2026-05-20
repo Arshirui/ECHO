@@ -213,6 +213,10 @@ class FakeStore {
   finishFolderScan(): void {
     this.finishFolderScanCalls += 1;
   }
+
+  recordLibraryInboxBatch(): null {
+    return null;
+  }
 }
 
 class FakeScanner implements FileScanner {

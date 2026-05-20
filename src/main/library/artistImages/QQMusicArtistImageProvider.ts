@@ -1,5 +1,6 @@
 import type { StreamingArtist } from '../../../shared/types/streaming';
 import { QQMusicStreamingProvider } from '../../streaming/providers/QQMusicStreamingProvider';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 import { ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE, artistImageConfidence } from './ArtistImageMatching';
 import type { ArtistImageCandidate, ArtistImageProvider } from './ArtistImageTypes';
 
@@ -101,7 +102,7 @@ const legacyArtistSearch = async (artistName: string): Promise<StreamingArtist[]
     needNewCode: '0',
   });
   try {
-    const response = await fetch(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?${params.toString()}`, {
+    const response = await fetchWithNetworkProxy(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?${params.toString()}`, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json,text/plain,*/*',

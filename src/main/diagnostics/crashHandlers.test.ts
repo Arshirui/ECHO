@@ -25,6 +25,8 @@ describe('crashHandlers', () => {
     expect(isClosedPipeWriteError(new Error('write EOF'))).toBe(true);
     expect(isClosedPipeWriteError(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))).toBe(true);
     expect(isClosedPipeWriteError(Object.assign(new Error('stream was destroyed'), { code: 'ERR_STREAM_DESTROYED' }))).toBe(true);
+    expect(isClosedPipeWriteError(Object.assign(new Error('write after end'), { code: 'ERR_STREAM_WRITE_AFTER_END' }))).toBe(true);
+    expect(isClosedPipeWriteError(new Error('Cannot call write after a stream was destroyed'))).toBe(true);
   });
 
   it('does not classify unrelated exceptions as pipe writes', () => {

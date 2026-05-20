@@ -1,5 +1,6 @@
 import { ARTIST_IMAGE_AUTO_MATCH_MIN_CONFIDENCE, artistImageConfidence } from './ArtistImageMatching';
 import type { ArtistImageCandidate, ArtistImageProvider } from './ArtistImageTypes';
+import { fetchWithNetworkProxy } from '../../network/networkFetch';
 
 const providerName = 'kuwo';
 const kuwoReferer = 'https://www.kuwo.cn/';
@@ -168,7 +169,7 @@ export class KuwoArtistImageProvider implements ArtistImageProvider {
     });
 
     try {
-      const response = await fetch(`https://search.kuwo.cn/r.s?${params.toString()}`, {
+      const response = await fetchWithNetworkProxy(`https://search.kuwo.cn/r.s?${params.toString()}`, {
         signal: controller.signal,
         headers: {
           Accept: 'text/plain,application/json,*/*',

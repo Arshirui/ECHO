@@ -1,3 +1,5 @@
+import { fetchWithNetworkProxy } from '../../../network/networkFetch';
+
 export const fetchJsonWithTimeout = async (
   url: string,
   signal: AbortSignal | undefined,
@@ -10,7 +12,7 @@ export const fetchJsonWithTimeout = async (
   signal?.addEventListener('abort', abort, { once: true });
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithNetworkProxy(url, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json,text/plain,*/*',

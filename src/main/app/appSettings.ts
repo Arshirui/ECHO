@@ -14,6 +14,7 @@ import type {
   AppSettings,
   LyricsBackgroundMode,
   LyricsMiniPlayerColorMode,
+  NetworkProxyMode,
   RememberedAudioOutput,
   RememberedWindowSize,
   ReplayGainMode,
@@ -46,6 +47,7 @@ const defaultLyricsMiniPlayerColor = '#232120';
 const mvNetworkProviders: NetworkMvProviderId[] = ['bilibili', 'youtube'];
 const lyricsProviders: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic', 'musixmatch', 'genius', 'manual'];
 const defaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic'];
+export const defaultNetworkProxyBypassRules = '<local>;localhost;127.0.0.1;::1;*.local;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*';
 const appMemoryVersion = 2;
 const locales: AppLocale[] = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP'];
 const appThemeModes: AppThemeMode[] = ['light', 'dark', 'system'];
@@ -220,8 +222,16 @@ export const defaultSettings: AppSettings = {
   appWallpaperVisualProtectionEnabled: true,
   appWallpaperUnifiedOpacityEnabled: false,
   appVideoWallpaperPauseMode: 'smart',
+  networkProxyMode: 'off',
+  networkProxyUrl: null,
+  networkProxyBypassRules: defaultNetworkProxyBypassRules,
+  networkProxyPacUrl: null,
   networkMetadataEnabled: false,
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
+  onlineArtistInfoBandsintownAppId: null,
+  onlineArtistInfoTicketmasterApiKey: null,
+  onlineArtistInfoSeatGeekClientId: null,
+  onlineArtistInfoRegion: null,
   audioAnalysisEnabled: true,
   lyricsNetworkEnabled: true,
   lyricsPreferredProvider: 'lrclib',
@@ -235,7 +245,9 @@ export const defaultSettings: AppSettings = {
   lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
+  lyricsTimelineCorrectionEnabled: true,
   lyricsOffsetControlsEnabled: false,
+  lyricsSmartAlignmentEnabled: false,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
   lyricsMvAutoShowTrackInfoDisabled: true,
@@ -643,6 +655,87 @@ const normalizeAppWallpaperMediaType = (filePath: string | null): AppWallpaperMe
 const normalizeAppVideoWallpaperPauseMode = (value: unknown): AppVideoWallpaperPauseMode =>
   value === 'minimized' || value === 'never' || value === 'smart' ? value : defaultSettings.appVideoWallpaperPauseMode ?? 'smart';
 
+const normalizeNetworkProxyUrl = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.replace(/[\r\n]/g, '').trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (
+      url.protocol !== 'http:' &&
+      url.protocol !== 'https:' &&
+      url.protocol !== 'socks:' &&
+      url.protocol !== 'socks4:' &&
+      url.protocol !== 'socks5:'
+    ) {
+      return null;
+    }
+    if (!url.hostname || !url.port) {
+      return null;
+    }
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
+const normalizeNetworkProxyPacUrl = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.replace(/[\r\n]/g, '').trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return null;
+    }
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
+const normalizeNetworkProxyBypassRules = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return defaultNetworkProxyBypassRules;
+  }
+
+  const normalized = value
+    .replace(/[\r\n]/g, ';')
+    .split(/[;,]/u)
+    .map((rule) => rule.trim())
+    .filter(Boolean)
+    .slice(0, 80)
+    .join(';');
+  return normalized || defaultNetworkProxyBypassRules;
+};
+
+const normalizeNetworkProxyMode = (value: unknown, proxyUrl: string | null, pacUrl: string | null): NetworkProxyMode => {
+  if (value === 'system') {
+    return 'system';
+  }
+  if (value === 'manual') {
+    return proxyUrl ? 'manual' : 'off';
+  }
+  if (value === 'pac') {
+    return pacUrl ? 'pac' : 'off';
+  }
+  return 'off';
+};
+
 const normalizeLyricsWallpaperPath = (value: unknown): string | null =>
   normalizeWallpaperPath(value, getLyricsWallpaperDirectory(), imageWallpaperExtensions);
 
@@ -709,6 +802,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const appWallpaperUiOpacityPercent = Number(settings.appWallpaperUiOpacityPercent);
   const appCustomWallpaperPath = normalizeAppWallpaperPath(settings.appCustomWallpaperPath);
   const appWallpaperMediaType = normalizeAppWallpaperMediaType(appCustomWallpaperPath);
+  const networkProxyUrl = normalizeNetworkProxyUrl(settings.networkProxyUrl);
+  const networkProxyPacUrl = normalizeNetworkProxyPacUrl(settings.networkProxyPacUrl);
+  const networkProxyMode = normalizeNetworkProxyMode(settings.networkProxyMode, networkProxyUrl, networkProxyPacUrl);
   const providers = Array.isArray(settings.networkMetadataProviders)
     ? settings.networkMetadataProviders.filter(
         (provider): provider is AppSettings['networkMetadataProviders'][number] =>
@@ -804,8 +900,16 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     appWallpaperVisualProtectionEnabled: settings.appWallpaperVisualProtectionEnabled !== false,
     appWallpaperUnifiedOpacityEnabled: settings.appWallpaperUnifiedOpacityEnabled === true,
     appVideoWallpaperPauseMode: normalizeAppVideoWallpaperPauseMode(settings.appVideoWallpaperPauseMode),
+    networkProxyMode,
+    networkProxyUrl,
+    networkProxyBypassRules: normalizeNetworkProxyBypassRules(settings.networkProxyBypassRules),
+    networkProxyPacUrl,
     networkMetadataEnabled: settings.networkMetadataEnabled === true,
     networkMetadataProviders: providers.length ? providers : defaultSettings.networkMetadataProviders,
+    onlineArtistInfoBandsintownAppId: normalizeOptionalText(settings.onlineArtistInfoBandsintownAppId),
+    onlineArtistInfoTicketmasterApiKey: normalizeOptionalText(settings.onlineArtistInfoTicketmasterApiKey),
+    onlineArtistInfoSeatGeekClientId: normalizeOptionalText(settings.onlineArtistInfoSeatGeekClientId),
+    onlineArtistInfoRegion: normalizeOptionalText(settings.onlineArtistInfoRegion),
     audioAnalysisEnabled: settings.audioAnalysisEnabled !== false,
     lyricsNetworkEnabled: settings.lyricsNetworkEnabled !== false,
     lyricsPreferredProvider: 'lrclib',
@@ -834,7 +938,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsGlobalSyncOffsetMs: Number.isFinite(lyricsGlobalSyncOffsetMs)
       ? Math.round(clamp(lyricsGlobalSyncOffsetMs, -1000, 1000))
       : defaultSettings.lyricsGlobalSyncOffsetMs,
+    lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
     lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
+    lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled === true,
     lyricsEnabled: settings.lyricsEnabled !== false,
     lyricsHeaderHidden: settings.lyricsHeaderHidden === true,
     lyricsMvAutoShowTrackInfoDisabled: settings.lyricsMvAutoShowTrackInfoDisabled !== false,

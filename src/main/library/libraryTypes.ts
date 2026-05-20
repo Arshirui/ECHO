@@ -72,6 +72,10 @@ import type {
   ReplayGainAnalysisJobStatus,
   ReplayGainAnalysisResult,
   ReplayGainAnalysisStartOptions,
+  ArtistInsights,
+  ArtistInsightsOptions,
+  ArtistInsightEdge,
+  ArtistInsightNode,
 } from '../../shared/types/library';
 
 export type {
@@ -148,6 +152,10 @@ export type {
   ReplayGainAnalysisJobStatus,
   ReplayGainAnalysisResult,
   ReplayGainAnalysisStartOptions,
+  ArtistInsights,
+  ArtistInsightsOptions,
+  ArtistInsightEdge,
+  ArtistInsightNode,
 };
 
 export type ScannedAudioFile = {

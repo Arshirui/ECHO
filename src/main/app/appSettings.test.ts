@@ -56,6 +56,13 @@ describe('app settings normalization', () => {
     expect(settings.appWallpaperVisualProtectionEnabled).toBe(true);
     expect(settings.appWallpaperUnifiedOpacityEnabled).toBe(false);
     expect(settings.appVideoWallpaperPauseMode).toBe('smart');
+    expect(settings.networkProxyMode).toBe('off');
+    expect(settings.networkProxyUrl).toBeNull();
+    expect(settings.networkProxyPacUrl).toBeNull();
+    expect(settings.onlineArtistInfoBandsintownAppId).toBeNull();
+    expect(settings.onlineArtistInfoTicketmasterApiKey).toBeNull();
+    expect(settings.onlineArtistInfoSeatGeekClientId).toBeNull();
+    expect(settings.onlineArtistInfoRegion).toBeNull();
     expect(settings.scanPerformanceMode).toBe('balanced');
     expect(settings.backgroundSpacePauseEnabled).toBe(false);
     expect(settings.globalShortcuts?.playPause).toEqual({ enabled: false, accelerator: null });
@@ -71,7 +78,9 @@ describe('app settings normalization', () => {
     expect(settings.lyricsAutoAcceptScore).toBe(0.5);
     expect(settings.lyricsDefaultOffsetMs).toBe(0);
     expect(settings.lyricsGlobalSyncOffsetMs).toBe(0);
+    expect(settings.lyricsTimelineCorrectionEnabled).toBe(true);
     expect(settings.lyricsOffsetControlsEnabled).toBe(false);
+    expect(settings.lyricsSmartAlignmentEnabled).toBe(false);
     expect(settings.lyricsEnabled).toBe(true);
     expect(settings.lyricsHeaderHidden).toBe(false);
     expect(settings.lyricsMvAutoShowTrackInfoDisabled).toBe(true);
@@ -120,6 +129,40 @@ describe('app settings normalization', () => {
     const { normalizeSettings } = await import('./appSettings');
 
     expect(normalizeSettings({ coverCacheDir: '   ' }).coverCacheDir).toBeNull();
+  });
+
+  it('normalizes network proxy settings conservatively', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    const manual = normalizeSettings({
+      networkProxyMode: 'manual',
+      networkProxyUrl: 'socks5://127.0.0.1:7890',
+      networkProxyBypassRules: 'localhost, 127.0.0.1\n*.local',
+    });
+    expect(manual.networkProxyMode).toBe('manual');
+    expect(manual.networkProxyUrl).toBe('socks5://127.0.0.1:7890');
+    expect(manual.networkProxyBypassRules).toBe('localhost;127.0.0.1;*.local');
+
+    expect(normalizeSettings({ networkProxyMode: 'manual', networkProxyUrl: 'ftp://127.0.0.1:21' }).networkProxyMode).toBe('off');
+    expect(normalizeSettings({ networkProxyMode: 'pac', networkProxyPacUrl: 'file:///proxy.pac' }).networkProxyMode).toBe('off');
+    expect(normalizeSettings({ networkProxyMode: 'pac', networkProxyPacUrl: 'https://example.com/proxy.pac' }).networkProxyMode).toBe('pac');
+  });
+
+  it('normalizes online artist info provider settings as optional local text', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    const settings = normalizeSettings({
+      onlineArtistInfoBandsintownAppId: ' echo-next ',
+      onlineArtistInfoTicketmasterApiKey: ' ticketmaster-key ',
+      onlineArtistInfoSeatGeekClientId: ' seatgeek-id ',
+      onlineArtistInfoRegion: ' HK ',
+    });
+
+    expect(settings.onlineArtistInfoBandsintownAppId).toBe('echo-next');
+    expect(settings.onlineArtistInfoTicketmasterApiKey).toBe('ticketmaster-key');
+    expect(settings.onlineArtistInfoSeatGeekClientId).toBe('seatgeek-id');
+    expect(settings.onlineArtistInfoRegion).toBe('HK');
+    expect(normalizeSettings({ onlineArtistInfoBandsintownAppId: '   ' }).onlineArtistInfoBandsintownAppId).toBeNull();
   });
 
   it('normalizes appearance theme modes', async () => {
@@ -693,7 +736,9 @@ describe('app settings normalization', () => {
         lyricsAutoAcceptScore: 2,
         lyricsDefaultOffsetMs: -24000,
         lyricsGlobalSyncOffsetMs: 24000,
+        lyricsTimelineCorrectionEnabled: false,
         lyricsOffsetControlsEnabled: true,
+        lyricsSmartAlignmentEnabled: 'yes' as never,
         lyricsEnabled: false,
         lyricsHeaderHidden: true,
         lyricsMvAutoShowTrackInfoDisabled: false,
@@ -732,7 +777,9 @@ describe('app settings normalization', () => {
       lyricsAutoAcceptScore: 1,
       lyricsDefaultOffsetMs: -10000,
       lyricsGlobalSyncOffsetMs: 1000,
+      lyricsTimelineCorrectionEnabled: false,
       lyricsOffsetControlsEnabled: true,
+      lyricsSmartAlignmentEnabled: false,
       lyricsEnabled: false,
       lyricsHeaderHidden: true,
       lyricsMvAutoShowTrackInfoDisabled: false,
@@ -772,6 +819,7 @@ describe('app settings normalization', () => {
         lyricsPlayerBarDrawerColor: '#ff8a80',
         lyricsColor: '#ff3366',
         lyricsSmartReadableColorsEnabled: true,
+        lyricsSmartAlignmentEnabled: true,
         lyricsHighResolutionNetworkCoverEnabled: true,
         lyricsBackgroundMode: 'cover',
         lyricsCoverOpacityPercent: 64.4,
@@ -790,6 +838,7 @@ describe('app settings normalization', () => {
       lyricsPlayerBarDrawerColor: '#FF8A80',
       lyricsColor: '#FF3366',
       lyricsSmartReadableColorsEnabled: true,
+      lyricsSmartAlignmentEnabled: true,
       lyricsHighResolutionNetworkCoverEnabled: true,
       lyricsBackgroundMode: 'cover',
       lyricsCoverOpacityPercent: 64,

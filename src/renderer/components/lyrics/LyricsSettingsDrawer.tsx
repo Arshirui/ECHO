@@ -53,7 +53,9 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsAutoAcceptScore'
   | 'lyricsDefaultOffsetMs'
   | 'lyricsGlobalSyncOffsetMs'
+  | 'lyricsTimelineCorrectionEnabled'
   | 'lyricsOffsetControlsEnabled'
+  | 'lyricsSmartAlignmentEnabled'
   | 'lyricsPreferredProvider'
   | 'lyricsEnabledProviders'
   | 'lyricsProviderOrder'
@@ -94,7 +96,9 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsAutoAcceptScore: 0.5,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
+  lyricsTimelineCorrectionEnabled: true,
   lyricsOffsetControlsEnabled: false,
+  lyricsSmartAlignmentEnabled: false,
   lyricsPreferredProvider: 'lrclib',
   lyricsEnabledProviders: ['local', 'lrclib', 'netease', 'qqmusic'],
   lyricsProviderOrder: ['local', 'lrclib', 'netease', 'qqmusic'],
@@ -277,7 +281,9 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsAutoAcceptScore: settings.lyricsAutoAcceptScore,
   lyricsDefaultOffsetMs: settings.lyricsDefaultOffsetMs,
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
+  lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
   lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
+  lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled === true,
   lyricsPreferredProvider: settings.lyricsPreferredProvider,
   lyricsEnabledProviders: settings.lyricsEnabledProviders?.length ? settings.lyricsEnabledProviders : defaultLyricsEnabledProviders,
   lyricsProviderOrder: settings.lyricsProviderOrder?.length ? settings.lyricsProviderOrder : defaultLyricsProviderOrder,
@@ -1966,6 +1972,19 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsGlobalSyncOffsetMs: Number(event.currentTarget.value) })}
             />
           </label>
+
+          <label className="audio-toggle-row">
+            <span>
+              <TimerReset size={17} />
+              <strong>应用歌词时间轴校准</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsTimelineCorrectionEnabled !== false}
+              disabled={isBusy}
+              onChange={(event) => void patchSettings({ lyricsTimelineCorrectionEnabled: event.currentTarget.checked })}
+            />
+          </label>
           <p>全局延迟会影响所有歌曲；本歌曲延迟请在歌词页校准条里调整，会跟随当前歌曲单独记忆。</p>
 
           <label className="audio-toggle-row">
@@ -1980,6 +1999,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsOffsetControlsEnabled: event.currentTarget.checked })}
             />
           </label>
+
+          <label className="audio-toggle-row">
+            <span>
+              <TimerReset size={17} />
+              <strong>智能歌词校准</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsSmartAlignmentEnabled === true}
+              disabled={isBusy}
+              onChange={(event) => void patchSettings({ lyricsSmartAlignmentEnabled: event.currentTarget.checked })}
+            />
+          </label>
+          <p>开启后歌词页会显示智能校准入口；只给出建议，不会自动保存。</p>
 
           <button
             className="audio-device-pill"

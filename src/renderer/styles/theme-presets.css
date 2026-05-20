@@ -415,6 +415,17 @@ html[data-theme="light"][data-theme-preset="neonCandy"] {
 }
 
 html[data-theme="light"][data-theme-preset="nyanCat"] {
+  --nyan-page-gradient:
+    radial-gradient(circle at 10% 12%, rgb(255 95 147 / 0.42), transparent 27%),
+    radial-gradient(circle at 52% 0%, rgb(255 216 79 / 0.36), transparent 28%),
+    radial-gradient(circle at 88% 10%, rgb(40 184 240 / 0.38), transparent 30%),
+    linear-gradient(120deg, #fff3fb 0%, #bdeeff 22%, #fff06f 42%, #a6ff9f 62%, #c8b7ff 82%, #ffb6dd 100%);
+  --nyan-surface-gradient:
+    radial-gradient(circle at 18% 8%, rgb(255 95 147 / 0.28), transparent 30%),
+    radial-gradient(circle at 82% 10%, rgb(40 184 240 / 0.24), transparent 30%),
+    linear-gradient(120deg, rgb(var(--preset-panel-rgb) / 0.48), rgb(255 246 150 / 0.58) 36%, rgb(166 255 159 / 0.44) 58%, rgb(var(--preset-soft-rgb) / 0.78));
+  --nyan-player-gradient:
+    linear-gradient(110deg, rgb(var(--preset-panel-rgb) / 0.96), rgb(255 246 180 / 0.78) 34%, rgb(185 242 255 / 0.86) 66%, rgb(var(--preset-panel-rgb) / 0.96));
   --preset-app-bg: #fff7fb;
   --preset-app-bg-2: #d7f3ff;
   --preset-app-bg-3: #eadcff;
@@ -1004,6 +1015,17 @@ html[data-theme="dark"][data-theme-preset="neonCandy"] {
 }
 
 html[data-theme="dark"][data-theme-preset="nyanCat"] {
+  --nyan-page-gradient:
+    radial-gradient(circle at 12% 10%, rgb(255 127 176 / 0.32), transparent 28%),
+    radial-gradient(circle at 52% 0%, rgb(255 216 79 / 0.18), transparent 30%),
+    radial-gradient(circle at 86% 8%, rgb(89 217 255 / 0.3), transparent 32%),
+    linear-gradient(120deg, #11132d 0%, #172959 24%, #3c2a18 42%, #16351f 62%, #241b4c 82%, #35164b 100%);
+  --nyan-surface-gradient:
+    radial-gradient(circle at 18% 4%, rgb(255 127 176 / 0.18), transparent 32%),
+    radial-gradient(circle at 84% 8%, rgb(89 217 255 / 0.18), transparent 34%),
+    linear-gradient(120deg, rgb(var(--preset-panel-rgb) / 0.72), rgb(58 42 24 / 0.64) 36%, rgb(24 66 38 / 0.5) 58%, rgb(var(--preset-soft-rgb) / 0.88));
+  --nyan-player-gradient:
+    linear-gradient(110deg, rgb(var(--preset-panel-rgb) / 0.94), rgb(73 51 34 / 0.82) 34%, rgb(36 78 96 / 0.88) 66%, rgb(var(--preset-panel-rgb) / 0.96));
   --preset-app-bg: #11132d;
   --preset-app-bg-2: #172959;
   --preset-app-bg-3: #35164b;
@@ -1723,26 +1745,29 @@ html[data-theme-preset="nyanCat"] {
       #8b5cf6 80%,
       #ff5f93 100%
     );
-  --theme-page-bg:
-    radial-gradient(circle at 10% 12%, rgb(255 95 147 / 0.42), transparent 27%),
-    radial-gradient(circle at 52% 0%, rgb(255 216 79 / 0.36), transparent 28%),
-    radial-gradient(circle at 88% 10%, rgb(40 184 240 / 0.38), transparent 30%),
-    linear-gradient(120deg, #fff3fb 0%, #bdeeff 22%, #fff06f 42%, #a6ff9f 62%, #c8b7ff 82%, #ffb6dd 100%);
+  --theme-page-bg: var(--nyan-page-gradient);
   --echo-polish-app-bg-layer: var(--theme-page-bg);
-  --echo-polish-page-bg:
-    radial-gradient(circle at 18% 8%, rgb(255 95 147 / 0.28), transparent 30%),
-    radial-gradient(circle at 82% 10%, rgb(40 184 240 / 0.24), transparent 30%),
-    linear-gradient(120deg, rgb(var(--preset-panel-rgb) / 0.48), rgb(255 246 150 / 0.58) 36%, rgb(166 255 159 / 0.44) 58%, rgb(var(--preset-soft-rgb) / 0.78));
-  --echo-polish-player-bg:
-    linear-gradient(110deg, rgb(var(--preset-panel-rgb) / 0.96), rgb(255 246 180 / 0.78) 34%, rgb(185 242 255 / 0.86) 66%, rgb(var(--preset-panel-rgb) / 0.96));
+  --echo-polish-page-bg: var(--nyan-surface-gradient);
+  --echo-polish-player-bg: var(--nyan-player-gradient);
 }
 
-html[data-theme-preset="nyanCat"] body,
+html[data-theme-preset="nyanCat"] .app-shell {
+  background: var(--echo-polish-app-bg-layer), var(--echo-polish-app-bg);
+}
+
+html[data-theme-preset="nyanCat"] .page-surface:not(:has(.lyrics-page)) {
+  background: var(--echo-polish-page-bg), var(--theme-app-bg);
+}
+
+html[data-theme-preset="nyanCat"] .player-bar {
+  background: var(--echo-polish-player-bg);
+}
+
 html[data-theme-preset="nyanCat"] .app-shell,
-html[data-theme-preset="nyanCat"] .page-surface,
+html[data-theme-preset="nyanCat"] .page-surface:not(:has(.lyrics-page)),
 html[data-theme-preset="nyanCat"] .player-bar {
   background-size: 240% 240%;
-  animation: nyan-cat-gradient-flow 22s ease-in-out infinite alternate;
+  animation: nyan-cat-gradient-flow 18s ease-in-out infinite alternate;
 }
 
 html[data-theme-preset="nyanCat"] .settings-theme-preset-card[data-preset="nyanCat"] .settings-theme-preset-preview,
@@ -1835,9 +1860,8 @@ html[data-theme-preset="nyanCat"] .player-bar .progress-track:focus-within .prog
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html[data-theme-preset="nyanCat"] body,
   html[data-theme-preset="nyanCat"] .app-shell,
-  html[data-theme-preset="nyanCat"] .page-surface,
+  html[data-theme-preset="nyanCat"] .page-surface:not(:has(.lyrics-page)),
   html[data-theme-preset="nyanCat"] .player-bar,
   html[data-theme-preset="nyanCat"] .settings-theme-preset-card[data-preset="nyanCat"] .settings-theme-preset-preview,
   html[data-theme-preset="nyanCat"] .player-bar .progress-fill {

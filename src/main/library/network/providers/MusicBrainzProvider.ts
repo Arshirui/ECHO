@@ -1,6 +1,7 @@
 import type { NetworkMetadataProvider } from '../NetworkMetadataProvider';
 import type { NetworkMetadataCandidateInput, NetworkTrackLookup } from '../networkTypes';
 import { buildSearchQuery } from './providerFetch';
+import { fetchWithNetworkProxy } from '../../../network/networkFetch';
 
 const withTimeout = async (url: string, signal: AbortSignal | undefined): Promise<unknown> => {
   const controller = new AbortController();
@@ -9,7 +10,7 @@ const withTimeout = async (url: string, signal: AbortSignal | undefined): Promis
   signal?.addEventListener('abort', abort, { once: true });
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithNetworkProxy(url, {
       signal: controller.signal,
       headers: {
         Accept: 'application/json',

@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Code2, FolderOpen, PackagePlus, Play, Power, RefreshCw, ScrollText, TerminalSquare } from 'lucide-react';
-import type { PluginCreateExampleKind, PluginLogEntry, PluginPermission, PluginSummary } from '../../shared/types/plugins';
+import { pluginPanelBridgeActions, pluginPanelBridgeChannel, pluginPanelBridgeVersion } from '../../shared/types/plugins';
+import type {
+  PluginCreateExampleKind,
+  PluginLogEntry,
+  PluginPanelBridgeAction,
+  PluginPanelBridgeRequest,
+  PluginPanelBridgeResponse,
+  PluginPermission,
+  PluginSummary,
+} from '../../shared/types/plugins';
 import { EmptyState } from '../components/ui/EmptyState';
 import { getPluginsBridge } from '../utils/echoBridge';
 
@@ -25,6 +34,39 @@ const formatError = (error: unknown): string => (error instanceof Error ? error.
 
 const fileUrlFromPath = (path: string): string => `file:///${path.replace(/\\/gu, '/')}`;
 
+const pluginPanelActionSet = new Set<PluginPanelBridgeAction>(pluginPanelBridgeActions);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const normalizePanelRequest = (value: unknown): PluginPanelBridgeRequest | null => {
+  if (!isRecord(value) || value.channel !== pluginPanelBridgeChannel || value.type !== 'request') {
+    return null;
+  }
+  if (
+    typeof value.requestId !== 'string' ||
+    typeof value.pluginId !== 'string' ||
+    typeof value.action !== 'string' ||
+    !pluginPanelActionSet.has(value.action as PluginPanelBridgeAction)
+  ) {
+    return null;
+  }
+
+  return {
+    channel: pluginPanelBridgeChannel,
+    version: typeof value.version === 'number' ? value.version : undefined,
+    type: 'request',
+    requestId: value.requestId,
+    pluginId: value.pluginId,
+    action: value.action as PluginPanelBridgeAction,
+    payload: value.payload,
+  };
+};
+
+const postPanelResponse = (target: Window, response: PluginPanelBridgeResponse): void => {
+  target.postMessage(response, '*');
+};
+
 const StatusPill = ({ plugin }: { plugin: PluginSummary }): JSX.Element => {
   const label = plugin.error ? '异常' : plugin.status === 'running' ? '运行中' : plugin.enabled ? '已启用' : '未启用';
   return <span className="plugin-status-pill" data-status={plugin.error ? 'error' : plugin.status}>{label}</span>;
@@ -38,6 +80,7 @@ const PermissionList = ({ permissions }: { permissions: PluginPermission[] }): J
 
 export const PluginsPage = (): JSX.Element => {
   const pluginsApi = getPluginsBridge();
+  const panelFrameRef = useRef<HTMLIFrameElement | null>(null);
   const [plugins, setPlugins] = useState<PluginSummary[]>([]);
   const [pluginDirectory, setPluginDirectory] = useState('');
   const [logs, setLogs] = useState<PluginLogEntry[]>([]);
@@ -128,6 +171,77 @@ export const PluginsPage = (): JSX.Element => {
       '命令已执行，详情可查看日志。',
     );
   };
+
+  useEffect(() => {
+    if (!pluginsApi || !selectedPlugin) {
+      return undefined;
+    }
+
+    const handlePanelMessage = (event: MessageEvent): void => {
+      if (event.source !== panelFrameRef.current?.contentWindow) {
+        return;
+      }
+
+      const request = normalizePanelRequest(event.data);
+      if (!request || request.pluginId !== selectedPlugin.id) {
+        return;
+      }
+
+      const sourceWindow = event.source as Window | null;
+      if (!sourceWindow) {
+        return;
+      }
+
+      const respond = async (): Promise<void> => {
+        try {
+          let result: unknown;
+          if (request.action === 'plugin:getSummary') {
+            result = selectedPlugin;
+          } else if (request.action === 'plugin:getLogs') {
+            result = await pluginsApi.getLogs(selectedPlugin.id);
+          } else if (request.action === 'plugin:runCommand') {
+            const payload = isRecord(request.payload) ? request.payload : {};
+            const commandId = typeof payload.commandId === 'string' ? payload.commandId.trim() : '';
+            if (!commandId) {
+              throw new Error('plugin_panel_command_id_required');
+            }
+            result = await pluginsApi.runCommand({
+              pluginId: selectedPlugin.id,
+              commandId,
+              args: Array.isArray(payload.args) ? payload.args : undefined,
+            });
+            await refresh();
+            await refreshLogs(selectedPlugin.id);
+          }
+
+          postPanelResponse(sourceWindow, {
+            channel: pluginPanelBridgeChannel,
+            version: pluginPanelBridgeVersion,
+            type: 'response',
+            requestId: request.requestId,
+            pluginId: selectedPlugin.id,
+            ok: true,
+            result,
+          });
+        } catch (error) {
+          postPanelResponse(sourceWindow, {
+            channel: pluginPanelBridgeChannel,
+            version: pluginPanelBridgeVersion,
+            type: 'response',
+            requestId: request.requestId,
+            pluginId: selectedPlugin.id,
+            ok: false,
+            error: formatError(error),
+          });
+        }
+      };
+
+      void respond();
+    };
+
+    window.addEventListener('message', handlePanelMessage);
+    return () => window.removeEventListener('message', handlePanelMessage);
+  }, [pluginsApi, refresh, refreshLogs, selectedPlugin]);
 
   if (!pluginsApi) {
     return (
@@ -267,7 +381,13 @@ export const PluginsPage = (): JSX.Element => {
                     <Code2 size={17} />
                     <strong>面板预览</strong>
                   </header>
-                  <iframe title={`${selectedPlugin.name} panel`} sandbox="allow-scripts" src={fileUrlFromPath(selectedPlugin.panel)} />
+                  <iframe
+                    ref={panelFrameRef}
+                    key={`${selectedPlugin.id}:${selectedPlugin.panel}`}
+                    title={`${selectedPlugin.name} panel`}
+                    sandbox="allow-scripts"
+                    src={fileUrlFromPath(selectedPlugin.panel)}
+                  />
                 </div>
               ) : null}
 

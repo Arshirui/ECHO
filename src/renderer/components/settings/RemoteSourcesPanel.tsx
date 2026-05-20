@@ -172,6 +172,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   const activeTab = useMemo(() => tabs.find((tab) => tab.provider === activeProvider) ?? tabs[0], [activeProvider]);
   const visibleSources = useMemo(() => sources.filter((source) => source.provider === activeProvider), [activeProvider, sources]);
   const visibleSourceIds = useMemo(() => visibleSources.map((source) => source.id), [visibleSources]);
+  const playbackLoadReduced = globalJobStatus.playbackActive && !globalJobStatus.paused;
 
   const refreshStatuses = useCallback(async (sourceIds: string[], replace = false): Promise<void> => {
     if (!remoteApi) {
@@ -351,12 +352,20 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         setMessage('已加入元数据补齐任务。');
       } else if (action === 'cover') {
         await remoteApi.startBackgroundJobs(source.id, ['cover']);
-        setMessage('\u5df2\u52a0\u5165\u4e00\u5c0f\u6279\u7f3a\u5931\u5c01\u9762\u626b\u63cf\u4efb\u52a1\u3002');
+        const latestGlobalStatus = await remoteApi.getBackgroundGlobalStatus().catch(() => globalJobStatus);
+        setGlobalJobStatus(latestGlobalStatus);
+        setMessage(latestGlobalStatus.playbackActive
+          ? '\u5df2\u52a0\u5165\u7f3a\u5931\u5c01\u9762\u4efb\u52a1\uff1b\u64ad\u653e\u4e2d\u4f1a\u4fdd\u6301\u4f4e\u8d1f\u8f7d\uff0c\u7a7a\u95f2\u540e\u7ee7\u7eed\u5904\u7406\u3002'
+          : '\u5df2\u52a0\u5165\u4e00\u5c0f\u6279\u7f3a\u5931\u5c01\u9762\u626b\u63cf\u4efb\u52a1\u3002');
         await refreshStatuses([source.id]);
         return;
       } else if (action === 'match') {
         await remoteApi.startBackgroundJobs(source.id, ['lyrics']);
-        setMessage('\u5df2\u52a0\u5165\u4e00\u5c0f\u6279\u6b4c\u8bcd\u5339\u914d\u4efb\u52a1\uff1b\u7f51\u76d8\u6765\u6e90\u4e0d\u518d\u6279\u91cf\u5339\u914d MV\u3002');
+        const latestGlobalStatus = await remoteApi.getBackgroundGlobalStatus().catch(() => globalJobStatus);
+        setGlobalJobStatus(latestGlobalStatus);
+        setMessage(latestGlobalStatus.playbackActive
+          ? '\u5df2\u52a0\u5165\u6b4c\u8bcd\u5339\u914d\u4efb\u52a1\uff1b\u64ad\u653e\u4e2d\u4f1a\u4fdd\u6301\u4f4e\u8d1f\u8f7d\uff0c\u7a7a\u95f2\u540e\u7ee7\u7eed\u5904\u7406\u3002'
+          : '\u5df2\u52a0\u5165\u4e00\u5c0f\u6279\u6b4c\u8bcd\u5339\u914d\u4efb\u52a1\uff1b\u7f51\u76d8\u6765\u6e90\u4e0d\u518d\u6279\u91cf\u5339\u914d MV\u3002');
         await refreshStatuses([source.id]);
         return;
       } else if (action === 'retryFailed') {
@@ -534,6 +543,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
           const hasFailedMetadata = jobStatus.failed.metadata + jobStatus.failed['duration-backfill'] > 0;
           const sourcePaused = jobStatus.paused;
           const sourceDisabled = source.status === 'disabled';
+          const hasDeferredPlaybackJobs = globalJobStatus.playbackActive && (jobStatus.pending.cover + jobStatus.pending.lyrics + jobStatus.pending.mv > 0);
 
           return (
             <article className="remote-source-card" key={source.id}>
@@ -562,6 +572,11 @@ export const RemoteSourcesPanel = (): JSX.Element => {
               {(syncStatus.failedCount > 0 || hasFailedMetadata) ? (
                 <p className="settings-inline-note">
                   有失败项时优先重试元数据/时长任务；封面、歌词和 MV 仍按小批量后台任务处理，避免拖慢本地播放。
+                </p>
+              ) : null}
+              {hasDeferredPlaybackJobs ? (
+                <p className="settings-inline-note">
+                  播放中，封面和歌词等后台任务已低负载等待，空闲后会继续处理。
                 </p>
               ) : null}
               <div
@@ -642,9 +657,14 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         <div className="remote-source-card-head">
           <div>
             <h3>后台任务</h3>
-            <p>播放时会自动降低后台元数据和封面任务并发，优先保证播放稳定。</p>
+            <p>播放时会自动降低远程后台负载，优先保证播放稳定；空闲后会自动恢复。</p>
+            {playbackLoadReduced ? (
+              <p className="settings-inline-note">
+                播放中，后台任务已降低负载：元数据和时长保留单并发，封面和歌词会在空闲后继续。
+              </p>
+            ) : null}
           </div>
-          <span className="remote-source-status">{globalJobStatus.paused ? '已暂停' : '运行中'}</span>
+          <span className="remote-source-status">{globalJobStatus.paused ? '已暂停' : playbackLoadReduced ? '低负载运行' : '运行中'}</span>
         </div>
         <div className="remote-job-grid">
           {jobKinds.map((kind) => (

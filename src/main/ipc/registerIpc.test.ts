@@ -23,6 +23,15 @@ const validateGlobalShortcutMock = vi.fn(() => ({
   reason: 'available',
   valid: true,
 }));
+const applyNetworkProxySettingsMock = vi.fn();
+const testNetworkProxyConnectionMock = vi.fn(() => ({
+  ok: true,
+  mode: 'off',
+  message: '连接正常',
+  resolvedProxy: 'DIRECT',
+  status: 204,
+  elapsedMs: 12,
+}));
 const appPathMock = vi.fn((name: string) =>
   name === 'downloads' ? tmpdir() : join(tmpdir(), 'echo-next-register-ipc-test-userdata'),
 );
@@ -131,6 +140,11 @@ vi.mock('../app/backgroundPlaybackShortcuts', () => ({
   validateGlobalShortcut: validateGlobalShortcutMock,
 }));
 
+vi.mock('../network/proxySettings', () => ({
+  applyNetworkProxySettings: applyNetworkProxySettingsMock,
+  testNetworkProxyConnection: testNetworkProxyConnectionMock,
+}));
+
 vi.mock('../library/CoverCacheManager', () => ({
   ensureCoverCacheDirectory: ensureCoverCacheDirectoryMock,
 }));
@@ -225,6 +239,8 @@ describe('app IPC cover cache directory', () => {
     fromWebContentsMock.mockReset();
     refreshGlobalShortcutRegistrationMock.mockClear();
     validateGlobalShortcutMock.mockClear();
+    applyNetworkProxySettingsMock.mockClear();
+    testNetworkProxyConnectionMock.mockClear();
     appPathMock.mockClear();
     const module = await import('./registerIpc');
     module.registerIpc();
@@ -458,5 +474,28 @@ describe('app IPC cover cache directory', () => {
 
     expect(validateGlobalShortcutMock).toHaveBeenCalledWith('Ctrl+Alt+Space');
     expect(result).toMatchObject({ valid: true, available: true });
+  });
+
+  it('applies network proxy settings after saving proxy fields', async () => {
+    const proxyPatch = {
+      networkProxyMode: 'manual',
+      networkProxyUrl: 'http://127.0.0.1:7890/',
+      networkProxyBypassRules: '<local>;localhost',
+    };
+    setAppSettingsMock.mockReturnValue({ ...proxyPatch, coverCacheDir: null, hideToTrayOnClose: false });
+
+    await handlers[IpcChannels.AppSetSettings]!(null, proxyPatch);
+
+    expect(setAppSettingsMock).toHaveBeenCalledWith(proxyPatch);
+    expect(applyNetworkProxySettingsMock).toHaveBeenCalledWith(expect.objectContaining(proxyPatch));
+  });
+
+  it('tests the current network proxy settings through IPC', async () => {
+    getAppSettingsMock.mockReturnValue({ networkProxyMode: 'off', coverCacheDir: null, hideToTrayOnClose: false });
+
+    const result = await handlers[IpcChannels.AppTestNetworkProxy]!();
+
+    expect(testNetworkProxyConnectionMock).toHaveBeenCalledWith(expect.objectContaining({ networkProxyMode: 'off' }));
+    expect(result).toMatchObject({ ok: true, resolvedProxy: 'DIRECT' });
   });
 });
