@@ -16,6 +16,7 @@ import type { LibraryTrack } from '../../shared/types/library';
 import type { AirPlayReceiverState, AirPlayReceiverStatus } from '../../shared/types/connect';
 import type { PlayableTrack } from '../../shared/types/remoteSources';
 import { streamingProviderNames, type StreamingAudioQuality, type StreamingProviderName } from '../../shared/types/streaming';
+import type { HqPlayerPlaybackHandoffRequest } from '../../shared/types/hqplayer';
 import type { ReplayGainTrackData } from '../../shared/utils/replayGain';
 import type { AudioSessionAutomixRequest, AudioSessionGaplessRequest } from '../audio/audioTypes';
 import { getAudioSession, type AudioErrorRecoveryHandler } from '../audio/AudioSession';
@@ -31,7 +32,7 @@ import { enqueueAudioCommand, isAudioCommandTimeoutError } from './audioCommandQ
 import { normalizePlaybackFilePath } from './playbackPath';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio', 'system']);
-const sharedBackends = new Set<AudioSharedBackend>(['auto', 'windows', 'directsound']);
+const sharedBackends = new Set<AudioSharedBackend>(['auto', 'windows', 'directsound', 'alsa']);
 const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
 const playbackSpeedModes = new Set<PlaybackSpeedMode>(['nightcore', 'daycore', 'speed']);
 const streamingProviders = new Set<StreamingProviderName>(streamingProviderNames);
@@ -729,6 +730,55 @@ const hasReplayGainHint = (item: PlayableTrack): boolean => {
   );
 };
 
+const titleFromPlaybackPath = (filePath: string): string => {
+  const normalized = filePath.replace(/\\/gu, '/');
+  const name = normalized.split('/').filter(Boolean).pop();
+  return name || filePath || 'Unknown';
+};
+
+const runHqPlayerPlaybackPreflight = (request: HqPlayerPlaybackHandoffRequest): void => {
+  void import('../integrations/hqplayer/HqPlayerService')
+    .then(({ getHqPlayerService }) => getHqPlayerService().createPlaybackHandoff(request))
+    .catch(() => undefined);
+};
+
+const preflightHqPlayerLocalFile = (request: PlaybackStartRequest): void => {
+  runHqPlayerPlaybackPreflight({
+    item: {
+      mediaType: 'local',
+      trackId: request.trackId ?? request.filePath,
+      path: request.filePath,
+      title: titleFromPlaybackPath(request.filePath),
+      artist: '',
+      album: '',
+      duration: request.probe?.durationSeconds ?? null,
+    },
+    startSeconds: request.startSeconds,
+    resolvedSource: {
+      filePath: request.filePath,
+      inputHeaders: undefined,
+      mimeType: null,
+      durationSeconds: request.probe?.durationSeconds ?? null,
+      probe: request.probe,
+    },
+  });
+};
+
+const preflightHqPlayerMediaItem = (request: PlaybackMediaStartRequest, prepared: PreparedMediaItem): void => {
+  runHqPlayerPlaybackPreflight({
+    item: request.item,
+    startSeconds: request.startSeconds,
+    forceRefresh: request.forceRefresh,
+    resolvedSource: {
+      filePath: prepared.filePath,
+      inputHeaders: prepared.inputHeaders,
+      mimeType: prepared.mimeType,
+      durationSeconds: prepared.durationSeconds,
+      probe: prepared.probe,
+    },
+  });
+};
+
 const scheduleReplayGainAnalysisForPlayback = (trackId: string | null | undefined, item?: PlayableTrack): void => {
   if (!trackId || item?.mediaType === 'streaming' || item?.mediaType === 'remote' || (item && hasReplayGainHint(item))) {
     return;
@@ -994,6 +1044,7 @@ const recoverActiveMediaPlaybackFromExpiredUrl = async (
     }
 
     const startSeconds = clampRecoveryPositionSeconds(status);
+    preflightHqPlayerMediaItem({ ...request, startSeconds, forceRefresh: true }, prepared);
     playbackStartAttempted = true;
     await getAudioSession().playLocalFile({
       filePath: prepared.filePath,
@@ -1105,6 +1156,7 @@ export const registerPlaybackIpc = (): void => {
     const playbackRun = beginPlaybackStartRun();
     try {
       const normalized = normalizePlayRequest(request);
+      preflightHqPlayerLocalFile(normalized);
       await getAudioSession().playLocalFile({
         ...normalized,
         automix: await resolveAutomixRequest(normalized.automix),
@@ -1163,6 +1215,7 @@ export const registerPlaybackIpc = (): void => {
     try {
       const prepared = await resolveMediaItemForPlayback(request);
       assertPlaybackStartRunCurrent(playbackRun);
+      preflightHqPlayerMediaItem(request, prepared);
 
       return await enqueuePlaybackStatusCommand(async () => {
         assertPlaybackStartRunCurrent(playbackRun);
@@ -1203,6 +1256,7 @@ export const registerPlaybackIpc = (): void => {
       try {
         const prepared = await resolveMediaItemForPlayback(request, { forceRefresh: true });
         assertPlaybackStartRunCurrent(playbackRun);
+        preflightHqPlayerMediaItem(request, prepared);
         return await enqueuePlaybackStatusCommand(async () => {
           assertPlaybackStartRunCurrent(playbackRun);
           await getAudioSession().playLocalFile({

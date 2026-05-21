@@ -15,6 +15,66 @@ export const pluginPermissions = [
 
 export type PluginPermission = (typeof pluginPermissions)[number];
 
+export type PluginPermissionRisk = 'low' | 'medium' | 'high';
+
+export type PluginPermissionDescriptor = {
+  permission: PluginPermission;
+  label: string;
+  description: string;
+  risk: PluginPermissionRisk;
+};
+
+export const pluginPermissionDescriptors: Record<PluginPermission, PluginPermissionDescriptor> = {
+  'playback:read': {
+    permission: 'playback:read',
+    label: '读取播放状态',
+    description: '可读取当前播放状态、曲目 id、进度和音频状态快照。',
+    risk: 'low',
+  },
+  'playback:control': {
+    permission: 'playback:control',
+    label: '控制播放',
+    description: '可触发播放、暂停、停止和跳转位置。',
+    risk: 'medium',
+  },
+  'library:read': {
+    permission: 'library:read',
+    label: '读取曲库',
+    description: '可分页读取曲库摘要和公开曲目信息。',
+    risk: 'medium',
+  },
+  'library:write': {
+    permission: 'library:write',
+    label: '修改曲库',
+    description: '预留给曲库写入能力，启用前应确认插件来源。',
+    risk: 'high',
+  },
+  'settings:read': {
+    permission: 'settings:read',
+    label: '读取设置',
+    description: '可读取应用设置快照。',
+    risk: 'medium',
+  },
+  'settings:write': {
+    permission: 'settings:write',
+    label: '修改设置',
+    description: '可写入应用设置，属于高风险能力。',
+    risk: 'high',
+  },
+  network: {
+    permission: 'network',
+    label: '访问网络',
+    description: '预留给网络访问能力，插件可能连接外部服务。',
+    risk: 'high',
+  },
+  'fs:plugin': {
+    permission: 'fs:plugin',
+    label: '插件目录文件',
+    description: '可读写插件自身目录内的数据。',
+    risk: 'medium',
+  },
+};
+
 export type PluginPanelContribution = {
   id: string;
   title: string;
@@ -149,6 +209,32 @@ export type PluginLogEntry = {
   createdAt: string;
 };
 
+export type PluginActivitySummary = {
+  lastStartedAt: string | null;
+  lastStoppedAt: string | null;
+  lastCommandAt: string | null;
+  lastEventAt: string | null;
+  lastStorageWriteAt: string | null;
+  lastSettingsWriteAt: string | null;
+  lastErrorAt: string | null;
+  commandRunCount: number;
+  eventDispatchCount: number;
+  storageWriteCount: number;
+  settingsWriteCount: number;
+  errorCount: number;
+};
+
+export type PluginSecuritySummary = {
+  requestedPermissionCount: number;
+  trustedPermissionCount: number;
+  untrustedPermissions: PluginPermission[];
+  highRiskPermissions: PluginPermission[];
+  hasEntry: boolean;
+  hasPanel: boolean;
+  sandboxedPanel: boolean;
+  commandCount: number;
+};
+
 export type PluginCommand = PluginCommandContribution & {
   pluginId: string;
 };
@@ -166,6 +252,9 @@ export type PluginSummary = {
   enabled: boolean;
   status: PluginRuntimeStatus;
   error: string | null;
+  disabledByHost: boolean;
+  activity: PluginActivitySummary;
+  security: PluginSecuritySummary;
   contributes: PluginManifestContributes;
   commands: PluginCommand[];
 };
@@ -191,4 +280,23 @@ export type PluginCreateExampleKind = 'playback-panel' | 'command-tool' | 'libra
 export type PluginCreateExampleResult = {
   pluginId: string;
   directory: string;
+};
+
+export type PluginPackageFile = {
+  path: string;
+  content: string;
+};
+
+export type PluginPackage = {
+  type: 'echo-next-plugin-package';
+  version: 1;
+  exportedAt: string;
+  manifest: PluginManifest;
+  files: PluginPackageFile[];
+};
+
+export type PluginImportPackageResult = {
+  pluginId: string;
+  directory: string;
+  importedFileCount: number;
 };

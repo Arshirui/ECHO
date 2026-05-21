@@ -416,6 +416,8 @@ sudo apt install \
 
 ```bash
 npm ci
+npm run verify:ffmpeg
+npm run test:audio-engine
 npm run build:linux
 ```
 
@@ -430,6 +432,7 @@ npm run build:linux
 
 ```text
 dist/linux-unpacked/resources/echo-audio-host
+dist/linux-unpacked/resources/tools/ffmpeg
 dist/*.AppImage
 dist/*.deb
 ```

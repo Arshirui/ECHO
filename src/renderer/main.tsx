@@ -48,6 +48,13 @@ const loadAppearanceFontFiles = (preferences: AppearancePreferences): void => {
       .then((fontFile) => registerAppearanceFontFile('chinese', fontFile))
       .catch(() => undefined);
   }
+
+  if (preferences.fallbackFontFilePath && appBridge) {
+    void appBridge
+      .loadFontFile(preferences.fallbackFontFilePath)
+      .then((fontFile) => registerAppearanceFontFile('fallback', fontFile))
+      .catch(() => undefined);
+  }
 };
 
 const loadLyricsFontFile = (settings: Partial<AppSettings>): void => {

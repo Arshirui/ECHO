@@ -24,6 +24,7 @@ import type {
 import type { LyricsProviderId } from '../../shared/types/lyrics';
 import type { LibrarySort } from '../../shared/types/library';
 import type { MvSettings, NetworkMvProviderId } from '../../shared/types/mv';
+import type { HqPlayerDefaultPlaybackBackend, HqPlayerSettings } from '../../shared/types/hqplayer';
 import {
   createDefaultGlobalShortcuts,
   globalShortcutActions,
@@ -164,6 +165,8 @@ export const defaultAppearancePreferences: AppearancePreferences = {
   mainFontFilePath: null,
   chineseFontFamily: 'Microsoft YaHei',
   chineseFontFilePath: null,
+  fallbackFontFamily: 'Noto Sans SC',
+  fallbackFontFilePath: null,
   baseFontSize: 14,
   lineHeight: 1.35,
   textDepth: 62,
@@ -174,6 +177,18 @@ const defaultRememberedAudioOutput: RememberedAudioOutput = {
   outputMode: 'system',
   sharedBackend: 'auto',
   latencyProfile: 'balanced',
+};
+export const defaultHqPlayerSettings: HqPlayerSettings = {
+  enabled: false,
+  connectionMode: 'localDesktop',
+  host: '127.0.0.1',
+  port: null,
+  executablePath: null,
+  allowLaunch: false,
+  mediaServerEnabled: false,
+  mediaServerPort: null,
+  defaultPlaybackBackend: 'echoNative',
+  profileName: null,
 };
 const lowLatencyMaxBufferSizeFrames = 2048;
 
@@ -253,6 +268,7 @@ export const defaultSettings: AppSettings = {
   audioAsioUnavailableFallbackEnabled: false,
   audioSoxrFallbackEnabled: true,
   audioReleaseExclusiveOnPauseExperimentalEnabled: false,
+  audioIssueDiagnosticsWindowEnabled: false,
   albumMergeStrategy: 'standard',
   chineseCrossScriptSearchEnabled: true,
   artistWallAlbumArtwork: false,
@@ -266,6 +282,7 @@ export const defaultSettings: AppSettings = {
   suppressAccountExpiryNotices: false,
   spotifyAutoLaunchOfficialPlayer: true,
   connectAutoStartReceiversEnabled: false,
+  hqPlayer: { ...defaultHqPlayerSettings },
   playlistBackupsEnabled: true,
   autoDataBackupEnabled: false,
   autoDataBackupDirectory: null,
@@ -433,6 +450,34 @@ const normalizeFontPath = (value: unknown): string | null => {
 
   const normalized = value.replace(/[\r\n]/g, '').trim();
   return normalized || null;
+};
+
+const normalizeNullablePort = (value: unknown): number | null => {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 1 && numeric <= 65535 ? numeric : null;
+};
+
+const normalizeHqPlayerBackend = (value: unknown): HqPlayerDefaultPlaybackBackend =>
+  value === 'hqplayer' || value === 'ask' ? value : defaultHqPlayerSettings.defaultPlaybackBackend;
+
+export const normalizeHqPlayerSettings = (value: unknown): HqPlayerSettings => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ...defaultHqPlayerSettings };
+  }
+
+  const input = value as Partial<HqPlayerSettings>;
+  return {
+    enabled: input.enabled === true,
+    connectionMode: input.connectionMode === 'remote' ? 'remote' : 'localDesktop',
+    host: normalizeRequiredText(input.host, defaultHqPlayerSettings.host).slice(0, 255),
+    port: normalizeNullablePort(input.port),
+    executablePath: normalizeFontPath(input.executablePath),
+    allowLaunch: input.allowLaunch === true,
+    mediaServerEnabled: input.mediaServerEnabled === true,
+    mediaServerPort: normalizeNullablePort(input.mediaServerPort),
+    defaultPlaybackBackend: normalizeHqPlayerBackend(input.defaultPlaybackBackend),
+    profileName: normalizeOptionalText(input.profileName)?.slice(0, 120) ?? null,
+  };
 };
 
 const normalizeLocale = (value: unknown): AppLocale =>
@@ -698,6 +743,8 @@ const normalizeAppearancePreferences = (value: unknown): AppearancePreferences =
     mainFontFilePath: normalizeFontPath(input.mainFontFilePath),
     chineseFontFamily: normalizeRequiredText(input.chineseFontFamily, defaultAppearancePreferences.chineseFontFamily),
     chineseFontFilePath: normalizeFontPath(input.chineseFontFilePath),
+    fallbackFontFamily: normalizeRequiredText(input.fallbackFontFamily, defaultAppearancePreferences.fallbackFontFamily),
+    fallbackFontFilePath: normalizeFontPath(input.fallbackFontFilePath),
     baseFontSize: Number.isFinite(baseFontSize)
       ? clamp(baseFontSize, 12, 18)
       : defaultAppearancePreferences.baseFontSize,
@@ -721,7 +768,7 @@ const normalizeRememberedAudioOutput = (value: unknown): RememberedAudioOutput =
       ? input.outputMode
       : defaultRememberedAudioOutput.outputMode;
   const sharedBackend =
-    input.sharedBackend === 'directsound' || input.sharedBackend === 'windows'
+    input.sharedBackend === 'directsound' || input.sharedBackend === 'windows' || input.sharedBackend === 'alsa'
       ? input.sharedBackend
       : defaultRememberedAudioOutput.sharedBackend;
   const latencyProfile =
@@ -1084,6 +1131,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     audioAsioUnavailableFallbackEnabled: settings.audioAsioUnavailableFallbackEnabled === true,
     audioSoxrFallbackEnabled: settings.audioSoxrFallbackEnabled !== false,
     audioReleaseExclusiveOnPauseExperimentalEnabled: settings.audioReleaseExclusiveOnPauseExperimentalEnabled === true,
+    audioIssueDiagnosticsWindowEnabled: settings.audioIssueDiagnosticsWindowEnabled === true,
     albumMergeStrategy,
     chineseCrossScriptSearchEnabled: settings.chineseCrossScriptSearchEnabled !== false,
     artistWallAlbumArtwork: settings.artistWallAlbumArtwork === true,
@@ -1097,6 +1145,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     suppressAccountExpiryNotices: settings.suppressAccountExpiryNotices === true,
     spotifyAutoLaunchOfficialPlayer: settings.spotifyAutoLaunchOfficialPlayer !== false,
     connectAutoStartReceiversEnabled: settings.connectAutoStartReceiversEnabled === true,
+    hqPlayer: normalizeHqPlayerSettings(settings.hqPlayer),
     playlistBackupsEnabled: settings.playlistBackupsEnabled !== false,
     autoDataBackupEnabled: settings.autoDataBackupEnabled === true,
     autoDataBackupDirectory: normalizeDataBackupDirectory(settings.autoDataBackupDirectory),

@@ -58,6 +58,8 @@ const mocks = vi.hoisted(() => {
     })),
     getAppSettingsMock: vi.fn(() => ({ smtcEnabled: true })),
     setAppSettingsMock: vi.fn((patch: Record<string, unknown>) => ({ smtcEnabled: true, ...patch })),
+    showSaveDialogMock: vi.fn(),
+    showOpenDialogMock: vi.fn(),
   };
 });
 
@@ -67,6 +69,10 @@ vi.mock('electron', () => ({
   },
   shell: {
     openPath: mocks.openPathMock,
+  },
+  dialog: {
+    showSaveDialog: mocks.showSaveDialogMock,
+    showOpenDialog: mocks.showOpenDialogMock,
   },
 }));
 
@@ -110,6 +116,8 @@ describe('PluginService', () => {
     mocks.getAppSettingsMock.mockClear();
     mocks.setAppSettingsMock.mockClear();
     mocks.openPathMock.mockClear();
+    mocks.showSaveDialogMock.mockReset();
+    mocks.showOpenDialogMock.mockReset();
     pluginRoot = mkdtempSync(join(tmpdir(), 'echo-next-plugin-service-'));
     service = new PluginService(pluginRoot);
   });
@@ -148,6 +156,10 @@ describe('PluginService', () => {
     await service.runCommand({ pluginId: 'echo.playback-panel', commandId: 'show-status' });
 
     expect(mocks.fakeAudioSession.getStatus).toHaveBeenCalled();
+    const summary = service.list().plugins[0];
+    expect(summary.activity.commandRunCount).toBe(1);
+    expect(summary.activity.lastCommandAt).toBeTruthy();
+    expect(summary.security.sandboxedPanel).toBe(true);
     expect(service.getLogs('echo.playback-panel').some((entry) => entry.message.includes('当前播放状态'))).toBe(true);
   });
 
@@ -216,6 +228,69 @@ describe('PluginService', () => {
       title: 'Song',
       fieldSources: { title: 'embedded' },
     });
+  });
+
+  it('exports and imports plugin packages without runtime storage', async () => {
+    service.createExample('command-tool');
+    writeFileSync(join(pluginRoot, 'echo.command-tool', 'plugin-storage.json'), '{"secret":"nope"}\n', 'utf8');
+    const packagePath = join(pluginRoot, 'echo.command-tool.echo-plugin.json');
+
+    await expect(service.exportPluginPackage('echo.command-tool', packagePath)).resolves.toBe(packagePath);
+
+    const payload = JSON.parse(readFileSync(packagePath, 'utf8')) as {
+      type: string;
+      files: Array<{ path: string; content: string }>;
+    };
+    expect(payload.type).toBe('echo-next-plugin-package');
+    expect(payload.files.map((file) => file.path)).toEqual(expect.arrayContaining(['echo.plugin.json', 'plugin.js']));
+    expect(payload.files.map((file) => file.path)).not.toContain('plugin-storage.json');
+
+    const importRoot = mkdtempSync(join(tmpdir(), 'echo-next-plugin-import-'));
+    try {
+      const importService = new PluginService(importRoot);
+      await expect(importService.importPluginPackage(packagePath)).resolves.toMatchObject({
+        pluginId: 'echo.command-tool',
+        importedFileCount: 2,
+      });
+      expect(existsSync(join(importRoot, 'echo.command-tool', 'echo.plugin.json'))).toBe(true);
+      expect(existsSync(join(importRoot, 'echo.command-tool', 'plugin.js'))).toBe(true);
+      expect(existsSync(join(importRoot, 'echo.command-tool', 'plugin-storage.json'))).toBe(false);
+      expect(importService.list().plugins[0]).toMatchObject({ id: 'echo.command-tool', enabled: false });
+    } finally {
+      rmSync(importRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('isolates a plugin after repeated startup crashes', async () => {
+    const manifest: PluginManifest = {
+      id: 'echo.crasher',
+      name: 'Crasher',
+      version: '0.0.1',
+      apiVersion: 1,
+      entry: 'plugin.js',
+      permissions: [],
+    };
+    writePlugin(pluginRoot, manifest, "throw new Error('boom');");
+    writeFileSync(join(pluginRoot, 'plugin-state.json'), JSON.stringify({
+      plugins: {
+        'echo.crasher': {
+          enabled: true,
+          trustedPermissions: [],
+          crashTimestamps: [new Date().toISOString(), new Date().toISOString()],
+        },
+      },
+    }, null, 2), 'utf8');
+
+    service.scheduleAutoStart();
+    await vi.advanceTimersByTimeAsync(1_200);
+    await Promise.resolve();
+
+    const summary = service.list().plugins[0];
+    expect(summary.enabled).toBe(false);
+    expect(summary.disabledByHost).toBe(true);
+    expect(summary.status).toBe('disabled');
+    expect(summary.error).toContain('boom');
+    expect(service.getLogs('echo.crasher').some((entry) => entry.message.includes('plugin_disabled_after_repeated_errors'))).toBe(true);
   });
 
   it('rejects oversized storage writes and permissionless event subscriptions', async () => {

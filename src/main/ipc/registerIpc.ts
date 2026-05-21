@@ -45,6 +45,7 @@ import { registerLastFmIpc } from './lastFmIpc';
 import { registerLibraryIpc } from './libraryIpc';
 import { registerLyricsIpc } from './lyricsIpc';
 import { registerMvIpc } from './mvIpc';
+import { registerHqPlayerIpc } from './hqPlayerIpc';
 import { registerPlaybackIpc } from './playbackIpc';
 import { registerPluginIpc } from './pluginIpc';
 import { registerRemoteSourcesIpc } from './remoteSourcesIpc';
@@ -534,6 +535,7 @@ export const registerIpc = (): void => {
   registerLibraryIpc();
   registerLyricsIpc();
   registerMvIpc();
+  registerHqPlayerIpc();
   registerRemoteSourcesIpc();
   registerStreamingIpc();
   registerPlaybackIpc();

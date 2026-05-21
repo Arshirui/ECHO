@@ -5,6 +5,7 @@ import {
   Check,
   Clapperboard,
   Code2,
+  Clipboard,
   Download,
   ExternalLink,
   FileText,
@@ -37,6 +38,14 @@ import type { LucideIcon } from 'lucide-react';
 import type { AudioDeviceInfo, AudioOutputMode, AudioOutputSettings, AudioSharedBackend, AudioStatus, ChannelBalanceState, PlaybackSpeedMode } from '../../shared/types/audio';
 import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
 import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
+import type {
+  HqPlayerConnectionMode,
+  HqPlayerConnectionState,
+  HqPlayerConnectionTestResult,
+  HqPlayerDefaultPlaybackBackend,
+  HqPlayerSettings,
+  HqPlayerStatus,
+} from '../../shared/types/hqplayer';
 import type {
   AppSettings,
   AppThemeCustomTheme,
@@ -79,11 +88,20 @@ import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
 import { LibraryQualityPanel } from '../components/library/LibraryQualityPanel';
 import { NetworkMetadataPanel } from '../components/library/NetworkMetadataPanel';
 import { LyricsSettingsPanel } from '../components/lyrics/LyricsSettingsDrawer';
+import { AudioProfessionalStatusPanel } from '../components/player/AudioProfessionalStatusPanel';
 import { PlaybackStabilityDiagnosticsPanel } from '../components/player/PlaybackStabilityDiagnosticsPanel';
+import { formatAudioDiagnostics } from '../components/player/audioDiagnosticsFormat';
+import { DiagnosticsAssistantPanel } from '../components/settings/DiagnosticsAssistantPanel';
 import { RemoteSourcesPanel } from '../components/settings/RemoteSourcesPanel';
 import { StyledSelect } from '../components/ui/StyledSelect';
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
+import {
+  detectRendererPlatform,
+  isAdvancedNativeOutputPlatform,
+  isNativeSharedOutputPlatform,
+  normalizeAudioSharedBackendForPlatform,
+} from '../../shared/utils/audioPlatformCapabilities';
 import {
   defaultAppearancePreferences,
   readAppearancePreferences,
@@ -118,6 +136,7 @@ import {
   getDiscordPresenceBridge,
   getDownloadsBridge,
   getEqBridge,
+  getHqPlayerBridge,
   getLastFmBridge,
   getLibraryBridge,
   getPluginsBridge,
@@ -284,12 +303,106 @@ const findDuplicateGlobalShortcutAction = (
 };
 
 const normalizeSharedBackend = (value: unknown): AudioSharedBackend =>
-  value === 'windows' || value === 'directsound' ? value : 'auto';
+  value === 'windows' || value === 'directsound' || value === 'alsa' ? value : 'auto';
 
 const playbackOutputModes: AudioOutputMode[] = ['system', 'shared', 'exclusive', 'asio'];
 
+const detectSettingsPlatform = (): NodeJS.Platform | 'unknown' =>
+  typeof window !== 'undefined' ? detectRendererPlatform(window.navigator) : 'unknown';
+
+const getPlaybackOutputModesForPlatform = (platform: NodeJS.Platform | 'unknown'): AudioOutputMode[] =>
+  playbackOutputModes.filter((mode) => {
+    if (mode === 'system') {
+      return true;
+    }
+
+    if (mode === 'shared') {
+      return isNativeSharedOutputPlatform(platform);
+    }
+
+    return isAdvancedNativeOutputPlatform(platform);
+  });
+
 const getPlaybackOutputModeLabel = (mode: AudioOutputMode, translate: (key: TranslationKey) => string): string =>
   translate(`settings.playback.outputMode.${mode}` as TranslationKey);
+
+const getSharedBackendOptionsForPlatform = (
+  platform: NodeJS.Platform | 'unknown',
+): Array<[AudioSharedBackend, TranslationKey]> => {
+  if (platform === 'linux') {
+    return [
+      ['auto', 'settings.playback.sharedBackend.auto'],
+      ['alsa', 'settings.playback.sharedBackend.alsa'],
+    ];
+  }
+
+  if (platform === 'win32') {
+    return [
+      ['auto', 'settings.playback.sharedBackend.wasapi'],
+      ['directsound', 'settings.playback.sharedBackend.directSound'],
+    ];
+  }
+
+  return [];
+};
+
+const getSharedBackendDescriptionKey = (platform: NodeJS.Platform | 'unknown'): TranslationKey =>
+  platform === 'linux' ? 'settings.playback.sharedBackend.linuxDescription' : 'settings.playback.sharedBackend.description';
+
+const defaultHqPlayerUiSettings: HqPlayerSettings = {
+  enabled: false,
+  connectionMode: 'localDesktop',
+  host: '127.0.0.1',
+  port: null,
+  executablePath: null,
+  allowLaunch: false,
+  mediaServerEnabled: false,
+  mediaServerPort: null,
+  defaultPlaybackBackend: 'echoNative',
+  profileName: null,
+};
+
+const hqPlayerConnectionModes: HqPlayerConnectionMode[] = ['localDesktop', 'remote'];
+const hqPlayerDefaultBackends: HqPlayerDefaultPlaybackBackend[] = ['echoNative', 'ask', 'hqplayer'];
+
+const getHqPlayerStatusKey = (state: HqPlayerConnectionState): TranslationKey => {
+  switch (state) {
+    case 'available':
+      return 'settings.playback.hqplayer.status.available';
+    case 'checking':
+      return 'settings.playback.hqplayer.status.checking';
+    case 'disabled':
+      return 'settings.playback.hqplayer.status.disabled';
+    case 'not-configured':
+      return 'settings.playback.hqplayer.status.notConfigured';
+    case 'unavailable':
+    default:
+      return 'settings.playback.hqplayer.status.unavailable';
+  }
+};
+
+const getHqPlayerConnectionModeKey = (mode: HqPlayerConnectionMode): TranslationKey =>
+  `settings.playback.hqplayer.mode.${mode}` as TranslationKey;
+
+const getHqPlayerBackendKey = (backend: HqPlayerDefaultPlaybackBackend): TranslationKey =>
+  `settings.playback.hqplayer.defaultBackend.${backend}` as TranslationKey;
+
+const formatHqPlayerEndpoint = (settings: Pick<HqPlayerSettings, 'host' | 'port'>): string =>
+  settings.port ? `${settings.host}:${settings.port}` : settings.host;
+
+const parseHqPlayerPort = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const port = Number(trimmed);
+  if (!Number.isFinite(port)) {
+    return null;
+  }
+
+  return Math.min(65535, Math.max(1, Math.round(port)));
+};
 
 const getCompatiblePlaybackDevices = (devices: AudioDeviceInfo[], outputMode: AudioOutputMode): AudioDeviceInfo[] => {
   if (outputMode === 'system') {
@@ -435,7 +548,7 @@ type SettingsSearchResult = {
   score: number;
 };
 
-type FontPickerTarget = 'main' | 'chinese';
+type FontPickerTarget = 'main' | 'chinese' | 'fallback';
 type AlbumMergeStrategy = AppSettings['albumMergeStrategy'];
 type AccountBusyAction = 'save' | 'check' | 'clear' | 'browser' | 'login';
 
@@ -653,6 +766,11 @@ const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
     'dop',
     'soxr',
     'speed',
+    'hqplayer',
+    'hq player',
+    'network audio adapter',
+    'external playback',
+    'naa',
     '播放',
     '音频',
     '输出',
@@ -1022,38 +1140,6 @@ const formatRate = (value: number | null): string => {
 
   return `${value} Hz`;
 };
-
-const statusRows = (
-  status: AudioStatus | null,
-  formatBool: (value: boolean) => string,
-): Array<{ label: string; value: string }> => [
-  { label: 'state', value: status?.state ?? 'loading' },
-  { label: 'outputMode', value: status?.outputMode ?? 'shared' },
-  { label: 'outputBackend', value: status?.outputBackend ?? 'n/a' },
-  { label: 'activeOutputBackendImpl', value: status?.activeOutputBackendImpl ?? 'n/a' },
-  { label: 'useJuceOutputRequested', value: formatBool(status?.useJuceOutputRequested ?? false) },
-  { label: 'activeDecodeBackendImpl', value: status?.activeDecodeBackendImpl ?? 'n/a' },
-  { label: 'useJuceDecodeRequested', value: formatBool(status?.useJuceDecodeRequested ?? false) },
-  { label: 'dsdOutputModeRequested', value: status?.dsdOutputModeRequested ?? 'pcm' },
-  { label: 'activeDsdOutputMode', value: status?.activeDsdOutputMode ?? 'n/a' },
-  { label: 'dsdNativeSampleRate', value: formatRate(status?.dsdNativeSampleRate ?? null) },
-  { label: 'dsdTransportSampleRate', value: formatRate(status?.dsdTransportSampleRate ?? null) },
-  { label: 'fileSampleRate', value: formatRate(status?.fileSampleRate ?? null) },
-  { label: 'decoderOutputSampleRate', value: formatRate(status?.decoderOutputSampleRate ?? null) },
-  { label: 'requestedOutputSampleRate', value: formatRate(status?.requestedOutputSampleRate ?? null) },
-  { label: 'actualDeviceSampleRate', value: formatRate(status?.actualDeviceSampleRate ?? null) },
-  { label: 'sharedDeviceSampleRate', value: formatRate(status?.sharedDeviceSampleRate ?? null) },
-  { label: 'outputDeviceName', value: status?.outputDeviceName ?? 'n/a' },
-  { label: 'resampling', value: formatBool(status?.resampling ?? false) },
-  { label: 'ffmpegSource', value: status?.ffmpegSource ?? 'n/a' },
-  { label: 'ffmpegVersion', value: status?.ffmpegVersion ?? 'n/a' },
-  { label: 'soxrAvailable', value: formatBool(status?.soxrAvailable ?? false) },
-  { label: 'resamplerEngine', value: status?.resamplerEngine ?? 'default' },
-  { label: 'resamplerFallbackActive', value: formatBool(status?.resamplerFallbackActive ?? false) },
-  { label: 'bitPerfectCandidate', value: formatBool(status?.bitPerfectCandidate ?? false) },
-  { label: 'bitPerfectDisabledReason', value: status?.bitPerfectDisabledReason ?? 'n/a' },
-  { label: 'sampleRateMismatch', value: formatBool(status?.sampleRateMismatch ?? false) },
-];
 
 const themeModeOptions: Array<{ mode: AppThemeMode; labelKey: TranslationKey }> = [
   { mode: 'light', labelKey: 'settings.appearance.theme.light' },
@@ -3198,6 +3284,11 @@ const FontPickerModal = ({
 export const SettingsPage = (): JSX.Element => {
   const { locale, localeOptions, setLocale, t } = useI18n();
   const playbackQueue = usePlaybackQueue();
+  const [rendererPlatform] = useState<NodeJS.Platform | 'unknown'>(() => detectSettingsPlatform());
+  const playbackOutputModesForPlatform = useMemo(() => getPlaybackOutputModesForPlatform(rendererPlatform), [rendererPlatform]);
+  const sharedBackendOptionsForPlatform = useMemo(() => getSharedBackendOptionsForPlatform(rendererPlatform), [rendererPlatform]);
+  const advancedNativeOutputAvailable = isAdvancedNativeOutputPlatform(rendererPlatform);
+  const windowsIntegrationAvailable = rendererPlatform === 'win32';
   const settingsScrollShellRef = useRef<HTMLDivElement | null>(null);
   const [settingsHorizontalScroll, setSettingsHorizontalScroll] = useState({
     available: false,
@@ -3208,12 +3299,17 @@ export const SettingsPage = (): JSX.Element => {
   const [settingsQuery, setSettingsQuery] = useState('');
   const [highlightedSettingId, setHighlightedSettingId] = useState<string | null>(null);
   const [status, setStatus] = useState<AudioStatus | null>(null);
+  const [audioDiagnosticsCopied, setAudioDiagnosticsCopied] = useState(false);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
   const [outputMode, setOutputMode] = useState<AudioOutputMode>('shared');
   const [sharedBackend, setSharedBackend] = useState<AudioSharedBackend>('auto');
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(() => readAppearancePreferences());
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [hqPlayerDraft, setHqPlayerDraft] = useState<HqPlayerSettings>(defaultHqPlayerUiSettings);
+  const [hqPlayerStatus, setHqPlayerStatus] = useState<HqPlayerStatus | null>(null);
+  const [hqPlayerBusy, setHqPlayerBusy] = useState<'save' | 'test' | null>(null);
+  const [hqPlayerTestResult, setHqPlayerTestResult] = useState<HqPlayerConnectionTestResult | null>(null);
   const [selectedThemePreset, setSelectedThemePreset] = useState<AppThemePreset>(() => readThemePreset());
   const [themeCustomThemes, setThemeCustomThemes] = useState<AppThemeCustomTheme[]>(() => readThemeCustomThemes());
   const [activeThemeCustomId, setActiveThemeCustomId] = useState<string | null>(() => readThemeCustomId());
@@ -3248,6 +3344,7 @@ export const SettingsPage = (): JSX.Element => {
   const [lastCrashSummary, setLastCrashSummary] = useState<LastCrashSummary | null>(null);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [diagnosticsMessage, setDiagnosticsMessage] = useState<string | null>(null);
+  const [devConsoleMessage, setDevConsoleMessage] = useState<string | null>(null);
   const [defaultCacheDirectory, setDefaultCacheDirectory] = useState<string | null>(null);
   const [pendingCacheDirectory, setPendingCacheDirectory] = useState<string | null | undefined>(undefined);
   const [cacheDirectoryBusy, setCacheDirectoryBusy] = useState(false);
@@ -3482,6 +3579,24 @@ export const SettingsPage = (): JSX.Element => {
         terms: ['关闭账号失效通知', '账号失效通知', '左上角通知', '消息推送', 'account notice', 'account expiry notice', 'login expired', 'notification'],
       },
       {
+        id: 'row-hqplayer',
+        sectionKey: 'playback',
+        targetId: 'settings-row-hqplayer',
+        title: t('settings.playback.hqplayer.title'),
+        description: t('settings.playback.hqplayer.description'),
+        terms: [
+          t('settings.playback.hqplayer.title'),
+          t('settings.playback.hqplayer.description'),
+          'hqplayer',
+          'hq player',
+          'network audio adapter',
+          'naa',
+          'external playback',
+          'hi-fi',
+          'hifi',
+        ],
+      },
+      {
         id: 'row-audio-status',
         sectionKey: 'playback',
         targetId: 'settings-row-audio-status',
@@ -3649,6 +3764,22 @@ export const SettingsPage = (): JSX.Element => {
         ],
       },
       {
+        id: 'row-dev-console',
+        sectionKey: 'about',
+        targetId: 'settings-row-dev-console',
+        title: '开发控制台',
+        description: '实时显示主进程 stdout/stderr 与渲染器 console，接近 npm run dev 的调试输出。',
+        terms: ['开发控制台', '打开控制台', '调试控制台', 'console', 'stdout', 'stderr', 'npm run dev', 'debug console', 'devtools', '日志'],
+      },
+      {
+        id: 'row-diagnostics-assistant',
+        sectionKey: 'about',
+        targetId: 'settings-row-diagnostics-assistant',
+        title: '诊断助手',
+        description: '汇总音频链路、崩溃状态、日志目录、Markdown 和安全诊断包导出。',
+        terms: ['诊断助手', '音频诊断', '安全诊断包', '导出 zip', 'audio diagnostics', 'diagnostics assistant', 'underrun', 'ffmpeg', 'logs'],
+      },
+      {
         id: 'row-diagnostics',
         sectionKey: 'about',
         targetId: 'settings-row-diagnostics',
@@ -3658,8 +3789,11 @@ export const SettingsPage = (): JSX.Element => {
       },
     ];
 
-    return [...rowEntries, ...sectionEntries];
-  }, [t]);
+    const entries = [...rowEntries, ...sectionEntries];
+    return windowsIntegrationAvailable
+      ? entries
+      : entries.filter((entry) => entry.targetId !== 'settings-row-smtc' && entry.targetId !== 'settings-row-taskbar-playback');
+  }, [t, windowsIntegrationAvailable]);
 
   const settingsSearchResults = useMemo<SettingsSearchResult[]>(() => {
     const query = normalizeSettingsSearchText(settingsQuery);
@@ -3745,6 +3879,21 @@ export const SettingsPage = (): JSX.Element => {
     }
   }, []);
 
+  const refreshHqPlayerStatus = useCallback(async () => {
+    const hqPlayer = getHqPlayerBridge();
+
+    if (!hqPlayer) {
+      setHqPlayerStatus(null);
+      return;
+    }
+
+    try {
+      setHqPlayerStatus(await hqPlayer.getStatus());
+    } catch {
+      setHqPlayerStatus(null);
+    }
+  }, []);
+
   const refreshDevices = useCallback(async () => {
     try {
       const audio = getAudioBridge();
@@ -3775,6 +3924,25 @@ export const SettingsPage = (): JSX.Element => {
       setDiscordPresenceStatus(await discordPresence.getStatus());
     } catch {
       setDiscordPresenceStatus(null);
+    }
+  }, []);
+
+  const copyAudioDiagnostics = useCallback(async (): Promise<void> => {
+    const audio = getAudioBridge();
+
+    if (!audio?.getDiagnostics) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to copy audio diagnostics.');
+      return;
+    }
+
+    try {
+      const diagnostics = await audio.getDiagnostics();
+      await window.navigator.clipboard.writeText(formatAudioDiagnostics(diagnostics));
+      setAudioDiagnosticsCopied(true);
+      setError(null);
+      window.setTimeout(() => setAudioDiagnosticsCopied(false), 1800);
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : String(copyError));
     }
   }, []);
 
@@ -3910,8 +4078,9 @@ export const SettingsPage = (): JSX.Element => {
       if (settings.appearancePreferences) {
         setAppearancePreferences(updateAppearancePreferences(settings.appearancePreferences));
       }
-      setSharedBackend(settings.rememberedAudioOutput?.sharedBackend ?? 'auto');
+      setSharedBackend(normalizeAudioSharedBackendForPlatform(settings.rememberedAudioOutput?.sharedBackend ?? 'auto', rendererPlatform));
       setChannelBalanceState(settings.channelBalance ?? defaultSettingsChannelBalance);
+      setHqPlayerDraft(settings.hqPlayer ?? defaultHqPlayerUiSettings);
     }).catch(() => undefined);
     void app?.getVersion().then(setAppVersion).catch(() => undefined);
     void app?.getUpdateStatus?.().then(setUpdateStatus).catch(() => undefined);
@@ -3937,6 +4106,7 @@ export const SettingsPage = (): JSX.Element => {
       void refreshStatus();
       if (activeSection === 'playback') {
         void refreshDevices();
+        void refreshHqPlayerStatus();
       }
     });
     const timer = window.setInterval(() => {
@@ -3947,7 +4117,7 @@ export const SettingsPage = (): JSX.Element => {
       cancelInitialRefresh();
       window.clearInterval(timer);
     };
-  }, [activeSection, refreshDevices, refreshStatus]);
+  }, [activeSection, refreshDevices, refreshHqPlayerStatus, refreshStatus]);
 
   useEffect(() => {
     if (activeSection !== 'integrations') {
@@ -4163,9 +4333,14 @@ export const SettingsPage = (): JSX.Element => {
   useEffect(() => {
     setOutputMode(status?.outputMode ?? 'shared');
     if (status?.sharedBackend || status?.outputBackend === 'directsound-shared') {
-      setSharedBackend(status.outputBackend === 'directsound-shared' ? 'directsound' : normalizeSharedBackend(status.sharedBackend));
+      setSharedBackend(
+        normalizeAudioSharedBackendForPlatform(
+          status.outputBackend === 'directsound-shared' ? 'directsound' : normalizeSharedBackend(status.sharedBackend),
+          rendererPlatform,
+        ),
+      );
     }
-  }, [status?.outputBackend, status?.outputMode, status?.sharedBackend]);
+  }, [rendererPlatform, status?.outputBackend, status?.outputMode, status?.sharedBackend]);
 
   useEffect(() => {
     if (statusSelectedDevice) {
@@ -4337,7 +4512,9 @@ export const SettingsPage = (): JSX.Element => {
     async (nextOutputMode = outputMode, nextDeviceId = selectedDeviceId, nextSharedBackend = sharedBackend) => {
       const nextDevice =
         getCompatiblePlaybackDevices(devices, nextOutputMode).find((device) => device.id === nextDeviceId) ?? null;
-      const normalizedSharedBackend = nextOutputMode === 'shared' ? normalizeSharedBackend(nextSharedBackend) : 'auto';
+      const normalizedSharedBackend = nextOutputMode === 'shared'
+        ? normalizeAudioSharedBackendForPlatform(normalizeSharedBackend(nextSharedBackend), rendererPlatform)
+        : 'auto';
       const output: AudioOutputSettings = {
         outputMode: nextOutputMode,
         sharedBackend: normalizedSharedBackend,
@@ -4375,6 +4552,7 @@ export const SettingsPage = (): JSX.Element => {
       appSettings?.audioUseJuceOutput,
       devices,
       outputMode,
+      rendererPlatform,
       selectedDeviceId,
       sharedBackend,
     ],
@@ -4607,6 +4785,10 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleWindowsAudioServiceRestart = async (): Promise<void> => {
+    if (!windowsIntegrationAvailable) {
+      return;
+    }
+
     if (!window.confirm(t('settings.playback.troubleshooting.hardConfirm'))) {
       return;
     }
@@ -5042,6 +5224,57 @@ export const SettingsPage = (): JSX.Element => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
   }, [dispatchSettingsChanged, refreshDataBackupStatus, refreshTaskbarPlaybackStatus]);
+
+  const patchHqPlayerDraft = useCallback((patch: Partial<HqPlayerSettings>): void => {
+    setHqPlayerDraft((current) => ({ ...current, ...patch }));
+    setHqPlayerTestResult(null);
+  }, []);
+
+  const handleHqPlayerSave = useCallback(async (): Promise<void> => {
+    const hqPlayer = getHqPlayerBridge();
+
+    if (!hqPlayer) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to save HQPlayer settings.');
+      return;
+    }
+
+    setHqPlayerBusy('save');
+    setHqPlayerTestResult(null);
+    try {
+      const saved = await hqPlayer.setSettings(hqPlayerDraft);
+      setHqPlayerDraft(saved);
+      setAppSettings((current) => (current ? { ...current, hqPlayer: saved } : current));
+      setHqPlayerStatus(await hqPlayer.getStatus());
+      dispatchSettingsChanged({ hqPlayer: saved });
+      setError(null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
+    } finally {
+      setHqPlayerBusy(null);
+    }
+  }, [dispatchSettingsChanged, hqPlayerDraft]);
+
+  const handleHqPlayerTestConnection = useCallback(async (): Promise<void> => {
+    const hqPlayer = getHqPlayerBridge();
+
+    if (!hqPlayer) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to test HQPlayer.');
+      return;
+    }
+
+    setHqPlayerBusy('test');
+    setHqPlayerTestResult(null);
+    try {
+      const result = await hqPlayer.testConnection(hqPlayerDraft);
+      setHqPlayerTestResult(result);
+      setHqPlayerStatus(await hqPlayer.getStatus());
+      setError(null);
+    } catch (testError) {
+      setError(testError instanceof Error ? testError.message : String(testError));
+    } finally {
+      setHqPlayerBusy(null);
+    }
+  }, [hqPlayerDraft]);
 
   const handleNetworkProxySave = useCallback((): void => {
     const app = getAppBridge();
@@ -5734,6 +5967,22 @@ export const SettingsPage = (): JSX.Element => {
       setDiagnosticsMessage(`音频报告：${openedPath}`);
     } catch (diagnosticsError) {
       setDiagnosticsMessage(diagnosticsError instanceof Error ? diagnosticsError.message : String(diagnosticsError));
+    }
+  };
+
+  const handleDiagnosticsOpenDevConsole = async (): Promise<void> => {
+    try {
+      const diagnostics = getDiagnosticsBridge();
+
+      if (!diagnostics?.openDevConsole) {
+        setError('Desktop bridge unavailable. Open ECHO Next in Electron to view the debug console.');
+        return;
+      }
+
+      await diagnostics.openDevConsole();
+      setDevConsoleMessage('控制台已打开：实时显示主进程 stdout/stderr 和渲染器 console。');
+    } catch (diagnosticsError) {
+      setDevConsoleMessage(diagnosticsError instanceof Error ? diagnosticsError.message : String(diagnosticsError));
     }
   };
 
@@ -7103,6 +7352,10 @@ export const SettingsPage = (): JSX.Element => {
       handleAppearanceChange({ ...appearancePreferences, chineseFontFamily: fontFamily, chineseFontFilePath: null });
     }
 
+    if (fontPickerTarget === 'fallback') {
+      handleAppearanceChange({ ...appearancePreferences, fallbackFontFamily: fontFamily, fallbackFontFilePath: null });
+    }
+
     setFontPickerTarget(null);
   };
 
@@ -7138,6 +7391,10 @@ export const SettingsPage = (): JSX.Element => {
         handleAppearanceChange({ ...appearancePreferences, chineseFontFamily: fontFamily, chineseFontFilePath: fontFile.path });
       }
 
+      if (target === 'fallback') {
+        handleAppearanceChange({ ...appearancePreferences, fallbackFontFamily: fontFamily, fallbackFontFilePath: fontFile.path });
+      }
+
       setFontPickerTarget(null);
       setError(null);
     } catch (fontError) {
@@ -7146,8 +7403,18 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const activeNavItems = visibleNavItems.length ? visibleNavItems : settingsNavItems;
-  const formatBool = (value: boolean): string => (value ? t('common.yes') : t('common.no'));
-  const activeFontValue = fontPickerTarget === 'chinese' ? appearancePreferences.chineseFontFamily : appearancePreferences.mainFontFamily;
+  const activeFontValue =
+    fontPickerTarget === 'chinese'
+      ? appearancePreferences.chineseFontFamily
+      : fontPickerTarget === 'fallback'
+        ? appearancePreferences.fallbackFontFamily
+        : appearancePreferences.mainFontFamily;
+  const activeFontTitle =
+    fontPickerTarget === 'chinese'
+      ? t('settings.appearance.font.chinese.title')
+      : fontPickerTarget === 'fallback'
+        ? t('settings.appearance.font.fallback.title')
+        : t('settings.appearance.font.main.title');
   const dataBackupDirectory = dataBackupStatus?.directory ?? appSettings?.autoDataBackupDirectory ?? null;
   const dataBackupEnabled = appSettings?.autoDataBackupEnabled === true;
   const dataBackupIntervalDays = appSettings?.autoDataBackupIntervalDays ?? dataBackupStatus?.intervalDays ?? 7;
@@ -7265,6 +7532,13 @@ export const SettingsPage = (): JSX.Element => {
         threshold: lastFmStatus.activeTrack.thresholdSeconds,
       })
     : t('settings.integrations.lastfm.noActiveTrack');
+  const hqPlayerState: HqPlayerConnectionState =
+    hqPlayerStatus?.state ?? (hqPlayerDraft.enabled ? (hqPlayerDraft.port ? 'unavailable' : 'not-configured') : 'disabled');
+  const hqPlayerCheckedLabel = hqPlayerStatus?.lastCheckedAt ? formatProtectionTimestamp(hqPlayerStatus.lastCheckedAt) : 'n/a';
+  const hqPlayerEndpointLabel = formatHqPlayerEndpoint({
+    host: hqPlayerStatus?.endpoint.host ?? hqPlayerDraft.host,
+    port: hqPlayerStatus?.endpoint.port ?? hqPlayerDraft.port,
+  });
 
   return (
     <div className="settings-page no-drag">
@@ -7522,25 +7796,24 @@ export const SettingsPage = (): JSX.Element => {
             <SettingSection activeKey={activeSection} icon={Zap} id="playback" title={t('settings.nav.playback.label')}>
               <SettingRow title={t('settings.playback.outputMode.title')} description={t('settings.playback.outputMode.description')}>
                 <div className="settings-chip-row">
-                  {playbackOutputModes.map((mode) => (
+                  {playbackOutputModesForPlatform.map((mode) => (
                     <ChipButton active={outputMode === mode} key={mode} onClick={() => handleOutputModeChange(mode)}>
                       {getPlaybackOutputModeLabel(mode, t)}
                     </ChipButton>
                   ))}
                 </div>
               </SettingRow>
-              <SettingRow title={t('settings.playback.sharedBackend.title')} description={t('settings.playback.sharedBackend.description')}>
-                <div className="settings-chip-row">
-                  {([
-                    ['auto', t('settings.playback.sharedBackend.wasapi')],
-                    ['directsound', t('settings.playback.sharedBackend.directSound')],
-                  ] as Array<[AudioSharedBackend, string]>).map(([backend, label]) => (
-                    <ChipButton active={outputMode === 'shared' && sharedBackend === backend} key={backend} onClick={() => handleSharedBackendChange(backend)}>
-                      {label}
-                    </ChipButton>
-                  ))}
-                </div>
-              </SettingRow>
+              {sharedBackendOptionsForPlatform.length > 0 ? (
+                <SettingRow title={t('settings.playback.sharedBackend.title')} description={t(getSharedBackendDescriptionKey(rendererPlatform))}>
+                  <div className="settings-chip-row">
+                    {sharedBackendOptionsForPlatform.map(([backend, labelKey]) => (
+                      <ChipButton active={outputMode === 'shared' && sharedBackend === backend} key={backend} onClick={() => handleSharedBackendChange(backend)}>
+                        {t(labelKey)}
+                      </ChipButton>
+                    ))}
+                  </div>
+                </SettingRow>
+              ) : null}
               <SettingRow
                 id="settings-row-output-device"
                 highlighted={highlightedSettingId === 'settings-row-output-device'}
@@ -7568,17 +7841,33 @@ export const SettingsPage = (): JSX.Element => {
                     <RotateCw size={15} />
                     {audioResetBusy ? t('settings.playback.troubleshooting.softBusy') : t('settings.playback.troubleshooting.softAction')}
                   </button>
-                  <button
-                    className="settings-action-button"
-                    type="button"
-                    disabled={audioResetBusy || windowsAudioRestartBusy}
-                    onClick={() => void handleWindowsAudioServiceRestart()}
-                  >
-                    <ShieldAlert size={15} />
-                    {windowsAudioRestartBusy ? t('settings.playback.troubleshooting.hardBusy') : t('settings.playback.troubleshooting.hardAction')}
-                  </button>
+                  {windowsIntegrationAvailable ? (
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={audioResetBusy || windowsAudioRestartBusy}
+                      onClick={() => void handleWindowsAudioServiceRestart()}
+                    >
+                      <ShieldAlert size={15} />
+                      {windowsAudioRestartBusy ? t('settings.playback.troubleshooting.hardBusy') : t('settings.playback.troubleshooting.hardAction')}
+                    </button>
+                  ) : null}
                   {audioResetMessage ? <StatusText tone="good">{audioResetMessage}</StatusText> : null}
                 </div>
+              </SettingRow>
+              <SettingRow
+                title="音频问题诊断窗口"
+                description="默认关闭。用户反馈播放异常时开启，会弹出浮窗记录状态、进度、duration、native 缓冲、underrun、backend、警告和 ended 标记。"
+              >
+                <ToggleButton
+                  active={appSettings?.audioIssueDiagnosticsWindowEnabled ?? false}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      audioIssueDiagnosticsWindowEnabled: !(appSettings?.audioIssueDiagnosticsWindowEnabled ?? false),
+                    })
+                  }
+                />
               </SettingRow>
               <SettingRow title="JUCE 主输出" description="默认开启。FFmpeg 继续负责解码，JUCE 接管输出；失败时自动回退到兼容输出。">
                 <ToggleButton
@@ -7594,6 +7883,8 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() => void handleJuceDecodeToggle()}
                 />
               </SettingRow>
+              {advancedNativeOutputAvailable ? (
+                <>
               <SettingRow
                 title="DSD DoP 直出试验"
                 description={
@@ -7631,6 +7922,8 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() => void handleAsioUnavailableFallbackToggle()}
                 />
               </SettingRow>
+                </>
+              ) : null}
               <SettingRow title={t('audioDrawer.guard.soxrFallback.title')} description={t('audioDrawer.guard.soxrFallback.description')}>
                 <ToggleButton
                   active={appSettings?.audioSoxrFallbackEnabled ?? true}
@@ -7852,6 +8145,130 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() => handleMonoAudioToggle(!(channelBalanceState.enabled && channelBalanceState.monoMode === 'sum'))}
                 />
               </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                id="settings-row-hqplayer"
+                highlighted={highlightedSettingId === 'settings-row-hqplayer'}
+                title={t('settings.playback.hqplayer.title')}
+                description={t('settings.playback.hqplayer.description')}
+              >
+                <div className="settings-cache-panel settings-cache-panel--hqplayer">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <div className="settings-inline-toggle">
+                      <span>{t('settings.playback.hqplayer.enable')}</span>
+                      <ToggleButton
+                        active={hqPlayerDraft.enabled}
+                        disabled={!appSettings}
+                        onClick={() => patchHqPlayerDraft({ enabled: !hqPlayerDraft.enabled })}
+                      />
+                    </div>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={!appSettings || hqPlayerBusy === 'save'}
+                      onClick={() => void handleHqPlayerSave()}
+                    >
+                      <Save size={15} />
+                      {hqPlayerBusy === 'save' ? t('settings.playback.hqplayer.saving') : t('settings.playback.hqplayer.save')}
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={!appSettings || hqPlayerBusy === 'test'}
+                      onClick={() => void handleHqPlayerTestConnection()}
+                    >
+                      <RotateCw className={hqPlayerBusy === 'test' ? 'spinning-icon' : undefined} size={15} />
+                      {hqPlayerBusy === 'test' ? t('settings.playback.hqplayer.testing') : t('settings.playback.hqplayer.test')}
+                    </button>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    {hqPlayerConnectionModes.map((mode) => (
+                      <ChipButton
+                        active={hqPlayerDraft.connectionMode === mode}
+                        key={mode}
+                        onClick={() => patchHqPlayerDraft({ connectionMode: mode })}
+                      >
+                        {t(getHqPlayerConnectionModeKey(mode))}
+                      </ChipButton>
+                    ))}
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    {hqPlayerDefaultBackends.map((backend) => (
+                      <ChipButton
+                        active={hqPlayerDraft.defaultPlaybackBackend === backend}
+                        key={backend}
+                        onClick={() => patchHqPlayerDraft({ defaultPlaybackBackend: backend })}
+                      >
+                        {t(getHqPlayerBackendKey(backend))}
+                      </ChipButton>
+                    ))}
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <label className="settings-number-field">
+                      <span>{t('settings.playback.hqplayer.host')}</span>
+                      <input
+                        aria-label={t('settings.playback.hqplayer.host')}
+                        type="text"
+                        value={hqPlayerDraft.host}
+                        onChange={(event) => patchHqPlayerDraft({ host: event.currentTarget.value })}
+                      />
+                    </label>
+                    <label className="settings-number-field">
+                      <span>{t('settings.playback.hqplayer.port')}</span>
+                      <input
+                        aria-label={t('settings.playback.hqplayer.port')}
+                        type="number"
+                        min={1}
+                        max={65535}
+                        value={hqPlayerDraft.port ?? ''}
+                        onChange={(event) => patchHqPlayerDraft({ port: parseHqPlayerPort(event.currentTarget.value) })}
+                      />
+                    </label>
+                    <label className="settings-number-field">
+                      <span>{t('settings.playback.hqplayer.profileName')}</span>
+                      <input
+                        aria-label={t('settings.playback.hqplayer.profileName')}
+                        type="text"
+                        value={hqPlayerDraft.profileName ?? ''}
+                        onChange={(event) => patchHqPlayerDraft({ profileName: event.currentTarget.value.trim() || null })}
+                      />
+                    </label>
+                    <div className="settings-inline-toggle">
+                      <span>{t('settings.playback.hqplayer.mediaServer')}</span>
+                      <ToggleButton
+                        active={hqPlayerDraft.mediaServerEnabled}
+                        disabled={!appSettings}
+                        onClick={() => patchHqPlayerDraft({ mediaServerEnabled: !hqPlayerDraft.mediaServerEnabled })}
+                      />
+                    </div>
+                  </div>
+                  <div className="settings-status-grid">
+                    <span>
+                      <em>{t('settings.playback.hqplayer.field.status')}</em>
+                      <strong>{t(getHqPlayerStatusKey(hqPlayerState))}</strong>
+                    </span>
+                    <span>
+                      <em>{t('settings.playback.hqplayer.field.endpoint')}</em>
+                      <strong>{hqPlayerEndpointLabel}</strong>
+                    </span>
+                    <span>
+                      <em>{t('settings.playback.hqplayer.field.defaultBackend')}</em>
+                      <strong>{t(getHqPlayerBackendKey(hqPlayerDraft.defaultPlaybackBackend))}</strong>
+                    </span>
+                    <span>
+                      <em>{t('settings.playback.hqplayer.field.lastChecked')}</em>
+                      <strong>{hqPlayerCheckedLabel}</strong>
+                    </span>
+                  </div>
+                  {hqPlayerTestResult ? (
+                    <p className={hqPlayerTestResult.ok ? 'settings-inline-note' : 'settings-inline-error'}>
+                      {t(hqPlayerTestResult.ok ? 'settings.playback.hqplayer.result.ok' : 'settings.playback.hqplayer.result.failed')}
+                      {hqPlayerTestResult.error ? `: ${hqPlayerTestResult.error}` : ''}
+                    </p>
+                  ) : null}
+                  <p className="settings-inline-note">{t('settings.playback.hqplayer.note')}</p>
+                </div>
+              </SettingRow>
               <SettingRow title={t('settings.playback.wireless.title')} description={t('settings.playback.wireless.description')}>
                 <ToggleButton />
               </SettingRow>
@@ -7862,13 +8279,18 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('settings.playback.audioStatus.title')}
                 description={t('settings.playback.audioStatus.description')}
               >
-                <div className="settings-status-grid settings-status-grid--audio">
-                  {statusRows(status, formatBool).map((row) => (
-                    <span key={row.label}>
-                      <em>{row.label}</em>
-                      <strong>{row.value}</strong>
-                    </span>
-                  ))}
+                <div className="settings-audio-professional-panel">
+                  <AudioProfessionalStatusPanel status={status} variant="settings" />
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <button className="settings-action-button" type="button" onClick={() => void refreshStatus()}>
+                      <RotateCw size={15} />
+                      {t('audioProfessional.action.refresh')}
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void copyAudioDiagnostics()}>
+                      <Clipboard size={15} />
+                      {audioDiagnosticsCopied ? t('audioDrawer.action.copiedDiagnostics') : t('audioDrawer.action.copyDiagnostics')}
+                    </button>
+                  </div>
                 </div>
               </SettingRow>
               {error ? <p className="settings-inline-error">{error}</p> : null}
@@ -8181,7 +8603,7 @@ export const SettingsPage = (): JSX.Element => {
                 title="网络代理"
                 description="给登录页、网络封面、歌词、MV 搜索和元数据补全使用。媒体播放流默认不走代理，避免影响缓冲和 Range 请求。"
               >
-                <div className="settings-cache-panel settings-cache-panel--network-proxy">
+                <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--network-proxy">
                   <div className="settings-proxy-grid">
                     <label className="settings-proxy-field">
                       <span>模式</span>
@@ -8266,7 +8688,7 @@ export const SettingsPage = (): JSX.Element => {
                 title="在线歌手信息"
                 description="配置演出和歌手补强数据源；未配置时歌手页只显示本地关系，不会展示假内容。"
               >
-                <div className="settings-cache-panel settings-cache-panel--online-artist-info">
+                <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--online-artist-info">
                   <div className="settings-proxy-grid">
                     <label className="settings-proxy-field">
                       <span>Bandsintown app_id</span>
@@ -8328,7 +8750,7 @@ export const SettingsPage = (): JSX.Element => {
                     </button>
                   </div>
                   <p className="settings-inline-note">
-                    第一版只保存配置，不发起在线请求；后续接入 Bandsintown、Ticketmaster 和 SeatGeek 时会走后台队列与缓存。
+                    使用方式：在对应服务后台申请 key，填入任意已准备好的 app_id / apikey / client_id；地区过滤可填 HK、Tokyo、US 等关键词，留空为全球。第一版只保存配置，不发起在线请求。
                   </p>
                   {onlineArtistInfoMessage ? <p className="settings-inline-note">{onlineArtistInfoMessage}</p> : null}
                 </div>
@@ -8351,6 +8773,8 @@ export const SettingsPage = (): JSX.Element => {
                   />
                 </div>
               </SettingRow>
+              {windowsIntegrationAvailable ? (
+                <>
               <SettingRow
                 id="settings-row-smtc"
                 highlighted={highlightedSettingId === 'settings-row-smtc'}
@@ -8387,6 +8811,8 @@ export const SettingsPage = (): JSX.Element => {
                   />
                 </div>
               </SettingRow>
+                </>
+              ) : null}
               <SettingRow
                 id="settings-row-lastfm"
                 highlighted={highlightedSettingId === 'settings-row-lastfm'}
@@ -9120,6 +9546,14 @@ export const SettingsPage = (): JSX.Element => {
                   <em>{t('settings.appearance.font.choose')}</em>
                 </button>
               </SettingRow>
+              <SettingRow title={t('settings.appearance.font.fallback.title')} description={t('settings.appearance.font.fallback.description')}>
+                <button className="settings-font-picker-button" type="button" onClick={() => handleFontPickerOpen('fallback')}>
+                  <span style={{ fontFamily: `"${appearancePreferences.fallbackFontFamily}", var(--echo-font-family)` }}>
+                    {appearancePreferences.fallbackFontFamily}
+                  </span>
+                  <em>{t('settings.appearance.font.choose')}</em>
+                </button>
+              </SettingRow>
               <SettingRow title={t('settings.appearance.fontSize.title')} description={t('settings.appearance.fontSize.description')}>
                 <NumberRangeField
                   min={12}
@@ -9761,6 +10195,34 @@ export const SettingsPage = (): JSX.Element => {
                 </div>
               </SettingRow>
               <SettingRow
+                id="settings-row-dev-console"
+                highlighted={highlightedSettingId === 'settings-row-dev-console'}
+                title="开发控制台"
+                description="显示 ECHO 当前运行期的 stdout/stderr、主进程日志和渲染器 console，方便像 npm run dev 一样排查问题。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--diagnostics">
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenDevConsole()}>
+                      <Code2 size={15} />
+                      打开控制台
+                    </button>
+                  </div>
+                  <p className="settings-inline-note">
+                    说明：Electron 不能读取父级 PowerShell/cmd 里已经输出过的历史文本；这里会实时镜像 ECHO 后续写出的 stdout/stderr 和 renderer console。
+                  </p>
+                  {devConsoleMessage ? <p className="settings-inline-note">{devConsoleMessage}</p> : null}
+                </div>
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                id="settings-row-diagnostics-assistant"
+                highlighted={highlightedSettingId === 'settings-row-diagnostics-assistant'}
+                title="诊断助手"
+                description="本地、安全、详细地整理音频链路、崩溃状态、日志和导出入口；不会自动上传。"
+              >
+                <DiagnosticsAssistantPanel lastCrashSummary={lastCrashSummary} />
+              </SettingRow>
+              <SettingRow
                 className="setting-row--full setting-row--compact-panel"
                 id="settings-row-diagnostics"
                 highlighted={highlightedSettingId === 'settings-row-diagnostics'}
@@ -9802,6 +10264,10 @@ export const SettingsPage = (): JSX.Element => {
                     <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenAudioCrashReport()}>
                       <Headphones size={15} />
                       打开音频报告
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void handleDiagnosticsOpenDevConsole()}>
+                      <Code2 size={15} />
+                      打开调试控制台
                     </button>
                     <button
                       className="settings-action-button"
@@ -9987,7 +10453,7 @@ export const SettingsPage = (): JSX.Element => {
           onSelect={handleFontSelect}
           query={fontPickerQuery}
           setQuery={setFontPickerQuery}
-          title={fontPickerTarget === 'chinese' ? t('settings.appearance.font.chinese.title') : t('settings.appearance.font.main.title')}
+          title={activeFontTitle}
         />
       ) : null}
     </div>

@@ -245,7 +245,11 @@ const isBrowserPlayableStreamCodec = (variant: TrackVideoStreamRow): boolean =>
   variant.provider !== 'bilibili' || isBrowserPlayableBilibiliCodec(variant.codec);
 
 const isPlayableStreamRow = (variant: TrackVideoStreamRow | null | undefined): variant is TrackVideoStreamRow & { url: string } => {
-  if (!variant?.url || variant.playable_in_app !== 1 || variant.protocol === 'external') {
+  if (!variant?.url || variant.playable_in_app !== 1 || variant.protocol !== 'direct') {
+    return false;
+  }
+
+  if (isStaleBilibiliDashDirectStream(variant)) {
     return false;
   }
 
@@ -253,7 +257,7 @@ const isPlayableStreamRow = (variant: TrackVideoStreamRow | null | undefined): v
 };
 
 const isPlayableResolvedVariant = (variant: ResolvedMvStreamVariant): boolean =>
-  Boolean(variant.url && variant.playableInApp && variant.protocol !== 'external');
+  Boolean(variant.url && variant.playableInApp && variant.protocol === 'direct' && !isStaleBilibiliDashDirectResolvedVariant(variant));
 
 const isPlayableTrackVideo = (video: TrackVideo | null | undefined): video is TrackVideo =>
   Boolean(video?.playableInApp && video.mediaUrl);
@@ -261,6 +265,15 @@ const isPlayableTrackVideo = (video: TrackVideo | null | undefined): video is Tr
 const recordFromJson = (value: string | null): Record<string, unknown> | null => {
   const parsed = parseJson(value);
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+};
+
+const isStaleBilibiliDashDirectStream = (variant: TrackVideoStreamRow): boolean => {
+  if (variant.provider !== 'bilibili' || variant.protocol !== 'direct') {
+    return false;
+  }
+
+  const raw = recordFromJson(variant.raw_json);
+  return raw?.source === 'dash-video' || raw?.resolver === 'bilibili-dash-video-v4';
 };
 
 const bilibiliQnFromRaw = (variant: TrackVideoStreamRow): number | null => {
@@ -282,6 +295,15 @@ const bilibiliRankFromRaw = (variant: TrackVideoStreamRow): number => {
 
 const recordFromUnknown = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const isStaleBilibiliDashDirectResolvedVariant = (variant: ResolvedMvStreamVariant): boolean => {
+  if (variant.protocol !== 'direct') {
+    return false;
+  }
+
+  const raw = recordFromUnknown(variant.rawProviderJson);
+  return raw?.provider === 'bilibili' && (raw.source === 'dash-video' || raw.resolver === 'bilibili-dash-video-v4');
+};
 
 const bilibiliQnFromResolved = (variant: ResolvedMvStreamVariant): number | null => {
   const raw = recordFromUnknown(variant.rawProviderJson);
@@ -309,7 +331,7 @@ const mediaUrlForLocal = (row: TrackVideoRow): string | null => {
 };
 
 const mediaUrlForStream = (row: TrackVideoRow, variant: TrackVideoStreamRow | null): string | null => {
-  if (!variant?.url || variant.playable_in_app !== 1 || variant.protocol === 'external') {
+  if (!isPlayableStreamRow(variant)) {
     return null;
   }
 
@@ -591,6 +613,7 @@ export class MvService {
     private readonly closeDatabase: () => void = () => this.database.close(),
   ) {
     this.onlineProviderMap = new Map(onlineProviders.map((provider) => [provider.id, provider]));
+    this.purgeKnownBadBilibiliStreamCache();
   }
 
   close(): void {
@@ -996,7 +1019,7 @@ export class MvService {
 
     const provider = providerName(row.provider);
     if (provider !== 'local' && row.source_type === 'search_candidate') {
-      const resolved = await this.resolveStreams(videoId);
+      const resolved = await this.resolvePlayableCandidateForSelection(videoId);
       if (!isPlayableTrackVideo(resolved.video)) {
         throw createMvInAppUnavailableError();
       }
@@ -1061,7 +1084,21 @@ export class MvService {
     }
   }
 
-  private async resolveStreamsUnsafe(videoId: string): Promise<MvResolvedStreams> {
+  private async resolvePlayableCandidateForSelection(videoId: string): Promise<MvResolvedStreams> {
+    const resolved = await this.resolveStreams(videoId);
+    if (isPlayableTrackVideo(resolved.video)) {
+      return resolved;
+    }
+
+    try {
+      const refreshed = await this.resolveStreamsUnsafe(videoId, { forceRefresh: true });
+      return isPlayableTrackVideo(refreshed.video) ? refreshed : resolved;
+    } catch {
+      return resolved;
+    }
+  }
+
+  private async resolveStreamsUnsafe(videoId: string, options: { forceRefresh?: boolean } = {}): Promise<MvResolvedStreams> {
     const row = this.requireRow(videoId);
     if (row.provider === 'local') {
       return { video: this.mapRow(row), variants: [] };
@@ -1075,7 +1112,7 @@ export class MvService {
     const settings = this.getSettings();
     let variants = this.getValidStreamRows(row.id);
 
-    if (variants.length === 0 || !variants.some(isPlayableStreamRow) || this.shouldRefreshResolvedStreams(row, variants, settings)) {
+    if (options.forceRefresh || variants.length === 0 || !variants.some(isPlayableStreamRow) || this.shouldRefreshResolvedStreams(row, variants, settings)) {
       const provider = this.onlineProviderMap.get(providerId);
       if (!provider) {
         throw new Error(`MV provider ${providerId} is unavailable`);
@@ -1122,6 +1159,37 @@ export class MvService {
     this.applySelectedStreamSnapshot(videoId);
 
     return this.mapRow(this.requireRow(videoId));
+  }
+
+  async refreshStreamVariantForProtocol(videoId: string, variantId: string): Promise<StreamVariantForProtocol | null> {
+    const row = this.getRow(videoId);
+    if (!row || row.provider === 'local') {
+      return null;
+    }
+
+    try {
+      await this.resolveStreamsUnsafe(videoId, { forceRefresh: true });
+    } catch {
+      return null;
+    }
+
+    const refreshedRow = this.requireRow(videoId);
+    const refreshedVariant = this.getStreamRow(videoId, variantId);
+    const selectedVariant = isPlayableStreamRow(refreshedVariant)
+      ? refreshedVariant
+      : this.chooseStreamVariant(refreshedRow, this.getPlaybackStreamRows(videoId));
+
+    if (!isPlayableStreamRow(selectedVariant)) {
+      return null;
+    }
+
+    return {
+      videoId,
+      variantId: selectedVariant.variant_id,
+      url: selectedVariant.url,
+      headers: parseHeaders(selectedVariant.headers_json),
+      mimeType: selectedVariant.mime_type,
+    };
   }
 
   setVideoOffset(trackId: string, offsetMs: number): TrackVideo | null {
@@ -1468,6 +1536,38 @@ export class MvService {
     resetMvStreamStorage(this.database);
   }
 
+  private purgeKnownBadBilibiliStreamCache(): void {
+    try {
+      const result = this.database
+        .prepare(
+          `DELETE FROM track_video_streams
+           WHERE provider = 'bilibili'
+             AND (
+               protocol = 'external'
+               OR (
+                 protocol = 'direct'
+                 AND (
+                   variant_id LIKE 'bilibili-dash-qn-%'
+                   OR url LIKE '%.m4s%'
+                   OR raw_json LIKE '%"source":"dash-video"%'
+                   OR raw_json LIKE '%"resolver":"bilibili-dash-video-v4"%'
+                 )
+               )
+             )`,
+        )
+        .run();
+
+      if (result.changes > 0) {
+        console.warn('[mv] Cleared stale Bilibili MV stream cache rows.', {
+          rows: result.changes,
+          database: this.databaseDiagnostics(),
+        });
+      }
+    } catch (error) {
+      console.warn('[mv] Failed to clear stale Bilibili MV stream cache rows.', error);
+    }
+  }
+
   private upsertNetworkCandidate(track: LibraryTrack, candidate: MvMatchCandidate): MvMatchCandidate {
     const sourceId = sourceIdForCandidate(candidate);
     const existing = this.database
@@ -1611,7 +1711,7 @@ export class MvService {
   ): Promise<TrackVideo | null> {
     for (const candidate of this.rankAutoCandidates(candidates, settings)) {
       try {
-        const resolved = await this.resolveStreams(candidate.id);
+        const resolved = await this.resolvePlayableCandidateForSelection(candidate.id);
         if (resolved.video.playableInApp && resolved.video.mediaUrl) {
           return this.commitSelectedVideo(trackId, candidate.id);
         }
@@ -1674,8 +1774,7 @@ export class MvService {
     const settings = this.getSettings();
     return (
       [...variants]
-        .filter((variant) => variant.protocol !== 'external')
-        .filter((variant) => variant.playable_in_app === 1)
+        .filter(isPlayableStreamRow)
         .filter((variant) => {
           if (row.provider === 'bilibili') {
             const qn = bilibiliQnFromRaw(variant);
@@ -1721,9 +1820,7 @@ export class MvService {
   ): ResolvedMvStreamVariant | null {
     return (
       [...variants]
-        .filter((variant) => variant.protocol !== 'external')
-        .filter((variant) => variant.playableInApp === true)
-        .filter((variant) => Boolean(variant.url))
+        .filter(isPlayableResolvedVariant)
         .filter((variant) => {
           if (providerId === 'bilibili') {
             const qn = bilibiliQnFromResolved(variant);
@@ -1929,8 +2026,9 @@ export class MvService {
     const fileExists = row.provider !== 'local' || !row.file_path || existsSync(row.file_path);
     const localPlayable = row.provider === 'local' && Boolean(row.file_path) && fileExists && isBrowserPlayableVideo(row.file_path ?? '');
     const selectedStream = row.provider === 'local' ? null : this.chooseStreamVariant(row, this.getPlaybackStreamRows(row.id));
-    const streamPlayable = Boolean(selectedStream?.url && selectedStream.playable_in_app === 1 && selectedStream.protocol !== 'external');
+    const streamPlayable = isPlayableStreamRow(selectedStream);
     const provider = providerName(row.provider);
+    const useRowSnapshot = provider === 'local';
 
     return {
       id: row.id,
@@ -1945,13 +2043,13 @@ export class MvService {
       thumbnailUrl: row.thumbnail_url,
       filePath: null,
       mediaUrl: localPlayable ? mediaUrlForLocal(row) : mediaUrlForStream(row, selectedStream),
-      mimeType: selectedStream?.mime_type ?? row.mime_type,
+      mimeType: selectedStream?.mime_type ?? (useRowSnapshot ? row.mime_type : null),
       durationSeconds: row.duration_seconds,
-      width: selectedStream?.width ?? row.width,
-      height: selectedStream?.height ?? row.height,
+      width: selectedStream?.width ?? (useRowSnapshot ? row.width : null),
+      height: selectedStream?.height ?? (useRowSnapshot ? row.height : null),
       selectedQualityId: provider === 'local' ? null : (row.selected_quality_id ?? 'auto'),
-      qualityLabel: selectedStream?.label ?? row.quality_label,
-      fps: selectedStream?.fps ?? row.fps,
+      qualityLabel: selectedStream?.label ?? (useRowSnapshot ? row.quality_label : null),
+      fps: selectedStream?.fps ?? (useRowSnapshot ? row.fps : null),
       offsetMs: clampOffset(Number(row.offset_ms ?? 0)),
       score: Number(row.score ?? 0),
       selected: row.selected === 1,

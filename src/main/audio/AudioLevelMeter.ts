@@ -13,6 +13,7 @@ export type PcmLevelSnapshot = {
 export type AudioLevelEstimate = AudioLevelTelemetry;
 
 const meterSource = 'pre_native_estimated_post_dsp' as const;
+const defaultMaxObservedSamplesPerChunk = 8192;
 
 const dbFromLinear = (value: number): number | null => {
   if (!Number.isFinite(value) || value <= 0) {
@@ -82,6 +83,7 @@ export const createAudioLevelTelemetry = (
 export class PcmLevelMeterTransform extends Transform {
   private readonly intervalMs: number;
   private readonly onSnapshot: (snapshot: PcmLevelSnapshot) => void;
+  private readonly maxObservedSamplesPerChunk: number;
   private remainder = Buffer.alloc(0);
   private gain = 1;
   private peakAbs = 0;
@@ -91,10 +93,15 @@ export class PcmLevelMeterTransform extends Transform {
   private lastClipAt: string | null = null;
   private lastEmitAt = 0;
 
-  constructor(onSnapshot: (snapshot: PcmLevelSnapshot) => void, intervalMs = 100) {
+  constructor(
+    onSnapshot: (snapshot: PcmLevelSnapshot) => void,
+    intervalMs = 100,
+    maxObservedSamplesPerChunk = defaultMaxObservedSamplesPerChunk,
+  ) {
     super();
     this.onSnapshot = onSnapshot;
     this.intervalMs = intervalMs;
+    this.maxObservedSamplesPerChunk = Math.max(1, Math.round(maxObservedSamplesPerChunk));
   }
 
   setGain(gain: number): void {
@@ -138,25 +145,57 @@ export class PcmLevelMeterTransform extends Transform {
     const completeBytes = input.length - (input.length % 4);
     this.remainder = completeBytes < input.length ? Buffer.from(input.subarray(completeBytes)) : Buffer.alloc(0);
 
-    for (let offset = 0; offset < completeBytes; offset += 4) {
-      const sample = input.readFloatLE(offset) * this.gain;
-
-      if (!Number.isFinite(sample)) {
-        continue;
-      }
-
-      const absSample = Math.abs(sample);
-      this.peakAbs = Math.max(this.peakAbs, absSample);
-      this.sumSquares += sample * sample;
-      this.sampleCount += 1;
-
-      if (absSample >= 1) {
-        this.clipCount += 1;
-        this.lastClipAt = new Date().toISOString();
-      }
-    }
+    this.observeSamples(input, completeBytes);
 
     this.emitSnapshot(false);
+  }
+
+  private observeSamples(input: Buffer, completeBytes: number): void {
+    const totalSamples = completeBytes / 4;
+    if (totalSamples <= 0) {
+      return;
+    }
+
+    if (totalSamples <= this.maxObservedSamplesPerChunk) {
+      for (let index = 0; index < totalSamples; index += 1) {
+        this.observeSample(input, index * 4);
+      }
+      return;
+    }
+
+    if (this.maxObservedSamplesPerChunk === 1) {
+      this.observeSample(input, 0);
+      return;
+    }
+
+    const step = (totalSamples - 1) / (this.maxObservedSamplesPerChunk - 1);
+    let previousIndex = -1;
+    for (let sample = 0; sample < this.maxObservedSamplesPerChunk; sample += 1) {
+      const sampleIndex = Math.min(totalSamples - 1, Math.round(sample * step));
+      if (sampleIndex === previousIndex) {
+        continue;
+      }
+      previousIndex = sampleIndex;
+      this.observeSample(input, sampleIndex * 4);
+    }
+  }
+
+  private observeSample(input: Buffer, offset: number): void {
+    const sample = input.readFloatLE(offset) * this.gain;
+
+    if (!Number.isFinite(sample)) {
+      return;
+    }
+
+    const absSample = Math.abs(sample);
+    this.peakAbs = Math.max(this.peakAbs, absSample);
+    this.sumSquares += sample * sample;
+    this.sampleCount += 1;
+
+    if (absSample >= 1) {
+      this.clipCount += 1;
+      this.lastClipAt = new Date().toISOString();
+    }
   }
 
   private emitSnapshot(force: boolean): void {

@@ -6,6 +6,12 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 `;
 
 export const librarySchemaSql = `
+CREATE TABLE IF NOT EXISTS library_maintenance_flags (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS folders (
   id TEXT PRIMARY KEY,
   path TEXT NOT NULL UNIQUE,
@@ -227,6 +233,19 @@ CREATE TABLE IF NOT EXISTS scan_jobs (
   updated_at TEXT NOT NULL,
   FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS scan_directory_snapshots (
+  folder_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  mtime_ms INTEGER NOT NULL,
+  entries_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (folder_id, path),
+  FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_scan_directory_snapshots_folder
+  ON scan_directory_snapshots(folder_id);
 
 CREATE TABLE IF NOT EXISTS library_inbox_batches (
   id TEXT PRIMARY KEY,

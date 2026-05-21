@@ -1,5 +1,5 @@
 export type AudioOutputMode = 'shared' | 'exclusive' | 'asio' | 'system';
-export type AudioSharedBackend = 'auto' | 'windows' | 'directsound';
+export type AudioSharedBackend = 'auto' | 'windows' | 'directsound' | 'alsa';
 
 export type AudioPlaybackState = 'idle' | 'loading' | 'playing' | 'paused' | 'stopped' | 'ended' | 'error';
 
@@ -176,6 +176,46 @@ export type AudioSessionResetEvent = {
   status: AudioStatus;
 };
 
+export type AudioPlaybackDiagnosticSeverity = 'info' | 'suspect' | 'recovery' | 'error';
+
+export type AudioPlaybackDiagnosticEvent = {
+  at: string;
+  kind:
+    | 'play_request'
+    | 'seek_request'
+    | 'pause_request'
+    | 'stop_request'
+    | 'ended'
+    | 'position_jump_suspected'
+    | 'position_jump_recovered'
+    | 'watchdog_recovery'
+    | 'live_restart_skipped';
+  severity: AudioPlaybackDiagnosticSeverity;
+  reason: string;
+  state: AudioPlaybackState;
+  trackId: string | null;
+  filePath: string | null;
+  positionSeconds: number | null;
+  durationSeconds: number | null;
+  outputMode: AudioOutputMode | null;
+  outputBackend: string | null;
+  outputBackendImpl: string | null;
+  nativeBufferedFrames?: number | null;
+  nativeUnderrunCallbacks?: number;
+  nativeUnderrunFrames?: number;
+  warnings?: string[];
+  details?: Record<string, unknown>;
+};
+
+export type AudioPlaybackIssueSummary = {
+  eventCount: number;
+  suspectEventCount: number;
+  recoveryEventCount: number;
+  lastSuspectEventAt: string | null;
+  lastRecoveryEventAt: string | null;
+  lastCommandAt: string | null;
+};
+
 export type AudioDiagnostics = Pick<
   AudioStatus,
   | 'state'
@@ -232,4 +272,6 @@ export type AudioDiagnostics = Pick<
   watchdogStatus: 'idle' | 'monitoring' | 'recovering' | 'limited';
   recentWatchdogRecoveryCount: number;
   lastWatchdogRecoveryTime: string | null;
+  recentPlaybackEvents?: AudioPlaybackDiagnosticEvent[];
+  playbackIssueSummary?: AudioPlaybackIssueSummary;
 };

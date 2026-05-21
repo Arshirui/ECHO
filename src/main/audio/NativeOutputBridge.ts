@@ -29,6 +29,7 @@ export type HostSpawner = (
 
 export type NativeOutputBridgeDependencies = {
   hostBinary?: string | null;
+  platform?: NodeJS.Platform;
   spawn?: HostSpawner;
   readyTimeoutMs?: number;
   logger?: (message: string) => void;
@@ -327,8 +328,20 @@ const normalizeOutputMode = (options: NativeOutputStartOptions): 'shared' | 'exc
 
 type NativeOutputMode = ReturnType<typeof normalizeOutputMode>;
 
-const normalizeSharedBackendForHost = (sharedBackend: NativeOutputStartOptions['sharedBackend']): 'auto' | 'windows' | 'directsound' =>
-  sharedBackend === 'windows' || sharedBackend === 'directsound' ? sharedBackend : 'auto';
+export const normalizeSharedBackendForHost = (
+  sharedBackend: NativeOutputStartOptions['sharedBackend'],
+  platform: NodeJS.Platform = process.platform,
+): 'auto' | 'windows' | 'directsound' | 'alsa' => {
+  if (platform === 'win32') {
+    return sharedBackend === 'windows' || sharedBackend === 'directsound' ? sharedBackend : 'auto';
+  }
+
+  if (platform === 'linux') {
+    return sharedBackend === 'alsa' ? 'alsa' : 'auto';
+  }
+
+  return 'auto';
+};
 
 type PendingGracefulStop = {
   promise: Promise<void>;
@@ -345,7 +358,7 @@ const normalizePositiveInteger = (value: unknown): number | null => {
   return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : null;
 };
 
-const createReuseKey = (options: NativeOutputStartOptions): string => {
+const createReuseKey = (options: NativeOutputStartOptions, platform: NodeJS.Platform = process.platform): string => {
   const outputMode = normalizeOutputMode(options);
   const sampleRate =
     outputMode === 'shared'
@@ -363,7 +376,7 @@ const createReuseKey = (options: NativeOutputStartOptions): string => {
     asioOutputChannelStart: outputMode === 'asio' && Number.isInteger(Number(options.asioOutputChannelStart))
       ? Number(options.asioOutputChannelStart)
       : null,
-    sharedBackend: outputMode === 'shared' ? normalizeSharedBackendForHost(options.sharedBackend) : null,
+    sharedBackend: outputMode === 'shared' ? normalizeSharedBackendForHost(options.sharedBackend, platform) : null,
     sampleRate,
     channels: options.channels,
     asio: options.asio === true,
@@ -459,6 +472,7 @@ class AutomixNextDeckWritable extends Writable {
 
 export class NativeOutputBridge extends EventEmitter {
   private readonly spawn: HostSpawner;
+  private readonly platform: NodeJS.Platform;
   private readonly readyTimeoutMs: number;
   private readonly logger: (message: string) => void;
   private hostBinary: string | null;
@@ -501,6 +515,7 @@ export class NativeOutputBridge extends EventEmitter {
   constructor(dependencies: NativeOutputBridgeDependencies = {}) {
     super();
     this.hostBinary = dependencies.hostBinary ?? null;
+    this.platform = dependencies.platform ?? process.platform;
     this.spawn = dependencies.spawn ?? nodeSpawn;
     this.readyTimeoutMs = dependencies.readyTimeoutMs ?? sharedReadyTimeoutMs;
     this.logger = dependencies.logger ?? defaultLogger;
@@ -563,7 +578,7 @@ export class NativeOutputBridge extends EventEmitter {
       this.sessionIdCounter = 0;
       this.currentSessionId = 0;
       this.currentSessionHasPcm = false;
-      this.reuseKey = createReuseKey(options);
+      this.reuseKey = createReuseKey(options, this.platform);
       this.ready = false;
       this.ended = false;
       this.stopRequested = false;
@@ -745,6 +760,13 @@ export class NativeOutputBridge extends EventEmitter {
     this.ended = false;
   }
 
+  rebaseOutputClock(startSeconds = 0, playbackRate = this.playbackRate): void {
+    this.frameOffset = this.framesConsumed;
+    this.startSeconds = Math.max(0, startSeconds);
+    this.playbackRate = playbackRate;
+    this.ended = false;
+  }
+
   canReuseFor(options: NativeOutputStartOptions): boolean {
     if (this.pendingGracefulStop) {
       return false;
@@ -762,7 +784,7 @@ export class NativeOutputBridge extends EventEmitter {
       !stdin.destroyed &&
       !stdin.writableEnded &&
       stdin.writable &&
-      this.reuseKey === createReuseKey(options),
+      this.reuseKey === createReuseKey(options, this.platform),
     );
   }
 
@@ -1099,7 +1121,7 @@ export class NativeOutputBridge extends EventEmitter {
       }
     }
 
-    const sharedBackend = normalizeSharedBackendForHost(options.sharedBackend);
+    const sharedBackend = normalizeSharedBackendForHost(options.sharedBackend, this.platform);
     if (!options.exclusive && !options.asio && sharedBackend !== 'auto') {
       args.push('-shared-backend', sharedBackend);
     }

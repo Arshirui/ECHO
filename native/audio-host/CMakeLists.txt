@@ -42,6 +42,14 @@ set(ECHO_JUCE_DEFINITIONS
   ECHO_ENABLE_ASIO=$<BOOL:${ECHO_ENABLE_ASIO}>
 )
 
+if(UNIX AND NOT APPLE)
+  find_package(ALSA REQUIRED)
+  list(APPEND ECHO_JUCE_DEFINITIONS
+    JUCE_ALSA=1
+    JUCE_JACK=0
+  )
+endif()
+
 set(ECHO_JUCE_LIBRARIES
   juce::juce_audio_basics
   juce::juce_audio_devices
@@ -97,6 +105,11 @@ if(WIN32)
   target_link_libraries(echo-audio-host PRIVATE shell32 ole32 avrt winmm advapi32 uuid)
 endif()
 
+if(UNIX AND NOT APPLE)
+  target_include_directories(echo-audio-host PRIVATE ${ALSA_INCLUDE_DIRS})
+  target_link_libraries(echo-audio-host PRIVATE ${ALSA_LIBRARIES})
+endif()
+
 juce_add_console_app(echo-audio-engine-tests
   PRODUCT_NAME "echo-audio-engine-tests"
 )
@@ -140,6 +153,11 @@ target_link_libraries(echo-audio-engine-tests
 
 if(WIN32)
   target_link_libraries(echo-audio-engine-tests PRIVATE shell32 ole32 avrt winmm advapi32 uuid)
+endif()
+
+if(UNIX AND NOT APPLE)
+  target_include_directories(echo-audio-engine-tests PRIVATE ${ALSA_INCLUDE_DIRS})
+  target_link_libraries(echo-audio-engine-tests PRIVATE ${ALSA_LIBRARIES})
 endif()
 
 enable_testing()

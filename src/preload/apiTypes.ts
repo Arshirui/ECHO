@@ -116,7 +116,7 @@ import type {
   PlaybackStartRequest,
   PlaybackStatus,
 } from '../shared/types/playback';
-import type { LastCrashSummary, RendererErrorPayload } from '../shared/types/diagnostics';
+import type { DiagnosticConsoleEntry, DiagnosticConsoleSnapshot, LastCrashSummary, RendererErrorPayload } from '../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../shared/types/discordPresence';
 import type {
   CreateDownloadUrlJobOptions,
@@ -128,9 +128,18 @@ import type {
 } from '../shared/types/downloads';
 import type { LastFmAuthStartResult, LastFmStatus } from '../shared/types/lastfm';
 import type {
+  HqPlayerConnectionTestResult,
+  HqPlayerPlaybackControlPlan,
+  HqPlayerPlaybackHandoffPlan,
+  HqPlayerPlaybackHandoffRequest,
+  HqPlayerSettings,
+  HqPlayerStatus,
+} from '../shared/types/hqplayer';
+import type {
   PluginCreateExampleKind,
   PluginCreateExampleResult,
   PluginEnableRequest,
+  PluginImportPackageResult,
   PluginListResult,
   PluginLogEntry,
   PluginRunCommandRequest,
@@ -518,6 +527,15 @@ export type EchoApi = {
     authenticatePassword: (username: string, password: string) => Promise<LastFmStatus>;
     disconnect: () => Promise<LastFmStatus>;
   };
+  hqPlayer: {
+    getSettings: () => Promise<HqPlayerSettings>;
+    setSettings: (patch: Partial<HqPlayerSettings>) => Promise<HqPlayerSettings>;
+    getStatus: () => Promise<HqPlayerStatus>;
+    testConnection: (patch?: Partial<HqPlayerSettings>) => Promise<HqPlayerConnectionTestResult>;
+    createPlaybackHandoff: (request: HqPlayerPlaybackHandoffRequest) => Promise<HqPlayerPlaybackHandoffPlan>;
+    getLastPlaybackHandoff: () => Promise<HqPlayerPlaybackHandoffPlan | null>;
+    getLastPlaybackControl: () => Promise<HqPlayerPlaybackControlPlan | null>;
+  };
   audio: {
     getStatus: () => Promise<AudioStatus>;
     getDiagnostics: () => Promise<AudioDiagnostics>;
@@ -534,9 +552,13 @@ export type EchoApi = {
     getLastCrashSummary: () => Promise<LastCrashSummary | null>;
     clearLastCrashSummary: () => Promise<void>;
     exportDiagnostics: () => Promise<string>;
+    exportDiagnosticsZip: () => Promise<string>;
     openDiagnosticsFolder: () => Promise<string>;
     openCrashReport: () => Promise<string>;
     openAudioCrashReport: () => Promise<string>;
+    openDevConsole: () => Promise<void>;
+    getDevConsoleSnapshot?: () => Promise<DiagnosticConsoleSnapshot>;
+    onDevConsoleEntry?: (handler: (entry: DiagnosticConsoleEntry) => void) => () => void;
     reportRendererError: (payload: RendererErrorPayload) => Promise<void>;
   };
   downloads: {
@@ -558,6 +580,8 @@ export type EchoApi = {
     disable: (pluginId: string) => Promise<PluginSummary>;
     reload: (pluginId: string) => Promise<PluginSummary>;
     openDirectory: (pluginId?: string) => Promise<void>;
+    exportPackage: (pluginId: string) => Promise<string | null>;
+    importPackage: () => Promise<PluginImportPackageResult | null>;
     runCommand: (request: PluginRunCommandRequest) => Promise<unknown>;
     getLogs: (pluginId?: string) => Promise<PluginLogEntry[]>;
   };

@@ -966,6 +966,124 @@ describe('PlaybackQueueProvider playback history session', () => {
 });
 
 describe('PlaybackQueueProvider playback modes', () => {
+  it('uses the next queued track for manual next while repeat-one stays enabled', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 120000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const RepeatOneManualNextProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.setRepeatMode('one');
+        void queue.playTrack(first, { replaceQueueWith: [first, second] });
+      }, [queue]);
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="repeat-mode">{queue.repeatMode}</output>
+          <button type="button" onClick={() => void queue.playNext()}>
+            next
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <RepeatOneManualNextProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe(first.id));
+    expect(screen.getByLabelText('repeat-mode').textContent).toBe('one');
+
+    fireEvent.click(screen.getByRole('button', { name: 'next' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe(second.id));
+    expect(screen.getByLabelText('repeat-mode').textContent).toBe('one');
+    expect(playLocalFile).toHaveBeenLastCalledWith(expect.objectContaining({ trackId: second.id }));
+  });
+
+  it('keeps repeat-one for automatic end-of-track advance', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 120000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const RepeatOneAutoAdvanceProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.setRepeatMode('one');
+        void queue.playTrack(first, { replaceQueueWith: [first, second] });
+      }, [queue]);
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <button type="button" onClick={() => void queue.playNext({ autoAdvance: true })}>
+            auto next
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <RepeatOneAutoAdvanceProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe(first.id));
+
+    fireEvent.click(screen.getByRole('button', { name: 'auto next' }));
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('current-track').textContent).toBe(first.id);
+    expect(playLocalFile).toHaveBeenLastCalledWith(expect.objectContaining({ trackId: first.id }));
+  });
+
   it('does not repeat recently played queue items while shuffle still has unplayed tracks', async () => {
     const tracks = [makeTrack(1), makeTrack(2), makeTrack(3), makeTrack(4)];
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);

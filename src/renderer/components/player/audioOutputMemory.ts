@@ -23,7 +23,7 @@ export const resolveSupportedLatencyProfile = (
 };
 
 export const normalizeSharedBackend = (value: unknown): AudioSharedBackend =>
-  value === 'windows' || value === 'directsound' ? value : 'auto';
+  value === 'windows' || value === 'directsound' || value === 'alsa' ? value : 'auto';
 
 const sanitizeBufferSizeFrames = (
   outputMode: AudioOutputMode,
@@ -62,16 +62,17 @@ const normalizeRememberedAudioOutput = (
       ? raw.outputMode
       : fallback.outputMode;
   const sharedBackend = normalizeSharedBackend(raw.sharedBackend);
-  const latencyProfile =
+  const latencyProfile: AudioLatencyProfile =
     raw.latencyProfile === 'stable' || raw.latencyProfile === 'balanced' || raw.latencyProfile === 'lowLatency'
       ? raw.latencyProfile
-      : fallback.latencyProfile;
+      : (fallback.latencyProfile ?? defaultRememberedAudioOutput.latencyProfile ?? 'balanced');
+  const supportedLatencyProfile = resolveSupportedLatencyProfile(outputMode, latencyProfile);
   const remembered: RememberedAudioOutput = {
     ...raw,
     enabled: raw.enabled === true,
     outputMode,
     sharedBackend,
-    latencyProfile: resolveSupportedLatencyProfile(outputMode, latencyProfile),
+    latencyProfile: supportedLatencyProfile,
     deviceIndex: Number.isInteger(Number(raw.deviceIndex)) ? Number(raw.deviceIndex) : undefined,
     deviceName: typeof raw.deviceName === 'string' && raw.deviceName.trim() ? raw.deviceName : undefined,
     asioOutputChannelStart: outputMode === 'asio' && Number.isInteger(Number(raw.asioOutputChannelStart)) && Number(raw.asioOutputChannelStart) >= 0
@@ -79,7 +80,7 @@ const normalizeRememberedAudioOutput = (
       : undefined,
   };
 
-  const bufferSizeFrames = sanitizeBufferSizeFrames(outputMode, latencyProfile, raw.bufferSizeFrames);
+  const bufferSizeFrames = sanitizeBufferSizeFrames(outputMode, supportedLatencyProfile, raw.bufferSizeFrames);
   if (bufferSizeFrames !== undefined) {
     remembered.bufferSizeFrames = bufferSizeFrames;
   } else {

@@ -425,6 +425,8 @@ export const getLibraryLabBridge = (): Window['echo']['libraryLab'] | null => ge
 
 export const getLastFmBridge = (): Window['echo']['lastfm'] | null => getEchoBridge()?.lastfm ?? null;
 
+export const getHqPlayerBridge = (): Window['echo']['hqPlayer'] | null => getEchoBridge()?.hqPlayer ?? null;
+
 export const getMvBridge = (): Window['echo']['mv'] | null => getEchoBridge()?.mv ?? null;
 
 export const getPlaybackBridge = (): Window['echo']['playback'] | null => getEchoBridge()?.playback ?? null;

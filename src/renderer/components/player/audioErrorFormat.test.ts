@@ -23,6 +23,17 @@ describe('audio error formatting', () => {
     expect(formatAudioHostError(message)).toBeTruthy();
   });
 
+  it('formats local decode failures as a damaged file message', () => {
+    const formatted = formatAudioHostError(
+      'ffmpeg_exit_code_69; kind="input_invalid"; stderr="Invalid data found when processing input"',
+    );
+
+    expect(formatted).toBe('音频文件可能已经损坏或不完整，ECHO 已停止播放这首歌。请重新获取这份音频文件。');
+    expect(formatAudioHostError('system_audio_decode_error; positionSeconds=172.450; durationSeconds=221.565')).toBe(
+      formatted,
+    );
+  });
+
   it('formats system audio seek failures as a plain playback message', () => {
     expect(formatAudioHostError('system_audio_seek_timeout')).toBe('系统音频无法跳转到该位置，可能是文件或网络源不支持拖动');
     expect(formatAudioHostError('system_audio_range_not_satisfiable')).toBe('系统音频无法跳转到该位置，可能是文件或网络源不支持拖动');

@@ -1136,6 +1136,37 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 35,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS library_maintenance_flags (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+    },
+  },
+  {
+    id: 36,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS scan_directory_snapshots (
+          folder_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          mtime_ms INTEGER NOT NULL,
+          entries_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (folder_id, path),
+          FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_scan_directory_snapshots_folder
+          ON scan_directory_snapshots(folder_id);
+      `);
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): void => {

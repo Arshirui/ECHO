@@ -1,6 +1,13 @@
 export type SmtcPlaybackState = 'idle' | 'loading' | 'playing' | 'paused' | 'stopped' | 'ended' | 'error';
 
-export type SmtcCommand = 'play' | 'pause' | 'playPause' | 'previous' | 'next' | 'stop';
+export type SmtcButtonCommand = 'play' | 'pause' | 'playPause' | 'previous' | 'next' | 'stop';
+
+export type SmtcSeekCommand = {
+  type: 'seek';
+  positionSeconds: number;
+};
+
+export type SmtcCommand = SmtcButtonCommand | SmtcSeekCommand;
 
 export type SmtcTrackMetadata = {
   trackId: string | null;

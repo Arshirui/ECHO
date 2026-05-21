@@ -360,6 +360,10 @@ class FakeBridge extends EventEmitter {
     this.positionSeconds = startSeconds;
   }
 
+  rebaseOutputClock(startSeconds = 0): void {
+    this.positionSeconds = startSeconds;
+  }
+
   canReuseFor(options: NativeOutputStartOptions): boolean {
     const normalizeSampleRate = (value: unknown): number | null => {
       const numeric = Number(value);
@@ -667,6 +671,37 @@ describe('AudioSession stability cleanup', () => {
 
       expect(session.getStatus().state).toBe('error');
       expect(session.getStatus().error).toBe('decoder_stream_error: decode stream failed');
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('treats local playback ending before the probed duration as a possible corrupt file', async () => {
+    const decoder = new PcmChunkDecoder(new Map([['broken.flac', probe('broken.flac', 44100)]]), [pcmBuffer([0, 0, 0, 0])]);
+    const bridge = new FakeBridge();
+    const ended = vi.fn();
+    const session = new AudioSession({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+    session.on('ended', ended);
+
+    try {
+      await session.playLocalFile({ filePath: 'broken.flac', output: { outputMode: 'shared' } });
+      bridge.positionSeconds = 72;
+      bridge.emit('ended');
+
+      expect(ended).not.toHaveBeenCalled();
+      expect(session.getStatus().state).toBe('error');
+      expect(session.getStatus().error).toContain('audio_file_decode_failed_or_corrupt');
+      expect(session.getDiagnostics().recentPlaybackEvents?.at(-1)).toMatchObject({
+        kind: 'ended',
+        severity: 'suspect',
+        reason: 'ended_before_duration',
+      });
     } finally {
       session.dispose();
     }
@@ -3801,6 +3836,214 @@ describe('AudioSession playback watchdog', () => {
     expect(session.getDiagnostics().recentWatchdogRecoveryCount).toBe(0);
   });
 
+  it('does not restart on startup position reports inside the discontinuity guard', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-20T08:00:00.000Z'));
+    const reportAudioError = vi.fn();
+    const longProbe = {
+      ...probe('song.flac', 48000),
+      durationSeconds: 120,
+    };
+    const { bridges, decoder, session } = createLongRunningSessionHarness([longProbe], [48000], [], {
+      disableWatchdogTimer: true,
+      reportAudioError,
+    });
+
+    try {
+      await session.playLocalFile({ filePath: 'song.flac', trackId: 'track-1', output: { outputMode: 'shared' } });
+
+      vi.advanceTimersByTime(1000);
+      bridges[0].emit('position', 48000, {
+        positionFrames: 48000,
+        bufferedFrames: 4800,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      vi.advanceTimersByTime(200);
+      bridges[0].emit('position', 6 * 48000, {
+        positionFrames: 6 * 48000,
+        bufferedFrames: 4800,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(reportAudioError).not.toHaveBeenCalled();
+      expect(bridges.reduce((total, bridge) => total + bridge.sessionBegins, 0)).toBe(1);
+      expect(decoder.decodeRequests).toHaveLength(1);
+      const status = session.getStatus();
+      expect(status.positionSeconds).toBeGreaterThanOrEqual(1.1);
+      expect(status.positionSeconds).toBeLessThanOrEqual(1.3);
+      expect(status.warnings).not.toContain('unexpected_playback_position_jump_recovered');
+    } finally {
+      session.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it('rebases a stale first native position report during startup', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-20T08:00:00.000Z'));
+    const reportAudioError = vi.fn();
+    const longProbe = {
+      ...probe('song.flac', 48000),
+      durationSeconds: 120,
+    };
+    const { bridges, decoder, session } = createLongRunningSessionHarness([longProbe], [48000], [], {
+      disableWatchdogTimer: true,
+      reportAudioError,
+    });
+
+    try {
+      await session.playLocalFile({ filePath: 'song.flac', trackId: 'track-1', output: { outputMode: 'shared' } });
+
+      vi.advanceTimersByTime(200);
+      bridges[0].emit('position', 8 * 48000, {
+        positionFrames: 8 * 48000,
+        bufferedFrames: 4800,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(reportAudioError).not.toHaveBeenCalled();
+      expect(bridges.reduce((total, bridge) => total + bridge.sessionBegins, 0)).toBe(1);
+      expect(decoder.decodeRequests).toHaveLength(1);
+      const status = session.getStatus();
+      expect(status.positionSeconds).toBeGreaterThanOrEqual(0);
+      expect(status.positionSeconds).toBeLessThanOrEqual(0.1);
+      expect(session.getDiagnostics().recentPlaybackEvents?.at(-1)).toMatchObject({
+        kind: 'position_jump_suspected',
+        reason: 'guarded_position_jump_ignored',
+        details: expect.objectContaining({
+          firstPositionSample: true,
+          reportedPositionSeconds: 8,
+        }),
+      });
+    } finally {
+      session.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not inherit the previous track position when the reused native bridge reports a stale first position', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-20T08:00:00.000Z'));
+    const firstProbe = {
+      ...probe('first.flac', 48000),
+      durationSeconds: 240,
+    };
+    const secondProbe = {
+      ...probe('second.flac', 48000),
+      durationSeconds: 240,
+    };
+    const { bridges, decoder, session } = createLongRunningSessionHarness([firstProbe, secondProbe], [48000], [], {
+      disableWatchdogTimer: true,
+    });
+
+    try {
+      await session.playLocalFile({ filePath: 'first.flac', trackId: 'track-a', output: { outputMode: 'shared' } });
+      vi.advanceTimersByTime(120_000);
+      bridges[0].positionSeconds = 120;
+      expect(session.getStatus().positionSeconds).toBeGreaterThanOrEqual(120);
+
+      await session.playLocalFile({ filePath: 'second.flac', trackId: 'track-b', output: { outputMode: 'shared' } });
+      vi.advanceTimersByTime(200);
+      bridges[0].emit('position', 120 * 48000, {
+        positionFrames: 120 * 48000,
+        bufferedFrames: 4800,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(bridges).toHaveLength(1);
+      expect(bridges[0].sessionBegins).toBe(2);
+      expect(decoder.decodeRequests.at(-1)).toMatchObject({
+        filePath: 'second.flac',
+        startSeconds: 0,
+      });
+      const status = session.getStatus();
+      expect(status.currentTrackId).toBe('track-b');
+      expect(status.positionSeconds).toBeGreaterThanOrEqual(0);
+      expect(status.positionSeconds).toBeLessThanOrEqual(0.1);
+      expect(session.getDiagnostics().recentPlaybackEvents?.at(-1)).toMatchObject({
+        kind: 'position_jump_suspected',
+        trackId: 'track-b',
+        reason: 'guarded_position_jump_ignored',
+        details: expect.objectContaining({
+          firstPositionSample: true,
+          reportedPositionSeconds: 120,
+        }),
+      });
+    } finally {
+      session.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports and restarts when native position jumps forward unexpectedly', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-20T08:00:00.000Z'));
+    const reportAudioError = vi.fn();
+    const longProbe = {
+      ...probe('song.flac', 48000),
+      durationSeconds: 260,
+    };
+    const { bridges, decoder, session } = createLongRunningSessionHarness([longProbe], [48000], [], {
+      disableWatchdogTimer: true,
+      reportAudioError,
+    });
+
+    try {
+      await session.playLocalFile({ filePath: 'song.flac', trackId: 'track-1', output: { outputMode: 'shared' } });
+
+      vi.advanceTimersByTime(3000);
+      bridges[0].emit('position', 60 * 48000, {
+        positionFrames: 60 * 48000,
+        bufferedFrames: 4800,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      vi.advanceTimersByTime(1000);
+      bridges[0].emit('position', 180 * 48000, {
+        positionFrames: 180 * 48000,
+        bufferedFrames: 4800,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(reportAudioError).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'unexpected_playback_position_jump',
+        phase: 'unexpected-playback-position-jump',
+        severity: 'recoverable',
+        recovered: true,
+      }));
+      expect(reportAudioError.mock.calls[0][0].details).toMatchObject({
+        previousPositionSeconds: 60,
+        reportedPositionSeconds: 180,
+        recoveryAction: 'restart_same_output_at_expected_position',
+      });
+      expect(bridges.reduce((total, bridge) => total + bridge.sessionBegins, 0)).toBeGreaterThanOrEqual(2);
+      expect(decoder.decodeRequests.at(-1)?.startSeconds).toBeGreaterThanOrEqual(60.9);
+      expect(decoder.decodeRequests.at(-1)?.startSeconds).toBeLessThanOrEqual(61.1);
+      expect(session.getStatus().warnings).toContain('unexpected_playback_position_jump_recovered');
+      expect(session.getStatus().error).toContain('播放进度异常跳跃');
+    } finally {
+      session.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it('recovers stuck native output while playing', async () => {
     const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 44100)], [], [], {
       disableWatchdogTimer: true,
@@ -4092,7 +4335,7 @@ describe('AudioSession playback watchdog', () => {
       watchdogStallChecks: 1,
     });
     await endedHarness.session.playLocalFile({ filePath: 'ended.flac', output: { outputMode: 'shared' } });
-    endedHarness.bridges[0].positionSeconds = 12;
+    endedHarness.bridges[0].positionSeconds = 120;
     endedHarness.bridges[0].emit('ended');
     await endedHarness.session.checkPlaybackWatchdog();
     await endedHarness.session.checkPlaybackWatchdog();
@@ -4854,6 +5097,51 @@ describe('NativeOutputBridge host arguments', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(bridge.getPositionSeconds()).toBeGreaterThanOrEqual(12.5);
     expect(bridge.getPositionSeconds()).toBeLessThan(12.6);
+    bridge.stop();
+  });
+
+  it('rebases native output clock without resetting host frame position', async () => {
+    const stdoutRef = new PassThrough();
+    const fakeSpawn = (): ChildProcessWithoutNullStreams => {
+      const stdin = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout: stdoutRef,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stdoutRef.write('{"ready":true,"sampleRate":48000}\n');
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host.exe',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+
+    await bridge.start({
+      requestedOutputSampleRate: 48000,
+      channels: 2,
+    });
+
+    bridge.beginSession({ startSeconds: 0 });
+    stdoutRef.write('{"pos":288000}\n');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bridge.getPositionSeconds()).toBeGreaterThanOrEqual(6);
+
+    bridge.rebaseOutputClock(1.2);
+    expect(bridge.getPositionSeconds()).toBeGreaterThanOrEqual(1.2);
+    expect(bridge.getPositionSeconds()).toBeLessThan(1.3);
+
+    stdoutRef.write('{"pos":312000}\n');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bridge.getPositionSeconds()).toBeGreaterThanOrEqual(1.7);
+    expect(bridge.getPositionSeconds()).toBeLessThan(1.8);
     bridge.stop();
   });
 
@@ -6134,6 +6422,24 @@ describe('DecoderPipeline ffmpeg resolution', () => {
     ).toBe(join('C:', 'App', 'resources', 'tools', 'ffmpeg.exe'));
   });
 
+  it('prefers Linux dev-bundled ffmpeg from tools-linux before legacy tools', () => {
+    const cwd = join('C:', 'Project', 'ECHO-Next');
+    const linuxTool = join(cwd, 'electron-app', 'tools-linux', 'ffmpeg');
+    const legacyTool = join(cwd, 'electron-app', 'tools', 'ffmpeg');
+
+    const info = resolveFfmpegToolchain({
+      env: {},
+      platform: 'linux',
+      resourcesPath: null,
+      cwd,
+      existsSync: (path) => path === linuxTool || path === legacyTool,
+      requireHealthy: false,
+    });
+
+    expect(info.path).toBe(linuxTool);
+    expect(info.source).toBe('dev-bundled');
+  });
+
   it('detects healthy SOXR-capable ffmpeg builds', () => {
     const execFileSync = vi.fn((_file: string, args: string[]) => {
       if (args.includes('-version')) {
@@ -6947,6 +7253,98 @@ describe('NativeOutputBridge diagnostics', () => {
       sharedMixSampleRate: 48000,
       channels: 2,
       sharedBackend: 'directsound',
+    })).toBe(true);
+    expect(bridge.canReuseFor({
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+      channels: 2,
+    })).toBe(false);
+  });
+
+  it('normalizes Windows shared backends to auto on Linux hosts', async () => {
+    let spawnedArgs: string[] = [];
+    const fakeSpawn = (_file: string, args: string[]): ChildProcessWithoutNullStreams => {
+      spawnedArgs = args;
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stdout.write('{"ready":true,"sampleRate":48000,"backend":"shared","backendImpl":"juce-shared","deviceType":"ALSA","deviceName":"Default output"}\n');
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host',
+      platform: 'linux',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+
+    await bridge.start({
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+      channels: 2,
+      sharedBackend: 'directsound',
+    });
+
+    expect(spawnedArgs).not.toContain('-shared-backend');
+    expect(spawnedArgs).not.toContain('directsound');
+    expect(bridge.canReuseFor({
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+      channels: 2,
+    })).toBe(true);
+  });
+
+  it('passes ALSA shared backend through on Linux hosts', async () => {
+    let spawnedArgs: string[] = [];
+    const fakeSpawn = (_file: string, args: string[]): ChildProcessWithoutNullStreams => {
+      spawnedArgs = args;
+      const stdin = new PassThrough();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const child = Object.assign(new EventEmitter(), {
+        stdin,
+        stdout,
+        stderr,
+        kill: vi.fn(() => true),
+      }) as unknown as ChildProcessWithoutNullStreams;
+
+      queueMicrotask(() => {
+        stdout.write('{"ready":true,"sampleRate":48000,"backend":"alsa-shared","backendImpl":"juce-alsa-shared","deviceType":"ALSA","deviceName":"Default output"}\n');
+      });
+
+      return child;
+    };
+    const bridge = new NativeOutputBridge({
+      hostBinary: 'echo-audio-host',
+      platform: 'linux',
+      spawn: fakeSpawn as HostSpawner,
+      logger: noopLogger,
+    });
+
+    await bridge.start({
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+      channels: 2,
+      sharedBackend: 'alsa',
+    });
+
+    expect(spawnedArgs).toContain('-shared-backend');
+    expect(spawnedArgs).toContain('alsa');
+    expect(bridge.canReuseFor({
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+      channels: 2,
+      sharedBackend: 'alsa',
     })).toBe(true);
     expect(bridge.canReuseFor({
       requestedOutputSampleRate: 48000,

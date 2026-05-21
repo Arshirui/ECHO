@@ -5,6 +5,32 @@ import { PluginsPage } from './PluginsPage';
 import { pluginPanelBridgeChannel } from '../../shared/types/plugins';
 import type { PluginSummary } from '../../shared/types/plugins';
 
+const activity: PluginSummary['activity'] = {
+  lastStartedAt: '2026-05-19T00:00:00.000Z',
+  lastStoppedAt: null,
+  lastCommandAt: null,
+  lastEventAt: null,
+  lastStorageWriteAt: null,
+  lastSettingsWriteAt: null,
+  lastErrorAt: null,
+  commandRunCount: 0,
+  eventDispatchCount: 0,
+  storageWriteCount: 0,
+  settingsWriteCount: 0,
+  errorCount: 0,
+};
+
+const security: PluginSummary['security'] = {
+  requestedPermissionCount: 1,
+  trustedPermissionCount: 0,
+  untrustedPermissions: ['playback:read'],
+  highRiskPermissions: [],
+  hasEntry: true,
+  hasPanel: true,
+  sandboxedPanel: true,
+  commandCount: 1,
+};
+
 const plugins: PluginSummary[] = [
   {
     id: 'echo.playback-panel',
@@ -19,6 +45,9 @@ const plugins: PluginSummary[] = [
     enabled: false,
     status: 'disabled',
     error: null,
+    disabledByHost: false,
+    activity,
+    security,
     contributes: {
       commands: [{ id: 'show-status', title: '显示状态' }],
     },
@@ -33,6 +62,8 @@ const pluginsBridge = {
   disable: vi.fn(async () => ({ ...plugins[0], enabled: false, status: 'disabled' })),
   reload: vi.fn(async () => plugins[0]),
   openDirectory: vi.fn(async () => undefined),
+  exportPackage: vi.fn(async () => 'D:\\Echo\\plugins\\echo.playback-panel.echo-plugin.json'),
+  importPackage: vi.fn(async () => ({ pluginId: 'echo.playback-panel', directory: 'D:\\Echo\\plugins\\echo.playback-panel', importedFileCount: 2 })),
   runCommand: vi.fn(async () => undefined),
   getLogs: vi.fn(async () => [{ id: 'log-1', pluginId: 'echo.playback-panel', level: 'info' as const, message: '已启动', createdAt: '2026-05-19T00:00:00.000Z' }]),
 };
@@ -66,7 +97,7 @@ describe('PluginsPage', () => {
 
     expect(await screen.findByRole('heading', { name: '插件' })).toBeTruthy();
     expect((await screen.findAllByText('播放状态面板')).length).toBeGreaterThan(0);
-    expect(screen.getByText('读取播放状态')).toBeTruthy();
+    expect(screen.getByText(/读取播放状态/u)).toBeTruthy();
     expect(await screen.findByText('已启动')).toBeTruthy();
     expect(pluginsBridge.list).toHaveBeenCalledTimes(1);
     expect(pluginsBridge.getLogs).toHaveBeenCalledWith('echo.playback-panel');
@@ -92,6 +123,16 @@ describe('PluginsPage', () => {
     fireEvent.click(createButtons[0]);
 
     await waitFor(() => expect(pluginsBridge.createExample).toHaveBeenCalledWith('playback-panel'));
+  });
+
+  it('imports and exports local plugin packages', async () => {
+    render(<PluginsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /导入插件包/u }));
+    await waitFor(() => expect(pluginsBridge.importPackage).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(await screen.findByRole('button', { name: /导出插件包/u }));
+    await waitFor(() => expect(pluginsBridge.exportPackage).toHaveBeenCalledWith('echo.playback-panel'));
   });
 
   it('routes sandbox panel bridge requests to the selected plugin only', async () => {

@@ -61,6 +61,7 @@ describe('WindowsSmtcService', () => {
     });
 
     await service.initialize();
+    await service.setEnabledActions({ play: true, pause: true, previous: true, next: true, seek: true });
     await service.setMetadata({
       trackId: 'track-1',
       title: 'Song',
@@ -75,6 +76,8 @@ describe('WindowsSmtcService', () => {
     await service.setPlaybackState('playing');
 
     expect(spawnHost).toHaveBeenCalledWith('D:\\Echo\\echo-smtc-host.exe', [], expect.objectContaining({ windowsHide: true }));
+    expect(writes.join('')).toContain('"type":"setEnabledActions"');
+    expect(writes.join('')).toContain('"seek":true');
     expect(writes.join('')).toContain('"type":"setMetadata"');
     expect(writes.join('')).toContain('"coverPath":"D:\\\\Echo\\\\cover.png"');
     expect(writes.join('')).toContain('"type":"setPlaybackState"');
@@ -94,8 +97,10 @@ describe('WindowsSmtcService', () => {
 
     await service.initialize();
     host.stdout.write('{"type":"command","command":"next"}\n');
+    host.stdout.write('{"type":"command","command":"seek","positionSeconds":42.5}\n');
 
     expect(handler).toHaveBeenCalledWith('next');
+    expect(handler).toHaveBeenCalledWith({ type: 'seek', positionSeconds: 42.5 });
   });
 
   it('falls back quietly when the helper binary is missing', async () => {

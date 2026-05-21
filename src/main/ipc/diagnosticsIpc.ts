@@ -2,6 +2,12 @@ import { ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { LastCrashSummary, RendererErrorPayload } from '../../shared/types/diagnostics';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
+import {
+  clearDevConsole,
+  getDevConsoleSnapshot,
+  openDevConsoleDevTools,
+  openDevConsoleWindow,
+} from '../diagnostics/DevConsoleService';
 
 const normalizeRendererError = (value: unknown): RendererErrorPayload => {
   const input = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -26,6 +32,7 @@ export const registerDiagnosticsIpc = (): void => {
     getCrashReportService().clearLastCrashSummary();
   });
   ipcMain.handle(IpcChannels.DiagnosticsExport, (): Promise<string> => getCrashReportService().exportDiagnosticsMarkdown());
+  ipcMain.handle(IpcChannels.DiagnosticsExportZip, (): Promise<string> => getCrashReportService().exportDiagnosticsZip());
   ipcMain.handle(IpcChannels.DiagnosticsOpenFolder, (): Promise<string> => getCrashReportService().openDiagnosticsFolder());
   ipcMain.handle(IpcChannels.DiagnosticsOpenCrashReport, (): Promise<string> =>
     getCrashReportService().openCrashReportFile({ preferLastAbnormal: true }),
@@ -33,6 +40,16 @@ export const registerDiagnosticsIpc = (): void => {
   ipcMain.handle(IpcChannels.DiagnosticsOpenAudioCrashReport, (): Promise<string> =>
     getCrashReportService().openAudioCrashReportFile(),
   );
+  ipcMain.handle(IpcChannels.DiagnosticsOpenDevConsole, (): void => {
+    openDevConsoleWindow();
+  });
+  ipcMain.handle(IpcChannels.DiagnosticsDevConsoleSnapshot, () => getDevConsoleSnapshot());
+  ipcMain.handle(IpcChannels.DiagnosticsDevConsoleClear, (): void => {
+    clearDevConsole();
+  });
+  ipcMain.handle(IpcChannels.DiagnosticsDevConsoleOpenDevTools, (event): void => {
+    openDevConsoleDevTools(event.sender);
+  });
   ipcMain.handle(IpcChannels.DiagnosticsReportRendererError, (_event, payload: unknown): void => {
     getCrashReportService().reportRendererError(normalizeRendererError(payload));
   });

@@ -108,8 +108,12 @@ export type TranslationKey =
   | 'audioDrawer.option.rememberOutputDescription'
   | 'audioDrawer.option.showAsioPanelSettings'
   | 'audioDrawer.option.showAsioPanelSettingsDescription'
+  | 'audioDrawer.option.alsaShared'
+  | 'audioDrawer.option.alsaSharedDescription'
   | 'audioDrawer.option.directSound'
   | 'audioDrawer.option.directSoundDescription'
+  | 'audioDrawer.option.linuxAutoShared'
+  | 'audioDrawer.option.linuxAutoSharedDescription'
   | 'audioDrawer.option.sharedBackend'
   | 'audioDrawer.option.wasapiShared'
   | 'audioDrawer.option.wasapiSharedDescription'
@@ -145,6 +149,64 @@ export type TranslationKey =
   | 'audioDrawer.status.ratePending'
   | 'audioDrawer.status.sampleRatePending'
   | 'audioDrawer.title'
+  | 'audioProfessional.action.hideDetails'
+  | 'audioProfessional.action.refresh'
+  | 'audioProfessional.action.showDetails'
+  | 'audioProfessional.badge.bitPerfect'
+  | 'audioProfessional.badge.dsp'
+  | 'audioProfessional.badge.replayGain'
+  | 'audioProfessional.badge.resampling'
+  | 'audioProfessional.badge.sampleMismatch'
+  | 'audioProfessional.badge.warning'
+  | 'audioProfessional.issue.reason'
+  | 'audioProfessional.group.directDsp'
+  | 'audioProfessional.group.playbackChain'
+  | 'audioProfessional.group.sampleRate'
+  | 'audioProfessional.group.stability'
+  | 'audioProfessional.row.actualBuffer'
+  | 'audioProfessional.row.actualDeviceSampleRate'
+  | 'audioProfessional.row.bitDepth'
+  | 'audioProfessional.row.bitPerfect'
+  | 'audioProfessional.row.bitrate'
+  | 'audioProfessional.row.buffered'
+  | 'audioProfessional.row.channelBalance'
+  | 'audioProfessional.row.channels'
+  | 'audioProfessional.row.clippingProtection'
+  | 'audioProfessional.row.codec'
+  | 'audioProfessional.row.decodeBackend'
+  | 'audioProfessional.row.decoderOutputSampleRate'
+  | 'audioProfessional.row.deviceBuffer'
+  | 'audioProfessional.row.eq'
+  | 'audioProfessional.row.error'
+  | 'audioProfessional.row.fileSampleRate'
+  | 'audioProfessional.row.latencyProfile'
+  | 'audioProfessional.row.outputBackend'
+  | 'audioProfessional.row.outputDevice'
+  | 'audioProfessional.row.outputLatency'
+  | 'audioProfessional.row.outputMode'
+  | 'audioProfessional.row.replayGain'
+  | 'audioProfessional.row.requestedBuffer'
+  | 'audioProfessional.row.requestedOutputSampleRate'
+  | 'audioProfessional.row.resampler'
+  | 'audioProfessional.row.resampling'
+  | 'audioProfessional.row.sampleRateMismatch'
+  | 'audioProfessional.row.sharedDeviceSampleRate'
+  | 'audioProfessional.row.sharedStability'
+  | 'audioProfessional.row.soxr'
+  | 'audioProfessional.row.state'
+  | 'audioProfessional.row.underrun'
+  | 'audioProfessional.row.warnings'
+  | 'audioProfessional.summary.pending'
+  | 'audioProfessional.title'
+  | 'audioProfessional.value.disabled'
+  | 'audioProfessional.value.enabled'
+  | 'audioProfessional.value.no'
+  | 'audioProfessional.value.pending'
+  | 'audioProfessional.value.ready'
+  | 'audioProfessional.value.sharedMixer'
+  | 'audioProfessional.value.systemDefault'
+  | 'audioProfessional.value.unknown'
+  | 'audioProfessional.value.yes'
   | 'audioDrawer.todo.outputControls'
   | 'audioDrawer.todo.outputControlsDescription'
   | 'audioDrawer.troubleshooting.description'
@@ -508,6 +570,8 @@ export type TranslationKey =
   | 'settings.appearance.font.choose'
   | 'settings.appearance.font.chinese.description'
   | 'settings.appearance.font.chinese.title'
+  | 'settings.appearance.font.fallback.description'
+  | 'settings.appearance.font.fallback.title'
   | 'settings.appearance.font.main.description'
   | 'settings.appearance.font.main.title'
   | 'settings.appearance.fontSize.description'
@@ -975,8 +1039,39 @@ export type TranslationKey =
   | 'settings.playback.outputMode.shared'
   | 'settings.playback.outputMode.system'
   | 'settings.playback.outputMode.title'
+  | 'settings.playback.hqplayer.defaultBackend.ask'
+  | 'settings.playback.hqplayer.defaultBackend.echoNative'
+  | 'settings.playback.hqplayer.defaultBackend.hqplayer'
+  | 'settings.playback.hqplayer.description'
+  | 'settings.playback.hqplayer.enable'
+  | 'settings.playback.hqplayer.field.defaultBackend'
+  | 'settings.playback.hqplayer.field.endpoint'
+  | 'settings.playback.hqplayer.field.lastChecked'
+  | 'settings.playback.hqplayer.field.status'
+  | 'settings.playback.hqplayer.host'
+  | 'settings.playback.hqplayer.mediaServer'
+  | 'settings.playback.hqplayer.mode.localDesktop'
+  | 'settings.playback.hqplayer.mode.remote'
+  | 'settings.playback.hqplayer.note'
+  | 'settings.playback.hqplayer.port'
+  | 'settings.playback.hqplayer.profileName'
+  | 'settings.playback.hqplayer.result.failed'
+  | 'settings.playback.hqplayer.result.ok'
+  | 'settings.playback.hqplayer.save'
+  | 'settings.playback.hqplayer.saving'
+  | 'settings.playback.hqplayer.status.available'
+  | 'settings.playback.hqplayer.status.checking'
+  | 'settings.playback.hqplayer.status.disabled'
+  | 'settings.playback.hqplayer.status.notConfigured'
+  | 'settings.playback.hqplayer.status.unavailable'
+  | 'settings.playback.hqplayer.test'
+  | 'settings.playback.hqplayer.testing'
+  | 'settings.playback.hqplayer.title'
   | 'settings.playback.sharedBackend.description'
+  | 'settings.playback.sharedBackend.alsa'
+  | 'settings.playback.sharedBackend.auto'
   | 'settings.playback.sharedBackend.directSound'
+  | 'settings.playback.sharedBackend.linuxDescription'
   | 'settings.playback.sharedBackend.title'
   | 'settings.playback.sharedBackend.wasapi'
   | 'settings.playback.resetEngine.action'
@@ -1165,8 +1260,12 @@ const zhCN: TranslationMap = {
   'audioDrawer.option.rememberOutputDescription': '下次启动时恢复所选输出设备、输出模式和缓冲等参数。',
   'audioDrawer.option.showAsioPanelSettings': '是否显示 ASIO 面板设置',
   'audioDrawer.option.showAsioPanelSettingsDescription': '默认关闭。开启后才在 ASIO 设备下显示“打开 ASIO 面板”按钮。',
+  'audioDrawer.option.alsaShared': 'ALSA',
+  'audioDrawer.option.alsaSharedDescription': '通过 Linux ALSA 设备输出。',
   'audioDrawer.option.directSound': 'DirectSound 兼容',
   'audioDrawer.option.directSoundDescription': '手动兼容模式，延迟较大；只在 WASAPI 播放异常时尝试。',
+  'audioDrawer.option.linuxAutoShared': '自动',
+  'audioDrawer.option.linuxAutoSharedDescription': '优先使用 ALSA，并尊重系统的 PipeWire/ALSA 兼容层配置。',
   'audioDrawer.option.sharedBackend': '共享后端',
   'audioDrawer.option.wasapiShared': 'WASAPI Shared',
   'audioDrawer.option.wasapiSharedDescription': '日常 Windows 共享输出路径。',
@@ -1202,6 +1301,64 @@ const zhCN: TranslationMap = {
   'audioDrawer.status.ratePending': '采样率待定',
   'audioDrawer.status.sampleRatePending': '采样率待定',
   'audioDrawer.title': '音频设置',
+  'audioProfessional.action.hideDetails': '收起专业详情',
+  'audioProfessional.action.refresh': '刷新状态',
+  'audioProfessional.action.showDetails': '展开专业详情',
+  'audioProfessional.badge.bitPerfect': 'Bit-perfect',
+  'audioProfessional.badge.dsp': 'DSP active',
+  'audioProfessional.badge.replayGain': 'ReplayGain',
+  'audioProfessional.badge.resampling': '重采样',
+  'audioProfessional.badge.sampleMismatch': '采样率不匹配',
+  'audioProfessional.badge.warning': '设备异常/警告',
+  'audioProfessional.issue.reason': '异常原因',
+  'audioProfessional.group.directDsp': '直通与 DSP',
+  'audioProfessional.group.playbackChain': '播放链路',
+  'audioProfessional.group.sampleRate': '采样率链路',
+  'audioProfessional.group.stability': '稳定性',
+  'audioProfessional.row.actualBuffer': '实际 buffer',
+  'audioProfessional.row.actualDeviceSampleRate': '实际设备采样率',
+  'audioProfessional.row.bitDepth': '位深',
+  'audioProfessional.row.bitPerfect': 'Bit-perfect',
+  'audioProfessional.row.bitrate': '码率',
+  'audioProfessional.row.buffered': '当前缓冲',
+  'audioProfessional.row.channelBalance': '声道平衡',
+  'audioProfessional.row.channels': '声道',
+  'audioProfessional.row.clippingProtection': '削波保护',
+  'audioProfessional.row.codec': '格式',
+  'audioProfessional.row.decodeBackend': '解码后端',
+  'audioProfessional.row.decoderOutputSampleRate': '解码输出',
+  'audioProfessional.row.deviceBuffer': '设备 buffer',
+  'audioProfessional.row.eq': 'EQ',
+  'audioProfessional.row.error': '错误',
+  'audioProfessional.row.fileSampleRate': '音源采样率',
+  'audioProfessional.row.latencyProfile': '延迟档位',
+  'audioProfessional.row.outputBackend': '输出后端',
+  'audioProfessional.row.outputDevice': '输出设备',
+  'audioProfessional.row.outputLatency': '输出延迟',
+  'audioProfessional.row.outputMode': '输出模式',
+  'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.requestedBuffer': '请求 buffer',
+  'audioProfessional.row.requestedOutputSampleRate': '请求输出',
+  'audioProfessional.row.resampler': '重采样器',
+  'audioProfessional.row.resampling': '重采样',
+  'audioProfessional.row.sampleRateMismatch': '采样率不匹配',
+  'audioProfessional.row.sharedDeviceSampleRate': '共享设备采样率',
+  'audioProfessional.row.sharedStability': '共享稳定档',
+  'audioProfessional.row.soxr': 'SOXR',
+  'audioProfessional.row.state': '状态',
+  'audioProfessional.row.underrun': 'Underrun',
+  'audioProfessional.row.warnings': '警告',
+  'audioProfessional.summary.pending': '等待音频状态',
+  'audioProfessional.title': '专业播放状态',
+  'audioProfessional.value.disabled': '关闭',
+  'audioProfessional.value.enabled': '开启',
+  'audioProfessional.value.no': '否',
+  'audioProfessional.value.pending': '待确认',
+  'audioProfessional.value.ready': '可直通',
+  'audioProfessional.value.sharedMixer': '共享混音',
+  'audioProfessional.value.systemDefault': '系统默认输出',
+  'audioProfessional.value.unknown': 'n/a',
+  'audioProfessional.value.yes': '是',
   'audioDrawer.todo.outputControls': '目标采样率和缓冲控制',
   'audioDrawer.todo.outputControlsDescription': 'TODO：等 DeviceService 暴露安全控制后接入真实音频设置。',
   'audioDrawer.troubleshooting.description': '如果声音卡住或设备列表不正常，点这里。软重启不会影响其他应用。',
@@ -1565,6 +1722,8 @@ const zhCN: TranslationMap = {
   'settings.appearance.font.choose': '选择',
   'settings.appearance.font.chinese.description': '当主字体缺少中文字符时，优先使用这个中文字体补齐。',
   'settings.appearance.font.chinese.title': '中文字体',
+  'settings.appearance.font.fallback.description': '界面字体的第三组备用，优先级最低，用于继续补齐缺失字符。',
+  'settings.appearance.font.fallback.title': '备用字体',
   'settings.appearance.font.main.description': 'ECHO 默认使用 Outfit；也可以输入任意已安装字体名称。',
   'settings.appearance.font.main.title': '主字体',
   'settings.appearance.fontSize.description': '调整全局界面的基础字号。',
@@ -1572,7 +1731,7 @@ const zhCN: TranslationMap = {
   'settings.appearance.lineHeight.description': '调整界面文字的默认行距，让列表和说明文本更疏朗或更紧凑。',
   'settings.appearance.lineHeight.title': '界面行距',
   'settings.appearance.reset.action': '恢复默认',
-  'settings.appearance.reset.description': '恢复 Outfit、默认中文字体、字号、行距与文字深浅。',
+  'settings.appearance.reset.description': '恢复 Outfit、默认中文字体、备用字体、字号、行距与文字深浅。',
   'settings.appearance.reset.title': '外观默认值',
   'settings.appearance.textDepth.description': '调整界面文字颜色深浅；数值越低越浅。',
   'settings.appearance.textDepth.title': '文字颜色深浅',
@@ -2032,8 +2191,39 @@ const zhCN: TranslationMap = {
   'settings.playback.outputMode.shared': 'Shared',
   'settings.playback.outputMode.system': '标准输出（推荐）',
   'settings.playback.outputMode.title': '输出模式',
+  'settings.playback.hqplayer.defaultBackend.ask': '每次询问',
+  'settings.playback.hqplayer.defaultBackend.echoNative': '继续使用 ECHO 输出',
+  'settings.playback.hqplayer.defaultBackend.hqplayer': '优先 HQPlayer',
+  'settings.playback.hqplayer.description': '预留 HQPlayer 控制端点和播放交接偏好；默认不接管当前播放输出。',
+  'settings.playback.hqplayer.enable': '启用 HQPlayer 集成',
+  'settings.playback.hqplayer.field.defaultBackend': '默认交接',
+  'settings.playback.hqplayer.field.endpoint': '控制端点',
+  'settings.playback.hqplayer.field.lastChecked': '上次检测',
+  'settings.playback.hqplayer.field.status': '状态',
+  'settings.playback.hqplayer.host': 'Host',
+  'settings.playback.hqplayer.mediaServer': 'ECHO 媒体服务',
+  'settings.playback.hqplayer.mode.localDesktop': '本机 HQPlayer Desktop',
+  'settings.playback.hqplayer.mode.remote': '远程 HQPlayer',
+  'settings.playback.hqplayer.note': '当前只保存配置并测试 TCP 连通性，不会启动 HQPlayer，也不会改变 ECHO 当前播放链路。',
+  'settings.playback.hqplayer.port': '控制端口',
+  'settings.playback.hqplayer.profileName': '配置名',
+  'settings.playback.hqplayer.result.failed': '连接不可用',
+  'settings.playback.hqplayer.result.ok': '连接可用',
+  'settings.playback.hqplayer.save': '保存',
+  'settings.playback.hqplayer.saving': '保存中',
+  'settings.playback.hqplayer.status.available': '可用',
+  'settings.playback.hqplayer.status.checking': '检测中',
+  'settings.playback.hqplayer.status.disabled': '未启用',
+  'settings.playback.hqplayer.status.notConfigured': '未配置端口',
+  'settings.playback.hqplayer.status.unavailable': '不可用',
+  'settings.playback.hqplayer.test': '测试连接',
+  'settings.playback.hqplayer.testing': '测试中',
+  'settings.playback.hqplayer.title': 'HQPlayer 集成',
   'settings.playback.sharedBackend.description': 'DirectSound 只作为手动兼容模式，延迟较大；日常播放保持 WASAPI Shared。',
+  'settings.playback.sharedBackend.alsa': 'ALSA',
+  'settings.playback.sharedBackend.auto': '自动',
   'settings.playback.sharedBackend.directSound': 'DirectSound 兼容',
+  'settings.playback.sharedBackend.linuxDescription': 'Linux 下默认优先 ALSA；如果系统把 PipeWire 接到 ALSA 兼容层，也会走这条共享输出路径。',
   'settings.playback.sharedBackend.title': '共享后端',
   'settings.playback.sharedBackend.wasapi': 'WASAPI Shared',
   'settings.playback.resetEngine.action': '重启音频引擎',
@@ -2252,8 +2442,12 @@ const zhTW: TranslationMap = {
   'audioDrawer.option.rememberOutputDescription': '下次啟動時復原所選輸出裝置、輸出模式與緩衝等參數。',
   'audioDrawer.option.showAsioPanelSettings': '是否顯示 ASIO 面板設定',
   'audioDrawer.option.showAsioPanelSettingsDescription': '預設關閉。開啟後才會在 ASIO 裝置下顯示「開啟 ASIO 面板」按鈕。',
+  'audioDrawer.option.alsaShared': 'ALSA',
+  'audioDrawer.option.alsaSharedDescription': '透過 Linux ALSA 裝置輸出。',
   'audioDrawer.option.directSound': 'DirectSound 相容',
   'audioDrawer.option.directSoundDescription': '手動相容模式，延遲較大；只在 WASAPI 播放異常時嘗試。',
+  'audioDrawer.option.linuxAutoShared': '自動',
+  'audioDrawer.option.linuxAutoSharedDescription': '優先使用 ALSA，並尊重系統的 PipeWire/ALSA 相容層設定。',
   'audioDrawer.option.sharedBackend': '共享後端',
   'audioDrawer.option.wasapiShared': 'WASAPI Shared',
   'audioDrawer.option.wasapiSharedDescription': '日常 Windows 共享輸出路徑。',
@@ -2289,6 +2483,64 @@ const zhTW: TranslationMap = {
   'audioDrawer.status.ratePending': '取樣率待定',
   'audioDrawer.status.sampleRatePending': '取樣率待定',
   'audioDrawer.title': '音訊設定',
+  'audioProfessional.action.hideDetails': '收起專業詳情',
+  'audioProfessional.action.refresh': '重新整理狀態',
+  'audioProfessional.action.showDetails': '展開專業詳情',
+  'audioProfessional.badge.bitPerfect': 'Bit-perfect',
+  'audioProfessional.badge.dsp': 'DSP active',
+  'audioProfessional.badge.replayGain': 'ReplayGain',
+  'audioProfessional.badge.resampling': '重取樣',
+  'audioProfessional.badge.sampleMismatch': '取樣率不符',
+  'audioProfessional.badge.warning': '裝置異常/警告',
+  'audioProfessional.issue.reason': '異常原因',
+  'audioProfessional.group.directDsp': '直通與 DSP',
+  'audioProfessional.group.playbackChain': '播放鏈路',
+  'audioProfessional.group.sampleRate': '取樣率鏈路',
+  'audioProfessional.group.stability': '穩定性',
+  'audioProfessional.row.actualBuffer': '實際 buffer',
+  'audioProfessional.row.actualDeviceSampleRate': '實際裝置取樣率',
+  'audioProfessional.row.bitDepth': '位元深度',
+  'audioProfessional.row.bitPerfect': 'Bit-perfect',
+  'audioProfessional.row.bitrate': '位元率',
+  'audioProfessional.row.buffered': '目前緩衝',
+  'audioProfessional.row.channelBalance': '聲道平衡',
+  'audioProfessional.row.channels': '聲道',
+  'audioProfessional.row.clippingProtection': '削波保護',
+  'audioProfessional.row.codec': '格式',
+  'audioProfessional.row.decodeBackend': '解碼後端',
+  'audioProfessional.row.decoderOutputSampleRate': '解碼輸出',
+  'audioProfessional.row.deviceBuffer': '裝置 buffer',
+  'audioProfessional.row.eq': 'EQ',
+  'audioProfessional.row.error': '錯誤',
+  'audioProfessional.row.fileSampleRate': '音源取樣率',
+  'audioProfessional.row.latencyProfile': '延遲檔位',
+  'audioProfessional.row.outputBackend': '輸出後端',
+  'audioProfessional.row.outputDevice': '輸出裝置',
+  'audioProfessional.row.outputLatency': '輸出延遲',
+  'audioProfessional.row.outputMode': '輸出模式',
+  'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.requestedBuffer': '要求 buffer',
+  'audioProfessional.row.requestedOutputSampleRate': '要求輸出',
+  'audioProfessional.row.resampler': '重取樣器',
+  'audioProfessional.row.resampling': '重取樣',
+  'audioProfessional.row.sampleRateMismatch': '取樣率不符',
+  'audioProfessional.row.sharedDeviceSampleRate': '共享裝置取樣率',
+  'audioProfessional.row.sharedStability': '共享穩定檔',
+  'audioProfessional.row.soxr': 'SOXR',
+  'audioProfessional.row.state': '狀態',
+  'audioProfessional.row.underrun': 'Underrun',
+  'audioProfessional.row.warnings': '警告',
+  'audioProfessional.summary.pending': '等待音訊狀態',
+  'audioProfessional.title': '專業播放狀態',
+  'audioProfessional.value.disabled': '關閉',
+  'audioProfessional.value.enabled': '開啟',
+  'audioProfessional.value.no': '否',
+  'audioProfessional.value.pending': '待確認',
+  'audioProfessional.value.ready': '可直通',
+  'audioProfessional.value.sharedMixer': '共享混音',
+  'audioProfessional.value.systemDefault': '系統預設輸出',
+  'audioProfessional.value.unknown': 'n/a',
+  'audioProfessional.value.yes': '是',
   'audioDrawer.todo.outputControls': '目標取樣率與緩衝控制',
   'audioDrawer.todo.outputControlsDescription': 'TODO：等 DeviceService 暴露安全控制後接入真實音訊設定。',
   'audioDrawer.troubleshooting.description': '如果聲音卡住或裝置列表不正常，點這裡。軟重啟不會影響其他應用程式。',
@@ -2617,12 +2869,43 @@ const zhTW: TranslationMap = {
   'settings.playback.outputMode.shared': 'Shared',
   'settings.playback.outputMode.system': '標準輸出（推薦）',
   'settings.playback.outputMode.title': '輸出模式',
+  'settings.playback.hqplayer.defaultBackend.ask': '每次詢問',
+  'settings.playback.hqplayer.defaultBackend.echoNative': '繼續使用 ECHO 輸出',
+  'settings.playback.hqplayer.defaultBackend.hqplayer': '優先 HQPlayer',
+  'settings.playback.hqplayer.description': '預留 HQPlayer 控制端點和播放交接偏好；預設不接管目前播放輸出。',
+  'settings.playback.hqplayer.enable': '啟用 HQPlayer 整合',
+  'settings.playback.hqplayer.field.defaultBackend': '預設交接',
+  'settings.playback.hqplayer.field.endpoint': '控制端點',
+  'settings.playback.hqplayer.field.lastChecked': '上次檢測',
+  'settings.playback.hqplayer.field.status': '狀態',
+  'settings.playback.hqplayer.host': 'Host',
+  'settings.playback.hqplayer.mediaServer': 'ECHO 媒體服務',
+  'settings.playback.hqplayer.mode.localDesktop': '本機 HQPlayer Desktop',
+  'settings.playback.hqplayer.mode.remote': '遠端 HQPlayer',
+  'settings.playback.hqplayer.note': '目前只儲存設定並測試 TCP 連通性，不會啟動 HQPlayer，也不會改變 ECHO 目前播放鏈路。',
+  'settings.playback.hqplayer.port': '控制連接埠',
+  'settings.playback.hqplayer.profileName': '設定檔名稱',
+  'settings.playback.hqplayer.result.failed': '連線不可用',
+  'settings.playback.hqplayer.result.ok': '連線可用',
+  'settings.playback.hqplayer.save': '儲存',
+  'settings.playback.hqplayer.saving': '儲存中',
+  'settings.playback.hqplayer.status.available': '可用',
+  'settings.playback.hqplayer.status.checking': '檢測中',
+  'settings.playback.hqplayer.status.disabled': '未啟用',
+  'settings.playback.hqplayer.status.notConfigured': '未設定連接埠',
+  'settings.playback.hqplayer.status.unavailable': '不可用',
+  'settings.playback.hqplayer.test': '測試連線',
+  'settings.playback.hqplayer.testing': '測試中',
+  'settings.playback.hqplayer.title': 'HQPlayer 整合',
   'settings.playback.speedMode.description': '選擇播放器底部速度滑桿使用的變速方式。',
   'settings.playback.speedMode.title': '變速模式',
   'settings.playback.outputDevice.title': '輸出裝置',
   'settings.playback.outputDevice.empty': '沒有可用裝置',
   'settings.playback.sharedBackend.description': 'DirectSound 只作為手動相容模式，延遲較大；日常播放保持 WASAPI Shared。',
+  'settings.playback.sharedBackend.alsa': 'ALSA',
+  'settings.playback.sharedBackend.auto': '自動',
   'settings.playback.sharedBackend.directSound': 'DirectSound 相容',
+  'settings.playback.sharedBackend.linuxDescription': 'Linux 下預設優先 ALSA；如果系統把 PipeWire 接到 ALSA 相容層，也會走這條共享輸出路徑。',
   'settings.playback.sharedBackend.title': '共享後端',
   'settings.playback.sharedBackend.wasapi': 'WASAPI Shared',
   'settings.playback.resetEngine.action': '重啟音訊引擎',
@@ -3042,8 +3325,12 @@ const jaJP: TranslationMap = {
   'audioDrawer.option.rememberOutputDescription': '次回起動時に選択した出力デバイス、出力モード、バッファーなどの設定を復元します。',
   'audioDrawer.option.showAsioPanelSettings': 'ASIO パネル設定を表示する',
   'audioDrawer.option.showAsioPanelSettingsDescription': '既定ではオフです。オンにすると ASIO デバイスの下に「ASIO パネルを開く」ボタンを表示します。',
+  'audioDrawer.option.alsaShared': 'ALSA',
+  'audioDrawer.option.alsaSharedDescription': 'Linux ALSA デバイス経由で出力します。',
   'audioDrawer.option.directSound': 'DirectSound 互換',
   'audioDrawer.option.directSoundDescription': '手動の互換モードです。遅延が大きいため、WASAPI 再生に問題がある場合だけ試してください。',
+  'audioDrawer.option.linuxAutoShared': '自動',
+  'audioDrawer.option.linuxAutoSharedDescription': 'ALSA を優先し、システムの PipeWire/ALSA 互換レイヤー設定に従います。',
   'audioDrawer.option.sharedBackend': '共有バックエンド',
   'audioDrawer.option.wasapiShared': 'WASAPI Shared',
   'audioDrawer.option.wasapiSharedDescription': '通常の Windows 共有出力経路です。',
@@ -3079,6 +3366,64 @@ const jaJP: TranslationMap = {
   'audioDrawer.status.ratePending': 'レート未確定',
   'audioDrawer.status.sampleRatePending': 'サンプルレート未確定',
   'audioDrawer.title': '音声設定',
+  'audioProfessional.action.hideDetails': '詳細を閉じる',
+  'audioProfessional.action.refresh': '状態を更新',
+  'audioProfessional.action.showDetails': '詳細を表示',
+  'audioProfessional.badge.bitPerfect': 'Bit-perfect',
+  'audioProfessional.badge.dsp': 'DSP active',
+  'audioProfessional.badge.replayGain': 'ReplayGain',
+  'audioProfessional.badge.resampling': 'リサンプル',
+  'audioProfessional.badge.sampleMismatch': 'サンプルレート不一致',
+  'audioProfessional.badge.warning': 'デバイス警告',
+  'audioProfessional.issue.reason': '理由',
+  'audioProfessional.group.directDsp': 'Direct / DSP',
+  'audioProfessional.group.playbackChain': '再生チェーン',
+  'audioProfessional.group.sampleRate': 'サンプルレート',
+  'audioProfessional.group.stability': '安定性',
+  'audioProfessional.row.actualBuffer': '実 buffer',
+  'audioProfessional.row.actualDeviceSampleRate': '実デバイスレート',
+  'audioProfessional.row.bitDepth': 'ビット深度',
+  'audioProfessional.row.bitPerfect': 'Bit-perfect',
+  'audioProfessional.row.bitrate': 'ビットレート',
+  'audioProfessional.row.buffered': 'バッファ',
+  'audioProfessional.row.channelBalance': 'チャンネルバランス',
+  'audioProfessional.row.channels': 'チャンネル',
+  'audioProfessional.row.clippingProtection': 'クリップ保護',
+  'audioProfessional.row.codec': '形式',
+  'audioProfessional.row.decodeBackend': 'デコード後端',
+  'audioProfessional.row.decoderOutputSampleRate': 'デコード出力',
+  'audioProfessional.row.deviceBuffer': 'デバイス buffer',
+  'audioProfessional.row.eq': 'EQ',
+  'audioProfessional.row.error': 'エラー',
+  'audioProfessional.row.fileSampleRate': 'ソースレート',
+  'audioProfessional.row.latencyProfile': 'レイテンシ',
+  'audioProfessional.row.outputBackend': '出力後端',
+  'audioProfessional.row.outputDevice': '出力デバイス',
+  'audioProfessional.row.outputLatency': '出力遅延',
+  'audioProfessional.row.outputMode': '出力モード',
+  'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.requestedBuffer': '要求 buffer',
+  'audioProfessional.row.requestedOutputSampleRate': '要求出力',
+  'audioProfessional.row.resampler': 'リサンプラー',
+  'audioProfessional.row.resampling': 'リサンプル',
+  'audioProfessional.row.sampleRateMismatch': 'レート不一致',
+  'audioProfessional.row.sharedDeviceSampleRate': '共有デバイスレート',
+  'audioProfessional.row.sharedStability': '共有安定度',
+  'audioProfessional.row.soxr': 'SOXR',
+  'audioProfessional.row.state': '状態',
+  'audioProfessional.row.underrun': 'Underrun',
+  'audioProfessional.row.warnings': '警告',
+  'audioProfessional.summary.pending': '音声状態を待機中',
+  'audioProfessional.title': 'プロ再生ステータス',
+  'audioProfessional.value.disabled': 'オフ',
+  'audioProfessional.value.enabled': 'オン',
+  'audioProfessional.value.no': 'いいえ',
+  'audioProfessional.value.pending': '確認中',
+  'audioProfessional.value.ready': 'Direct ready',
+  'audioProfessional.value.sharedMixer': '共有ミキサー',
+  'audioProfessional.value.systemDefault': 'システム既定出力',
+  'audioProfessional.value.unknown': 'n/a',
+  'audioProfessional.value.yes': 'はい',
   'audioDrawer.todo.outputControls': 'ターゲットレートとバッファー制御',
   'audioDrawer.todo.outputControlsDescription': 'TODO: DeviceService が安全な制御を公開したら実際の音声設定に接続します。',
   'audioDrawer.troubleshooting.description': '音が固まったりデバイス一覧が不正な時に使います。ソフト再起動は他のアプリに影響しません。',
@@ -3479,6 +3824,34 @@ const jaJP: TranslationMap = {
   'settings.general.backup.import': '設定を読み込む',
   'settings.playback.outputMode.asio': 'ASIO',
   'settings.playback.outputMode.title': '出力モード',
+  'settings.playback.hqplayer.defaultBackend.ask': '毎回確認',
+  'settings.playback.hqplayer.defaultBackend.echoNative': 'ECHO 出力を使う',
+  'settings.playback.hqplayer.defaultBackend.hqplayer': 'HQPlayer を優先',
+  'settings.playback.hqplayer.description': 'HQPlayer の制御エンドポイントと再生受け渡し設定を準備します。既定では現在の出力を変更しません。',
+  'settings.playback.hqplayer.enable': 'HQPlayer 連携を有効化',
+  'settings.playback.hqplayer.field.defaultBackend': '既定の受け渡し',
+  'settings.playback.hqplayer.field.endpoint': '制御エンドポイント',
+  'settings.playback.hqplayer.field.lastChecked': '前回チェック',
+  'settings.playback.hqplayer.field.status': '状態',
+  'settings.playback.hqplayer.host': 'Host',
+  'settings.playback.hqplayer.mediaServer': 'ECHO メディアサービス',
+  'settings.playback.hqplayer.mode.localDesktop': 'ローカル HQPlayer Desktop',
+  'settings.playback.hqplayer.mode.remote': 'リモート HQPlayer',
+  'settings.playback.hqplayer.note': '現段階では設定保存と TCP 接続テストだけを行い、HQPlayer の起動や ECHO の再生チェーン変更は行いません。',
+  'settings.playback.hqplayer.port': '制御ポート',
+  'settings.playback.hqplayer.profileName': 'プロファイル名',
+  'settings.playback.hqplayer.result.failed': '接続できません',
+  'settings.playback.hqplayer.result.ok': '接続できます',
+  'settings.playback.hqplayer.save': '保存',
+  'settings.playback.hqplayer.saving': '保存中',
+  'settings.playback.hqplayer.status.available': '利用可能',
+  'settings.playback.hqplayer.status.checking': '確認中',
+  'settings.playback.hqplayer.status.disabled': '無効',
+  'settings.playback.hqplayer.status.notConfigured': 'ポート未設定',
+  'settings.playback.hqplayer.status.unavailable': '利用不可',
+  'settings.playback.hqplayer.test': '接続テスト',
+  'settings.playback.hqplayer.testing': 'テスト中',
+  'settings.playback.hqplayer.title': 'HQPlayer 連携',
   'settings.playback.speedMode.description': '下部プレイヤーの速度スライダーで使う変速方式を選びます。',
   'settings.playback.speedMode.title': '変速モード',
   'settings.playback.outputMode.description': '一般的なヘッドホン、Bluetooth、PC スピーカーには標準出力を推奨します。WASAPI / ASIO / Exclusive は外部オーディオ機器や HiFi 調整向けです。',
@@ -3486,7 +3859,10 @@ const jaJP: TranslationMap = {
   'settings.playback.outputMode.shared': 'Shared',
   'settings.playback.outputMode.system': '標準出力（推奨）',
   'settings.playback.sharedBackend.description': 'DirectSound は手動の互換モードです。遅延が大きいため、普段は WASAPI Shared を使います。',
+  'settings.playback.sharedBackend.alsa': 'ALSA',
+  'settings.playback.sharedBackend.auto': '自動',
   'settings.playback.sharedBackend.directSound': 'DirectSound 互換',
+  'settings.playback.sharedBackend.linuxDescription': 'Linux では既定で ALSA を優先します。PipeWire が ALSA 互換レイヤーに接続されている場合も、この共有出力経路を使います。',
   'settings.playback.sharedBackend.title': '共有バックエンド',
   'settings.playback.sharedBackend.wasapi': 'WASAPI Shared',
   'settings.playback.outputDevice.title': '出力デバイス',
@@ -3906,8 +4282,12 @@ const enUS: TranslationMap = {
   'audioDrawer.option.rememberOutputDescription': 'Restores the selected output device, output mode, buffer, and related settings on the next launch.',
   'audioDrawer.option.showAsioPanelSettings': 'Show ASIO panel settings',
   'audioDrawer.option.showAsioPanelSettingsDescription': 'Off by default. When enabled, ASIO devices show an Open ASIO Panel button.',
+  'audioDrawer.option.alsaShared': 'ALSA',
+  'audioDrawer.option.alsaSharedDescription': 'Output through Linux ALSA devices.',
   'audioDrawer.option.directSound': 'DirectSound Compatibility',
   'audioDrawer.option.directSoundDescription': 'Manual compatibility mode with high latency; try only when WASAPI playback fails.',
+  'audioDrawer.option.linuxAutoShared': 'Auto',
+  'audioDrawer.option.linuxAutoSharedDescription': 'Prefer ALSA and respect the system PipeWire/ALSA compatibility layer.',
   'audioDrawer.option.sharedBackend': 'Shared backend',
   'audioDrawer.option.wasapiShared': 'WASAPI Shared',
   'audioDrawer.option.wasapiSharedDescription': 'Everyday Windows shared output path.',
@@ -3943,6 +4323,64 @@ const enUS: TranslationMap = {
   'audioDrawer.status.ratePending': 'Rate pending',
   'audioDrawer.status.sampleRatePending': 'Sample rate pending',
   'audioDrawer.title': 'Audio Settings',
+  'audioProfessional.action.hideDetails': 'Hide professional details',
+  'audioProfessional.action.refresh': 'Refresh status',
+  'audioProfessional.action.showDetails': 'Show professional details',
+  'audioProfessional.badge.bitPerfect': 'Bit-perfect',
+  'audioProfessional.badge.dsp': 'DSP active',
+  'audioProfessional.badge.replayGain': 'ReplayGain',
+  'audioProfessional.badge.resampling': 'Resampling',
+  'audioProfessional.badge.sampleMismatch': 'Sample-rate mismatch',
+  'audioProfessional.badge.warning': 'Device issue/warning',
+  'audioProfessional.issue.reason': 'Reason',
+  'audioProfessional.group.directDsp': 'Direct And DSP',
+  'audioProfessional.group.playbackChain': 'Playback Chain',
+  'audioProfessional.group.sampleRate': 'Sample-Rate Chain',
+  'audioProfessional.group.stability': 'Stability',
+  'audioProfessional.row.actualBuffer': 'Actual buffer',
+  'audioProfessional.row.actualDeviceSampleRate': 'Actual device rate',
+  'audioProfessional.row.bitDepth': 'Bit depth',
+  'audioProfessional.row.bitPerfect': 'Bit-perfect',
+  'audioProfessional.row.bitrate': 'Bitrate',
+  'audioProfessional.row.buffered': 'Buffered',
+  'audioProfessional.row.channelBalance': 'Channel balance',
+  'audioProfessional.row.channels': 'Channels',
+  'audioProfessional.row.clippingProtection': 'Clipping protection',
+  'audioProfessional.row.codec': 'Codec',
+  'audioProfessional.row.decodeBackend': 'Decode backend',
+  'audioProfessional.row.decoderOutputSampleRate': 'Decoder output',
+  'audioProfessional.row.deviceBuffer': 'Device buffer',
+  'audioProfessional.row.eq': 'EQ',
+  'audioProfessional.row.error': 'Error',
+  'audioProfessional.row.fileSampleRate': 'Source rate',
+  'audioProfessional.row.latencyProfile': 'Latency profile',
+  'audioProfessional.row.outputBackend': 'Output backend',
+  'audioProfessional.row.outputDevice': 'Output device',
+  'audioProfessional.row.outputLatency': 'Output latency',
+  'audioProfessional.row.outputMode': 'Output mode',
+  'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.requestedBuffer': 'Requested buffer',
+  'audioProfessional.row.requestedOutputSampleRate': 'Requested output',
+  'audioProfessional.row.resampler': 'Resampler',
+  'audioProfessional.row.resampling': 'Resampling',
+  'audioProfessional.row.sampleRateMismatch': 'Sample-rate mismatch',
+  'audioProfessional.row.sharedDeviceSampleRate': 'Shared device rate',
+  'audioProfessional.row.sharedStability': 'Shared stability',
+  'audioProfessional.row.soxr': 'SOXR',
+  'audioProfessional.row.state': 'State',
+  'audioProfessional.row.underrun': 'Underrun',
+  'audioProfessional.row.warnings': 'Warnings',
+  'audioProfessional.summary.pending': 'Waiting for audio status',
+  'audioProfessional.title': 'Professional Playback Status',
+  'audioProfessional.value.disabled': 'Disabled',
+  'audioProfessional.value.enabled': 'Enabled',
+  'audioProfessional.value.no': 'No',
+  'audioProfessional.value.pending': 'Pending',
+  'audioProfessional.value.ready': 'Ready',
+  'audioProfessional.value.sharedMixer': 'Shared mixer',
+  'audioProfessional.value.systemDefault': 'System default output',
+  'audioProfessional.value.unknown': 'n/a',
+  'audioProfessional.value.yes': 'Yes',
   'audioDrawer.todo.outputControls': 'Target sample rate and buffer controls',
   'audioDrawer.todo.outputControlsDescription': 'TODO: wire to real audio settings when DeviceService exposes safe controls.',
   'audioDrawer.troubleshooting.description': 'Use this when audio is stuck or the device list looks wrong. The soft restart only affects ECHO.',
@@ -4444,6 +4882,34 @@ const enUS: TranslationMap = {
   'settings.general.backup.import': 'Import Settings',
   'settings.playback.outputMode.asio': 'ASIO',
   'settings.playback.outputMode.title': 'Output Mode',
+  'settings.playback.hqplayer.defaultBackend.ask': 'Ask Each Time',
+  'settings.playback.hqplayer.defaultBackend.echoNative': 'Keep ECHO Output',
+  'settings.playback.hqplayer.defaultBackend.hqplayer': 'Prefer HQPlayer',
+  'settings.playback.hqplayer.description': 'Prepares the HQPlayer control endpoint and playback handoff preference. It does not take over current output by default.',
+  'settings.playback.hqplayer.enable': 'Enable HQPlayer Integration',
+  'settings.playback.hqplayer.field.defaultBackend': 'Default Handoff',
+  'settings.playback.hqplayer.field.endpoint': 'Control Endpoint',
+  'settings.playback.hqplayer.field.lastChecked': 'Last Checked',
+  'settings.playback.hqplayer.field.status': 'Status',
+  'settings.playback.hqplayer.host': 'Host',
+  'settings.playback.hqplayer.mediaServer': 'ECHO Media Service',
+  'settings.playback.hqplayer.mode.localDesktop': 'Local HQPlayer Desktop',
+  'settings.playback.hqplayer.mode.remote': 'Remote HQPlayer',
+  'settings.playback.hqplayer.note': 'This phase only saves settings and tests TCP connectivity. It does not launch HQPlayer or change ECHO playback routing.',
+  'settings.playback.hqplayer.port': 'Control Port',
+  'settings.playback.hqplayer.profileName': 'Profile Name',
+  'settings.playback.hqplayer.result.failed': 'Connection unavailable',
+  'settings.playback.hqplayer.result.ok': 'Connection available',
+  'settings.playback.hqplayer.save': 'Save',
+  'settings.playback.hqplayer.saving': 'Saving',
+  'settings.playback.hqplayer.status.available': 'Available',
+  'settings.playback.hqplayer.status.checking': 'Checking',
+  'settings.playback.hqplayer.status.disabled': 'Disabled',
+  'settings.playback.hqplayer.status.notConfigured': 'Port not configured',
+  'settings.playback.hqplayer.status.unavailable': 'Unavailable',
+  'settings.playback.hqplayer.test': 'Test Connection',
+  'settings.playback.hqplayer.testing': 'Testing',
+  'settings.playback.hqplayer.title': 'HQPlayer Integration',
   'settings.playback.speedMode.description': 'Choose the mode used by the speed slider in the player bar.',
   'settings.playback.speedMode.title': 'Speed Mode',
   'settings.playback.outputMode.description': 'Use Standard Output for headphones, Bluetooth, and computer speakers. WASAPI / ASIO / Exclusive are for external audio interfaces and HiFi debugging.',
@@ -4451,7 +4917,10 @@ const enUS: TranslationMap = {
   'settings.playback.outputMode.shared': 'Shared',
   'settings.playback.outputMode.system': 'Standard Output (Recommended)',
   'settings.playback.sharedBackend.description': 'DirectSound is a manual compatibility mode with high latency; keep WASAPI Shared for daily playback.',
+  'settings.playback.sharedBackend.alsa': 'ALSA',
+  'settings.playback.sharedBackend.auto': 'Auto',
   'settings.playback.sharedBackend.directSound': 'DirectSound Compatibility',
+  'settings.playback.sharedBackend.linuxDescription': 'Linux defaults to ALSA first. If your system routes PipeWire through ALSA compatibility, it uses this shared output path too.',
   'settings.playback.sharedBackend.title': 'Shared Backend',
   'settings.playback.sharedBackend.wasapi': 'WASAPI Shared',
   'settings.playback.outputDevice.title': 'Output Device',
@@ -4801,6 +5270,8 @@ const enUS: TranslationMap = {
   'settings.appearance.font.choose': 'Choose',
   'settings.appearance.font.chinese.description': 'Used first when the main font does not include Chinese glyphs.',
   'settings.appearance.font.chinese.title': 'Chinese Font',
+  'settings.appearance.font.fallback.description': 'The third and lowest-priority interface font group, used to continue filling missing glyphs.',
+  'settings.appearance.font.fallback.title': 'Fallback Font',
   'settings.appearance.font.main.description': 'ECHO uses Outfit by default. You can enter any installed font family.',
   'settings.appearance.font.main.title': 'Main Font',
   'settings.appearance.fontSize.description': 'Adjust the base size used by the interface.',
@@ -4808,7 +5279,7 @@ const enUS: TranslationMap = {
   'settings.appearance.lineHeight.description': 'Adjust default UI text spacing for denser or airier reading.',
   'settings.appearance.lineHeight.title': 'Interface Line Height',
   'settings.appearance.reset.action': 'Reset',
-  'settings.appearance.reset.description': 'Restore Outfit, the default Chinese font, base size, line height, and text depth.',
+  'settings.appearance.reset.description': 'Restore Outfit, default Chinese and fallback fonts, base size, line height, and text depth.',
   'settings.appearance.reset.title': 'Appearance Defaults',
   'settings.appearance.textDepth.description': 'Adjust interface text darkness. Lower values make text lighter.',
   'settings.appearance.textDepth.title': 'Text Depth',

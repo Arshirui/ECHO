@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, FolderOpen, HardDrive, Headphones,
 import type { LucideIcon } from 'lucide-react';
 import type { AudioOutputMode } from '../../../shared/types/audio';
 import type { AppSettings, ScanPerformanceMode } from '../../../shared/types/appSettings';
+import { detectRendererPlatform, isAdvancedNativeOutputPlatform, isNativeSharedOutputPlatform } from '../../../shared/utils/audioPlatformCapabilities';
 import { rememberLibraryScanStatus } from '../../stores/libraryScanSession';
 
 type FirstRunWizardProps = {
@@ -34,6 +35,35 @@ const outputModes: Array<{ mode: AudioOutputMode; label: string; description: st
   { mode: 'exclusive', label: 'WASAPI Exclusive', description: '独占设备，适合确认稳定的外置声卡或 HiFi 调试。', hint: '高级' },
   { mode: 'asio', label: 'ASIO', description: '需要 ASIO 设备和可靠驱动。', hint: '专业' },
 ];
+
+const detectFirstRunPlatform = (): NodeJS.Platform | 'unknown' =>
+  typeof window !== 'undefined' ? detectRendererPlatform(window.navigator) : 'unknown';
+
+const getSupportedFirstRunOutputModes = (
+  platform: NodeJS.Platform | 'unknown',
+): Array<{ mode: AudioOutputMode; label: string; description: string; hint: string }> =>
+  outputModes
+    .filter((item) => {
+      if (item.mode === 'system') {
+        return true;
+      }
+
+      if (item.mode === 'shared') {
+        return isNativeSharedOutputPlatform(platform);
+      }
+
+      return isAdvancedNativeOutputPlatform(platform);
+    })
+    .map((item) =>
+      platform === 'linux' && item.mode === 'shared'
+        ? {
+            ...item,
+            label: 'Linux Shared',
+            description: 'Use ECHO native output through the Linux audio stack.',
+            hint: 'Advanced',
+          }
+        : item,
+    );
 
 const firstRunSteps: FirstRunStep[] = [
   {
@@ -79,11 +109,16 @@ const firstRunSteps: FirstRunStep[] = [
 ];
 
 export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstRunWizardProps): JSX.Element => {
+  const [rendererPlatform] = useState<NodeJS.Platform | 'unknown'>(() => detectFirstRunPlatform());
+  const firstRunOutputModes = useMemo(() => getSupportedFirstRunOutputModes(rendererPlatform), [rendererPlatform]);
   const [activeStepId, setActiveStepId] = useState<FirstRunStepId>('library');
   const [musicFolderPath, setMusicFolderPath] = useState<string | null>(null);
   const [cacheDirectory, setCacheDirectory] = useState<string | null | undefined>(undefined);
   const [scanMode, setScanMode] = useState<ScanPerformanceMode>(initialSettings?.scanPerformanceMode ?? 'balanced');
-  const [outputMode, setOutputMode] = useState<AudioOutputMode>(initialSettings?.rememberedAudioOutput?.outputMode ?? 'system');
+  const [outputMode, setOutputMode] = useState<AudioOutputMode>(() => {
+    const rememberedMode = initialSettings?.rememberedAudioOutput?.outputMode ?? 'system';
+    return getSupportedFirstRunOutputModes(rendererPlatform).some((item) => item.mode === rememberedMode) ? rememberedMode : 'system';
+  });
   const [scanNow, setScanNow] = useState(true);
   const [busy, setBusy] = useState<'folder' | 'cache' | 'finish' | 'skip' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -103,7 +138,7 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
   }, [cacheDirectory, initialSettings?.coverCacheDir]);
 
   const scanModeLabel = scanModes.find((item) => item.mode === scanMode)?.label ?? scanMode;
-  const outputModeLabel = outputModes.find((item) => item.mode === outputMode)?.label ?? outputMode;
+  const outputModeLabel = firstRunOutputModes.find((item) => item.mode === outputMode)?.label ?? outputMode;
 
   const chooseMusicFolder = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
@@ -277,7 +312,7 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
       case 'audio':
         return (
           <div className="first-run-options first-run-options--cards">
-            {outputModes.map((item) => (
+            {firstRunOutputModes.map((item) => (
               <button
                 className={outputMode === item.mode ? 'is-active' : undefined}
                 key={item.mode}

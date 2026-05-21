@@ -16,6 +16,7 @@ describe('audio platform capabilities', () => {
     expect(normalizeAudioSharedBackendForPlatform('auto', 'win32')).toBe('auto');
     expect(normalizeAudioSharedBackendForPlatform('windows', 'win32')).toBe('windows');
     expect(normalizeAudioSharedBackendForPlatform('directsound', 'win32')).toBe('directsound');
+    expect(normalizeAudioSharedBackendForPlatform('alsa', 'win32')).toBe('auto');
   });
 
   it('allows Linux shared output and downgrades advanced output modes', () => {
@@ -26,5 +27,6 @@ describe('audio platform capabilities', () => {
     expect(normalizeAudioOutputModeForPlatform('asio', 'linux')).toBe('shared');
     expect(normalizeAudioSharedBackendForPlatform('directsound', 'linux')).toBe('auto');
     expect(normalizeAudioSharedBackendForPlatform('windows', 'linux')).toBe('auto');
+    expect(normalizeAudioSharedBackendForPlatform('alsa', 'linux')).toBe('alsa');
   });
 });

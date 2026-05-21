@@ -1555,7 +1555,7 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
     }
 
     handledEndedTrackRef.current = endedPlaybackKey;
-    void runPlaybackAction(queue.playNext);
+    void runPlaybackAction(() => queue.playNext({ autoAdvance: true }));
   }, [
     endedStatusFilePath,
     endedStatusTrackId,

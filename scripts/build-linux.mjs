@@ -7,6 +7,11 @@ const scriptPath = fileURLToPath(import.meta.url);
 const projectRoot = resolve(dirname(scriptPath), '..');
 const hostBinary = join(projectRoot, 'electron-app', 'build', 'echo-audio-host');
 const packagedHostBinary = join(projectRoot, 'dist', 'linux-unpacked', 'resources', 'echo-audio-host');
+const linuxToolsDir = join(projectRoot, 'electron-app', 'tools-linux');
+const linuxFfmpegBinary = join(linuxToolsDir, 'ffmpeg');
+const linuxYtDlpBinary = join(linuxToolsDir, 'yt-dlp');
+const packagedFfmpegBinary = join(projectRoot, 'dist', 'linux-unpacked', 'resources', 'tools', 'ffmpeg');
+const packagedYtDlpBinary = join(projectRoot, 'dist', 'linux-unpacked', 'resources', 'tools', 'yt-dlp');
 const distDir = join(projectRoot, 'dist');
 const electronBuilderBin = join(projectRoot, 'node_modules', '.bin', 'electron-builder');
 
@@ -78,6 +83,9 @@ try {
     fail(`Linux packaging currently supports x64 only. Current architecture is ${process.arch}.`);
   }
 
+  assertExecutableFile(linuxFfmpegBinary, 'Linux ffmpeg');
+  run('npm', ['run', 'rebuild:native']);
+  run('npm', ['run', 'verify:ffmpeg']);
   run('npm', ['run', 'build:audio-host']);
   assertExecutableFile(hostBinary, 'Linux audio host');
 
@@ -85,6 +93,10 @@ try {
   run(electronBuilderBin, ['--linux']);
 
   assertExecutableFile(packagedHostBinary, 'packaged Linux audio host');
+  assertExecutableFile(packagedFfmpegBinary, 'packaged Linux ffmpeg');
+  if (existsSync(linuxYtDlpBinary)) {
+    assertExecutableFile(packagedYtDlpBinary, 'packaged Linux yt-dlp');
+  }
   assertLinuxArtifacts();
 
   console.log('[build:linux] Linux build completed.');

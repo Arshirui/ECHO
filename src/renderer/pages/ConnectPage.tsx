@@ -1,7 +1,38 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Cast, Loader2, Pause, Play, Power, RefreshCw, Smartphone, Square, Unplug, Volume2, Wifi } from 'lucide-react';
+import {
+  AlertTriangle,
+  Cable,
+  Cast,
+  FileAudio,
+  Loader2,
+  Pause,
+  Play,
+  Power,
+  RefreshCw,
+  Save,
+  Server,
+  SlidersHorizontal,
+  Smartphone,
+  Square,
+  Unplug,
+  Volume2,
+  Wifi,
+} from 'lucide-react';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
+import type {
+  HqPlayerConnectionMode,
+  HqPlayerConnectionTestResult,
+  HqPlayerDefaultPlaybackBackend,
+  HqPlayerPlaybackControlPlan,
+  HqPlayerPlaybackHandoffPlan,
+  HqPlayerPlaybackHandoffReason,
+  HqPlayerSettings,
+  HqPlayerStatus,
+} from '../../shared/types/hqplayer';
+import type { LibraryTrack } from '../../shared/types/library';
+import type { PlayableTrack } from '../../shared/types/remoteSources';
+import { streamingProviderNames, type StreamingProviderName } from '../../shared/types/streaming';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useSharedPlaybackStatus } from '../stores/playbackStatusStore';
 
@@ -95,6 +126,63 @@ const airPlayStateLabel: Record<AirPlayReceiverStatus['state'], string> = {
   error: '错误',
 };
 
+const defaultHqPlayerSettings: HqPlayerSettings = {
+  enabled: false,
+  connectionMode: 'localDesktop',
+  host: '127.0.0.1',
+  port: null,
+  executablePath: null,
+  allowLaunch: false,
+  mediaServerEnabled: false,
+  mediaServerPort: null,
+  defaultPlaybackBackend: 'ask',
+  profileName: null,
+};
+
+const hqPlayerConnectionModes: HqPlayerConnectionMode[] = ['localDesktop', 'remote'];
+const hqPlayerDefaultBackends: HqPlayerDefaultPlaybackBackend[] = ['echoNative', 'ask', 'hqplayer'];
+
+const hqPlayerStateLabel: Record<HqPlayerStatus['state'], string> = {
+  disabled: '未启用',
+  'not-configured': '未配置端口',
+  checking: '检测中',
+  available: '可连接',
+  unavailable: '不可用',
+};
+
+const hqPlayerModeLabel: Record<HqPlayerConnectionMode, string> = {
+  localDesktop: '本机 Desktop',
+  remote: '远程 HQPlayer',
+};
+
+const hqPlayerBackendLabel: Record<HqPlayerDefaultPlaybackBackend, string> = {
+  echoNative: '继续用 ECHO',
+  ask: '每次询问',
+  hqplayer: '优先 HQPlayer',
+};
+
+const hqPlayerHandoffReasonLabel: Record<HqPlayerPlaybackHandoffReason, string> = {
+  hqplayer_disabled: 'HQPlayer 未启用',
+  hqplayer_control_port_not_configured: '控制端口未配置',
+  hqplayer_confirmation_required: '需要确认',
+  echo_native_selected: '当前选择 ECHO 输出',
+  remote_hqplayer_requires_media_server: '远程模式需要媒体服务',
+  media_server_not_ready: '媒体服务未就绪',
+  spotify_sdk_required: 'Spotify 需要 SDK 播放',
+  streaming_item_unplayable: '串流曲目不可播放',
+  streaming_proxy_required: '需要代理播放',
+  source_requires_headers: '音源需要请求头',
+  source_resolution_failed: '音源解析失败',
+  unsupported_media_type: '暂不支持的媒体类型',
+};
+
+const hqPlayerExposureLabel: Record<NonNullable<HqPlayerPlaybackControlPlan['source']>['exposure'], string> = {
+  'local-file': '本地文件',
+  'loopback-http': '本机流地址',
+  'direct-http': '直连 HTTP',
+  'media-server': 'ECHO 媒体服务',
+};
+
 const formatTime = (seconds: number): string => {
   const safe = Math.max(0, Math.floor(seconds));
   const minutes = Math.floor(safe / 60);
@@ -114,6 +202,103 @@ const formatReceiverAddress = (value: string): string => {
   }
 };
 
+const parsePort = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+    return null;
+  }
+
+  return parsed;
+};
+
+const formatTimestamp = (value: string | null): string => {
+  if (!value) {
+    return '未检测';
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+};
+
+const formatHqEndpoint = (settings: Pick<HqPlayerSettings, 'host' | 'port'>): string =>
+  settings.port ? `${settings.host}:${settings.port}` : `${settings.host}:未配置`;
+
+const isStreamingProviderName = (value: string | null | undefined): value is StreamingProviderName =>
+  streamingProviderNames.includes(value as StreamingProviderName);
+
+const toHqPlayerPlayableTrack = (track: LibraryTrack | null, fallbackPath: string | null): PlayableTrack | null => {
+  if (!track) {
+    if (!fallbackPath) {
+      return null;
+    }
+
+    const title = fallbackPath.split(/[\\/]/u).pop() || 'Local Track';
+    return {
+      mediaType: 'local',
+      trackId: `file:${fallbackPath}`,
+      path: fallbackPath,
+      title,
+      artist: 'Unknown Artist',
+      album: 'Unknown Album',
+      duration: null,
+    };
+  }
+
+  if (track.mediaType === 'remote') {
+    return {
+      mediaType: 'remote',
+      trackId: track.id,
+      sourceId: track.sourceId ?? null,
+      stableKey: track.stableKey ?? null,
+      remotePath: track.remotePath ?? null,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      albumArtist: track.albumArtist,
+      duration: track.duration,
+      coverThumb: track.coverThumb,
+    };
+  }
+
+  if (track.mediaType === 'streaming') {
+    const provider = isStreamingProviderName(track.provider) ? track.provider : 'mock';
+    const providerTrackId = track.providerTrackId ?? track.id;
+    return {
+      mediaType: 'streaming',
+      trackId: track.id,
+      provider,
+      providerTrackId,
+      quality: track.streamingQuality,
+      stableKey: track.stableKey ?? `${provider}:${providerTrackId}`,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      albumArtist: track.albumArtist,
+      duration: track.duration,
+      coverThumb: track.coverThumb,
+      playable: track.unavailable !== true,
+      unavailableReason: track.unavailable ? 'This streaming track is unavailable.' : null,
+    };
+  }
+
+  return {
+    mediaType: 'local',
+    trackId: track.id,
+    path: track.path,
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    albumArtist: track.albumArtist,
+    duration: track.duration,
+    coverThumb: track.coverThumb,
+  };
+};
+
 export const ConnectPage = (): JSX.Element => {
   const queue = usePlaybackQueue();
   const playbackStatus = useSharedPlaybackStatus();
@@ -130,6 +315,12 @@ export const ConnectPage = (): JSX.Element => {
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [isCommandBusy, setIsCommandBusy] = useState(false);
   const [volumePercent, setVolumePercent] = useState(80);
+  const [hqPlayerDraft, setHqPlayerDraft] = useState<HqPlayerSettings>(defaultHqPlayerSettings);
+  const [hqPlayerStatus, setHqPlayerStatus] = useState<HqPlayerStatus | null>(null);
+  const [hqPlayerTestResult, setHqPlayerTestResult] = useState<HqPlayerConnectionTestResult | null>(null);
+  const [hqPlayerLastHandoff, setHqPlayerLastHandoff] = useState<HqPlayerPlaybackHandoffPlan | null>(null);
+  const [hqPlayerLastControl, setHqPlayerLastControl] = useState<HqPlayerPlaybackControlPlan | null>(null);
+  const [hqPlayerBusy, setHqPlayerBusy] = useState<'save' | 'test' | 'preview' | null>(null);
 
   const activeDevice = useMemo(
     () => devices.find((device) => device.id === status.deviceId) ?? null,
@@ -169,6 +360,19 @@ export const ConnectPage = (): JSX.Element => {
     airPlayReceiverStatus.durationSeconds > 0
       ? Math.min(100, Math.max(0, (airPlayReceiverStatus.positionSeconds / airPlayReceiverStatus.durationSeconds) * 100))
       : 0;
+  const hqPlayerState: HqPlayerStatus['state'] =
+    hqPlayerStatus?.state ?? (hqPlayerDraft.enabled ? (hqPlayerDraft.port ? 'unavailable' : 'not-configured') : 'disabled');
+  const hqPlayerEndpointLabel = formatHqEndpoint({
+    host: hqPlayerStatus?.endpoint.host ?? hqPlayerDraft.host,
+    port: hqPlayerStatus?.endpoint.port ?? hqPlayerDraft.port,
+  });
+  const hqPlayerControlPlan = hqPlayerLastControl ?? hqPlayerLastHandoff?.control ?? null;
+  const hqPlayerLastReason = hqPlayerLastHandoff?.reason ? hqPlayerHandoffReasonLabel[hqPlayerLastHandoff.reason] : null;
+  const hqPlayerCurrentPlayable = useMemo(
+    () => toHqPlayerPlayableTrack(currentTrack, currentFilePath),
+    [currentFilePath, currentTrack],
+  );
+  const hqPlayerPreviewDisabled = hqPlayerBusy === 'preview' || !hqPlayerCurrentPlayable || !hqPlayerDraft.enabled || !hqPlayerDraft.port;
 
   const refreshDevices = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;

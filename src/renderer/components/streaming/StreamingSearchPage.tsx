@@ -140,6 +140,17 @@ const formatAlbumDuration = (tracks: StreamingTrack[]): string | null => {
 
 const formatTrackCount = (count: number | null): string => `${count ?? 0} ${(count ?? 0) === 1 ? 'track' : 'tracks'}`;
 
+const safeStreamingArtistName = (artist: Pick<StreamingArtist, 'name' | 'providerArtistId'>): string => {
+  const name = typeof artist.name === 'string' ? artist.name.trim() : '';
+  const fallback = typeof artist.providerArtistId === 'string' ? artist.providerArtistId.trim() : '';
+  return name || fallback || 'Unknown Artist';
+};
+
+const streamingArtistInitial = (name: string): string => Array.from(name.trim())[0]?.toUpperCase() ?? '?';
+
+const streamingTrackArtists = (track: StreamingTrack): StreamingTrack['artists'] =>
+  Array.isArray(track.artists) ? track.artists : [];
+
 const streamingTrackToLibraryTrack = (track: StreamingTrack, quality: QualityPreference): LibraryTrack => ({
   id: track.stableKey || streamingStableKey(track.provider, track.providerTrackId),
   mediaType: 'streaming',
@@ -901,7 +912,8 @@ export const StreamingSearchPage = (): JSX.Element => {
 
   const handlePlayArtist = useCallback(async (): Promise<void> => {
     const detail = selectedArtistDetail;
-    const playableTracks = detail?.topTracks.filter((track) => track.playable).map((track) => streamingTrackToLibraryTrack(track, quality)) ?? [];
+    const topTracks = Array.isArray(detail?.topTracks) ? detail.topTracks : [];
+    const playableTracks = topTracks.filter((track) => track.playable).map((track) => streamingTrackToLibraryTrack(track, quality));
     const firstTrack = playableTracks[0];
     if (!detail || !firstTrack) {
       setArtistDetailError('这个流媒体歌手暂时没有可播放的歌曲。');
@@ -928,8 +940,13 @@ export const StreamingSearchPage = (): JSX.Element => {
       return;
     }
 
-    const artistSource = { type: 'streaming' as const, label: `${selectedArtistDetail.name} / ${selectedArtistDetail.provider}`, provider: selectedArtistDetail.provider };
-    selectedArtistDetail.topTracks
+    const artistSource = {
+      type: 'streaming' as const,
+      label: `${safeStreamingArtistName(selectedArtistDetail)} / ${selectedArtistDetail.provider}`,
+      provider: selectedArtistDetail.provider,
+    };
+    const topTracks = Array.isArray(selectedArtistDetail.topTracks) ? selectedArtistDetail.topTracks : [];
+    topTracks
       .filter((track) => track.playable)
       .forEach((track) => queue.appendToQueue(streamingTrackToLibraryTrack(track, quality), artistSource));
   }, [quality, queue, selectedArtistDetail]);
@@ -940,8 +957,10 @@ export const StreamingSearchPage = (): JSX.Element => {
       return null;
     }
 
-    const topTracks = selectedArtistDetail?.topTracks ?? [];
-    const artistAlbums = selectedArtistDetail?.albums ?? [];
+    const artistName = safeStreamingArtistName(artist);
+    const artistProvider = artist.provider ?? provider;
+    const topTracks = Array.isArray(selectedArtistDetail?.topTracks) ? selectedArtistDetail.topTracks : [];
+    const artistAlbums = Array.isArray(selectedArtistDetail?.albums) ? selectedArtistDetail.albums : [];
     const heroImageUrl = artist.coverUrl ?? artist.avatarUrl ?? null;
     const currentDetailStableKey = queue.currentTrack?.mediaType === 'streaming' ? queue.currentTrack.stableKey ?? queue.currentTrack.id : null;
     const canPlay = topTracks.some((track) => track.playable);
@@ -953,20 +972,20 @@ export const StreamingSearchPage = (): JSX.Element => {
           Streaming
         </button>
 
-        <section className="artist-hero" aria-label={`${artist.name} streaming artist details`}>
+        <section className="artist-hero" aria-label={`${artistName} streaming artist details`}>
           <div className="artist-hero-avatar" data-cover={Boolean(heroImageUrl)} aria-hidden="true">
-            {heroImageUrl ? <img alt="" decoding="async" draggable={false} height={512} loading="lazy" src={heroImageUrl} width={512} /> : <span>{artist.name.slice(0, 1).toUpperCase()}</span>}
+            {heroImageUrl ? <img alt="" decoding="async" draggable={false} height={512} loading="lazy" src={heroImageUrl} width={512} /> : <span>{streamingArtistInitial(artistName)}</span>}
           </div>
 
           <div className="artist-hero-copy">
             <span className="artist-detail-kicker">Streaming Artist</span>
-            <h1>{artist.name}</h1>
+            <h1>{artistName}</h1>
             <div className="artist-hero-meta" aria-label="Streaming artist metadata">
-              <span>{artist.provider}</span>
+              <span>{artistProvider}</span>
               <span>{formatTrackCount(topTracks.length)}</span>
               <span>{artistAlbums.length} albums</span>
             </div>
-            <p>Streaming catalog from {artist.provider}.</p>
+            <p>Streaming catalog from {artistProvider}.</p>
 
             <div className="artist-hero-actions">
               <button className="artist-primary-action" type="button" disabled={isArtistDetailLoading || !canPlay} onClick={() => void handlePlayArtist()}>
@@ -983,7 +1002,7 @@ export const StreamingSearchPage = (): JSX.Element => {
           </div>
         </section>
 
-        <section className="artist-detail-section" aria-label={`${artist.name} streaming top tracks`}>
+        <section className="artist-detail-section" aria-label={`${artistName} streaming top tracks`}>
           <div className="artist-section-heading">
             <div>
               <span>Top Tracks</span>
@@ -1033,7 +1052,7 @@ export const StreamingSearchPage = (): JSX.Element => {
         </section>
 
         {artistAlbums.length > 0 ? (
-          <section className="artist-detail-section" aria-label={`${artist.name} streaming albums`}>
+          <section className="artist-detail-section" aria-label={`${artistName} streaming albums`}>
             <div className="artist-section-heading">
               <div>
                 <span>Albums</span>
@@ -1050,13 +1069,14 @@ export const StreamingSearchPage = (): JSX.Element => {
   };
 
   const renderTrackCredits = (track: StreamingTrack): JSX.Element => {
-    const artists = track.artists.length > 0 ? track.artists : null;
+    const artists = streamingTrackArtists(track);
+    const displayArtists = artists.length > 0 ? artists : null;
     const canOpenAlbum = Boolean(track.albumId);
 
     return (
       <span className="streaming-credit-links">
-        {artists
-          ? artists.map((artist, index) => (
+        {displayArtists
+          ? displayArtists.map((artist, index) => (
               <span className="streaming-credit-part" key={artist.id}>
                 {index > 0 ? <span className="streaming-credit-separator">,</span> : null}
                 <button

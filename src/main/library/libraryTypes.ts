@@ -306,9 +306,29 @@ export type StoredTrackCoverState = StoredTrackFingerprint & {
   identityError?: string | null;
 };
 
+export type ScanDirectorySnapshotEntry = {
+  name: string;
+  kind: 'directory' | 'file';
+};
+
+export type ScanDirectorySnapshot = {
+  path: string;
+  mtimeMs: number;
+  entries: ScanDirectorySnapshotEntry[];
+};
+
+export type ScanFileSystemError = {
+  kind: 'directory' | 'file_stat';
+  path: string;
+  message: string;
+};
+
 export type ScanOptions = {
   signal?: AbortSignal;
   audioExtensions?: readonly string[];
+  onFileSystemError?: (error: ScanFileSystemError) => void;
+  getDirectorySnapshot?: (directoryPath: string) => ScanDirectorySnapshot | null;
+  onDirectorySnapshot?: (snapshot: ScanDirectorySnapshot) => void;
 };
 
 export type StoredTrackFingerprint = {

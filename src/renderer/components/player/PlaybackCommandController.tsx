@@ -125,11 +125,48 @@ export const PlaybackCommandController = (): null => {
     await refreshPlaybackStatus();
   }, []);
 
+  const commitSeek = useCallback(
+    async (nextPositionSeconds: number): Promise<void> => {
+      const playback = window.echo?.playback;
+
+      if (!playback || durationSeconds <= 0) {
+        return;
+      }
+
+      const safePositionSeconds = Math.min(durationSeconds, Math.max(0, nextPositionSeconds));
+      if (isSpotifyCurrentTrack && queue.currentTrack) {
+        const status = await seekSpotifyPlayback(queue.currentTrack, safePositionSeconds);
+        setPlaybackStatusSnapshot({ playbackStatus: status, error: null });
+        dispatchPlaybackSeeked(safePositionSeconds, status.currentTrackId ?? queue.currentTrackId ?? null);
+        return;
+      }
+
+      const status = await playback.seek(safePositionSeconds);
+      setPlaybackStatusSnapshot({
+        playbackStatus: {
+          ...status,
+          positionMs: Math.round(safePositionSeconds * 1000),
+        },
+        error: null,
+      });
+      dispatchPlaybackSeeked(safePositionSeconds, status.currentTrackId ?? queue.currentTrackId ?? null);
+      await refreshPlaybackStatus();
+    },
+    [durationSeconds, isSpotifyCurrentTrack, queue.currentTrack, queue.currentTrackId],
+  );
+
   const handleSmtcCommand = useCallback(
     (command: SmtcCommand): void => {
       const playback = window.echo?.playback;
 
       if (!playback) {
+        return;
+      }
+
+      if (typeof command !== 'string') {
+        if (command.type === 'seek') {
+          void commitSeek(command.positionSeconds);
+        }
         return;
       }
 
@@ -176,37 +213,7 @@ export const PlaybackCommandController = (): null => {
         handleStop();
       }
     },
-    [handleNext, handlePlayPause, handlePrevious, handleStop, isPlaying, isSpotifyCurrentTrack, queue, runPlaybackAction, state],
-  );
-
-  const commitSeek = useCallback(
-    async (nextPositionSeconds: number): Promise<void> => {
-      const playback = window.echo?.playback;
-
-      if (!playback || durationSeconds <= 0) {
-        return;
-      }
-
-      const safePositionSeconds = Math.min(durationSeconds, Math.max(0, nextPositionSeconds));
-      if (isSpotifyCurrentTrack && queue.currentTrack) {
-        const status = await seekSpotifyPlayback(queue.currentTrack, safePositionSeconds);
-        setPlaybackStatusSnapshot({ playbackStatus: status, error: null });
-        dispatchPlaybackSeeked(safePositionSeconds, status.currentTrackId ?? queue.currentTrackId ?? null);
-        return;
-      }
-
-      const status = await playback.seek(safePositionSeconds);
-      setPlaybackStatusSnapshot({
-        playbackStatus: {
-          ...status,
-          positionMs: Math.round(safePositionSeconds * 1000),
-        },
-        error: null,
-      });
-      dispatchPlaybackSeeked(safePositionSeconds, status.currentTrackId ?? queue.currentTrackId ?? null);
-      await refreshPlaybackStatus();
-    },
-    [durationSeconds, isSpotifyCurrentTrack, queue.currentTrack, queue.currentTrackId],
+    [commitSeek, handleNext, handlePlayPause, handlePrevious, handleStop, isPlaying, isSpotifyCurrentTrack, queue, runPlaybackAction, state],
   );
 
   const handleGlobalShortcutCommand = useCallback(

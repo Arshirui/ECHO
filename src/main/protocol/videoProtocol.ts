@@ -60,6 +60,43 @@ const passthroughHeaders = (response: Response, fallbackMimeType: string | null)
   return headers;
 };
 
+const fetchUpstreamVariant = async (
+  variant: { url: string; headers: Record<string, string>; mimeType: string | null },
+  request: Request,
+): Promise<Response | null> => {
+  const headers = new Headers(variant.headers);
+  const range = request.headers.get('range');
+  if (range) {
+    headers.set('Range', range);
+  }
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(variant.url, {
+      headers,
+      redirect: 'follow',
+    });
+  } catch {
+    return null;
+  }
+
+  if (upstream.status === 416) {
+    return new Response('', {
+      status: 416,
+      headers: passthroughHeaders(upstream, variant.mimeType),
+    });
+  }
+
+  if (!upstream.ok && upstream.status !== 206) {
+    return null;
+  }
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: passthroughHeaders(upstream, variant.mimeType),
+  });
+};
+
 export const registerVideoProtocolHandler = (): void => {
   protocol.handle('echo-video', async (request) => {
     try {
@@ -118,25 +155,7 @@ export const registerVideoProtocolHandler = (): void => {
           return new Response('', { status: 404 });
         }
 
-        const headers = new Headers(variant.headers);
-        const range = request.headers.get('range');
-        if (range) {
-          headers.set('Range', range);
-        }
-
-        const upstream = await fetch(variant.url, {
-          headers,
-          redirect: 'follow',
-        });
-
-        if (!upstream.ok && upstream.status !== 206) {
-          return new Response('', { status: 502 });
-        }
-
-        return new Response(upstream.body, {
-          status: upstream.status,
-          headers: passthroughHeaders(upstream, variant.mimeType),
-        });
+        return (await fetchUpstreamVariant(variant, request)) ?? new Response('', { status: 502 });
       }
 
       if (
@@ -152,30 +171,23 @@ export const registerVideoProtocolHandler = (): void => {
         return new Response('', { status: 404 });
       }
 
-      const variant = await getMvService().getStreamVariantForProtocol(videoId, variantId);
+      const mvService = getMvService();
+      const variant = await mvService.getStreamVariantForProtocol(videoId, variantId);
       if (!variant) {
         return new Response('', { status: 404 });
       }
 
-      const headers = new Headers(variant.headers);
-      const range = request.headers.get('range');
-      if (range) {
-        headers.set('Range', range);
+      const response = await fetchUpstreamVariant(variant, request);
+      if (response) {
+        return response;
       }
 
-      const upstream = await fetch(variant.url, {
-        headers,
-        redirect: 'follow',
-      });
-
-      if (!upstream.ok && upstream.status !== 206) {
+      const refreshedVariant = await mvService.refreshStreamVariantForProtocol(videoId, variantId);
+      if (!refreshedVariant) {
         return new Response('', { status: 502 });
       }
 
-      return new Response(upstream.body, {
-        status: upstream.status,
-        headers: passthroughHeaders(upstream, variant.mimeType),
-      });
+      return (await fetchUpstreamVariant(refreshedVariant, request)) ?? new Response('', { status: 502 });
     } catch {
       return new Response('', { status: 404 });
     }

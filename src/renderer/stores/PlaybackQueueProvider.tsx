@@ -62,6 +62,10 @@ type PlayTrackOptions = {
   forceNewQueueItem?: boolean;
 };
 
+type PlayNextOptions = {
+  autoAdvance?: boolean;
+};
+
 type PlaybackQueueContextValue = {
   items: QueueItem[];
   tracks: LibraryTrack[];
@@ -89,7 +93,7 @@ type PlaybackQueueContextValue = {
   playTrack: (track: LibraryTrack, options?: PlayTrackOptions) => Promise<PlaybackStatus>;
   openTemporaryLocalFiles: (paths: string[]) => Promise<LocalFileResolveResult>;
   playPrevious: () => Promise<PlaybackStatus | null>;
-  playNext: () => Promise<PlaybackStatus | null>;
+  playNext: (options?: PlayNextOptions) => Promise<PlaybackStatus | null>;
   setAutomixEnabled: (enabled: boolean) => void;
   setCurrentTrackId: (trackId: string | null) => void;
   updateCurrentTrackSnapshot: (
@@ -1598,14 +1602,14 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     return status;
   }, [commitPlayedItem, playLocalTrack, setHistory]);
 
-  const playNext = useCallback(async (): Promise<PlaybackStatus | null> => {
+  const playNext = useCallback(async (options: PlayNextOptions = {}): Promise<PlaybackStatus | null> => {
     const current = itemsRef.current;
     const activeRepeatMode = repeatModeRef.current;
     const activeCurrentQueueId = currentQueueIdRef.current;
     const currentIndex = findCurrentIndex(current, activeCurrentQueueId, currentTrackIdRef.current);
     const activeItem = currentIndex >= 0 ? current[currentIndex] : findItemByQueueId(current, activeCurrentQueueId);
 
-    if (activeRepeatMode === 'one') {
+    const repeatCurrentItem = async (): Promise<PlaybackStatus | null> => {
       if (activeItem) {
         const status = await playLocalTrack(activeItem);
         commitPlayedItem(activeItem, status, { recordHistory: false });
@@ -1614,12 +1618,17 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
       const fallbackTrack = lastPlayedTrackRef.current;
       return fallbackTrack ? playTrack(fallbackTrack) : null;
+    };
+
+    if (activeRepeatMode === 'one' && options.autoAdvance === true) {
+      return repeatCurrentItem();
     }
 
     if (current.length === 0) {
-      return null;
+      return activeRepeatMode === 'one' ? repeatCurrentItem() : null;
     }
 
+    const navigationRepeatMode = activeRepeatMode === 'one' ? 'off' : activeRepeatMode;
     let target: QueueItem | null = null;
 
     if (isShuffleEnabledRef.current) {
@@ -1632,24 +1641,24 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         target = await fetchLibraryShuffleTarget(source, activeItem ?? null);
       }
 
-      if (!target && activeRepeatMode === 'all') {
+      if (!target && navigationRepeatMode === 'all') {
         candidates = activeItem ? current.filter((item) => item.queueId !== activeItem.queueId) : current;
         target = pickRandom(candidates);
       }
 
-      if (!target && activeRepeatMode === 'all') {
+      if (!target && navigationRepeatMode === 'all') {
         target = activeItem ?? current[0] ?? null;
       }
     } else if (currentIndex >= 0 && currentIndex < current.length - 1) {
       target = current[currentIndex + 1] ?? null;
     } else if (currentIndex < 0) {
       target = current[0] ?? null;
-    } else if (activeRepeatMode === 'all') {
+    } else if (navigationRepeatMode === 'all') {
       target = current[0] ?? null;
     }
 
     if (!target) {
-      return null;
+      return activeRepeatMode === 'one' ? repeatCurrentItem() : null;
     }
 
     const status = await playLocalTrack(target);

@@ -50,6 +50,7 @@ const ytDlpPathCandidates = (): string[] => {
   return [
     ...(explicit ? [explicit] : []),
     ...(resourcesPath ? [resolve(resourcesPath, 'tools', ytDlpFileName)] : []),
+    ...(process.platform !== 'win32' ? [resolve(process.cwd(), 'electron-app', 'tools-linux', ytDlpFileName)] : []),
     resolve(process.cwd(), 'electron-app', 'tools', ytDlpFileName),
     ytDlpFileName,
   ];

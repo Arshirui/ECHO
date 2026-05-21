@@ -125,6 +125,42 @@ describe('audioOutputMemory', () => {
     }, 'stable', 'directsound')).not.toHaveProperty('deviceIndex');
   });
 
+  it('persists ALSA shared backend and keeps device index when creating Linux output settings', () => {
+    writeRememberedAudioOutput({
+      enabled: true,
+      outputMode: 'shared',
+      sharedBackend: 'alsa',
+      latencyProfile: 'stable',
+      deviceIndex: 2,
+      deviceName: 'ALSA Default',
+    });
+
+    expect(readRememberedAudioOutput()).toMatchObject({
+      enabled: true,
+      outputMode: 'shared',
+      sharedBackend: 'alsa',
+      latencyProfile: 'stable',
+      deviceIndex: 2,
+      deviceName: 'ALSA Default',
+    });
+
+    expect(createOutputSettings('shared', {
+      id: 'shared:2',
+      index: 2,
+      name: 'ALSA Default',
+      outputMode: 'shared',
+      sampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      isDefault: true,
+    }, 'stable', 'alsa')).toMatchObject({
+      outputMode: 'shared',
+      sharedBackend: 'alsa',
+      latencyProfile: 'stable',
+      deviceIndex: 2,
+      deviceName: 'ALSA Default',
+    });
+  });
+
   it('sanitizes incompatible low-latency buffer sizes in local output memory', () => {
     window.localStorage.setItem(
       'echo-next.audio-output-memory',

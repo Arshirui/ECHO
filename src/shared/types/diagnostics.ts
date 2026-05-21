@@ -2,6 +2,28 @@ export type DiagnosticScope = 'main' | 'renderer' | 'library' | 'audio' | 'playb
 
 export type DiagnosticLevel = 'debug' | 'info' | 'warn' | 'error';
 
+export type DiagnosticConsoleSource = 'stdout' | 'stderr' | 'renderer' | 'system';
+
+export type DiagnosticConsoleLevel = DiagnosticLevel | 'log';
+
+export type DiagnosticConsoleEntry = {
+  id: number;
+  timestamp: string;
+  source: DiagnosticConsoleSource;
+  level: DiagnosticConsoleLevel;
+  message: string;
+  rawMessage?: string;
+  details?: {
+    line?: number;
+    sourceId?: string;
+  };
+};
+
+export type DiagnosticConsoleSnapshot = {
+  entries: DiagnosticConsoleEntry[];
+  maxEntries: number;
+};
+
 export type CrashSessionStatus = 'running' | 'closed' | 'abnormalExit';
 
 export type CrashSessionInfo = {

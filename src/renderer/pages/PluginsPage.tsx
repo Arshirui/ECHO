@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Code2, FolderOpen, PackagePlus, Play, Power, RefreshCw, ScrollText, TerminalSquare } from 'lucide-react';
-import { pluginPanelBridgeActions, pluginPanelBridgeChannel, pluginPanelBridgeVersion } from '../../shared/types/plugins';
+import { Activity, AlertTriangle, Code2, Download, Eye, FolderOpen, LockKeyhole, PackagePlus, Play, Power, RefreshCw, ScrollText, ShieldCheck, TerminalSquare, Upload } from 'lucide-react';
+import { pluginPanelBridgeActions, pluginPanelBridgeChannel, pluginPanelBridgeVersion, pluginPermissionDescriptors } from '../../shared/types/plugins';
 import type {
   PluginCreateExampleKind,
   PluginLogEntry,
@@ -13,16 +13,11 @@ import type {
 import { EmptyState } from '../components/ui/EmptyState';
 import { getPluginsBridge } from '../utils/echoBridge';
 
-const permissionLabels: Record<PluginPermission, string> = {
-  'playback:read': '读取播放状态',
-  'playback:control': '控制播放',
-  'library:read': '读取曲库',
-  'library:write': '修改曲库',
-  'settings:read': '读取设置',
-  'settings:write': '修改设置',
-  network: '访问网络',
-  'fs:plugin': '插件目录文件',
-};
+const permissionRiskLabels = {
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+} as const;
 
 const exampleLabels: Array<{ kind: PluginCreateExampleKind; label: string; description: string }> = [
   { kind: 'playback-panel', label: '播放状态面板', description: '监听播放状态，带一个可编辑面板。' },
@@ -33,6 +28,17 @@ const exampleLabels: Array<{ kind: PluginCreateExampleKind; label: string; descr
 const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error || '插件操作失败'));
 
 const fileUrlFromPath = (path: string): string => `file:///${path.replace(/\\/gu, '/')}`;
+
+const getPermissionLabel = (permission: PluginPermission): string => pluginPermissionDescriptors[permission]?.label ?? permission;
+
+const formatPermissionForConfirm = (permission: PluginPermission): string => {
+  const descriptor = pluginPermissionDescriptors[permission];
+  return descriptor
+    ? `- ${descriptor.label}（${permissionRiskLabels[descriptor.risk]}）：${descriptor.description}`
+    : `- ${permission}`;
+};
+
+const formatPluginTime = (value: string | null): string => (value ? new Date(value).toLocaleString() : '暂无');
 
 const pluginPanelActionSet = new Set<PluginPanelBridgeAction>(pluginPanelBridgeActions);
 
@@ -68,14 +74,94 @@ const postPanelResponse = (target: Window, response: PluginPanelBridgeResponse):
 };
 
 const StatusPill = ({ plugin }: { plugin: PluginSummary }): JSX.Element => {
-  const label = plugin.error ? '异常' : plugin.status === 'running' ? '运行中' : plugin.enabled ? '已启用' : '未启用';
-  return <span className="plugin-status-pill" data-status={plugin.error ? 'error' : plugin.status}>{label}</span>;
+  const label = plugin.disabledByHost ? '已隔离' : plugin.error ? '异常' : plugin.status === 'running' ? '运行中' : plugin.enabled ? '已启用' : '未启用';
+  return <span className="plugin-status-pill" data-status={plugin.disabledByHost ? 'isolated' : plugin.error ? 'error' : plugin.status}>{label}</span>;
 };
 
-const PermissionList = ({ permissions }: { permissions: PluginPermission[] }): JSX.Element => (
+const PermissionList = ({ plugin }: { plugin: PluginSummary }): JSX.Element => (
   <div className="plugin-permissions">
-    {permissions.length === 0 ? <span>无额外权限</span> : permissions.map((permission) => <span key={permission}>{permissionLabels[permission]}</span>)}
+    {plugin.permissions.length === 0 ? (
+      <span>无需额外权限</span>
+    ) : (
+      plugin.permissions.map((permission) => {
+        const descriptor = pluginPermissionDescriptors[permission];
+        const trusted = plugin.trustedPermissions.includes(permission);
+        return (
+          <span key={permission} data-risk={descriptor?.risk ?? 'medium'} title={descriptor?.description ?? permission}>
+            {getPermissionLabel(permission)}
+            <em>{trusted ? '已信任' : '未信任'}</em>
+          </span>
+        );
+      })
+    )}
   </div>
+);
+
+const SecurityOverview = ({ plugin }: { plugin: PluginSummary }): JSX.Element => {
+  const highRiskCount = plugin.security.highRiskPermissions.length;
+  return (
+    <section className="plugin-security-panel">
+      <header>
+        <ShieldCheck size={17} />
+        <strong>安全边界</strong>
+      </header>
+      <div className="plugin-security-grid">
+        <span>
+          <LockKeyhole size={16} />
+          {plugin.security.trustedPermissionCount}/{plugin.security.requestedPermissionCount} 权限已信任
+        </span>
+        <span data-risk={highRiskCount > 0 ? 'high' : 'low'}>
+          <AlertTriangle size={16} />
+          {highRiskCount > 0 ? `${highRiskCount} 个高风险权限` : '无高风险权限'}
+        </span>
+        <span>
+          <Eye size={16} />
+          {plugin.security.sandboxedPanel ? '面板沙盒隔离' : '无面板脚本'}
+        </span>
+        <span>
+          <TerminalSquare size={16} />
+          {plugin.security.commandCount} 个命令
+        </span>
+      </div>
+      <PermissionList plugin={plugin} />
+    </section>
+  );
+};
+
+const ActivityOverview = ({ plugin }: { plugin: PluginSummary }): JSX.Element => (
+  <section className="plugin-activity-panel">
+    <header>
+      <Activity size={17} />
+      <strong>这个插件干了什么</strong>
+    </header>
+    <div className="plugin-activity-grid">
+      <span>
+        <strong>{plugin.activity.commandRunCount}</strong>
+        命令执行
+        <em>{formatPluginTime(plugin.activity.lastCommandAt)}</em>
+      </span>
+      <span>
+        <strong>{plugin.activity.eventDispatchCount}</strong>
+        事件接收
+        <em>{formatPluginTime(plugin.activity.lastEventAt)}</em>
+      </span>
+      <span>
+        <strong>{plugin.activity.storageWriteCount}</strong>
+        插件存储写入
+        <em>{formatPluginTime(plugin.activity.lastStorageWriteAt)}</em>
+      </span>
+      <span>
+        <strong>{plugin.activity.settingsWriteCount}</strong>
+        设置写入
+        <em>{formatPluginTime(plugin.activity.lastSettingsWriteAt)}</em>
+      </span>
+      <span data-risk={plugin.activity.errorCount > 0 ? 'high' : 'low'}>
+        <strong>{plugin.activity.errorCount}</strong>
+        错误
+        <em>{formatPluginTime(plugin.activity.lastErrorAt)}</em>
+      </span>
+    </div>
+  </section>
 );
 
 export const PluginsPage = (): JSX.Element => {
@@ -136,14 +222,61 @@ export const PluginsPage = (): JSX.Element => {
     [refresh, refreshLogs, selectedPlugin?.id],
   );
 
+  const handleImportPackage = (): void => {
+    if (!pluginsApi) {
+      return;
+    }
+    void (async () => {
+      try {
+        setBusyAction('import-package');
+        setMessage(null);
+        const result = await pluginsApi.importPackage();
+        if (!result) {
+          setMessage('已取消导入。');
+          return;
+        }
+        setSelectedPluginId(result.pluginId);
+        setMessage(`已导入插件包：${result.pluginId}`);
+        await refresh();
+        await refreshLogs(result.pluginId);
+      } catch (error) {
+        setMessage(formatError(error));
+      } finally {
+        setBusyAction(null);
+      }
+    })();
+  };
+
+  const handleExportPackage = (plugin: PluginSummary): void => {
+    if (!pluginsApi) {
+      return;
+    }
+    void (async () => {
+      try {
+        setBusyAction(`export:${plugin.id}`);
+        setMessage(null);
+        const target = await pluginsApi.exportPackage(plugin.id);
+        setMessage(target ? `已导出插件包：${target}` : '已取消导出。');
+        await refreshLogs(plugin.id);
+      } catch (error) {
+        setMessage(formatError(error));
+      } finally {
+        setBusyAction(null);
+      }
+    })();
+  };
+
   const handleEnable = (plugin: PluginSummary): void => {
     if (!pluginsApi) {
       return;
     }
     const permissionText = plugin.permissions.length
-      ? plugin.permissions.map((permission) => `- ${permissionLabels[permission]}`).join('\n')
-      : '无额外权限';
-    const confirmed = window.confirm(`启用插件「${plugin.name}」？\n\n请求权限：\n${permissionText}\n\n坏插件会被隔离并记录日志，但仍建议只启用你信任的本地插件。`);
+      ? plugin.permissions.map(formatPermissionForConfirm).join('\n')
+      : '无需额外权限';
+    const highRiskText = plugin.security.highRiskPermissions.length > 0
+      ? '\n\n包含高风险权限，请确认插件来源可信。'
+      : '';
+    const confirmed = window.confirm(`启用插件「${plugin.name}」？\n\n请求权限：\n${permissionText}${highRiskText}\n\n插件会在主进程受控沙盒和面板 iframe 沙盒中运行，连续启动失败会自动隔离。`);
     if (!confirmed) {
       return;
     }
@@ -265,6 +398,10 @@ export const PluginsPage = (): JSX.Element => {
             <FolderOpen size={16} />
             打开插件目录
           </button>
+          <button className="settings-action-button" type="button" disabled={busyAction === 'import-package'} onClick={handleImportPackage}>
+            <Upload size={16} />
+            导入插件包
+          </button>
           <button className="settings-action-button" type="button" disabled={busyAction === 'refresh'} onClick={() => void runAction('refresh', refresh, '插件列表已刷新。')}>
             <RefreshCw size={16} />
             刷新
@@ -324,8 +461,12 @@ export const PluginsPage = (): JSX.Element => {
               </div>
 
               {selectedPlugin.error ? <p className="plugins-message plugins-message--error">{selectedPlugin.error}</p> : null}
+              {selectedPlugin.disabledByHost ? (
+                <p className="plugins-message plugins-message--error">这个插件连续启动失败，ECHO 已自动隔离。修复插件文件后可手动重新启用。</p>
+              ) : null}
 
-              <PermissionList permissions={selectedPlugin.permissions} />
+              <SecurityOverview plugin={selectedPlugin} />
+              <ActivityOverview plugin={selectedPlugin} />
 
               <div className="plugin-actions">
                 {selectedPlugin.enabled ? (
@@ -334,7 +475,7 @@ export const PluginsPage = (): JSX.Element => {
                     停用
                   </button>
                 ) : (
-                  <button className="settings-action-button" type="button" disabled={Boolean(selectedPlugin.error) || busyAction === `enable:${selectedPlugin.id}`} onClick={() => handleEnable(selectedPlugin)}>
+                  <button className="settings-action-button" type="button" disabled={Boolean(selectedPlugin.error && !selectedPlugin.disabledByHost) || busyAction === `enable:${selectedPlugin.id}`} onClick={() => handleEnable(selectedPlugin)}>
                     <Power size={16} />
                     启用
                   </button>
@@ -346,6 +487,10 @@ export const PluginsPage = (): JSX.Element => {
                 <button className="settings-action-button" type="button" onClick={() => void pluginsApi.openDirectory(selectedPlugin.id)}>
                   <FolderOpen size={16} />
                   打开目录
+                </button>
+                <button className="settings-action-button" type="button" disabled={busyAction === `export:${selectedPlugin.id}`} onClick={() => handleExportPackage(selectedPlugin)}>
+                  <Download size={16} />
+                  导出插件包
                 </button>
               </div>
 

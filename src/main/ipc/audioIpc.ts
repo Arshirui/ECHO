@@ -22,9 +22,11 @@ import { createSystemAudioStreamUrl } from '../protocol/audioProtocol';
 import { enqueueAudioCommand, isAudioCommandTimeoutError } from './audioCommandQueue';
 
 const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio', 'system']);
-const sharedBackends = new Set<AudioSharedBackend>(['auto', 'windows', 'directsound']);
+const sharedBackends = new Set<AudioSharedBackend>(['auto', 'windows', 'directsound', 'alsa']);
 const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
 const playbackSpeedModes = new Set<PlaybackSpeedMode>(['nightcore', 'daycore', 'speed']);
+const systemAudioOutputBackend = 'system-audio';
+const systemAudioBackendImpl = 'electron-html-audio';
 
 const safeExportFileName = (value: string): string => {
   // eslint-disable-next-line no-control-regex -- Control chars are illegal in Windows file names.
@@ -291,8 +293,8 @@ const reportSystemPlaybackError = (rawReport: unknown): void => {
   const audioStatus: AudioStatus = {
     ...status,
     outputMode: 'system',
-    outputBackend: 'windows-system-audio',
-    activeOutputBackendImpl: 'electron-html-audio',
+    outputBackend: systemAudioOutputBackend,
+    activeOutputBackendImpl: systemAudioBackendImpl,
     error: report.recovered ? null : report.message,
   };
 

@@ -1,11 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, extname, resolve } from 'node:path';
+import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
 import type { EchoDatabase } from '../database/createDatabase';
 import { BPM_ANALYSIS_VERSION } from '../../shared/constants/audioAnalysis';
 import { REPLAY_GAIN_ANALYSIS_VERSION } from '../../shared/constants/replayGain';
 import { chineseSearchVariants } from './ChineseSearchVariants';
-import { buildTrackSearchTerms } from './SearchIndexTokens';
+import {
+  buildTrackSearchTerms,
+  buildTrackSearchTermsAsync,
+  hasJapaneseSearchText,
+  preloadSearchIndexRomanizer,
+  type SearchIndexTrackFields,
+} from './SearchIndexTokens';
 import { normalizeAlbumTitleForLooseMerge, type AlbumKeyInput, type AlbumMergeStrategy, type AlbumService } from './AlbumService';
 import { updateCoverPathsInDatabase } from './CoverCacheManager';
 import { DuplicateTrackService } from './duplicates/DuplicateTrackService';
@@ -59,6 +66,8 @@ import type {
   LibraryScanStatus,
   LibrarySummary,
   LibraryTrack,
+  ScanDirectorySnapshot,
+  ScanDirectorySnapshotEntry,
   ScanJobUpdate,
   StoredTrackCoverState,
   StoredTrackFingerprint,
@@ -71,6 +80,9 @@ import type {
 import { COVER_CACHE_VERSION as currentCoverCacheVersion } from './libraryTypes';
 
 type DbRow = Record<string, unknown>;
+type MarkTracksMissingFromFolderOptions = {
+  excludeDirectories?: readonly string[];
+};
 type ArtistIndexStats = {
   id: string;
   key: string;
@@ -128,6 +140,23 @@ type LibraryInboxResolvedQuery = {
   selectedBatch: LibraryInboxBatch | null;
   hasTarget: boolean;
 };
+type TrackTagUpdateInput = {
+  title: string;
+  artist: string;
+  album: string;
+  albumArtist: string;
+  trackNo: number | null;
+  discNo: number | null;
+  year: number | null;
+  genre: string | null;
+  bpm?: number | null;
+  sizeBytes: number;
+  mtimeMs: number;
+  fieldSources: Record<string, string>;
+  embeddedMetadataStatus?: LibraryTrack['embeddedMetadataStatus'];
+  embeddedCoverStatus?: LibraryTrack['embeddedCoverStatus'];
+  metadataStatus?: string;
+};
 
 const defaultPageSize = 100;
 const maxPageSize = 500;
@@ -146,6 +175,8 @@ const neteaseDailyRecommendSourcePlaylistId = 'daily-recommend';
 const protectedSystemPlaylistIds = new Set([likedSongsSourcePlaylistId, likedAlbumsSourcePlaylistId, neteaseDailyRecommendSourcePlaylistId]);
 const streamingDownloadAddedFrom = (provider: string, providerTrackId: string): string =>
   `streaming-download:${provider}:${providerTrackId}`;
+const japaneseRomajiSearchTermsFlag = 'search_terms_japanese_romaji_v1';
+const searchTermsBackfillBatchSize = 100;
 const libraryQualityOverviewDefinitions: Array<Omit<LibraryQualityOverviewItem, 'count' | 'lastError'>> = [
   {
     kind: 'missing_cover',
@@ -525,6 +556,41 @@ const parseErrors = (value: unknown): string[] => {
   }
 };
 
+const isSafeScanDirectorySnapshotEntry = (value: unknown): value is ScanDirectorySnapshotEntry => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const entry = value as Partial<ScanDirectorySnapshotEntry>;
+  return (
+    typeof entry.name === 'string' &&
+    entry.name.length > 0 &&
+    !entry.name.includes('/') &&
+    !entry.name.includes('\\') &&
+    (entry.kind === 'directory' || entry.kind === 'file')
+  );
+};
+
+const parseScanDirectorySnapshotEntries = (value: unknown): ScanDirectorySnapshotEntry[] | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  if (binaryLibraryTextPattern.test(value)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) && parsed.every(isSafeScanDirectorySnapshotEntry) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const sanitizeScanDirectorySnapshotEntries = (entries: readonly ScanDirectorySnapshotEntry[]): ScanDirectorySnapshotEntry[] | null =>
+  entries.every(isSafeScanDirectorySnapshotEntry) ? entries.map((entry) => ({ name: entry.name, kind: entry.kind })) : null;
+
 const textOrNull = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
 const numberOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 const titleCollator = new Intl.Collator(['zh-Hans-u-co-pinyin', 'zh-Hant', 'ja', 'ko', 'en'], {
@@ -778,6 +844,185 @@ export class LibraryStore {
         );
       }
     })();
+  }
+
+  async prepareTrackSearchTerms(track: TrackWrite): Promise<string> {
+    return buildTrackSearchTermsAsync(this.searchFieldsForTrackWrite(track));
+  }
+
+  async prepareTrackTagSearchTerms(trackId: string, update: TrackTagUpdateInput): Promise<string> {
+    return buildTrackSearchTermsAsync(this.searchFieldsForTrackTagUpdate(trackId, update));
+  }
+
+  async rebuildJapaneseRomanizedSearchTerms(): Promise<number> {
+    if (this.hasMaintenanceFlag(japaneseRomajiSearchTermsFlag)) {
+      return 0;
+    }
+    if (!(await preloadSearchIndexRomanizer())) {
+      return 0;
+    }
+
+    const changed = (await this.rebuildLocalJapaneseSearchTerms()) + (await this.rebuildRemoteJapaneseSearchTerms());
+    this.setMaintenanceFlag(japaneseRomajiSearchTermsFlag, 'complete');
+    return changed;
+  }
+
+  private searchFieldsForTrackWrite(track: TrackWrite): SearchIndexTrackFields {
+    const safeTrack = sanitizeTrackWrite(track);
+    return {
+      title: safeTrack.title,
+      artist: safeTrack.artist,
+      album: safeTrack.album,
+      albumArtist: safeTrack.albumArtist,
+      genre: safeTrack.genre,
+      path: resolve(safeTrack.path),
+    };
+  }
+
+  private searchFieldsForTrackTagUpdate(trackId: string, update: TrackTagUpdateInput): SearchIndexTrackFields {
+    const current = this.getTrack(trackId);
+    const filenameGuess = filenameTrackFallback(current?.path ?? update.title);
+    const safeTitle = sanitizeLibraryText(update.title, filenameGuess.title);
+    const safeArtist = sanitizeLibraryText(update.artist, filenameGuess.artist ?? unknownArtist);
+    const safeAlbum = sanitizeLibraryText(update.album, '');
+    const safeAlbumArtist = sanitizeLibraryText(update.albumArtist, safeArtist);
+    const safeGenre = sanitizeNullableLibraryText(update.genre);
+
+    return {
+      title: safeTitle,
+      artist: safeArtist,
+      album: safeAlbum,
+      albumArtist: safeAlbumArtist,
+      genre: safeGenre,
+      path: current?.path,
+    };
+  }
+
+  private hasMaintenanceFlag(key: string): boolean {
+    const row = this.database.prepare<[string], { value: string }>('SELECT value FROM library_maintenance_flags WHERE key = ?').get(key);
+    return row?.value === 'complete';
+  }
+
+  private setMaintenanceFlag(key: string, value: string): void {
+    this.database
+      .prepare<[string, string, string]>(
+        `INSERT INTO library_maintenance_flags (key, value, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(key, value, nowIso());
+  }
+
+  private async rebuildLocalJapaneseSearchTerms(): Promise<number> {
+    const selectRows = this.database.prepare<[number, number], DbRow>(
+      `SELECT rowid, id, path, title, artist, album, album_artist, genre, search_terms
+       FROM tracks
+       WHERE rowid > ?
+       ORDER BY rowid
+       LIMIT ?`,
+    );
+    const updateRow = this.database.prepare<[string, string]>('UPDATE tracks SET search_terms = ? WHERE id = ?');
+    let changed = 0;
+    let lastRowId = 0;
+
+    while (true) {
+      const rows = selectRows.all(lastRowId, searchTermsBackfillBatchSize);
+      if (rows.length === 0) {
+        break;
+      }
+
+      lastRowId = Number(rows[rows.length - 1]?.rowid ?? lastRowId);
+      const updates: Array<{ id: string; searchTerms: string }> = [];
+
+      for (const row of rows) {
+        const fields = {
+          title: String(row.title ?? ''),
+          artist: String(row.artist ?? ''),
+          album: String(row.album ?? ''),
+          albumArtist: String(row.album_artist ?? ''),
+          genre: textOrNull(row.genre),
+          path: textOrNull(row.path),
+        };
+
+        if (!hasJapaneseSearchText(fields)) {
+          continue;
+        }
+
+        const searchTerms = await buildTrackSearchTermsAsync(fields);
+        if (searchTerms && searchTerms !== String(row.search_terms ?? '')) {
+          updates.push({ id: String(row.id), searchTerms });
+        }
+      }
+
+      if (updates.length > 0) {
+        this.database.transaction(() => {
+          for (const update of updates) {
+            updateRow.run(update.searchTerms, update.id);
+            changed += 1;
+          }
+        })();
+      }
+
+      await yieldToMainLoop();
+    }
+
+    return changed;
+  }
+
+  private async rebuildRemoteJapaneseSearchTerms(): Promise<number> {
+    const selectRows = this.database.prepare<[number, number], DbRow>(
+      `SELECT rowid, id, remote_path, title, artist, album, album_artist, genre, search_terms
+       FROM remote_tracks
+       WHERE rowid > ?
+       ORDER BY rowid
+       LIMIT ?`,
+    );
+    const updateRow = this.database.prepare<[string, string]>('UPDATE remote_tracks SET search_terms = ? WHERE id = ?');
+    let changed = 0;
+    let lastRowId = 0;
+
+    while (true) {
+      const rows = selectRows.all(lastRowId, searchTermsBackfillBatchSize);
+      if (rows.length === 0) {
+        break;
+      }
+
+      lastRowId = Number(rows[rows.length - 1]?.rowid ?? lastRowId);
+      const updates: Array<{ id: string; searchTerms: string }> = [];
+
+      for (const row of rows) {
+        const fields = {
+          title: String(row.title ?? ''),
+          artist: String(row.artist ?? ''),
+          album: String(row.album ?? ''),
+          albumArtist: String(row.album_artist ?? ''),
+          genre: textOrNull(row.genre),
+          remotePath: textOrNull(row.remote_path),
+        };
+
+        if (!hasJapaneseSearchText(fields)) {
+          continue;
+        }
+
+        const searchTerms = await buildTrackSearchTermsAsync(fields);
+        if (searchTerms && searchTerms !== String(row.search_terms ?? '')) {
+          updates.push({ id: String(row.id), searchTerms });
+        }
+      }
+
+      if (updates.length > 0) {
+        this.database.transaction(() => {
+          for (const update of updates) {
+            updateRow.run(update.searchTerms, update.id);
+            changed += 1;
+          }
+        })();
+      }
+
+      await yieldToMainLoop();
+    }
+
+    return changed;
   }
 
   transaction<T>(work: () => T): T {
@@ -1040,6 +1285,7 @@ export class LibraryStore {
       this.run('UPDATE folders SET status = ?, enabled = ?, updated_at = ? WHERE id = ?', 'removed', 0, timestamp, folderId);
       this.run('DELETE FROM tracks WHERE folder_id = ?', folderId);
       this.run('DELETE FROM scan_jobs WHERE folder_id = ?', folderId);
+      this.run('DELETE FROM scan_directory_snapshots WHERE folder_id = ?', folderId);
       this.run('DELETE FROM album_tracks');
       this.run('DELETE FROM albums');
       this.refreshArtists();
@@ -1535,6 +1781,56 @@ export class LibraryStore {
     this.run('UPDATE folders SET last_scan_at = ?, updated_at = ? WHERE id = ?', timestamp, timestamp, folderId);
   }
 
+  getScanDirectorySnapshotsByFolder(folderId: string): Map<string, ScanDirectorySnapshot> {
+    const rows = this.allRows(
+      'SELECT path, mtime_ms, entries_json FROM scan_directory_snapshots WHERE folder_id = ?',
+      folderId,
+    );
+    const snapshots = new Map<string, ScanDirectorySnapshot>();
+
+    for (const row of rows) {
+      const entries = parseScanDirectorySnapshotEntries(row.entries_json);
+      if (!entries) {
+        continue;
+      }
+
+      const path = resolve(String(row.path));
+      snapshots.set(pathCompareValue(path), {
+        path,
+        mtimeMs: Number(row.mtime_ms),
+        entries,
+      });
+    }
+
+    return snapshots;
+  }
+
+  upsertScanDirectorySnapshots(folderId: string, snapshots: readonly ScanDirectorySnapshot[], timestamp = nowIso()): void {
+    if (snapshots.length === 0) {
+      return;
+    }
+
+    const statement = this.database.prepare(
+      `INSERT INTO scan_directory_snapshots (folder_id, path, mtime_ms, entries_json, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(folder_id, path) DO UPDATE SET
+         mtime_ms = excluded.mtime_ms,
+         entries_json = excluded.entries_json,
+         updated_at = excluded.updated_at`,
+    );
+
+    this.transaction(() => {
+      for (const snapshot of snapshots) {
+        const entries = sanitizeScanDirectorySnapshotEntries(snapshot.entries);
+        if (!entries || !Number.isFinite(snapshot.mtimeMs)) {
+          continue;
+        }
+
+        statement.run(folderId, resolve(snapshot.path), Math.round(snapshot.mtimeMs), JSON.stringify(entries), timestamp);
+      }
+    });
+  }
+
   findTrackFingerprint(filePath: string): StoredTrackFingerprint | null {
     const row = this.getRow('SELECT id, size_bytes, mtime_ms FROM tracks WHERE path = ? AND missing = 0', resolve(filePath));
 
@@ -1660,10 +1956,25 @@ export class LibraryStore {
     };
   }
 
-  markTracksMissingFromFolder(folderId: string, discoveredPaths: string[], timestamp = nowIso()): number {
-    const normalizedPaths = new Set(discoveredPaths.map((filePath) => resolve(filePath)));
+  markTracksMissingFromFolder(
+    folderId: string,
+    discoveredPaths: string[],
+    timestamp = nowIso(),
+    options: MarkTracksMissingFromFolderOptions = {},
+  ): number {
+    const normalizedPaths = new Set(discoveredPaths.map((filePath) => pathCompareValue(filePath)));
+    const excludedDirectories = (options.excludeDirectories ?? []).map((directoryPath) => resolve(directoryPath));
     const existingRows = this.allRows('SELECT id, path FROM tracks WHERE folder_id = ? AND missing = 0', folderId);
-    const missingIds = existingRows.filter((row) => !normalizedPaths.has(String(row.path))).map((row) => String(row.id));
+    const missingIds = existingRows
+      .filter((row) => {
+        const trackPath = String(row.path);
+        if (normalizedPaths.has(pathCompareValue(trackPath))) {
+          return false;
+        }
+
+        return !excludedDirectories.some((directoryPath) => isPathInsideOrEqual(directoryPath, trackPath));
+      })
+      .map((row) => String(row.id));
 
     let changed = 0;
 
@@ -1774,13 +2085,13 @@ export class LibraryStore {
     return id;
   }
 
-  upsertTrack(track: TrackWrite): 'added' | 'updated' {
+  upsertTrack(track: TrackWrite, preparedSearchTerms?: string): 'added' | 'updated' {
     const existing = this.getRow('SELECT id, created_at FROM tracks WHERE path = ?', resolve(track.path));
     const createdAt = textOrNull(existing?.created_at) ?? track.createdAt ?? track.updatedAt;
     const id = textOrNull(existing?.id) ?? track.id;
     const normalizedPath = resolve(track.path);
     const safeTrack = sanitizeTrackWrite(track);
-    const searchTerms = buildTrackSearchTerms({
+    const searchTerms = preparedSearchTerms ?? buildTrackSearchTerms({
       title: safeTrack.title,
       artist: safeTrack.artist,
       album: safeTrack.album,
@@ -2800,24 +3111,9 @@ export class LibraryStore {
 
   updateTrackTags(
     trackId: string,
-    update: {
-      title: string;
-      artist: string;
-      album: string;
-      albumArtist: string;
-      trackNo: number | null;
-      discNo: number | null;
-      year: number | null;
-      genre: string | null;
-      bpm?: number | null;
-      sizeBytes: number;
-      mtimeMs: number;
-      fieldSources: Record<string, string>;
-      embeddedMetadataStatus?: LibraryTrack['embeddedMetadataStatus'];
-      embeddedCoverStatus?: LibraryTrack['embeddedCoverStatus'];
-      metadataStatus?: string;
-    },
+    update: TrackTagUpdateInput,
     timestamp = nowIso(),
+    preparedSearchTerms?: string,
   ): LibraryTrack {
     const current = this.getTrack(trackId);
     const filenameGuess = filenameTrackFallback(current?.path ?? update.title);
@@ -2844,7 +3140,7 @@ export class LibraryStore {
       safeFieldSources.genre = 'unknown';
     }
 
-    const searchTerms = buildTrackSearchTerms({
+    const searchTerms = preparedSearchTerms ?? buildTrackSearchTerms({
       title: safeTitle,
       artist: safeArtist,
       album: safeAlbum,

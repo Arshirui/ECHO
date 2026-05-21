@@ -131,8 +131,10 @@ describe('SMTC service', () => {
 
     expect(handlers[0]).toBeTruthy();
     handlers[0]?.('next');
+    handlers[0]?.({ type: 'seek', positionSeconds: 32 });
 
     expect(send).toHaveBeenCalledWith(IpcChannels.SmtcCommand, 'next');
+    expect(send).toHaveBeenCalledWith(IpcChannels.SmtcCommand, { type: 'seek', positionSeconds: 32 });
     unsubscribe();
     expect(handlers).toHaveLength(0);
   });

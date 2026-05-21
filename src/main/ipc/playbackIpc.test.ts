@@ -780,6 +780,10 @@ describe('playback media prepare IPC', () => {
       expiresAt: '2026-01-01T06:00:00.000Z',
     });
     const backfillDuration = vi.fn();
+    const createPlaybackHandoff = vi.fn().mockResolvedValue({
+      state: 'ready',
+      source: { url: 'http://127.0.0.1:19000/remote-stream/token' },
+    });
 
     vi.doMock('electron', () => ({
       dialog: { showOpenDialog: vi.fn() },
@@ -811,6 +815,11 @@ describe('playback media prepare IPC', () => {
       }),
     }));
     vi.doMock('../integrations/smtc/SmtcStatusSync', () => ({ syncSmtcStatus: vi.fn() }));
+    vi.doMock('../integrations/hqplayer/HqPlayerService', () => ({
+      getHqPlayerService: () => ({
+        createPlaybackHandoff,
+      }),
+    }));
     vi.doMock('../library/remote/RemoteSourceService', () => ({
       getRemoteSourceService: () => ({
         setPlaybackActive,
@@ -863,6 +872,17 @@ describe('playback media prepare IPC', () => {
       probe: { durationSeconds: 188.5 },
     }));
     expect(backfillDuration).toHaveBeenCalledWith('remote-track', 188.5);
+    await expect.poll(() => createPlaybackHandoff.mock.calls.length).toBe(1);
+    expect(createPlaybackHandoff).toHaveBeenCalledWith(expect.objectContaining({
+      item: expect.objectContaining({
+        mediaType: 'remote',
+        trackId: 'remote-track',
+      }),
+      resolvedSource: expect.objectContaining({
+        filePath: 'http://127.0.0.1:19000/remote-stream/token',
+        durationSeconds: 188.5,
+      }),
+    }));
   });
 
   it('forwards local file preparation failures without breaking the IPC call', async () => {

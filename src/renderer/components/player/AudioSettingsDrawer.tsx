@@ -24,11 +24,17 @@ import {
   Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { AudioDeviceInfo, AudioDiagnostics, AudioLatencyProfile, AudioOutputMode, AudioOutputSettings, AudioSharedBackend, AudioStatus } from '../../../shared/types/audio';
-import { detectRendererPlatform, isAdvancedNativeOutputPlatform } from '../../../shared/utils/audioPlatformCapabilities';
+import type { AudioDeviceInfo, AudioLatencyProfile, AudioOutputMode, AudioOutputSettings, AudioSharedBackend, AudioStatus } from '../../../shared/types/audio';
+import {
+  detectRendererPlatform,
+  isAdvancedNativeOutputPlatform,
+  normalizeAudioSharedBackendForPlatform,
+} from '../../../shared/utils/audioPlatformCapabilities';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
 import { createOutputSettings, normalizeSharedBackend, readRememberedAudioOutput, resolveSupportedLatencyProfile, writeRememberedAudioOutput } from './audioOutputMemory';
+import { AudioProfessionalStatusPanel } from './AudioProfessionalStatusPanel';
+import { formatAudioDiagnostics } from './audioDiagnosticsFormat';
 
 type AudioSettingsDrawerProps = {
   isOpen: boolean;
@@ -107,8 +113,41 @@ const asioBufferOptionDefinitions: Array<{ value: number | null; label?: string;
   { value: 1024, label: '1024', detailKey: 'audioDrawer.buffer.stable' },
 ];
 
-const supportsAdvancedNativeOutput = (): boolean =>
-  typeof window !== 'undefined' && isAdvancedNativeOutputPlatform(detectRendererPlatform(window.navigator));
+const detectAudioDrawerPlatform = (): NodeJS.Platform | 'unknown' =>
+  typeof window !== 'undefined' ? detectRendererPlatform(window.navigator) : 'unknown';
+
+const getSystemAudioPlatformLabel = (platform: NodeJS.Platform | 'unknown'): string => {
+  if (platform === 'win32') {
+    return 'Windows';
+  }
+  if (platform === 'linux') {
+    return 'Linux';
+  }
+  if (platform === 'darwin') {
+    return 'macOS';
+  }
+  return 'System';
+};
+
+const getSharedBackendOptionsForPlatform = (
+  platform: NodeJS.Platform | 'unknown',
+): Array<{ id: AudioSharedBackend; labelKey: TranslationKey; detailKey: TranslationKey }> => {
+  if (platform === 'linux') {
+    return [
+      { id: 'auto', labelKey: 'audioDrawer.option.linuxAutoShared', detailKey: 'audioDrawer.option.linuxAutoSharedDescription' },
+      { id: 'alsa', labelKey: 'audioDrawer.option.alsaShared', detailKey: 'audioDrawer.option.alsaSharedDescription' },
+    ];
+  }
+
+  if (platform === 'win32') {
+    return [
+      { id: 'auto', labelKey: 'audioDrawer.option.wasapiShared', detailKey: 'audioDrawer.option.wasapiSharedDescription' },
+      { id: 'directsound', labelKey: 'audioDrawer.option.directSound', detailKey: 'audioDrawer.option.directSoundDescription' },
+    ];
+  }
+
+  return [];
+};
 
 const sanitizeOutputBufferSizeFrames = (
   outputMode: AudioOutputMode,
@@ -641,78 +680,6 @@ const getCurrentOutputName = (status: AudioStatus | null, fallbackDeviceName: st
 
 const getCurrentBackend = (status: AudioStatus | null, copy: AudioDrawerCopy): string => status?.outputBackend || status?.outputDeviceType || copy.systemAudio;
 
-const formatDiagnosticsValue = (value: unknown): string => {
-  if (Array.isArray(value)) {
-    return value.length ? value.join(', ') : '[]';
-  }
-
-  if (value === null || value === undefined || value === '') {
-    return 'n/a';
-  }
-
-  return String(value);
-};
-
-const formatAudioDiagnostics = (diagnostics: AudioDiagnostics): string => {
-  const rows: Array<[string, unknown]> = [
-    ['state', diagnostics.state],
-    ['host', diagnostics.host],
-    ['outputMode', diagnostics.outputMode],
-    ['sharedBackend', diagnostics.sharedBackend],
-    ['latencyProfile', diagnostics.latencyProfile],
-    ['outputBackend', diagnostics.outputBackend],
-    ['activeOutputBackendImpl', diagnostics.activeOutputBackendImpl],
-    ['useJuceOutputRequested', diagnostics.useJuceOutputRequested],
-    ['activeDecodeBackendImpl', diagnostics.activeDecodeBackendImpl],
-    ['useJuceDecodeRequested', diagnostics.useJuceDecodeRequested],
-    ['dsdOutputModeRequested', diagnostics.dsdOutputModeRequested],
-    ['activeDsdOutputMode', diagnostics.activeDsdOutputMode],
-    ['dsdNativeSampleRate', diagnostics.dsdNativeSampleRate],
-    ['dsdTransportSampleRate', diagnostics.dsdTransportSampleRate],
-    ['outputDeviceName', diagnostics.outputDeviceName],
-    ['currentFilePath', diagnostics.currentFilePath],
-    ['currentTrackId', diagnostics.currentTrackId],
-    ['durationSeconds', diagnostics.durationSeconds],
-    ['positionSeconds', diagnostics.positionSeconds],
-    ['playbackRate', diagnostics.playbackRate],
-    ['fileSampleRate', diagnostics.fileSampleRate],
-    ['decoderOutputSampleRate', diagnostics.decoderOutputSampleRate],
-    ['requestedOutputSampleRate', diagnostics.requestedOutputSampleRate],
-    ['actualDeviceSampleRate', diagnostics.actualDeviceSampleRate],
-    ['sharedDeviceSampleRate', diagnostics.sharedDeviceSampleRate],
-    ['resampling', diagnostics.resampling],
-    ['ffmpegPath', diagnostics.ffmpegPath],
-    ['ffmpegSource', diagnostics.ffmpegSource],
-    ['ffmpegVersion', diagnostics.ffmpegVersion],
-    ['ffmpegHealthy', diagnostics.ffmpegHealthy],
-    ['soxrAvailable', diagnostics.soxrAvailable],
-    ['resamplerEngine', diagnostics.resamplerEngine],
-    ['resamplerFallbackActive', diagnostics.resamplerFallbackActive],
-    ['bitPerfectCandidate', diagnostics.bitPerfectCandidate],
-    ['sampleRateMismatch', diagnostics.sampleRateMismatch],
-    ['sharedStabilityTier', diagnostics.sharedStabilityTier],
-    ['nativeDeviceBufferFrames', diagnostics.nativeDeviceBufferFrames],
-    ['nativeRequestedBufferFrames', diagnostics.nativeRequestedBufferFrames],
-    ['nativeActualBufferFrames', diagnostics.nativeActualBufferFrames],
-    ['nativeOutputLatencyMs', diagnostics.nativeOutputLatencyMs],
-    ['nativePositionStalenessMs', diagnostics.nativePositionStalenessMs],
-    ['nativeFifoCapacityFrames', diagnostics.nativeFifoCapacityFrames],
-    ['nativeStartupPrebufferFrames', diagnostics.nativeStartupPrebufferFrames],
-    ['nativeBufferedFrames', diagnostics.nativeBufferedFrames],
-    ['nativeBufferedMs', diagnostics.nativeBufferedMs],
-    ['nativeUnderrunCallbacks', diagnostics.nativeUnderrunCallbacks],
-    ['nativeUnderrunFrames', diagnostics.nativeUnderrunFrames],
-    ['lastSharedStabilityRecoveryAt', diagnostics.lastSharedStabilityRecoveryAt],
-    ['warnings', diagnostics.warnings],
-    ['error', diagnostics.error],
-    ['watchdogStatus', diagnostics.watchdogStatus],
-    ['recentWatchdogRecoveryCount', diagnostics.recentWatchdogRecoveryCount],
-    ['lastWatchdogRecoveryTime', diagnostics.lastWatchdogRecoveryTime],
-  ];
-
-  return ['ECHO Next Audio Diagnostics', ...rows.map(([label, value]) => `${label}: ${formatDiagnosticsValue(value)}`)].join('\n');
-};
-
 export const AudioSettingsDrawer = ({
   isOpen,
   status,
@@ -792,6 +759,7 @@ export const AudioSettingsDrawer = ({
   const [isAdvancedOutputOpen, setIsAdvancedOutputOpen] = useState(() => readAdvancedOutputOpen());
   const [isBufferOptionsOpen, setIsBufferOptionsOpen] = useState(false);
   const [showAsioPanelSettings, setShowAsioPanelSettings] = useState(() => readShowAsioPanelSettings());
+  const rendererPlatform = useMemo(() => detectAudioDrawerPlatform(), []);
 
   const hiddenDeviceKeySet = useMemo(() => new Set(hiddenDeviceKeys), [hiddenDeviceKeys]);
   const visibleDevices = useMemo(
@@ -806,7 +774,10 @@ export const AudioSettingsDrawer = ({
   const defaultSharedDevice = useMemo(() => allSharedDevices.find((device) => device.isDefault) ?? null, [allSharedDevices]);
   const sharedDevices = useMemo(() => visibleDevices.filter((device) => device.outputMode === 'shared'), [visibleDevices]);
   const asioDevices = useMemo(() => visibleDevices.filter((device) => device.outputMode === 'asio'), [visibleDevices]);
-  const advancedNativeOutputAvailable = useMemo(() => supportsAdvancedNativeOutput(), []);
+  const advancedNativeOutputAvailable = useMemo(() => isAdvancedNativeOutputPlatform(rendererPlatform), [rendererPlatform]);
+  const sharedBackendOptions = useMemo(() => getSharedBackendOptionsForPlatform(rendererPlatform), [rendererPlatform]);
+  const windowsAudioServiceRestartAvailable = rendererPlatform === 'win32';
+  const systemAudioPlatformLabel = useMemo(() => getSystemAudioPlatformLabel(rendererPlatform), [rendererPlatform]);
   const wasapiExclusive = outputMode === 'exclusive';
   const systemAudioActive = outputMode === 'system' || status?.outputMode === 'system';
   const lockWasapiExclusive = !advancedNativeOutputAvailable || outputMode === 'asio' || outputMode === 'system';
@@ -1008,12 +979,14 @@ export const AudioSettingsDrawer = ({
 
     const remembered = readRememberedAudioOutput();
     setRememberOutput(remembered.enabled);
-    setSharedBackend(remembered.sharedBackend ?? 'auto');
+    setSharedBackend(normalizeAudioSharedBackendForPlatform(remembered.sharedBackend ?? 'auto', rendererPlatform));
     void window.echo?.app
       .getSettings()
       .then((settings) => {
         setRememberOutput(settings.rememberedAudioOutput?.enabled === true);
-        setSharedBackend(settings.rememberedAudioOutput?.sharedBackend ?? remembered.sharedBackend ?? 'auto');
+        setSharedBackend(
+          normalizeAudioSharedBackendForPlatform(settings.rememberedAudioOutput?.sharedBackend ?? remembered.sharedBackend ?? 'auto', rendererPlatform),
+        );
         setUseJuceOutput(settings.audioUseJuceOutput !== false);
         setUseJuceDecode(settings.audioUseJuceDecode === true);
         setUseDsdDop(settings.audioDsdOutputMode === 'dop');
@@ -1025,19 +998,32 @@ export const AudioSettingsDrawer = ({
       .catch(() => undefined);
     void loadPersistedHiddenDeviceKeys().then(setHiddenDeviceKeys).catch(() => setHiddenDeviceKeys(readHiddenDeviceKeys()));
     void refresh();
-  }, [isOpen, refresh]);
+  }, [isOpen, refresh, rendererPlatform]);
 
   useEffect(() => {
     if (status?.outputMode) {
       setOutputMode(status.outputMode);
     }
     if (status?.sharedBackend || status?.outputBackend === 'directsound-shared') {
-      setSharedBackend(status.outputBackend === 'directsound-shared' ? 'directsound' : normalizeSharedBackend(status.sharedBackend));
+      setSharedBackend(
+        normalizeAudioSharedBackendForPlatform(
+          status.outputBackend === 'directsound-shared' ? 'directsound' : normalizeSharedBackend(status.sharedBackend),
+          rendererPlatform,
+        ),
+      );
     }
     setUseJuceOutput(status?.useJuceOutputRequested === true);
     setUseJuceDecode(status?.useJuceDecodeRequested === true);
     setUseDsdDop(status?.dsdOutputModeRequested === 'dop');
-  }, [status?.dsdOutputModeRequested, status?.outputBackend, status?.outputMode, status?.sharedBackend, status?.useJuceDecodeRequested, status?.useJuceOutputRequested]);
+  }, [
+    rendererPlatform,
+    status?.dsdOutputModeRequested,
+    status?.outputBackend,
+    status?.outputMode,
+    status?.sharedBackend,
+    status?.useJuceDecodeRequested,
+    status?.useJuceOutputRequested,
+  ]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -1076,7 +1062,7 @@ export const AudioSettingsDrawer = ({
       const hasBufferSize = Object.prototype.hasOwnProperty.call(settings, 'bufferSizeFrames');
       const nextOutputMode = settings.outputMode ?? remembered.outputMode ?? status?.outputMode ?? outputMode ?? 'shared';
       const nextSharedBackend = nextOutputMode === 'shared'
-        ? normalizeSharedBackend(settings.sharedBackend ?? remembered.sharedBackend ?? sharedBackend)
+        ? normalizeAudioSharedBackendForPlatform(normalizeSharedBackend(settings.sharedBackend ?? remembered.sharedBackend ?? sharedBackend), rendererPlatform)
         : 'auto';
       const nextLatencyProfile = resolveSupportedLatencyProfile(
         nextOutputMode,
@@ -1100,7 +1086,7 @@ export const AudioSettingsDrawer = ({
         bufferSizeFrames: nextBufferSizeFrames,
       });
     },
-    [outputMode, rememberOutput, sharedBackend, status?.latencyProfile, status?.outputMode],
+    [outputMode, rememberOutput, rendererPlatform, sharedBackend, status?.latencyProfile, status?.outputMode],
   );
 
   const applyOutput = useCallback(
@@ -1141,9 +1127,12 @@ export const AudioSettingsDrawer = ({
         const nextStatus = await withTimeout(audio.setOutput(settingsWithFallback), outputApplyTimeoutMs, 'Audio output switch timed out');
         setOutputMode(nextStatus.outputMode);
         setSharedBackend(
-          nextStatus.outputBackend === 'directsound-shared'
-            ? 'directsound'
-            : normalizeSharedBackend(nextStatus.sharedBackend ?? settings.sharedBackend ?? sharedBackend),
+          normalizeAudioSharedBackendForPlatform(
+            nextStatus.outputBackend === 'directsound-shared'
+              ? 'directsound'
+              : normalizeSharedBackend(nextStatus.sharedBackend ?? settings.sharedBackend ?? sharedBackend),
+            rendererPlatform,
+          ),
         );
         onStatusChange(nextStatus);
       } catch (applyError) {
@@ -1152,9 +1141,12 @@ export const AudioSettingsDrawer = ({
           const latestStatus = await withTimeout(audio.getStatus(), 2_500, 'Audio status refresh timed out');
           setOutputMode(latestStatus.outputMode);
           setSharedBackend(
-            latestStatus.outputBackend === 'directsound-shared'
-              ? 'directsound'
-              : normalizeSharedBackend(latestStatus.sharedBackend ?? sharedBackend),
+            normalizeAudioSharedBackendForPlatform(
+              latestStatus.outputBackend === 'directsound-shared'
+                ? 'directsound'
+                : normalizeSharedBackend(latestStatus.sharedBackend ?? sharedBackend),
+              rendererPlatform,
+            ),
           );
           onStatusChange(latestStatus);
         } catch {
@@ -1173,6 +1165,7 @@ export const AudioSettingsDrawer = ({
       persistOutput,
       releaseExclusiveOnPauseExperimentalEnabled,
       rememberOutput,
+      rendererPlatform,
       sharedBackend,
       status?.outputMode,
     ],
@@ -1484,6 +1477,10 @@ export const AudioSettingsDrawer = ({
   }, [copy.desktopBridgeUnavailable, onStatusChange, refresh, t]);
 
   const restartWindowsAudioService = useCallback(async (): Promise<void> => {
+    if (!windowsAudioServiceRestartAvailable) {
+      return;
+    }
+
     if (!window.confirm(t('audioDrawer.troubleshooting.hardConfirm'))) {
       return;
     }
@@ -1510,7 +1507,7 @@ export const AudioSettingsDrawer = ({
     } finally {
       setWindowsAudioRestartBusy(false);
     }
-  }, [copy.desktopBridgeUnavailable, onStatusChange, refresh, t]);
+  }, [copy.desktopBridgeUnavailable, onStatusChange, refresh, t, windowsAudioServiceRestartAvailable]);
 
   if (!shouldRender) {
     return null;
@@ -1576,6 +1573,19 @@ export const AudioSettingsDrawer = ({
           <span className="audio-engine-meter__hint">{t('audioDrawer.note.engine')}</span>
         </button>
 
+        <AudioProfessionalStatusPanel status={status} />
+
+        <div className="audio-professional-status-actions">
+          <button className="audio-diagnostics-copy-button" type="button" onClick={() => void refresh()} disabled={isBusy}>
+            <RefreshCw size={16} />
+            <span>{t('audioProfessional.action.refresh')}</span>
+          </button>
+          <button className="audio-diagnostics-copy-button" type="button" onClick={() => void copyDiagnostics()}>
+            <Clipboard size={16} />
+            <span>{diagnosticsCopied ? copy.copiedDiagnostics : copy.copyDiagnostics}</span>
+          </button>
+        </div>
+
         <section className="audio-drawer-section audio-current-output-section">
           <div className="audio-drawer-section-title">
             <Headphones size={17} />
@@ -1621,7 +1631,7 @@ export const AudioSettingsDrawer = ({
               <strong>{copy.systemAudio}</strong>
               <small>{copy.systemAudioDescription}</small>
             </span>
-            <em>Windows</em>
+            <em>{systemAudioPlatformLabel}</em>
             {systemAudioActive ? <Check size={15} /> : null}
           </button>
           <button
@@ -1909,29 +1919,28 @@ export const AudioSettingsDrawer = ({
                 />
               </label>
               <p>{t('audioDrawer.note.releaseExclusiveOnPause')}</p>
-
-              <div className="audio-drawer-mini-grid" aria-label={t('audioDrawer.option.sharedBackend')}>
-                {([
-                  ['auto', t('audioDrawer.option.wasapiShared'), t('audioDrawer.option.wasapiSharedDescription')],
-                  ['directsound', t('audioDrawer.option.directSound'), t('audioDrawer.option.directSoundDescription')],
-                ] as Array<[AudioSharedBackend, string, string]>).map(([backend, label, detail]) => (
-                  <button
-                    className={`audio-device-pill ${outputMode === 'shared' && sharedBackend === backend ? 'active' : ''}`}
-                    type="button"
-                    key={backend}
-                    disabled={isBusy}
-                    onClick={() => applySharedBackend(backend)}
-                  >
-                    <Waves size={15} />
-                    <span>
-                      <strong>{label}</strong>
-                      <small>{detail}</small>
-                    </span>
-                    <em>{outputMode === 'shared' && sharedBackend === backend ? optionActiveLabel : optionSetLabel}</em>
-                  </button>
-                ))}
-              </div>
                 </>
+              ) : null}
+
+              {sharedBackendOptions.length > 0 ? (
+                <div className="audio-drawer-mini-grid" aria-label={t('audioDrawer.option.sharedBackend')}>
+                  {sharedBackendOptions.map((option) => (
+                    <button
+                      className={`audio-device-pill ${outputMode === 'shared' && sharedBackend === option.id ? 'active' : ''}`}
+                      type="button"
+                      key={option.id}
+                      disabled={isBusy}
+                      onClick={() => applySharedBackend(option.id)}
+                    >
+                      <Waves size={15} />
+                      <span>
+                        <strong>{t(option.labelKey)}</strong>
+                        <small>{t(option.detailKey)}</small>
+                      </span>
+                      <em>{outputMode === 'shared' && sharedBackend === option.id ? optionActiveLabel : optionSetLabel}</em>
+                    </button>
+                  ))}
+                </div>
               ) : null}
 
           <div className={`audio-buffer-collapse${isBufferOptionsOpen ? ' audio-buffer-collapse--open' : ''}`}>
@@ -2034,11 +2043,6 @@ export const AudioSettingsDrawer = ({
             <span>{resetBusy ? t('audioDrawer.action.resetEngineBusy') : resetMessage ?? t('audioDrawer.action.resetEngine')}</span>
           </button>
 
-          <button className="audio-diagnostics-copy-button" type="button" onClick={() => void copyDiagnostics()}>
-            <Clipboard size={16} />
-            <span>{diagnosticsCopied ? copy.copiedDiagnostics : copy.copyDiagnostics}</span>
-          </button>
-
           <div className="audio-advanced-todo">
             <strong>{t('audioDrawer.todo.outputControls')}</strong>
             <span>{t('audioDrawer.todo.outputControlsDescription')}</span>
@@ -2121,15 +2125,17 @@ export const AudioSettingsDrawer = ({
                 <RefreshCw size={16} />
                 <span>{forceRestartBusy ? t('audioDrawer.troubleshooting.softBusy') : t('audioDrawer.troubleshooting.softAction')}</span>
               </button>
-              <button
-                className="audio-diagnostics-copy-button audio-diagnostics-copy-button--danger"
-                type="button"
-                disabled={forceRestartBusy || windowsAudioRestartBusy || isBusy}
-                onClick={() => void restartWindowsAudioService()}
-              >
-                <Waves size={16} />
-                <span>{windowsAudioRestartBusy ? t('audioDrawer.troubleshooting.hardBusy') : t('audioDrawer.troubleshooting.hardAction')}</span>
-              </button>
+              {windowsAudioServiceRestartAvailable ? (
+                <button
+                  className="audio-diagnostics-copy-button audio-diagnostics-copy-button--danger"
+                  type="button"
+                  disabled={forceRestartBusy || windowsAudioRestartBusy || isBusy}
+                  onClick={() => void restartWindowsAudioService()}
+                >
+                  <Waves size={16} />
+                  <span>{windowsAudioRestartBusy ? t('audioDrawer.troubleshooting.hardBusy') : t('audioDrawer.troubleshooting.hardAction')}</span>
+                </button>
+              ) : null}
             </div>
             {troubleshootingMessage ? <p className="audio-drawer-troubleshooting__message">{troubleshootingMessage}</p> : null}
           </section>

@@ -287,6 +287,7 @@ const resolveBundledYtDlpPath: ToolResolver = () => {
   const candidates = [
     resourcesPath ? resolve(resourcesPath, 'tools', ytDlpFileName) : null,
     resourcesPath ? resolve(resourcesPath, ytDlpFileName) : null,
+    process.platform !== 'win32' ? resolve(process.cwd(), 'electron-app', 'tools-linux', ytDlpFileName) : null,
     resolve(process.cwd(), 'electron-app', 'tools', ytDlpFileName),
     resolve(process.cwd(), 'tools', ytDlpFileName),
   ].filter((candidate): candidate is string => Boolean(candidate));

@@ -32,6 +32,8 @@ const testTranslations: Record<string, string> = {
   'audioDrawer.option.set': 'Set',
   'audioDrawer.option.showAsioPanelSettings': 'Show ASIO panel settings',
   'audioDrawer.option.showAsioPanelSettingsDescription': 'Show ASIO panel buttons',
+  'audioDrawer.option.alsaShared': 'ALSA',
+  'audioDrawer.option.alsaSharedDescription': 'Use Linux ALSA output',
   'audioDrawer.action.openAsioPanel': 'Open ASIO Panel',
   'audioDrawer.troubleshooting.description': 'Use this when audio is stuck.',
   'audioDrawer.troubleshooting.hardAction': 'Restart Windows Audio Service',
@@ -54,6 +56,31 @@ const testTranslations: Record<string, string> = {
   'audioDrawer.signal.dsdDopStandby': 'DSD DoP not used',
   'audioDrawer.device.systemAudio': 'Standard Output (Recommended)',
   'audioDrawer.device.systemAudioDescription': 'Most stable for headphones, Bluetooth, and computer speakers',
+  'audioProfessional.action.hideDetails': 'Hide professional details',
+  'audioProfessional.action.refresh': 'Refresh status',
+  'audioProfessional.action.showDetails': 'Show professional details',
+  'audioProfessional.badge.bitPerfect': 'Bit-perfect',
+  'audioProfessional.badge.dsp': 'DSP active',
+  'audioProfessional.badge.replayGain': 'ReplayGain',
+  'audioProfessional.badge.resampling': 'Resampling',
+  'audioProfessional.badge.sampleMismatch': 'Sample-rate mismatch',
+  'audioProfessional.badge.warning': 'Device issue/warning',
+  'audioProfessional.issue.reason': 'Reason',
+  'audioProfessional.group.directDsp': 'Direct And DSP',
+  'audioProfessional.group.playbackChain': 'Playback Chain',
+  'audioProfessional.group.sampleRate': 'Sample-Rate Chain',
+  'audioProfessional.group.stability': 'Stability',
+  'audioProfessional.summary.pending': 'Waiting for audio status',
+  'audioProfessional.title': 'Professional Playback Status',
+  'audioProfessional.value.disabled': 'Disabled',
+  'audioProfessional.value.enabled': 'Enabled',
+  'audioProfessional.value.no': 'No',
+  'audioProfessional.value.pending': 'Pending',
+  'audioProfessional.value.ready': 'Ready',
+  'audioProfessional.value.sharedMixer': 'Shared mixer',
+  'audioProfessional.value.systemDefault': 'System default output',
+  'audioProfessional.value.unknown': 'n/a',
+  'audioProfessional.value.yes': 'Yes',
 };
 
 vi.mock('../../i18n/I18nProvider', () => ({
@@ -263,7 +290,7 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     renderDrawer({
       ...baseStatus,
       outputMode: 'system',
-      outputBackend: 'windows-system-audio',
+      outputBackend: 'system-audio',
     });
 
     expect(screen.getAllByRole('button', { name: /Standard Output \(Recommended\)/ }).some((button) =>
@@ -290,6 +317,36 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
 
     expect(screen.getByRole('button', { name: /advancedOutput/ }).getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByRole('checkbox', { name: /JUCE Main Output/ })).toBeTruthy();
+  });
+
+  it('shows professional playback status badges without opening advanced output', () => {
+    renderDrawer({
+      ...soxrResamplingStatus,
+      bitPerfectCandidate: true,
+      dspActive: true,
+      eqEnabled: true,
+      replayGainEnabled: true,
+      replayGainMode: 'track',
+      replayGainAppliedDb: -3.25,
+      sampleRateMismatch: true,
+      warnings: ['native_buffer_recovered'],
+    });
+
+    expect(screen.getByText('Professional Playback Status')).toBeTruthy();
+    expect(screen.getByText('Bit-perfect')).toBeTruthy();
+    expect(screen.getByText('Resampling')).toBeTruthy();
+    expect(screen.getByText('DSP active')).toBeTruthy();
+    expect(screen.getByText('ReplayGain')).toBeTruthy();
+    expect(screen.getByText('Sample-rate mismatch')).toBeTruthy();
+    expect(screen.getByText('Device issue/warning')).toBeTruthy();
+    expect(screen.getByText('Reason')).toBeTruthy();
+    expect(screen.getByText('native buffer recovered')).toBeTruthy();
+    expect(screen.queryByText('Direct And DSP')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Show professional details/ }));
+
+    expect(screen.getByText('Direct And DSP')).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: /JUCE Main Output/ })).toBeNull();
   });
 
   it('shows the active FFmpeg to JUCE output chain', () => {
@@ -817,5 +874,11 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
     expect(screen.queryByRole('heading', { name: 'asioDevices' })).toBeNull();
     expect(screen.queryByRole('checkbox', { name: /wasapiExclusive/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /TEAC ASIO/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Restart Windows Audio Service' })).toBeNull();
+    expect(screen.getByText('Linux')).toBeTruthy();
+
+    openAdvancedControls();
+    expect(screen.getByRole('button', { name: /ALSA/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /DirectSound/ })).toBeNull();
   });
 });

@@ -12,6 +12,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <iostream>
+#include <cmath>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -33,6 +34,11 @@ TimeSpan secondsToTimeSpan(double seconds)
 {
     const auto safeSeconds = std::max(0.0, seconds);
     return std::chrono::duration_cast<TimeSpan>(std::chrono::duration<double>(safeSeconds));
+}
+
+double timeSpanToSeconds(TimeSpan value)
+{
+    return std::max(0.0, std::chrono::duration<double>(value).count());
 }
 
 std::wstring widen(const std::string& value)
@@ -164,6 +170,7 @@ public:
 
         controls = nextControls;
         buttonToken = controls.ButtonPressed({ this, &SmtcHost::onButtonPressed });
+        playbackPositionToken = controls.PlaybackPositionChangeRequested({ this, &SmtcHost::onPlaybackPositionChangeRequested });
         controls.IsEnabled(true);
         controls.IsPlayEnabled(true);
         controls.IsPauseEnabled(true);
@@ -223,6 +230,7 @@ public:
                 controls.PlaybackStatus(MediaPlaybackStatus::Closed);
                 controls.IsEnabled(false);
                 controls.ButtonPressed(buttonToken);
+                controls.PlaybackPositionChangeRequested(playbackPositionToken);
             }
             catch (...)
             {
@@ -235,6 +243,8 @@ public:
 private:
     SystemMediaTransportControls controls{ nullptr };
     event_token buttonToken{};
+    event_token playbackPositionToken{};
+    bool seekEnabled = true;
     std::mutex inputMutex;
     std::queue<std::string> inputQueue;
     std::mutex outputMutex;
@@ -250,6 +260,13 @@ private:
         std::cout << "{\"type\":\"command\",\"command\":\"" << escapeJson(command) << "\"}" << std::endl;
     }
 
+    void emitSeekCommand(double positionSeconds)
+    {
+        const auto safePositionSeconds = std::isfinite(positionSeconds) ? std::max(0.0, positionSeconds) : 0.0;
+        std::lock_guard lock(outputMutex);
+        std::cout << "{\"type\":\"command\",\"command\":\"seek\",\"positionSeconds\":" << safePositionSeconds << "}" << std::endl;
+    }
+
     void emitError(const std::string& message)
     {
         std::lock_guard lock(outputMutex);
@@ -261,6 +278,13 @@ private:
         SystemMediaTransportControlsButtonPressedEventArgs const& args)
     {
         emitCommand(commandName(args.Button()));
+    }
+
+    void onPlaybackPositionChangeRequested(
+        SystemMediaTransportControls const&,
+        PlaybackPositionChangeRequestedEventArgs const& args)
+    {
+        emitSeekCommand(timeSpanToSeconds(args.RequestedPlaybackPosition()));
     }
 
     hstring getString(JsonObject const& object, const wchar_t* name, const wchar_t* fallback = L"")
@@ -399,13 +423,14 @@ private:
     {
         const auto safeDuration = std::max(0.0, durationSeconds);
         const auto safePosition = std::max(0.0, std::min(positionSeconds, safeDuration > 0 ? safeDuration : positionSeconds));
+        const auto canSeek = seekEnabled && safeDuration > 0;
 
         SystemMediaTransportControlsTimelineProperties timeline;
         timeline.StartTime(secondsToTimeSpan(0));
-        timeline.MinSeekTime(secondsToTimeSpan(0));
+        timeline.MinSeekTime(secondsToTimeSpan(canSeek ? 0 : safePosition));
         timeline.Position(secondsToTimeSpan(safePosition));
         timeline.EndTime(secondsToTimeSpan(safeDuration));
-        timeline.MaxSeekTime(secondsToTimeSpan(safeDuration));
+        timeline.MaxSeekTime(secondsToTimeSpan(canSeek ? safeDuration : safePosition));
         controls.UpdateTimelineProperties(timeline);
     }
 
@@ -418,6 +443,7 @@ private:
         controls.IsStopEnabled(true);
         controls.IsFastForwardEnabled(false);
         controls.IsRewindEnabled(false);
+        seekEnabled = getBool(object, L"seek", true);
     }
 
     void clearDisplay()

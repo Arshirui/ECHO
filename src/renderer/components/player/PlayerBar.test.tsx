@@ -6,6 +6,7 @@ import type { AudioStatus } from '../../../shared/types/audio';
 import type { EqState } from '../../../shared/types/eq';
 import type { GlobalShortcutAction } from '../../../shared/types/globalShortcuts';
 import type { LibraryTrack } from '../../../shared/types/library';
+import type { SmtcCommand } from '../../../shared/types/smtc';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { PlaybackCommandController } from './PlaybackCommandController';
 import { PlayerBar } from './PlayerBar';
@@ -1277,10 +1278,10 @@ describe('PlayerBar', () => {
     expect(analyzeBpm).not.toHaveBeenCalled();
   });
 
-  it('routes SMTC pause, previous, and next commands through the playback queue', async () => {
+  it('routes SMTC transport and seek commands through the playback queue', async () => {
     const firstTrack = makeTrack(1);
     const secondTrack = makeTrack(2);
-    const smtcHandlers: Array<(command: 'play' | 'pause' | 'playPause' | 'previous' | 'next' | 'stop') => void> = [];
+    const smtcHandlers: Array<(command: SmtcCommand) => void> = [];
     const playLocalFile = vi.fn().mockImplementation(({ filePath, trackId }: { filePath: string; trackId?: string }) =>
       Promise.resolve({
         state: 'playing',
@@ -1297,6 +1298,13 @@ describe('PlayerBar', () => {
       durationMs: secondTrack.duration * 1000,
       filePath: secondTrack.path,
     });
+    const seek = vi.fn().mockResolvedValue({
+      state: 'playing',
+      currentTrackId: firstTrack.id,
+      positionMs: 42000,
+      durationMs: firstTrack.duration * 1000,
+      filePath: firstTrack.path,
+    });
 
     window.echo = {
       playback: {
@@ -1311,7 +1319,7 @@ describe('PlayerBar', () => {
         play: vi.fn(),
         pause,
         stop: vi.fn(),
-        seek: vi.fn(),
+        seek,
         openLocalAudioFile: vi.fn(),
       },
       smtc: {
@@ -1378,6 +1386,9 @@ describe('PlayerBar', () => {
     smtcHandlers[0]?.('pause');
 
     await waitFor(() => expect(pause).toHaveBeenCalledTimes(1));
+    smtcHandlers[0]?.({ type: 'seek', positionSeconds: 42 });
+
+    await waitFor(() => expect(seek).toHaveBeenCalledWith(42));
   });
 
   it('routes global shortcut commands through the playback queue', async () => {

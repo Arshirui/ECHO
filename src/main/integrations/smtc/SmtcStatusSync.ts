@@ -165,7 +165,7 @@ export const initializeSmtcIntegration = async (): Promise<void> => {
 
   const service = getSmtcService();
   await service.initialize();
-  await service.setEnabledActions({ play: true, pause: true, previous: true, next: true, seek: false });
+  await service.setEnabledActions({ play: true, pause: true, previous: true, next: true, seek: true });
   state.unsubscribeCommand = bindSmtcCommandBridge(service);
   state.statusListener = (status: AudioStatus) => {
     void syncSmtcStatus(status);

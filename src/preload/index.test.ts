@@ -143,6 +143,8 @@ describe('preload SMTC API', () => {
     expect(listener).toBeTruthy();
     listener?.({}, 'playPause');
     expect(handler).toHaveBeenCalledWith('playPause');
+    listener?.({}, { type: 'seek', positionSeconds: 12.5 });
+    expect(handler).toHaveBeenCalledWith({ type: 'seek', positionSeconds: 12.5 });
 
     unsubscribe();
     expect(listeners.has(IpcChannels.SmtcCommand)).toBe(false);
@@ -200,6 +202,12 @@ describe('preload SMTC API', () => {
     await exposedApi!.diagnostics.openCrashReport();
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.DiagnosticsOpenCrashReport);
+  });
+
+  it('exposes safe diagnostics zip export through IPC', async () => {
+    await exposedApi!.diagnostics.exportDiagnosticsZip();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.DiagnosticsExportZip);
   });
 
   it('exposes audio crash report file opening through IPC', async () => {
@@ -279,6 +287,50 @@ describe('preload SMTC API', () => {
       durationMs: 12_000,
       filePath: 'D:\\Music\\song.mp3',
     });
+  });
+
+  it('reports local system audio ending before duration as a decode failure', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/broken-token');
+      }
+      if (channel === IpcChannels.AudioReportSystemPlaybackError) {
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+    const statuses: Array<Awaited<ReturnType<EchoApi['audio']['getStatus']>>> = [];
+    exposedApi!.audio.onStatus((status) => statuses.push(status));
+
+    await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\broken.flac',
+      trackId: 'track-bad',
+      probe: { durationSeconds: 120 },
+    });
+    fakeAudioInstances[0].duration = 120;
+    fakeAudioInstances[0].currentTime = 72;
+    fakeAudioInstances[0].emit('ended');
+
+    expect(statuses.at(-1)).toMatchObject({
+      outputMode: 'system',
+      state: 'error',
+      currentTrackId: 'track-bad',
+      error: expect.stringContaining('system_audio_decode_error'),
+    });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      IpcChannels.AudioReportSystemPlaybackError,
+      expect.objectContaining({
+        phase: 'system-audio-ended-before-duration',
+        recovered: false,
+        sourceKind: 'local',
+        trackId: 'track-bad',
+      }),
+    );
   });
 
   it('applies ReplayGain on remembered system audio playback', async () => {
@@ -607,6 +659,8 @@ describe('preload SMTC API', () => {
     await exposedApi!.plugins.disable('echo.playback-panel');
     await exposedApi!.plugins.reload('echo.playback-panel');
     await exposedApi!.plugins.openDirectory('echo.playback-panel');
+    await exposedApi!.plugins.exportPackage('echo.playback-panel');
+    await exposedApi!.plugins.importPackage();
     await exposedApi!.plugins.runCommand({ pluginId: 'echo.playback-panel', commandId: 'show-status' });
     await exposedApi!.plugins.getLogs('echo.playback-panel');
 
@@ -619,6 +673,8 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsDisable, 'echo.playback-panel');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsReload, 'echo.playback-panel');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsOpenDirectory, 'echo.playback-panel');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsExportPackage, 'echo.playback-panel');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsImportPackage);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.PluginsRunCommand, {
       pluginId: 'echo.playback-panel',
       commandId: 'show-status',

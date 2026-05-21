@@ -25,6 +25,14 @@ export const formatAudioHostError = (error: string | null | undefined): string |
     return null;
   }
 
+  if (
+    /\baudio_file_decode_failed_or_corrupt\b|\bsystem_audio_decode_error\b|\bkind="input_invalid"\b|invalid data found when processing input|decode_frame\(\) failed|error while decoding stream/iu.test(
+      error,
+    )
+  ) {
+    return '音频文件可能已经损坏或不完整，ECHO 已停止播放这首歌。请重新获取这份音频文件。';
+  }
+
   if (/\bsystem_audio_seek_timeout\b|\bsystem_audio_range_(?:not_supported|not_satisfiable)\b/u.test(error)) {
     return '系统音频无法跳转到该位置，可能是文件或网络源不支持拖动';
   }

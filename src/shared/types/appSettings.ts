@@ -4,6 +4,7 @@ import type { LibrarySort } from './library';
 import type { LyricsProviderId } from './lyrics';
 import type { MvMaxQuality, MvSyncMode, NetworkMvProviderId } from './mv';
 import type { GlobalShortcutSettings } from './globalShortcuts';
+import type { HqPlayerSettings } from './hqplayer';
 
 export type ScanPerformanceMode = 'low' | 'balanced' | 'performance';
 export type LyricsBackgroundMode = 'theme' | 'cover' | 'customWallpaper';
@@ -114,6 +115,8 @@ export type AppearancePreferences = {
   mainFontFilePath: string | null;
   chineseFontFamily: string;
   chineseFontFilePath: string | null;
+  fallbackFontFamily: string;
+  fallbackFontFilePath: string | null;
   baseFontSize: number;
   lineHeight: number;
   textDepth: number;
@@ -155,6 +158,7 @@ export type AppSettings = {
   audioAsioUnavailableFallbackEnabled?: boolean;
   audioSoxrFallbackEnabled?: boolean;
   audioReleaseExclusiveOnPauseExperimentalEnabled?: boolean;
+  audioIssueDiagnosticsWindowEnabled?: boolean;
   albumMergeStrategy: 'standard' | 'sameTitleAndCover';
   chineseCrossScriptSearchEnabled?: boolean;
   artistWallAlbumArtwork: boolean;
@@ -168,6 +172,7 @@ export type AppSettings = {
   suppressAccountExpiryNotices?: boolean;
   spotifyAutoLaunchOfficialPlayer?: boolean;
   connectAutoStartReceiversEnabled?: boolean;
+  hqPlayer?: HqPlayerSettings;
   playlistBackupsEnabled?: boolean;
   autoDataBackupEnabled?: boolean;
   autoDataBackupDirectory?: string | null;

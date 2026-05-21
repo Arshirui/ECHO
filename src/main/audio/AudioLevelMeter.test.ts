@@ -17,11 +17,14 @@ const pcmBuffer = (samples: number[]): Buffer => {
   return buffer;
 };
 
-const runMeter = async (samples: number[]): Promise<{ snapshot: PcmLevelSnapshot; output: Buffer }> => {
+const runMeter = async (
+  samples: number[],
+  options: { maxObservedSamplesPerChunk?: number } = {},
+): Promise<{ snapshot: PcmLevelSnapshot; output: Buffer }> => {
   let snapshot: PcmLevelSnapshot | null = null;
   const meter = new PcmLevelMeterTransform((nextSnapshot) => {
     snapshot = nextSnapshot;
-  }, 0);
+  }, 0, options.maxObservedSamplesPerChunk);
   const outputChunks: Buffer[] = [];
   meter.on('data', (chunk: Buffer) => outputChunks.push(Buffer.from(chunk)));
   const input = pcmBuffer(samples);
@@ -87,6 +90,16 @@ describe('AudioLevelMeter', () => {
 
     expect(result.snapshot.clipCount).toBe(2);
     expect(result.snapshot.lastClipAt).toEqual(expect.any(String));
+  });
+
+  it('samples large chunks without changing playback bytes', async () => {
+    const samples = [0.1, 0.2, 1.2, 0.3, 0.4];
+    const input = pcmBuffer(samples);
+    const result = await runMeter(samples, { maxObservedSamplesPerChunk: 3 });
+
+    expect(result.snapshot.inputPeakDb).toBe(1.6);
+    expect(result.snapshot.clipCount).toBe(1);
+    expect(result.output.equals(input)).toBe(true);
   });
 
   it('adds conservative EQ and channel balance gain to the output estimate', () => {

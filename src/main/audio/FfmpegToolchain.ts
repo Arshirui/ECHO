@@ -21,6 +21,7 @@ export type FfmpegToolchainDependencies = {
   env?: NodeJS.ProcessEnv;
   systemFfmpegPath?: string | null;
   resourcesPath?: string | null;
+  platform?: NodeJS.Platform;
   cwd?: string;
   existsSync?: (path: string) => boolean;
   execFileSync?: typeof nodeExecFileSync;
@@ -76,6 +77,8 @@ const collectCandidates = (dependencies: FfmpegToolchainDependencies = {}): Ffmp
   const env = dependencies.env ?? process.env;
   const resourcesPath = getResourcesPath(dependencies);
   const cwd = dependencies.cwd ?? process.cwd();
+  const platform = dependencies.platform ?? process.platform;
+  const executableName = platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
   const systemPath = normalizePath(dependencies.systemFfmpegPath) ?? 'ffmpeg';
   const candidates: Array<FfmpegCandidate | null> = [
     normalizePath(dependencies.ffmpegPath)
@@ -85,9 +88,12 @@ const collectCandidates = (dependencies: FfmpegToolchainDependencies = {}): Ffmp
       ? { path: normalizeAsarUnpackedPath(normalizePath(env.ECHO_FFMPEG_PATH) as string), source: 'explicit', mustExist: false }
       : null,
     resourcesPath
-      ? { path: resolve(resourcesPath, 'tools', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'), source: 'bundled', mustExist: true }
+      ? { path: resolve(resourcesPath, 'tools', executableName), source: 'bundled', mustExist: true }
       : null,
-    { path: resolve(cwd, 'electron-app', 'tools', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'), source: 'dev-bundled', mustExist: true },
+    platform !== 'win32'
+      ? { path: resolve(cwd, 'electron-app', 'tools-linux', executableName), source: 'dev-bundled', mustExist: true }
+      : null,
+    { path: resolve(cwd, 'electron-app', 'tools', executableName), source: 'dev-bundled', mustExist: true },
     { path: systemPath, source: 'system', mustExist: false },
   ];
 

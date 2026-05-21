@@ -1,16 +1,18 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { basename, join, resolve } from 'node:path';
+import { basename, extname, join, resolve } from 'node:path';
 import vm from 'node:vm';
-import { app, shell } from 'electron';
+import { app, dialog, shell } from 'electron';
 import type { AudioStatus } from '../../shared/types/audio';
-import { pluginEventNames, pluginLibraryTrackFields } from '../../shared/types/plugins';
+import { pluginEventNames, pluginLibraryTrackFields, pluginPermissionDescriptors } from '../../shared/types/plugins';
 import type {
+  PluginActivitySummary,
   PluginCommand,
   PluginCreateExampleKind,
   PluginCreateExampleResult,
   PluginEnableRequest,
   PluginEventName,
+  PluginImportPackageResult,
   PluginLibraryTrack,
   PluginLibraryTrackField,
   PluginLibraryTrackPage,
@@ -19,8 +21,11 @@ import type {
   PluginLogEntry,
   PluginManifest,
   PluginManifestContributes,
+  PluginPackage,
+  PluginPackageFile,
   PluginPermission,
   PluginRunCommandRequest,
+  PluginSecuritySummary,
   PluginSummary,
 } from '../../shared/types/plugins';
 import { getAppSettings, setAppSettings } from '../app/appSettings';
@@ -31,6 +36,10 @@ import { normalizePluginManifest } from './PluginManifest';
 type PluginState = {
   enabled?: boolean;
   trustedPermissions?: PluginPermission[];
+  disabledByHost?: boolean;
+  crashTimestamps?: string[];
+  lastError?: string;
+  lastErrorAt?: string;
 };
 
 type PluginStateFile = {
@@ -60,6 +69,7 @@ type PluginRecord = {
   trustedPermissions: PluginPermission[];
   status: PluginSummary['status'];
   error: string | null;
+  disabledByHost: boolean;
 };
 
 const manifestFileName = 'echo.plugin.json';
@@ -77,6 +87,15 @@ const maxPluginStorageKeyLength = 96;
 const maxPluginStorageValueBytes = 64 * 1024;
 const maxPluginStorageBytes = 256 * 1024;
 const maxPluginSettingsPatchBytes = 32 * 1024;
+const pluginCrashLoopWindowMs = 10 * 60 * 1_000;
+const pluginCrashLoopLimit = 3;
+const pluginPackageType = 'echo-next-plugin-package';
+const pluginPackageVersion = 1;
+const maxPluginPackageBytes = 2 * 1024 * 1024;
+const maxPluginPackageFiles = 32;
+const maxPluginPackageFileBytes = 512 * 1024;
+const exportablePluginFileExtensions = new Set(['.js', '.mjs', '.cjs', '.html', '.css', '.json', '.md', '.txt']);
+const pluginPackageExcludedFiles = new Set([stateFileName, storageFileName]);
 
 const pluginEventSet = new Set<PluginEventName>(pluginEventNames);
 const pluginEventPermissions: Record<PluginEventName, PluginPermission> = {
@@ -219,6 +238,35 @@ const assertJsonByteLimit = (value: unknown, limit: number, errorCode: string): 
   }
 };
 
+const createEmptyPluginActivity = (): PluginActivitySummary => ({
+  lastStartedAt: null,
+  lastStoppedAt: null,
+  lastCommandAt: null,
+  lastEventAt: null,
+  lastStorageWriteAt: null,
+  lastSettingsWriteAt: null,
+  lastErrorAt: null,
+  commandRunCount: 0,
+  eventDispatchCount: 0,
+  storageWriteCount: 0,
+  settingsWriteCount: 0,
+  errorCount: 0,
+});
+
+const normalizePluginPackageFilePath = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const normalized = value.trim().replace(/\\/g, '/');
+  if (!normalized || normalized.includes('/') || normalized.includes('\0') || normalized === '.' || normalized === '..' || normalized.includes(':')) {
+    return '';
+  }
+  return normalized;
+};
+
+const isPluginPackageFile = (value: unknown): value is PluginPackageFile =>
+  isRecord(value) && typeof value.path === 'string' && typeof value.content === 'string';
+
 const normalizePositiveInteger = (value: unknown, fallback: number, max: number): number => {
   const normalized = Math.floor(Number(value));
   return Number.isFinite(normalized) ? Math.min(max, Math.max(1, normalized)) : fallback;
@@ -325,6 +373,7 @@ const timeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
 export class PluginService {
   private records = new Map<string, PluginRecord>();
   private runtimes = new Map<string, RuntimeRecord>();
+  private activity = new Map<string, PluginActivitySummary>();
   private logs: PluginLogEntry[] = [];
   private state: Required<PluginStateFile> = { plugins: {} };
   private autoStartScheduled = false;
@@ -378,10 +427,17 @@ export class PluginService {
     this.state.plugins[record.manifest.id] = {
       enabled: true,
       trustedPermissions,
+      disabledByHost: false,
+      crashTimestamps: [],
+      lastError: undefined,
+      lastErrorAt: undefined,
     };
     this.writeState();
     record.enabled = true;
     record.trustedPermissions = trustedPermissions;
+    record.disabledByHost = false;
+    record.status = 'enabled';
+    record.error = null;
     void this.startPlugin(record.manifest.id).catch((error) => this.markError(record, error));
     return this.toSummary(record);
   }
@@ -394,10 +450,13 @@ export class PluginService {
     this.state.plugins[id] = {
       ...this.state.plugins[id],
       enabled: false,
+      disabledByHost: false,
     };
     this.writeState();
     record.enabled = false;
+    record.disabledByHost = false;
     record.status = 'disabled';
+    record.error = null;
     return this.toSummary(record);
   }
 
@@ -410,7 +469,12 @@ export class PluginService {
     this.scan();
     const refreshed = this.requireRecord(id);
     if (refreshed.enabled && refreshed.manifest) {
-      await this.startPlugin(refreshed.manifest.id);
+      try {
+        await this.startPlugin(refreshed.manifest.id);
+      } catch (error) {
+        this.markError(refreshed, error);
+        throw error;
+      }
     }
     return this.toSummary(refreshed);
   }
@@ -420,6 +484,85 @@ export class PluginService {
     const target = pluginId ? this.requireRecord(pluginId).directory : this.pluginDirectory;
     mkdirSync(target, { recursive: true });
     await shell.openPath(target);
+  }
+
+  async exportPluginPackage(pluginId: string, destinationPath?: string): Promise<string | null> {
+    this.scan();
+    const record = this.requireRecord(pluginId);
+    if (!record.manifest) {
+      throw new Error(record.error ?? 'plugin_manifest_invalid');
+    }
+
+    const files = this.collectPluginPackageFiles(record);
+    const payload: PluginPackage = {
+      type: pluginPackageType,
+      version: pluginPackageVersion,
+      exportedAt: new Date().toISOString(),
+      manifest: record.manifest,
+      files,
+    };
+    assertJsonByteLimit(payload, maxPluginPackageBytes, 'plugin_package_too_large');
+
+    const target = destinationPath ?? await this.chooseExportPath(record.manifest);
+    if (!target) {
+      return null;
+    }
+
+    writeFileSync(target, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+    this.log(record.manifest.id, 'info', `plugin_package_exported:${target}`);
+    return target;
+  }
+
+  async importPluginPackage(sourcePath?: string): Promise<PluginImportPackageResult | null> {
+    const targetSource = sourcePath ?? await this.chooseImportPath();
+    if (!targetSource) {
+      return null;
+    }
+
+    const packageBytes = statSync(targetSource).size;
+    if (packageBytes > maxPluginPackageBytes) {
+      throw new Error('plugin_package_too_large');
+    }
+
+    const parsed = JSON.parse(readFileSync(targetSource, 'utf8')) as unknown;
+    if (!isRecord(parsed) || parsed.type !== pluginPackageType || parsed.version !== pluginPackageVersion || !Array.isArray(parsed.files)) {
+      throw new Error('plugin_package_invalid');
+    }
+    if (parsed.files.length > maxPluginPackageFiles) {
+      throw new Error('plugin_package_file_limit_exceeded');
+    }
+
+    const manifest = normalizePluginManifest(parsed.manifest, isRecord(parsed.manifest) && typeof parsed.manifest.id === 'string' ? parsed.manifest.id : 'imported-plugin');
+    const targetDirectory = join(this.pluginDirectory, manifest.id);
+    if (existsSync(targetDirectory)) {
+      throw new Error('plugin_import_target_exists');
+    }
+
+    mkdirSync(targetDirectory, { recursive: true });
+    writeFileSync(join(targetDirectory, manifestFileName), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+    let importedFileCount = 1;
+    for (const file of parsed.files) {
+      if (!isPluginPackageFile(file)) {
+        continue;
+      }
+      const safePath = normalizePluginPackageFilePath(file.path);
+      if (!safePath || safePath === manifestFileName || safePath.endsWith('.echo-plugin.json') || pluginPackageExcludedFiles.has(safePath)) {
+        continue;
+      }
+      if (!exportablePluginFileExtensions.has(extname(safePath).toLowerCase())) {
+        continue;
+      }
+      if (Buffer.byteLength(file.content, 'utf8') > maxPluginPackageFileBytes) {
+        throw new Error('plugin_package_file_too_large');
+      }
+      writeFileSync(join(targetDirectory, safePath), file.content, 'utf8');
+      importedFileCount += 1;
+    }
+
+    this.scan();
+    this.log(manifest.id, 'info', `plugin_package_imported:${targetSource}`);
+    return { pluginId: manifest.id, directory: targetDirectory, importedFileCount };
   }
 
   createExample(kind: PluginCreateExampleKind): PluginCreateExampleResult {
@@ -453,10 +596,16 @@ export class PluginService {
       throw new Error('plugin_command_not_found');
     }
 
+    this.bumpPluginActivity(record.manifest.id, (activity, now) => ({
+      ...activity,
+      lastCommandAt: now,
+      commandRunCount: activity.commandRunCount + 1,
+    }));
     this.log(record.manifest.id, 'info', `运行命令：${command.title}`);
     try {
       return await timeout(Promise.resolve(command.handler(...(Array.isArray(request.args) ? request.args : []))).then(jsonClone), commandTimeoutMs);
     } catch (error) {
+      this.recordPluginErrorActivity(record.manifest.id);
       this.log(record.manifest.id, 'error', `命令失败：${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
@@ -497,13 +646,16 @@ export class PluginService {
       seen.add(id);
       const persisted = this.state.plugins[id] ?? {};
       const current = this.records.get(id);
+      const disabledByHost = persisted.disabledByHost === true;
+      const enabled = persisted.enabled === true && !disabledByHost;
       this.records.set(id, {
         manifest,
         directory,
-        enabled: persisted.enabled === true,
+        enabled,
         trustedPermissions: this.normalizeTrustedPermissions(persisted.trustedPermissions ?? [], manifest?.permissions ?? []),
-        status: persisted.enabled === true ? current?.status ?? 'enabled' : 'disabled',
-        error: error ?? current?.error ?? null,
+        status: enabled ? current?.status ?? 'enabled' : 'disabled',
+        error: error ?? (disabledByHost ? persisted.lastError ?? current?.error ?? null : current?.error ?? null),
+        disabledByHost,
       });
     }
 
@@ -558,6 +710,10 @@ export class PluginService {
 
     record.status = 'running';
     record.error = null;
+    this.bumpPluginActivity(record.manifest.id, (activity, now) => ({
+      ...activity,
+      lastStartedAt: now,
+    }));
     this.log(record.manifest.id, 'info', '插件已启动。');
   }
 
@@ -571,6 +727,10 @@ export class PluginService {
       clearTimeout(runtime.statusTimer);
     }
     this.runtimes.delete(pluginId);
+    this.bumpPluginActivity(pluginId, (activity, now) => ({
+      ...activity,
+      lastStoppedAt: now,
+    }));
   }
 
   private createEmptyRuntime(record: PluginRecord): RuntimeRecord {
@@ -670,7 +830,15 @@ export class PluginService {
           requirePermission('settings:write');
           const safePatch = isRecord(patch) ? jsonClone(patch) : {};
           assertJsonByteLimit(safePatch, maxPluginSettingsPatchBytes, 'plugin_settings_patch_too_large');
-          return jsonClone(setAppSettings(safePatch));
+          const result = setAppSettings(safePatch);
+          if (record.manifest) {
+            this.bumpPluginActivity(record.manifest.id, (activity, now) => ({
+              ...activity,
+              lastSettingsWriteAt: now,
+              settingsWriteCount: activity.settingsWriteCount + 1,
+            }));
+          }
+          return jsonClone(result);
         },
       }),
       storage: Object.freeze({
@@ -701,6 +869,13 @@ export class PluginService {
     storage[safeKey] = safeValue;
     assertJsonByteLimit(storage, maxPluginStorageBytes, 'plugin_storage_quota_exceeded');
     writeFileSync(join(record.directory, storageFileName), `${JSON.stringify(storage, null, 2)}\n`, 'utf8');
+    if (record.manifest) {
+      this.bumpPluginActivity(record.manifest.id, (activity, now) => ({
+        ...activity,
+        lastStorageWriteAt: now,
+        storageWriteCount: activity.storageWriteCount + 1,
+      }));
+    }
   }
 
   private readPluginStorage(directory: string): Record<string, unknown> {
@@ -754,12 +929,19 @@ export class PluginService {
       return;
     }
 
+    this.bumpPluginActivity(runtime.manifest.id, (activity, now) => ({
+      ...activity,
+      lastEventAt: now,
+      eventDispatchCount: activity.eventDispatchCount + 1,
+    }));
     for (const handler of handlers) {
       try {
         void Promise.resolve(handler(jsonClone(payload))).catch((error) => {
+          this.recordPluginErrorActivity(runtime.manifest.id);
           this.log(runtime.manifest.id, 'error', `事件处理失败：${error instanceof Error ? error.message : String(error)}`);
         });
       } catch (error) {
+        this.recordPluginErrorActivity(runtime.manifest.id);
         this.log(runtime.manifest.id, 'error', `事件处理失败：${error instanceof Error ? error.message : String(error)}`);
       }
     }
@@ -790,11 +972,90 @@ export class PluginService {
       permissions: manifest?.permissions ?? [],
       trustedPermissions: record.trustedPermissions,
       enabled: record.enabled,
-      status: record.error ? 'error' : record.enabled ? record.status : 'disabled',
+      status: record.disabledByHost ? 'disabled' : record.error ? 'error' : record.enabled ? record.status : 'disabled',
       error: record.error,
+      disabledByHost: record.disabledByHost,
+      activity: this.getPluginActivity(manifest?.id ?? basename(record.directory)),
+      security: this.createSecuritySummary(record, commands),
       contributes,
       commands: commands.filter((command, index, list) => list.findIndex((item) => item.id === command.id) === index),
     };
+  }
+
+  private createSecuritySummary(record: PluginRecord, commands: PluginCommand[]): PluginSecuritySummary {
+    const requestedPermissions = record.manifest?.permissions ?? [];
+    return {
+      requestedPermissionCount: requestedPermissions.length,
+      trustedPermissionCount: record.trustedPermissions.length,
+      untrustedPermissions: requestedPermissions.filter((permission) => !record.trustedPermissions.includes(permission)),
+      highRiskPermissions: requestedPermissions.filter((permission) => pluginPermissionDescriptors[permission]?.risk === 'high'),
+      hasEntry: Boolean(record.manifest?.entry),
+      hasPanel: Boolean(record.manifest?.panel),
+      sandboxedPanel: Boolean(record.manifest?.panel),
+      commandCount: commands.filter((command, index, list) => list.findIndex((item) => item.id === command.id) === index).length,
+    };
+  }
+
+  private getPluginActivity(pluginId: string): PluginActivitySummary {
+    const activity = this.activity.get(pluginId) ?? createEmptyPluginActivity();
+    this.activity.set(pluginId, activity);
+    return { ...activity };
+  }
+
+  private bumpPluginActivity(pluginId: string, updater: (activity: PluginActivitySummary, now: string) => PluginActivitySummary): void {
+    const current = this.activity.get(pluginId) ?? createEmptyPluginActivity();
+    this.activity.set(pluginId, updater(current, new Date().toISOString()));
+  }
+
+  private recordPluginErrorActivity(pluginId: string): void {
+    this.bumpPluginActivity(pluginId, (activity, now) => ({
+      ...activity,
+      lastErrorAt: now,
+      errorCount: activity.errorCount + 1,
+    }));
+  }
+
+  private collectPluginPackageFiles(record: PluginRecord): PluginPackageFile[] {
+    const files: PluginPackageFile[] = [];
+    for (const item of readdirSync(record.directory, { withFileTypes: true })) {
+      if (!item.isFile() || files.length >= maxPluginPackageFiles) {
+        continue;
+      }
+      const safePath = normalizePluginPackageFilePath(item.name);
+      if (!safePath || safePath.endsWith('.echo-plugin.json') || pluginPackageExcludedFiles.has(safePath)) {
+        continue;
+      }
+      if (!exportablePluginFileExtensions.has(extname(safePath).toLowerCase())) {
+        continue;
+      }
+      const filePath = join(record.directory, safePath);
+      if (statSync(filePath).size > maxPluginPackageFileBytes) {
+        continue;
+      }
+      files.push({
+        path: safePath,
+        content: readFileSync(filePath, 'utf8'),
+      });
+    }
+    return files;
+  }
+
+  private async chooseExportPath(manifest: PluginManifest): Promise<string | null> {
+    const result = await dialog.showSaveDialog({
+      title: 'Export ECHO plugin package',
+      defaultPath: `${manifest.id}-${manifest.version}.echo-plugin.json`,
+      filters: [{ name: 'ECHO plugin package', extensions: ['json'] }],
+    });
+    return result.canceled ? null : result.filePath ?? null;
+  }
+
+  private async chooseImportPath(): Promise<string | null> {
+    const result = await dialog.showOpenDialog({
+      title: 'Import ECHO plugin package',
+      properties: ['openFile'],
+      filters: [{ name: 'ECHO plugin package', extensions: ['json'] }],
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
   }
 
   private requireRecord(pluginId: string): PluginRecord {
@@ -831,9 +1092,32 @@ export class PluginService {
   }
 
   private markError(record: PluginRecord, error: unknown): void {
+    const pluginId = record.manifest?.id ?? basename(record.directory);
+    const message = error instanceof Error ? error.message : String(error);
+    const now = new Date().toISOString();
+    const currentState = this.state.plugins[pluginId] ?? {};
+    const recentCrashes = (currentState.crashTimestamps ?? [])
+      .filter((timestamp) => Date.parse(timestamp) >= Date.now() - pluginCrashLoopWindowMs)
+      .concat(now);
+
     record.status = 'error';
-    record.error = error instanceof Error ? error.message : String(error);
-    this.log(record.manifest?.id ?? basename(record.directory), 'error', record.error);
+    record.error = message;
+    currentState.crashTimestamps = recentCrashes;
+    currentState.lastError = message;
+    currentState.lastErrorAt = now;
+    if (recentCrashes.length >= pluginCrashLoopLimit) {
+      currentState.enabled = false;
+      currentState.disabledByHost = true;
+      record.enabled = false;
+      record.disabledByHost = true;
+      record.status = 'disabled';
+      this.stopPlugin(pluginId);
+      this.log(pluginId, 'error', `plugin_disabled_after_repeated_errors:${message}`);
+    }
+    this.state.plugins[pluginId] = currentState;
+    this.writeState();
+    this.recordPluginErrorActivity(pluginId);
+    this.log(pluginId, 'error', record.error);
   }
 
   private log(pluginId: string, level: PluginLogEntry['level'], message: string): void {

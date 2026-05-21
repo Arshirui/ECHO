@@ -206,7 +206,7 @@ export class RemoteLibrarySyncService {
 
         if (batch.length >= batchSize) {
           publishProgress(true, { phase: 'writing_database' });
-          writtenCount += this.flush(sourceId, batch);
+          writtenCount += await this.flush(sourceId, batch);
           batch = [];
           publishProgress(true, { phase: 'scanning' });
           await yieldToMainLoop();
@@ -218,7 +218,7 @@ export class RemoteLibrarySyncService {
       }
 
       publishProgress(true, { phase: 'writing_database' });
-      writtenCount += this.flush(sourceId, batch);
+      writtenCount += await this.flush(sourceId, batch);
       await yieldToMainLoop();
       publishProgress(true, { phase: 'marking_missing' });
       const missingCount = this.store.markMissingExcept(sourceId, seenPaths);
@@ -248,12 +248,12 @@ export class RemoteLibrarySyncService {
     }
   }
 
-  private flush(sourceId: string, batch: RemoteTrackWrite[]): number {
+  private async flush(sourceId: string, batch: RemoteTrackWrite[]): Promise<number> {
     if (batch.length === 0) {
       return 0;
     }
 
-    this.store.upsertTracks(batch);
+    this.store.upsertTracks(batch, await this.store.prepareSearchTermsForTracks(batch));
     this.onTracksIndexed(sourceId, batch);
     return batch.length;
   }

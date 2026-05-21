@@ -7,6 +7,7 @@ import { SettingsPage } from './SettingsPage';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadSettings } from '../../shared/types/downloads';
 import { createDefaultGlobalShortcuts, createRecommendedGlobalShortcuts } from '../../shared/types/globalShortcuts';
+import type { HqPlayerConnectionTestResult, HqPlayerSettings, HqPlayerStatus } from '../../shared/types/hqplayer';
 import type { LibraryDatabaseProtectionStatus } from '../../shared/types/library';
 import type { MvSettings } from '../../shared/types/mv';
 
@@ -91,6 +92,34 @@ const settings: AppSettings = {
   taskbarPlaybackControlsEnabled: false,
 };
 
+const hqPlayerSettings: HqPlayerSettings = {
+  enabled: false,
+  connectionMode: 'localDesktop',
+  host: '127.0.0.1',
+  port: null,
+  executablePath: null,
+  allowLaunch: false,
+  mediaServerEnabled: false,
+  mediaServerPort: null,
+  defaultPlaybackBackend: 'echoNative',
+  profileName: null,
+};
+
+const hqPlayerStatus: HqPlayerStatus = {
+  enabled: false,
+  state: 'disabled',
+  endpoint: {
+    connectionMode: 'localDesktop',
+    host: '127.0.0.1',
+    port: null,
+  },
+  mediaServerEnabled: false,
+  defaultPlaybackBackend: 'echoNative',
+  profileName: null,
+  lastCheckedAt: null,
+  lastError: null,
+};
+
 const getSettingsMock = vi.fn();
 const setSettingsMock = vi.fn();
 const resetSettingsMock = vi.fn();
@@ -108,6 +137,7 @@ const getDownloadSettingsMock = vi.fn();
 const chooseDownloadOutputDirectoryMock = vi.fn();
 const getCacheInventoryMock = vi.fn();
 const audioGetStatusMock = vi.fn();
+const audioGetDiagnosticsMock = vi.fn();
 const audioListDevicesMock = vi.fn();
 const audioSetOutputMock = vi.fn();
 const audioResetEngineMock = vi.fn();
@@ -122,6 +152,10 @@ const startReplayGainAnalysisMock = vi.fn();
 const getReplayGainAnalysisStatusMock = vi.fn();
 const openPluginDirectoryMock = vi.fn();
 const createPluginExampleMock = vi.fn();
+const hqPlayerGetSettingsMock = vi.fn();
+const hqPlayerSetSettingsMock = vi.fn();
+const hqPlayerGetStatusMock = vi.fn();
+const hqPlayerTestConnectionMock = vi.fn();
 
 const downloadSettings: DownloadSettings = {
   audioStrategy: 'best_available',
@@ -239,6 +273,7 @@ vi.mock('../utils/echoBridge', () => ({
   }),
   getAudioBridge: () => ({
     getStatus: audioGetStatusMock,
+    getDiagnostics: audioGetDiagnosticsMock,
     listDevices: audioListDevicesMock,
     setOutput: audioSetOutputMock,
     resetEngine: audioResetEngineMock,
@@ -283,6 +318,12 @@ vi.mock('../utils/echoBridge', () => ({
     startAuth: vi.fn(),
     completeAuth: vi.fn(),
     disconnect: vi.fn(),
+  }),
+  getHqPlayerBridge: () => ({
+    getSettings: hqPlayerGetSettingsMock,
+    setSettings: hqPlayerSetSettingsMock,
+    getStatus: hqPlayerGetStatusMock,
+    testConnection: hqPlayerTestConnectionMock,
   }),
   getLibraryBridge: () => ({
     clearCache: clearCacheMock,
@@ -352,10 +393,37 @@ vi.mock('../stores/PlaybackQueueProvider', () => ({
   }),
 }));
 
+const setNavigatorPlatform = (platform: string, userAgent: string): void => {
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  });
+  Object.defineProperty(window.navigator, 'userAgent', {
+    configurable: true,
+    value: userAgent,
+  });
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  setNavigatorPlatform('Win32', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
   getDownloadSettingsMock.mockResolvedValue(downloadSettings);
   chooseDownloadOutputDirectoryMock.mockResolvedValue({ ...downloadSettings, outputDirectory: 'E:\\Music Downloads' });
+  hqPlayerGetSettingsMock.mockResolvedValue(hqPlayerSettings);
+  hqPlayerSetSettingsMock.mockImplementation(async (patch: Partial<HqPlayerSettings>) => ({ ...hqPlayerSettings, ...patch }));
+  hqPlayerGetStatusMock.mockResolvedValue(hqPlayerStatus);
+  hqPlayerTestConnectionMock.mockImplementation(async (patch?: Partial<HqPlayerSettings>): Promise<HqPlayerConnectionTestResult> => ({
+    ok: true,
+    state: 'available',
+    endpoint: {
+      connectionMode: patch?.connectionMode ?? hqPlayerSettings.connectionMode,
+      host: patch?.host ?? hqPlayerSettings.host,
+      port: patch?.port ?? hqPlayerSettings.port,
+    },
+    elapsedMs: 5,
+    checkedAt: '2026-05-20T00:00:00.000Z',
+    error: null,
+  }));
   getCacheInventoryMock.mockResolvedValue({
     generatedAt: '2026-05-20T00:00:00.000Z',
     totalSizeBytes: 0,
@@ -403,6 +471,12 @@ beforeEach(() => {
   });
   openDataProtectionFolderMock.mockResolvedValue(undefined);
   audioGetStatusMock.mockResolvedValue(null);
+  audioGetDiagnosticsMock.mockResolvedValue({
+    ...playbackStatus,
+    watchdogStatus: 'idle',
+    recentWatchdogRecoveryCount: 0,
+    lastWatchdogRecoveryTime: null,
+  });
   audioListDevicesMock.mockResolvedValue([]);
   audioSetOutputMock.mockResolvedValue(null);
   audioResetEngineMock.mockResolvedValue({ state: 'stopped', warnings: [] });
@@ -413,6 +487,12 @@ beforeEach(() => {
   openExternalUrlMock.mockResolvedValue(undefined);
   openPluginDirectoryMock.mockResolvedValue(undefined);
   createPluginExampleMock.mockResolvedValue({ pluginId: 'echo.playback-panel', directory: 'D:\\Echo\\plugins\\echo.playback-panel' });
+  Object.defineProperty(window.navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: vi.fn().mockResolvedValue(undefined),
+    },
+  });
   validateGlobalShortcutMock.mockResolvedValue({
     accelerator: 'Ctrl+Alt+Space',
     available: true,
@@ -1271,6 +1351,55 @@ describe('SettingsPage', () => {
     expect(await within(row).findByText('2/2')).toBeTruthy();
   });
 
+  it('edits and tests HQPlayer foundation settings without changing the audio output path', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue({ ...settings, hqPlayer: hqPlayerSettings });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
+
+    const row = (await screen.findByText('settings.playback.hqplayer.title')).closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByText('settings.playback.hqplayer.enable').closest('.settings-inline-toggle')?.querySelector('button') as HTMLButtonElement);
+    fireEvent.click(within(row).getByRole('button', { name: 'settings.playback.hqplayer.mode.remote' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'settings.playback.hqplayer.defaultBackend.ask' }));
+    fireEvent.change(within(row).getByLabelText('settings.playback.hqplayer.host'), { target: { value: '192.0.2.20' } });
+    fireEvent.change(within(row).getByLabelText('settings.playback.hqplayer.port'), { target: { value: '4321' } });
+
+    fireEvent.click(within(row).getByRole('button', { name: 'settings.playback.hqplayer.test' }));
+
+    await waitFor(() =>
+      expect(hqPlayerTestConnectionMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          enabled: true,
+          connectionMode: 'remote',
+          defaultPlaybackBackend: 'ask',
+          host: '192.0.2.20',
+          port: 4321,
+        }),
+      ),
+    );
+    expect(await within(row).findByText('settings.playback.hqplayer.result.ok')).toBeTruthy();
+
+    fireEvent.click(within(row).getByRole('button', { name: 'settings.playback.hqplayer.save' }));
+
+    await waitFor(() =>
+      expect(hqPlayerSetSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          enabled: true,
+          connectionMode: 'remote',
+          defaultPlaybackBackend: 'ask',
+          host: '192.0.2.20',
+          port: 4321,
+        }),
+      ),
+    );
+    expect(audioSetOutputMock).not.toHaveBeenCalled();
+  });
+
   it('does not start audio device/status work when first entering Settings', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);
@@ -1510,6 +1639,53 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('1 - USB DAC B')).toBeTruthy();
   });
 
+  it('shows the professional playback status panel in playback settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    audioGetStatusMock.mockResolvedValue({
+      ...playbackStatus,
+      outputDeviceName: 'USB DAC B',
+      fileSampleRate: 96000,
+      actualDeviceSampleRate: 96000,
+      bitPerfectCandidate: true,
+      replayGainEnabled: true,
+      replayGainMode: 'track',
+      replayGainAppliedDb: -2.5,
+    });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
+
+    expect(await screen.findByText('audioProfessional.title')).toBeTruthy();
+    expect(screen.queryByText('audioProfessional.group.playbackChain')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'audioProfessional.action.showDetails' }));
+
+    expect(screen.getByText('audioProfessional.group.playbackChain')).toBeTruthy();
+    expect(screen.getByText('audioProfessional.group.sampleRate')).toBeTruthy();
+    expect(screen.queryByText(/^fileSampleRate$/u)).toBeNull();
+  });
+
+  it('copies audio diagnostics from playback settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
+    fireEvent.click(await screen.findByRole('button', { name: /audioDrawer\.action\.copyDiagnostics/ }));
+
+    await waitFor(() => expect(audioGetDiagnosticsMock).toHaveBeenCalledTimes(1));
+    expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('ECHO Next Audio Diagnostics'));
+  });
+
   it('resets the audio engine from playback settings', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);
@@ -1544,6 +1720,29 @@ describe('SettingsPage', () => {
     expect(confirmSpy).toHaveBeenCalledWith('settings.playback.troubleshooting.hardConfirm');
     await waitFor(() => expect(audioRestartWindowsAudioServiceMock).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('settings.playback.troubleshooting.hardDone')).toBeTruthy();
+  });
+
+  it('hides Windows-only playback and integration controls on Linux', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    setNavigatorPlatform('Linux x86_64', 'Mozilla/5.0 (X11; Linux x86_64)');
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.playback.label')[0]);
+    expect(screen.queryByText('settings.playback.outputMode.exclusive')).toBeNull();
+    expect(screen.queryByText('settings.playback.outputMode.asio')).toBeNull();
+    expect(screen.getByText('settings.playback.sharedBackend.title')).toBeTruthy();
+    expect(screen.getByText('settings.playback.sharedBackend.alsa')).toBeTruthy();
+    expect(screen.queryByText('settings.playback.sharedBackend.directSound')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'settings.playback.troubleshooting.hardAction' })).toBeNull();
+
+    fireEvent.click(screen.getAllByText('settings.nav.integrations.label')[0]);
+    expect(screen.queryByText('settings.integrations.smtc.title')).toBeNull();
+    expect(screen.queryByText('settings.integrations.taskbarPlayback.title')).toBeNull();
   });
 
   it('saves the startup account check setting from Settings', async () => {

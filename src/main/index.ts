@@ -5,9 +5,11 @@ import { registerIpc } from './ipc/registerIpc';
 import { registerCoverProtocolScheme } from './protocol/coverProtocol';
 import { initializeProtectedUserDataPath } from './app/dataProtection';
 import { isLibraryRecoveryMode } from './app/libraryRecoveryMode';
+import { initializeDevConsoleCapture } from './diagnostics/DevConsoleService';
 
 initializeProtectedUserDataPath();
 registerCrashHandlers();
+initializeDevConsoleCapture();
 registerCoverProtocolScheme();
 registerIpc();
 if (!isLibraryRecoveryMode()) {

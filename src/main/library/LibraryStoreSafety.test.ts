@@ -102,6 +102,24 @@ describe('LibraryStore track metadata safety', () => {
     });
   });
 
+  it('backfills Japanese romaji search terms for existing tracks', async () => {
+    const store = makeStore();
+    const folder = store.addFolder('D:\\Music');
+    const path = 'D:\\Music\\Japanese.flac';
+
+    store.upsertTrack(baseTrack(folder.id, path, {
+      title: '君が好き',
+      artist: 'Echo Artist',
+    }));
+
+    expect(store.getTracks({ search: 'kimi', pageSize: 10 }).total).toBe(0);
+    expect(await store.rebuildJapaneseRomanizedSearchTerms()).toBe(1);
+
+    const page = store.getTracks({ search: 'kimi', pageSize: 10 });
+    expect(page.total).toBe(1);
+    expect(page.items[0]?.title).toBe('君が好き');
+  });
+
   it('sanitizes stale album and artist rows before returning them to the renderer', () => {
     const store = makeStore();
     const folder = store.addFolder('D:\\Music');

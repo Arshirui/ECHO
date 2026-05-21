@@ -3,7 +3,7 @@ import { getAppBridge } from '../utils/echoBridge';
 
 export type { AppearancePreferences } from '../../shared/types/appSettings';
 
-export type AppearanceFontSlot = 'main' | 'chinese' | 'lyrics';
+export type AppearanceFontSlot = 'main' | 'chinese' | 'fallback' | 'lyrics';
 
 export type AppearanceFontFile = {
   path: string;
@@ -18,6 +18,8 @@ export const defaultAppearancePreferences: AppearancePreferences = {
   mainFontFilePath: null,
   chineseFontFamily: 'Microsoft YaHei',
   chineseFontFilePath: null,
+  fallbackFontFamily: 'Noto Sans SC',
+  fallbackFontFilePath: null,
   baseFontSize: 14,
   lineHeight: 1.35,
   textDepth: 62,
@@ -48,6 +50,8 @@ const normalizePreferences = (value: Partial<AppearancePreferences>): Appearance
   mainFontFilePath: normalizeFontPath(value.mainFontFilePath),
   chineseFontFamily: normalizeFontName(value.chineseFontFamily, defaultAppearancePreferences.chineseFontFamily),
   chineseFontFilePath: normalizeFontPath(value.chineseFontFilePath),
+  fallbackFontFamily: normalizeFontName(value.fallbackFontFamily, defaultAppearancePreferences.fallbackFontFamily),
+  fallbackFontFilePath: normalizeFontPath(value.fallbackFontFilePath),
   baseFontSize: clamp(Number(value.baseFontSize) || defaultAppearancePreferences.baseFontSize, 12, 18),
   lineHeight: clamp(Number(value.lineHeight) || defaultAppearancePreferences.lineHeight, 1.1, 1.8),
   textDepth: clamp(Number(value.textDepth) || defaultAppearancePreferences.textDepth, 35, 100),
@@ -117,6 +121,7 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences): 
   const fontStack = [
     serializeFontList(normalized.mainFontFamily),
     serializeFontList(normalized.chineseFontFamily),
+    serializeFontList(normalized.fallbackFontFamily),
     'ui-sans-serif',
     'system-ui',
     '-apple-system',
@@ -148,7 +153,9 @@ export const registerAppearanceFontFile = async (slot: AppearanceFontSlot, fontF
       ? defaultAppearancePreferences.mainFontFamily
       : slot === 'chinese'
         ? defaultAppearancePreferences.chineseFontFamily
-        : 'Microsoft YaHei';
+        : slot === 'fallback'
+          ? defaultAppearancePreferences.fallbackFontFamily
+          : 'Microsoft YaHei';
   const family = normalizeFontName(fontFile.family, fallbackFamily);
   const fontFace = new FontFace(family, `url("${fontFile.dataUrl}")`);
   const loadedFontFace = await fontFace.load();

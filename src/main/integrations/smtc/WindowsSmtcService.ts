@@ -194,7 +194,7 @@ export class WindowsSmtcService implements SmtcService {
       pause: actions.pause,
       previous: actions.previous,
       next: actions.next,
-      seek: false,
+      seek: actions.seek === true,
     });
   }
 
@@ -262,9 +262,10 @@ export class WindowsSmtcService implements SmtcService {
     }
 
     try {
-      const message = JSON.parse(line) as { type?: unknown; command?: unknown; message?: unknown };
-      if (message.type === 'command' && this.isCommand(message.command)) {
-        this.emitCommand(message.command);
+      const message = JSON.parse(line) as { type?: unknown; command?: unknown; message?: unknown; positionSeconds?: unknown };
+      const command = this.parseCommandMessage(message);
+      if (message.type === 'command' && command) {
+        this.emitCommand(command);
       } else if (message.type === 'error') {
         this.logger.warn('[SMTC] Windows SMTC host reported an error', { message: String(message.message ?? '') });
       }
@@ -324,7 +325,22 @@ export class WindowsSmtcService implements SmtcService {
     return Number.isFinite(value) && value > 0 ? value : 0;
   }
 
-  private isCommand(value: unknown): value is SmtcCommand {
+  private parseCommandMessage(message: { command?: unknown; positionSeconds?: unknown }): SmtcCommand | null {
+    if (this.isButtonCommand(message.command)) {
+      return message.command;
+    }
+
+    if (message.command === 'seek' && typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)) {
+      return {
+        type: 'seek',
+        positionSeconds: Math.max(0, message.positionSeconds),
+      };
+    }
+
+    return null;
+  }
+
+  private isButtonCommand(value: unknown): value is Exclude<SmtcCommand, { type: 'seek' }> {
     return value === 'play' || value === 'pause' || value === 'playPause' || value === 'previous' || value === 'next' || value === 'stop';
   }
 }

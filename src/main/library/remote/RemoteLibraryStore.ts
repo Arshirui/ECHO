@@ -18,7 +18,7 @@ import type {
 } from '../../../shared/types/remoteSources';
 import type { RemoteSourceSecret, RemoteTrackWrite } from './remoteTypes';
 import { RemoteSourceSecretStore } from './RemoteSourceSecretStore';
-import { buildTrackSearchTerms } from '../SearchIndexTokens';
+import { buildTrackSearchTerms, buildTrackSearchTermsAsync } from '../SearchIndexTokens';
 
 type DbRow = Record<string, unknown>;
 
@@ -465,7 +465,47 @@ export class RemoteLibraryStore {
     return fingerprints;
   }
 
-  upsertTracks(tracks: RemoteTrackWrite[]): void {
+  async prepareSearchTermsForTracks(tracks: RemoteTrackWrite[]): Promise<Map<string, string>> {
+    const terms = new Map<string, string>();
+    await Promise.all(
+      tracks.map(async (track) => {
+        terms.set(
+          track.id,
+          await buildTrackSearchTermsAsync({
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            albumArtist: track.albumArtist,
+            genre: track.genre,
+            remotePath: track.remotePath,
+          }),
+        );
+      }),
+    );
+    return terms;
+  }
+
+  async prepareMetadataUpdateSearchTerms(
+    trackId: string,
+    update: {
+      title: string;
+      artist: string;
+      album: string;
+      albumArtist: string;
+      genre: string | null;
+    },
+  ): Promise<string> {
+    return buildTrackSearchTermsAsync({
+      title: update.title,
+      artist: update.artist,
+      album: update.album,
+      albumArtist: update.albumArtist,
+      genre: update.genre,
+      remotePath: this.getTrack(trackId)?.remotePath,
+    });
+  }
+
+  upsertTracks(tracks: RemoteTrackWrite[], preparedSearchTerms: Map<string, string> = new Map()): void {
     if (tracks.length === 0) {
       return;
     }
@@ -512,7 +552,7 @@ export class RemoteLibraryStore {
 
     this.database.transaction(() => {
       for (const track of tracks) {
-        const searchTerms = buildTrackSearchTerms({
+        const searchTerms = preparedSearchTerms.get(track.id) ?? buildTrackSearchTerms({
           title: track.title,
           artist: track.artist,
           album: track.album,
@@ -575,7 +615,7 @@ export class RemoteLibraryStore {
     bitrate: number | null;
     metadataStatus: RemoteLibraryTrack['metadataStatus'];
     fieldSources: Record<string, string>;
-  }): RemoteLibraryTrack | null {
+  }, preparedSearchTerms?: string): RemoteLibraryTrack | null {
     this.database
       .prepare(
         `UPDATE remote_tracks SET
@@ -614,7 +654,7 @@ export class RemoteLibraryStore {
         update.bitrate,
         update.metadataStatus,
         JSON.stringify(update.fieldSources),
-        buildTrackSearchTerms({
+        preparedSearchTerms ?? buildTrackSearchTerms({
           title: update.title,
           artist: update.artist,
           album: update.album,

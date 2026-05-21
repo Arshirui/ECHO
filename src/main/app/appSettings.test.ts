@@ -46,6 +46,13 @@ describe('app settings normalization', () => {
     expect(settings.autoAccountCheckOnStartup).toBe(true);
     expect(settings.spotifyAutoLaunchOfficialPlayer).toBe(true);
     expect(settings.connectAutoStartReceiversEnabled).toBe(false);
+    expect(settings.hqPlayer).toMatchObject({
+      enabled: false,
+      connectionMode: 'localDesktop',
+      host: '127.0.0.1',
+      port: null,
+      defaultPlaybackBackend: 'echoNative',
+    });
     expect(settings.playlistBackupsEnabled).toBe(true);
     expect(settings.autoDataBackupEnabled).toBe(false);
     expect(settings.autoDataBackupDirectory).toBeNull();
@@ -194,6 +201,67 @@ describe('app settings normalization', () => {
     expect(settings.onlineArtistInfoSeatGeekClientId).toBe('seatgeek-id');
     expect(settings.onlineArtistInfoRegion).toBe('HK');
     expect(normalizeSettings({ onlineArtistInfoBandsintownAppId: '   ' }).onlineArtistInfoBandsintownAppId).toBeNull();
+  });
+
+  it('normalizes HQPlayer settings as an opt-in external playback foundation', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).hqPlayer).toMatchObject({
+      enabled: false,
+      connectionMode: 'localDesktop',
+      host: '127.0.0.1',
+      port: null,
+      mediaServerEnabled: false,
+      defaultPlaybackBackend: 'echoNative',
+    });
+
+    expect(
+      normalizeSettings({
+        hqPlayer: {
+          enabled: true,
+          connectionMode: 'remote',
+          host: '  192.168.1.32\r\n  ',
+          port: 4321,
+          executablePath: ' C:\\Program Files\\HQPlayer\\HQPlayer.exe ',
+          allowLaunch: true,
+          mediaServerEnabled: true,
+          mediaServerPort: 17890,
+          defaultPlaybackBackend: 'hqplayer',
+          profileName: ' DSD preset ',
+        },
+      }).hqPlayer,
+    ).toMatchObject({
+      enabled: true,
+      connectionMode: 'remote',
+      host: '192.168.1.32',
+      port: 4321,
+      executablePath: 'C:\\Program Files\\HQPlayer\\HQPlayer.exe',
+      allowLaunch: true,
+      mediaServerEnabled: true,
+      mediaServerPort: 17890,
+      defaultPlaybackBackend: 'hqplayer',
+      profileName: 'DSD preset',
+    });
+
+    expect(
+      normalizeSettings({
+        hqPlayer: {
+          enabled: 'yes',
+          connectionMode: 'embedded',
+          host: ' ',
+          port: 70000,
+          mediaServerPort: 0,
+          defaultPlaybackBackend: 'replace-native',
+        },
+      } as never).hqPlayer,
+    ).toMatchObject({
+      enabled: false,
+      connectionMode: 'localDesktop',
+      host: '127.0.0.1',
+      port: null,
+      mediaServerPort: null,
+      defaultPlaybackBackend: 'echoNative',
+    });
   });
 
   it('normalizes appearance theme modes', async () => {
@@ -690,6 +758,16 @@ describe('app settings normalization', () => {
     });
     expect(
       normalizeSettings({
+        rememberedAudioOutput: { enabled: true, outputMode: 'shared', sharedBackend: 'alsa', latencyProfile: 'stable' },
+      }).rememberedAudioOutput,
+    ).toMatchObject({
+      enabled: true,
+      outputMode: 'shared',
+      sharedBackend: 'alsa',
+      latencyProfile: 'stable',
+    });
+    expect(
+      normalizeSettings({
         rememberedAudioOutput: { enabled: false, outputMode: 'shared', sharedBackend: 'auto', latencyProfile: 'balanced' },
       }).rememberedAudioOutput,
     ).toMatchObject({
@@ -809,6 +887,9 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ audioAnalysisEnabled: false }).audioAnalysisEnabled).toBe(false);
     expect(normalizeSettings({ audioAnalysisEnabled: true }).audioAnalysisEnabled).toBe(true);
     expect(normalizeSettings({ audioAnalysisEnabled: 'yes' as never }).audioAnalysisEnabled).toBe(true);
+    expect(normalizeSettings({}).audioIssueDiagnosticsWindowEnabled).toBe(false);
+    expect(normalizeSettings({ audioIssueDiagnosticsWindowEnabled: true }).audioIssueDiagnosticsWindowEnabled).toBe(true);
+    expect(normalizeSettings({ audioIssueDiagnosticsWindowEnabled: 'yes' as never }).audioIssueDiagnosticsWindowEnabled).toBe(false);
   });
 
   it('keeps ReplayGain analysis lazy by default', async () => {

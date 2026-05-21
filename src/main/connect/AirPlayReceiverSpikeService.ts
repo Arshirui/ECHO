@@ -750,7 +750,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     return this.getStatus();
   }
 
-  async seekPlayback(): Promise<AirPlayReceiverStatus> {
+  async seekPlayback(_positionSeconds?: number): Promise<AirPlayReceiverStatus> {
     this.addDebugEvent('seek', 'AirPlay receiver seek is not supported by the native backend');
     return this.getStatus();
   }

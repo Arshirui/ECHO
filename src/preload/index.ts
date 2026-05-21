@@ -12,6 +12,7 @@ import type {
 } from '../shared/types/playback';
 import type { SmtcCommand } from '../shared/types/smtc';
 import type { UpdateStatus } from '../shared/types/updates';
+import type { DiagnosticConsoleEntry } from '../shared/types/diagnostics';
 import { calculateReplayGain, dbToLinearGain, type ReplayGainCalculation, type ReplayGainTrackData } from '../shared/utils/replayGain';
 import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../shared/constants/replayGain';
 
@@ -66,10 +67,13 @@ type SystemPlaybackErrorReport = {
 };
 
 const systemAudioWarning = 'system_audio_compatibility_mode';
-const systemAudioDeviceName = 'Windows default output';
+const systemAudioDeviceName = 'System default output';
+const systemAudioOutputBackend = 'system-audio';
+const systemAudioBackendImpl = 'electron-html-audio';
 const maxSystemMediaRecoveryAttempts = 1;
 const systemSeekConfirmTimeoutMs = 2500;
 const systemSeekToleranceSeconds = 0.75;
+const systemPrematureEndToleranceSeconds = 5;
 const systemSeekConfirmEvents: Array<keyof HTMLMediaElementEventMap> = [
   'seeked',
   'timeupdate',
@@ -127,6 +131,26 @@ let systemOutputSettings: Pick<AudioStatus, 'volume' | 'playbackRate' | 'playbac
 
 const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
 const isRendererReadyUrl = (value: string): boolean => /^(?:blob|data):/iu.test(value.trim());
+const isLocalSystemSource = (source: SystemPlaybackSource | null): boolean => {
+  const rawUrl = source?.filePath?.trim() ?? '';
+  return rawUrl.length > 0 && !isHttpUrl(rawUrl) && !isRendererReadyUrl(rawUrl);
+};
+
+const createSystemAudioMediaErrorMessage = (element: HTMLAudioElement, fallback = 'system_audio_playback_failed'): string => {
+  const code = typeof element.error?.code === 'number' ? element.error.code : null;
+  const nativeMessage = element.error?.message?.trim() ?? '';
+  if (code === 3) {
+    return nativeMessage ? `system_audio_decode_error: ${nativeMessage}` : 'system_audio_decode_error';
+  }
+  if (code === 4) {
+    return nativeMessage ? `system_audio_source_not_supported: ${nativeMessage}` : 'system_audio_source_not_supported';
+  }
+
+  return nativeMessage || fallback;
+};
+
+const createSystemAudioPrematureEndMessage = (positionSeconds: number, durationSeconds: number): string =>
+  `system_audio_decode_error; positionSeconds=${positionSeconds.toFixed(3)}; durationSeconds=${durationSeconds.toFixed(3)}`;
 
 const nextSystemPlaybackGeneration = (): number => {
   systemPlaybackGeneration += 1;
@@ -187,8 +211,8 @@ const createFallbackAudioStatus = (): AudioStatus => ({
   outputDeviceId: null,
   outputDeviceName: systemAudioDeviceName,
   outputDeviceType: 'system',
-  outputBackend: 'windows-system-audio',
-  activeOutputBackendImpl: 'electron-html-audio',
+  outputBackend: systemAudioOutputBackend,
+  activeOutputBackendImpl: systemAudioBackendImpl,
   outputMode: 'system',
   sharedBackend: 'auto',
   useJuceOutputRequested: false,
@@ -323,7 +347,7 @@ const waitForSystemSeekConfirmed = (
     };
 
     rejectForElementError = (): void => {
-      finish(new Error(element.error?.message || systemAudioError || 'system_audio_playback_failed'));
+      finish(new Error(createSystemAudioMediaErrorMessage(element, systemAudioError || 'system_audio_playback_failed')));
     };
 
     for (const event of systemSeekConfirmEvents) {
@@ -347,8 +371,8 @@ const createSystemAudioStatus = (): AudioStatus => {
     outputDeviceId: null,
     outputDeviceName: systemAudioDeviceName,
     outputDeviceType: 'system',
-    outputBackend: 'windows-system-audio',
-    activeOutputBackendImpl: 'electron-html-audio',
+    outputBackend: systemAudioOutputBackend,
+    activeOutputBackendImpl: systemAudioBackendImpl,
     outputMode: 'system',
     sharedBackend: 'auto',
     useJuceOutputRequested: false,
@@ -638,13 +662,37 @@ const ensureSystemAudioElement = (): HTMLAudioElement => {
     emitSystemAudioStatus();
   });
   element.addEventListener('ended', () => {
+    const endedPositionSeconds = getSystemPositionSeconds();
+    const durationSeconds = getSystemDurationSeconds();
+    const premature =
+      isLocalSystemSource(systemAudioSource) &&
+      durationSeconds > 0 &&
+      endedPositionSeconds < durationSeconds - systemPrematureEndToleranceSeconds;
+    if (premature) {
+      systemAudioState = 'error';
+      systemAudioError = createSystemAudioPrematureEndMessage(endedPositionSeconds, durationSeconds);
+      stopSystemStatusTimer();
+      emitSystemAudioStatus();
+      reportSystemPlaybackError({
+        phase: 'system-audio-ended-before-duration',
+        message: systemAudioError,
+        recovered: false,
+        ...mediaRequestDiagnostics(systemMediaPlaybackContext?.request ?? null),
+        ...sourceDiagnostics(systemAudioSource),
+        trackId: systemAudioSource?.trackId ?? null,
+        recoveryAttempt: systemMediaPlaybackContext?.recoveryAttempts ?? 0,
+        maxRecoveryAttempts: maxSystemMediaRecoveryAttempts,
+        htmlAudio: htmlAudioDiagnostics(),
+      });
+      return;
+    }
     systemAudioState = 'ended';
     stopSystemStatusTimer();
     emitSystemAudioStatus();
   });
   element.addEventListener('error', () => {
     systemAudioState = 'error';
-    systemAudioError = element.error?.message || 'system_audio_playback_failed';
+    systemAudioError = createSystemAudioMediaErrorMessage(element);
     stopSystemStatusTimer();
     emitSystemAudioStatus();
     void handleSystemPlaybackFailure('system-audio-htmlaudio-error', new Error(systemAudioError), systemPlaybackGeneration);
@@ -1414,6 +1462,15 @@ const echoApi: EchoApi = {
     authenticatePassword: (username, password) => ipcRenderer.invoke(IpcChannels.LastFmAuthenticatePassword, username, password),
     disconnect: () => ipcRenderer.invoke(IpcChannels.LastFmDisconnect),
   },
+  hqPlayer: {
+    getSettings: () => ipcRenderer.invoke(IpcChannels.HqPlayerGetSettings),
+    setSettings: (patch) => ipcRenderer.invoke(IpcChannels.HqPlayerSetSettings, patch),
+    getStatus: () => ipcRenderer.invoke(IpcChannels.HqPlayerGetStatus),
+    testConnection: (patch) => ipcRenderer.invoke(IpcChannels.HqPlayerTestConnection, patch),
+    createPlaybackHandoff: (request) => ipcRenderer.invoke(IpcChannels.HqPlayerCreatePlaybackHandoff, request),
+    getLastPlaybackHandoff: () => ipcRenderer.invoke(IpcChannels.HqPlayerGetLastPlaybackHandoff),
+    getLastPlaybackControl: () => ipcRenderer.invoke(IpcChannels.HqPlayerGetLastPlaybackControl),
+  },
   audio: {
     getStatus: async () => {
       if (systemAudioModeActive) {
@@ -1486,9 +1543,19 @@ const echoApi: EchoApi = {
     getLastCrashSummary: () => ipcRenderer.invoke(IpcChannels.DiagnosticsGetLastCrashSummary),
     clearLastCrashSummary: () => ipcRenderer.invoke(IpcChannels.DiagnosticsClearLastCrashSummary),
     exportDiagnostics: () => ipcRenderer.invoke(IpcChannels.DiagnosticsExport),
+    exportDiagnosticsZip: () => ipcRenderer.invoke(IpcChannels.DiagnosticsExportZip),
     openDiagnosticsFolder: () => ipcRenderer.invoke(IpcChannels.DiagnosticsOpenFolder),
     openCrashReport: () => ipcRenderer.invoke(IpcChannels.DiagnosticsOpenCrashReport),
     openAudioCrashReport: () => ipcRenderer.invoke(IpcChannels.DiagnosticsOpenAudioCrashReport),
+    openDevConsole: () => ipcRenderer.invoke(IpcChannels.DiagnosticsOpenDevConsole),
+    getDevConsoleSnapshot: () => ipcRenderer.invoke(IpcChannels.DiagnosticsDevConsoleSnapshot),
+    onDevConsoleEntry: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, entry: unknown): void => {
+        handler(entry as DiagnosticConsoleEntry);
+      };
+      ipcRenderer.on(IpcChannels.DiagnosticsDevConsoleEntry, listener);
+      return () => ipcRenderer.off(IpcChannels.DiagnosticsDevConsoleEntry, listener);
+    },
     reportRendererError: (payload) => ipcRenderer.invoke(IpcChannels.DiagnosticsReportRendererError, payload),
   },
   downloads: {
@@ -1516,6 +1583,8 @@ const echoApi: EchoApi = {
     disable: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsDisable, pluginId),
     reload: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsReload, pluginId),
     openDirectory: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsOpenDirectory, pluginId),
+    exportPackage: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsExportPackage, pluginId),
+    importPackage: () => ipcRenderer.invoke(IpcChannels.PluginsImportPackage),
     runCommand: (request) => ipcRenderer.invoke(IpcChannels.PluginsRunCommand, request),
     getLogs: (pluginId) => ipcRenderer.invoke(IpcChannels.PluginsGetLogs, pluginId),
   },

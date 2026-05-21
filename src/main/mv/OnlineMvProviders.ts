@@ -31,6 +31,21 @@ type ProviderDependencies = {
   getCredentials?: (provider: NetworkMvProviderId) => AccountCredentials;
 };
 
+type BilibiliPlayEndpoint = 'playurl' | 'wbi-playurl';
+
+type BilibiliPlayAttempt = {
+  endpoint: BilibiliPlayEndpoint;
+  fnval: string;
+  qn: number;
+  status: number | null;
+  code: number | null;
+  message: string | null;
+  quality: number | null;
+  hasDurl: boolean;
+  hasDashVideo: boolean;
+  error: string | null;
+};
+
 const userAgent =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ECHO-Next/1.0 Safari/537.36';
 const bilibiliAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7';
@@ -47,6 +62,8 @@ const qualityHeight: Record<Exclude<MvQualityTier, 'auto'>, number> = {
 const maxQualityHeight = (quality: MvSettings['maxQuality']): number => (quality === 'max' ? Number.POSITIVE_INFINITY : qualityHeight[quality]);
 
 const bilibiliQualityMap: Record<number, { tier: Exclude<MvQualityTier, 'auto'>; label: string }> = {
+  16: { tier: '720p', label: '360p' },
+  32: { tier: '720p', label: '480p' },
   64: { tier: '720p', label: '720p' },
   80: { tier: '1080p', label: '1080p' },
   112: { tier: '1080p', label: '1080p+' },
@@ -59,6 +76,18 @@ const bilibiliQualityMap: Record<number, { tier: Exclude<MvQualityTier, 'auto'>;
 
 const bilibiliDashFnval = '4048';
 const bilibiliQualityOrder = [127, 126, 125, 120, 116, 112, 80, 64];
+const bilibiliQualityHeight: Record<number, number> = {
+  16: 360,
+  32: 480,
+  64: 720,
+  80: 1080,
+  112: 1080,
+  116: 1080,
+  120: 2160,
+  125: 2160,
+  126: 2160,
+  127: 4320,
+};
 const bilibiliQualityRank = (qn: number): number => {
   const index = bilibiliQualityOrder.indexOf(qn);
   return index >= 0 ? bilibiliQualityOrder.length - index : 0;
@@ -134,11 +163,29 @@ const metricNumber = (value: unknown): number | null => {
   return Math.round(amount * multiplier);
 };
 
-const normalizeSearchText = (value: string): string =>
+const decodeHtmlEntities = (value: string): string =>
   value
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) => {
+      const codePoint = Number.parseInt(hex, 16);
+      return Number.isFinite(codePoint) && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : '';
+    })
+    .replace(/&#(\d+);/g, (_match, decimal: string) => {
+      const codePoint = Number.parseInt(decimal, 10);
+      return Number.isFinite(codePoint) && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : '';
+    })
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+const normalizeSearchText = (value: string): string =>
+  decodeHtmlEntities(value)
     .normalize('NFKC')
     .toLowerCase()
     .replace(/<[^>]*>/g, ' ')
+    .replace(/&+/g, ' ')
     .replace(/[[\]【】「」『』()（）"'“”‘’]/g, ' ')
     .replace(/[_\-~|/\\:：·・.,，。!?！？]+/g, ' ')
     .replace(/\s+/g, ' ')
@@ -184,12 +231,7 @@ const stripHtml = (value: unknown): string | null => {
     return null;
   }
 
-  return raw
-    .replace(/<[^>]*>/g, '')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-    .trim();
+  return decodeHtmlEntities(raw.replace(/<[^>]*>/g, '')).trim();
 };
 
 const normalizeUrl = (value: unknown): string | null => {
@@ -276,9 +318,9 @@ const labelWithFrameRate = (label: string, fps: number | null): string => {
   return new RegExp(`\\b${suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(label) ? label : `${label} ${suffix}`;
 };
 
-const bilibiliStreamVariantId = (streamQn: number, fps: number | null): string => {
+const bilibiliStreamVariantId = (streamQn: number, fps: number | null, source: 'dash-video' | 'durl' = 'dash-video'): string => {
   const highFrameRate = fps && fps >= 100 ? `-${frameRateLabel(fps).toLowerCase()}` : '';
-  return `bilibili-qn-${streamQn}${highFrameRate}`;
+  return `bilibili-${source === 'dash-video' ? 'dash-' : ''}qn-${streamQn}${highFrameRate}`;
 };
 
 const qualityFromHeight = (
@@ -367,7 +409,7 @@ const externalVariant = (
   rawProviderJson: null,
 });
 
-const withTimeout = async (fetchImpl: FetchLike, url: string, headers: Record<string, string>): Promise<unknown> => {
+const fetchJsonWithTimeout = async (fetchImpl: FetchLike, url: string, headers: Record<string, string>): Promise<{ status: number; ok: boolean; payload: unknown }> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 6500);
 
@@ -381,19 +423,31 @@ const withTimeout = async (fetchImpl: FetchLike, url: string, headers: Record<st
       signal: controller.signal,
     });
 
-    if (!response.ok) {
-      throw new Error(`request_failed:${response.status}`);
-    }
-
     const body = await response.text();
-    return JSON.parse(body.trim().replace(/^[^(]*\((.*)\);?$/s, '$1')) as unknown;
+    return {
+      status: response.status,
+      ok: response.ok,
+      payload: JSON.parse(body.trim().replace(/^[^(]*\((.*)\);?$/s, '$1')) as unknown,
+    };
   } finally {
     clearTimeout(timer);
   }
 };
 
+const withTimeout = async (fetchImpl: FetchLike, url: string, headers: Record<string, string>): Promise<unknown> => {
+  const response = await fetchJsonWithTimeout(fetchImpl, url, headers);
+  if (!response.ok) {
+    throw new Error(`request_failed:${response.status}`);
+  }
+
+  return response.payload;
+};
+
 const bilibiliSearchReferer = (query: string): string =>
   `https://search.bilibili.com/video?keyword=${encodeURIComponent(query)}`;
+
+const bilibiliAllSearchReferer = (query: string): string =>
+  `https://search.bilibili.com/all?keyword=${encodeURIComponent(query)}`;
 
 const bilibiliSearchHeaders = (query: string, credentials: Record<string, string>): Record<string, string> => ({
   ...credentials,
@@ -448,22 +502,29 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
     const query = queryOverride?.trim() || [track.title, track.artist || track.albumArtist, 'MV'].filter(Boolean).join(' ');
     const headers = bilibiliSearchHeaders(query, this.cookieHeaders(this.id));
     const wbiMixinKey = await this.bilibiliWbiMixinKey(headers);
-    const url = new URL(
+    const typeSearchUrl = new URL(
       wbiMixinKey
         ? 'https://api.bilibili.com/x/web-interface/wbi/search/type'
         : 'https://api.bilibili.com/x/web-interface/search/type',
     );
-    url.searchParams.set('search_type', 'video');
-    url.searchParams.set('keyword', query);
-    url.searchParams.set('page', '1');
-    url.searchParams.set('order', 'click');
+    typeSearchUrl.searchParams.set('search_type', 'video');
+    typeSearchUrl.searchParams.set('keyword', query);
+    typeSearchUrl.searchParams.set('page', '1');
+    typeSearchUrl.searchParams.set('order', 'click');
+    typeSearchUrl.searchParams.set('page_size', '8');
     if (wbiMixinKey) {
-      appendWbiSignature(url, wbiMixinKey);
+      appendWbiSignature(typeSearchUrl, wbiMixinKey);
     }
 
-    const payload = await withTimeout(this.fetchImpl, url.toString(), headers);
-    const data = isRecord(payload) ? payload.data : null;
-    const results = isRecord(data) ? asArray(data.result) : [];
+    let typeResults: unknown[] = [];
+    try {
+      const typePayload = await withTimeout(this.fetchImpl, typeSearchUrl.toString(), headers);
+      const typeData = isRecord(typePayload) ? typePayload.data : null;
+      typeResults = isRecord(typeData) ? asArray(typeData.result) : [];
+    } catch {
+      typeResults = [];
+    }
+    const results = typeResults.length > 0 ? typeResults : await this.searchAllVideos(query, headers);
 
     return results
       .flatMap((item): (MvMatchCandidate & { viewCount: number | null })[] => {
@@ -519,6 +580,28 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
       .map((candidate) => candidate);
   }
 
+  private async searchAllVideos(query: string, headers: Record<string, string>): Promise<unknown[]> {
+    try {
+      const url = new URL('https://api.bilibili.com/x/web-interface/search/all/v2');
+      url.searchParams.set('keyword', query);
+      url.searchParams.set('page', '1');
+
+      const payload = await withTimeout(this.fetchImpl, url.toString(), {
+        ...headers,
+        Referer: bilibiliAllSearchReferer(query),
+      });
+      const data = isRecord(payload) ? payload.data : null;
+      const groups = isRecord(data) ? asArray(data.result) : [];
+      const videoGroup = groups.find(
+        (group) => isRecord(group) && group.result_type === 'video',
+      );
+
+      return isRecord(videoGroup) ? asArray(videoGroup.data) : [];
+    } catch {
+      return [];
+    }
+  }
+
   async resolve(video: TrackVideo, settings: MvSettings): Promise<ResolvedMvStreamVariant[]> {
     const bvid = video.sourceId ?? (video.id.startsWith('bilibili:') ? video.id.slice('bilibili:'.length) : null);
     if (!bvid) {
@@ -530,13 +613,155 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
     const viewData = isRecord(viewPayload) ? viewPayload.data : null;
     const cid = number(isRecord(viewData) ? viewData.cid : null);
     if (!cid) {
+      console.warn('[mv] Bilibili MV view did not return a playable cid.', {
+        bvid,
+        title: video.title,
+      });
       return [externalVariant(this.id, video.providerUrl ?? video.url, 'Bilibili')];
     }
 
     const qualities = bilibiliQualitiesForSettings(settings);
     const variants: ResolvedMvStreamVariant[] = [];
+    const playAttempts: BilibiliPlayAttempt[] = [];
     const expiresAt = new Date(Date.now() + defaultExpiresMs).toISOString();
     const wbiMixinKey = await this.bilibiliWbiMixinKey(headers);
+    const makePlayUrl = (qn: number, fnval: string, endpoint: BilibiliPlayEndpoint): URL => {
+      const playUrl = new URL(endpoint === 'wbi-playurl' ? 'https://api.bilibili.com/x/player/wbi/playurl' : 'https://api.bilibili.com/x/player/playurl');
+      playUrl.searchParams.set('bvid', bvid);
+      playUrl.searchParams.set('cid', String(cid));
+      playUrl.searchParams.set('qn', String(qn));
+      playUrl.searchParams.set('fnval', fnval);
+      playUrl.searchParams.set('fnver', '0');
+      playUrl.searchParams.set('fourk', '1');
+      if (endpoint === 'wbi-playurl' && wbiMixinKey) {
+        appendWbiSignature(playUrl, wbiMixinKey);
+      }
+
+      return playUrl;
+    };
+    const playEndpoints: BilibiliPlayEndpoint[] = wbiMixinKey ? ['wbi-playurl', 'playurl'] : ['playurl'];
+    const fetchPlayData = async (qn: number, fnval: string): Promise<{ data: Record<string, unknown>; endpoint: BilibiliPlayEndpoint } | null> => {
+      for (const endpoint of playEndpoints) {
+        try {
+          const response = await fetchJsonWithTimeout(this.fetchImpl, makePlayUrl(qn, fnval, endpoint).toString(), headers);
+          const payload = response.payload;
+          const code = nullableNumber(isRecord(payload) ? payload.code : null);
+          const message = text(isRecord(payload) ? payload.message : null);
+          const data = isRecord(payload) ? payload.data : null;
+          const dash = isRecord(data) && isRecord(data.dash) ? data.dash : null;
+          const hasDashVideo = asArray(dash?.video).some(isRecord);
+          const hasDurl = isRecord(data) && asArray(data.durl).some(isRecord);
+          playAttempts.push({
+            endpoint,
+            fnval,
+            qn,
+            status: response.status,
+            code,
+            message,
+            quality: number(isRecord(data) ? data.quality : null),
+            hasDurl,
+            hasDashVideo,
+            error: response.ok ? null : `request_failed:${response.status}`,
+          });
+
+          if (!response.ok || !isRecord(data)) {
+            continue;
+          }
+
+          if (hasDashVideo || hasDurl) {
+            return { data, endpoint };
+          }
+        } catch (error) {
+          playAttempts.push({
+            endpoint,
+            fnval,
+            qn,
+            status: null,
+            code: null,
+            message: null,
+            quality: null,
+            hasDurl: false,
+            hasDashVideo: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          // Try the plain playurl endpoint if WBI playurl is rejected or returns an unusable payload.
+        }
+      }
+
+      return null;
+    };
+    const pushStreamVariant = ({
+      actualQn,
+      actualQuality,
+      availableQn,
+      endpoint,
+      requestedQn,
+      source,
+      stream,
+    }: {
+      actualQn: number | null;
+      actualQuality: { tier: Exclude<MvQualityTier, 'auto'>; label: string };
+      availableQn: number[];
+      endpoint: 'playurl' | 'wbi-playurl';
+      requestedQn: number;
+      source: 'dash-video' | 'durl';
+      stream: Record<string, unknown>;
+    }): void => {
+      const streamHeight = nullableNumber(stream.height);
+      const inferredQuality = qualityFromHeight(streamHeight, actualQuality);
+      const streamQn = number(stream.id) ?? actualQn ?? (source === 'durl' && requestedQn > 120 ? 120 : requestedQn);
+      const streamQuality = bilibiliQualityMap[streamQn] ?? inferredQuality;
+      const streamUrl = firstUrl(stream.baseUrl, stream.base_url, stream.url, stream.backupUrl, stream.backup_url);
+      const variantFps = source === 'dash-video' ? fpsFromDashStream(stream, streamQuality.label) : streamQn === 116 ? 60 : null;
+      const streamId = bilibiliStreamVariantId(streamQn, variantFps, source);
+
+      if (!streamUrl || variants.some((variant) => variant.id === streamId || variant.url === streamUrl)) {
+        return;
+      }
+
+      const variantHeight = streamHeight ?? bilibiliQualityHeight[streamQn] ?? qualityHeight[streamQuality.tier];
+      const streamWidth = nullableNumber(stream.width);
+      if (variantFps && variantFps >= 55 && settings.allow60fps === false) {
+        return;
+      }
+
+      const label = labelWithFrameRate(streamQuality.label, variantFps);
+      const codec = text(stream.codecs);
+      const browserPlayable = source === 'durl' && isBrowserPlayableBilibiliCodec(codec);
+
+      variants.push({
+        ...makeQualityVariant(streamId, label, streamQuality.tier, {
+          width: streamWidth,
+          height: variantHeight,
+          fps: variantFps,
+          codec,
+          container: 'mp4',
+          mimeType: 'video/mp4',
+          protocol: source === 'dash-video' ? 'dash' : 'direct',
+          playableInApp: browserPlayable,
+          requiresAccount: streamQn >= 112 && !this.credentials(this.id).cookie,
+          expiresAt,
+        }),
+        url: streamUrl,
+        headers: {
+          ...this.cookieHeaders(this.id),
+          Referer: video.providerUrl ?? `https://www.bilibili.com/video/${bvid}`,
+          'User-Agent': userAgent,
+        },
+        rawProviderJson: {
+          provider: this.id,
+          resolver: source === 'dash-video' ? 'bilibili-dash-video-v4' : 'bilibili-progressive-mp4-v1',
+          source,
+          endpoint,
+          requestedQn,
+          qn: streamQn,
+          qualityRank: bilibiliQualityRank(streamQn),
+          availableQn,
+          qualityLimited: streamQn < requestedQn,
+          cid,
+        },
+      });
+    };
 
     for (const qn of qualities) {
       const quality = bilibiliQualityMap[qn];
@@ -548,20 +773,9 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
         continue;
       }
 
-      const playUrl = new URL(wbiMixinKey ? 'https://api.bilibili.com/x/player/wbi/playurl' : 'https://api.bilibili.com/x/player/playurl');
-      playUrl.searchParams.set('bvid', bvid);
-      playUrl.searchParams.set('cid', String(cid));
-      playUrl.searchParams.set('qn', String(qn));
-      playUrl.searchParams.set('fnval', bilibiliDashFnval);
-      playUrl.searchParams.set('fnver', '0');
-      playUrl.searchParams.set('fourk', '1');
-      if (wbiMixinKey) {
-        appendWbiSignature(playUrl, wbiMixinKey);
-      }
-
       try {
-        const playPayload = await withTimeout(this.fetchImpl, playUrl.toString(), headers);
-        const playData = isRecord(playPayload) ? playPayload.data : null;
+        const playResult = await fetchPlayData(qn, bilibiliDashFnval);
+        const playData = playResult?.data ?? null;
         const actualQn = number(isRecord(playData) ? playData.quality : null);
         const actualQuality = actualQn ? bilibiliQualityMap[actualQn] ?? quality : quality;
         const availableQn = isRecord(playData)
@@ -579,63 +793,53 @@ export class BilibiliMvProvider extends ProviderBase implements MainMvOnlineProv
         const streamCandidates = dashStreams.length > 0 ? dashStreams : durl ? [{ stream: durl, source: 'durl' as const }] : [];
 
         for (const { stream, source } of streamCandidates) {
-          const streamHeight = nullableNumber(stream.height);
-          const inferredQuality = qualityFromHeight(streamHeight, actualQuality);
-          const streamQn = number(stream.id) ?? actualQn ?? (source === 'durl' && qn > 120 ? 120 : qn);
-          const streamQuality = bilibiliQualityMap[streamQn] ?? inferredQuality;
-          const streamUrl = firstUrl(stream.baseUrl, stream.base_url, stream.url, stream.backupUrl, stream.backup_url);
-          const variantFps = fpsFromDashStream(stream, streamQuality.label);
-          const streamId = bilibiliStreamVariantId(streamQn, variantFps);
-
-          if (!streamUrl || variants.some((variant) => variant.id === streamId || variant.url === streamUrl)) {
-            continue;
-          }
-
-          const variantHeight = streamHeight ?? qualityHeight[streamQuality.tier];
-          const streamWidth = nullableNumber(stream.width);
-          if (variantFps && variantFps >= 55 && settings.allow60fps === false) {
-            continue;
-          }
-
-          const label = labelWithFrameRate(streamQuality.label, variantFps);
-          const codec = text(stream.codecs);
-
-          variants.push({
-            ...makeQualityVariant(streamId, label, streamQuality.tier, {
-              width: streamWidth,
-              height: variantHeight,
-              fps: variantFps,
-              codec,
-              container: 'mp4',
-              mimeType: 'video/mp4',
-              protocol: 'direct',
-              playableInApp: isBrowserPlayableBilibiliCodec(codec),
-              requiresAccount: streamQn >= 112 && !this.credentials(this.id).cookie,
-              expiresAt,
-            }),
-            url: streamUrl,
-            headers: {
-              ...this.cookieHeaders(this.id),
-              Referer: video.providerUrl ?? `https://www.bilibili.com/video/${bvid}`,
-              'User-Agent': userAgent,
-            },
-            rawProviderJson: {
-              provider: this.id,
-              resolver: 'bilibili-dash-video-v4',
-              source,
-              endpoint: wbiMixinKey ? 'wbi-playurl' : 'playurl',
-              requestedQn: qn,
-              qn: streamQn,
-              qualityRank: bilibiliQualityRank(streamQn),
-              availableQn,
-              qualityLimited: streamQn < qn,
-              cid,
-            },
+          pushStreamVariant({
+            actualQn,
+            actualQuality,
+            availableQn,
+            endpoint: playResult?.endpoint ?? 'playurl',
+            requestedQn: qn,
+            source,
+            stream,
           });
         }
       } catch {
         // Lower qualities may still resolve even when a higher one is account gated.
       }
+
+      try {
+        const progressiveResult = await fetchPlayData(qn, '1');
+        const progressiveData = progressiveResult?.data ?? null;
+        const actualQn = number(isRecord(progressiveData) ? progressiveData.quality : null);
+        const actualQuality = actualQn ? bilibiliQualityMap[actualQn] ?? quality : quality;
+        const availableQn = isRecord(progressiveData)
+          ? Array.from(new Set([...numericArray(progressiveData.accept_quality), ...numericArray(progressiveData.acceptQuality)]))
+          : [];
+        const durlStreams = asArray(isRecord(progressiveData) ? progressiveData.durl : null).filter(isRecord);
+        for (const stream of durlStreams) {
+          pushStreamVariant({
+            actualQn,
+            actualQuality,
+            availableQn,
+            endpoint: progressiveResult?.endpoint ?? 'playurl',
+            requestedQn: qn,
+            source: 'durl',
+            stream,
+          });
+        }
+      } catch {
+        // DASH metadata is still useful for external/manual playback if progressive MP4 is unavailable.
+      }
+    }
+
+    if (!variants.some((variant) => variant.protocol === 'direct' && variant.playableInApp && variant.url)) {
+      console.warn('[mv] Bilibili MV resolved without an in-app MP4 stream.', {
+        bvid,
+        cid,
+        maxQuality: settings.maxQuality,
+        allow60fps: settings.allow60fps,
+        attempts: playAttempts,
+      });
     }
 
     return variants.length > 0 ? variants : [externalVariant(this.id, video.providerUrl ?? video.url, 'Bilibili')];

@@ -188,6 +188,8 @@ export class LibraryService {
   private lastWatcherRescanPathCount = 0;
   private lastMetadataBackfillCount = 0;
   private lastSkippedByCacheCount = 0;
+  private searchIndexBackfillTimer: NodeJS.Timeout | null = null;
+  private closed = false;
 
   constructor(
     private readonly store: LibraryStore,
@@ -214,6 +216,7 @@ export class LibraryService {
       this.syncArtistImageBackfillState();
     }, 0);
     this.artistImageStartupTimer.unref?.();
+    this.scheduleSearchIndexBackfill();
   }
 
   addFolder(folderPath: string): LibraryFolder {
@@ -942,24 +945,26 @@ export class LibraryService {
 
     const timestamp = new Date().toISOString();
     const trackId = randomUUID();
+    const trackWrite = {
+      path: normalizedPath,
+      folderId: folder.id,
+      sizeBytes: fileStat.size,
+      mtimeMs: Math.round(fileStat.mtimeMs),
+      ...metadataFields,
+      id: trackId,
+      coverId,
+      fieldSources,
+      embeddedMetadataStatus: hasMetadataOverrides ? 'present' : metadata.embeddedMetadataStatus,
+      embeddedCoverStatus: coverData ? 'present' : metadata.embeddedCoverStatus,
+      metadataStatus: metadata.status,
+      warnings: metadata.warnings,
+      errors: [...metadata.errors, ...embeddedWriteErrors, ...coverErrors],
+      updatedAt: timestamp,
+    };
+    const searchTerms = await this.store.prepareTrackSearchTerms(trackWrite);
 
     const track = this.store.transaction(() => {
-      this.store.upsertTrack({
-        path: normalizedPath,
-        folderId: folder.id,
-        sizeBytes: fileStat.size,
-        mtimeMs: Math.round(fileStat.mtimeMs),
-        ...metadataFields,
-        id: trackId,
-        coverId,
-        fieldSources,
-        embeddedMetadataStatus: hasMetadataOverrides ? 'present' : metadata.embeddedMetadataStatus,
-        embeddedCoverStatus: coverData ? 'present' : metadata.embeddedCoverStatus,
-        metadataStatus: metadata.status,
-        warnings: metadata.warnings,
-        errors: [...metadata.errors, ...embeddedWriteErrors, ...coverErrors],
-        updatedAt: timestamp,
-      });
+      this.store.upsertTrack(trackWrite, searchTerms);
       const track = this.store.getTrack(trackId) ?? this.store.getTrackByPath(normalizedPath);
       if (!track) {
         throw new Error(`Failed to import audio file: ${normalizedPath}`);
@@ -1131,27 +1136,30 @@ export class LibraryService {
       coverId = this.store.upsertCover({ ...coverResult, source: 'embedded' });
     }
 
+    const tagUpdate = {
+      title: metadata.fields.title,
+      artist: metadata.fields.artist,
+      album: metadata.fields.album,
+      albumArtist: metadata.fields.albumArtist,
+      trackNo: metadata.fields.trackNo,
+      discNo: metadata.fields.discNo,
+      year: metadata.fields.year,
+      genre: metadata.fields.genre,
+      bpm: metadata.fields.bpm ?? null,
+      sizeBytes: fileStat.size,
+      mtimeMs: fileStat.mtimeMs,
+      fieldSources: {
+        ...currentTrack.fieldSources,
+        ...metadata.fieldSources,
+      },
+      embeddedMetadataStatus: metadata.embeddedMetadataStatus,
+      embeddedCoverStatus: metadata.embeddedCover ? 'present' : currentTrack.embeddedCoverStatus,
+      metadataStatus: metadata.status,
+    };
+    const searchTerms = await this.store.prepareTrackTagSearchTerms(trackId, tagUpdate);
+
     const updatedTrack = this.store.transaction(() => {
-      const updated = this.store.updateTrackTags(trackId, {
-        title: metadata.fields.title,
-        artist: metadata.fields.artist,
-        album: metadata.fields.album,
-        albumArtist: metadata.fields.albumArtist,
-        trackNo: metadata.fields.trackNo,
-        discNo: metadata.fields.discNo,
-        year: metadata.fields.year,
-        genre: metadata.fields.genre,
-        bpm: metadata.fields.bpm ?? null,
-        sizeBytes: fileStat.size,
-        mtimeMs: fileStat.mtimeMs,
-        fieldSources: {
-          ...currentTrack.fieldSources,
-          ...metadata.fieldSources,
-        },
-        embeddedMetadataStatus: metadata.embeddedMetadataStatus,
-        embeddedCoverStatus: metadata.embeddedCover ? 'present' : currentTrack.embeddedCoverStatus,
-        metadataStatus: metadata.status,
-      });
+      const updated = this.store.updateTrackTags(trackId, tagUpdate, undefined, searchTerms);
       if (coverId !== currentTrack.coverId) {
         this.store.updateTrackCover(trackId, coverId);
       }
@@ -1220,13 +1228,16 @@ export class LibraryService {
       manualCoverId = this.store.upsertCover({ ...coverResult, source: coverUrl && !coverPath ? 'network' : 'manual' });
     }
 
+    const tagUpdate = {
+      ...tags,
+      sizeBytes: fileStat.size,
+      mtimeMs: fileStat.mtimeMs,
+      fieldSources,
+    };
+    const searchTerms = await this.store.prepareTrackTagSearchTerms(request.trackId, tagUpdate);
+
     const updatedTrack = this.store.transaction(() => {
-      const updated = this.store.updateTrackTags(request.trackId, {
-        ...tags,
-        sizeBytes: fileStat.size,
-        mtimeMs: fileStat.mtimeMs,
-        fieldSources,
-      });
+      const updated = this.store.updateTrackTags(request.trackId, tagUpdate, undefined, searchTerms);
       if (manualCoverId !== undefined) {
         this.store.updateTrackCover(request.trackId, manualCoverId);
       }
@@ -1279,6 +1290,7 @@ export class LibraryService {
       mtimeMs: number;
       fieldSources: Record<string, string>;
       coverId?: string | null;
+      searchTerms: string;
     }> = [];
 
     for (const track of tracks) {
@@ -1300,12 +1312,27 @@ export class LibraryService {
         coverId = this.store.upsertCover({ ...coverResult, source: coverUrl && !coverPath ? 'network' : 'manual' });
       }
 
+      const tagUpdate = {
+        title: track.title,
+        artist: track.artist,
+        album: tags.album,
+        albumArtist: tags.albumArtist,
+        trackNo: track.trackNo,
+        discNo: track.discNo,
+        year: tags.year,
+        genre: tags.genre,
+        sizeBytes: fileStat.size,
+        mtimeMs: fileStat.mtimeMs,
+        fieldSources,
+      };
+
       updates.push({
         track,
         sizeBytes: fileStat.size,
         mtimeMs: fileStat.mtimeMs,
         fieldSources,
         coverId,
+        searchTerms: await this.store.prepareTrackTagSearchTerms(track.id, tagUpdate),
       });
     }
 
@@ -1323,7 +1350,7 @@ export class LibraryService {
           sizeBytes: update.sizeBytes,
           mtimeMs: update.mtimeMs,
           fieldSources: update.fieldSources,
-        });
+        }, undefined, update.searchTerms);
         if (update.coverId !== undefined) {
           this.store.updateTrackCover(update.track.id, update.coverId);
         }
@@ -1741,10 +1768,15 @@ export class LibraryService {
   }
 
   close(): void {
+    this.closed = true;
     this.watcherService?.stop();
     if (this.artistImageStartupTimer) {
       clearTimeout(this.artistImageStartupTimer);
       this.artistImageStartupTimer = null;
+    }
+    if (this.searchIndexBackfillTimer) {
+      clearTimeout(this.searchIndexBackfillTimer);
+      this.searchIndexBackfillTimer = null;
     }
     if (this.groupingRefreshTimer) {
       clearTimeout(this.groupingRefreshTimer);
@@ -1761,6 +1793,38 @@ export class LibraryService {
 
   private notifyLibraryChanged(): void {
     broadcastLibraryChanged();
+  }
+
+  private scheduleSearchIndexBackfill(delayMs = 10_000): void {
+    if (this.closed || this.searchIndexBackfillTimer) {
+      return;
+    }
+
+    this.searchIndexBackfillTimer = setTimeout(() => {
+      void this.runSearchIndexBackfill();
+    }, delayMs);
+    this.searchIndexBackfillTimer.unref?.();
+  }
+
+  private async runSearchIndexBackfill(): Promise<void> {
+    this.searchIndexBackfillTimer = null;
+    if (this.closed) {
+      return;
+    }
+
+    try {
+      if (await shouldDelayGroupingRefreshForAudio()) {
+        this.scheduleSearchIndexBackfill();
+        return;
+      }
+
+      const changed = await this.store.rebuildJapaneseRomanizedSearchTerms();
+      if (!this.closed && changed > 0) {
+        this.notifyLibraryChanged();
+      }
+    } catch {
+      // Search backfill is best-effort; scanning and direct edits keep writing fresh terms.
+    }
   }
 
   private previewRescanPathsFromWatcher(folderId: string, paths: string[]): number {
@@ -2026,7 +2090,7 @@ export class LibraryService {
           tags: request.tags,
           coverData: request.coverData,
         });
-        this.syncTrackFileStat(request.trackId);
+        await this.syncTrackFileStat(request.trackId);
       } catch (error) {
         console.warn(`${request.errorPrefix} for ${request.filePath}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -2038,14 +2102,14 @@ export class LibraryService {
     startTimer.unref?.();
   }
 
-  private syncTrackFileStat(trackId: string): void {
+  private async syncTrackFileStat(trackId: string): Promise<void> {
     const track = this.store.getTrack(trackId);
     if (!track || !existsSync(track.path)) {
       return;
     }
 
     const fileStat = statSync(track.path);
-    this.store.updateTrackTags(track.id, {
+    const tagUpdate = {
       title: track.title,
       artist: track.artist,
       album: track.album,
@@ -2057,7 +2121,8 @@ export class LibraryService {
       sizeBytes: fileStat.size,
       mtimeMs: fileStat.mtimeMs,
       fieldSources: track.fieldSources,
-    });
+    };
+    this.store.updateTrackTags(track.id, tagUpdate, undefined, await this.store.prepareTrackTagSearchTerms(track.id, tagUpdate));
   }
 }
 

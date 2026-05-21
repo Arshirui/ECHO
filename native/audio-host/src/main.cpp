@@ -421,7 +421,7 @@ Options parseOptions(const std::vector<juce::String>& args)
         else if (arg == "-shared-backend" && i + 1 < args.size())
         {
             const auto value = args[++i].toLowerCase();
-            if (value == "auto" || value == "windows" || value == "directsound")
+            if (value == "auto" || value == "windows" || value == "directsound" || value == "alsa")
                 options.sharedBackend = value;
         }
     }
@@ -446,11 +446,25 @@ bool isExclusiveType(const juce::String& typeName)
     return typeName.containsIgnoreCase("exclusive");
 }
 
+bool isAlsaType(const juce::String& typeName)
+{
+    return typeName.containsIgnoreCase("alsa");
+}
+
+bool isJackType(const juce::String& typeName)
+{
+    return typeName.containsIgnoreCase("jack");
+}
+
 bool isPreferredSharedType(const juce::String& typeName)
 {
+#if ! JUCE_WINDOWS
+    return ! isExclusiveType(typeName) && isAlsaType(typeName);
+#else
     return ! isExclusiveType(typeName)
         && (typeName.containsIgnoreCase("windows audio")
             || typeName.containsIgnoreCase("wasapi"));
+#endif
 }
 
 bool isDirectSoundType(const juce::String& typeName)
@@ -460,6 +474,18 @@ bool isDirectSoundType(const juce::String& typeName)
 
 int sharedTypePriority(const juce::String& typeName)
 {
+#if ! JUCE_WINDOWS
+    if (isAlsaType(typeName))
+        return 0;
+
+    if (typeName.containsIgnoreCase("shared"))
+        return 1;
+
+    if (isJackType(typeName))
+        return 2;
+
+    return 3;
+#else
     if (typeName.containsIgnoreCase("shared"))
         return 0;
 
@@ -470,6 +496,7 @@ int sharedTypePriority(const juce::String& typeName)
         return 2;
 
     return 3;
+#endif
 }
 
 bool shouldIncludeType(const juce::String& typeName, DeviceListMode mode)
@@ -491,8 +518,15 @@ bool shouldIncludeType(const juce::String& typeName, DeviceListMode mode)
 
 bool shouldIncludeSharedBackendType(const juce::String& typeName, const juce::String& sharedBackend)
 {
+    if (sharedBackend == "alsa")
+        return isAlsaType(typeName);
+
     if (sharedBackend == "windows")
+#if JUCE_WINDOWS
         return isPreferredSharedType(typeName);
+#else
+        return false;
+#endif
 
     if (sharedBackend == "directsound")
         return isDirectSoundType(typeName);
@@ -525,6 +559,12 @@ std::string getBackendName(const Options& options, const juce::String& typeName)
         return "wasapi-exclusive";
 
 #if ! JUCE_WINDOWS
+    if (isAlsaType(typeName))
+        return "alsa-shared";
+
+    if (isJackType(typeName))
+        return "jack-shared";
+
     return "linux-shared";
 #else
     return isDirectSoundType(typeName) ? "directsound-shared" : "wasapi-shared";
@@ -540,6 +580,12 @@ std::string getBackendImplName(const Options& options, const juce::String& typeN
         return "juce-wasapi-exclusive";
 
 #if ! JUCE_WINDOWS
+    if (isAlsaType(typeName))
+        return "juce-alsa-shared";
+
+    if (isJackType(typeName))
+        return "juce-jack-shared";
+
     return "juce-linux-shared";
 #else
     return isDirectSoundType(typeName) ? "juce-directsound-shared" : "juce-wasapi-shared";
@@ -553,6 +599,9 @@ std::string getOpenFailurePrefix(const Options& options)
 
     if (options.exclusive)
         return "WASAPI exclusive open failed: ";
+
+    if (! options.asio && ! options.exclusive && options.sharedBackend == "alsa")
+        return "ALSA open failed: ";
 
     return "output open failed: ";
 }
@@ -4901,7 +4950,7 @@ int runHost(const Options& options)
 #endif
     }
 
-    if (! options.useJuceOutput && ! options.exclusive && ! options.asio && options.sharedBackend != "directsound")
+    if (! options.useJuceOutput && ! options.exclusive && ! options.asio && options.sharedBackend != "directsound" && options.sharedBackend != "alsa")
     {
 #if JUCE_WINDOWS
         return runLegacyWasapiSharedHost(options);

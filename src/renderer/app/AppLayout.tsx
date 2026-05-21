@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { PlayerBar } from '../components/player/PlayerBar';
 import { PlaybackQueueDrawer } from '../components/player/PlaybackQueueDrawer';
 import { AudioSettingsDrawer } from '../components/player/AudioSettingsDrawer';
+import { AudioIssueDiagnosticsWindow } from '../components/player/AudioIssueDiagnosticsWindow';
 import { LyricsSettingsDrawer } from '../components/lyrics/LyricsSettingsDrawer';
 import { MvSettingsDrawer } from '../components/lyrics/MvSettingsDrawer';
 import { parseHexColor, sampleImageUrl, type ReadableColorSample, type Rgb } from '../components/lyrics/lyricsReadableColor';
@@ -172,7 +173,6 @@ const openMvSettingsEvent = 'app:open-mv-settings';
 const openLyricsSettingsEvent = 'app:open-lyrics-settings';
 const showChromeNoticeEvent = 'app:show-chrome-notice';
 const pendingRouteStorageKey = 'echo-next.pending-route';
-
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.suppressAccountExpiryNotices === true;
 
@@ -208,6 +208,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isMvDrawerOpen, setIsMvDrawerOpen] = useState(false);
   const [isLyricsQueueDrawerOpen, setIsLyricsQueueDrawerOpen] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
+  const [audioIssueDiagnosticsWindowEnabled, setAudioIssueDiagnosticsWindowEnabled] = useState(false);
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
   const [lyricsMiniPlayerCoverSample, setLyricsMiniPlayerCoverSample] = useState<ReadableColorSample | null>(null);
   const [activeLyricsViewMode, setActiveLyricsViewMode] = useState<LyricsViewMode>(() => readRememberedLyricsViewMode());
@@ -398,6 +399,47 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     };
 
     loadFirstRunSettings();
+    window.addEventListener('settings:changed', handleSettingsChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
+      if (!settings || !Object.prototype.hasOwnProperty.call(settings, 'audioIssueDiagnosticsWindowEnabled')) {
+        return;
+      }
+
+      setAudioIssueDiagnosticsWindowEnabled(settings.audioIssueDiagnosticsWindowEnabled === true);
+    };
+
+    const refreshSettings = (): void => {
+      void window.echo?.app?.getSettings?.()
+        .then((settings) => {
+          if (!cancelled) {
+            applySettings(settings);
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    const handleSettingsChanged = (event: Event): void => {
+      if (event instanceof CustomEvent) {
+        applySettings(event.detail as Partial<AppSettings> | null | undefined);
+        return;
+      }
+
+      if (!cancelled) {
+        refreshSettings();
+      }
+    };
+
+    refreshSettings();
     window.addEventListener('settings:changed', handleSettingsChanged);
 
     return () => {
@@ -1204,6 +1246,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     }
   }, []);
 
+  const handleCloseAudioIssueDiagnosticsWindow = useCallback((): void => {
+    setAudioIssueDiagnosticsWindowEnabled(false);
+    void window.echo?.app?.setSettings?.({ audioIssueDiagnosticsWindowEnabled: false })
+      .then((settings) => {
+        window.dispatchEvent(new CustomEvent('settings:changed', { detail: settings }));
+      })
+      .catch(() => undefined);
+  }, []);
+
   const handleBrowserFolderPicked = (files: FileList | null): void => {
     if (!files?.length) {
       return;
@@ -1348,6 +1399,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         tabIndex={-1}
         onChange={(event) => handleBrowserFilePicked(event.target.files)}
       />
+
+      {audioIssueDiagnosticsWindowEnabled ? (
+        <AudioIssueDiagnosticsWindow onClose={handleCloseAudioIssueDiagnosticsWindow} />
+      ) : null}
 
       {chromeNotice ? (
         <div className={`chrome-notice ${isChromeNoticeVisible ? 'is-visible' : 'is-hiding'}`} role="status">

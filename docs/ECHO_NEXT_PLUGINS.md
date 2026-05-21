@@ -167,6 +167,13 @@ const page = await echo.library.getTracks({
 5. 修改 `plugin.js` 或 `panel.html` 后点击“重载”。
 6. 出错时查看插件日志；坏插件只会标红或禁用，不应影响主程序启动。
 
+## 导入、导出和可见性
+
+- 插件页可以导出 `.echo-plugin.json` 插件包。导出只包含 manifest 和根目录下允许的源码/面板/文档文件，不包含 `plugin-storage.json`、启停状态或用户运行数据。
+- 导入插件包会创建新的插件目录；如果目标插件 id 已存在，会拒绝覆盖，避免误伤本地插件。
+- 插件详情会展示“安全边界”和“这个插件干了什么”：已信任权限、高风险权限、面板是否沙盒隔离、命令数量、命令执行次数、事件接收次数、storage 写入次数、settings 写入次数和错误次数。
+- 插件连续启动失败会被宿主自动隔离，用户修复文件后可以手动重新启用。
+
 ## 面板状态
 
 v1 的 `panel.html` 作为 sandbox iframe 运行，不接触主应用 DOM。面板可以通过受控 `postMessage` bridge 请求宿主做少量插件管理动作；宿主只处理当前 iframe、当前插件 id、白名单 action。
@@ -227,4 +234,8 @@ window.addEventListener('message', (event) => {
 - `plugin_storage_value_too_large`：单个 storage value 超过 64 KB。
 - `plugin_storage_quota_exceeded`：这个插件的 storage 总量超过 256 KB。
 - `plugin_settings_patch_too_large`：设置写入 payload 超过 32 KB。
+- `plugin_package_invalid`：导入文件不是 ECHO Next 插件包。
+- `plugin_package_too_large` / `plugin_package_file_too_large`：插件包或单个文件超过大小限制。
+- `plugin_import_target_exists`：目标插件 id 已存在，导入不会覆盖本地插件。
+- `plugin_disabled_after_repeated_errors`：插件连续启动失败，宿主已自动隔离。
 - `apiVersion must be between 1 and 1`：插件 API 版本不兼容。

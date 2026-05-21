@@ -13,6 +13,8 @@ const serviceMock = {
   disable: vi.fn((pluginId: string) => ({ id: pluginId, enabled: false })),
   reload: vi.fn(async (pluginId: string) => ({ id: pluginId, status: 'running' })),
   openDirectory: vi.fn(async () => undefined),
+  exportPluginPackage: vi.fn(async () => 'D:\\Echo\\plugins\\echo.playback-panel.echo-plugin.json'),
+  importPluginPackage: vi.fn(async () => ({ pluginId: 'echo.playback-panel', directory: 'D:\\Echo\\plugins\\echo.playback-panel', importedFileCount: 2 })),
   runCommand: vi.fn(async () => ({ ok: true })),
   getLogs: vi.fn(() => []),
 };
@@ -47,6 +49,7 @@ describe('plugin IPC', () => {
     expect(serviceMock.scheduleAutoStart).toHaveBeenCalledTimes(1);
     expect(handleMock).toHaveBeenCalledWith(IpcChannels.PluginsList, expect.any(Function));
     expect(handleMock).toHaveBeenCalledWith(IpcChannels.PluginsRunCommand, expect.any(Function));
+    expect(handleMock).toHaveBeenCalledWith(IpcChannels.PluginsImportPackage, expect.any(Function));
   });
 
   it('routes valid plugin IPC requests to the service', async () => {
@@ -55,11 +58,15 @@ describe('plugin IPC', () => {
     expect(handlers[IpcChannels.PluginsEnable]!(null, { pluginId: 'echo.playback-panel' })).toMatchObject({ enabled: true });
     expect(handlers[IpcChannels.PluginsDisable]!(null, 'echo.playback-panel')).toMatchObject({ enabled: false });
     await expect(handlers[IpcChannels.PluginsReload]!(null, 'echo.playback-panel')).resolves.toMatchObject({ status: 'running' });
+    await expect(handlers[IpcChannels.PluginsExportPackage]!(null, 'echo.playback-panel')).resolves.toContain('echo.playback-panel');
+    await expect(handlers[IpcChannels.PluginsImportPackage]!(null)).resolves.toMatchObject({ pluginId: 'echo.playback-panel' });
     await expect(handlers[IpcChannels.PluginsRunCommand]!(null, { pluginId: 'echo.playback-panel', commandId: 'show-status' })).resolves.toEqual({ ok: true });
     expect(handlers[IpcChannels.PluginsGetLogs]!(null, 'echo.playback-panel')).toEqual([]);
 
     expect(serviceMock.createExample).toHaveBeenCalledWith('playback-panel');
     expect(serviceMock.enable).toHaveBeenCalledWith({ pluginId: 'echo.playback-panel' });
+    expect(serviceMock.exportPluginPackage).toHaveBeenCalledWith('echo.playback-panel');
+    expect(serviceMock.importPluginPackage).toHaveBeenCalledTimes(1);
     expect(serviceMock.runCommand).toHaveBeenCalledWith({ pluginId: 'echo.playback-panel', commandId: 'show-status' });
   });
 
@@ -67,6 +74,7 @@ describe('plugin IPC', () => {
     expect(() => handlers[IpcChannels.PluginsCreateExample]!(null, 'remote-market')).toThrow('unknown_plugin_example_kind');
     expect(() => handlers[IpcChannels.PluginsEnable]!(null, null)).toThrow('plugin enable request must be an object');
     expect(() => handlers[IpcChannels.PluginsDisable]!(null, '')).toThrow('pluginId must be a non-empty string');
+    expect(() => handlers[IpcChannels.PluginsExportPackage]!(null, '')).toThrow('pluginId must be a non-empty string');
     expect(() => handlers[IpcChannels.PluginsRunCommand]!(null, null)).toThrow('plugin command request must be an object');
   });
 });

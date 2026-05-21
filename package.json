@@ -1,6 +1,6 @@
 {
   "name": "echo-next",
-  "version": "26.5.19",
+  "version": "26.5.20",
   "description": "ECHO Next Phase 0 desktop music app shell.",
   "author": "Moekotori",
   "main": "out/main/index.js",
@@ -197,6 +197,13 @@
         {
           "from": "electron-app/build/echo-audio-host",
           "to": "echo-audio-host"
+        },
+        {
+          "from": "electron-app/tools-linux",
+          "to": "tools",
+          "filter": [
+            "**/*"
+          ]
         }
       ],
       "target": [

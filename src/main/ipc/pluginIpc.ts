@@ -34,6 +34,8 @@ export const registerPluginIpc = (): void => {
   ipcMain.handle(IpcChannels.PluginsOpenDirectory, (_event, pluginId: unknown) =>
     service.openDirectory(typeof pluginId === 'string' && pluginId.trim() ? pluginId.trim() : undefined),
   );
+  ipcMain.handle(IpcChannels.PluginsExportPackage, (_event, pluginId: unknown) => service.exportPluginPackage(requireText(pluginId, 'pluginId')));
+  ipcMain.handle(IpcChannels.PluginsImportPackage, () => service.importPluginPackage());
   ipcMain.handle(IpcChannels.PluginsRunCommand, (_event, request: unknown) => {
     if (!request || typeof request !== 'object' || Array.isArray(request)) {
       throw new Error('plugin command request must be an object');

@@ -8,6 +8,7 @@ import { bindTaskbarPlaybackIntegration } from './taskbarPlaybackIntegration';
 import { ensureTray, isAppQuitRequested } from './tray';
 import { clearMainWindow, setMainWindow } from './windowManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
+import { recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
 
 const mainOutputDir = import.meta.dirname;
 const appIconPath = join(mainOutputDir, '../../software.ico');
@@ -83,6 +84,7 @@ export const createMainWindow = (): BrowserWindow => {
   let rememberSizeTimer: ReturnType<typeof setTimeout> | null = null;
 
   window.webContents.on('console-message', (details) => {
+    recordRendererConsoleMessage(details);
     const { level, message, lineNumber, sourceId } = details;
 
     if (!message.includes('[SpotifySDK]')) {

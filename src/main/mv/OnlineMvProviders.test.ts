@@ -171,6 +171,250 @@ describe('BilibiliMvProvider', () => {
     );
   });
 
+  it('falls back to Bilibili all search when signed video search returns no candidates', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/nav')) {
+        return jsonResponse({
+          data: {
+            wbi_img: {
+              img_url: 'https://i0.hdslb.com/bfs/wbi/abcdefghijklmnopqrstuvwxyzABCDEF.png',
+              sub_url: 'https://i0.hdslb.com/bfs/wbi/0123456789abcdefghijklmnopqrstuvwxyzABCDEF.png',
+            },
+          },
+        });
+      }
+
+      if (url.includes('/x/web-interface/wbi/search/type')) {
+        return jsonResponse({ data: { result: [] } });
+      }
+
+      if (url.includes('/x/web-interface/search/all/v2')) {
+        return jsonResponse({
+          data: {
+            result: [
+              {
+                result_type: 'video',
+                data: [
+                  {
+                    bvid: 'BV1all',
+                    title: '<em class="keyword">Echo</em> Song Official MV',
+                    author: 'Echo Channel',
+                    pic: '//i.example/all.jpg',
+                    play: 32000,
+                  },
+                ],
+              },
+            ],
+          },
+        });
+      }
+
+      return jsonResponse({ code: -1 }, 404);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili' }),
+    });
+
+    const candidates = await provider.search(track, settings);
+
+    expect(candidates[0]).toMatchObject({
+      id: 'bilibili:BV1all',
+      title: 'Echo Song Official MV',
+      providerUrl: 'https://www.bilibili.com/video/BV1all',
+      viewCount: 32000,
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.stringContaining('/x/web-interface/search/all/v2'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Referer: 'https://search.bilibili.com/all?keyword=Echo%20Song%20Echo%20Artist%20MV',
+        }),
+      }),
+    );
+  });
+
+  it('keeps entity-encoded Bilibili titles auto-matchable for slash-separated artists', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/nav')) {
+        return jsonResponse({ data: {} });
+      }
+
+      if (url.includes('/x/web-interface/search/type')) {
+        return jsonResponse({ code: -412 }, 412);
+      }
+
+      if (url.includes('/x/web-interface/search/all/v2')) {
+        return jsonResponse({
+          data: {
+            result: [
+              {
+                result_type: 'video',
+                data: [
+                  {
+                    bvid: 'BV1heaven',
+                    title: '【liquid Funk】Heaven&#x27;s ray - rinahamu&amp;KOTONOHOUSE&amp;Pure 100%',
+                    author: 'Echo Channel',
+                    pic: '//i.example/heaven.jpg',
+                    play: 5418,
+                  },
+                ],
+              },
+            ],
+          },
+        });
+      }
+
+      return jsonResponse({ code: -1 }, 404);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili' }),
+    });
+
+    const candidates = await provider.search(
+      {
+        ...track,
+        title: "Heaven's ray",
+        artist: 'rinahamu/KOTONOHOUSE/Pure 100%',
+        albumArtist: 'rinahamu/KOTONOHOUSE/Pure 100%',
+      },
+      settings,
+    );
+
+    expect(candidates[0]).toMatchObject({
+      id: 'bilibili:BV1heaven',
+      title: "【liquid Funk】Heaven's ray - rinahamu&KOTONOHOUSE&Pure 100%",
+      providerUrl: 'https://www.bilibili.com/video/BV1heaven',
+    });
+    expect(candidates[0]?.score).toBeGreaterThanOrEqual(0.7);
+  });
+
+  it('falls back to plain Bilibili playurl when WBI playurl does not return usable streams', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/nav')) {
+        return jsonResponse({
+          data: {
+            wbi_img: {
+              img_url: 'https://i0.hdslb.com/bfs/wbi/abcdefghijklmnopqrstuvwxyzABCDEF.png',
+              sub_url: 'https://i0.hdslb.com/bfs/wbi/0123456789abcdefghijklmnopqrstuvwxyzABCDEF.png',
+            },
+          },
+        });
+      }
+
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ data: { cid: 1516848961 } });
+      }
+
+      if (url.includes('/x/player/wbi/playurl')) {
+        return jsonResponse({ code: -404, message: 'wbi playurl rejected' }, 404);
+      }
+
+      if (url.includes('/x/player/playurl') && url.includes('fnval=1')) {
+        return jsonResponse({
+          data: {
+            quality: 64,
+            accept_quality: [64, 16],
+            durl: [{ url: 'https://upos.example/tsubasa-720.mp4' }],
+          },
+        });
+      }
+
+      return jsonResponse({ code: -1 }, 403);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili' }),
+    });
+
+    const variants = await provider.resolve(
+      {
+        ...video,
+        sourceId: 'BV1BD421J7w3',
+        url: 'https://www.bilibili.com/video/BV1BD421J7w3',
+        providerUrl: 'https://www.bilibili.com/video/BV1BD421J7w3',
+      },
+      settings,
+    );
+
+    expect(variants).toContainEqual(expect.objectContaining({
+      id: 'bilibili-qn-64',
+      protocol: 'direct',
+      playableInApp: true,
+      url: 'https://upos.example/tsubasa-720.mp4',
+      rawProviderJson: expect.objectContaining({
+        endpoint: 'playurl',
+        resolver: 'bilibili-progressive-mp4-v1',
+        source: 'durl',
+      }),
+    }));
+  });
+
+  it('logs compact Bilibili playurl health when no in-app MP4 stream is resolved', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/nav')) {
+        return jsonResponse({ data: {} });
+      }
+
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ data: { cid: 123 } });
+      }
+
+      if (url.includes('/x/player/playurl')) {
+        return jsonResponse({
+          code: 0,
+          message: 'OK',
+          data: {
+            quality: 64,
+            accept_quality: [64],
+            dash: {
+              video: [
+                {
+                  id: 64,
+                  baseUrl: 'https://upos.example/video-only.m4s',
+                  width: 1280,
+                  height: 720,
+                  codecs: 'avc1.64001f',
+                },
+              ],
+            },
+          },
+        });
+      }
+
+      return jsonResponse({ code: -1 }, 404);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili' }),
+    });
+
+    const variants = await provider.resolve(video, settings);
+
+    expect(variants.every((variant) => variant.protocol !== 'direct')).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[mv] Bilibili MV resolved without an in-app MP4 stream.',
+      expect.objectContaining({
+        bvid: 'BV1echo',
+        cid: 123,
+        maxQuality: '1080p',
+        attempts: expect.arrayContaining([
+          expect.objectContaining({
+            endpoint: 'playurl',
+            fnval: '1',
+            status: 200,
+            code: 0,
+            quality: 64,
+            hasDurl: false,
+            hasDashVideo: true,
+          }),
+        ]),
+      }),
+    );
+  });
+
   it('sorts Bilibili search results by match score first and play count second', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse({
@@ -327,13 +571,13 @@ describe('BilibiliMvProvider', () => {
     });
   });
 
-  it('resolves Bilibili DASH video streams so logged-in higher quality is not capped at durl-only 720p', async () => {
+  it('prefers progressive MP4 for in-app playback and keeps DASH video-only streams external', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('/x/web-interface/view')) {
         return jsonResponse({ data: { cid: 123 } });
       }
 
-      if (url.includes('qn=80')) {
+      if (url.includes('qn=80') && url.includes('fnval=4048')) {
         return jsonResponse({
           data: {
             quality: 80,
@@ -354,7 +598,16 @@ describe('BilibiliMvProvider', () => {
         });
       }
 
-      if (url.includes('qn=64')) {
+      if (url.includes('qn=80') && url.includes('fnval=1')) {
+        return jsonResponse({
+          data: {
+            quality: 80,
+            durl: [{ url: 'https://upos.example/1080-progressive.mp4' }],
+          },
+        });
+      }
+
+      if (url.includes('qn=64') && url.includes('fnval=4048')) {
         return jsonResponse({
           data: {
             quality: 64,
@@ -374,6 +627,15 @@ describe('BilibiliMvProvider', () => {
         });
       }
 
+      if (url.includes('qn=64') && url.includes('fnval=1')) {
+        return jsonResponse({
+          data: {
+            quality: 64,
+            durl: [{ url: 'https://upos.example/720-progressive.mp4' }],
+          },
+        });
+      }
+
       return jsonResponse({ code: -1 }, 403);
     }) as typeof fetch;
     const provider = new BilibiliMvProvider({
@@ -383,23 +645,37 @@ describe('BilibiliMvProvider', () => {
 
     const variants = await provider.resolve(video, settings);
 
-    expect(variants.map((variant) => variant.id)).toEqual(['bilibili-qn-80', 'bilibili-qn-64']);
-    expect(variants[0]).toMatchObject({
+    expect(variants.map((variant) => variant.id)).toEqual([
+      'bilibili-dash-qn-80',
+      'bilibili-qn-80',
+      'bilibili-dash-qn-64',
+      'bilibili-qn-64',
+    ]);
+    expect(variants.find((variant) => variant.id === 'bilibili-dash-qn-80')).toMatchObject({
       label: '1080p',
       qualityTier: '1080p',
       width: 1920,
       height: 1080,
       codec: 'avc1.640032',
+      protocol: 'dash',
+      playableInApp: false,
       url: 'https://upos.example/1080-video-only.m4s',
       headers: {
         Cookie: 'SESSDATA=secret',
         Referer: 'https://www.bilibili.com/video/BV1echo',
       },
     });
+    expect(variants.find((variant) => variant.id === 'bilibili-qn-80')).toMatchObject({
+      label: '1080p',
+      protocol: 'direct',
+      playableInApp: true,
+      url: 'https://upos.example/1080-progressive.mp4',
+    });
     expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('fnval=4048'), expect.anything());
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('fnval=1'), expect.anything());
   });
 
-  it('resolves the current Bilibili DASH response shape for BV1KjQDYdEx2 as playable in-app video', async () => {
+  it('records the current Bilibili DASH response shape for BV1KjQDYdEx2 without treating m4s as direct MP4', async () => {
     const targetVideo: TrackVideo = {
       ...video,
       sourceId: 'BV1KjQDYdEx2',
@@ -412,7 +688,7 @@ describe('BilibiliMvProvider', () => {
         return jsonResponse({ code: 0, data: { cid: 28882894939, title: targetVideo.title } });
       }
 
-      if (url.includes('qn=80') || url.includes('qn=64')) {
+      if ((url.includes('qn=80') || url.includes('qn=64')) && url.includes('fnval=4048')) {
         return jsonResponse({
           code: 0,
           message: 'OK',
@@ -446,10 +722,10 @@ describe('BilibiliMvProvider', () => {
     const variants = await provider.resolve(targetVideo, settings);
 
     expect(variants[0]).toMatchObject({
-      id: 'bilibili-qn-64',
+      id: 'bilibili-dash-qn-64',
       label: '720p',
-      protocol: 'direct',
-      playableInApp: true,
+      protocol: 'dash',
+      playableInApp: false,
       url: 'https://upos.example/BV1KjQDYdEx2-720p.m4s',
       headers: {
         Referer: 'https://www.bilibili.com/video/BV1KjQDYdEx2',
@@ -538,7 +814,7 @@ describe('BilibiliMvProvider', () => {
     expect(variants.map((variant) => variant.id)).toEqual(['bilibili-qn-80']);
   });
 
-  it('marks HEVC 4K DASH video streams as not in-app playable while preserving AVC fallback', async () => {
+  it('marks Bilibili DASH video-only streams as not in-app playable', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('/x/web-interface/view')) {
         return jsonResponse({ data: { cid: 123 } });
@@ -568,7 +844,7 @@ describe('BilibiliMvProvider', () => {
         });
       }
 
-      if (url.includes('qn=80')) {
+      if (url.includes('qn=80') && url.includes('fnval=4048')) {
         return jsonResponse({
           data: {
             quality: 80,
@@ -598,7 +874,7 @@ describe('BilibiliMvProvider', () => {
     const variants = await provider.resolve(video, { ...settings, maxQuality: '2160p', allow60fps: true });
 
     expect(variants[0]).toMatchObject({
-      id: 'bilibili-qn-120',
+      id: 'bilibili-dash-qn-120',
       label: '4K 60fps',
       qualityTier: '2160p',
       width: 3840,
@@ -608,11 +884,12 @@ describe('BilibiliMvProvider', () => {
       playableInApp: false,
       url: 'https://upos.example/4k-video-only.m4s',
     });
-    expect(variants.find((variant) => variant.id === 'bilibili-qn-80')).toMatchObject({
+    expect(variants.find((variant) => variant.id === 'bilibili-dash-qn-80')).toMatchObject({
       label: '1080p',
       qualityTier: '1080p',
       codec: 'avc1.640032',
-      playableInApp: true,
+      protocol: 'dash',
+      playableInApp: false,
       url: 'https://upos.example/1080-avc.m4s',
     });
   });
@@ -660,9 +937,9 @@ describe('BilibiliMvProvider', () => {
 
     const variants = await provider.resolve(video, { ...settings, maxQuality: '2160p', allow60fps: true });
 
-    expect(variants.map((variant) => variant.id)).toContain('bilibili-qn-120');
-    expect(variants.map((variant) => variant.id)).toContain('bilibili-qn-120-120fps');
-    expect(variants.find((variant) => variant.id === 'bilibili-qn-120-120fps')).toMatchObject({
+    expect(variants.map((variant) => variant.id)).toContain('bilibili-dash-qn-120');
+    expect(variants.map((variant) => variant.id)).toContain('bilibili-dash-qn-120-120fps');
+    expect(variants.find((variant) => variant.id === 'bilibili-dash-qn-120-120fps')).toMatchObject({
       label: '4K 120fps',
       qualityTier: '2160p',
       width: 3840,
@@ -713,6 +990,49 @@ describe('BilibiliMvProvider', () => {
     });
   });
 
+  it('labels Bilibili progressive MP4 by the actual low quality returned for high quality requests', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return jsonResponse({ data: { cid: 123 } });
+      }
+
+      if (url.includes('fnval=4048')) {
+        return jsonResponse({ code: -1 }, 403);
+      }
+
+      if (url.includes('qn=112') && url.includes('fnval=1')) {
+        return jsonResponse({
+          data: {
+            quality: 16,
+            accept_quality: [80, 16],
+            durl: [{ url: 'https://cdn.example/actual-360.mp4' }],
+          },
+        });
+      }
+
+      return jsonResponse({ code: -1 }, 403);
+    }) as typeof fetch;
+    const provider = new BilibiliMvProvider({
+      fetchImpl,
+      getCredentials: () => ({ provider: 'bilibili' }),
+    });
+
+    const variants = await provider.resolve(video, { ...settings, maxQuality: '1440p' });
+
+    expect(variants[0]).toMatchObject({
+      id: 'bilibili-qn-16',
+      label: '360p',
+      height: 360,
+      playableInApp: true,
+      url: 'https://cdn.example/actual-360.mp4',
+      rawProviderJson: {
+        requestedQn: 112,
+        qn: 16,
+        qualityLimited: true,
+      },
+    });
+  });
+
   it('keeps the Bilibili 1080p60 label when the encoded DASH height is letterboxed', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('/x/web-interface/view')) {
@@ -750,7 +1070,7 @@ describe('BilibiliMvProvider', () => {
     const variants = await provider.resolve(video, { ...settings, maxQuality: '1080p', allow60fps: true });
 
     expect(variants[0]).toMatchObject({
-      id: 'bilibili-qn-116',
+      id: 'bilibili-dash-qn-116',
       label: '1080p 60fps',
       qualityTier: '1080p',
       width: 1920,

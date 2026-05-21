@@ -702,7 +702,7 @@ export class RemoteBackgroundJobQueue {
       ...metadata.fieldSources,
     };
 
-    return this.store.updateTrackMetadata(track.id, {
+    const update = {
       title: metadata.title || track.title,
       artist: metadata.artist || track.artist,
       album: metadata.album,
@@ -718,7 +718,8 @@ export class RemoteBackgroundJobQueue {
       bitrate: metadata.bitrate,
       metadataStatus: metadata.status,
       fieldSources: mergedFieldSources,
-    });
+    };
+    return this.store.updateTrackMetadata(track.id, update, await this.store.prepareMetadataUpdateSearchTerms(track.id, update));
   }
 
   private kindsForTrack(track: QueueableTrack, kinds: RemoteBackgroundJobKind[], failedOnly: boolean): RemoteBackgroundJobKind[] {

@@ -37,7 +37,7 @@ const send = (message) => {
   child.stdin.write(`${JSON.stringify(message)}\n`);
 };
 
-send({ type: 'setEnabledActions', play: true, pause: true, previous: true, next: true, seek: false });
+send({ type: 'setEnabledActions', play: true, pause: true, previous: true, next: true, seek: true });
 send({
   type: 'setMetadata',
   title: 'ECHO Smoke Song',

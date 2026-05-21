@@ -3,7 +3,7 @@ import { nativeImage, type BrowserWindow, type NativeImage } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { AudioStatus } from '../../shared/types/audio';
-import type { SmtcCommand } from '../../shared/types/smtc';
+import type { SmtcButtonCommand } from '../../shared/types/smtc';
 import type { TaskbarPlaybackStatus } from '../../shared/types/taskbarPlayback';
 import { getAudioSession } from '../audio/AudioSession';
 import { getLibraryService } from '../library/LibraryService';
@@ -393,7 +393,7 @@ export class TaskbarPlaybackIntegration {
     };
   }
 
-  private sendCommand(command: SmtcCommand): void {
+  private sendCommand(command: SmtcButtonCommand): void {
     if (this.window.isDestroyed()) {
       return;
     }

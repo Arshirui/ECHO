@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AlbumService } from './AlbumService';
 import type { LibraryStore } from './LibraryStore';
@@ -13,6 +13,7 @@ import type {
   LibraryScanOptions,
   LibraryScanStatus,
   MetadataResult,
+  ScanDirectorySnapshot,
   ScannedFile,
   ScanJobUpdate,
   StoredTrackCoverState,
@@ -29,6 +30,15 @@ const makeTempRoot = (): string => {
   mkdirSync(root, { recursive: true });
   tempRoots.push(root);
   return root;
+};
+
+const pathCompareValue = (filePath: string): string => (process.platform === 'win32' ? resolve(filePath).toLocaleLowerCase() : resolve(filePath));
+
+const isPathInsideOrEqual = (rootPath: string, candidatePath: string): boolean => {
+  const root = pathCompareValue(rootPath);
+  const candidate = pathCompareValue(candidatePath);
+  const relativePath = relative(root, candidate);
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
 };
 
 const uint32Le = (value: number): Buffer => {
@@ -125,6 +135,7 @@ class FakeStore {
   readonly updates: ScanJobUpdate[] = [];
   readonly upsertedTracks: TrackWrite[] = [];
   readonly identityUpdates: Array<{ trackId: string; identity: Partial<TrackWrite> }> = [];
+  readonly directorySnapshots: ScanDirectorySnapshot[] = [];
   readonly missingPaths: string[] = [];
   markMissingCalls = 0;
   refreshAlbumsCalls = 0;
@@ -134,7 +145,10 @@ class FakeStore {
   findTrackCoverStateCalls = 0;
   cancelled = false;
 
-  constructor(private readonly coverStatesByPath = new Map<string, StoredTrackCoverState>()) {}
+  constructor(
+    private readonly coverStatesByPath = new Map<string, StoredTrackCoverState>(),
+    private readonly snapshotsByPath = new Map<string, ScanDirectorySnapshot>(),
+  ) {}
 
   createScanJob(folderId: string): LibraryScanStatus {
     this.status = baseStatus(folderId);
@@ -179,10 +193,20 @@ class FakeStore {
     return work();
   }
 
-  markTracksMissingFromFolder(_folderId: string, discoveredPaths: string[]): number {
+  markTracksMissingFromFolder(
+    _folderId: string,
+    discoveredPaths: string[],
+    _timestamp?: string,
+    options: { excludeDirectories?: readonly string[] } = {},
+  ): number {
     this.markMissingCalls += 1;
-    const discovered = new Set(discoveredPaths);
-    const missing = Array.from(this.coverStatesByPath.keys()).filter((filePath) => !discovered.has(filePath));
+    const discovered = new Set(discoveredPaths.map(pathCompareValue));
+    const excludedDirectories = options.excludeDirectories ?? [];
+    const missing = Array.from(this.coverStatesByPath.keys()).filter(
+      (filePath) =>
+        !discovered.has(pathCompareValue(filePath)) &&
+        !excludedDirectories.some((directoryPath) => isPathInsideOrEqual(directoryPath, filePath)),
+    );
     this.missingPaths.push(...missing);
     return missing.length;
   }
@@ -195,6 +219,10 @@ class FakeStore {
 
   updateTrackIdentity(trackId: string, identity: Partial<TrackWrite>): void {
     this.identityUpdates.push({ trackId, identity });
+  }
+
+  async prepareTrackSearchTerms(): Promise<string> {
+    return '';
   }
 
   upsertTrack(track: TrackWrite): 'added' | 'updated' {
@@ -212,6 +240,14 @@ class FakeStore {
 
   finishFolderScan(): void {
     this.finishFolderScanCalls += 1;
+  }
+
+  getScanDirectorySnapshotsByFolder(): Map<string, ScanDirectorySnapshot> {
+    return new Map(this.snapshotsByPath);
+  }
+
+  upsertScanDirectorySnapshots(_folderId: string, snapshots: readonly ScanDirectorySnapshot[]): void {
+    this.directorySnapshots.push(...snapshots);
   }
 
   recordLibraryInboxBatch(): null {
@@ -234,6 +270,26 @@ class FakeScanner implements FileScanner {
 class ThrowingScanner implements FileScanner {
   scanFolder(): AsyncIterable<ScannedFile> {
     throw new Error('scanner boom');
+  }
+}
+
+class RecoverableErrorScanner implements FileScanner {
+  constructor(
+    private readonly files: ScannedFile[],
+    private readonly errorPath: string,
+    private readonly kind: 'directory' | 'file_stat' = 'directory',
+  ) {}
+
+  async *scanFolder(_folderPath?: string, options?: Parameters<FileScanner['scanFolder']>[1]): AsyncIterable<ScannedFile> {
+    options?.onFileSystemError?.({
+      kind: this.kind,
+      path: this.errorPath,
+      message: 'EACCES: permission denied',
+    });
+
+    for (const file of this.files) {
+      yield file;
+    }
   }
 }
 
@@ -766,6 +822,86 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(metadataReader.paths).toEqual([]);
     expect(store.getTrackCacheStatesByFolderCalls).toBe(1);
     expect(store.findTrackCoverStateCalls).toBe(0);
+  });
+
+  it('keeps scanning when one directory is inaccessible and does not mark tracks under it missing', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    const cacheRoot = join(root, 'custom-cache');
+    const inaccessibleDirectory = join(folder.path, 'locked');
+    mkdirSync(cacheRoot, { recursive: true });
+    const cachedCover = join(cacheRoot, 'cached.webp');
+    writeFileSync(cachedCover, 'cached');
+    const keptFile = { path: join(folder.path, 'kept.flac'), sizeBytes: 10, mtimeMs: 1 };
+    const blockedFile = { path: join(inaccessibleDirectory, 'blocked.flac'), sizeBytes: 10, mtimeMs: 1 };
+    const store = new FakeStore(
+      coverStateMap([keptFile, blockedFile], (file) =>
+        coverState(file, {
+          thumbPath: cachedCover,
+          albumPath: cachedCover,
+          largePath: cachedCover,
+          originalRef: cachedCover,
+        }),
+      ),
+    );
+
+    const status = await runQueue(
+      store,
+      new RecoverableErrorScanner([keptFile], inaccessibleDirectory),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      cacheRoot,
+      folder,
+    );
+
+    expect(status.status).toBe('completed');
+    expect(status.errorCount).toBe(1);
+    expect(status.errors[0]).toContain('scanner: directory');
+    expect(status.removedTracks).toBe(0);
+    expect(store.missingPaths).toEqual([]);
+  });
+
+  it('does not mark any tracks missing when the root scan directory is inaccessible', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    const existingFile = { path: join(folder.path, 'existing.flac'), sizeBytes: 10, mtimeMs: 1 };
+    const store = new FakeStore(coverStateMap([existingFile], (file) => coverState(file)));
+
+    const status = await runQueue(
+      store,
+      new RecoverableErrorScanner([], folder.path),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      join(root, 'custom-cache'),
+      folder,
+    );
+
+    expect(status.status).toBe('completed');
+    expect(status.errorCount).toBe(1);
+    expect(status.removedTracks).toBe(0);
+    expect(store.missingPaths).toEqual([]);
+  });
+
+  it('does not mark a track missing when its file stat failed during discovery', async () => {
+    const root = makeTempRoot();
+    const folder = baseFolder(root);
+    const statFailedFile = { path: join(folder.path, 'locked.flac'), sizeBytes: 10, mtimeMs: 1 };
+    const store = new FakeStore(coverStateMap([statFailedFile], (file) => coverState(file)));
+
+    const status = await runQueue(
+      store,
+      new RecoverableErrorScanner([], statFailedFile.path, 'file_stat'),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      join(root, 'custom-cache'),
+      folder,
+    );
+
+    expect(status.status).toBe('completed');
+    expect(status.errorCount).toBe(1);
+    expect(status.errors[0]).toContain('scanner: file_stat');
+    expect(status.removedTracks).toBe(0);
+    expect(store.missingPaths).toEqual([]);
   });
 
   it('does not keep embedded cover buffers in track writes while preserving embeddedCoverStatus', async () => {
