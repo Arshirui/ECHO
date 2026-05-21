@@ -108,14 +108,31 @@ describe('PlaybackQueueDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: '播放 Track 2' }));
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: second.id })));
 
-    const thirdRow = screen.getByText('Track 3').closest('.lyrics-queue-row');
+    const list = document.querySelector('.lyrics-queue-list') as HTMLElement;
+    const secondRow = within(list).getByText('Track 2').closest('.lyrics-queue-row');
+    const thirdRow = within(list).getByText('Track 3').closest('.lyrics-queue-row');
+    let transferredQueueId = '';
+    const dragData = {
+      effectAllowed: '',
+      dropEffect: '',
+      getData: vi.fn(() => transferredQueueId),
+      setData: vi.fn((_type: string, value: string) => {
+        transferredQueueId = value;
+      }),
+    };
+
+    expect(secondRow).toBeTruthy();
     expect(thirdRow).toBeTruthy();
-    fireEvent.click(within(thirdRow as HTMLElement).getByRole('button', { name: '上移 Track 3' }));
+    fireEvent.dragStart(thirdRow as HTMLElement, { dataTransfer: dragData });
+    fireEvent.dragOver(secondRow as HTMLElement, { dataTransfer: dragData });
+    fireEvent.drop(secondRow as HTMLElement, { dataTransfer: dragData });
 
     const rowsAfterMove = Array.from(document.querySelectorAll('.lyrics-queue-row-main strong')).map((element) => element.textContent);
     expect(rowsAfterMove).toEqual(['Track 1', 'Track 3', 'Track 2']);
 
-    fireEvent.click(screen.getByRole('button', { name: '移除 Track 3' }));
+    const movedThirdRow = within(list).getByText('Track 3').closest('.lyrics-queue-row');
+    expect(movedThirdRow).toBeTruthy();
+    fireEvent.click(within(movedThirdRow as HTMLElement).getByRole('button', { name: '移除 Track 3' }));
     expect(screen.queryByText('Track 3')).toBeNull();
   });
 });

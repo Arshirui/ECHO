@@ -385,6 +385,27 @@ describe('RemoteSourcesPanel', () => {
     await screen.findByText('Echo Song');
   });
 
+  it('summarizes provider tabs and per-source health for the remote console', async () => {
+    sources = [
+      remoteSource({ indexedTrackCount: 4 }),
+      remoteSource({
+        id: 'source-2',
+        provider: 'subsonic',
+        displayName: 'Navidrome',
+        baseUrl: 'https://music.example.test',
+        indexedTrackCount: 12,
+      }),
+    ];
+    render(<RemoteSourcesPanel />);
+
+    await screen.findByText('Mock AList');
+    expect(screen.getByText('远程库控制台')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /网盘 \/ WebDAV.*1 个.*4 首/u })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Subsonic \/ Navidrome.*1 个.*12 首/u })).toBeTruthy();
+    expect(screen.getByLabelText('Mock AList 补齐进度')).toBeTruthy();
+    expect(screen.getByText('1 个来源')).toBeTruthy();
+  });
+
   it('keeps remote matching and retry actions lightweight', async () => {
     sources = [remoteSource()];
     render(<RemoteSourcesPanel />);

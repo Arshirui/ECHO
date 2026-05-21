@@ -1,10 +1,10 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DragEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  ChevronDown,
-  ChevronUp,
   Disc3,
   ExternalLink,
+  GripVertical,
   ListMusic,
   Music2,
   Play,
@@ -26,14 +26,19 @@ type PlaybackQueueDrawerProps = {
 
 type QueueDrawerRowProps = {
   item: QueueItem;
-  index: number;
   isCurrent: boolean;
-  isFirst: boolean;
-  isLast: boolean;
-  onMove: (fromIndex: number, toIndex: number) => void;
+  isDragging: boolean;
+  isDropTarget: boolean;
+  onDragEnd: () => void;
+  onDragOver: (event: DragEvent<HTMLElement>, item: QueueItem) => void;
+  onDragStart: (event: DragEvent<HTMLElement>, item: QueueItem) => void;
+  onDrop: (event: DragEvent<HTMLElement>, item: QueueItem) => void;
   onPlay: (queueId: string) => void;
   onRemove: (queueId: string) => void;
 };
+
+const drawerCloseAnimationMs = 240;
+const queueDrawerDragMime = 'application/x-echo-next-queue-item';
 
 const formatDuration = (duration: number): string => {
   if (!Number.isFinite(duration) || duration <= 0) {
@@ -73,8 +78,33 @@ const nextRepeatMode = (mode: RepeatMode): RepeatMode => {
 };
 
 const PlaybackQueueDrawerRow = memo(
-  ({ item, index, isCurrent, isFirst, isLast, onMove, onPlay, onRemove }: QueueDrawerRowProps): JSX.Element => (
-    <article className="lyrics-queue-row" data-current={isCurrent ? 'true' : undefined} role="listitem">
+  ({
+    item,
+    isCurrent,
+    isDragging,
+    isDropTarget,
+    onDragEnd,
+    onDragOver,
+    onDragStart,
+    onDrop,
+    onPlay,
+    onRemove,
+  }: QueueDrawerRowProps): JSX.Element => (
+    <article
+      className="lyrics-queue-row"
+      data-current={isCurrent ? 'true' : undefined}
+      data-dragging={isDragging ? 'true' : undefined}
+      data-drop-target={isDropTarget ? 'true' : undefined}
+      draggable
+      role="listitem"
+      onDragEnd={onDragEnd}
+      onDragOver={(event) => onDragOver(event, item)}
+      onDragStart={(event) => onDragStart(event, item)}
+      onDrop={(event) => onDrop(event, item)}
+    >
+      <span className="lyrics-queue-drag-handle" aria-label={`拖动 ${item.track.title}`} title="拖动调整顺序">
+        <GripVertical size={16} />
+      </span>
       <div className="lyrics-queue-row-cover" data-empty={!item.track.coverThumb}>
         {item.track.coverThumb ? <img alt="" src={item.track.coverThumb} /> : <Music2 size={18} />}
       </div>
@@ -92,24 +122,6 @@ const PlaybackQueueDrawerRow = memo(
       </span>
       <span className="lyrics-queue-row-duration">{formatDuration(item.track.duration)}</span>
       <div className="lyrics-queue-row-actions" aria-label={`${item.track.title} 队列操作`}>
-        <button
-          type="button"
-          aria-label={`上移 ${item.track.title}`}
-          title="上移"
-          disabled={isFirst}
-          onClick={() => onMove(index, index - 1)}
-        >
-          <ChevronUp size={15} />
-        </button>
-        <button
-          type="button"
-          aria-label={`下移 ${item.track.title}`}
-          title="下移"
-          disabled={isLast}
-          onClick={() => onMove(index, index + 1)}
-        >
-          <ChevronDown size={15} />
-        </button>
         <button type="button" aria-label={`移除 ${item.track.title}`} title="移除" onClick={() => onRemove(item.queueId)}>
           <X size={15} />
         </button>
@@ -124,6 +136,24 @@ export const PlaybackQueueDrawer = ({ isOpen, onClose, onOpenFullQueue }: Playba
   const queue = usePlaybackQueue();
   const listRef = useRef<HTMLDivElement | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [shouldRender, setShouldRender] = useState(isOpen);
+  const [draggedQueueId, setDraggedQueueId] = useState<string | null>(null);
+  const [dropTargetQueueId, setDropTargetQueueId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShouldRender(false);
+      setDraggedQueueId(null);
+      setDropTargetQueueId(null);
+    }, drawerCloseAnimationMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isOpen]);
 
   const currentIndex = useMemo(
     () => (queue.currentQueueId ? queue.items.findIndex((item) => item.queueId === queue.currentQueueId) : -1),
@@ -147,14 +177,6 @@ export const PlaybackQueueDrawer = ({ isOpen, onClose, onOpenFullQueue }: Playba
     [queue],
   );
 
-  const moveQueueItem = useCallback(
-    (fromIndex: number, toIndex: number): void => {
-      setActionError(null);
-      queue.moveQueueItem(fromIndex, toIndex);
-    },
-    [queue],
-  );
-
   const removeQueueItem = useCallback(
     (queueId: string): void => {
       setActionError(null);
@@ -163,19 +185,61 @@ export const PlaybackQueueDrawer = ({ isOpen, onClose, onOpenFullQueue }: Playba
     [queue],
   );
 
+  const handleDragStart = useCallback((event: DragEvent<HTMLElement>, item: QueueItem): void => {
+    setActionError(null);
+    setDraggedQueueId(item.queueId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(queueDrawerDragMime, item.queueId);
+    event.dataTransfer.setData('text/plain', item.queueId);
+  }, []);
+
+  const handleDragOver = useCallback((event: DragEvent<HTMLElement>, item: QueueItem): void => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTargetQueueId(item.queueId);
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLElement>, targetItem: QueueItem): void => {
+      event.preventDefault();
+      const sourceQueueId = draggedQueueId || event.dataTransfer.getData(queueDrawerDragMime) || event.dataTransfer.getData('text/plain');
+      setDraggedQueueId(null);
+      setDropTargetQueueId(null);
+
+      if (!sourceQueueId || sourceQueueId === targetItem.queueId) {
+        return;
+      }
+
+      const fromIndex = queue.items.findIndex((item) => item.queueId === sourceQueueId);
+      const toIndex = queue.items.findIndex((item) => item.queueId === targetItem.queueId);
+
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        return;
+      }
+
+      queue.moveQueueItem(fromIndex, toIndex);
+    },
+    [draggedQueueId, queue],
+  );
+
+  const handleDragEnd = useCallback((): void => {
+    setDraggedQueueId(null);
+    setDropTargetQueueId(null);
+  }, []);
+
   const handleOpenFullQueue = useCallback((): void => {
     onClose();
     onOpenFullQueue();
   }, [onClose, onOpenFullQueue]);
 
-  if (!isOpen) {
+  if (!shouldRender) {
     return null;
   }
 
   const nowPlaying = queue.currentTrack ?? queue.currentItem?.track ?? queue.lastPlayedTrack ?? null;
 
   return (
-    <aside className="lyrics-queue-drawer" aria-label="播放队列抽屉">
+    <aside className="lyrics-queue-drawer" aria-label="播放队列抽屉" data-open={isOpen ? 'true' : 'false'}>
       <button className="lyrics-queue-drawer__scrim" type="button" aria-label="关闭播放队列" onClick={onClose} />
       <section className="lyrics-queue-drawer__panel" aria-label="播放队列">
         <header className="lyrics-queue-drawer__header">
@@ -247,11 +311,13 @@ export const PlaybackQueueDrawer = ({ isOpen, onClose, onOpenFullQueue }: Playba
                   >
                     <PlaybackQueueDrawerRow
                       item={item}
-                      index={virtualRow.index}
                       isCurrent={item.queueId === queue.currentQueueId}
-                      isFirst={virtualRow.index === 0}
-                      isLast={virtualRow.index === queue.items.length - 1}
-                      onMove={moveQueueItem}
+                      isDragging={draggedQueueId === item.queueId}
+                      isDropTarget={dropTargetQueueId === item.queueId && draggedQueueId !== item.queueId}
+                      onDragEnd={handleDragEnd}
+                      onDragOver={handleDragOver}
+                      onDragStart={handleDragStart}
+                      onDrop={handleDrop}
                       onPlay={playQueueItem}
                       onRemove={removeQueueItem}
                     />

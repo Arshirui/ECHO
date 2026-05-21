@@ -1,5 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, FolderOpen, PauseCircle, Play, RefreshCw, RotateCcw, Save, Server, Trash2, Wifi } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  Check,
+  Database,
+  FolderOpen,
+  Gauge,
+  HardDrive,
+  Music2,
+  PauseCircle,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  Server,
+  ShieldCheck,
+  Trash2,
+  Wifi,
+} from 'lucide-react';
 import type {
   RemoteBackgroundGlobalStatus,
   RemoteBackgroundJobKind,
@@ -240,6 +258,28 @@ const issueKindLabels: Record<RemoteSourceIssueKind, string> = {
   missing: '缺失文件',
 };
 
+const sourceStatusLabels: Record<RemoteSource['status'], string> = {
+  enabled: '已启用',
+  disabled: '已禁用',
+  error: '异常',
+};
+
+const statusKindTotal = (counts: RemoteSourceOverviewItem['metadata']): number =>
+  counts.pending + counts.searching + counts.partial + counts.ok + counts.not_found + counts.error;
+
+const statusIssueCount = (counts: RemoteSourceOverviewItem['metadata']): number =>
+  counts.partial + counts.not_found + counts.error;
+
+const completionPercent = (counts: RemoteSourceOverviewItem['metadata']): number | null => {
+  const total = statusKindTotal(counts);
+  return total <= 0 ? null : clampPercent(Math.round((counts.ok / total) * 100));
+};
+
+const completionPercentText = (counts: RemoteSourceOverviewItem['metadata']): string => {
+  const percent = completionPercent(counts);
+  return percent === null ? '暂无数据' : `${percent}%`;
+};
+
 const recommendationText = (source: RemoteSourceOverviewItem): string | null => {
   const metadataIssues = source.metadata.error + source.metadata.partial + source.metadata.not_found;
   const coverIssues = source.cover.error + source.cover.not_found;
@@ -345,6 +385,34 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   const visibleSourceIds = useMemo(() => visibleSources.map((source) => source.id), [visibleSources]);
   const overviewBySourceId = useMemo(() => new Map(overview.sources.map((source) => [source.sourceId, source])), [overview.sources]);
   const playbackLoadReduced = globalJobStatus.playbackActive && !globalJobStatus.paused;
+  const providerSummaries = useMemo(() => tabs.map((tab) => {
+    const overviewSources = overview.sources.filter((source) => source.provider === tab.provider);
+    const listedSources = sources.filter((source) => source.provider === tab.provider);
+    const countBase = overviewSources.length > 0 ? overviewSources : listedSources.map(emptyOverviewItem);
+    return {
+      provider: tab.provider,
+      sourceCount: Math.max(overviewSources.length, listedSources.length),
+      enabledCount: listedSources.length > 0
+        ? listedSources.filter((source) => source.status === 'enabled').length
+        : overviewSources.filter((source) => source.status === 'enabled').length,
+      errorCount: listedSources.length > 0
+        ? listedSources.filter((source) => source.status === 'error').length
+        : overviewSources.filter((source) => source.status === 'error').length,
+      trackCount: countBase.reduce((total, source) => total + source.trackCount, 0),
+      issueCount: countBase.reduce((total, source) => total + sourceIssueTotal(source), 0),
+    };
+  }), [overview.sources, sources]);
+  const activeProviderSummary = providerSummaries.find((summary) => summary.provider === activeProvider);
+  const overviewIssueCount = useMemo(() => overview.sources.reduce((total, source) => total + sourceIssueTotal(source), 0), [overview.sources]);
+  const runningSyncCount = useMemo(() => Object.values(syncStatuses).filter((status) => status.status === 'running').length, [syncStatuses]);
+  const queuedJobCount = useMemo(() => Object.values(jobStatuses).reduce((total, status) => total + sumKinds(status.pending) + sumKinds(status.running), 0), [jobStatuses]);
+  const commandStatusLabel = globalJobStatus.paused
+    ? '后台已暂停'
+    : playbackLoadReduced
+      ? '播放中低负载'
+      : queuedJobCount > 0 || runningSyncCount > 0
+        ? '正在处理'
+        : '空闲待命';
 
   const refreshStatuses = useCallback(async (sourceIds: string[], replace = false): Promise<void> => {
     if (!remoteApi) {
@@ -607,37 +675,73 @@ export const RemoteSourcesPanel = (): JSX.Element => {
   };
 
   const renderOverview = (): JSX.Element => (
-    <section className="remote-overview-grid" aria-label="网盘中心总览">
-      <span>
-        <em>来源</em>
-        <strong>{formatCount(overview.totalSources)}</strong>
-        <small>启用 {formatCount(overview.enabledSources)} / 错误 {formatCount(overview.errorSources)}</small>
-      </span>
-      <span>
-        <em>已索引歌曲</em>
-        <strong>{formatCount(overview.trackCount)}</strong>
-        <small>{formatCount(overview.albumCount)} 张专辑 / {formatCount(overview.artistCount)} 位艺人</small>
-      </span>
-      <span>
-        <em>已知容量</em>
-        <strong>{formatBytes(overview.totalSizeBytes)}</strong>
-        <small>缺失 {formatCount(overview.missingTrackCount)} 首</small>
-      </span>
-      <span>
-        <em>元数据完成度</em>
-        <strong>{statusCompletionText(overview.metadata)}</strong>
-        <small>异常 {formatCount(overview.metadata.error + overview.metadata.partial + overview.metadata.not_found)} 首</small>
-      </span>
-      <span>
-        <em>封面完成度</em>
-        <strong>{statusCompletionText(overview.cover)}</strong>
-        <small>失败 {formatCount(overview.cover.error + overview.cover.not_found)} 首</small>
-      </span>
-      <span>
-        <em>后台状态</em>
-        <strong>{globalJobStatus.paused ? '已暂停' : playbackLoadReduced ? '播放中降负载' : '空闲运行'}</strong>
-        <small>{globalJobStatus.updatedAt ? formatDate(globalJobStatus.updatedAt) : '按来源任务队列执行'}</small>
-      </span>
+    <section className="remote-command-center" aria-label="网盘中心总览">
+      <div className="remote-command-panel">
+        <div className="remote-command-eyebrow">
+          <ShieldCheck size={16} />
+          <span>本地播放优先</span>
+        </div>
+        <div>
+          <h3>远程库控制台</h3>
+          <p>集中查看网盘索引、同步队列、异常项目和后台负载状态。</p>
+        </div>
+        <div className="remote-command-status-row">
+          <span data-tone={globalJobStatus.paused ? 'paused' : playbackLoadReduced ? 'warning' : 'ready'}>
+            <Activity size={15} />
+            {commandStatusLabel}
+          </span>
+          <span>
+            <RefreshCw size={15} />
+            同步 {formatCount(runningSyncCount)}
+          </span>
+          <span>
+            <Gauge size={15} />
+            队列 {formatCount(queuedJobCount)}
+          </span>
+          <span data-tone={overviewIssueCount > 0 ? 'warning' : 'ready'}>
+            <AlertTriangle size={15} />
+            问题 {formatCount(overviewIssueCount)}
+          </span>
+        </div>
+      </div>
+      <div className="remote-overview-grid">
+        <span>
+          <Server size={17} />
+          <em>来源</em>
+          <strong>{formatCount(overview.totalSources)}</strong>
+          <small>启用 {formatCount(overview.enabledSources)} / 错误 {formatCount(overview.errorSources)}</small>
+        </span>
+        <span>
+          <Music2 size={17} />
+          <em>已索引歌曲</em>
+          <strong>{formatCount(overview.trackCount)}</strong>
+          <small>{formatCount(overview.albumCount)} 张专辑 / {formatCount(overview.artistCount)} 位艺人</small>
+        </span>
+        <span>
+          <HardDrive size={17} />
+          <em>已知容量</em>
+          <strong>{formatBytes(overview.totalSizeBytes)}</strong>
+          <small>缺失 {formatCount(overview.missingTrackCount)} 首</small>
+        </span>
+        <span>
+          <Database size={17} />
+          <em>元数据完成度</em>
+          <strong>{statusCompletionText(overview.metadata)}</strong>
+          <small>异常 {formatCount(statusIssueCount(overview.metadata))} 首</small>
+        </span>
+        <span>
+          <FolderOpen size={17} />
+          <em>封面完成度</em>
+          <strong>{statusCompletionText(overview.cover)}</strong>
+          <small>失败 {formatCount(statusIssueCount(overview.cover))} 首</small>
+        </span>
+        <span>
+          <Gauge size={17} />
+          <em>后台状态</em>
+          <strong>{commandStatusLabel}</strong>
+          <small>{globalJobStatus.updatedAt ? formatDate(globalJobStatus.updatedAt) : '按来源任务队列执行'}</small>
+        </span>
+      </div>
     </section>
   );
 
@@ -751,12 +855,34 @@ export const RemoteSourcesPanel = (): JSX.Element => {
       {renderOverview()}
 
       <nav className="remote-source-tabs" aria-label="远程音乐库类型">
-        {tabs.map((tab) => (
-          <button key={tab.provider} type="button" className={tab.provider === activeProvider ? 'active' : ''} onClick={() => setActiveProvider(tab.provider)}>
-            {tab.label}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const summary = providerSummaries.find((item) => item.provider === tab.provider);
+          const statusText = summary && summary.sourceCount > 0
+            ? `${formatCount(summary.sourceCount)} 个 · ${formatCount(summary.trackCount)} 首`
+            : '未连接';
+          return (
+            <button key={tab.provider} type="button" className={tab.provider === activeProvider ? 'active' : ''} onClick={() => setActiveProvider(tab.provider)}>
+              <span>{tab.label}</span>
+              <small>{statusText}</small>
+            </button>
+          );
+        })}
       </nav>
+
+      {activeProviderSummary && activeProviderSummary.sourceCount > 0 ? (
+        <section className="remote-provider-summary" aria-label={`${activeTab.label} 来源摘要`}>
+          <span>
+            <Server size={15} />
+            {activeTab.label}
+          </span>
+          <strong>{formatCount(activeProviderSummary.sourceCount)} 个来源</strong>
+          <span>启用 {formatCount(activeProviderSummary.enabledCount)}</span>
+          <span>歌曲 {formatCount(activeProviderSummary.trackCount)}</span>
+          <span data-tone={activeProviderSummary.issueCount > 0 || activeProviderSummary.errorCount > 0 ? 'warning' : 'ready'}>
+            问题 {formatCount(activeProviderSummary.issueCount + activeProviderSummary.errorCount)}
+          </span>
+        </section>
+      ) : null}
 
       {activeTab.supported ? renderForm() : (
         <section className="remote-source-coming-soon">
@@ -784,15 +910,53 @@ export const RemoteSourcesPanel = (): JSX.Element => {
           const hasDeferredPlaybackJobs = globalJobStatus.playbackActive && (jobStatus.pending.cover + jobStatus.pending.lyrics + jobStatus.pending.mv > 0);
           const recommendation = recommendationText(sourceOverview);
           const recommendedKind = recommendedIssueKind(sourceOverview);
+          const metadataPercent = completionPercent(sourceOverview.metadata);
+          const coverPercent = completionPercent(sourceOverview.cover);
+          const lyricsPercent = completionPercent(sourceOverview.lyrics);
+          const mvPercent = completionPercent(sourceOverview.mv);
+          const sourceIssues = sourceIssueTotal(sourceOverview);
 
           return (
             <article className="remote-source-card" key={source.id}>
               <div className="remote-source-card-head">
                 <div>
-                  <h3>{source.displayName}</h3>
-                  <p>{providerLabels[source.provider]} · {source.baseUrl ?? '无服务器地址'}</p>
+                  <div className="remote-source-title-line">
+                    <h3>{source.displayName}</h3>
+                    <span>{providerLabels[source.provider]}</span>
+                  </div>
+                  <p>{source.baseUrl ?? '无服务器地址'}</p>
                 </div>
-                <span className={`remote-source-status remote-source-status--${source.status}`}>{source.status}</span>
+                <div className="remote-source-state-stack">
+                  <span className={`remote-source-status remote-source-status--${source.status}`}>{sourceStatusLabels[source.status]}</span>
+                  {running ? <span className="remote-source-status remote-source-status--syncing">同步中</span> : null}
+                </div>
+              </div>
+              <div className="remote-source-health-strip" aria-label={`${source.displayName} 补齐进度`}>
+                <span>
+                  <em>元数据</em>
+                  <strong>{completionPercentText(sourceOverview.metadata)}</strong>
+                  <i style={{ width: `${metadataPercent ?? 0}%` }} />
+                </span>
+                <span>
+                  <em>封面</em>
+                  <strong>{completionPercentText(sourceOverview.cover)}</strong>
+                  <i style={{ width: `${coverPercent ?? 0}%` }} />
+                </span>
+                <span>
+                  <em>歌词</em>
+                  <strong>{completionPercentText(sourceOverview.lyrics)}</strong>
+                  <i style={{ width: `${lyricsPercent ?? 0}%` }} />
+                </span>
+                <span>
+                  <em>MV</em>
+                  <strong>{completionPercentText(sourceOverview.mv)}</strong>
+                  <i style={{ width: `${mvPercent ?? 0}%` }} />
+                </span>
+                <span data-tone={sourceIssues > 0 ? 'warning' : 'ready'}>
+                  <em>问题</em>
+                  <strong>{sourceIssues > 0 ? `${formatCount(sourceIssues)} 项` : '干净'}</strong>
+                  <i style={{ width: `${sourceIssues > 0 ? 100 : 0}%` }} />
+                </span>
               </div>
               <div className="remote-source-grid">
                 <span><em>已索引歌曲</em><strong>{formatCount(sourceOverview.trackCount)}</strong></span>
@@ -927,7 +1091,15 @@ export const RemoteSourcesPanel = (): JSX.Element => {
             </article>
           );
         })}
-        {activeTab.supported && visibleSources.length === 0 ? <p className="settings-inline-note">还没有 {activeTab.label} 来源。</p> : null}
+        {activeTab.supported && visibleSources.length === 0 ? (
+          <section className="remote-source-empty" aria-label={`${activeTab.label} 空状态`}>
+            <HardDrive size={22} />
+            <div>
+              <strong>还没有 {activeTab.label} 来源</strong>
+              <span>添加后会出现在这里，并显示索引、问题、同步和后台补齐状态。</span>
+            </div>
+          </section>
+        ) : null}
       </section>
 
       <section className="remote-source-card">
@@ -942,6 +1114,11 @@ export const RemoteSourcesPanel = (): JSX.Element => {
             ) : null}
           </div>
           <span className="remote-source-status">{globalJobStatus.paused ? '已暂停' : playbackLoadReduced ? '低负载运行' : '运行中'}</span>
+        </div>
+        <div className="remote-background-summary" aria-label="远程后台任务摘要">
+          <span><Activity size={15} />同步 {formatCount(runningSyncCount)}</span>
+          <span><Gauge size={15} />队列 {formatCount(queuedJobCount)}</span>
+          <span><ShieldCheck size={15} />{playbackLoadReduced ? '播放保护中' : '常规限速'}</span>
         </div>
         <div className="remote-job-grid">
           {jobKinds.map((kind) => (

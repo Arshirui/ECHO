@@ -166,6 +166,8 @@ const broadcastLibraryChanged = (): void => {
   }
 };
 
+const romanizedSearchPattern = /[a-z]{2,}/iu;
+
 export class LibraryService {
   private artistsDirty = false;
   private groupingRefreshTimer: NodeJS.Timeout | null = null;
@@ -189,6 +191,8 @@ export class LibraryService {
   private lastMetadataBackfillCount = 0;
   private lastSkippedByCacheCount = 0;
   private searchIndexBackfillTimer: NodeJS.Timeout | null = null;
+  private searchIndexBackfillRunning = false;
+  private searchIndexBackfillAllowDuringPlayback = false;
   private closed = false;
 
   constructor(
@@ -297,6 +301,7 @@ export class LibraryService {
   }
 
   getTracks(query?: LibraryPageQuery): LibraryPage<LibraryTrack> {
+    this.maybeScheduleRomanizedSearchBackfill(query?.search);
     return this.store.getTracks(query);
   }
 
@@ -1782,6 +1787,10 @@ export class LibraryService {
       clearTimeout(this.groupingRefreshTimer);
       this.groupingRefreshTimer = null;
     }
+    if (this.searchIndexBackfillTimer) {
+      clearTimeout(this.searchIndexBackfillTimer);
+      this.searchIndexBackfillTimer = null;
+    }
     (this.scanJobQueue as { dispose?: () => void }).dispose?.();
 
     this.closeDatabase();
@@ -1795,14 +1804,26 @@ export class LibraryService {
     broadcastLibraryChanged();
   }
 
-  private scheduleSearchIndexBackfill(delayMs = 10_000): void {
-    if (this.closed || this.searchIndexBackfillTimer) {
+  private scheduleSearchIndexBackfill(delayMs = 10_000, options: { allowDuringPlayback?: boolean } = {}): void {
+    if (this.closed || this.searchIndexBackfillRunning) {
       return;
+    }
+
+    const shouldAccelerate = delayMs <= 0 || options.allowDuringPlayback === true;
+    this.searchIndexBackfillAllowDuringPlayback =
+      this.searchIndexBackfillAllowDuringPlayback || options.allowDuringPlayback === true;
+
+    if (this.searchIndexBackfillTimer) {
+      if (!shouldAccelerate) {
+        return;
+      }
+      clearTimeout(this.searchIndexBackfillTimer);
+      this.searchIndexBackfillTimer = null;
     }
 
     this.searchIndexBackfillTimer = setTimeout(() => {
       void this.runSearchIndexBackfill();
-    }, delayMs);
+    }, Math.max(0, delayMs));
     this.searchIndexBackfillTimer.unref?.();
   }
 
@@ -1812,8 +1833,12 @@ export class LibraryService {
       return;
     }
 
+    const allowDuringPlayback = this.searchIndexBackfillAllowDuringPlayback;
+    this.searchIndexBackfillAllowDuringPlayback = false;
+    this.searchIndexBackfillRunning = true;
     try {
-      if (await shouldDelayGroupingRefreshForAudio()) {
+      if (!allowDuringPlayback && await shouldDelayGroupingRefreshForAudio()) {
+        this.searchIndexBackfillRunning = false;
         this.scheduleSearchIndexBackfill();
         return;
       }
@@ -1824,7 +1849,17 @@ export class LibraryService {
       }
     } catch {
       // Search backfill is best-effort; scanning and direct edits keep writing fresh terms.
+    } finally {
+      this.searchIndexBackfillRunning = false;
     }
+  }
+
+  private maybeScheduleRomanizedSearchBackfill(search: string | undefined): void {
+    if (!search || !romanizedSearchPattern.test(search) || this.store.isJapaneseRomanizedSearchReady()) {
+      return;
+    }
+
+    this.scheduleSearchIndexBackfill(0, { allowDuringPlayback: true });
   }
 
   private previewRescanPathsFromWatcher(folderId: string, paths: string[]): number {

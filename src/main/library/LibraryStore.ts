@@ -175,7 +175,7 @@ const neteaseDailyRecommendSourcePlaylistId = 'daily-recommend';
 const protectedSystemPlaylistIds = new Set([likedSongsSourcePlaylistId, likedAlbumsSourcePlaylistId, neteaseDailyRecommendSourcePlaylistId]);
 const streamingDownloadAddedFrom = (provider: string, providerTrackId: string): string =>
   `streaming-download:${provider}:${providerTrackId}`;
-const japaneseRomajiSearchTermsFlag = 'search_terms_japanese_romaji_v1';
+const japaneseRomajiSearchTermsFlag = 'search_terms_japanese_romaji_v2';
 const searchTermsBackfillBatchSize = 100;
 const libraryQualityOverviewDefinitions: Array<Omit<LibraryQualityOverviewItem, 'count' | 'lastError'>> = [
   {
@@ -865,6 +865,10 @@ export class LibraryStore {
     const changed = (await this.rebuildLocalJapaneseSearchTerms()) + (await this.rebuildRemoteJapaneseSearchTerms());
     this.setMaintenanceFlag(japaneseRomajiSearchTermsFlag, 'complete');
     return changed;
+  }
+
+  isJapaneseRomanizedSearchReady(): boolean {
+    return this.hasMaintenanceFlag(japaneseRomajiSearchTermsFlag);
   }
 
   private searchFieldsForTrackWrite(track: TrackWrite): SearchIndexTrackFields {

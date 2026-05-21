@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { pinyin } from 'pinyin-pro';
 
 export type SearchIndexTrackFields = {
@@ -20,7 +22,9 @@ type KuroshiroInstance = {
 };
 
 type KuroshiroConstructor = new () => { init: (analyzer: unknown) => Promise<void> } & KuroshiroInstance;
-type KuromojiAnalyzerConstructor = new () => unknown;
+type KuromojiAnalyzerConstructor = new (options?: { dictPath?: string }) => unknown;
+
+const nodeRequire = createRequire(import.meta.url);
 
 const searchSeparatorPattern = /[\s!"#$%&'()*+,./:;<=>?@[\\\]^`{|}~_-]+/u;
 const cjkPattern = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
@@ -36,6 +40,7 @@ const maxRomanizationInputLength = 512;
 const maxRomanizationCacheEntries = 4096;
 
 let kuroshiroPromise: Promise<KuroshiroInstance | null> | null = null;
+let hasLoggedKuroshiroInitFailure = false;
 const japaneseConversionCache = new Map<string, string | null>();
 
 const normalizeSearchText = (value: string): string => value.normalize('NFKC').trim().toLocaleLowerCase();
@@ -53,6 +58,30 @@ const resolveDefaultExport = <T>(moduleValue: unknown): T | null => {
   return typeof nestedDefault === 'function' ? (nestedDefault as T) : null;
 };
 
+const resolveKuromojiDictPath = (): string | undefined => {
+  try {
+    const entry = nodeRequire.resolve('kuromoji');
+    return join(dirname(dirname(entry)), 'dict');
+  } catch {
+    return undefined;
+  }
+};
+
+const makeKuromojiAnalyzer = (KuromojiAnalyzer: KuromojiAnalyzerConstructor): unknown => {
+  const dictPath = resolveKuromojiDictPath();
+  return dictPath ? new KuromojiAnalyzer({ dictPath }) : new KuromojiAnalyzer();
+};
+
+const logKuroshiroInitFailure = (error: unknown): void => {
+  if (hasLoggedKuroshiroInitFailure) {
+    return;
+  }
+
+  hasLoggedKuroshiroInitFailure = true;
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(`[library-search] Japanese romaji search disabled: ${message}`);
+};
+
 const getKuroshiro = async (): Promise<KuroshiroInstance | null> => {
   if (!kuroshiroPromise) {
     kuroshiroPromise = (async () => {
@@ -68,9 +97,10 @@ const getKuroshiro = async (): Promise<KuroshiroInstance | null> => {
         }
 
         const kuroshiro = new Kuroshiro();
-        await kuroshiro.init(new KuromojiAnalyzer());
+        await kuroshiro.init(makeKuromojiAnalyzer(KuromojiAnalyzer));
         return kuroshiro;
-      } catch {
+      } catch (error) {
+        logKuroshiroInitFailure(error);
         return null;
       }
     })();
