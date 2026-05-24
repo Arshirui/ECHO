@@ -8,6 +8,7 @@ type PlaybackVisualIntent = {
   state: 'playing';
   currentTrackId: string | null;
   filePath: string | null;
+  expectedPositionMs: number;
   startedAtMs: number;
 };
 
@@ -22,6 +23,7 @@ type PlaybackStatusSnapshot = {
 const idlePollingStates = new Set(['paused', 'stopped', 'idle', 'error']);
 const activePollingIntervalMs = 500;
 const idlePollingIntervalMs = 2000;
+const trackSwitchVisualIntentGuardMs = 2500;
 const nonActionableAudioStatusErrorPatterns = [
   /\beq_control_(?:closed|disconnected)\b/u,
   /\beq_control_sync_skipped\b/u,
@@ -60,13 +62,25 @@ const playbackMatchesIntent = (status: AudioStatus | PlaybackStatus, intent: Pla
 const playbackHasIdentity = (status: AudioStatus | PlaybackStatus): boolean =>
   Boolean(status.currentTrackId || ('currentFilePath' in status ? status.currentFilePath : status.filePath));
 
+const playbackStartsVisualIntent = (status: PlaybackStatus | null | undefined, intent: PlaybackVisualIntent | null | undefined): boolean =>
+  Boolean(status && intent && playbackMatchesIntent(status, intent));
+
 const isSpotifyPlaybackStatus = (status: PlaybackStatus | null | undefined): boolean =>
   typeof status?.filePath === 'string' && status.filePath.startsWith('streaming:spotify:');
 
-const isStaleStatusForVisualIntent = (status: AudioStatus | PlaybackStatus, intent: PlaybackVisualIntent | null): boolean =>
-  Boolean(intent && playbackHasIdentity(status) && !playbackMatchesIntent(status, intent));
+const statusPositionMs = (status: AudioStatus | PlaybackStatus): number =>
+  'positionSeconds' in status ? Math.round(Math.max(0, status.positionSeconds) * 1000) : Math.max(0, status.positionMs);
 
-const getAuthoritativeState = (): AudioPlaybackState => snapshot.audioStatus?.state ?? snapshot.playbackStatus?.state ?? 'idle';
+const playbackPositionMatchesIntent = (status: AudioStatus | PlaybackStatus, intent: PlaybackVisualIntent): boolean =>
+  Math.abs(statusPositionMs(status) - intent.expectedPositionMs) <= 1500;
+
+const isStaleStatusForVisualIntent = (status: AudioStatus | PlaybackStatus, intent: PlaybackVisualIntent | null): boolean =>
+  Boolean(
+    intent &&
+      Date.now() - intent.startedAtMs <= trackSwitchVisualIntentGuardMs &&
+      playbackHasIdentity(status) &&
+      (!playbackMatchesIntent(status, intent) || !playbackPositionMatchesIntent(status, intent)),
+  );
 
 const getActionableAudioStatusError = (error: string | null | undefined): string | null => {
   if (!error) {
@@ -142,11 +156,21 @@ const shouldClearVisualIntentForPatch = (
     return true;
   }
 
-  if (shouldApplyPlaybackStatus && patch.playbackStatus && patch.playbackStatus.state !== 'loading') {
+  if (shouldApplyPlaybackStatus && patch.playbackStatus?.state === 'error') {
     return true;
   }
 
-  if (shouldApplyAudioStatus && patch.audioStatus && playbackMatchesIntent(patch.audioStatus, intent) && patch.audioStatus.state !== 'loading') {
+  if (shouldApplyPlaybackStatus && patch.playbackStatus && Date.now() - intent.startedAtMs > trackSwitchVisualIntentGuardMs) {
+    return true;
+  }
+
+  if (
+    shouldApplyAudioStatus &&
+    patch.audioStatus &&
+    playbackMatchesIntent(patch.audioStatus, intent) &&
+    playbackPositionMatchesIntent(patch.audioStatus, intent) &&
+    patch.audioStatus.state !== 'loading'
+  ) {
     return true;
   }
 
@@ -165,8 +189,11 @@ export const setPlaybackStatusSnapshot = (patch: Partial<Omit<PlaybackStatusSnap
     isSpotifyPlaybackStatus(snapshot.playbackStatus) &&
     hasAudioStatusPatch &&
     !hasPlaybackStatusPatch;
+  const playbackStatusStartsNewIntent =
+    hasPlaybackStatusPatch && playbackStartsVisualIntent(patch.playbackStatus, patch.playbackVisualIntent);
   const shouldApplyPlaybackStatus =
-    !nativeRefreshOverSpotify && (!patch.playbackStatus || !isStaleStatusForVisualIntent(patch.playbackStatus, snapshot.playbackVisualIntent));
+    !nativeRefreshOverSpotify &&
+    (playbackStatusStartsNewIntent || !patch.playbackStatus || !isStaleStatusForVisualIntent(patch.playbackStatus, snapshot.playbackVisualIntent));
   const shouldApplyAudioStatus =
     !nativeRefreshOverSpotify &&
     !nativeAudioOverSpotify &&
@@ -205,17 +232,20 @@ export const setPlaybackStatusSnapshot = (patch: Partial<Omit<PlaybackStatusSnap
 };
 
 export const beginPlaybackSwitchSnapshot = (playbackStatus: PlaybackStatus): PlaybackStatusSnapshot => {
-  const wasPlaying = getAuthoritativeState() === 'playing';
+  const shouldTrackSwitchIntent =
+    (playbackStatus.state === 'loading' || playbackStatus.state === 'playing') &&
+    Boolean(playbackStatus.currentTrackId || playbackStatus.filePath);
 
   return setPlaybackStatusSnapshot({
     audioStatus: null,
     playbackStatus,
-    playbackVisualIntent: wasPlaying
+    playbackVisualIntent: shouldTrackSwitchIntent
       ? {
           type: 'track-switch',
           state: 'playing',
           currentTrackId: playbackStatus.currentTrackId,
           filePath: playbackStatus.filePath,
+          expectedPositionMs: Math.max(0, playbackStatus.positionMs),
           startedAtMs: Date.now(),
         }
       : null,
@@ -225,7 +255,10 @@ export const beginPlaybackSwitchSnapshot = (playbackStatus: PlaybackStatus): Pla
 
 export const getVisualPlaybackState = (
   statusSnapshot: Pick<PlaybackStatusSnapshot, 'audioStatus' | 'playbackStatus' | 'playbackVisualIntent'>,
-): AudioPlaybackState => statusSnapshot.playbackVisualIntent?.state ?? statusSnapshot.audioStatus?.state ?? statusSnapshot.playbackStatus?.state ?? 'idle';
+): AudioPlaybackState =>
+  statusSnapshot.playbackVisualIntent && Date.now() - statusSnapshot.playbackVisualIntent.startedAtMs <= trackSwitchVisualIntentGuardMs
+    ? statusSnapshot.playbackVisualIntent.state
+    : statusSnapshot.audioStatus?.state ?? statusSnapshot.playbackStatus?.state ?? 'idle';
 
 export const refreshPlaybackStatus = async (): Promise<PlaybackStatusSnapshot> => {
   const echo = window.echo;

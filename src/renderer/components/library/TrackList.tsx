@@ -40,6 +40,8 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, ca
   const loadRequestedRef = useRef(false);
   const loadPreviousRequestedRef = useRef(false);
   const visibleTrackIdsKeyRef = useRef('');
+  const visibleTrackIdsTimerRef = useRef<number | null>(null);
+  const pendingVisibleTrackIdsRef = useRef<{ key: string; trackIds: string[] } | null>(null);
   const virtualCount = Math.max(totalCount ?? tracks.length, tracks.length);
   const safeLoadedStartIndex = Math.max(0, Math.min(loadedStartIndex, Math.max(0, virtualCount - tracks.length)));
   const loadedBoundary = Math.min(virtualCount, safeLoadedStartIndex + Math.min(loadedCount, tracks.length));
@@ -108,6 +110,11 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, ca
 
   useEffect(() => {
     if (!onVisibleTrackIdsChange) {
+      if (visibleTrackIdsTimerRef.current !== null) {
+        window.clearTimeout(visibleTrackIdsTimerRef.current);
+        visibleTrackIdsTimerRef.current = null;
+      }
+      pendingVisibleTrackIdsRef.current = null;
       return;
     }
 
@@ -120,9 +127,31 @@ export const TrackList = memo(({ tracks, currentTrackId, canLoadMore = false, ca
       return;
     }
 
-    visibleTrackIdsKeyRef.current = visibleTrackIdsKey;
-    onVisibleTrackIdsChange(visibleTrackIds);
+    pendingVisibleTrackIdsRef.current = { key: visibleTrackIdsKey, trackIds: visibleTrackIds };
+    if (visibleTrackIdsTimerRef.current !== null) {
+      window.clearTimeout(visibleTrackIdsTimerRef.current);
+    }
+    visibleTrackIdsTimerRef.current = window.setTimeout(() => {
+      visibleTrackIdsTimerRef.current = null;
+      const pending = pendingVisibleTrackIdsRef.current;
+
+      if (!pending || visibleTrackIdsKeyRef.current === pending.key) {
+        return;
+      }
+
+      visibleTrackIdsKeyRef.current = pending.key;
+      pendingVisibleTrackIdsRef.current = null;
+      onVisibleTrackIdsChange(pending.trackIds);
+    }, 96);
   }, [onVisibleTrackIdsChange, renderedVirtualItems, safeLoadedStartIndex, tracks]);
+
+  useEffect(() => {
+    return () => {
+      if (visibleTrackIdsTimerRef.current !== null) {
+        window.clearTimeout(visibleTrackIdsTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleScroll = (): void => {
     const scrollElement = scrollParentRef.current;

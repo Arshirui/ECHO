@@ -1,14 +1,14 @@
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import type { AppSettings, RememberedWindowSize } from '../../shared/types/appSettings';
 import { getAppSettings, setAppSettings } from './appSettings';
 import { bindBackgroundPlaybackShortcutsToWindow } from './backgroundPlaybackShortcuts';
 import { bindTaskbarPlaybackIntegration } from './taskbarPlaybackIntegration';
-import { ensureTray, isAppQuitRequested } from './tray';
+import { ensureTray, isAppQuitRequested, requestAppQuit } from './tray';
 import { clearMainWindow, setMainWindow } from './windowManager';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
-import { closeDevConsoleWindow, recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
+import { closeDevConsoleWindow, recordMainRuntimeIssue, recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
 import { markStartupStage } from '../diagnostics/StartupDiagnostics';
 
 const mainOutputDir = import.meta.dirname;
@@ -100,6 +100,19 @@ export const createMainWindow = (): BrowserWindow => {
       sourceId,
     });
   });
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    recordMainRuntimeIssue('renderer-load-failed', errorDescription || 'Renderer failed to load', {
+      reason: validatedURL,
+      exitCode: errorCode,
+      sourceId: isMainFrame ? 'main-frame' : 'sub-frame',
+    });
+  });
+  window.webContents.on('preload-error', (_event, preloadPath, error) => {
+    recordMainRuntimeIssue('preload-error', error.message, {
+      stack: error.stack,
+      sourceId: preloadPath,
+    });
+  });
 
   const scheduleRememberSize = (): void => {
     if (rememberSizeTimer !== null) {
@@ -143,6 +156,11 @@ export const createMainWindow = (): BrowserWindow => {
 
     clearMainWindow();
     closeDevConsoleWindow();
+
+    if (!isAppQuitRequested() && !getAppSettings().hideToTrayOnClose) {
+      requestAppQuit();
+      app.quit();
+    }
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {

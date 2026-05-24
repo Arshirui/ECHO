@@ -1537,6 +1537,28 @@ describe('SettingsPage', () => {
     );
   });
 
+  it('renders shortcut settings when saved settings are missing a newer shortcut action', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const legacyLocalShortcuts = { ...createDefaultLocalShortcuts() } as Partial<ReturnType<typeof createDefaultLocalShortcuts>>;
+    const legacyGlobalShortcuts = { ...createDefaultGlobalShortcuts() } as Partial<ReturnType<typeof createDefaultGlobalShortcuts>>;
+    delete legacyLocalShortcuts.toggleDesktopLyricsLock;
+    delete legacyGlobalShortcuts.toggleDesktopLyricsLock;
+    getSettingsMock.mockResolvedValue({
+      ...settings,
+      localShortcuts: legacyLocalShortcuts,
+      globalShortcuts: legacyGlobalShortcuts,
+    } as AppSettings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    fireEvent.click(screen.getAllByText('settings.nav.shortcuts.label')[0]);
+
+    expect(screen.getByText('settings.shortcuts.action.toggleDesktopLyricsLock.title')).toBeTruthy();
+  });
+
   it('records a single-key global shortcut from Settings', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);

@@ -137,6 +137,46 @@ describe('BilibiliStreamingProvider', () => {
     });
   });
 
+  it('tries normalized query variants when the exact Bilibili query has no videos', async () => {
+    const fetchRunner = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 0, data: { numResults: 0, result: [] } }))
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(jsonResponse({
+        code: 0,
+        data: {
+          numResults: 1,
+          result: [
+            {
+              bvid: 'BV1VARIANT',
+              title: 'Echo Lab',
+              author: 'Variant UP',
+              duration: '02:30',
+              pic: '//i0.hdslb.com/bfs/archive/variant.jpg',
+            },
+          ],
+        },
+      }));
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const result = await new BilibiliStreamingProvider().search({
+      provider: 'bilibili',
+      query: 'Echo - Lab',
+      mediaTypes: ['track'],
+      page: 1,
+      pageSize: 10,
+    });
+
+    expect(String(fetchRunner.mock.calls[0][0])).toContain('keyword=Echo+-+Lab');
+    expect(String(fetchRunner.mock.calls[2][0])).toContain('keyword=Echo+Lab');
+    expect(result.query).toBe('Echo - Lab');
+    expect(result.tracks[0]).toMatchObject({
+      providerTrackId: 'BV1VARIANT',
+      title: 'Echo Lab',
+      artist: 'Variant UP',
+    });
+  });
+
   it('falls back to the Bilibili search page when the JSON API is blocked', async () => {
     const fetchRunner = vi
       .fn()

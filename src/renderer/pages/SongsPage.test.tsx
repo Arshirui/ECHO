@@ -483,18 +483,18 @@ describe('SongsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Song One' }));
 
     await waitFor(() =>
-      expect(playLocalFile).toHaveBeenCalledWith({
+      expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({
         filePath: track.path,
         trackId: track.id,
-        probe: {
+        probe: expect.objectContaining({
           durationSeconds: track.duration,
           fileSampleRate: track.sampleRate,
           channels: 2,
           codec: track.codec,
           bitDepth: track.bitDepth,
           bitrate: track.bitrate,
-        },
-      }),
+        }),
+      })),
     );
     await waitFor(() => expect(screen.getByTestId('current-track-id').textContent).toBe('track-1'));
   });

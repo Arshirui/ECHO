@@ -611,7 +611,10 @@ class ConfigurableStartupFailingBridge extends EventEmitter {
 }
 
 const createAudioSessionForTest = (dependencies: AudioSessionDependencies): AudioSession => {
-  const session = new AudioSession(dependencies);
+  const session = new AudioSession({
+    persistJuceDecodePreference: () => undefined,
+    ...dependencies,
+  });
 
   if (!dependencies.juceDecoder) {
     (session as unknown as { outputSettings: { useJuceDecode: boolean } }).outputSettings.useJuceDecode = false;
@@ -640,6 +643,7 @@ const createSessionHarness = (
       bridges.push(bridge);
       return bridge;
     },
+    persistJuceDecodePreference: () => undefined,
     logger: noopLogger,
     ...sessionOptions,
   });
@@ -670,6 +674,7 @@ const createLongRunningSessionHarness = (
       bridges.push(bridge);
       return bridge;
     },
+    persistJuceDecodePreference: () => undefined,
     logger: noopLogger,
     ...sessionOptions,
   });
@@ -2365,8 +2370,10 @@ describe('Audio Core sample-rate regression guard', () => {
 
   it('falls back to FFmpeg when resident JUCE decode exceeds the first PCM startup budget', async () => {
     const juceDecoder = new ReadyFailingJuceDecoder(new Error('echo-audio-host juce_decode_timeout_waiting_for_first_pcm'));
+    const persistJuceDecodePreference = vi.fn();
     const { decoder, session } = createSessionHarness([probe('slow-first-pcm.flac', 48000)], [48000], [], {
       juceDecoder,
+      persistJuceDecodePreference,
     });
 
     const status = await session.playLocalFile({
@@ -2378,6 +2385,7 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(decoder.decodeRequests).toHaveLength(1);
     expect(status.activeDecodeBackendImpl).toBe('ffmpeg');
     expect(status.warnings).toContain('juce_decode_fell_back_to_ffmpeg');
+    expect(persistJuceDecodePreference).toHaveBeenCalledWith(false);
   });
 
   it('suspends JUCE decode after a startup failure so the next playback starts on FFmpeg', async () => {
@@ -4024,6 +4032,47 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(decoder.decodeRequests).toHaveLength(1);
   });
 
+  it('does not report a position jump immediately after changing playback speed', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-25T00:00:00.000Z'));
+    const reportAudioError = vi.fn();
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)], [44100], [], {
+      disableWatchdogTimer: true,
+      reportAudioError,
+    });
+
+    try {
+      await session.playLocalFile({ filePath: 'song.flac', trackId: 'track-speed', output: { outputMode: 'shared' } });
+      await vi.advanceTimersByTimeAsync(3000);
+      bridges[0].emit('position', 12 * 44100, {
+        positionFrames: 12 * 44100,
+        bufferedFrames: 4410,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+
+      await session.setOutput({ playbackRate: 1.2, playbackSpeedMode: 'nightcore' });
+      bridges[0].emit('position', 60 * 44100, {
+        positionFrames: 60 * 44100,
+        bufferedFrames: 4410,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      await Promise.resolve();
+
+      expect(reportAudioError).not.toHaveBeenCalledWith(expect.objectContaining({
+        message: 'unexpected_playback_position_jump',
+      }));
+      expect(session.getStatus().warnings).not.toContain('unexpected_playback_position_jump_detected');
+      expect(session.getStatus().warnings).not.toContain('unexpected_playback_position_jump_rebased');
+      expect(bridges).toHaveLength(1);
+      expect(bridges[0].stop).not.toHaveBeenCalled();
+    } finally {
+      session.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it('restoring the same shared output while playing does not restart at the current position', async () => {
     const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 48000)]);
 
@@ -4515,6 +4564,68 @@ describe('AudioSession playback watchdog', () => {
     }
   });
 
+  it('rebases exclusive output instead of restarting when native position reports a forward glitch', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-25T00:00:00.000Z'));
+    const reportAudioError = vi.fn();
+    const longProbe = {
+      ...probe('exclusive-song.flac', 44100),
+      bitDepth: 16,
+      durationSeconds: 260,
+    };
+    const { bridges, decoder, session } = createLongRunningSessionHarness([longProbe], [44100], [], {
+      disableWatchdogTimer: true,
+      reportAudioError,
+    });
+
+    try {
+      await session.playLocalFile({
+        filePath: 'exclusive-song.flac',
+        trackId: 'track-exclusive',
+        output: { outputMode: 'exclusive' },
+      });
+
+      vi.advanceTimersByTime(3000);
+      bridges[0].emit('position', 60 * 44100, {
+        positionFrames: 60 * 44100,
+        bufferedFrames: 4410,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      vi.advanceTimersByTime(1000);
+      bridges[0].emit('position', 180 * 44100, {
+        positionFrames: 180 * 44100,
+        bufferedFrames: 4410,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(bridges).toHaveLength(1);
+      expect(bridges[0].stop).not.toHaveBeenCalled();
+      expect(decoder.decodeRequests).toHaveLength(1);
+      expect(reportAudioError).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'unexpected_playback_position_jump',
+        phase: 'unexpected-playback-position-jump',
+        severity: 'recoverable',
+        recovered: true,
+      }));
+      expect(reportAudioError.mock.calls[0][0].details).toMatchObject({
+        previousPositionSeconds: 60,
+        reportedPositionSeconds: 180,
+        recoveryAction: 'rebase_output_clock_at_expected_position',
+      });
+      expect(session.getStatus().outputMode).toBe('exclusive');
+      expect(session.getStatus().warnings).toContain('unexpected_playback_position_jump_rebased');
+      expect(session.getStatus().warnings).not.toContain('unexpected_playback_position_jump_detected');
+    } finally {
+      session.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it('recovers stuck native output while playing', async () => {
     const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 44100)], [], [], {
       disableWatchdogTimer: true,
@@ -4997,6 +5108,99 @@ describe('AudioSession playback watchdog', () => {
     expect(session.getStatus().sharedStabilityTier).toBe('recovery');
   });
 
+  it('does not fall back from exclusive output during startup underrun grace', async () => {
+    const exclusiveProbe = { ...probe('exclusive.flac', 48000), bitDepth: 16 };
+    const decoder = new FakeDecoder(new Map([['exclusive.flac', exclusiveProbe]]));
+    const bridges: FakeBridge[] = [];
+    const readyBridges = [new FakeBridge(48000, { format: 'pcm16' }), new FakeBridge(48000)];
+    let bridgeIndex = 0;
+    const session = createAudioSessionForTest({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => {
+        const bridge = readyBridges[bridgeIndex++] ?? new FakeBridge(48000);
+        bridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+    let now = 1_000_000;
+    const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+    try {
+      await session.playLocalFile({ filePath: 'exclusive.flac', trackId: 'track-exclusive', output: { outputMode: 'exclusive' } });
+      bridges[0].emit('position', 48000, {
+        positionFrames: 48000,
+        bufferedFrames: 0,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      now += 4_000;
+      bridges[0].emit('position', 192000, {
+        positionFrames: 192000,
+        bufferedFrames: 0,
+        underrunCallbacks: 3,
+        underrunFrames: 512,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(bridges[0].stop).not.toHaveBeenCalled();
+      expect(bridges).toHaveLength(1);
+      expect(session.getStatus().outputMode).toBe('exclusive');
+      expect(session.getStatus().warnings).not.toContain('exclusive_output_unstable');
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
+  it('does not fall back from exclusive output for small underrun bursts after startup grace', async () => {
+    const exclusiveProbe = { ...probe('exclusive.flac', 48000), bitDepth: 16 };
+    const decoder = new FakeDecoder(new Map([['exclusive.flac', exclusiveProbe]]));
+    const bridges: FakeBridge[] = [];
+    const readyBridges = [new FakeBridge(48000, { format: 'pcm16' }), new FakeBridge(48000)];
+    let bridgeIndex = 0;
+    const session = createAudioSessionForTest({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => {
+        const bridge = readyBridges[bridgeIndex++] ?? new FakeBridge(48000);
+        bridges.push(bridge);
+        return bridge;
+      },
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+    let now = 1_000_000;
+    const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+    try {
+      await session.playLocalFile({ filePath: 'exclusive.flac', trackId: 'track-exclusive', output: { outputMode: 'exclusive' } });
+      now += 12_000;
+      bridges[0].emit('position', 576000, {
+        positionFrames: 576000,
+        bufferedFrames: 0,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      now += 1;
+      bridges[0].emit('position', 576512, {
+        positionFrames: 576512,
+        bufferedFrames: 0,
+        underrunCallbacks: 3,
+        underrunFrames: 512,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(bridges[0].stop).not.toHaveBeenCalled();
+      expect(bridges).toHaveLength(1);
+      expect(session.getStatus().outputMode).toBe('exclusive');
+      expect(session.getStatus().warnings).not.toContain('exclusive_output_unstable');
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
   it('falls back from unstable exclusive output to shared after repeated native underruns', async () => {
     const exclusiveProbe = { ...probe('exclusive.flac', 48000), bitDepth: 16 };
     const decoder = new FakeDecoder(new Map([['exclusive.flac', exclusiveProbe]]));
@@ -5014,49 +5218,57 @@ describe('AudioSession playback watchdog', () => {
       logger: noopLogger,
       disableWatchdogTimer: true,
     });
+    let now = 1_000_000;
+    const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => now);
 
-    await session.playLocalFile({ filePath: 'exclusive.flac', trackId: 'track-exclusive', output: { outputMode: 'exclusive' } });
-    bridges[0].emit('position', 48000, {
-      positionFrames: 48000,
-      bufferedFrames: 0,
-      underrunCallbacks: 0,
-      underrunFrames: 0,
-    });
-    bridges[0].emit('position', 48512, {
-      positionFrames: 48512,
-      bufferedFrames: 0,
-      underrunCallbacks: 3,
-      underrunFrames: 512,
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    try {
+      await session.playLocalFile({ filePath: 'exclusive.flac', trackId: 'track-exclusive', output: { outputMode: 'exclusive' } });
+      now += 8_001;
+      bridges[0].emit('position', 432000, {
+        positionFrames: 432000,
+        bufferedFrames: 0,
+        underrunCallbacks: 0,
+        underrunFrames: 0,
+      });
+      now += 1;
+      bridges[0].emit('position', 432512, {
+        positionFrames: 432512,
+        bufferedFrames: 0,
+        underrunCallbacks: 3,
+        underrunFrames: 4800,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(bridges[0].stop).toHaveBeenCalledTimes(1);
-    expect(bridges).toHaveLength(2);
-    expect(bridges[1].startOptions).toMatchObject({
-      exclusive: false,
-      asio: false,
-    });
-    expect(bridges[1].startOptions?.startSeconds).toBeCloseTo(48512 / 48000);
-    expect(session.getStatus().outputMode).toBe('shared');
-    expect(session.getStatus().warnings).toContain('exclusive_output_unstable');
-    expect(session.getStatus().warnings).toContain('exclusive_output_fell_back_to_shared');
-    const fallbackEvent = session.getDiagnostics().recentPlaybackEvents?.find(
-      (event) => event.kind === 'watchdog_recovery' && event.reason === 'exclusive_output_unstable',
-    );
-    expect(fallbackEvent?.details).toMatchObject({
-      bitDepth: 16,
-      fileSampleRate: 48000,
-      decoderOutputSampleRate: 48000,
-      requestedOutputSampleRate: 48000,
-      actualDeviceSampleRate: 48000,
-      nativeOutputFormat: 'pcm16',
-      nativeBufferedMs: 0,
-      nativeUnderrunCallbacks: 3,
-      nativeUnderrunFrames: 512,
-      nativeUnderrunCallbackDelta: 3,
-      nativeUnderrunFrameDelta: 512,
-    });
-    expect(fallbackEvent?.details?.nativeUnderrunWindowMs).toEqual(expect.any(Number));
+      expect(bridges[0].stop).toHaveBeenCalledTimes(1);
+      expect(bridges).toHaveLength(2);
+      expect(bridges[1].startOptions).toMatchObject({
+        exclusive: false,
+        asio: false,
+      });
+      expect(bridges[1].startOptions?.startSeconds).toBeCloseTo(432512 / 48000);
+      expect(session.getStatus().outputMode).toBe('shared');
+      expect(session.getStatus().warnings).toContain('exclusive_output_unstable');
+      expect(session.getStatus().warnings).toContain('exclusive_output_fell_back_to_shared');
+      const fallbackEvent = session.getDiagnostics().recentPlaybackEvents?.find(
+        (event) => event.kind === 'watchdog_recovery' && event.reason === 'exclusive_output_unstable',
+      );
+      expect(fallbackEvent?.details).toMatchObject({
+        bitDepth: 16,
+        fileSampleRate: 48000,
+        decoderOutputSampleRate: 48000,
+        requestedOutputSampleRate: 48000,
+        actualDeviceSampleRate: 48000,
+        nativeOutputFormat: 'pcm16',
+        nativeBufferedMs: 0,
+        nativeUnderrunCallbacks: 3,
+        nativeUnderrunFrames: 4800,
+        nativeUnderrunCallbackDelta: 3,
+        nativeUnderrunFrameDelta: 4800,
+      });
+      expect(fallbackEvent?.details?.nativeUnderrunWindowMs).toEqual(expect.any(Number));
+    } finally {
+      dateNow.mockRestore();
+    }
   });
 
   it('upgrades ASIO output after repeated native underruns', async () => {

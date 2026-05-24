@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AudioStatus } from '../../../shared/types/audio';
 import type { EqState } from '../../../shared/types/eq';
-import { createDefaultLocalShortcuts, type GlobalShortcutAction } from '../../../shared/types/globalShortcuts';
+import { createDefaultGlobalShortcuts, createDefaultLocalShortcuts, type GlobalShortcutAction } from '../../../shared/types/globalShortcuts';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type { SmtcCommand } from '../../../shared/types/smtc';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
@@ -532,6 +532,15 @@ describe('PlayerBar', () => {
 
     act(() => {
       audioStatusHandler?.({
+        ...audioStatus(secondTrack),
+        positionSeconds: 17,
+      });
+    });
+
+    expect(Number((screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement).value)).toBe(0);
+
+    act(() => {
+      audioStatusHandler?.({
         ...audioStatus(firstTrack),
         state: 'paused',
       });
@@ -546,6 +555,15 @@ describe('PlayerBar', () => {
     });
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy());
+
+    act(() => {
+      audioStatusHandler?.({
+        ...audioStatus(secondTrack),
+        positionSeconds: 17,
+      });
+    });
+
+    expect(Number((screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement).value)).toBe(0);
   });
 
   it('uses current-track audio status when playback status is stale', async () => {
@@ -1613,6 +1631,64 @@ describe('PlayerBar', () => {
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: secondTrack.id })));
   });
 
+  it('does not crash when saved shortcut settings are missing newer actions', async () => {
+    const track = makeTrack(1);
+    const localShortcuts = createDefaultLocalShortcuts();
+    const globalShortcuts = createDefaultGlobalShortcuts();
+    delete (localShortcuts as Partial<typeof localShortcuts>).toggleDesktopLyricsLock;
+    delete (globalShortcuts as Partial<typeof globalShortcuts>).toggleDesktopLyricsLock;
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'paused',
+          currentTrackId: track.id,
+          positionMs: 4000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true, localShortcuts, globalShortcuts }),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(track)),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTracks: vi.fn(),
+        getAlbums: vi.fn(),
+        getAlbumTracks: vi.fn(),
+        getSummary: vi.fn(),
+        chooseFolder: vi.fn(),
+        addFolder: vi.fn(),
+        getFolders: vi.fn(),
+        removeFolder: vi.fn(),
+        scanFolder: vi.fn(),
+        getScanStatus: vi.fn(),
+        cancelScan: vi.fn(),
+        getDiagnostics: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <PlaybackCommandController />
+        <QueueSeed tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Song 1');
+    await waitFor(() => expect(window.echo?.app?.getSettings).toHaveBeenCalled());
+  });
+
   it('handles boss key and playback speed global shortcut commands', async () => {
     const track = makeTrack(1);
     const globalShortcutHandlers: Array<(command: GlobalShortcutAction) => void> = [];
@@ -1693,6 +1769,7 @@ describe('PlayerBar', () => {
     const openAudioSettings = vi.fn();
     const openMvSettings = vi.fn();
     const openLyricsSettings = vi.fn();
+    const setDesktopLyricsLocked = vi.fn().mockResolvedValue({ locked: true });
     window.addEventListener('app:open-audio-settings', openAudioSettings);
     window.addEventListener('app:open-mv-settings', openMvSettings);
     window.addEventListener('app:open-lyrics-settings', openLyricsSettings);
@@ -1721,6 +1798,10 @@ describe('PlayerBar', () => {
         listDevices: vi.fn(),
         setOutput: vi.fn(),
       },
+      desktopLyrics: {
+        getState: vi.fn().mockResolvedValue({ locked: false }),
+        setLocked: setDesktopLyricsLocked,
+      },
       library: {
         getTracks: vi.fn(),
         getAlbums: vi.fn(),
@@ -1748,10 +1829,12 @@ describe('PlayerBar', () => {
     globalShortcutHandlers[0]?.('openAudioSettings');
     globalShortcutHandlers[0]?.('openMvSettings');
     globalShortcutHandlers[0]?.('openLyricsSettings');
+    globalShortcutHandlers[0]?.('toggleDesktopLyricsLock');
 
     expect(openAudioSettings).toHaveBeenCalledTimes(1);
     expect(openMvSettings).toHaveBeenCalledTimes(1);
     expect(openLyricsSettings).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(setDesktopLyricsLocked).toHaveBeenCalledWith(true));
     window.removeEventListener('app:open-audio-settings', openAudioSettings);
     window.removeEventListener('app:open-mv-settings', openMvSettings);
     window.removeEventListener('app:open-lyrics-settings', openLyricsSettings);

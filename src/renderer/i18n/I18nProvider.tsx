@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { Context } from 'react';
 import type { PropsWithChildren } from 'react';
 import { getAppBridge } from '../utils/echoBridge';
 import { isLocale, localeOptions, translations } from './locales';
@@ -16,7 +17,22 @@ type I18nContextValue = {
   t: (key: TranslationKey, options?: TranslateOptions) => string;
 };
 
-const I18nContext = createContext<I18nContextValue | null>(null);
+declare global {
+  interface Window {
+    __echoNextI18nContext?: Context<I18nContextValue | null>;
+  }
+}
+
+const getI18nContext = (): Context<I18nContextValue | null> => {
+  if (typeof window === 'undefined') {
+    return createContext<I18nContextValue | null>(null);
+  }
+
+  window.__echoNextI18nContext ??= createContext<I18nContextValue | null>(null);
+  return window.__echoNextI18nContext;
+};
+
+const I18nContext = getI18nContext();
 
 const readInitialLocale = (): Locale => {
   if (typeof window === 'undefined') {

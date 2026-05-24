@@ -19,6 +19,8 @@
   <span>&nbsp;|&nbsp;</span>
   <a href="./docs/USER_GUIDE.md">用户教程</a>
   <span>&nbsp;|&nbsp;</span>
+  <a href="./docs/ECHO_NEXT_LINUX_BUILD.md">Linux 构建指南</a>
+  <span>&nbsp;|&nbsp;</span>
   <a href="#开发与构建">开发与构建</a>
 </p>
 

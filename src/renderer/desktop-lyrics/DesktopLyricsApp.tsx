@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { Lock, Minus, Palette, Plus, RotateCcw, X } from 'lucide-react';
+import { Languages, Lock, Minus, Palette, Plus, RotateCcw, X } from 'lucide-react';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../../shared/types/desktopLyrics';
@@ -201,16 +201,15 @@ const getActiveIndex = (lyrics: DesktopLyricsStateSnapshot, clock: PlaybackClock
 
 const lineText = (line: LyricLine | null | undefined): string => line?.text.trim() ?? '';
 
-const secondaryLineText = (
+const secondaryLineTexts = (
   line: LyricLine | null | undefined,
-  nextLine: LyricLine | null | undefined,
   showRomanization: boolean,
   showTranslation: boolean,
-): string =>
-  (showTranslation ? line?.translation?.trim() : '') ||
-  (showRomanization ? line?.romanization?.trim() : '') ||
-  nextLine?.text.trim() ||
-  '';
+): string[] => {
+  const romanization = showRomanization ? line?.romanization?.trim() : '';
+  const translation = showTranslation ? line?.translation?.trim() : '';
+  return [romanization, translation].filter((text): text is string => Boolean(text));
+};
 
 export const DesktopLyricsApp = (): JSX.Element => {
   const [settings, setSettings] = useState<DesktopLyricsSettings>(fallbackSettings);
@@ -438,21 +437,24 @@ export const DesktopLyricsApp = (): JSX.Element => {
   }, []);
 
   const currentLine = activeIndex >= 0 ? lyrics.lines[activeIndex] : lyrics.lines[0];
-  const nextLine = activeIndex >= 0 ? lyrics.lines[activeIndex + 1] : lyrics.lines[1];
   const canShowRomanization = shouldShowRomanizationForLyrics(lyrics.lines);
   const primaryText =
     lyrics.kind === 'instrumental'
       ? '纯音乐，请欣赏'
       : lineText(currentLine) || (clockHasIdentity(activeClock) ? '暂无歌词' : 'ECHO NEXT');
-  const secondaryText =
+  const secondaryTexts =
     lyrics.kind === 'instrumental'
-      ? ''
-      : secondaryLineText(
+      ? []
+      : secondaryLineTexts(
         currentLine,
-        nextLine,
         settings.desktopLyricsRomanizationEnabled && canShowRomanization,
         settings.desktopLyricsTranslationEnabled,
-      ) || (clockHasIdentity(activeClock) ? 'Desktop Lyrics' : '等待播放');
+      );
+  const visibleSecondaryTexts = lyrics.kind === 'instrumental'
+    ? []
+    : lineText(currentLine)
+      ? secondaryTexts
+      : [clockHasIdentity(activeClock) ? 'Desktop Lyrics' : '等待播放'];
 
   const style = {
     '--desktop-lyrics-font-size': `${settings.desktopLyricsFontSizePx}px`,
@@ -478,7 +480,9 @@ export const DesktopLyricsApp = (): JSX.Element => {
       <section className="desktop-lyrics-stage" aria-label="Desktop lyrics">
         <div className="desktop-lyrics-lines">
           <strong>{primaryText}</strong>
-          <span>{secondaryText}</span>
+          {visibleSecondaryTexts.map((text, index) => (
+            <span key={`${index}-${text}`}>{text}</span>
+          ))}
         </div>
 
         {!settings.desktopLyricsLocked ? (
@@ -538,6 +542,30 @@ export const DesktopLyricsApp = (): JSX.Element => {
               value={settings.desktopLyricsColor}
               onChange={(event) => void patchStyle({ desktopLyricsColor: event.currentTarget.value })}
             />
+            <button
+              className="desktop-lyrics-menu-toggle"
+              type="button"
+              title="桌面歌词显示罗马音"
+              aria-label="桌面歌词显示罗马音"
+              aria-pressed={settings.desktopLyricsRomanizationEnabled}
+              onClick={() =>
+                void patchStyle({ desktopLyricsRomanizationEnabled: !settings.desktopLyricsRomanizationEnabled })}
+            >
+              <Languages size={14} />
+              <span>R</span>
+            </button>
+            <button
+              className="desktop-lyrics-menu-toggle"
+              type="button"
+              title="桌面歌词显示翻译"
+              aria-label="桌面歌词显示翻译"
+              aria-pressed={settings.desktopLyricsTranslationEnabled}
+              onClick={() =>
+                void patchStyle({ desktopLyricsTranslationEnabled: !settings.desktopLyricsTranslationEnabled })}
+            >
+              <Languages size={14} />
+              <span>译</span>
+            </button>
             <button type="button" title="锁定" aria-label="锁定" onClick={() => void setLocked()}>
               <Lock size={14} />
             </button>

@@ -14,6 +14,7 @@ export const globalShortcutActions = [
   'openAudioSettings',
   'openMvSettings',
   'openLyricsSettings',
+  'toggleDesktopLyricsLock',
 ] as const;
 
 export type GlobalShortcutAction = (typeof globalShortcutActions)[number];
@@ -59,6 +60,7 @@ export const recommendedGlobalShortcuts: GlobalShortcutSettings = {
   openAudioSettings: { enabled: false, accelerator: 'Ctrl+Alt+A' },
   openMvSettings: { enabled: false, accelerator: 'Ctrl+Alt+M' },
   openLyricsSettings: { enabled: false, accelerator: 'Ctrl+Alt+L' },
+  toggleDesktopLyricsLock: { enabled: false, accelerator: 'Ctrl+Alt+Shift+L' },
 };
 
 export const recommendedLocalShortcuts: LocalShortcutSettings = {
@@ -77,6 +79,7 @@ export const recommendedLocalShortcuts: LocalShortcutSettings = {
   openAudioSettings: { enabled: false, accelerator: null },
   openMvSettings: { enabled: false, accelerator: null },
   openLyricsSettings: { enabled: false, accelerator: null },
+  toggleDesktopLyricsLock: { enabled: false, accelerator: null },
 };
 
 const modifierAliases = new Map<string, string>([

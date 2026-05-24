@@ -1072,7 +1072,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       window.echo?.app?.getSettings?.().catch(() => null) ?? Promise.resolve(null),
     ])
       .then(([remembered, settings]) => {
-        const useJuceOutput = settings?.audioUseJuceOutput !== false;
+        const useJuceOutput = settings?.audioUseJuceOutput === true;
         const useJuceDecode = settings?.audioUseJuceDecode === true;
         const dsdOutputMode = settings?.audioDsdOutputMode === 'dop' ? 'dop' : 'pcm';
         const asioNativeDsdExperimentalEnabled = settings?.audioAsioNativeDsdExperimentalEnabled === true;

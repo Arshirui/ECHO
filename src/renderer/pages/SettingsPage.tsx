@@ -208,6 +208,7 @@ const globalShortcutActionMeta: Array<{
   { action: 'openAudioSettings', titleKey: 'settings.shortcuts.action.openAudioSettings.title', descriptionKey: 'settings.shortcuts.action.openAudioSettings.description' },
   { action: 'openMvSettings', titleKey: 'settings.shortcuts.action.openMvSettings.title', descriptionKey: 'settings.shortcuts.action.openMvSettings.description' },
   { action: 'openLyricsSettings', titleKey: 'settings.shortcuts.action.openLyricsSettings.title', descriptionKey: 'settings.shortcuts.action.openLyricsSettings.description' },
+  { action: 'toggleDesktopLyricsLock', titleKey: 'settings.shortcuts.action.toggleDesktopLyricsLock.title', descriptionKey: 'settings.shortcuts.action.toggleDesktopLyricsLock.description' },
 ];
 
 type ShortcutScope = 'local' | 'global';
@@ -320,6 +321,20 @@ const findDuplicateShortcutAction = (
     ) ?? null
   );
 };
+
+const mergeShortcutSettings = <T extends GlobalShortcutSettings | LocalShortcutSettings>(
+  defaults: T,
+  saved: Partial<T> | null | undefined,
+): T =>
+  Object.fromEntries(
+    globalShortcutActions.map((action) => [
+      action,
+      {
+        ...defaults[action],
+        ...(saved?.[action] ?? {}),
+      },
+    ]),
+  ) as T;
 
 const normalizeSharedBackend = (value: unknown): AudioSharedBackend =>
   value === 'windows' || value === 'directsound' || value === 'alsa' ? value : 'auto';
@@ -3953,11 +3968,11 @@ export const SettingsPage = (): JSX.Element => {
     [compatibleDevices, outputMode, t],
   );
   const localShortcuts = useMemo(
-    () => appSettings?.localShortcuts ?? createDefaultLocalShortcuts(),
+    () => mergeShortcutSettings(createDefaultLocalShortcuts(), appSettings?.localShortcuts),
     [appSettings?.localShortcuts],
   );
   const globalShortcuts = useMemo(
-    () => appSettings?.globalShortcuts ?? createDefaultGlobalShortcuts(),
+    () => mergeShortcutSettings(createDefaultGlobalShortcuts(), appSettings?.globalShortcuts),
     [appSettings?.globalShortcuts],
   );
   const segmentPlaybackStatus = sharedPlaybackStatus.playbackStatus;
@@ -4687,7 +4702,7 @@ export const SettingsPage = (): JSX.Element => {
         outputMode: nextOutputMode,
         sharedBackend: normalizedSharedBackend,
         latencyProfile: 'lowLatency',
-        useJuceOutput: appSettings?.audioUseJuceOutput !== false,
+        useJuceOutput: appSettings?.audioUseJuceOutput === true,
         useJuceDecode: appSettings?.audioUseJuceDecode === true,
         dsdOutputMode: appSettings?.audioDsdOutputMode === 'dop' ? 'dop' : 'pcm',
         asioNativeDsdExperimentalEnabled: appSettings?.audioAsioNativeDsdExperimentalEnabled === true,
@@ -4821,7 +4836,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleJuceOutputToggle = async (): Promise<void> => {
-    const nextUseJuceOutput = !(appSettings?.audioUseJuceOutput ?? true);
+    const nextUseJuceOutput = appSettings?.audioUseJuceOutput !== true;
     patchAppSettings({ audioUseJuceOutput: nextUseJuceOutput });
 
     const audio = getAudioBridge();
@@ -8221,9 +8236,9 @@ export const SettingsPage = (): JSX.Element => {
                   }
                 />
               </SettingRow>
-              <SettingRow title="JUCE 主输出" description="默认开启。FFmpeg 继续负责解码，JUCE 接管输出；失败时自动回退到兼容输出。">
+              <SettingRow title="JUCE 主输出" description="默认关闭。FFmpeg 兼容路径作为默认输出；需要时可手动开启 JUCE 输出，失败时自动回退。">
                 <ToggleButton
-                  active={appSettings?.audioUseJuceOutput ?? true}
+                  active={appSettings?.audioUseJuceOutput === true}
                   disabled={!appSettings}
                   onClick={() => void handleJuceOutputToggle()}
                 />

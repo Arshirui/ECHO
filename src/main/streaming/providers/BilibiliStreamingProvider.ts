@@ -19,6 +19,7 @@ import { streamingStableKey } from '../../../shared/types/streaming';
 import { getAccountService } from '../../accounts/AccountService';
 import { fetchWithNetworkProxy } from '../../network/networkFetch';
 import type { StreamingProvider } from '../StreamingProvider';
+import { streamingSearchQueryVariants } from '../StreamingSearchQueryVariants';
 import { asRecord, integer, streamingImageProxyUrl, text } from './chinaStreamingUtils';
 
 const provider = 'bilibili' as const;
@@ -578,22 +579,38 @@ export class BilibiliStreamingProvider implements StreamingProvider {
       };
     }
 
+    const variants = page === 1 ? streamingSearchQueryVariants(request.query, 6) : [request.query];
+    let fallbackResult: BilibiliSearchPage | null = null;
+
+    for (const query of variants) {
+      const variantRequest = query === request.query ? request : { ...request, query };
+      const result = await this.searchBilibiliHttp(variantRequest, page, pageSize);
+      fallbackResult ??= result;
+      if (result.tracks.length > 0) {
+        return searchResultFromTracks(request, mediaType, page, pageSize, result);
+      }
+    }
+
+    const ytDlpResult = await this.searchBilibiliWithYtDlp(request, page, pageSize);
+    if (ytDlpResult.tracks.length > 0 || !fallbackResult) {
+      return searchResultFromTracks(request, mediaType, page, pageSize, ytDlpResult);
+    }
+
+    return searchResultFromTracks(request, mediaType, page, pageSize, fallbackResult);
+  }
+
+  private async searchBilibiliHttp(request: StreamingSearchRequest, page: number, pageSize: number): Promise<BilibiliSearchPage> {
     const apiResult = await this.searchBilibiliApi(request, page, pageSize);
     if (apiResult && apiResult.tracks.length > 0) {
-      return searchResultFromTracks(request, mediaType, page, pageSize, apiResult);
+      return apiResult;
     }
 
     const webpageResult = await this.searchBilibiliWebpage(request, page, pageSize);
     if (webpageResult.tracks.length > 0) {
-      return searchResultFromTracks(request, mediaType, page, pageSize, webpageResult);
+      return webpageResult;
     }
 
-    const ytDlpResult = await this.searchBilibiliWithYtDlp(request, page, pageSize);
-    if (ytDlpResult.tracks.length > 0 || !apiResult) {
-      return searchResultFromTracks(request, mediaType, page, pageSize, ytDlpResult);
-    }
-
-    return searchResultFromTracks(request, mediaType, page, pageSize, apiResult);
+    return apiResult ?? webpageResult;
   }
 
   private async searchBilibiliApi(request: StreamingSearchRequest, page: number, pageSize: number): Promise<BilibiliSearchPage | null> {

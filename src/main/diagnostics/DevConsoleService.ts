@@ -8,6 +8,7 @@ import type {
   DiagnosticConsoleLevel,
   DiagnosticConsoleSnapshot,
   DiagnosticConsoleSource,
+  RendererErrorPayload,
 } from '../../shared/types/diagnostics';
 import { recordDiagnosticConsoleProblem } from './ExceptionRecorder';
 
@@ -240,6 +241,44 @@ export const recordRendererConsoleMessage = (details: {
   pushEntry('renderer', rendererLevelFromConsoleMessage(details.level), message, {
     line: details.lineNumber,
     sourceId: details.sourceId,
+  });
+};
+
+const appendOptionalLine = (lines: string[], label: string, value: unknown): void => {
+  if (typeof value === 'string' && value.trim()) {
+    lines.push(`${label}: ${value.trim()}`);
+  }
+};
+
+export const recordRendererRuntimeError = (payload: RendererErrorPayload): DiagnosticConsoleEntry => {
+  const lines = [`[renderer:${payload.source}] ${payload.message}`];
+  appendOptionalLine(lines, 'file', payload.filename);
+  if (typeof payload.lineno === 'number') {
+    lines.push(`line: ${payload.lineno}${typeof payload.colno === 'number' ? `:${payload.colno}` : ''}`);
+  }
+  appendOptionalLine(lines, 'stack', payload.stack);
+
+  return pushEntry('renderer', 'error', lines.join('\n'), {
+    line: payload.lineno,
+    sourceId: payload.filename,
+  });
+};
+
+export const recordMainRuntimeIssue = (
+  type: string,
+  message: string,
+  details?: DiagnosticConsoleEntry['details'] & { stack?: string; reason?: string; exitCode?: number },
+): DiagnosticConsoleEntry => {
+  const lines = [`[main:${type}] ${message}`];
+  appendOptionalLine(lines, 'reason', details?.reason);
+  if (typeof details?.exitCode === 'number') {
+    lines.push(`exitCode: ${details.exitCode}`);
+  }
+  appendOptionalLine(lines, 'stack', details?.stack);
+
+  return pushEntry('system', 'error', lines.join('\n'), {
+    line: details?.line,
+    sourceId: details?.sourceId,
   });
 };
 

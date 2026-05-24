@@ -59,7 +59,7 @@ const mvNetworkProviders: NetworkMvProviderId[] = ['bilibili', 'youtube'];
 const lyricsProviders: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic', 'musixmatch', 'genius', 'manual'];
 const defaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic'];
 export const defaultNetworkProxyBypassRules = '<local>;localhost;127.0.0.1;::1;*.local;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*';
-const appMemoryVersion = 5;
+const appMemoryVersion = 6;
 const locales: AppLocale[] = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP'];
 const appThemeModes: AppThemeMode[] = ['light', 'dark', 'system'];
 const appThemePresets: AppThemePreset[] = [
@@ -292,7 +292,7 @@ export const defaultSettings: AppSettings = {
   songsSort: 'default',
   rememberedAudioOutput: { ...defaultRememberedAudioOutput },
   hiddenAudioDeviceKeys: [],
-  audioUseJuceOutput: true,
+  audioUseJuceOutput: false,
   audioUseJuceDecode: false,
   audioDsdOutputMode: 'pcm',
   audioAsioNativeDsdExperimentalEnabled: false,
@@ -1214,7 +1214,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       sourceAppMemoryVersion,
     ),
     hiddenAudioDeviceKeys: normalizeHiddenAudioDeviceKeys(settings.hiddenAudioDeviceKeys),
-    audioUseJuceOutput: sourceAppMemoryVersion < appMemoryVersion ? true : settings.audioUseJuceOutput !== false,
+    audioUseJuceOutput: sourceAppMemoryVersion >= 6 && settings.audioUseJuceOutput === true,
     audioUseJuceDecode: sourceAppMemoryVersion >= 4 && settings.audioUseJuceDecode === true,
     audioDsdOutputMode: settings.audioDsdOutputMode === 'dop' ? 'dop' : 'pcm',
     audioAsioNativeDsdExperimentalEnabled: settings.audioAsioNativeDsdExperimentalEnabled === true,

@@ -47,9 +47,9 @@ body:has(.desktop-lyrics-app),
 .desktop-lyrics-lines strong,
 .desktop-lyrics-lines span {
   display: block;
-  max-width: min(94vw, 1500px);
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
   letter-spacing: 0;
   text-shadow:
@@ -131,6 +131,19 @@ body:has(.desktop-lyrics-app),
 .desktop-lyrics-menu button:focus-visible {
   background: rgb(255 255 255 / 0.18);
   outline: none;
+}
+
+.desktop-lyrics-menu-toggle[aria-pressed="true"] {
+  color: #ffffff;
+  border-color: rgb(147 197 253 / 0.54);
+  background: rgb(96 165 250 / 0.32);
+}
+
+.desktop-lyrics-menu-toggle span {
+  margin-left: -5px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .desktop-lyrics-menu output {

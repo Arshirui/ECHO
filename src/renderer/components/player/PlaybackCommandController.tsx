@@ -144,9 +144,11 @@ const buildLocalShortcutMap = (
   localShortcuts: LocalShortcutSettings,
   globalShortcuts: GlobalShortcutSettings,
 ): Map<string, GlobalShortcutAction> => {
+  const defaultGlobalShortcuts = createDefaultGlobalShortcuts();
+  const defaultLocalShortcuts = createDefaultLocalShortcuts();
   const globalAccelerators = new Set<string>();
   for (const action of globalShortcutActions) {
-    const binding = globalShortcuts[action];
+    const binding = globalShortcuts[action] ?? defaultGlobalShortcuts[action];
     if (binding.enabled && binding.accelerator) {
       const validation = validateGlobalShortcutAccelerator(binding.accelerator);
       if (validation.valid && validation.accelerator) {
@@ -161,7 +163,7 @@ const buildLocalShortcutMap = (
       continue;
     }
 
-    const binding = localShortcuts[action];
+    const binding = localShortcuts[action] ?? defaultLocalShortcuts[action];
     if (!binding.enabled || !binding.accelerator) {
       continue;
     }
@@ -326,6 +328,20 @@ export const PlaybackCommandController = (): null => {
     }
     void window.echo?.app?.minimize?.();
     await refreshPlaybackStatus();
+  }, []);
+
+  const toggleDesktopLyricsLock = useCallback(async (): Promise<void> => {
+    const desktopLyrics = window.echo?.desktopLyrics;
+    if (!desktopLyrics) {
+      return;
+    }
+
+    try {
+      const state = await desktopLyrics.getState();
+      await desktopLyrics.setLocked(state.locked !== true);
+    } catch {
+      // Best effort: shortcut failures should not affect playback commands.
+    }
   }, []);
 
   const commitSeek = useCallback(
@@ -521,6 +537,11 @@ export const PlaybackCommandController = (): null => {
         return;
       }
 
+      if (action === 'toggleDesktopLyricsLock') {
+        void toggleDesktopLyricsLock();
+        return;
+      }
+
       if (action === 'seekBackward') {
         void commitSeek(positionSeconds - 10);
         return;
@@ -530,7 +551,7 @@ export const PlaybackCommandController = (): null => {
         void commitSeek(positionSeconds + 10);
       }
     },
-    [commitSeek, handleBossKey, handleNext, handlePlayPause, handlePrevious, handleSpeedStep, handleStop, handleVolumeStep, positionSeconds],
+    [commitSeek, handleBossKey, handleNext, handlePlayPause, handlePrevious, handleSpeedStep, handleStop, handleVolumeStep, positionSeconds, toggleDesktopLyricsLock],
   );
 
   useEffect(() => {

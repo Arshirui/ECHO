@@ -8,6 +8,7 @@ import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../../shared/t
 import { getAppSettings, setAppSettings } from './appSettings';
 import { createMainWindowWebPreferences } from './createMainWindow';
 import { getMainWindow } from './windowManager';
+import { recordMainRuntimeIssue, recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
 
 const mainOutputDir = import.meta.dirname;
 const defaultDesktopLyricsSize = {
@@ -182,6 +183,22 @@ export const createDesktopLyricsWindow = (): BrowserWindow => {
 
   desktopLyricsWindow = window;
   window.setMenuBarVisibility(false);
+  window.webContents.on('console-message', (details) => {
+    recordRendererConsoleMessage(details);
+  });
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    recordMainRuntimeIssue('desktop-lyrics-load-failed', errorDescription || 'Desktop lyrics renderer failed to load', {
+      reason: validatedURL,
+      exitCode: errorCode,
+      sourceId: isMainFrame ? 'main-frame' : 'sub-frame',
+    });
+  });
+  window.webContents.on('preload-error', (_event, preloadPath, error) => {
+    recordMainRuntimeIssue('desktop-lyrics-preload-error', error.message, {
+      stack: error.stack,
+      sourceId: preloadPath,
+    });
+  });
   applyDesktopLyricsAlwaysOnTop(window);
   applyDesktopLyricsLockState(window);
 

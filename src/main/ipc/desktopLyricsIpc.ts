@@ -28,6 +28,12 @@ const normalizeStylePatch = (value: unknown): DesktopLyricsStylePatch => {
     ...(typeof input.desktopLyricsColor === 'string' ? { desktopLyricsColor: input.desktopLyricsColor } : {}),
     ...(typeof input.desktopLyricsStrokeColor === 'string' ? { desktopLyricsStrokeColor: input.desktopLyricsStrokeColor } : {}),
     ...(input.desktopLyricsOpacityPercent !== undefined ? { desktopLyricsOpacityPercent: Number(input.desktopLyricsOpacityPercent) } : {}),
+    ...(typeof input.desktopLyricsRomanizationEnabled === 'boolean'
+      ? { desktopLyricsRomanizationEnabled: input.desktopLyricsRomanizationEnabled }
+      : {}),
+    ...(typeof input.desktopLyricsTranslationEnabled === 'boolean'
+      ? { desktopLyricsTranslationEnabled: input.desktopLyricsTranslationEnabled }
+      : {}),
   };
 };
 

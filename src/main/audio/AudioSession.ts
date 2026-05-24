@@ -15,7 +15,7 @@ import { isCueTrackPath } from './CueSheet';
 import { isDsdCodec, isDsdFilePath, isDsfFilePath, resolveDsdDopTransportSampleRate, resolveDsdPcmOutputSampleRate, shouldProbeDsdNativeSampleRate } from './DsdProbe';
 import { createDsfDopStream, createDsfNativeDsdStream, readDsfDopInfo } from './DsdDopPipeline';
 import { AutomixAnalyzer } from './AutomixAnalyzer';
-import { getAppSettings } from '../app/appSettings';
+import { getAppSettings, setAppSettings } from '../app/appSettings';
 import { calculateReplayGain, dbToLinearGain, type ReplayGainCalculation, type ReplayGainTrackData } from '../../shared/utils/replayGain';
 import { normalizeAudioSharedBackendForPlatform } from '../../shared/utils/audioPlatformCapabilities';
 import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
@@ -221,6 +221,7 @@ export type AudioSessionDependencies = {
   createBridge?: () => OutputBridgeLike;
   isNativeHostAvailable?: () => boolean;
   reportAudioError?: (payload: AudioCrashReportPayload) => void;
+  persistJuceDecodePreference?: (enabled: boolean) => void;
   logger?: (message: string) => void;
   watchdogIntervalMs?: number;
   watchdogStallChecks?: number;
@@ -250,6 +251,7 @@ const playbackDiagnosticEventLimit = 180;
 const nativeUnderrunWindowMs = 15_000;
 const nativeUnderrunCallbackThreshold = 3;
 const nativeUnderrunFramesThresholdMs = 100;
+const exclusiveNativeUnderrunStartupGraceMs = 8_000;
 const nativeTelemetryStatusIntervalMs = 1000;
 const levelMeterStatusIntervalMs = 1000;
 const sharedStabilityMemoryTtlMs = 30 * 60 * 1000;
@@ -1101,6 +1103,7 @@ export class AudioSession extends EventEmitter {
   private readonly createBridge: () => OutputBridgeLike;
   private readonly isNativeHostAvailable: () => boolean;
   private readonly reportAudioError: (payload: AudioCrashReportPayload) => void;
+  private readonly persistJuceDecodePreference: (enabled: boolean) => void;
   private readonly logger: (message: string) => void;
   private readonly verboseLogger: (message: string) => void;
   private readonly clock = new PlaybackClock();
@@ -1217,6 +1220,7 @@ export class AudioSession extends EventEmitter {
   private nativeStartupStatusGuardActive = false;
   private nativePositionReportedBeforePlaying = false;
   private nativePositionBeforePlayingBaselineSeconds: number | null = null;
+  private nativePlaybackStartedAtMs = 0;
   private nativeUnderrunWindow:
     | {
         startedAt: number;
@@ -1244,6 +1248,9 @@ export class AudioSession extends EventEmitter {
     this.createBridge = dependencies.createBridge ?? (() => new NativeOutputBridge({ logger: this.logger }));
     this.isNativeHostAvailable = dependencies.isNativeHostAvailable ?? isNativeOutputBridgeAvailable;
     this.reportAudioError = dependencies.reportAudioError ?? defaultAudioErrorReporter;
+    this.persistJuceDecodePreference = dependencies.persistJuceDecodePreference ?? ((enabled) => {
+      setAppSettings({ audioUseJuceDecode: enabled });
+    });
     this.watchdogIntervalMs = Math.max(250, dependencies.watchdogIntervalMs ?? defaultWatchdogIntervalMs);
     this.watchdogStallChecks = Math.max(1, dependencies.watchdogStallChecks ?? defaultWatchdogStallChecks);
     this.watchdogMaxRecoveriesPerTrack = Math.max(
@@ -1466,6 +1473,7 @@ export class AudioSession extends EventEmitter {
       this.speedTransform?.setPlaybackRate(this.outputSettings.playbackRate);
       this.bridge?.resetOutputClock?.(positionSeconds, this.outputSettings.playbackRate);
       this.clock.reset(positionSeconds, this.currentPlan?.actualDeviceSampleRate ?? this.currentPlan?.requestedOutputSampleRate ?? null);
+      this.markExpectedPositionDiscontinuity();
       this.emitStatus();
       return this.getStatus();
     }
@@ -1516,6 +1524,7 @@ export class AudioSession extends EventEmitter {
           this.speedTransform?.setPlaybackRate(this.outputSettings.playbackRate);
           this.bridge?.resetOutputClock?.(positionSeconds, this.outputSettings.playbackRate);
           this.clock.reset(positionSeconds, this.currentPlan?.actualDeviceSampleRate ?? this.currentPlan?.requestedOutputSampleRate ?? null);
+          this.markExpectedPositionDiscontinuity();
         }
 
         this.emitStatus();
@@ -3222,6 +3231,11 @@ export class AudioSession extends EventEmitter {
         ...this.outputSettings,
         useJuceDecode: false,
       };
+      try {
+        this.persistJuceDecodePreference(false);
+      } catch {
+        // Playback should continue on FFmpeg even if settings persistence fails.
+      }
       if (this.currentOutputSettings) {
         this.currentOutputSettings = {
           ...this.currentOutputSettings,
@@ -5705,6 +5719,19 @@ export class AudioSession extends EventEmitter {
       }
 
       const now = Date.now();
+      if (
+        this.currentPlan.outputMode === 'exclusive' &&
+        this.nativePlaybackStartedAtMs > 0 &&
+        now - this.nativePlaybackStartedAtMs < exclusiveNativeUnderrunStartupGraceMs
+      ) {
+        this.nativeUnderrunWindow = {
+          startedAt: now,
+          callbacks: this.nativeTelemetry.underrunCallbacks,
+          frames: this.nativeTelemetry.underrunFrames,
+        };
+        return;
+      }
+
       if (!this.nativeUnderrunWindow || now - this.nativeUnderrunWindow.startedAt > nativeUnderrunWindowMs) {
         this.nativeUnderrunWindow = {
           startedAt: now,
@@ -5720,6 +5747,10 @@ export class AudioSession extends EventEmitter {
       const frameThreshold = Math.max(1, Math.round((sampleRate * nativeUnderrunFramesThresholdMs) / 1000));
 
       if (callbackDelta < nativeUnderrunCallbackThreshold && frameDelta < frameThreshold) {
+        return;
+      }
+
+      if (this.currentPlan.outputMode === 'exclusive' && frameDelta < frameThreshold) {
         return;
       }
 
@@ -5879,6 +5910,7 @@ export class AudioSession extends EventEmitter {
     };
     this.lastNativeTelemetryStatusEmittedAt = 0;
     this.lastLevelMeterStatusEmittedAt = 0;
+    this.nativePlaybackStartedAtMs = 0;
     this.nativeUnderrunWindow = null;
   }
 
@@ -6232,6 +6264,8 @@ export class AudioSession extends EventEmitter {
 
   private markNativeStartupStatusGuard(): void {
     this.nativeStartupStatusGuardActive = true;
+    this.nativePlaybackStartedAtMs = Date.now();
+    this.nativeUnderrunWindow = null;
   }
 
   private isCurrentLivePcmStream(): boolean {
@@ -6489,7 +6523,7 @@ export class AudioSession extends EventEmitter {
   }
 
   private shouldRestartForUnexpectedPositionJump(jump: UnexpectedPositionJumpSnapshot): boolean {
-    return jump.outputMode === 'exclusive' || jump.outputMode === 'asio';
+    return jump.outputMode === 'asio';
   }
 
   private rebaseUnexpectedPositionJump(jump: UnexpectedPositionJumpSnapshot, token: number): void {

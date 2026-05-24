@@ -2,6 +2,7 @@ import { app } from 'electron';
 import type { WebContents } from 'electron';
 import { getCrashReportService } from './CrashReportService';
 import { showCrashRecoveryDialog } from './CrashRecoveryDialog';
+import { recordMainRuntimeIssue } from './DevConsoleService';
 import { sanitizeLogPayload } from './Logger';
 import { recoverClosedHelperPipe, type RuntimeSelfHealSource } from './RuntimeSelfHeal';
 
@@ -103,6 +104,9 @@ export const registerCrashHandlers = (): void => {
       message: error.message,
       stack: error.stack,
     });
+    recordMainRuntimeIssue('uncaughtException', error.message, {
+      stack: error.stack,
+    });
     showCrashRecoveryDialogSafely('main', error.message);
   });
 
@@ -121,6 +125,9 @@ export const registerCrashHandlers = (): void => {
       message: errorMessage(reason),
       stack: errorStack(reason),
       reason: errorMessage(reason),
+    });
+    recordMainRuntimeIssue('unhandledRejection', errorMessage(reason), {
+      stack: errorStack(reason),
     });
   });
 
@@ -143,6 +150,10 @@ export const registerCrashHandlers = (): void => {
         details,
       },
     });
+    recordMainRuntimeIssue('render-process-gone', message, {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
     showCrashRecoveryDialogSafely('renderer', message);
   });
 
@@ -160,6 +171,10 @@ export const registerCrashHandlers = (): void => {
       reason: details.reason,
       exitCode: details.exitCode,
       details,
+    });
+    recordMainRuntimeIssue('child-process-gone', `Child process gone: ${details.type}`, {
+      reason: details.reason,
+      exitCode: details.exitCode,
     });
   });
 };

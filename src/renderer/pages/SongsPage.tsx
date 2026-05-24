@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Download, FolderPlus, ListFilter, Play, RotateCw, Search, Trash2, X } from 'lucide-react';
 import type { DuplicateTrackIndexSummary, DuplicateTrackMember, EditableTrackTags, LibraryPlaylist, LibraryScanStatus, LibrarySort, LibraryTrack } from '../../shared/types/library';
 import { TrackContextMenu } from '../components/library/TrackContextMenu';
@@ -608,6 +608,9 @@ export const SongsPage = (): JSX.Element => {
       setError(error instanceof Error ? error.message : String(error));
     }
   }, []);
+  const handleOpenTrackArtistAction = useCallback((track: LibraryTrack): void => {
+    void handleOpenTrackArtist(track);
+  }, [handleOpenTrackArtist]);
 
   const handleOpenTrackAlbum = useCallback(async (track: LibraryTrack): Promise<void> => {
     try {
@@ -620,6 +623,9 @@ export const SongsPage = (): JSX.Element => {
       setError(error instanceof Error ? error.message : String(error));
     }
   }, []);
+  const handleOpenTrackAlbumAction = useCallback((track: LibraryTrack): void => {
+    void handleOpenTrackAlbum(track);
+  }, [handleOpenTrackAlbum]);
 
   const handleMaintainLibrary = async (): Promise<void> => {
     const library = window.echo?.library;
@@ -925,6 +931,9 @@ export const SongsPage = (): JSX.Element => {
       setVersionsBusy(false);
     }
   }, []);
+  const handleShowVersionsAction = useCallback((track: LibraryTrack): void => {
+    void handleShowVersions(track);
+  }, [handleShowVersions]);
 
   const handleOpenTrackMenu = useCallback((track: LibraryTrack, position: { x: number; y: number }): void => {
     const menuTracks = selectedTrackIds[track.id] && selectedTracks.length > 1 ? selectedTracks : [track];
@@ -940,6 +949,11 @@ export const SongsPage = (): JSX.Element => {
     },
     [appendToQueue, queueSource],
   );
+  const handleVisibleTrackIdsChange = useCallback((trackIds: string[]): void => {
+    startTransition(() => {
+      setVisibleTrackIds(trackIds);
+    });
+  }, []);
 
   const resolveTargetLocalPlaylist = useCallback(async () => {
     const library = window.echo?.library;
@@ -994,6 +1008,9 @@ export const SongsPage = (): JSX.Element => {
   const handleAddTrackToPlaylist = useCallback(async (track: LibraryTrack): Promise<void> => {
     await handleAddTracksToPlaylist([track]);
   }, [handleAddTracksToPlaylist]);
+  const handleAddTrackToPlaylistAction = useCallback((track: LibraryTrack): void => {
+    void handleAddTrackToPlaylist(track);
+  }, [handleAddTrackToPlaylist]);
 
   const resolveTrackLikedBeforeToggle = useCallback(async (trackId: string): Promise<boolean> => {
     const cached = likedTrackIdsRef.current[trackId];
@@ -1028,6 +1045,9 @@ export const SongsPage = (): JSX.Element => {
       setError(likeError instanceof Error ? likeError.message : String(likeError));
     }
   }, [mergeLikedTrackIds, resolveTrackLikedBeforeToggle]);
+  const handleToggleLikedAction = useCallback((track: LibraryTrack): void => {
+    void handleToggleLiked(track);
+  }, [handleToggleLiked]);
 
   const handleLikeTracks = useCallback(async (targetTracks: LibraryTrack[]): Promise<void> => {
     const library = window.echo?.library;
@@ -1382,17 +1402,17 @@ export const SongsPage = (): JSX.Element => {
         onEndReached={handleLoadMore}
         onStartReached={handleLoadPrevious}
         onAddToQueue={handleAddTrackToQueue}
-        onAddToPlaylist={(track) => void handleAddTrackToPlaylist(track)}
+        onAddToPlaylist={handleAddTrackToPlaylistAction}
         selectedTrackIds={selectedTrackIds}
         onToggleSelected={handleToggleTrackSelected}
-        onOpenArtist={(track) => void handleOpenTrackArtist(track)}
-        onOpenAlbum={(track) => void handleOpenTrackAlbum(track)}
+        onOpenArtist={handleOpenTrackArtistAction}
+        onOpenAlbum={handleOpenTrackAlbumAction}
         duplicateHiddenCounts={duplicateHiddenCounts}
-        onShowVersions={(track) => void handleShowVersions(track)}
+        onShowVersions={handleShowVersionsAction}
         likedTrackIds={likedTrackIds}
-        onToggleLiked={(track) => void handleToggleLiked(track)}
+        onToggleLiked={handleToggleLikedAction}
         onOpenTrackMenu={handleOpenTrackMenu}
-        onVisibleTrackIdsChange={setVisibleTrackIds}
+        onVisibleTrackIdsChange={handleVisibleTrackIdsChange}
         onPlay={handlePlayTrack}
       />
 

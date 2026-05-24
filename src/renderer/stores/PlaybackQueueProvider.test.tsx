@@ -1025,6 +1025,7 @@ describe('PlaybackQueueProvider playback history session', () => {
   it('publishes the requested track before slow playback IPC resolves', async () => {
     const first = makeTrack(1);
     const second = makeTrack(2);
+    let emitAudioStatus: ((status: AudioStatus) => void) | null = null;
     let resolveSecondPlay: (() => void) | null = null;
     const playLocalFile = vi
       .fn()
@@ -1043,7 +1044,7 @@ describe('PlaybackQueueProvider playback history session', () => {
             resolve({
               state: 'playing',
               currentTrackId: request.trackId,
-              positionMs: 0,
+              positionMs: 23000,
               durationMs: second.duration * 1000,
               filePath: request.filePath,
             });
@@ -1083,6 +1084,10 @@ describe('PlaybackQueueProvider playback history session', () => {
           volume: 1,
           error: null,
         }),
+        onStatus: vi.fn((listener: (status: AudioStatus) => void) => {
+          emitAudioStatus = listener;
+          return () => undefined;
+        }),
       },
     } as unknown as Window['echo'];
 
@@ -1104,6 +1109,8 @@ describe('PlaybackQueueProvider playback history session', () => {
         <div>
           <output aria-label="queue-track">{queue.currentTrackId ?? ''}</output>
           <output aria-label="shared-track">{status.playbackStatus?.currentTrackId ?? ''}</output>
+          <output aria-label="shared-position">{status.playbackStatus?.positionMs ?? ''}</output>
+          <output aria-label="shared-audio-track">{status.audioStatus?.currentTrackId ?? ''}</output>
           <output aria-label="visual-state">{status.playbackVisualIntent?.state ?? ''}</output>
           <button type="button" onClick={() => void queue.playNext()}>
             next
@@ -1127,6 +1134,52 @@ describe('PlaybackQueueProvider playback history session', () => {
 
     const finishSecondPlay = resolveSecondPlay ?? (() => undefined);
     finishSecondPlay();
+    await waitFor(() => expect(screen.getByLabelText('shared-position').textContent).toBe('0'));
+    expect(screen.getByLabelText('visual-state').textContent).toBe('playing');
+
+    if (!emitAudioStatus) {
+      throw new Error('audio status listener was not captured');
+    }
+
+    act(() => {
+      emitAudioStatus?.({
+        state: 'playing',
+        currentTrackId: first.id,
+        currentFilePath: first.path,
+        positionSeconds: 23,
+        durationSeconds: first.duration,
+        error: null,
+      } as AudioStatus);
+    });
+    expect(screen.getByLabelText('shared-track').textContent).toBe(second.id);
+    expect(screen.getByLabelText('shared-position').textContent).toBe('0');
+    expect(screen.getByLabelText('shared-audio-track').textContent).toBe('');
+
+    act(() => {
+      emitAudioStatus?.({
+        state: 'playing',
+        currentTrackId: second.id,
+        currentFilePath: second.path,
+        positionSeconds: 23,
+        durationSeconds: second.duration,
+        error: null,
+      } as AudioStatus);
+    });
+    expect(screen.getByLabelText('shared-track').textContent).toBe(second.id);
+    expect(screen.getByLabelText('shared-position').textContent).toBe('0');
+    expect(screen.getByLabelText('shared-audio-track').textContent).toBe('');
+
+    act(() => {
+      emitAudioStatus?.({
+        state: 'playing',
+        currentTrackId: second.id,
+        currentFilePath: second.path,
+        positionSeconds: 1,
+        durationSeconds: second.duration,
+        error: null,
+      } as AudioStatus);
+    });
+    await waitFor(() => expect(screen.getByLabelText('shared-audio-track').textContent).toBe(second.id));
     await waitFor(() => expect(screen.getByLabelText('visual-state').textContent).toBe(''));
   });
 
@@ -2256,5 +2309,64 @@ describe('PlaybackQueueProvider persisted queue session', () => {
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalled());
     expect(playLocalFile.mock.calls[0]?.[0].startSeconds).toBeUndefined();
+  });
+
+  it('consumes the restored resume position after playing another queue item', async () => {
+    const tracks = [makeTrack(1), makeTrack(2)];
+    const session = makePersistedQueueSession(tracks, {
+      resume: {
+        queueId: 'queue-1',
+        trackId: 'track-1',
+        filePath: tracks[0].path,
+        positionMs: 42000,
+        durationMs: 120000,
+        state: 'paused',
+        updatedAt: '2026-05-21T00:03:00.000Z',
+      },
+    });
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; startSeconds?: number }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: Math.round((request.startSeconds ?? 0) * 1000),
+        durationMs: 120000,
+        filePath: tracks.find((track) => track.id === request.trackId)?.path ?? '',
+      }),
+    );
+    window.echo = {
+      playback: {
+        getQueueSession: vi.fn().mockResolvedValue(session),
+        saveQueueSession: vi.fn(async (snapshot) => snapshot),
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const PlayProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      return (
+        <div>
+          {queue.items.map((item) => (
+            <button key={item.queueId} type="button" onClick={() => void queue.playQueueItem(item.queueId)}>
+              {item.track.title}
+            </button>
+          ))}
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <PlayProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Track 2' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Track 2' }));
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    expect(playLocalFile.mock.calls[0]?.[0].startSeconds).toBeUndefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Track 1' }));
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    expect(playLocalFile.mock.calls[1]?.[0].startSeconds).toBeUndefined();
   });
 });

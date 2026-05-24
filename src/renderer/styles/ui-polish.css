@@ -1078,7 +1078,18 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
   justify-self: stretch;
 }
 
+.settings-page .setting-row--shortcut-header {
+  min-height: 0;
+  padding: 6px 0 8px;
+  background: none;
+}
+
+.settings-page .setting-row--shortcut-header:hover {
+  background: none;
+}
+
 .settings-page .setting-row--shortcut-header > span {
+  width: 100%;
   justify-self: start;
 }
 

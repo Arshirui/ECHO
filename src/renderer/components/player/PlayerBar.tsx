@@ -41,6 +41,8 @@ const maxStaleStatusRegressionSeconds = 2.5;
 const seekAnchorMaxAgeSeconds = 3;
 const playbackRateChangeDiscontinuitySeconds = 0.35;
 const endedAutoAdvanceGraceSeconds = 5;
+const trackSwitchVisualIntentGuardMs = 2500;
+const trackSwitchVisualIntentPositionToleranceMs = 1500;
 const isStreamingProviderName = (provider: string | null | undefined): provider is StreamingProviderName =>
   streamingProviderNames.includes(provider as StreamingProviderName);
 const isReceiverTrackId = (value: string | null | undefined): value is string =>
@@ -114,6 +116,35 @@ type ReceiverPlaybackStatus = {
   metadata: ConnectMetadata | null;
   positionSeconds: number;
   durationSeconds: number;
+};
+
+type PlaybackVisualIntentSnapshot = {
+  currentTrackId: string | null;
+  filePath: string | null;
+  expectedPositionMs: number;
+  startedAtMs: number;
+};
+
+const isPlaybackVisualIntentActive = (intent: PlaybackVisualIntentSnapshot | null | undefined): intent is PlaybackVisualIntentSnapshot =>
+  Boolean(intent && Date.now() - intent.startedAtMs <= trackSwitchVisualIntentGuardMs);
+
+const audioStatusMatchesVisualIntent = (status: AudioStatus | null | undefined, intent: PlaybackVisualIntentSnapshot | null | undefined): boolean => {
+  if (!status) {
+    return false;
+  }
+
+  if (!isPlaybackVisualIntentActive(intent)) {
+    return true;
+  }
+
+  const matchesIntent =
+    Boolean(intent.currentTrackId && status.currentTrackId === intent.currentTrackId) ||
+    Boolean(intent.filePath && status.currentFilePath === intent.filePath);
+  if (!matchesIntent) {
+    return false;
+  }
+
+  return Math.abs(Math.round(Math.max(0, status.positionSeconds) * 1000) - intent.expectedPositionMs) <= trackSwitchVisualIntentPositionToleranceMs;
 };
 
 const streamingTrackWebUrl = (provider: StreamingProviderName, providerTrackId: string): string | null => {
@@ -467,7 +498,12 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
   );
 
   const applySharedPlaybackStatus = useCallback(
-    (snapshot: { playbackStatus: PlaybackStatus | null; audioStatus: AudioStatus | null; error: string | null }): void => {
+    (snapshot: {
+      playbackStatus: PlaybackStatus | null;
+      audioStatus: AudioStatus | null;
+      playbackVisualIntent: PlaybackVisualIntentSnapshot | null;
+      error: string | null;
+    }): void => {
       if (snapshot.playbackStatus) {
         setPlaybackStatus(snapshot.playbackStatus);
       }
@@ -477,8 +513,9 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
         setAudioStatus(null);
       }
       const shouldApplyAudioStatus = snapshotAudioStatus
-        ? isAudioStatusForPlayback(snapshotAudioStatus, snapshot.playbackStatus) ||
-          Boolean(snapshotAudioStatus.currentTrackId || snapshotAudioStatus.currentFilePath)
+        ? audioStatusMatchesVisualIntent(snapshotAudioStatus, snapshot.playbackVisualIntent) &&
+          (isAudioStatusForPlayback(snapshotAudioStatus, snapshot.playbackStatus) ||
+            Boolean(snapshotAudioStatus.currentTrackId || snapshotAudioStatus.currentFilePath))
         : false;
       let appliedAudioStatus = false;
       if (snapshotAudioStatus && shouldApplyAudioStatus) {
@@ -516,7 +553,8 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
       Boolean(currentTrack.path && playbackStatus.filePath === currentTrack.path));
   const currentPlaybackStatus = playbackStatusMatchesCurrentTrack ? playbackStatus : null;
   const audioStatusMatchesCurrentTrack =
-    audioStatus !== null &&
+    audioStatus != null &&
+    audioStatusMatchesVisualIntent(audioStatus, sharedPlaybackStatus.playbackVisualIntent) &&
     (!currentTrack ||
       Boolean(currentTrack.id && audioStatus?.currentTrackId === currentTrack.id) ||
       Boolean(currentTrack.path && audioStatus?.currentFilePath === currentTrack.path) ||

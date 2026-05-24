@@ -7,6 +7,7 @@ import {
   getDevConsoleSnapshot,
   openDevConsoleDevTools,
   openDevConsoleWindow,
+  recordRendererRuntimeError,
 } from '../diagnostics/DevConsoleService';
 
 const normalizeRendererError = (value: unknown): RendererErrorPayload => {
@@ -51,6 +52,8 @@ export const registerDiagnosticsIpc = (): void => {
     openDevConsoleDevTools(event.sender);
   });
   ipcMain.handle(IpcChannels.DiagnosticsReportRendererError, (_event, payload: unknown): void => {
-    getCrashReportService().reportRendererError(normalizeRendererError(payload));
+    const normalized = normalizeRendererError(payload);
+    getCrashReportService().reportRendererError(normalized);
+    recordRendererRuntimeError(normalized);
   });
 };

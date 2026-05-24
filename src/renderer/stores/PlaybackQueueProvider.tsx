@@ -45,8 +45,8 @@ const createPlaybackSpeedOutput = (
 
 const resolvePlaybackSpeedOutput = async (): Promise<Pick<AudioOutputSettings, 'playbackRate' | 'playbackSpeedMode'> | undefined> => {
   const [settings, status] = await Promise.all([
-    window.echo?.app?.getSettings?.().catch(() => null) ?? Promise.resolve(null),
-    window.echo?.audio?.getStatus?.().catch(() => null) ?? Promise.resolve(null),
+    Promise.resolve(window.echo?.app?.getSettings?.() ?? null).catch(() => null),
+    Promise.resolve(window.echo?.audio?.getStatus?.() ?? null).catch(() => null),
   ]);
   const settingsOutput = createPlaybackSpeedOutput(settings?.playbackSpeed, settings?.playbackSpeedMode);
   const statusOutput = createPlaybackSpeedOutput(status?.playbackRate, status?.playbackSpeedMode, settingsOutput?.playbackSpeedMode ?? null);
@@ -784,15 +784,14 @@ const statusForPlaybackFailure = (track: LibraryTrack): PlaybackStatus => ({
   filePath: track.stableKey ?? track.path,
 });
 
-const playbackStatusForItem = (status: PlaybackStatus, item: QueueItem): PlaybackStatus => {
-  if (status.currentTrackId === item.track.id) {
-    return status;
-  }
+const playbackStatusForItem = (status: PlaybackStatus, item: QueueItem, expectedStartSeconds?: number): PlaybackStatus => {
+  const hasExpectedStart = typeof expectedStartSeconds === 'number' && Number.isFinite(expectedStartSeconds);
 
   return {
     ...status,
     currentTrackId: item.track.id,
     durationMs: status.durationMs > 0 ? status.durationMs : Math.round(Math.max(0, item.track.duration) * 1000),
+    positionMs: hasExpectedStart ? Math.round(Math.max(0, expectedStartSeconds) * 1000) : status.positionMs,
   };
 };
 
@@ -1718,10 +1717,10 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         throw error;
       }
     })();
-    if (resumeStartSeconds !== undefined) {
+    if (resumeMemoryRef.current) {
       setResumeMemory(null);
     }
-    const status = playbackStatusForItem(rawStatus, item);
+    const status = playbackStatusForItem(rawStatus, item, resumeStartSeconds ?? 0);
     playbackStatusTokensRef.current.set(status, requestToken);
     playbackStatusPreviousItemRef.current.set(status, previousItem);
     if (playRequestTokenRef.current === requestToken) {

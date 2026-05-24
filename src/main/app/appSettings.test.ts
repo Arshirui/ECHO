@@ -918,20 +918,21 @@ describe('app settings normalization', () => {
     ).toBe(8192);
   });
 
-  it('normalizes JUCE output as the default main audio output', async () => {
+  it('normalizes JUCE output as an opt-in audio output', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
-    expect(normalizeSettings({}).audioUseJuceOutput).toBe(true);
-    expect(normalizeSettings({ audioUseJuceOutput: true }).audioUseJuceOutput).toBe(true);
+    expect(normalizeSettings({}).audioUseJuceOutput).toBe(false);
+    expect(normalizeSettings({ audioUseJuceOutput: true }).audioUseJuceOutput).toBe(false);
     expect(normalizeSettings({ appMemoryVersion: 5, audioUseJuceOutput: false }).audioUseJuceOutput).toBe(false);
-    expect(normalizeSettings({ appMemoryVersion: 5, audioUseJuceOutput: 'yes' as never }).audioUseJuceOutput).toBe(true);
+    expect(normalizeSettings({ appMemoryVersion: 6, audioUseJuceOutput: true }).audioUseJuceOutput).toBe(true);
+    expect(normalizeSettings({ appMemoryVersion: 6, audioUseJuceOutput: 'yes' as never }).audioUseJuceOutput).toBe(false);
   });
 
-  it('migrates older settings to JUCE main output once', async () => {
+  it('migrates older settings back to the FFmpeg compatibility output by default', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
-    expect(normalizeSettings({ appMemoryVersion: 1, audioUseJuceOutput: false }).audioUseJuceOutput).toBe(true);
-    expect(normalizeSettings({ appMemoryVersion: 1, audioUseJuceOutput: false }).appMemoryVersion).toBe(5);
+    expect(normalizeSettings({ appMemoryVersion: 1, audioUseJuceOutput: true }).audioUseJuceOutput).toBe(false);
+    expect(normalizeSettings({ appMemoryVersion: 1, audioUseJuceOutput: false }).appMemoryVersion).toBe(6);
   });
 
   it('normalizes JUCE decode as an opt-in local decode fast path', async () => {
