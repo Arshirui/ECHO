@@ -30,7 +30,8 @@ body:has(.desktop-lyrics-app),
   height: 100%;
   align-items: center;
   padding: 10px 18px;
-  -webkit-app-region: drag;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
 }
 
 .desktop-lyrics-lines {
@@ -38,10 +39,12 @@ body:has(.desktop-lyrics-app),
   min-width: 0;
   justify-items: center;
   gap: 3px;
+  pointer-events: auto;
   text-align: center;
   transform: scale(var(--desktop-lyrics-scale));
   transform-origin: center;
   font-family: var(--desktop-lyrics-font-family);
+  -webkit-app-region: drag;
 }
 
 .desktop-lyrics-lines strong,
@@ -60,7 +63,7 @@ body:has(.desktop-lyrics-app),
 }
 
 .desktop-lyrics-lines strong {
-  font-size: var(--desktop-lyrics-font-size);
+  font-size: calc(var(--desktop-lyrics-font-size) * var(--desktop-lyrics-text-fit-scale, 1));
   font-weight: 700;
   line-height: 1.18;
 }

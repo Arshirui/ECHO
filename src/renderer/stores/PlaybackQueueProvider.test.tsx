@@ -144,7 +144,7 @@ describe('PlaybackQueueProvider playback history session', () => {
 
   it('keeps queue navigation on HQPlayer after takeover even when Connect status is idle', async () => {
     const first = makeTrack(1);
-    const second = makeTrack(2);
+    const second: LibraryTrack = { ...makeTrack(2), unavailable: true };
     const playLocalFile = vi.fn();
     const connectTrack = vi.fn().mockImplementation(async (request: { track: LibraryTrack }) => ({
       deviceId: hqPlayerConnectDeviceId,
@@ -287,6 +287,7 @@ describe('PlaybackQueueProvider playback history session', () => {
   it('keeps the current playback speed when advancing to the next local track', async () => {
     const first = makeTrack(1);
     const second = makeTrack(2);
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
     const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
       Promise.resolve({
         state: 'playing',
@@ -471,9 +472,10 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(prepareMediaItem).not.toHaveBeenCalled();
   });
 
-  it('keeps automix off by default and sends a next-track plan only after opt-in', async () => {
+  it('keeps long-track Automix deferred at playback start after opt-in', async () => {
     const first = makeTrack(1);
     const second = makeTrack(2);
+    const third = makeTrack(3);
     const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
       Promise.resolve({
         state: 'playing',
@@ -500,7 +502,7 @@ describe('PlaybackQueueProvider playback history session', () => {
         }
 
         didStartRef.current = true;
-        queue.replaceQueue([first, second]);
+        queue.replaceQueue([first, second, third]);
         void queue.playTrack(first).then(() => {
           queue.setAutomixEnabled(true);
           return queue.playTrack(first);
@@ -518,16 +520,1047 @@ describe('PlaybackQueueProvider playback history session', () => {
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
     expect(playLocalFile.mock.calls[0]?.[0].automix).toBeUndefined();
-    expect(playLocalFile.mock.calls[1]?.[0].automix).toMatchObject({
-      enabled: true,
-      maxTransitionSeconds: 12,
-      beatAlignEnabled: true,
-      nextItem: {
-        mediaType: 'local',
-        trackId: second.id,
-        path: second.path,
+    expect(playLocalFile.mock.calls[1]?.[0].automix).toBeUndefined();
+  });
+
+  it('keeps short-track Automix off the initial play request to avoid startup premix', async () => {
+    const first = { ...makeTrack(1), duration: 48 };
+    const second = { ...makeTrack(2), duration: 48 };
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second]);
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return <output aria-label="current-duration">{queue.currentTrack?.duration ?? ''}</output>;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    expect(playLocalFile.mock.calls[0]?.[0].automix).toBeUndefined();
+  });
+
+  it('keeps unknown-duration Automix off the initial play request', async () => {
+    const first = { ...makeTrack(1), duration: 0 };
+    const second = makeTrack(2);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 0,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second]);
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return <output aria-label="current-duration">{queue.currentTrack?.duration ?? ''}</output>;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    expect(playLocalFile.mock.calls[0]?.[0].automix).toBeUndefined();
+  });
+
+  it('uses audio status duration when arming Automix for an unknown-duration track', async () => {
+    const first = { ...makeTrack(1), duration: 0 };
+    const second = makeTrack(2);
+    const audioStatusHandlers: Array<(status: AudioStatus) => void> = [];
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string; startSeconds?: number }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: Math.round((request.startSeconds ?? 0) * 1000),
+        durationMs: Math.round((request.trackId === first.id ? 48 : second.duration) * 1000),
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+      audio: {
+        onStatus: vi.fn((handler: (status: AudioStatus) => void) => {
+          audioStatusHandlers.push(handler);
+          return vi.fn();
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second]);
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return <output aria-label="current-duration">{queue.currentTrack?.duration ?? ''}</output>;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    audioStatusHandlers.at(-1)?.({
+      state: 'playing',
+      currentTrackId: first.id,
+      currentFilePath: first.path,
+      positionSeconds: 17,
+      durationSeconds: 48,
+      automix: { enabled: false, active: false, mode: 'off', transitionSeconds: null, transitionStartedAtSeconds: null, nextTrackId: null },
+    } as AudioStatus);
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByLabelText('current-duration').textContent).toBe('48'));
+    expect(playLocalFile.mock.calls[1]?.[0]).toMatchObject({
+      trackId: first.id,
+      startSeconds: 17,
+      probe: expect.objectContaining({
+        durationSeconds: 48,
+      }),
+      automix: {
+        enabled: true,
       },
     });
+  });
+
+  it('arms short-track Automix after playback has started instead of blocking startup', async () => {
+    const first = { ...makeTrack(1), duration: 48 };
+    const second = { ...makeTrack(2), duration: 48 };
+    const audioStatusHandlers: Array<(status: AudioStatus) => void> = [];
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string; startSeconds?: number }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: Math.round((request.startSeconds ?? 0) * 1000),
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+      audio: {
+        onStatus: vi.fn((handler: (status: AudioStatus) => void) => {
+          audioStatusHandlers.push(handler);
+          return vi.fn();
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second]);
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    audioStatusHandlers.at(-1)?.({
+      state: 'playing',
+      currentTrackId: first.id,
+      currentFilePath: first.path,
+      positionSeconds: 16,
+      durationSeconds: first.duration,
+      automix: { enabled: false, active: false, mode: 'off', transitionSeconds: null, transitionStartedAtSeconds: null, nextTrackId: null },
+    } as AudioStatus);
+    expect(playLocalFile).toHaveBeenCalledTimes(1);
+
+    audioStatusHandlers.at(-1)?.({
+      state: 'playing',
+      currentTrackId: first.id,
+      currentFilePath: first.path,
+      positionSeconds: 17,
+      durationSeconds: first.duration,
+      automix: { enabled: false, active: false, mode: 'off', transitionSeconds: null, transitionStartedAtSeconds: null, nextTrackId: null },
+    } as AudioStatus);
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    expect(playLocalFile.mock.calls[1]?.[0]).toMatchObject({
+      trackId: first.id,
+      startSeconds: 17,
+      automix: {
+        enabled: true,
+        nextItem: {
+          mediaType: 'local',
+          trackId: second.id,
+          path: second.path,
+        },
+      },
+    });
+  });
+
+  it('prewarms Automix analysis for the next local track after opt-in', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+        prepareLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixPrepareProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second]);
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixPrepareProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(prepareLocalFile).toHaveBeenCalledTimes(1));
+    expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      trackId: first.id,
+      automixAnalyze: true,
+    }));
+    expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      filePath: second.path,
+      trackId: second.id,
+      automixAnalyze: true,
+    }));
+  });
+
+  it('prewarms BPM analysis for the next Automix candidate when audio analysis is enabled', async () => {
+    const first = makeTrack(1);
+    const second = { ...makeTrack(2), bpm: null, bpmConfidence: null, beatOffsetMs: null, analysisStatus: 'none' as const };
+    const analyzedSecond = {
+      ...second,
+      bpm: 128,
+      bpmConfidence: 0.92,
+      beatOffsetMs: 16,
+      analysisStatus: 'complete' as const,
+      analysisUpdatedAt: '2026-05-25T01:00:00.000Z',
+    };
+    const startBpmAnalysis = vi.fn().mockResolvedValue({
+      id: 'bpm-job-1',
+      status: 'completed',
+      totalTracks: 1,
+      processedTracks: 1,
+      updatedTracks: 1,
+      errorCount: 0,
+      currentTrackTitle: null,
+      startedAt: '2026-05-25T00:59:00.000Z',
+      finishedAt: '2026-05-25T01:00:00.000Z',
+      errors: [],
+    });
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ audioAnalysisEnabled: true }),
+      },
+      library: {
+        startBpmAnalysis,
+        getBpmAnalysisStatus: vi.fn(),
+        getTrack: vi.fn().mockResolvedValue(analyzedSecond),
+      },
+      playback: {
+        playLocalFile,
+        prepareLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixBpmProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+      const queuedSecond = queue.items.find((item) => item.track.id === second.id)?.track ?? null;
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second]);
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return <output aria-label="next-bpm">{queuedSecond?.bpm ?? 'missing'}</output>;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixBpmProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(startBpmAnalysis).toHaveBeenCalledWith({ trackIds: [second.id] }));
+    await waitFor(() => expect(screen.getByLabelText('next-bpm').textContent).toBe('128'));
+    expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      trackId: second.id,
+      automixAnalyze: true,
+    }));
+  });
+
+  it('does not prewarm BPM analysis for Automix when audio analysis is disabled', async () => {
+    const first = makeTrack(1);
+    const second = { ...makeTrack(2), bpm: null, bpmConfidence: null, beatOffsetMs: null, analysisStatus: 'none' as const };
+    const getSettings = vi.fn().mockResolvedValue({ audioAnalysisEnabled: false });
+    const startBpmAnalysis = vi.fn();
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      app: {
+        getSettings,
+      },
+      library: {
+        startBpmAnalysis,
+        getBpmAnalysisStatus: vi.fn(),
+        getTrack: vi.fn(),
+      },
+      playback: {
+        playLocalFile,
+        prepareLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixBpmProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second]);
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixBpmProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(getSettings).toHaveBeenCalled());
+    await new Promise((resolve) => window.setTimeout(resolve, 220));
+    expect(startBpmAnalysis).not.toHaveBeenCalled();
+    expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      trackId: second.id,
+      automixAnalyze: true,
+    }));
+  });
+
+  it('arms Automix near the end of a long local track', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const third = makeTrack(3);
+    const audioStatusHandlers: Array<(status: AudioStatus) => void> = [];
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string; startSeconds?: number }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: Math.round((request.startSeconds ?? 0) * 1000),
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+      audio: {
+        onStatus: vi.fn((handler: (status: AudioStatus) => void) => {
+          audioStatusHandlers.push(handler);
+          return vi.fn();
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const status = useSharedPlaybackStatus();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second, third]);
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return (
+        <div>
+          <output aria-label="visual-state">{status.playbackVisualIntent?.state ?? ''}</output>
+          <output aria-label="visual-start">{status.playbackVisualIntent?.startedAtMs ?? ''}</output>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    expect(playLocalFile.mock.calls[0]?.[0].automix).toBeUndefined();
+    await waitFor(() => expect(screen.getByLabelText('visual-start').textContent).not.toBe(''));
+    const initialVisualStart = screen.getByLabelText('visual-start').textContent;
+
+    expect(audioStatusHandlers.length).toBeGreaterThan(0);
+    audioStatusHandlers.at(-1)?.({
+      state: 'playing',
+      currentTrackId: first.id,
+      currentFilePath: first.path,
+      positionSeconds: 80,
+      durationSeconds: first.duration,
+      automix: { enabled: false, active: false, mode: 'off', transitionSeconds: null, transitionStartedAtSeconds: null, nextTrackId: null },
+    } as AudioStatus);
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('visual-state').textContent).toBe('playing');
+    expect(screen.getByLabelText('visual-start').textContent).toBe(initialVisualStart);
+    expect(playLocalFile.mock.calls[1]?.[0]).toMatchObject({
+      trackId: first.id,
+      startSeconds: 80,
+      automix: {
+        enabled: true,
+        maxTransitionSeconds: 16,
+        beatAlignEnabled: true,
+        nextItem: {
+          mediaType: 'local',
+          trackId: second.id,
+          path: second.path,
+        },
+      },
+    });
+    expect(playLocalFile.mock.calls[1]?.[0].automixAnalyze).toBeUndefined();
+    expect(playLocalFile.mock.calls[1]?.[0].automix).not.toHaveProperty('upcomingItems');
+  });
+
+  it('arms long-track Automix with enough prebuffer window before the transition', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const audioStatusHandlers: Array<(status: AudioStatus) => void> = [];
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string; startSeconds?: number }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: Math.round((request.startSeconds ?? 0) * 1000),
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+      audio: {
+        onStatus: vi.fn((handler: (status: AudioStatus) => void) => {
+          audioStatusHandlers.push(handler);
+          return vi.fn();
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second]);
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    audioStatusHandlers.at(-1)?.({
+      state: 'playing',
+      currentTrackId: first.id,
+      currentFilePath: first.path,
+      positionSeconds: 59,
+      durationSeconds: first.duration,
+      automix: { enabled: false, active: false, mode: 'off', transitionSeconds: null, transitionStartedAtSeconds: null, nextTrackId: null },
+    } as AudioStatus);
+    expect(playLocalFile).toHaveBeenCalledTimes(1);
+
+    audioStatusHandlers.at(-1)?.({
+      state: 'playing',
+      currentTrackId: first.id,
+      currentFilePath: first.path,
+      positionSeconds: 60,
+      durationSeconds: first.duration,
+      automix: { enabled: false, active: false, mode: 'off', transitionSeconds: null, transitionStartedAtSeconds: null, nextTrackId: null },
+    } as AudioStatus);
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    expect(playLocalFile.mock.calls[1]?.[0]).toMatchObject({
+      trackId: first.id,
+      startSeconds: 60,
+      automix: {
+        enabled: true,
+        nextItem: {
+          mediaType: 'local',
+          trackId: second.id,
+          path: second.path,
+        },
+      },
+    });
+  });
+
+  it('arms Automix with a shuffled local next candidate instead of disabling it', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const third = makeTrack(3);
+    const randomSpy = vi.spyOn(Math, 'random')
+      .mockReturnValueOnce(0.99)
+      .mockReturnValueOnce(0.99);
+    const audioStatusHandlers: Array<(status: AudioStatus) => void> = [];
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string; startSeconds?: number }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: Math.round((request.startSeconds ?? 0) * 1000),
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+        prepareLocalFile,
+      },
+      audio: {
+        onStatus: vi.fn((handler: (status: AudioStatus) => void) => {
+          audioStatusHandlers.push(handler);
+          return vi.fn();
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixShuffleProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second, third]);
+        queue.toggleShuffle();
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixShuffleProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      trackId: third.id,
+      automixAnalyze: true,
+    })));
+    audioStatusHandlers.at(-1)?.({
+      state: 'playing',
+      currentTrackId: first.id,
+      currentFilePath: first.path,
+      positionSeconds: 80,
+      durationSeconds: first.duration,
+      automix: { enabled: false, active: false, mode: 'off', transitionSeconds: null, transitionStartedAtSeconds: null, nextTrackId: null },
+    } as AudioStatus);
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    expect(playLocalFile.mock.calls[1]?.[0]).toMatchObject({
+      trackId: first.id,
+      startSeconds: 80,
+      automix: {
+        enabled: true,
+        nextItem: {
+          mediaType: 'local',
+          trackId: third.id,
+          path: third.path,
+        },
+      },
+    });
+    expect(randomSpy).toHaveBeenCalled();
+    expect(randomSpy).toHaveBeenCalled();
+  });
+
+  it('arms shuffled Automix with a streaming next candidate', async () => {
+    const first = makeTrack(1);
+    const second: LibraryTrack = { ...makeTrack(2), unavailable: true };
+    const third: LibraryTrack = {
+      ...makeTrack(3),
+      id: 'streaming:qqmusic:third',
+      mediaType: 'streaming',
+      path: 'streaming:qqmusic:third',
+      provider: 'qqmusic',
+      providerTrackId: 'third',
+      stableKey: 'streaming:qqmusic:third',
+    };
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValueOnce(0.99);
+    const audioStatusHandlers: Array<(status: AudioStatus) => void> = [];
+    const prepareMediaItem = vi.fn().mockResolvedValue(undefined);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string; startSeconds?: number }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: Math.round((request.startSeconds ?? 0) * 1000),
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+        prepareMediaItem,
+      },
+      audio: {
+        onStatus: vi.fn((handler: (status: AudioStatus) => void) => {
+          audioStatusHandlers.push(handler);
+          return vi.fn();
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixShuffleProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second, third]);
+        queue.toggleShuffle();
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixShuffleProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(prepareMediaItem).toHaveBeenCalledWith(expect.objectContaining({
+      automixAnalyze: true,
+      item: expect.objectContaining({
+        mediaType: 'streaming',
+        trackId: third.id,
+      }),
+    })));
+
+    audioStatusHandlers.at(-1)?.({
+      state: 'playing',
+      currentTrackId: first.id,
+      currentFilePath: first.path,
+      positionSeconds: 80,
+      durationSeconds: first.duration,
+      automix: { enabled: false, active: false, mode: 'off', transitionSeconds: null, transitionStartedAtSeconds: null, nextTrackId: null },
+    } as AudioStatus);
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    expect(playLocalFile.mock.calls[1]?.[0]).toMatchObject({
+      trackId: first.id,
+      startSeconds: 80,
+      automix: {
+        nextItem: {
+          mediaType: 'streaming',
+          trackId: third.id,
+        },
+      },
+    });
+    expect(randomSpy).toHaveBeenCalled();
+  });
+
+  it('prewarms the first queue item for Automix repeat-all wraparound', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const third = makeTrack(3);
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: third.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+        prepareLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixRepeatProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.setRepeatMode('all');
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(third, { replaceQueueWith: [first, second, third] });
+      }, [queue]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixRepeatProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      trackId: first.id,
+      automixAnalyze: true,
+    })));
+  });
+
+  it('re-arms Automix after a native dual-deck transition has advanced', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    const third = makeTrack(3);
+    const audioStatusHandlers: Array<(status: AudioStatus) => void> = [];
+    let automixAdvanceHandler: ((event: { toTrackId: string; nextStartSeconds?: number }) => void) | null = null;
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string; startSeconds?: number }) => {
+      const track = [first, second, third].find((candidate) => candidate.id === request.trackId) ?? first;
+      return Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: Math.round((request.startSeconds ?? 0) * 1000),
+        durationMs: track.duration * 1000,
+        filePath: request.filePath,
+      });
+    });
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+        onAutomixAdvance: vi.fn((handler: (event: { toTrackId: string; nextStartSeconds?: number }) => void) => {
+          automixAdvanceHandler = handler;
+          return vi.fn();
+        }),
+      },
+      audio: {
+        onStatus: vi.fn((handler: (status: AudioStatus) => void) => {
+          audioStatusHandlers.push(handler);
+          return vi.fn();
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const sharedPlaybackStatus = useSharedPlaybackStatus();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.replaceQueue([first, second, third]);
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first);
+      }, [queue]);
+
+      return (
+        <>
+          <output aria-label="queue-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="shared-track">{sharedPlaybackStatus.playbackStatus.currentTrackId ?? ''}</output>
+          <output aria-label="shared-position">{sharedPlaybackStatus.playbackStatus.positionMs}</output>
+        </>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    audioStatusHandlers.at(-1)?.({
+      state: 'playing',
+      currentTrackId: first.id,
+      currentFilePath: first.path,
+      positionSeconds: 80,
+      durationSeconds: first.duration,
+      automix: { enabled: false, active: false, mode: 'off', transitionSeconds: null, transitionStartedAtSeconds: null, nextTrackId: null },
+    } as AudioStatus);
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+
+    act(() => {
+      automixAdvanceHandler?.({ toTrackId: second.id, nextStartSeconds: 4.25 });
+    });
+    await waitFor(() => expect(screen.getByLabelText('queue-track').textContent).toBe(second.id));
+    expect(screen.getByLabelText('shared-track').textContent).toBe(second.id);
+    expect(screen.getByLabelText('shared-position').textContent).toBe('4250');
+
+    audioStatusHandlers.at(-1)?.({
+      state: 'playing',
+      currentTrackId: second.id,
+      currentFilePath: second.path,
+      positionSeconds: 82,
+      durationSeconds: second.duration,
+      automix: {
+        enabled: true,
+        active: true,
+        mode: 'transitioning',
+        transitionSeconds: 16,
+        transitionStartedAtSeconds: 75,
+        nextTrackId: second.id,
+        plannedTrackCount: 2,
+        nextTransitionIndex: 1,
+      },
+    } as AudioStatus);
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(3));
+    expect(playLocalFile.mock.calls[2]?.[0]).toMatchObject({
+      trackId: second.id,
+      startSeconds: 82,
+      automix: {
+        enabled: true,
+        nextItem: {
+          mediaType: 'local',
+          trackId: third.id,
+          path: third.path,
+        },
+      },
+    });
+  });
+
+  it('advances Automix to the next queue position when the same track appears twice', async () => {
+    const first = makeTrack(1);
+    const third = makeTrack(3);
+    let automixAdvanceHandler: ((event: { toTrackId: string }) => void) | null = null;
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+        onAutomixAdvance: vi.fn((handler: (event: { toTrackId: string }) => void) => {
+          automixAdvanceHandler = handler;
+          return vi.fn();
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const DuplicateAdvanceProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+      const currentIndex = queue.items.findIndex((item) => item.queueId === queue.currentQueueId);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        void queue.playTrack(first, { replaceQueueWith: [first, first, third] });
+      }, [queue]);
+
+      return <output aria-label="queue-index">{currentIndex}</output>;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <DuplicateAdvanceProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('queue-index').textContent).toBe('0'));
+    act(() => {
+      automixAdvanceHandler?.({ toTrackId: first.id });
+    });
+
+    await waitFor(() => expect(screen.getByLabelText('queue-index').textContent).toBe('1'));
   });
 
   it('passes ReplayGain and a gapless next-track plan after opt-in', async () => {
@@ -609,9 +1642,10 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(playLocalFile.mock.calls[0]?.[0].automix).toBeUndefined();
   });
 
-  it('rearms the current native playback when automix is enabled mid-song', async () => {
+  it('does not restart current playback when automix is enabled mid-song', async () => {
     const first = makeTrack(1);
     const second = makeTrack(2);
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
     const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
       Promise.resolve({
         state: 'playing',
@@ -625,6 +1659,7 @@ describe('PlaybackQueueProvider playback history session', () => {
     window.echo = {
       playback: {
         playLocalFile,
+        prepareLocalFile,
         getStatus: vi.fn().mockResolvedValue({
           state: 'playing',
           currentTrackId: first.id,
@@ -655,11 +1690,12 @@ describe('PlaybackQueueProvider playback history session', () => {
         }
 
         didStartRef.current = true;
+        queue.setAutomixEnabled(true);
         queue.replaceQueue([first, second]);
         void queue.playTrack(first);
       }, [queue]);
 
-      return <button type="button" onClick={() => queue.setAutomixEnabled(true)}>enable</button>;
+      return <button type="button" aria-pressed={queue.automixEnabled} onClick={() => queue.setAutomixEnabled(true)}>enable</button>;
     };
 
     render(
@@ -671,20 +1707,12 @@ describe('PlaybackQueueProvider playback history session', () => {
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'enable' }));
 
-    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
-    expect(playLocalFile.mock.calls[1]?.[0]).toMatchObject({
-      trackId: first.id,
-      startSeconds: 42,
-      automix: {
-        enabled: true,
-        maxTransitionSeconds: 12,
-        nextItem: {
-          mediaType: 'local',
-          trackId: second.id,
-          path: second.path,
-        },
-      },
-    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'enable' }).getAttribute('aria-pressed')).toBe('true'));
+    expect(playLocalFile).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      trackId: second.id,
+      automixAnalyze: true,
+    })));
   });
 
   it('keeps remote prewarm on prepareMediaItem and skips local prepare for remote next items', async () => {
@@ -719,9 +1747,20 @@ describe('PlaybackQueueProvider playback history session', () => {
 
     const AutoPlayFirst = (): null => {
       const queue = usePlaybackQueue();
+      const didEnableRef = useRef(false);
       const didStartRef = useRef(false);
 
       useEffect(() => {
+        if (!didEnableRef.current) {
+          didEnableRef.current = true;
+          queue.setAutomixEnabled(true);
+          return;
+        }
+
+        if (!queue.automixEnabled) {
+          return;
+        }
+
         if (didStartRef.current) {
           return;
         }
@@ -729,7 +1768,7 @@ describe('PlaybackQueueProvider playback history session', () => {
         didStartRef.current = true;
         queue.replaceQueue([first, second]);
         void queue.playTrack(first);
-      }, [queue]);
+      }, [queue, queue.automixEnabled]);
 
       return null;
     };
@@ -742,6 +1781,13 @@ describe('PlaybackQueueProvider playback history session', () => {
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: first.id })));
     await waitFor(() => expect(prepareMediaItem).toHaveBeenCalledTimes(1));
+    expect(prepareMediaItem).toHaveBeenCalledWith(expect.objectContaining({
+      automixAnalyze: true,
+      item: expect.objectContaining({
+        mediaType: 'remote',
+        trackId: second.id,
+      }),
+    }));
     expect(prepareLocalFile).not.toHaveBeenCalled();
   });
 
@@ -944,6 +1990,221 @@ describe('PlaybackQueueProvider playback history session', () => {
 
     await waitFor(() => expect(playMediaItem).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe(second.id));
+  });
+
+  it('requests background Automix analysis when starting a streaming queue with Automix enabled', async () => {
+    const first: LibraryTrack = {
+      ...makeTrack(1),
+      id: 'streaming:qqmusic:first',
+      mediaType: 'streaming',
+      path: 'streaming:qqmusic:first',
+      provider: 'qqmusic',
+      providerTrackId: 'first',
+      stableKey: 'streaming:qqmusic:first',
+    };
+    const second: LibraryTrack = {
+      ...makeTrack(2),
+      id: 'streaming:qqmusic:second',
+      mediaType: 'streaming',
+      path: 'streaming:qqmusic:second',
+      provider: 'qqmusic',
+      providerTrackId: 'second',
+      stableKey: 'streaming:qqmusic:second',
+    };
+    const playMediaItem = vi.fn().mockImplementation((request: { item: { trackId: string } }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.item.trackId,
+        positionMs: 0,
+        durationMs: first.duration * 1000,
+        filePath: 'https://stream.example.test/song.flac',
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playMediaItem,
+      },
+    } as unknown as Window['echo'];
+
+    const StreamingAutomixProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.setAutomixEnabled(true);
+        void queue.playTrack(first, { replaceQueueWith: [first, second] });
+      }, [queue]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <StreamingAutomixProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playMediaItem).toHaveBeenCalledTimes(1));
+    expect(playMediaItem.mock.calls[0]?.[0]).toMatchObject({
+      item: {
+        mediaType: 'streaming',
+        trackId: first.id,
+      },
+      automixAnalyze: true,
+    });
+  });
+
+  it('includes streaming upcoming tracks in Automix following plans', async () => {
+    const first = makeTrack(1);
+    const second: LibraryTrack = {
+      ...makeTrack(2),
+      id: 'streaming:qqmusic:second',
+      mediaType: 'streaming',
+      path: 'streaming:qqmusic:second',
+      provider: 'qqmusic',
+      providerTrackId: 'second',
+      stableKey: 'streaming:qqmusic:second',
+    };
+    const third: LibraryTrack = {
+      ...makeTrack(3),
+      id: 'streaming:qqmusic:third',
+      mediaType: 'streaming',
+      path: 'streaming:qqmusic:third',
+      provider: 'qqmusic',
+      providerTrackId: 'third',
+      stableKey: 'streaming:qqmusic:third',
+    };
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string; startSeconds?: number }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: Math.round((request.startSeconds ?? 0) * 1000),
+        durationMs: first.duration * 1000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixUpcomingProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didSetupRef = useRef(false);
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (!didSetupRef.current) {
+          didSetupRef.current = true;
+          queue.setAutomixEnabled(true);
+          queue.replaceQueue([first, second, third]);
+          return;
+        }
+
+        if (!queue.automixEnabled || queue.items.length < 3) {
+          return;
+        }
+
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        void queue.playTrack(first, { startSeconds: 80 });
+      }, [queue, queue.automixEnabled, queue.items.length]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixUpcomingProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    expect(playLocalFile.mock.calls[0]?.[0]).toMatchObject({
+      automix: {
+        nextItem: {
+          mediaType: 'streaming',
+          trackId: second.id,
+        },
+        upcomingItems: [
+          {
+            mediaType: 'streaming',
+            trackId: third.id,
+          },
+        ],
+      },
+    });
+  });
+
+  it('skips unavailable tracks when choosing the next Automix item', async () => {
+    const first = makeTrack(1);
+    const unavailableNext: LibraryTrack = { ...makeTrack(2), unavailable: true };
+    const playableThird = makeTrack(3);
+    const playLocalFile = vi.fn().mockResolvedValue({
+      state: 'playing',
+      currentTrackId: first.id,
+      positionMs: 80000,
+      durationMs: first.duration * 1000,
+      filePath: first.path,
+    });
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+    } as unknown as Window['echo'];
+
+    const AutomixUnavailableProbe = (): null => {
+      const queue = usePlaybackQueue();
+      const didSetupRef = useRef(false);
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (!didSetupRef.current) {
+          didSetupRef.current = true;
+          queue.setAutomixEnabled(true);
+          queue.replaceQueue([first, unavailableNext, playableThird]);
+          return;
+        }
+
+        if (!queue.automixEnabled || queue.items.length < 3) {
+          return;
+        }
+
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        void queue.playTrack(first, { startSeconds: 80 });
+      }, [queue, queue.automixEnabled, queue.items.length]);
+
+      return null;
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <AutomixUnavailableProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    expect(playLocalFile.mock.calls[0]?.[0].automix).toMatchObject({
+      nextItem: {
+        trackId: playableThird.id,
+      },
+    });
   });
 
   it('refreshes an existing streaming queue item when replaying it at a different quality', async () => {

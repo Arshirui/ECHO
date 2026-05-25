@@ -76,6 +76,7 @@ const manifestFileName = 'echo.plugin.json';
 const stateFileName = 'plugin-state.json';
 const storageFileName = 'plugin-storage.json';
 const commandTimeoutMs = 2_000;
+const eventHandlerTimeoutMs = 2_000;
 const maxLogEntries = 160;
 const maxLogMessageLength = 1_000;
 const maxEventHandlersPerPlugin = 24;
@@ -87,6 +88,8 @@ const maxPluginStorageKeyLength = 96;
 const maxPluginStorageValueBytes = 64 * 1024;
 const maxPluginStorageBytes = 256 * 1024;
 const maxPluginSettingsPatchBytes = 32 * 1024;
+const maxPluginCommandArgsBytes = 64 * 1024;
+const maxPluginCommandResultBytes = 256 * 1024;
 const pluginCrashLoopWindowMs = 10 * 60 * 1_000;
 const pluginCrashLoopLimit = 3;
 const pluginPackageType = 'echo-next-plugin-package';
@@ -355,9 +358,9 @@ const toPluginLibraryTrackPage = (page: unknown, fields: PluginLibraryTrackField
   };
 };
 
-const timeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+const timeout = <T>(promise: Promise<T>, timeoutMs: number, errorCode: string): Promise<T> =>
   new Promise<T>((resolvePromise, reject) => {
-    const timer = setTimeout(() => reject(new Error('plugin_command_timeout')), timeoutMs);
+    const timer = setTimeout(() => reject(new Error(errorCode)), timeoutMs);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -603,7 +606,11 @@ export class PluginService {
     }));
     this.log(record.manifest.id, 'info', `运行命令：${command.title}`);
     try {
-      return await timeout(Promise.resolve(command.handler(...(Array.isArray(request.args) ? request.args : []))).then(jsonClone), commandTimeoutMs);
+      const args = Array.isArray(request.args) ? request.args : [];
+      assertJsonByteLimit(args, maxPluginCommandArgsBytes, 'plugin_command_args_too_large');
+      const result = await timeout(Promise.resolve(command.handler(...args)), commandTimeoutMs, 'plugin_command_timeout');
+      assertJsonByteLimit(result, maxPluginCommandResultBytes, 'plugin_command_result_too_large');
+      return jsonClone(result);
     } catch (error) {
       this.recordPluginErrorActivity(record.manifest.id);
       this.log(record.manifest.id, 'error', `命令失败：${error instanceof Error ? error.message : String(error)}`);
@@ -936,7 +943,7 @@ export class PluginService {
     }));
     for (const handler of handlers) {
       try {
-        void Promise.resolve(handler(jsonClone(payload))).catch((error) => {
+        void timeout(Promise.resolve(handler(jsonClone(payload))), eventHandlerTimeoutMs, 'plugin_event_handler_timeout').catch((error) => {
           this.recordPluginErrorActivity(runtime.manifest.id);
           this.log(runtime.manifest.id, 'error', `事件处理失败：${error instanceof Error ? error.message : String(error)}`);
         });
@@ -989,6 +996,8 @@ export class PluginService {
       trustedPermissionCount: record.trustedPermissions.length,
       untrustedPermissions: requestedPermissions.filter((permission) => !record.trustedPermissions.includes(permission)),
       highRiskPermissions: requestedPermissions.filter((permission) => pluginPermissionDescriptors[permission]?.risk === 'high'),
+      reservedPermissions: requestedPermissions.filter((permission) => pluginPermissionDescriptors[permission]?.availability === 'reserved'),
+      limitedPermissions: requestedPermissions.filter((permission) => pluginPermissionDescriptors[permission]?.availability === 'limited'),
       hasEntry: Boolean(record.manifest?.entry),
       hasPanel: Boolean(record.manifest?.panel),
       sandboxedPanel: Boolean(record.manifest?.panel),

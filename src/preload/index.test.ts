@@ -365,6 +365,61 @@ describe('preload SMTC API', () => {
     expect(fakeAudioInstances[0].currentTime).toBe(0);
   });
 
+  it('routes Automix requests through native shared output instead of system HTMLAudio', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.PlaybackPlayLocalFile) {
+        return Promise.resolve({
+          state: 'playing',
+          currentTrackId: 'track-1',
+          positionMs: 0,
+          durationMs: 180_000,
+          filePath: 'D:\\Music\\song.mp3',
+        });
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\song.mp3',
+      trackId: 'track-1',
+      output: { outputMode: 'system' },
+      probe: { durationSeconds: 180 },
+      automix: {
+        enabled: true,
+        nextItem: {
+          mediaType: 'local',
+          trackId: 'track-2',
+          path: 'D:\\Music\\next.mp3',
+          title: 'Next',
+          artist: 'Artist',
+          album: 'Album',
+          duration: 180,
+        },
+      },
+    });
+
+    expect(fakeAudioInstances).toHaveLength(0);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      IpcChannels.PlaybackPlayLocalFile,
+      expect.objectContaining({
+        output: expect.objectContaining({ outputMode: 'shared' }),
+        automix: expect.objectContaining({
+          enabled: true,
+          nextItem: expect.objectContaining({ trackId: 'track-2' }),
+        }),
+      }),
+    );
+    expect(ipcRenderer.invoke).not.toHaveBeenCalledWith(
+      IpcChannels.AudioCreateSystemStreamUrl,
+      expect.anything(),
+    );
+  });
+
   it('ignores stale system audio pause events after playback has resumed', async () => {
     vi.resetModules();
     exposedApi = null;
@@ -500,6 +555,50 @@ describe('preload SMTC API', () => {
         recovered: false,
         sourceKind: 'local',
         trackId: 'track-bad',
+      }),
+    );
+  });
+
+  it('allows local system audio to end when only the reported duration looks loose', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/loose-duration-token');
+      }
+      if (channel === IpcChannels.AudioReportSystemPlaybackError) {
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+    const statuses: Array<Awaited<ReturnType<EchoApi['audio']['getStatus']>>> = [];
+    exposedApi!.audio.onStatus((status) => statuses.push(status));
+
+    await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\loose-duration.flac',
+      trackId: 'track-loose-duration',
+      probe: { durationSeconds: 347.293 },
+    });
+    fakeAudioInstances[0].duration = 347.293;
+    fakeAudioInstances[0].currentTime = 267.271;
+    fakeAudioInstances[0].emit('ended');
+
+    expect(statuses.at(-1)).toMatchObject({
+      outputMode: 'system',
+      state: 'ended',
+      currentTrackId: 'track-loose-duration',
+      error: null,
+    });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      IpcChannels.AudioReportSystemPlaybackError,
+      expect.objectContaining({
+        phase: 'system-audio-ended-before-reported-duration',
+        recovered: true,
+        sourceKind: 'local',
+        trackId: 'track-loose-duration',
       }),
     );
   });

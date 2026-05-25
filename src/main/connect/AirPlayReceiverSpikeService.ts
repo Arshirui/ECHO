@@ -36,6 +36,7 @@ type RaopReceiverOptions = {
   model: string;
   host?: string;
   mac?: string;
+  latencies: string;
   metadata: boolean;
   portBase: number;
   portRange: number;
@@ -99,6 +100,8 @@ const airPlayPcmHighWaterMark = 4 * 1024 * 1024;
 const airPlayOutputSampleRate = 48_000;
 const airPlayOutputBufferFrames = 8192;
 const airPlayHttpPcmFallbackMs = 1_500;
+const airPlayHttpPcmReconnectMs = 120;
+const airPlayRaopLatencies = '1000:1000';
 
 type AirPlayAdvertiseInterface = {
   name: string;
@@ -672,9 +675,12 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private mdnsAdvertisers: AirPlayMdnsAdvertiserLike[] = [];
   private pcmStream: PassThrough | null = null;
   private httpPcmRequest: ClientRequest | null = null;
+  private readonly intentionalHttpPcmRequestCloses = new WeakSet<ClientRequest>();
   private httpPcmTransform: Transform | null = null;
   private httpPcmFallbackTimer: NodeJS.Timeout | null = null;
+  private httpPcmReconnectTimer: NodeJS.Timeout | null = null;
   private httpPcmBytesReceived = 0;
+  private lastHttpPcmPort: number | null = null;
   private pcmPlaybackStarted = false;
   private currentSourceId: string | null = null;
   private ignorePcmUntilNextStream = false;
@@ -803,6 +809,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
           name: this.advertisedName,
           model: airPlayModel,
           mac: advertisedMac,
+          latencies: airPlayRaopLatencies,
           metadata: true,
           portBase,
           portRange: 100,
@@ -931,6 +938,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
 
     switch (type) {
       case 'stream':
+        this.clearHttpPcmReconnectTimer();
         this.prepareIncomingStream(event);
         this.startHttpPcmPlayback(event);
         break;
@@ -951,6 +959,9 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       case 'flush':
         this.setPositionAnchor(this.estimatePosition(this.status));
         this.setStatus({ state: 'paused' });
+        if (type === 'flush') {
+          this.scheduleHttpPcmReconnect('flush');
+        }
         break;
       case 'stop':
         void this.stopPlayback();
@@ -1114,6 +1125,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.pcmStream = stream;
     this.pcmPlaybackStarted = true;
     this.httpPcmBytesReceived = 0;
+    this.lastHttpPcmPort = port;
     // The RAOP helper exposes PCM HTTP as a local bridge for this process; using
     // loopback avoids Windows adapter/firewall hairpin failures on LAN addresses.
     const host = '127.0.0.1';
@@ -1144,6 +1156,10 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
           return;
         }
         response.on('error', (error) => {
+          if (this.intentionalHttpPcmRequestCloses.has(request)) {
+            stream.destroy();
+            return;
+          }
           this.addDebugEvent('stream', error.message);
           stream.destroy(error);
         });
@@ -1155,12 +1171,17 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       socket.setNoDelay(true);
     });
     request.once('error', (error) => {
+      if (this.intentionalHttpPcmRequestCloses.has(request)) {
+        stream.destroy();
+        return;
+      }
       if (this.currentSourceId === sourceId) {
         this.enableDirectPcmFallback(sourceId, `AirPlay PCM HTTP failed: ${error.message}`);
       }
       stream.destroy(error);
     });
     request.once('close', () => {
+      this.intentionalHttpPcmRequestCloses.delete(request);
       if (this.httpPcmRequest === request) {
         this.httpPcmRequest = null;
       }
@@ -1228,6 +1249,34 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     }
   }
 
+  private clearHttpPcmReconnectTimer(): void {
+    if (this.httpPcmReconnectTimer) {
+      clearTimeout(this.httpPcmReconnectTimer);
+      this.httpPcmReconnectTimer = null;
+    }
+  }
+
+  private scheduleHttpPcmReconnect(reason: string): void {
+    const sourceId = this.currentSourceId;
+    const port = this.lastHttpPcmPort;
+    if (!sourceId || !port) {
+      return;
+    }
+
+    this.clearHttpPcmReconnectTimer();
+    this.destroyHttpPcmPlayback();
+    this.pcmStream = null;
+    this.pcmPlaybackStarted = false;
+    this.addDebugEvent('stream', `restart PCM HTTP after ${reason}`);
+    this.httpPcmReconnectTimer = setTimeout(() => {
+      this.httpPcmReconnectTimer = null;
+      if (this.currentSourceId !== sourceId || this.lastHttpPcmPort !== port) {
+        return;
+      }
+      this.startHttpPcmPlayback({ type: 'stream', port });
+    }, airPlayHttpPcmReconnectMs);
+  }
+
   private enableDirectPcmFallback(sourceId: string, reason: string): void {
     if (this.currentSourceId !== sourceId) {
       return;
@@ -1244,6 +1293,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private destroyHttpPcmPlayback(): void {
     this.clearHttpPcmFallbackTimer();
     if (this.httpPcmRequest) {
+      this.intentionalHttpPcmRequestCloses.add(this.httpPcmRequest);
       this.httpPcmRequest.destroy();
     }
     this.httpPcmRequest = null;
@@ -1255,11 +1305,13 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   }
 
   private clearCurrentSession(reason: string): void {
+    this.clearHttpPcmReconnectTimer();
     this.destroyHttpPcmPlayback();
     if (this.pcmStream) {
       this.pcmStream.destroy();
     }
     this.pcmStream = null;
+    this.lastHttpPcmPort = null;
     this.pcmPlaybackStarted = false;
     this.currentSourceId = null;
     this.audioSessionClaimedCurrentSource = false;

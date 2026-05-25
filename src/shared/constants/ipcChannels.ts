@@ -41,6 +41,7 @@ export const IpcChannels = {
   DesktopLyricsRendererAudioStatus: 'desktop-lyrics:renderer-audio-status',
   DesktopLyricsAudioStatus: 'desktop-lyrics:audio-status',
   DesktopLyricsGetLastAudioStatus: 'desktop-lyrics:get-last-audio-status',
+  DesktopLyricsSetMousePassthrough: 'desktop-lyrics:set-mouse-passthrough',
   MiniPlayerShow: 'mini-player:show',
   MiniPlayerHide: 'mini-player:hide',
   MiniPlayerGetState: 'mini-player:get-state',

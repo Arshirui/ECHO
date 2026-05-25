@@ -25,6 +25,8 @@ export type TrackTransitionAnalysis = {
   trailingSilenceSeconds: number;
   rmsDb: number | null;
   lufsDb: number | null;
+  introRmsDb?: number | null;
+  outroRmsDb?: number | null;
   energyCurve: number[];
   bpm: number | null;
   beatOffsetMs: number | null;
@@ -62,13 +64,22 @@ export type AutomixPlanInput = {
 };
 
 const minUsefulAutomixSeconds = 4;
+const defaultAutomixTransitionSeconds = 16;
+const maxAutomixTransitionSeconds = 16;
+const minAutomixTempoRatio = 0.985;
+const maxAutomixTempoRatio = 1.015;
 const silenceLeadInPaddingSeconds = 0.04;
 const silenceTailPaddingSeconds = 0.08;
-const maxLowEnergyOutroTrimSeconds = 8;
+const maxLowEnergyIntroSkipSeconds = 30;
+const maxLowEnergyOutroTrimSeconds = 12;
 
 const clamp = (value: number, minimum: number, maximum: number): number => Math.max(minimum, Math.min(maximum, value));
 
 const finiteOrNull = (value: unknown): number | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : null;
 };
@@ -101,7 +112,13 @@ const normalizeEnergyCurve = (value: unknown): number[] => {
     .slice(0, 96);
 };
 
-const inferEnergyCurve = (durationSeconds: number, leadingSilenceSeconds: number, trailingSilenceSeconds: number): number[] => {
+const inferEnergyCurve = (
+  durationSeconds: number,
+  leadingSilenceSeconds: number,
+  trailingSilenceSeconds: number,
+  introEndSeconds: number,
+  outroStartSeconds: number,
+): number[] => {
   if (durationSeconds <= 0) {
     return [];
   }
@@ -114,7 +131,14 @@ const inferEnergyCurve = (durationSeconds: number, leadingSilenceSeconds: number
       return 0;
     }
 
-    return 0.72;
+    const introRatio = introEndSeconds > 0 && bucketStart < introEndSeconds
+      ? clamp(bucketStart / Math.max(1, introEndSeconds), 0, 1)
+      : 1;
+    const outroRatio = outroStartSeconds < durationSeconds && bucketEnd > outroStartSeconds
+      ? clamp((durationSeconds - ((bucketStart + bucketEnd) / 2)) / Math.max(1, durationSeconds - outroStartSeconds), 0, 1)
+      : 1;
+    const energyRatio = Math.min(introRatio ** 2.5, outroRatio ** 2);
+    return roundToMillis(clamp(0.22 + (0.5 * energyRatio), 0.18, 0.72));
   });
 };
 
@@ -128,19 +152,23 @@ export const createEstimatedAutomixAnalysis = (
   const beatOffsetMs = finiteOrNull(hint?.beatOffsetMs);
   const introLength = clamp(durationSeconds * 0.1, 6, Math.min(24, Math.max(6, durationSeconds * 0.22)));
   const outroLength = clamp(durationSeconds * 0.12, 8, Math.min(28, Math.max(8, durationSeconds * 0.22)));
+  const introEndSeconds = Math.min(durationSeconds, introLength);
+  const outroStartSeconds = Math.max(0, durationSeconds - outroLength);
 
   return {
     status: durationSeconds > 0 ? 'estimated' : 'unavailable',
     durationSeconds,
     introStartSeconds: 0,
-    introEndSeconds: roundToMillis(Math.min(durationSeconds, introLength)),
-    outroStartSeconds: roundToMillis(Math.max(0, durationSeconds - outroLength)),
+    introEndSeconds: roundToMillis(introEndSeconds),
+    outroStartSeconds: roundToMillis(outroStartSeconds),
     outroEndSeconds: roundToMillis(durationSeconds),
     leadingSilenceSeconds: 0,
     trailingSilenceSeconds: 0,
     rmsDb: null,
     lufsDb: null,
-    energyCurve: durationSeconds > 0 ? inferEnergyCurve(durationSeconds, 0, 0) : [],
+    introRmsDb: null,
+    outroRmsDb: null,
+    energyCurve: durationSeconds > 0 ? inferEnergyCurve(durationSeconds, 0, 0, introEndSeconds, outroStartSeconds) : [],
     bpm: bpm !== null && bpm >= 40 && bpm <= 260 ? bpm : null,
     beatOffsetMs: beatOffsetMs !== null && beatOffsetMs >= 0 ? beatOffsetMs : null,
     beatConfidence: beatConfidence !== null ? clamp(beatConfidence, 0, 1) : null,
@@ -200,6 +228,8 @@ export const normalizeAutomixAnalysis = (
     trailingSilenceSeconds: roundToMillis(trailingSilenceSeconds),
     rmsDb: finiteOrNull(analysis.rmsDb),
     lufsDb: finiteOrNull(analysis.lufsDb),
+    introRmsDb: finiteOrNull(analysis.introRmsDb),
+    outroRmsDb: finiteOrNull(analysis.outroRmsDb),
     energyCurve: energyCurve.length ? energyCurve : estimated.energyCurve,
     bpm: bpm !== null && bpm >= 40 && bpm <= 260 ? bpm : null,
     beatOffsetMs: beatOffsetMs !== null && beatOffsetMs >= 0 ? beatOffsetMs : null,
@@ -246,7 +276,7 @@ const resolveTempoRatio = (currentBpm: number | null, nextBpm: number | null, be
     return 1;
   }
 
-  return roundToMillis(clamp(current / next, 0.96, 1.04));
+  return roundToMillis(clamp(current / next, minAutomixTempoRatio, maxAutomixTempoRatio));
 };
 
 const hasUsableEnergyCurve = (analysis: TrackTransitionAnalysis): boolean => {
@@ -280,9 +310,32 @@ const alignToBar = (seconds: number, bpm: number, beatOffsetMs: number | null, m
   return clamp(offsetSeconds + barIndex * barSeconds, minimum, maximum);
 };
 
-const selectEnergyOverlap = (baseSeconds: number, currentAnalysis: TrackTransitionAnalysis, nextAnalysis: TrackTransitionAnalysis): number => {
+const selectNextEntryEnergyBuckets = (analysis: TrackTransitionAnalysis, nextStartSeconds: number): number[] => {
+  if (nextStartSeconds <= 0 || analysis.energyCurve.length < 8 || analysis.durationSeconds <= 0) {
+    return analysis.energyCurve.slice(0, 4);
+  }
+
+  const headBucketCount = Math.max(4, Math.min(analysis.energyCurve.length, Math.ceil(analysis.energyCurve.length * 0.42)));
+  const introWindowSeconds = clamp(
+    analysis.introEndSeconds > analysis.introStartSeconds
+      ? analysis.introEndSeconds - analysis.introStartSeconds
+      : analysis.durationSeconds * 0.12,
+    4,
+    Math.min(36, analysis.durationSeconds * 0.25),
+  );
+  const rawIndex = Math.floor((nextStartSeconds / Math.max(1, introWindowSeconds)) * headBucketCount);
+  const startIndex = clamp(rawIndex, 0, Math.max(0, headBucketCount - 1));
+  return analysis.energyCurve.slice(startIndex, Math.min(headBucketCount, startIndex + 4));
+};
+
+const selectEnergyOverlap = (
+  baseSeconds: number,
+  currentAnalysis: TrackTransitionAnalysis,
+  nextAnalysis: TrackTransitionAnalysis,
+  nextStartSeconds: number,
+): number => {
   const currentTail = currentAnalysis.energyCurve.slice(Math.max(0, currentAnalysis.energyCurve.length - 4));
-  const nextHead = nextAnalysis.energyCurve.slice(0, 4);
+  const nextHead = selectNextEntryEnergyBuckets(nextAnalysis, nextStartSeconds);
   const currentEnergy = currentTail.length ? currentTail.reduce((sum, value) => sum + value, 0) / currentTail.length : 0.5;
   const nextEnergy = nextHead.length ? nextHead.reduce((sum, value) => sum + value, 0) / nextHead.length : 0.5;
   const energyDelta = Math.abs(currentEnergy - nextEnergy);
@@ -291,16 +344,61 @@ const selectEnergyOverlap = (baseSeconds: number, currentAnalysis: TrackTransiti
   return baseSeconds + deltaAdjustment;
 };
 
+const estimateLowEnergyIntroSkipSeconds = (analysis: TrackTransitionAnalysis): number => {
+  if (analysis.status === 'unavailable' || analysis.energyCurve.length < 8 || analysis.durationSeconds <= 0) {
+    return 0;
+  }
+
+  const headBucketCount = Math.max(4, Math.min(analysis.energyCurve.length, Math.ceil(analysis.energyCurve.length * 0.42)));
+  const headBuckets = analysis.energyCurve.slice(0, headBucketCount);
+  const minimum = Math.min(...headBuckets);
+  const peak = Math.max(...headBuckets);
+  if (peak < 0.44 || peak - minimum < 0.18) {
+    return 0;
+  }
+
+  const threshold = Math.max(0.4, peak * 0.58);
+  const firstStrongBucket = headBuckets.findIndex((value) => value >= threshold);
+  if (firstStrongBucket < 2) {
+    return 0;
+  }
+
+  const introWindowSeconds = clamp(
+    analysis.introEndSeconds > analysis.introStartSeconds
+      ? analysis.introEndSeconds - analysis.introStartSeconds
+      : analysis.durationSeconds * 0.12,
+    4,
+    Math.min(36, analysis.durationSeconds * 0.25),
+  );
+  const rawSkipSeconds = (firstStrongBucket / headBucketCount) * introWindowSeconds - 0.25;
+  return roundToMillis(clamp(rawSkipSeconds, 0, Math.min(maxLowEnergyIntroSkipSeconds, introWindowSeconds - 0.4, analysis.durationSeconds * 0.18)));
+};
+
 const estimateLowEnergyOutroTrimSeconds = (analysis: TrackTransitionAnalysis): number => {
   if (analysis.status === 'unavailable' || analysis.energyCurve.length < 8 || analysis.durationSeconds <= 0) {
     return 0;
   }
 
-  const bucketSeconds = analysis.durationSeconds / analysis.energyCurve.length;
+  const tailBucketCount = Math.max(4, Math.min(analysis.energyCurve.length, Math.ceil(analysis.energyCurve.length * 0.5)));
+  const tailBuckets = analysis.energyCurve.slice(-tailBucketCount);
+  const tailPeak = Math.max(...tailBuckets);
+  const tailEnd = tailBuckets.at(-1) ?? tailPeak;
+  const fallingTailThreshold =
+    tailPeak - tailEnd >= 0.18
+      ? Math.max(0.34, Math.min(0.52, tailPeak * 0.64))
+      : 0.34;
+  const outroWindowSeconds = clamp(
+    analysis.outroEndSeconds > analysis.outroStartSeconds
+      ? analysis.outroEndSeconds - analysis.outroStartSeconds
+      : analysis.durationSeconds * 0.12,
+    4,
+    Math.min(36, analysis.durationSeconds * 0.25),
+  );
+  const bucketSeconds = outroWindowSeconds / tailBucketCount;
   let quietTailBuckets = 0;
-  for (let index = analysis.energyCurve.length - 1; index >= 0; index -= 1) {
-    const energy = analysis.energyCurve[index] ?? 0;
-    if (energy > 0.34) {
+  for (let index = tailBuckets.length - 1; index >= 0; index -= 1) {
+    const energy = tailBuckets[index] ?? 0;
+    if (energy > fallingTailThreshold) {
       break;
     }
     quietTailBuckets += 1;
@@ -318,8 +416,14 @@ const resolveGainCompensation = (
   currentAnalysis: TrackTransitionAnalysis,
   nextAnalysis: TrackTransitionAnalysis,
 ): Pick<AutomixTransitionPlan, 'currentGainDb' | 'nextGainDb'> => {
-  const currentLoudness = finiteOrNull(currentAnalysis.lufsDb) ?? finiteOrNull(currentAnalysis.rmsDb);
-  const nextLoudness = finiteOrNull(nextAnalysis.lufsDb) ?? finiteOrNull(nextAnalysis.rmsDb);
+  const currentLoudness =
+    finiteOrNull(currentAnalysis.outroRmsDb) ??
+    finiteOrNull(currentAnalysis.lufsDb) ??
+    finiteOrNull(currentAnalysis.rmsDb);
+  const nextLoudness =
+    finiteOrNull(nextAnalysis.introRmsDb) ??
+    finiteOrNull(nextAnalysis.lufsDb) ??
+    finiteOrNull(nextAnalysis.rmsDb);
   if (currentLoudness === null || nextLoudness === null) {
     return {
       currentGainDb: 0,
@@ -336,7 +440,11 @@ const resolveGainCompensation = (
 
 export const planAutomixTransition = (input: AutomixPlanInput): AutomixTransitionPlan | null => {
   const currentStartSeconds = Math.max(0, finiteOrNull(input.currentStartSeconds) ?? 0);
-  const maxTransitionSeconds = clamp(finiteOrNull(input.maxTransitionSeconds) ?? 10, 2, 12);
+  const maxTransitionSeconds = clamp(
+    finiteOrNull(input.maxTransitionSeconds) ?? defaultAutomixTransitionSeconds,
+    2,
+    maxAutomixTransitionSeconds,
+  );
   const currentAnalysis = normalizeAutomixAnalysis(input.currentAnalysis, input.currentProbe, input.currentHint);
   const nextAnalysis = normalizeAutomixAnalysis(input.nextAnalysis, input.nextProbe, input.nextHint);
   const currentDuration = currentAnalysis.durationSeconds;
@@ -360,6 +468,7 @@ export const planAutomixTransition = (input: AutomixPlanInput): AutomixTransitio
   let nextStartSeconds = nextAnalysis.leadingSilenceSeconds > 0.16
     ? Math.max(0, nextAnalysis.leadingSilenceSeconds - silenceLeadInPaddingSeconds)
     : 0;
+  nextStartSeconds = Math.max(nextStartSeconds, estimateLowEnergyIntroSkipSeconds(nextAnalysis));
   nextStartSeconds = clamp(nextStartSeconds, 0, Math.max(0, nextDuration - 1.2));
 
   const availableCurrentSeconds = Math.max(0, currentEndSeconds - currentStartSeconds);
@@ -398,7 +507,7 @@ export const planAutomixTransition = (input: AutomixPlanInput): AutomixTransitio
   if (mode === 'beatAligned' && currentBpm !== null) {
     overlapSeconds = quantizeOverlapToBars(nominalOverlap, currentBpm, maxTransitionSeconds);
   } else if (mode === 'energyFade') {
-    overlapSeconds = selectEnergyOverlap(nominalOverlap, currentAnalysis, nextAnalysis);
+    overlapSeconds = selectEnergyOverlap(nominalOverlap, currentAnalysis, nextAnalysis, nextStartSeconds);
   }
   overlapSeconds = clamp(overlapSeconds, shortTrackFallback || unavailableAnalysis ? 0.8 : 2, Math.min(maxTransitionSeconds, availableCurrentSeconds - 0.4, availableNextSeconds - 0.4));
   if (!Number.isFinite(overlapSeconds) || overlapSeconds <= 0) {

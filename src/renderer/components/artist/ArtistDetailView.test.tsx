@@ -641,6 +641,7 @@ describe('ArtistDetailView', () => {
   });
 
   it('renders online artist bio links and concert cards after the background insights load', async () => {
+    const openExternalUrl = vi.fn().mockResolvedValue(undefined);
     const getArtistInsights = vi.fn()
       .mockResolvedValueOnce(artistInsights())
       .mockResolvedValue(artistInsights({
@@ -685,6 +686,13 @@ describe('ArtistDetailView', () => {
         },
       }));
     installLibrary(vi.fn().mockResolvedValue(artist()), { onlineArtistInfoBandsintownAppId: 'echo-next', onlineArtistInfoRegion: 'HK' }, getArtistInsights);
+    window.echo = {
+      ...window.echo,
+      app: {
+        ...window.echo?.app,
+        openExternalUrl,
+      },
+    } as Window['echo'];
 
     renderDetail(artist());
 
@@ -697,6 +705,8 @@ describe('ArtistDetailView', () => {
     expect(screen.getByText('Hong Kong')).toBeTruthy();
     expect(screen.getByText('20:00')).toBeTruthy();
     expect(document.querySelector('.artist-event-cover')).toBeNull();
+    fireEvent.click(document.querySelector('.artist-event-row') as HTMLAnchorElement);
+    await waitFor(() => expect(openExternalUrl).toHaveBeenCalledWith('https://bandsintown.example/events/evt-1'));
     await waitFor(() =>
       expect(getArtistInsights).toHaveBeenCalledWith('artist-1', {
         limit: 12,

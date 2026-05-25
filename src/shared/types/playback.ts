@@ -59,6 +59,7 @@ export type PlaybackStartRequest = {
   replayGain?: ReplayGainTrackData | null;
   automix?: PlaybackAutomixOptions;
   gapless?: PlaybackGaplessOptions;
+  automixAnalyze?: boolean;
 };
 
 export type PlaybackPrepareLocalFileRequest = {
@@ -66,6 +67,7 @@ export type PlaybackPrepareLocalFileRequest = {
   trackId?: string;
   probe?: PlaybackProbeHint;
   replayGain?: ReplayGainTrackData | null;
+  automixAnalyze?: boolean;
 };
 
 export type PlaybackMediaStartRequest = {
@@ -74,6 +76,7 @@ export type PlaybackMediaStartRequest = {
   output?: AudioOutputSettings;
   automix?: PlaybackAutomixOptions;
   gapless?: PlaybackGaplessOptions;
+  automixAnalyze?: boolean;
   forceRefresh?: boolean;
 };
 

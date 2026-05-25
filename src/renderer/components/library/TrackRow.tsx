@@ -4,6 +4,7 @@ import { Download, ListPlus, Loader2, MoreHorizontal, Music2 } from 'lucide-reac
 import { isDisplayableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { LibraryTrack } from '../../../shared/types/library';
 import { isDsdCodec, isHiResAudioSpec } from '../../../shared/utils/audioQuality';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 
 export type HifiTagKind = 'flac' | 'lossless' | 'depth' | 'rate' | 'bitrate' | 'bpm' | 'dsf' | 'hires';
 
@@ -94,9 +95,10 @@ const tagClassNameByKind: Record<HifiTagKind, string> = {
 
 export const TrackRow = memo(
   ({ track, isPlaying, isSelected = false, duplicateHiddenCount = 0, onPlay, onToggleSelected, onAddToQueue, onAddToPlaylist, onDownload, onOpenArtist, onOpenAlbum, isDownloading = false, downloadProgress = null, onShowVersions, onOpenMenu }: TrackRowProps): JSX.Element => {
+    const t = useOptionalI18n()?.t ?? translateFallback;
     const tags = tagsFromTrack(track);
     const isUnavailable = track.unavailable === true;
-    const remoteSourceLabel = track.mediaType === 'remote' ? track.sourceDisplayName ?? track.provider ?? '网盘' : null;
+    const remoteSourceLabel = track.mediaType === 'remote' ? track.sourceDisplayName ?? track.provider ?? t('library.source.remote') : null;
     const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
     const shouldShowCover = Boolean(track.coverThumb && track.coverThumb !== failedCoverUrl);
     const canDownload = Boolean(onDownload) && track.provider !== 'spotify';
@@ -234,17 +236,17 @@ export const TrackRow = memo(
             {isPlaying ? <span className="playing-dot" aria-hidden="true" /> : null}
             <strong className="track-title">{track.title}</strong>
             {remoteSourceLabel ? <span className="remote-track-source-badge">{remoteSourceLabel}</span> : null}
-            {isPlaying ? <span className="playing-pill">Playing</span> : null}
-            {isUnavailable ? <span className="playing-pill unavailable-pill">Unavailable</span> : null}
+            {isPlaying ? <span className="playing-pill">{t('library.trackRow.status.playing')}</span> : null}
+            {isUnavailable ? <span className="playing-pill unavailable-pill">{t('library.trackRow.status.unavailable')}</span> : null}
             {duplicateHiddenCount > 0 ? (
-              <button className="duplicate-version-badge" type="button" title="查看重复歌曲版本" onClick={handleShowVersions}>
-                有 {duplicateHiddenCount + 1} 个版本
+              <button className="duplicate-version-badge" type="button" title={t('library.trackRow.duplicateVersions.title')} onClick={handleShowVersions}>
+                {t('library.trackRow.duplicateVersions.count', { count: duplicateHiddenCount + 1 })}
               </button>
             ) : null}
           </div>
           <div className="track-subtitle">
             {onOpenArtist ? (
-              <button className="track-subtitle-link" type="button" title={`打开艺术家：${track.artist}`} onClick={handleOpenArtist}>
+              <button className="track-subtitle-link" type="button" title={t('library.trackRow.openArtist', { artist: track.artist })} onClick={handleOpenArtist}>
                 {track.artist}
               </button>
             ) : (
@@ -252,14 +254,14 @@ export const TrackRow = memo(
             )}
             <span className="track-subtitle-separator">-</span>
             {onOpenAlbum ? (
-              <button className="track-subtitle-link" type="button" title={`打开专辑：${track.album}`} onClick={handleOpenAlbum}>
+              <button className="track-subtitle-link" type="button" title={t('library.trackRow.openAlbum', { album: track.album })} onClick={handleOpenAlbum}>
                 {track.album}
               </button>
             ) : (
               <span>{track.album}</span>
             )}
           </div>
-          <div className="tag-row track-tags" aria-label="Audio specifications">
+          <div className="tag-row track-tags" aria-label={t('library.trackRow.audioSpecifications')}>
             {tags.map((tag) => (
               <span className={`hifi-tag ${tagClassNameByKind[tag.kind]}`} key={`${track.id}-${tag.label}`}>
                 {tag.label}
@@ -271,12 +273,12 @@ export const TrackRow = memo(
 
         <div className="track-duration">{formatDuration(track.duration)}</div>
 
-        <div className="track-actions" aria-label={`${track.title} actions`} onClick={stopActionPropagation} onDoubleClick={stopActionPropagation}>
+        <div className="track-actions" aria-label={t('library.trackRow.actions', { title: track.title })} onClick={stopActionPropagation} onDoubleClick={stopActionPropagation}>
           <button
             className="row-action"
             type="button"
-            aria-label={onAddToPlaylist ? `添加到歌单 ${track.title}` : `Add to queue ${track.title}`}
-            title={onAddToPlaylist ? '添加到歌单' : 'Add to queue'}
+            aria-label={t(onAddToPlaylist ? 'library.trackRow.action.addToPlaylistLabel' : 'library.trackRow.action.addToQueueLabel', { title: track.title })}
+            title={t(onAddToPlaylist ? 'library.trackRow.action.addToPlaylist' : 'library.trackRow.action.addToQueue')}
             disabled={isUnavailable}
             onClick={onAddToPlaylist ? handleAddToPlaylist : handleAddToQueue}
           >
@@ -286,8 +288,12 @@ export const TrackRow = memo(
             <button
               className="row-action"
               type="button"
-              aria-label={isDownloading && downloadPercent !== null ? `Downloading ${track.title} ${downloadPercent}%` : `Download ${track.title}`}
-              title={isDownloading && downloadPercent !== null ? `Downloading ${downloadPercent}%` : 'Download'}
+              aria-label={
+                isDownloading && downloadPercent !== null
+                  ? t('library.trackRow.action.downloadingLabel', { title: track.title, percent: downloadPercent })
+                  : t('library.trackRow.action.downloadLabel', { title: track.title })
+              }
+              title={isDownloading && downloadPercent !== null ? t('library.trackRow.action.downloading', { percent: downloadPercent }) : t('library.trackRow.action.download')}
               disabled={isUnavailable || isDownloading}
               onClick={handleDownload}
             >
@@ -300,7 +306,7 @@ export const TrackRow = memo(
               )}
             </button>
           ) : null}
-          <button className="row-action" type="button" aria-label={`More ${track.title}`} title="More" onClick={handleMoreClick}>
+          <button className="row-action" type="button" aria-label={t('library.trackRow.action.moreLabel', { title: track.title })} title={t('library.trackRow.action.more')} onClick={handleMoreClick}>
             <MoreHorizontal size={16} />
           </button>
         </div>

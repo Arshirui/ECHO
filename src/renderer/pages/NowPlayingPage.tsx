@@ -4,11 +4,13 @@ import type { AudioStatus } from '../../shared/types/audio';
 import type { PlaybackStatus } from '../../shared/types/playback';
 import { PlayerStatusChips } from '../components/player/PlayerStatusChips';
 import { titleFromPath } from '../components/player/playerFormat';
+import { useI18n } from '../i18n/I18nProvider';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 const idlePollingStates = new Set(['paused', 'stopped', 'idle', 'error']);
 
 export const NowPlayingPage = (): JSX.Element => {
+  const { t } = useI18n();
   const queue = usePlaybackQueue();
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus | null>(null);
@@ -22,7 +24,7 @@ export const NowPlayingPage = (): JSX.Element => {
     (queue.lastPlayedTrack?.id === statusTrackId ? queue.lastPlayedTrack : null);
   const filePath = currentTrack?.path ?? audioStatus?.currentFilePath ?? playbackStatus?.filePath ?? null;
   const title = currentTrack?.title ?? titleFromPath(filePath);
-  const artist = currentTrack?.artist || currentTrack?.albumArtist || (filePath ? 'Local file' : 'Ready');
+  const artist = currentTrack?.artist || currentTrack?.albumArtist || (filePath ? t('nowPlaying.localFile') : t('nowPlaying.ready'));
   const coverUrl = currentTrack?.coverThumb ?? null;
 
   const refreshStatus = useCallback(async (): Promise<void> => {
@@ -64,13 +66,13 @@ export const NowPlayingPage = (): JSX.Element => {
     <div className="page-stack now-playing-page">
       <section className="page-header">
         <div>
-          <p className="section-kicker">Now Playing</p>
-          <h1>正在播放</h1>
-          <p>当前曲目概览。歌词请从底部播放器的麦克风按钮进入独立页面。</p>
+          <p className="section-kicker">{t('nowPlaying.kicker')}</p>
+          <h1>{t('nowPlaying.title')}</h1>
+          <p>{t('nowPlaying.description')}</p>
         </div>
         <button className="primary-action" type="button" onClick={() => window.dispatchEvent(new Event('app:navigate:lyrics'))}>
           <Mic2 size={17} />
-          打开歌词
+          {t('nowPlaying.action.openLyrics')}
         </button>
       </section>
 
@@ -79,8 +81,8 @@ export const NowPlayingPage = (): JSX.Element => {
           {coverUrl ? <img alt="" src={coverUrl} /> : <Disc3 size={34} />}
         </div>
         <div className="now-playing-copy">
-          <span>{currentTrack || filePath ? 'Playing' : 'Idle'}</span>
-          <h2>{currentTrack || filePath ? title : 'Nothing is playing'}</h2>
+          <span>{currentTrack || filePath ? t('nowPlaying.state.playing') : t('nowPlaying.state.idle')}</span>
+          <h2>{currentTrack || filePath ? title : t('nowPlaying.emptyTitle')}</h2>
           <p>{artist}</p>
           <PlayerStatusChips status={audioStatus} state={state} track={currentTrack} />
           {error ? <strong className="now-playing-error">{error}</strong> : null}
@@ -90,7 +92,7 @@ export const NowPlayingPage = (): JSX.Element => {
       {!currentTrack && !filePath ? (
         <section className="empty-inline">
           <Music2 size={28} />
-          <span>从歌曲列表或专辑开始播放后，这里会显示当前曲目。</span>
+          <span>{t('nowPlaying.emptyDescription')}</span>
         </section>
       ) : null}
     </div>

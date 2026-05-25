@@ -316,4 +316,79 @@ describe('PluginService', () => {
     await expect(service.runCommand({ pluginId: 'echo.guardrails', commandId: 'subscribe-library' })).rejects.toThrow('plugin_permission_denied:library:read');
     await expect(service.runCommand({ pluginId: 'echo.guardrails', commandId: 'write-large' })).rejects.toThrow('plugin_storage_value_too_large');
   });
+
+  it('rejects oversized command args and command results with stable log codes', async () => {
+    const manifest: PluginManifest = {
+      id: 'echo.command-limits',
+      name: 'Command Limits',
+      version: '0.0.1',
+      apiVersion: 1,
+      entry: 'plugin.js',
+      permissions: [],
+    };
+    writePlugin(pluginRoot, manifest, [
+      "echo.commands.register('count-args', (...args) => args.length);",
+      "echo.commands.register('large-result', () => 'x'.repeat(260 * 1024));",
+    ].join('\n'));
+
+    service.enable({ pluginId: 'echo.command-limits', trustedPermissions: [] });
+
+    await expect(service.runCommand({
+      pluginId: 'echo.command-limits',
+      commandId: 'count-args',
+      args: ['x'.repeat(70 * 1024)],
+    })).rejects.toThrow('plugin_command_args_too_large');
+    await expect(service.runCommand({ pluginId: 'echo.command-limits', commandId: 'large-result' })).rejects.toThrow('plugin_command_result_too_large');
+
+    const messages = service.getLogs('echo.command-limits').map((entry) => entry.message);
+    expect(messages.some((message) => message.includes('plugin_command_args_too_large'))).toBe(true);
+    expect(messages.some((message) => message.includes('plugin_command_result_too_large'))).toBe(true);
+  });
+
+  it('times out async event handlers without blocking other handlers or plugin summaries', async () => {
+    const manifest: PluginManifest = {
+      id: 'echo.event-timeout',
+      name: 'Event Timeout',
+      version: '0.0.1',
+      apiVersion: 1,
+      entry: 'plugin.js',
+      permissions: ['playback:read'],
+    };
+    writePlugin(pluginRoot, manifest, [
+      "echo.events.on('playback:status', () => new Promise(() => undefined));",
+      "echo.events.on('playback:status', async (status) => {",
+      "  await echo.storage.set('lastStatus', status.currentTrackId);",
+      '});',
+    ].join('\n'));
+
+    service.enable({ pluginId: 'echo.event-timeout', trustedPermissions: ['playback:read'] });
+    mocks.fakeAudioSession.emit('status', { state: 'playing', currentTrackId: 'track-timeout' });
+
+    await vi.advanceTimersByTimeAsync(500);
+    const storage = JSON.parse(readFileSync(join(pluginRoot, 'echo.event-timeout', 'plugin-storage.json'), 'utf8')) as { lastStatus: string };
+    expect(storage.lastStatus).toBe('track-timeout');
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(service.getLogs('echo.event-timeout').some((entry) => entry.message.includes('plugin_event_handler_timeout'))).toBe(true);
+    expect(service.list().plugins[0]).toMatchObject({ id: 'echo.event-timeout', status: 'running' });
+  });
+
+  it('marks reserved and limited permissions in the security summary without adding APIs', () => {
+    const manifest: PluginManifest = {
+      id: 'echo.reserved-permissions',
+      name: 'Reserved Permissions',
+      version: '0.0.1',
+      apiVersion: 1,
+      entry: 'plugin.js',
+      permissions: ['network', 'library:write', 'fs:plugin'],
+    };
+    writePlugin(pluginRoot, manifest, '');
+
+    service.enable({ pluginId: 'echo.reserved-permissions', trustedPermissions: ['network', 'library:write', 'fs:plugin'] });
+
+    const summary = service.list().plugins[0];
+    expect(summary.security.reservedPermissions).toEqual(['network', 'library:write']);
+    expect(summary.security.limitedPermissions).toEqual(['fs:plugin']);
+    expect(summary.security.highRiskPermissions).toEqual(['network', 'library:write']);
+  });
 });

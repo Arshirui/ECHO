@@ -588,6 +588,10 @@ html[data-theme="dark"] .sidebar-folder:hover {
   box-shadow: none;
 }
 
+.album-track-row {
+  border-radius: 0;
+}
+
 .track-row:hover,
 .track-row[data-playing="true"],
 .streaming-row:hover,

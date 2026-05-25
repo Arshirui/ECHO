@@ -60,6 +60,7 @@ describe('playback media prepare IPC', () => {
   it('uses a prepared streaming playback source without resolving again', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const playLocalFile = vi.fn().mockResolvedValue(undefined);
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
     const resolvePlayback = vi.fn().mockResolvedValue({
       url: 'https://stream.example.test/song.flac?token=prepared',
       sampleRate: 44100,
@@ -93,6 +94,7 @@ describe('playback media prepare IPC', () => {
         on: vi.fn(),
         restorePlaybackMemory: vi.fn(),
         playLocalFile,
+        prepareLocalFile,
       }),
     }));
     vi.doMock('../audio/PlaybackMemoryStore', () => ({
@@ -139,6 +141,7 @@ describe('playback media prepare IPC', () => {
           trackPeak: 0.8,
         },
       },
+      automixAnalyze: true,
       gapless: {
         enabled: true,
         nextItem: {
@@ -166,6 +169,20 @@ describe('playback media prepare IPC', () => {
     };
 
     await handlers.get(IpcChannels.PlaybackPrepareMediaItem)?.({}, request);
+    expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+      filePath: 'https://stream.example.test/song.flac?token=prepared',
+      inputHeaders: expect.objectContaining({
+        Referer: 'https://music.163.com/',
+        Cookie: 'MUSIC_U=secret',
+      }),
+      trackId: 'streaming-track',
+      automixAnalyze: true,
+      probe: expect.objectContaining({
+        durationSeconds: 120,
+        fileSampleRate: 44100,
+      }),
+    }));
+
     await handlers.get(IpcChannels.PlaybackPlayMediaItem)?.({}, request);
 
     expect(resolvePlayback).toHaveBeenCalledTimes(1);
@@ -185,6 +202,7 @@ describe('playback media prepare IPC', () => {
         fileSampleRate: 44100,
         channels: 2,
       }),
+      automixAnalyze: true,
       gapless: {
         enabled: true,
         next: expect.objectContaining({
@@ -311,6 +329,7 @@ describe('playback media prepare IPC', () => {
   it('queues ReplayGain analysis only for the local track that starts playback', async () => {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const playLocalFile = vi.fn().mockResolvedValue(undefined);
+    const prepareLocalFile = vi.fn().mockResolvedValue(undefined);
     const startReplayGainAnalysis = vi.fn();
 
     vi.doMock('electron', () => ({
@@ -339,6 +358,7 @@ describe('playback media prepare IPC', () => {
         on: vi.fn(),
         restorePlaybackMemory: vi.fn(),
         playLocalFile,
+        prepareLocalFile,
       }),
     }));
     vi.doMock('../audio/PlaybackMemoryStore', () => ({
@@ -439,6 +459,7 @@ describe('playback media prepare IPC', () => {
         on: vi.fn(),
         restorePlaybackMemory: vi.fn(),
         playLocalFile,
+        prepareLocalFile,
       }),
     }));
     vi.doMock('../audio/PlaybackMemoryStore', () => ({
@@ -552,6 +573,7 @@ describe('playback media prepare IPC', () => {
         on: vi.fn(),
         restorePlaybackMemory: vi.fn(),
         playLocalFile,
+        prepareLocalFile,
       }),
     }));
     vi.doMock('../audio/PlaybackMemoryStore', () => ({

@@ -1,5 +1,6 @@
 import type { LibraryTrack } from '../../../shared/types/library';
 import type { PlaybackStatus } from '../../../shared/types/playback';
+import { translateCurrentLocale } from '../../i18n/I18nProvider';
 
 type SpotifyError = {
   message?: string;
@@ -140,9 +141,7 @@ const spotifyPlaybackError = (error: SpotifyError | null | undefined, fallback: 
     return new Error('Spotify playback device is not ready yet. Try again in a moment.');
   }
   if (/failed to initialize player/iu.test(message) && /Electron/iu.test(navigator.userAgent)) {
-    return new Error(
-      '当前 Electron 构建没有可用的 DRM/Widevine keysystem，Spotify 官方播放器无法在 ECHO 内注册设备。',
-    );
+    return new Error(translateCurrentLocale('spotifyPlayback.error.noDrmKeysystem'));
   }
 
   return new Error(message);
@@ -252,7 +251,7 @@ const chooseSpotifyConnectDevice = async (uri: string, webUrl: string): Promise<
 
   const sdkHint = lastSdkFailureMessage ? ` SDK failed: ${lastSdkFailureMessage}` : '';
   if (!(await shouldAutoLaunchSpotifyOfficialPlayer()) || !window.echo.spotify.ensureConnectDevice) {
-    throw new Error(`没有可用的 Spotify 播放设备。请开启“自动启动官方播放器”，或先打开 Spotify 桌面端/网页版。${sdkHint}`);
+    throw new Error(translateCurrentLocale('spotifyPlayback.error.noDevice', { hint: sdkHint }));
   }
 
   reportSpotifyDiagnostic('connect-autolaunch-start', { webUrl, preferredDeviceId: lastConnectDeviceId });

@@ -1289,15 +1289,17 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
                   const dateParts = formatEventDateParts(event.startsAt);
                   const timeLabel = formatEventTime(event.startsAt, event.timeTbd);
                   const sourceLabel = event.sourceLabel ?? event.source;
+                  const eventUrl = event.ticketUrl ?? event.url ?? null;
 
                   return (
                     <a
                       className="artist-event-row"
-                      href={event.ticketUrl ?? event.url ?? undefined}
+                      href={eventUrl ?? undefined}
                       key={event.id}
                       rel="noreferrer"
                       target="_blank"
                       title={`${dateParts.label} / ${eventSecondaryInfo(event)} / ${sourceLabel}`}
+                      onClick={eventUrl ? (clickEvent) => handleExternalLinkClick(clickEvent, eventUrl) : undefined}
                     >
                       <span className="artist-event-date">
                         <time dateTime={event.startsAt} aria-label={dateParts.label}>

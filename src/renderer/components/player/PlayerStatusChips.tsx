@@ -2,6 +2,7 @@ import type { AudioStatus } from '../../../shared/types/audio';
 import { isDisplayableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
 import type { LibraryTrack } from '../../../shared/types/library';
 import { isHiResAudioSpec } from '../../../shared/utils/audioQuality';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 
 type PlayerStatusChipsProps = {
   status: AudioStatus | null;
@@ -107,7 +108,35 @@ const isAirPlayReceiverTrack = (track: LibraryTrack | null): boolean =>
       (track.id.startsWith('airplay-receiver:') || track.fieldSources?.title === 'airplay'),
   );
 
+const formatAutomixLabel = (status: AudioStatus | null): string | null => {
+  const automix = status?.automix;
+  if (!automix?.active) {
+    return null;
+  }
+  if (
+    automix.gapless ||
+    automix.transitionMode === 'gaplessFallback' ||
+    automix.engine === 'nativeGapless' ||
+    automix.engine === 'ffmpegGapless'
+  ) {
+    return null;
+  }
+
+  const seconds = automix.overlapSeconds ?? automix.transitionSeconds;
+  const secondsLabel = typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0.1
+    ? ` ${Math.round(seconds)}s`
+    : '';
+  const modeLabel = automix.beatAligned || automix.transitionMode === 'beatAligned'
+    ? ' beat'
+    : automix.fallbackReason
+      ? ' fallback'
+      : '';
+
+  return `Automix${modeLabel}${secondsLabel}`;
+};
+
 export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsProps): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const codec = normalizeDisplayCodec(track?.codec ?? status?.codec ?? null);
   const bitDepth = track?.bitDepth ?? status?.bitDepth ?? null;
   const sampleRate = track?.sampleRate ?? status?.fileSampleRate ?? null;
@@ -117,11 +146,13 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const playbackRate = status?.playbackRate ?? 1;
   const bpm = isDisplayableBpmAnalysis(track?.bpm, track?.analysisStatus) ? (track?.bpm ?? null) : null;
   const displayBpm = bpm ? Math.round(bpm * playbackRate) : null;
+  const automixLabel = formatAutomixLabel(status);
   const chips: Chip[] = uniqueChips([
     status?.sampleRateMismatch ? { label: 'Rate Mismatch', className: 'tag-warning' } : null,
+    automixLabel ? { label: automixLabel, className: 'tag-automix' } : null,
     isDlnaReceiverTrack(track) ? { label: 'DLNA', className: 'tag-dlna' } : null,
     isAirPlayReceiverTrack(track) ? { label: 'AIRPLAY', className: 'tag-airplay' } : null,
-    track?.mediaType === 'streaming' ? { label: '流媒体', className: 'tag-streaming' } : null,
+    track?.mediaType === 'streaming' ? { label: t('playerStatus.streaming'), className: 'tag-streaming' } : null,
     codec ? { label: codec, className: codecClassName(codec) } : null,
     isHiResSource({ bitDepth, codec, sampleRate, track }) ? { label: 'Hi-Res', className: 'tag-hires' } : null,
     bitDepth && formattedRate ? { label: `${bitDepth}bit / ${formattedRate}`, className: 'tag-depth' } : null,
@@ -137,11 +168,11 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   ].filter((chip): chip is Chip => Boolean(chip)));
 
   if (chips.length === 0) {
-    chips.push({ label: state === 'idle' ? 'Ready' : state, className: state === 'error' ? 'tag-warning' : 'tag-depth' });
+    chips.push({ label: state === 'idle' ? t('playerStatus.ready') : state, className: state === 'error' ? 'tag-warning' : 'tag-depth' });
   }
 
   return (
-    <div className="tag-row player-tags" aria-label="Audio specifications">
+    <div className="tag-row player-tags" aria-label={t('playerStatus.audioSpecifications')}>
       {chips.map((chip) => (
         <span className={`hifi-tag ${chip.className}`} key={chip.label}>
           {chip.label}

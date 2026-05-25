@@ -58,6 +58,12 @@ const uint32Le = (value: number): Buffer => {
   return buffer;
 };
 
+const uint64Le = (value: number): Buffer => {
+  const buffer = Buffer.alloc(8);
+  buffer.writeBigUInt64LE(BigInt(value), 0);
+  return buffer;
+};
+
 const riffChunk = (id: string, data: Buffer): Buffer => Buffer.concat([
   Buffer.from(id, 'ascii'),
   uint32Le(data.length),
@@ -65,12 +71,33 @@ const riffChunk = (id: string, data: Buffer): Buffer => Buffer.concat([
   data.length % 2 ? Buffer.from([0]) : Buffer.alloc(0),
 ]);
 
-const writeWaveWithRawInfo = (filePath: string, tags: Record<string, Buffer>): void => {
+const riffChunkWithDeclaredSize = (id: string, data: Buffer, declaredSize = data.length): Buffer => Buffer.concat([
+  Buffer.from(id, 'ascii'),
+  uint32Le(declaredSize),
+  data,
+  data.length % 2 ? Buffer.from([0]) : Buffer.alloc(0),
+]);
+
+const waveInfoListChunk = (tags: Record<string, Buffer>): Buffer => {
   const infoChunks = Object.entries(tags).map(([id, value]) => riffChunk(id, value));
-  const listData = Buffer.concat([Buffer.from('INFO', 'ascii'), ...infoChunks]);
-  const listChunk = riffChunk('LIST', listData);
-  const riffSize = 4 + listChunk.length;
-  writeFileSync(filePath, Buffer.concat([Buffer.from('RIFF', 'ascii'), uint32Le(riffSize), Buffer.from('WAVE', 'ascii'), listChunk]));
+  return riffChunk('LIST', Buffer.concat([Buffer.from('INFO', 'ascii'), ...infoChunks]));
+};
+
+const ds64Chunk = (dataSize = 0): Buffer => riffChunk('ds64', Buffer.concat([
+  uint64Le(0),
+  uint64Le(dataSize),
+  uint64Le(0),
+  uint32Le(0),
+]));
+
+const writeWaveContainerWithChunks = (filePath: string, containerId: 'RIFF' | 'RF64' | 'BW64', chunks: Buffer[]): void => {
+  const body = Buffer.concat(chunks);
+  const riffSize = containerId === 'RIFF' ? 4 + body.length : 0xffffffff;
+  writeFileSync(filePath, Buffer.concat([Buffer.from(containerId, 'ascii'), uint32Le(riffSize), Buffer.from('WAVE', 'ascii'), body]));
+};
+
+const writeWaveWithRawInfo = (filePath: string, tags: Record<string, Buffer>): void => {
+  writeWaveContainerWithChunks(filePath, 'RIFF', [waveInfoListChunk(tags)]);
 };
 
 const writeWaveWithInfo = (filePath: string, tags: Record<string, string>): void => {
@@ -97,6 +124,24 @@ const writeFlacWithCueSheet = (filePath: string, cueSheet: string): void => {
   writeFileSync(filePath, Buffer.concat([Buffer.from('fLaC', 'ascii'), blockHeader, vorbisComment, Buffer.from('audio')]));
 };
 
+const writeFixedText = (buffer: Buffer, offset: number, length: number, value: string): void => {
+  Buffer.from(value, 'utf8').copy(buffer, offset, 0, length);
+};
+
+const bextChunkData = (fields: { description?: string; originator?: string; originationDate?: string }): Buffer => {
+  const data = Buffer.alloc(602);
+  if (fields.description) {
+    writeFixedText(data, 0, 256, fields.description);
+  }
+  if (fields.originator) {
+    writeFixedText(data, 256, 32, fields.originator);
+  }
+  if (fields.originationDate) {
+    writeFixedText(data, 320, 10, fields.originationDate);
+  }
+  return data;
+};
+
 describe('TsMetadataReader WAV INFO text decoding', () => {
   it('recovers legacy GBK-encoded Japanese WAV INFO text', () => {
     const raw = Buffer.from(
@@ -107,6 +152,18 @@ describe('TsMetadataReader WAV INFO text decoding', () => {
     expect(decodeWaveInfoText(raw)).toBe(
       '\u661f\u54b2\u3042\u304b\u308a (\u8d64\u5c3e\u3072\u304b\u308b), \u7687\u57ce\u30bb\u30c4\u30ca (\u516b\u5dfb\u30a2\u30f3\u30ca), \u9ad8\u702c\u68a8\u7dd2 (\u4e45\u4fdd\u30e6\u30ea\u30ab), \u67cf\u6728\u7f8e\u4e9c (\u548c\u6c23\u3042\u305a\u672a), \u6771\u96f2\u3064\u3080\u304e (\u548c\u6cc9\u98a8\u82b1)',
     );
+  });
+
+  it('recovers EUC-JP encoded Japanese WAV INFO text', () => {
+    const raw = iconv.encode('\u591c\u306b\u99c6\u3051\u308b\0', 'euc-jp');
+
+    expect(decodeWaveInfoText(raw)).toBe('\u591c\u306b\u99c6\u3051\u308b');
+  });
+
+  it('recovers ISO-2022-JP encoded Japanese WAV INFO text', () => {
+    const raw = Buffer.from('1b24424c6b244b366e2431246b1b2842', 'hex');
+
+    expect(decodeWaveInfoText(raw)).toBe('\u591c\u306b\u99c6\u3051\u308b');
   });
 
   it('keeps ordinary UTF-8 and ASCII WAV INFO text unchanged', () => {
@@ -461,6 +518,76 @@ describe('TsMetadataReader parser fallbacks', () => {
     });
     expect(result.fieldSources.year).toBe('embedded');
     expect(result.fieldSources.trackNo).toBe('embedded');
+  });
+
+  it('reads RF64 INFO tags after a ds64-sized data chunk', async () => {
+    const root = makeTempRoot();
+    const wavePath = join(root, 'RF64 Info.wav');
+    const audioData = Buffer.from([1, 2, 3, 4]);
+    writeWaveContainerWithChunks(wavePath, 'RF64', [
+      ds64Chunk(audioData.length),
+      riffChunkWithDeclaredSize('data', audioData, 0xffffffff),
+      waveInfoListChunk({
+        INAM: Buffer.from('RF64 Title\0', 'utf8'),
+        IART: Buffer.from('RF64 Artist\0', 'utf8'),
+      }),
+    ]);
+
+    const result = await new TsMetadataReader().read(wavePath);
+
+    expect(result.fields.title).toBe('RF64 Title');
+    expect(result.fields.artist).toBe('RF64 Artist');
+    expect(result.fieldSources.title).toBe('embedded');
+    expect(result.fieldSources.artist).toBe('embedded');
+  });
+
+  it('uses BW64 bext metadata only when ordinary title fields are missing', async () => {
+    const root = makeTempRoot();
+    const wavePath = join(root, 'BW64 Broadcast.wav');
+    writeWaveContainerWithChunks(wavePath, 'BW64', [
+      ds64Chunk(),
+      riffChunk('bext', bextChunkData({
+        description: 'Broadcast Title',
+        originator: 'Broadcast Originator',
+        originationDate: '2021-04-03',
+      })),
+    ]);
+
+    const result = await new TsMetadataReader().read(wavePath);
+
+    expect(result.fields).toMatchObject({
+      title: 'Broadcast Title',
+      artist: 'Broadcast Originator',
+      year: 2021,
+    });
+    expect(result.fieldSources.title).toBe('embedded');
+    expect(result.fieldSources.artist).toBe('embedded');
+    expect(result.fieldSources.year).toBe('embedded');
+  });
+
+  it('keeps ordinary common WAV tags ahead of bext metadata', async () => {
+    const root = makeTempRoot();
+    const wavePath = join(root, 'Bext With Common.wav');
+    writeWaveContainerWithChunks(wavePath, 'RIFF', [
+      riffChunk('bext', bextChunkData({
+        description: 'Bext Title',
+        originator: 'Bext Originator',
+        originationDate: '2021-04-03',
+      })),
+    ]);
+    parseFileMock.mockResolvedValue(emptyMetadata({
+      common: {
+        title: 'Common Title',
+        artist: 'Common Artist',
+        year: 2024,
+      },
+    }));
+
+    const result = await new TsMetadataReader().read(wavePath);
+
+    expect(result.fields.title).toBe('Common Title');
+    expect(result.fields.artist).toBe('Common Artist');
+    expect(result.fields.year).toBe(2024);
   });
 
   it('prefers decoded GBK WAV INFO text over lossy common WAV tags', async () => {

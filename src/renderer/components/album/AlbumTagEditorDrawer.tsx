@@ -3,6 +3,8 @@ import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, CloudDownload, Disc3, ImagePlus, RefreshCw, Save, Tag, X } from 'lucide-react';
 import type { EditableAlbumTags, LibraryAlbum, NetworkTagCandidate, TrackCoverSelection } from '../../../shared/types/library';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 
 type AlbumTagEditorDrawerProps = {
   album: LibraryAlbum | null;
@@ -28,12 +30,14 @@ type PendingNetworkCover = {
 
 type NetworkFieldSelection = Record<keyof AlbumTagFormState | 'cover', boolean>;
 
-const networkFieldLabels: Array<{ key: keyof AlbumTagFormState | 'cover'; label: string }> = [
-  { key: 'album', label: '专辑' },
-  { key: 'albumArtist', label: '专辑艺术家' },
-  { key: 'year', label: '年份' },
-  { key: 'genre', label: '流派' },
-  { key: 'cover', label: '封面' },
+type Translate = (key: TranslationKey, options?: Record<string, string | number>) => string;
+
+const networkFieldLabels: Array<{ key: keyof AlbumTagFormState | 'cover'; labelKey: TranslationKey }> = [
+  { key: 'album', labelKey: 'albumTagEditor.field.album' },
+  { key: 'albumArtist', labelKey: 'albumTagEditor.field.albumArtist' },
+  { key: 'year', labelKey: 'albumTagEditor.field.year' },
+  { key: 'genre', labelKey: 'albumTagEditor.field.genre' },
+  { key: 'cover', labelKey: 'albumTagEditor.field.cover' },
 ];
 
 const emptyNetworkSelection = (): NetworkFieldSelection => ({
@@ -59,9 +63,9 @@ const numberOrNull = (value: string): number | null => {
 const hasFormValue = (value: string): boolean => value.trim().length > 0;
 const hasCandidateText = (value: string | null | undefined): boolean => (value ?? '').trim().length > 0;
 const candidateNumberText = (value: number | null | undefined): string => (typeof value === 'number' && Number.isFinite(value) ? String(value) : '');
-const fieldValue = (value: string | number | null | undefined): string => {
+const fieldValue = (value: string | number | null | undefined, t: Translate): string => {
   if (value === null || value === undefined || value === '') {
-    return '空';
+    return t('albumTagEditor.value.empty');
   }
   return String(value);
 };
@@ -69,26 +73,28 @@ const fieldValue = (value: string | number | null | undefined): string => {
 const allNetworkFieldsSelected = (selection: NetworkFieldSelection): boolean => networkFieldLabels.every((field) => selection[field.key]);
 const someNetworkFieldsSelected = (selection: NetworkFieldSelection): boolean => networkFieldLabels.some((field) => selection[field.key]);
 
-const validatePositiveInteger = (value: string, label: string): string | null => {
+const validatePositiveInteger = (value: string, label: string, t: Translate): string | null => {
   const trimmed = value.trim();
   if (!trimmed) {
     return null;
   }
   if (!/^\d+$/u.test(trimmed) || Number(trimmed) <= 0) {
-    return `${label}必须是正整数或留空`;
+    return t('albumTagEditor.error.positiveInteger', { label });
   }
   return null;
 };
 
-const formatDuration = (duration: number): string => {
+const formatDuration = (duration: number, t: Translate): string => {
   if (!Number.isFinite(duration) || duration <= 0) {
-    return '未知时长';
+    return t('albumTagEditor.duration.unknown');
   }
 
   const totalMinutes = Math.round(duration / 60);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return hours > 0 ? `${hours} 小时 ${minutes} 分钟` : `${totalMinutes} 分钟`;
+  return hours > 0
+    ? t('albumTagEditor.duration.hoursMinutes', { hours, minutes })
+    : t('albumTagEditor.duration.minutes', { minutes: totalMinutes });
 };
 
 const candidateFieldValue = (candidate: NetworkTagCandidate, key: keyof AlbumTagFormState): string => {
@@ -132,6 +138,7 @@ const applyNetworkCandidateToForm = (
 });
 
 export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, onSave }: AlbumTagEditorDrawerProps): JSX.Element | null => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const [form, setForm] = useState<AlbumTagFormState>(() => stateFromAlbum(album));
   const [selectedCover, setSelectedCover] = useState<TrackCoverSelection | null>(null);
   const [pendingNetworkCover, setPendingNetworkCover] = useState<PendingNetworkCover | null>(null);
@@ -148,7 +155,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
 
   const initialForm = useMemo(() => stateFromAlbum(album), [album]);
   const previewCover = selectedCover?.dataUrl ?? pendingNetworkCover?.previewUrl ?? loadedCoverThumb ?? album?.coverThumb ?? null;
-  const yearError = useMemo(() => validatePositiveInteger(form.year, '年份'), [form.year]);
+  const yearError = useMemo(() => validatePositiveInteger(form.year, t('albumTagEditor.field.year'), t), [form.year, t]);
   const isBusy = isSaving || isLoadingEmbedded || isSearchingNetwork;
   const isDirty = useMemo(
     () =>
@@ -215,13 +222,13 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
 
     const library = window.echo?.library;
     if (!library?.getAlbumTracks) {
-      throw new Error('当前运行环境不支持读取专辑曲目。');
+      throw new Error(t('albumTagEditor.error.readTracksUnsupported'));
     }
 
     const result = await library.getAlbumTracks(album.id, { page: 1, pageSize: 1 });
     const trackId = result.items[0]?.id;
     if (!trackId) {
-      throw new Error('这张专辑没有可读取标签的歌曲。');
+      throw new Error(t('albumTagEditor.error.noReadableTrack'));
     }
 
     setRepresentativeTrackId(trackId);
@@ -237,7 +244,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
     const library = window.echo?.library;
 
     if (!library?.chooseTrackCover) {
-      setLocalError('当前运行环境不支持选择封面。');
+      setLocalError(t('albumTagEditor.error.chooseCoverUnsupported'));
       return;
     }
 
@@ -259,7 +266,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
     const library = window.echo?.library;
 
     if (!library?.loadEmbeddedTrackTags) {
-      setLocalError('当前运行环境不支持读取内嵌标签。');
+      setLocalError(t('albumTagEditor.error.embeddedUnsupported'));
       return;
     }
 
@@ -290,13 +297,13 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
     const library = window.echo?.library;
 
     if (!library?.searchNetworkTagCandidates) {
-      setLocalError('当前运行环境不支持网络标签搜索。');
+      setLocalError(t('albumTagEditor.error.networkUnsupported'));
       return;
     }
 
     setIsSearchingNetwork(true);
     setLocalError(null);
-    setNetworkMessage('正在搜索网络标签...');
+    setNetworkMessage(t('albumTagEditor.message.searchingNetwork'));
     setSelectedNetworkCandidate(null);
     setNetworkFieldSelection(emptyNetworkSelection());
 
@@ -304,11 +311,11 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
       const trackId = await getRepresentativeTrackId();
       const candidates = await library.searchNetworkTagCandidates(trackId);
       setNetworkCandidates(candidates);
-      setNetworkMessage(candidates.length ? null : '没有找到合适的网络标签。');
+      setNetworkMessage(candidates.length ? null : t('albumTagEditor.message.noNetworkTags'));
     } catch (searchError) {
       setNetworkCandidates([]);
       setNetworkMessage(null);
-      setLocalError(searchError instanceof Error ? searchError.message : '网络来源暂时不可用，请稍后再试。');
+      setLocalError(searchError instanceof Error ? searchError.message : t('albumTagEditor.error.networkTemporary'));
     } finally {
       setIsSearchingNetwork(false);
     }
@@ -353,7 +360,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
       setLoadedCoverThumb(null);
     }
 
-    setNetworkMessage('已应用到表单，点击保存后才会写入专辑内歌曲。');
+    setNetworkMessage(t('albumTagEditor.message.appliedNetwork'));
     setShowDiscardConfirm(false);
   };
 
@@ -361,7 +368,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
     event.preventDefault();
     setLocalError(null);
     if (yearError) {
-      setLocalError('请先修正年份，再保存标签。');
+      setLocalError(t('albumTagEditor.error.fixYearBeforeSave'));
       return;
     }
 
@@ -381,52 +388,52 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
 
   const editor = (
     <div className="tag-editor-root" data-open={isOpen}>
-      <button className="tag-editor-scrim" type="button" aria-label="关闭编辑标签" onClick={requestClose} />
+      <button className="tag-editor-scrim" type="button" aria-label={t('albumTagEditor.action.close')} onClick={requestClose} />
       <form className="tag-editor-drawer" onSubmit={handleSubmit}>
         <div className="tag-editor-scroll">
           <header className="tag-editor-header">
           <div>
             <Tag size={23} />
             <div>
-              <h2>编辑标签</h2>
-              <p>{isDirty ? '未保存更改' : '专辑级批量标签'}</p>
+              <h2>{t('albumTagEditor.title')}</h2>
+              <p>{isDirty ? t('albumTagEditor.subtitle.unsaved') : t('albumTagEditor.subtitle.albumBatch')}</p>
             </div>
           </div>
-          <button className="tag-editor-close" type="button" aria-label="关闭编辑标签" onClick={requestClose}>
+          <button className="tag-editor-close" type="button" aria-label={t('albumTagEditor.action.close')} onClick={requestClose}>
             <X size={22} />
           </button>
         </header>
 
-        <section className="tag-editor-cover-card" aria-label="当前专辑">
+        <section className="tag-editor-cover-card" aria-label={t('albumTagEditor.currentAlbumAria')}>
           <div className="tag-editor-cover" data-empty={!previewCover}>
             {previewCover ? <img alt="" src={previewCover} /> : <Disc3 size={42} />}
           </div>
           <div className="tag-editor-file">
-            <span className="tag-editor-kicker">当前专辑</span>
+            <span className="tag-editor-kicker">{t('albumTagEditor.currentAlbum')}</span>
             <strong>{album.title}</strong>
             <span>{album.albumArtist}</span>
             <small>
-              {album.trackCount} 首 / {formatDuration(album.duration)}
+              {t('albumTagEditor.albumSummary', { count: album.trackCount, duration: formatDuration(album.duration, t) })}
               {selectedCover
-                ? ` / 本地封面：${selectedCover.path}`
+                ? t('albumTagEditor.cover.localSuffix', { path: selectedCover.path })
                 : pendingNetworkCover
-                  ? ' / 网络封面将在保存时下载并写入'
+                  ? t('albumTagEditor.cover.networkSuffix')
                   : loadedCoverThumb
-                    ? ' / 已从内嵌标签重新载入封面'
+                    ? t('albumTagEditor.cover.embeddedSuffix')
                     : ''}
             </small>
             <div className="tag-editor-tool-row">
               <button type="button" onClick={() => void handleChooseCover()} disabled={isBusy}>
                 <ImagePlus size={17} />
-                选择封面
+                {t('albumTagEditor.action.chooseCover')}
               </button>
               <button type="button" onClick={() => void handleLoadEmbedded()} disabled={isBusy}>
                 <RefreshCw size={17} />
-                {isLoadingEmbedded ? '读取中' : '从内嵌标签加载'}
+                {isLoadingEmbedded ? t('albumTagEditor.action.loading') : t('albumTagEditor.action.loadEmbedded')}
               </button>
               <button type="button" onClick={() => void handleSearchNetwork()} disabled={isBusy}>
                 <CloudDownload size={17} />
-                {isSearchingNetwork ? '搜索中' : '从网络加载'}
+                {isSearchingNetwork ? t('albumTagEditor.action.searching') : t('albumTagEditor.action.loadNetwork')}
               </button>
             </div>
           </div>
@@ -434,48 +441,48 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
 
         <section className="tag-editor-section">
           <div className="tag-editor-section-heading">
-            <h3>专辑信息</h3>
-            <span>会批量写入这张专辑内的歌曲</span>
+            <h3>{t('albumTagEditor.section.albumInfo')}</h3>
+            <span>{t('albumTagEditor.section.albumInfoDescription')}</span>
           </div>
           <div className="tag-editor-grid">
             <label className="tag-editor-field">
-              <span>专辑</span>
-              <input disabled={isBusy} value={form.album} aria-label="专辑" onChange={(event) => updateField('album', event.target.value)} />
+              <span>{t('albumTagEditor.field.album')}</span>
+              <input disabled={isBusy} value={form.album} aria-label={t('albumTagEditor.field.album')} onChange={(event) => updateField('album', event.target.value)} />
             </label>
             <label className="tag-editor-field">
-              <span>专辑艺术家</span>
+              <span>{t('albumTagEditor.field.albumArtist')}</span>
               <input
                 disabled={isBusy}
                 value={form.albumArtist}
-                aria-label="专辑艺术家"
+                aria-label={t('albumTagEditor.field.albumArtist')}
                 onChange={(event) => updateField('albumArtist', event.target.value)}
               />
             </label>
             <label className="tag-editor-field" data-invalid={Boolean(yearError)}>
-              <span>年份</span>
+              <span>{t('albumTagEditor.field.year')}</span>
               <input
                 disabled={isBusy}
                 inputMode="numeric"
                 value={form.year}
                 aria-invalid={Boolean(yearError)}
-                aria-label="年份"
+                aria-label={t('albumTagEditor.field.year')}
                 onChange={(event) => updateField('year', event.target.value)}
               />
               {yearError ? <em>{yearError}</em> : null}
             </label>
             <label className="tag-editor-field">
-              <span>流派</span>
-              <input disabled={isBusy} value={form.genre} aria-label="流派" onChange={(event) => updateField('genre', event.target.value)} />
+              <span>{t('albumTagEditor.field.genre')}</span>
+              <input disabled={isBusy} value={form.genre} aria-label={t('albumTagEditor.field.genre')} onChange={(event) => updateField('genre', event.target.value)} />
             </label>
           </div>
         </section>
 
-        <section className="tag-editor-section tag-editor-network-panel" aria-label="网络候选对比">
+        <section className="tag-editor-section tag-editor-network-panel" aria-label={t('albumTagEditor.network.aria')}>
           <div className="tag-editor-section-heading">
-            <h3>网络候选</h3>
+            <h3>{t('albumTagEditor.network.title')}</h3>
             <button type="button" onClick={() => void handleSearchNetwork()} disabled={isBusy}>
               <CloudDownload size={16} />
-              {isSearchingNetwork ? '搜索中' : '搜索候选'}
+              {isSearchingNetwork ? t('albumTagEditor.action.searching') : t('albumTagEditor.action.searchCandidates')}
             </button>
           </div>
 
@@ -496,9 +503,9 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
                       {candidate.coverPreviewUrl ? <img alt="" src={candidate.coverPreviewUrl} /> : <Tag size={24} />}
                     </span>
                     <span className="tag-editor-network-copy">
-                      <strong>{candidate.album || candidate.title || '未知专辑'}</strong>
-                      <em>{candidate.albumArtist || candidate.artist || '未知艺术家'}</em>
-                      <small>{[candidate.year, candidate.genre].filter(Boolean).join(' / ') || '专辑候选'}</small>
+                      <strong>{candidate.album || candidate.title || t('albumTagEditor.value.unknownAlbum')}</strong>
+                      <em>{candidate.albumArtist || candidate.artist || t('albumTagEditor.value.unknownArtist')}</em>
+                      <small>{[candidate.year, candidate.genre].filter(Boolean).join(' / ') || t('albumTagEditor.value.albumCandidate')}</small>
                     </span>
                     <span className="tag-editor-network-score">
                       <b>{candidate.provider}</b>
@@ -511,7 +518,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
               {selectedNetworkCandidate ? (
                 <div className="tag-editor-network-fields">
                   <div className="tag-editor-network-fields-header">
-                    <span>选择要应用到专辑的字段</span>
+                    <span>{t('albumTagEditor.network.selectFields')}</span>
                     <label>
                       <input
                         ref={(node) => {
@@ -523,19 +530,19 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
                         checked={allNetworkFieldsSelected(networkFieldSelection)}
                         onChange={handleToggleAllNetworkFields}
                       />
-                      <span>全选</span>
+                      <span>{t('albumTagEditor.network.selectAll')}</span>
                     </label>
                   </div>
 
                   <div className="tag-editor-compare-table">
                     <div className="tag-editor-compare-head">
-                      <span>字段</span>
-                      <span>当前</span>
-                      <span>候选</span>
+                      <span>{t('albumTagEditor.network.column.field')}</span>
+                      <span>{t('albumTagEditor.network.column.current')}</span>
+                      <span>{t('albumTagEditor.network.column.candidate')}</span>
                     </div>
                     {networkFieldLabels.map((field) => {
-                      const candidateValue = field.key === 'cover' ? (selectedNetworkCandidate.coverUrl ? '网络封面' : '') : candidateFieldValue(selectedNetworkCandidate, field.key);
-                      const currentValue = field.key === 'cover' ? (previewCover ? '已有封面' : '') : form[field.key];
+                      const candidateValue = field.key === 'cover' ? (selectedNetworkCandidate.coverUrl ? t('albumTagEditor.value.networkCover') : '') : candidateFieldValue(selectedNetworkCandidate, field.key);
+                      const currentValue = field.key === 'cover' ? (previewCover ? t('albumTagEditor.value.existingCover') : '') : form[field.key];
                       const canApply = field.key === 'cover' ? Boolean(selectedNetworkCandidate.coverUrl) : hasFormValue(candidateValue);
                       return (
                         <label key={field.key} className="tag-editor-compare-row" data-disabled={!canApply}>
@@ -546,10 +553,10 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
                               checked={networkFieldSelection[field.key] && canApply}
                               onChange={() => handleToggleNetworkField(field.key)}
                             />
-                            {field.label}
+                            {t(field.labelKey)}
                           </span>
-                          <em>{fieldValue(currentValue)}</em>
-                          <strong>{fieldValue(candidateValue)}</strong>
+                          <em>{fieldValue(currentValue, t)}</em>
+                          <strong>{fieldValue(candidateValue, t)}</strong>
                         </label>
                       );
                     })}
@@ -557,7 +564,7 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
 
                   <button type="button" onClick={handleApplyNetworkCandidate} disabled={isSaving || !someNetworkFieldsSelected(networkFieldSelection)}>
                     <Check size={17} />
-                    应用到表单
+                    {t('albumTagEditor.action.applyToForm')}
                   </button>
                 </div>
               ) : null}
@@ -569,24 +576,24 @@ export const AlbumTagEditorDrawer = ({ album, isOpen, isSaving, error, onClose, 
 
         {showDiscardConfirm ? (
           <div className="tag-editor-discard" role="alert">
-            <span>有未保存更改，确认关闭并丢弃吗？</span>
+            <span>{t('albumTagEditor.discard.prompt')}</span>
             <button type="button" onClick={() => setShowDiscardConfirm(false)}>
-              继续编辑
+              {t('albumTagEditor.discard.continue')}
             </button>
             <button type="button" onClick={onClose}>
-              丢弃更改
+              {t('albumTagEditor.discard.discard')}
             </button>
           </div>
         ) : null}
 
           <footer className="tag-editor-actions">
-          <span>保存会写入这张专辑内所有歌曲的嵌入标签，并立即同步媒体库。</span>
+          <span>{t('albumTagEditor.saveDescription')}</span>
           <button className="tag-editor-cancel" type="button" onClick={requestClose} disabled={isSaving}>
-            取消
+            {t('albumTagEditor.action.cancel')}
           </button>
           <button className="tag-editor-save" type="submit" disabled={isSaving || Boolean(yearError)}>
             <Save size={18} />
-            {isSaving ? '保存中' : '保存标签'}
+            {isSaving ? t('albumTagEditor.action.saving') : t('albumTagEditor.action.saveTags')}
           </button>
           </footer>
         </div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { ArrowLeft, Disc3, ExternalLink, Heart, Info, Loader2, MoreHorizontal, Play, RefreshCw, Users } from 'lucide-react';
+import { ArrowLeft, Disc3, ExternalLink, Heart, Info, Loader2, MoreHorizontal, Play, RefreshCw } from 'lucide-react';
 import type { AlbumOnlineInfo, EditableTrackTags, LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../../hooks/useLikedMedia';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
@@ -85,7 +85,7 @@ type TrackMenuState = {
   position: { x: number; y: number };
 };
 
-type AlbumDetailTab = 'tracks' | 'credits' | 'information';
+type AlbumDetailTab = 'tracks' | 'sources' | 'releases' | 'information';
 
 type OnlineInfoState = {
   loading: boolean;
@@ -246,6 +246,59 @@ const creditSourceLabel = (source: string, t: (key: TranslationKey, options?: Re
       return t('albumDetail.credit.source.album');
   }
 };
+
+const sourceKindLabel = (kind: string, t: (key: TranslationKey, options?: Record<string, string | number>) => string): string => {
+  switch (kind) {
+    case 'database':
+      return t('albumDetail.sources.kind.database');
+    case 'streaming':
+      return t('albumDetail.sources.kind.streaming');
+    case 'official':
+      return t('albumDetail.sources.kind.official');
+    case 'reference':
+      return t('albumDetail.sources.kind.reference');
+    default:
+      return t('albumDetail.sources.kind.other');
+  }
+};
+
+const sourceProviderLabel = (provider: string): string => {
+  switch (provider) {
+    case 'musicbrainz':
+      return 'MusicBrainz';
+    case 'wikipedia':
+      return 'Wikipedia';
+    case 'wikidata':
+      return 'Wikidata';
+    case 'vgmdb':
+      return 'VGMdb';
+    case 'discogs':
+      return 'Discogs';
+    case 'spotify':
+      return 'Spotify';
+    case 'appleMusic':
+      return 'Apple Music';
+    case 'youtubeMusic':
+      return 'YouTube Music';
+    case 'bandcamp':
+      return 'Bandcamp';
+    case 'official':
+      return 'Official';
+    default:
+      return 'Web';
+  }
+};
+
+const formatReleaseVersionMeta = (version: NonNullable<AlbumOnlineInfo['releaseVersions'][number]>): string =>
+  [
+    version.year ? String(version.year) : null,
+    version.country,
+    version.mediaFormats.join(' / ') || null,
+    version.status,
+    version.barcode ? `Barcode ${version.barcode}` : null,
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join(' - ');
 
 export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.Element => {
   const { t } = useI18n();
@@ -926,13 +979,15 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     );
   };
 
-  const renderOnlineState = (section: 'credits' | 'information'): JSX.Element | null => {
+  const renderOnlineState = (section: 'sources' | 'releases' | 'information'): JSX.Element | null => {
     const info = onlineInfoState.info;
     const isEmpty =
       info &&
-      (section === 'credits'
-        ? info.credits.length === 0
-        : !info.information && !info.artistInformation);
+      (section === 'sources'
+        ? info.sourceLinks.length === 0 && !info.releaseDetails
+        : section === 'releases'
+          ? info.releaseVersions.length === 0
+          : !info.information && !info.artistInformation);
 
     if (onlineInfoState.loading && !info) {
       return (
@@ -997,46 +1052,122 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     );
   };
 
-  const renderCredits = (): JSX.Element => {
-    const state = renderOnlineState('credits');
+  const renderSources = (): JSX.Element => {
+    const state = renderOnlineState('sources');
+    if (state) {
+      return state;
+    }
+
+    const info = onlineInfoState.info;
+    const details = info?.releaseDetails ?? null;
+    return (
+      <div className="album-online-panel album-sources-panel">
+        {renderOnlineHeader()}
+        {details ? (
+          <section className="album-release-detail-card" aria-label={t('albumDetail.sources.releaseAria')}>
+            <div>
+              <span>{t('albumDetail.sources.releaseDetails')}</span>
+              <h3>{details.title}</h3>
+              <p>
+                {[
+                  details.date,
+                  details.country,
+                  details.status,
+                  details.mediaFormats.join(' / ') || null,
+                ].filter(Boolean).join(' - ')}
+              </p>
+            </div>
+            <div className="album-release-facts">
+              {details.barcode ? (
+                <span>
+                  <small>{t('albumDetail.sources.barcode')}</small>
+                  <strong>{details.barcode}</strong>
+                </span>
+              ) : null}
+              {details.labels.length ? (
+                <span>
+                  <small>{t('albumDetail.sources.labels')}</small>
+                  <strong>{details.labels.map((label) => [label.name, label.catalogNumber].filter(Boolean).join(' / ')).join(', ')}</strong>
+                </span>
+              ) : null}
+              {details.copyrights.length ? (
+                <span>
+                  <small>{t('albumDetail.sources.copyright')}</small>
+                  <strong>{details.copyrights.join(', ')}</strong>
+                </span>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+        {info?.sourceLinks.length ? (
+          <section className="album-source-link-grid" aria-label={t('albumDetail.sources.linksAria')}>
+            {info.sourceLinks.map((link) => (
+              <a key={link.url} href={link.url} rel="noreferrer" target="_blank" title={link.url} onClick={(event) => handleExternalLinkClick(event, link.url)}>
+                <ExternalLink size={15} />
+                <span>{sourceProviderLabel(link.provider)}</span>
+                <strong>{link.label}</strong>
+                <small>{sourceKindLabel(link.kind, t)}</small>
+              </a>
+            ))}
+          </section>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderReleases = (): JSX.Element => {
+    const state = renderOnlineState('releases');
     if (state) {
       return state;
     }
 
     const info = onlineInfoState.info;
     return (
-      <div className="album-online-panel album-credits-panel">
+      <div className="album-online-panel album-releases-panel">
         {renderOnlineHeader()}
-        {info?.credits.length ? (
-          <section className="album-credit-overview" aria-label={t('albumDetail.credits.overviewAria')}>
-            <Users size={18} />
-            <div>
-              <span>{t('albumDetail.credits.heading')}</span>
-              <strong>{t('albumDetail.credits.count', { count: info.credits.reduce((count, group) => count + group.people.length, 0) })}</strong>
-            </div>
-          </section>
-        ) : null}
-        {info?.credits.map((group) => (
-          <section className="album-credit-group" key={group.role}>
-            <header>
+        <section className="album-information-overview" aria-label={t('albumDetail.releases.overviewAria')}>
+          <Disc3 size={18} />
+          <div>
+            <span>{t('albumDetail.releases.heading')}</span>
+            <strong>{t('albumDetail.releases.count', { count: info?.releaseVersions.length ?? 0 })}</strong>
+            <small>{t('albumDetail.releases.currentHint')}</small>
+          </div>
+        </section>
+        <div className="album-release-version-list">
+          {info?.releaseVersions.map((version) => (
+            <article className="album-release-version-card" data-current={version.isMatched} key={version.providerItemId}>
               <div>
-                <span>{group.role}</span>
-                <h3>{creditRoleTitle(group.role, t)}</h3>
+                <span>{version.isMatched ? t('albumDetail.releases.current') : sourceProviderLabel('musicbrainz')}</span>
+                <h3>{version.title}</h3>
+                <p>{formatReleaseVersionMeta(version)}</p>
               </div>
-              <small>{t('albumDetail.credits.entries', { count: group.people.length })}</small>
-            </header>
-            <p>{creditRoleSummary(group.role, t)}</p>
-            <div className="album-credit-people">
-              {group.people.map((person) => (
-                <span className="album-credit-chip" key={`${group.role}-${person.name}-${person.trackTitle ?? ''}-${person.detail ?? ''}`}>
-                  <strong>{person.name}</strong>
-                  <small>{[person.detail, creditSourceLabel(person.source, t)].filter(Boolean).join(' - ')}</small>
-                  {person.trackTitle ? <em>{t('albumDetail.credits.trackPrefix', { title: person.trackTitle })}</em> : null}
-                </span>
-              ))}
-            </div>
-          </section>
-        ))}
+              <div className="album-release-version-meta">
+                {version.labels.length ? (
+                  <span>
+                    <small>{t('albumDetail.sources.labels')}</small>
+                    <strong>{version.labels.join(', ')}</strong>
+                  </span>
+                ) : null}
+                {version.catalogNumbers.length ? (
+                  <span>
+                    <small>{t('albumDetail.sources.catalogNumber')}</small>
+                    <strong>{version.catalogNumbers.join(', ')}</strong>
+                  </span>
+                ) : null}
+                {version.trackCount ? (
+                  <span>
+                    <small>{t('albumDetail.tab.tracks')}</small>
+                    <strong>{formatTrackCount(version.trackCount, t)}</strong>
+                  </span>
+                ) : null}
+              </div>
+              <a href={version.url} rel="noreferrer" target="_blank" onClick={(event) => handleExternalLinkClick(event, version.url)}>
+                <ExternalLink size={14} />
+                {t('albumDetail.action.openSource')}
+              </a>
+            </article>
+          ))}
+        </div>
       </div>
     );
   };
@@ -1171,8 +1302,11 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           <button className="album-detail-tab" type="button" aria-current={activeTab === 'tracks' ? 'page' : undefined} onClick={() => setActiveTab('tracks')}>
             {t('albumDetail.tab.tracks')}
           </button>
-          <button className="album-detail-tab" type="button" aria-current={activeTab === 'credits' ? 'page' : undefined} onClick={() => setActiveTab('credits')}>
-            {t('albumDetail.tab.credits')}
+          <button className="album-detail-tab" type="button" aria-current={activeTab === 'sources' ? 'page' : undefined} onClick={() => setActiveTab('sources')}>
+            {t('albumDetail.tab.sources')}
+          </button>
+          <button className="album-detail-tab" type="button" aria-current={activeTab === 'releases' ? 'page' : undefined} onClick={() => setActiveTab('releases')}>
+            {t('albumDetail.tab.releases')}
           </button>
           <button className="album-detail-tab" type="button" aria-current={activeTab === 'information' ? 'page' : undefined} onClick={() => setActiveTab('information')}>
             {t('albumDetail.tab.information')}
@@ -1193,8 +1327,10 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
             onPlayTrack={handlePlayTrack}
             onToggleTrackLiked={handleToggleTrackLiked}
           />
-        ) : activeTab === 'credits' ? (
-          renderCredits()
+        ) : activeTab === 'sources' ? (
+          renderSources()
+        ) : activeTab === 'releases' ? (
+          renderReleases()
         ) : (
           renderInformation()
         )}

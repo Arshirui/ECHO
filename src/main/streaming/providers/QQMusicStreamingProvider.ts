@@ -24,6 +24,7 @@ import { asRecord, integer, jsonFetch, linesFromLyrics, maybeDecodeBase64, numbe
 
 const provider = 'qqmusic' as const;
 const qqReferer = 'https://y.qq.com/';
+const qqLegacyApiReferer = 'https://c.y.qq.com/';
 
 const qqHeaders = (cookie?: string): Record<string, string> => ({
   Referer: qqReferer,
@@ -961,11 +962,17 @@ export class QQMusicStreamingProvider implements StreamingProvider {
     });
     const data = asRecord(
       await jsonFetch(`https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?${params.toString()}`, {
-        headers: qqHeaders(accountCookie()),
+        headers: {
+          ...qqHeaders(accountCookie()),
+          Referer: qqLegacyApiReferer,
+        },
         timeoutMs: 12_000,
       }),
     );
     const cd = asRecord((Array.isArray(data.cdlist) ? data.cdlist : [])[0]);
+    if (Object.keys(cd).length === 0) {
+      throw new Error(text(data.message) ?? text(data.msg) ?? 'QQ Music playlist detail is empty.');
+    }
     const songlist = Array.isArray(cd.songlist) ? cd.songlist : [];
     const total = integer(cd.total_song_num ?? cd.songnum) ?? songlist.length;
     const logo = text(cd.logo) ?? text(cd.picurl);

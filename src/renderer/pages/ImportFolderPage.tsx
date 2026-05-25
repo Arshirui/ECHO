@@ -1,7 +1,10 @@
 import { FolderPlus } from 'lucide-react';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
+import { useI18n } from '../i18n/I18nProvider';
 
 export const ImportFolderPage = (): JSX.Element => {
+  const { t } = useI18n();
+
   return (
     <div className="page-stack">
       <div className="empty-state import-folder-hero">
@@ -9,9 +12,9 @@ export const ImportFolderPage = (): JSX.Element => {
           <FolderPlus size={26} />
         </div>
         <div>
-          <h2>导入文件夹</h2>
-          <p>选择本地音乐文件夹，加入曲库后会立即在后台开始扫描。</p>
-          <span>此页面只用于本地曲库导入和扫描状态查看。</span>
+          <h2>{t('route.importFolder.label')}</h2>
+          <p>{t('route.importFolder.description')}</p>
+          <span>{t('importFolder.hero.note')}</span>
         </div>
       </div>
 

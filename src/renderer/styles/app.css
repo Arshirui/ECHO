@@ -2792,6 +2792,22 @@
   border-left: 3px solid rgba(75, 112, 154, 0.28);
 }
 
+.settings-update-markdown img {
+  display: block;
+  max-width: 100%;
+  max-height: 240px;
+  margin: 6px 0;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.settings-update-markdown hr {
+  width: 100%;
+  height: 1px;
+  border: 0;
+  background: rgba(66, 91, 121, 0.14);
+}
+
 .plain-page-header {
   display: grid;
   gap: 6px;
@@ -4305,6 +4321,12 @@
   background: #eefaf7;
 }
 
+.tag-automix {
+  color: #4f3b83;
+  border-color: rgba(79, 59, 131, 0.16);
+  background: #f2efff;
+}
+
 .tag-remote-path {
   max-width: 220px;
   color: #2f5f7c;
@@ -4712,11 +4734,32 @@
   z-index: 20;
 }
 
+.volume-popover {
+  right: 0;
+  bottom: 44px;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  width: 196px;
+  gap: 10px 12px;
+  padding: 13px 14px 12px;
+  border-color: rgba(111, 91, 154, 0.14);
+  border-radius: 18px;
+  box-shadow:
+    0 18px 42px rgba(38, 29, 67, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  transform: translateY(8px) scale(0.97);
+  transform-origin: calc(100% - 17px) 100%;
+}
+
 .volume-popover[data-open="true"],
 .speed-popover[data-open="true"] {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(50%) translateY(0) scale(1);
+}
+
+.volume-popover[data-open="true"] {
+  transform: translateY(0) scale(1);
 }
 
 .volume-popover span,
@@ -4725,6 +4768,15 @@
   font-size: 11px;
   font-weight: 800;
   text-align: center;
+}
+
+.volume-popover span {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+  color: var(--theme-heading-text);
+  font-size: 15px;
+  line-height: 1;
 }
 
 .speed-popover-header {
@@ -4766,20 +4818,28 @@
   accent-color: var(--theme-heading-text);
 }
 
+.volume-popover input {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+}
+
 .volume-popover input:disabled {
   opacity: 0.45;
 }
 
 .volume-fixed-button {
+  grid-column: 2;
+  grid-row: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  justify-self: center;
-  width: 28px;
-  min-height: 28px;
+  justify-self: end;
+  width: 30px;
+  min-height: 30px;
   color: #5f5b73;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: rgba(246, 243, 252, 0.95);
   cursor: pointer;
 }

@@ -73,6 +73,17 @@ const interpolate = (text: string, options?: TranslateOptions): string => {
   );
 };
 
+export const translateFallback = (key: TranslationKey, options?: TranslateOptions): string => {
+  const text = translations[fallbackLocale][key] ?? key;
+  return interpolate(text, options);
+};
+
+export const translateCurrentLocale = (key: TranslationKey, options?: TranslateOptions): string => {
+  const locale = readInitialLocale();
+  const text = translations[locale][key] ?? translations[fallbackLocale][key] ?? key;
+  return interpolate(text, options);
+};
+
 export const I18nProvider = ({ children }: PropsWithChildren): JSX.Element => {
   const [locale, setLocaleState] = useState<Locale>(readInitialLocale);
 
@@ -144,6 +155,8 @@ export const I18nProvider = ({ children }: PropsWithChildren): JSX.Element => {
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 };
+
+export const useOptionalI18n = (): I18nContextValue | null => useContext(I18nContext);
 
 export const useI18n = (): I18nContextValue => {
   const context = useContext(I18nContext);

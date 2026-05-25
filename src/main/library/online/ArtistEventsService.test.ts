@@ -292,6 +292,198 @@ describe('ArtistEventsService', () => {
     ]);
   });
 
+  it('finds upcoming Roselia events from Eventernote instead of being trapped on old history pages', async () => {
+    const fetcher = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('ticketmaster.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ _embedded: { events: [] } }),
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+        text: async () => `
+          <div class="gb_event_list clearfix">
+            <ul>
+              <li class="clearfix ">
+                <div class="date">
+                  <p class="day6">2026-08-29 (<span class="wday6">土</span>)</p>
+                  <p><img src="https://eventernote.example/events/463596_s.jpg" alt="Roselia Lehre der Rose"></p>
+                </div>
+                <div class="event">
+                  <h4><a href="/events/463596">Roselia「Lehre der Rose」- Roselia 10th Anniversary Best Album「Lehre der Rose」リリース記念ライブ DAY1</a></h4>
+                  <div class="place">会場: <a href="/places/11572">有明アリーナ</a></div>
+                  <div class="place"><span class="s">開場 16:30 開演 18:00 終演 20:00</span></div>
+                  <div class="actor"><ul><li><a href="/actors/Roselia/24401">Roselia</a></li></ul></div>
+                </div>
+              </li>
+            </ul>
+          </div>
+        `,
+      };
+    });
+
+    const result = await new ArtistEventsService(fetcher).getArtistEvents({
+      artistName: 'Roselia',
+      ticketmasterApiKey: 'ticketmaster-key',
+      now: new Date('2026-05-25T00:00:00.000Z'),
+    });
+
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain('https://www.eventernote.com/events/search?');
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain('year=2026');
+    expect(result.sources).toEqual(['ticketmaster', 'eventernote']);
+    expect(result.events).toEqual([
+      {
+        id: 'eventernote:463596',
+        source: 'eventernote',
+        sourceLabel: 'Eventernote',
+        title: 'Roselia「Lehre der Rose」- Roselia 10th Anniversary Best Album「Lehre der Rose」リリース記念ライブ DAY1',
+        startsAt: '2026-08-29T18:00:00',
+        timezone: 'Asia/Tokyo',
+        timeTbd: false,
+        venueName: '有明アリーナ',
+        city: null,
+        region: null,
+        country: 'Japan',
+        url: 'https://www.eventernote.com/events/463596',
+        ticketUrl: 'https://www.eventernote.com/events/463596',
+        venueUrl: null,
+        imageUrl: 'https://eventernote.example/events/463596_s.jpg',
+      },
+    ]);
+  });
+
+  it('uses no-key Japanese fallbacks even when no paid event provider is configured', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+      text: async () => `
+        <div class="gb_event_list clearfix">
+          <ul>
+            <li class="clearfix ">
+              <div class="date"><p class="day4">2026-07-02 (<span class="wday4">木</span>)</p></div>
+              <div class="event">
+                <h4><a href="/events/476970">J-POP SOUND CAPSULE 2026</a></h4>
+                <div class="place">会場: <a href="/places/25763">Crypto.com Arena</a></div>
+                <div class="place"><span class="s">開場 18:30 開演 20:00 終演 23:00</span></div>
+                <div class="actor"><ul><li><a href="/actors/Roselia/24401">Roselia</a></li></ul></div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      `,
+    });
+
+    const result = await new ArtistEventsService(fetcher).getArtistEvents({
+      artistName: 'Roselia',
+      now: new Date('2026-05-25T00:00:00.000Z'),
+      region: 'JP',
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('https://www.eventernote.com/events/search?');
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('year=2026');
+    expect(result.status).toBe('ready');
+    expect(result.sources).toEqual(['eventernote']);
+    expect(result.events.map((event) => event.id)).toEqual(['eventernote:476970']);
+  });
+
+  it('maps eplus ticket pages as a Japanese event fallback', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+      text: async () => `
+        <main>
+          <h1>Poppin’Party のチケット情報</h1>
+          <a href="/sf/detail/2330760002">
+            <h3>New Year LIVE「Happy BanG Year!!」 2026/1/3(土)18:00～</h3>
+          </a>
+          <p>Streaming+</p>
+        </main>
+      `,
+    });
+
+    const result = await new ArtistEventsService(fetcher).getEplusEvents({
+      artistName: "Poppin'Party",
+      now: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('ready');
+    expect(result.sources).toEqual(['eplus']);
+    expect(result.events).toEqual([
+      {
+        id: 'eplus:new year live happy bang year 2026 01 03t18 00 00',
+        source: 'eplus',
+        sourceLabel: 'eplus',
+        title: 'New Year LIVE「Happy BanG Year!!」',
+        startsAt: '2026-01-03T18:00:00',
+        timezone: 'Asia/Tokyo',
+        timeTbd: false,
+        venueName: null,
+        city: null,
+        region: null,
+        country: 'Japan',
+        url: 'https://eplus.jp/sf/detail/2330760002',
+        ticketUrl: 'https://eplus.jp/sf/detail/2330760002',
+        venueUrl: null,
+        imageUrl: null,
+      },
+    ]);
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain("https://eplus.jp/sf/search?keyword=Poppin'Party");
+  });
+
+  it('falls back to eplus when Ticketmaster and Eventernote have no Japanese artist matches', async () => {
+    const fetcher = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('ticketmaster.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ _embedded: { events: [] } }),
+        };
+      }
+
+      if (url.includes('eventernote.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          text: async () => '<div class="gb_event_list clearfix"><ul></ul></div>',
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+        text: async () => `
+          <main>
+            <h1>Poppin’Party のチケット情報</h1>
+            <a href="/sf/detail/2330760002">New Year LIVE「Happy BanG Year!!」 2026/1/3(土)18:00～</a>
+          </main>
+        `,
+      };
+    });
+
+    const result = await new ArtistEventsService(fetcher).getArtistEvents({
+      artistName: "Poppin'Party",
+      ticketmasterApiKey: 'ticketmaster-key',
+      now: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(5);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain('https://www.eventernote.com/events/search?');
+    expect(String(fetcher.mock.calls[2]?.[0])).toContain('year=2027');
+    expect(String(fetcher.mock.calls[4]?.[0])).toContain("https://eplus.jp/sf/search?keyword=Poppin'Party");
+    expect(result.sources).toEqual(['ticketmaster', 'eventernote', 'eplus']);
+    expect(result.events.map((event) => event.id)).toEqual(['eplus:new year live happy bang year 2026 01 03t18 00 00']);
+  });
+
   it('degrades to unavailable when Bandsintown fails', async () => {
     const fetcher = vi.fn().mockResolvedValue({
       ok: false,

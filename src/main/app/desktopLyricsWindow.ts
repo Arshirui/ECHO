@@ -25,6 +25,7 @@ const forwardedAudioStatusMaxAgeMs = 30_000;
 let desktopLyricsWindow: BrowserWindow | null = null;
 let rememberBoundsTimer: ReturnType<typeof setTimeout> | null = null;
 let lastForwardedAudioStatus: { status: AudioStatus; receivedAtMs: number } | null = null;
+let desktopLyricsMousePassthrough = false;
 
 const toDesktopLyricsSettings = (): DesktopLyricsState['settings'] => {
   const settings = getAppSettings();
@@ -120,7 +121,7 @@ const applyDesktopLyricsAlwaysOnTop = (window: BrowserWindow): void => {
 
 const applyDesktopLyricsLockState = (window: BrowserWindow): void => {
   const locked = getAppSettings().desktopLyricsLocked === true;
-  window.setIgnoreMouseEvents(locked, { forward: true });
+  window.setIgnoreMouseEvents(locked || desktopLyricsMousePassthrough, { forward: true });
 };
 
 const rememberDesktopLyricsBounds = (window: BrowserWindow): void => {
@@ -232,6 +233,7 @@ export const createDesktopLyricsWindow = (): BrowserWindow => {
 
 export const showDesktopLyricsWindow = (): DesktopLyricsState => {
   setAppSettings({ desktopLyricsEnabled: true });
+  desktopLyricsMousePassthrough = false;
   const window = createDesktopLyricsWindow();
   applyDesktopLyricsLockState(window);
   if (!window.isVisible()) {
@@ -244,6 +246,7 @@ export const showDesktopLyricsWindow = (): DesktopLyricsState => {
 
 export const hideDesktopLyricsWindow = (): DesktopLyricsState => {
   setAppSettings({ desktopLyricsEnabled: false });
+  desktopLyricsMousePassthrough = false;
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
     desktopLyricsWindow.hide();
   }
@@ -254,6 +257,7 @@ export const hideDesktopLyricsWindow = (): DesktopLyricsState => {
 export const closeDesktopLyricsWindow = (): void => {
   if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) {
     desktopLyricsWindow = null;
+    desktopLyricsMousePassthrough = false;
     return;
   }
 
@@ -264,16 +268,31 @@ export const closeDesktopLyricsWindow = (): void => {
 
   rememberDesktopLyricsBounds(desktopLyricsWindow);
   desktopLyricsWindow.destroy();
+  desktopLyricsMousePassthrough = false;
 };
 
 export const setDesktopLyricsLocked = (locked: boolean): DesktopLyricsState => {
   setAppSettings({ desktopLyricsLocked: locked });
+  desktopLyricsMousePassthrough = false;
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
     applyDesktopLyricsLockState(desktopLyricsWindow);
     applyDesktopLyricsAlwaysOnTop(desktopLyricsWindow);
   }
   emitDesktopLyricsStateChanged();
   return getDesktopLyricsState();
+};
+
+export const setDesktopLyricsMousePassthrough = (event: IpcMainEvent, passthrough: unknown): void => {
+  if (
+    !desktopLyricsWindow ||
+    desktopLyricsWindow.isDestroyed() ||
+    event.sender !== desktopLyricsWindow.webContents
+  ) {
+    return;
+  }
+
+  desktopLyricsMousePassthrough = passthrough === true;
+  applyDesktopLyricsLockState(desktopLyricsWindow);
 };
 
 export const setDesktopLyricsStyle = (patch: DesktopLyricsStylePatch): DesktopLyricsState => {

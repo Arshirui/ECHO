@@ -185,6 +185,7 @@ describe('AirPlayReceiverSpikeService', () => {
       name: 'ECHO Next (AirPlay)',
       model: 'ECHO-Next-AirPlay-Spike',
       mac: '60:CF:84:CB:1E:D1',
+      latencies: '1000:1000',
       metadata: true,
       portRange: 100,
     }));
@@ -229,7 +230,7 @@ describe('AirPlayReceiverSpikeService', () => {
   });
 
   it('surfaces unsupported modern AirPlay POST attempts from native logs', async () => {
-    let logHandler: ((event: unknown) => void) | null = null;
+    const logHandlers: Array<(event: unknown) => void> = [];
     const service = new AirPlayReceiverSpikeService({
       audioSession: new FakeAudioSession() as never,
       getAdvertiseInterfaces: () => [
@@ -244,13 +245,13 @@ describe('AirPlayReceiverSpikeService', () => {
         stopReceiver: vi.fn(),
         sendRemoteCommand: vi.fn(() => true),
         setLogHandler: vi.fn((handler) => {
-          logHandler = handler;
+          logHandlers.push(handler);
         }),
       }),
     });
 
     await service.setEnabled(true);
-    logHandler?.({ source: 'raop', level: 'info', line: 'handle_rtsp:591 unknown/unhandled method POST' });
+    logHandlers[0]?.({ source: 'raop', level: 'info', line: 'handle_rtsp:591 unknown/unhandled method POST' });
 
     const status = service.getStatus();
     expect(status.state).toBe('error');
@@ -258,7 +259,7 @@ describe('AirPlayReceiverSpikeService', () => {
   });
 
   it('does not label non-POST RTSP 501 responses as unsupported POST flow', async () => {
-    let logHandler: ((event: unknown) => void) | null = null;
+    const logHandlers: Array<(event: unknown) => void> = [];
     const service = new AirPlayReceiverSpikeService({
       audioSession: new FakeAudioSession() as never,
       getAdvertiseInterfaces: () => [
@@ -273,13 +274,13 @@ describe('AirPlayReceiverSpikeService', () => {
         stopReceiver: vi.fn(),
         sendRemoteCommand: vi.fn(() => true),
         setLogHandler: vi.fn((handler) => {
-          logHandler = handler;
+          logHandlers.push(handler);
         }),
       }),
     });
 
     await service.setEnabled(true);
-    logHandler?.({ source: 'raop', level: 'info', line: 'handle_rtsp:625 responding: RTSP/1.0 501 Not Implemented' });
+    logHandlers[0]?.({ source: 'raop', level: 'info', line: 'handle_rtsp:625 responding: RTSP/1.0 501 Not Implemented' });
 
     const status = service.getStatus();
     expect(status.state).toBe('idle');

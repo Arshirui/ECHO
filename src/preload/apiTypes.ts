@@ -274,6 +274,7 @@ export type EchoApi = {
     setLocked: (locked: boolean) => Promise<DesktopLyricsState>;
     setStyle: (patch: DesktopLyricsStylePatch) => Promise<DesktopLyricsState>;
     resetBounds: () => Promise<DesktopLyricsState>;
+    setMousePassthrough: (passthrough: boolean) => void;
     getLastAudioStatus: () => Promise<AudioStatus | null>;
     onStateChanged: (handler: (state: DesktopLyricsState) => void) => () => void;
     onAudioStatus: (handler: (status: AudioStatus) => void) => () => void;

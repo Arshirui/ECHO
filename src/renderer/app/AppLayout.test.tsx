@@ -79,7 +79,7 @@ describe('AppLayout standalone routes', () => {
     fireEvent.click(screen.getByRole('button', { name: /最小化|Minimize/ }));
 
     await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: '关闭提示' }));
+    fireEvent.click(screen.getByRole('button', { name: /关闭提示|Close notice/ }));
 
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
   });
@@ -122,6 +122,36 @@ describe('AppLayout standalone routes', () => {
     );
   });
 
+  it('toggles desktop lyrics from the lower-right icon', async () => {
+    const show = vi.fn().mockResolvedValue({ visible: true });
+    const hide = vi.fn().mockResolvedValue({ visible: false });
+
+    window.echo = {
+      desktopLyrics: {
+        getState: vi.fn().mockResolvedValue({ visible: false }),
+        show,
+        hide,
+        onStateChanged: vi.fn(() => undefined),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    const toggle = await screen.findByRole('button', { name: /桌面歌词|Desktop lyrics/i });
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(show).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('true'));
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(hide).toHaveBeenCalledTimes(1));
+  });
+
   it('opens a markdown crash report from the abnormal-exit notice', async () => {
     const openCrashReport = vi.fn().mockResolvedValue('D:\\ECHO\\crash-report.md');
 
@@ -145,15 +175,15 @@ describe('AppLayout standalone routes', () => {
       </AppProviders>,
     );
 
-    await waitFor(() => expect(screen.getByText(/没有正常退出/)).toBeTruthy());
-    const diagnosticsNotice = screen.getByText(/没有正常退出/).closest('.chrome-notice--diagnostics');
+    await waitFor(() => expect(screen.getByText(/没有正常退出|did not exit normally/i)).toBeTruthy());
+    const diagnosticsNotice = screen.getByText(/没有正常退出|did not exit normally/i).closest('.chrome-notice--diagnostics');
     if (!diagnosticsNotice) {
       throw new Error('diagnostics notice was not rendered');
     }
-    fireEvent.click(within(diagnosticsNotice as HTMLElement).getByRole('button', { name: '打开报告' }));
+    fireEvent.click(within(diagnosticsNotice as HTMLElement).getByRole('button', { name: /打开报告|Open Report/i }));
 
     await waitFor(() => expect(openCrashReport).toHaveBeenCalledTimes(1));
-    expect(screen.getByText(/Markdown 报告已打开/)).toBeTruthy();
+    expect(screen.getByText(/Markdown 报告已打开|Markdown report opened/i)).toBeTruthy();
   });
 
   it('keeps the songs route mounted when navigating away and back', async () => {
@@ -511,13 +541,14 @@ describe('AppLayout standalone routes', () => {
       </AppProviders>,
     );
 
-    await waitFor(() => expect(audioOnStatus).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(audioOnStatus).toHaveBeenCalled());
+    const initialAudioSubscriptionCount = audioOnStatus.mock.calls.length;
 
     const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
     fireEvent.click(within(sidebar).getByRole('button', { name: 'Lyrics' }));
 
     await waitFor(() => expect(container.querySelector('.lyrics-player-drawer-host')).toBeTruthy());
-    expect(audioOnStatus).toHaveBeenCalledTimes(1);
+    expect(audioOnStatus).toHaveBeenCalledTimes(initialAudioSubscriptionCount);
     expect(unsubscribeAudioStatus).not.toHaveBeenCalled();
   });
 
@@ -567,18 +598,19 @@ describe('AppLayout standalone routes', () => {
       </AppProviders>,
     );
 
-    await waitFor(() => expect(audioOnStatus).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(audioOnStatus).toHaveBeenCalled());
+    const initialAudioSubscriptionCount = audioOnStatus.mock.calls.length;
     fireEvent.click(within(screen.getByRole('complementary', { name: 'Main navigation' })).getByRole('button', { name: 'Lyrics' }));
 
     await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
-    expect(audioOnStatus).toHaveBeenCalledTimes(1);
+    expect(audioOnStatus).toHaveBeenCalledTimes(initialAudioSubscriptionCount);
   });
 
   it('shows an upper-left audio error notice with a report action', async () => {
-    let audioStatusHandler: ((status: { error: string | null; state: string }) => void) | undefined;
+    const audioStatusHandlers: Array<(status: { error: string | null; state: string }) => void> = [];
     const openAudioCrashReport = vi.fn().mockResolvedValue('D:\\ECHO\\audio-crash-report.md');
     const audioOnStatus = vi.fn((handler) => {
-      audioStatusHandler = handler as typeof audioStatusHandler;
+      audioStatusHandlers.push(handler as (status: { error: string | null; state: string }) => void);
       return vi.fn();
     });
 
@@ -622,8 +654,8 @@ describe('AppLayout standalone routes', () => {
       </AppProviders>,
     );
 
-    await waitFor(() => expect(audioStatusHandler).toBeTruthy());
-    const emitAudioStatus = audioStatusHandler;
+    await waitFor(() => expect(audioStatusHandlers[0]).toBeTruthy());
+    const emitAudioStatus = audioStatusHandlers[0];
     if (!emitAudioStatus) {
       throw new Error('audio status handler was not registered');
     }
@@ -633,17 +665,17 @@ describe('AppLayout standalone routes', () => {
     });
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
-    expect(screen.getByText('音频错误')).toBeTruthy();
-    expect(screen.getByText(/Markdown 诊断报告/)).toBeTruthy();
+    expect(screen.getByText(/音频错误|Audio Error/i)).toBeTruthy();
+    expect(screen.getByText(/Markdown (诊断报告|diagnostics report)/i)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: '打开报告' }));
+    fireEvent.click(screen.getByRole('button', { name: /打开报告|Open Report/i }));
     await waitFor(() => expect(openAudioCrashReport).toHaveBeenCalledTimes(1));
   });
 
   it('clears transient audio error notices after playback recovers', async () => {
-    let audioStatusHandler: ((status: { error: string | null; state: string }) => void) | undefined;
+    const audioStatusHandlers: Array<(status: { error: string | null; state: string }) => void> = [];
     const audioOnStatus = vi.fn((handler) => {
-      audioStatusHandler = handler as typeof audioStatusHandler;
+      audioStatusHandlers.push(handler as (status: { error: string | null; state: string }) => void);
       return vi.fn();
     });
 
@@ -687,14 +719,14 @@ describe('AppLayout standalone routes', () => {
       </AppProviders>,
     );
 
-    await waitFor(() => expect(audioStatusHandler).toBeTruthy());
-    audioStatusHandler?.({
+    await waitFor(() => expect(audioStatusHandlers[0]).toBeTruthy());
+    audioStatusHandlers[0]?.({
       state: 'error',
       error: 'echo-audio-host timeout_waiting_for_ready; mode="asio"',
     });
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
 
-    audioStatusHandler?.({
+    audioStatusHandlers[0]?.({
       state: 'playing',
       error: null,
     });
@@ -703,9 +735,9 @@ describe('AppLayout standalone routes', () => {
   });
 
   it('auto-dismisses upper-left audio error notices after five seconds', async () => {
-    let audioStatusHandler: ((status: { error: string | null; state: string }) => void) | undefined;
+    const audioStatusHandlers: Array<(status: { error: string | null; state: string }) => void> = [];
     const audioOnStatus = vi.fn((handler) => {
-      audioStatusHandler = handler as typeof audioStatusHandler;
+      audioStatusHandlers.push(handler as (status: { error: string | null; state: string }) => void);
       return vi.fn();
     });
 
@@ -759,10 +791,10 @@ describe('AppLayout standalone routes', () => {
       </AppProviders>,
     );
 
-    await waitFor(() => expect(audioStatusHandler).toBeTruthy());
+    await waitFor(() => expect(audioStatusHandlers[0]).toBeTruthy());
     vi.useFakeTimers();
     act(() => {
-      audioStatusHandler?.({
+      audioStatusHandlers[0]?.({
         state: 'error',
         error: 'echo-audio-host timeout_waiting_for_ready; mode="asio"',
       });
@@ -812,9 +844,9 @@ describe('AppLayout standalone routes', () => {
     emitAccountStatuses([{ provider: 'bilibili', connected: false, error: 'Bilibili login is invalid or expired.' }]);
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
-    expect(screen.getByText('账号登录失效')).toBeTruthy();
+    expect(screen.getByText(/账号登录失效|Account Login Expired/i)).toBeTruthy();
     expect(screen.getByText(/Bilibili/)).toBeTruthy();
-    expect(screen.getByText(/设置 > 集成/)).toBeTruthy();
+    expect(screen.getByText(/设置 > 集成|Settings > Integrations/i)).toBeTruthy();
   });
 
   it('suppresses account expiry notices when the setting is enabled', async () => {
@@ -856,8 +888,8 @@ describe('AppLayout standalone routes', () => {
     }
     emitAccountStatuses([{ provider: 'bilibili', connected: false, error: 'Bilibili login is invalid or expired.' }]);
 
-    expect(screen.queryByText('账号登录失效')).toBeNull();
-    expect(screen.queryByText(/设置 > 集成/)).toBeNull();
+    expect(screen.queryByText(/账号登录失效|Account Login Expired/i)).toBeNull();
+    expect(screen.queryByText(/设置 > 集成|Settings > Integrations/i)).toBeNull();
   });
 
   it('hides the app wallpaper layer on the standalone lyrics and MV page without unmounting it', async () => {
@@ -1164,7 +1196,7 @@ describe('AppLayout local file open integration', () => {
 
     await waitFor(() => expect(chooseImportFiles).toHaveBeenCalledTimes(1));
     expect(importAudioFiles).toHaveBeenCalledWith(['D:\\Music\\song.flac', 'D:\\Maps\\beatmap.osz']);
-    expect(await screen.findByText(/已入库 2 个文件/)).toBeTruthy();
+    expect(await screen.findByText(/已入库 2 个文件|Imported 2 files into the library/i)).toBeTruthy();
   });
 
   it('opens system-provided local audio files through the playback queue', async () => {

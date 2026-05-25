@@ -1119,6 +1119,27 @@ describe('MvPanel', () => {
     expect(window.echo.playback.seek).not.toHaveBeenCalled();
   });
 
+  it('keeps nudging MV drift between audio status refreshes while following progress', async () => {
+    const performanceNow = vi.spyOn(performance, 'now').mockReturnValue(0);
+    const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 10);
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(10, 3));
+
+    video.currentTime = 10.1;
+    performanceNow.mockReturnValue(1200);
+
+    await waitFor(() => expect(video.playbackRate).toBeGreaterThan(1), { timeout: 700 });
+    expect(video.currentTime).toBeCloseTo(10.1, 3);
+    expect(window.echo.playback.seek).not.toHaveBeenCalled();
+  });
+
   it('force-syncs MV when audio resumes from pause', async () => {
     vi.spyOn(performance, 'now').mockReturnValue(0);
     const { container, rerender } = renderPanel(makeVideo(), false, { ...defaultMvSettings, restartAudioOnLoad: true }, 12);

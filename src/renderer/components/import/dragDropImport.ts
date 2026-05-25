@@ -1,5 +1,7 @@
 import type { EchoApi } from '../../../preload/apiTypes';
 import type { ImportPathClassification, LibraryFolder, LibraryScanStatus } from '../../../shared/types/library';
+import { translateFallback } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 
 export type DroppedImportResult = {
   addedFolderCount: number;
@@ -16,6 +18,8 @@ type LibraryImportBridge = Pick<EchoApi['library'], 'addFolder' | 'classifyImpor
 type HandleDroppedImportOptions = {
   onScanStatus?: (status: LibraryScanStatus) => void;
 };
+
+type Translate = (key: TranslationKey, options?: Record<string, string | number>) => string;
 
 const uniquePaths = (paths: string[]): string[] => {
   const seen = new Set<string>();
@@ -63,34 +67,34 @@ const importAndScanFolder = async (
   }
 };
 
-export const summarizeDroppedImport = (result: DroppedImportResult): string => {
+export const summarizeDroppedImport = (result: DroppedImportResult, t: Translate = translateFallback): string => {
   const parts: string[] = [];
 
   if (result.addedFolderCount > 0) {
-    parts.push(`已添加 ${result.addedFolderCount} 个文件夹`);
+    parts.push(t('import.dragDrop.paths.addedFolders', { count: result.addedFolderCount }));
   }
 
   if (result.scannedAudioFolderCount > 0) {
-    parts.push(`已扫描 ${result.scannedAudioFolderCount} 个音乐文件所在文件夹`);
+    parts.push(t('import.dragDrop.paths.scannedAudioFolders', { count: result.scannedAudioFolderCount }));
   }
 
   if (result.importedFileCount > 0) {
-    parts.push(`已导入 ${result.importedFileCount} 个文件`);
+    parts.push(t('import.dragDrop.paths.importedFiles', { count: result.importedFileCount }));
   }
 
   if (result.ignoredCount > 0) {
-    parts.push(`忽略 ${result.ignoredCount} 个不支持文件`);
+    parts.push(t('import.dragDrop.paths.ignored', { count: result.ignoredCount }));
   }
 
   if (result.missingCount > 0) {
-    parts.push(`跳过 ${result.missingCount} 个不可访问路径`);
+    parts.push(t('import.dragDrop.paths.missing', { count: result.missingCount }));
   }
 
   if (result.failedCount > 0) {
-    parts.push(`${result.failedCount} 个路径导入失败`);
+    parts.push(t('import.dragDrop.paths.failed', { count: result.failedCount }));
   }
 
-  return parts.length > 0 ? parts.join('，') : '未找到可导入的音乐文件或文件夹';
+  return parts.length > 0 ? parts.join(t('punctuation.clauseSeparator')) : t('import.dragDrop.paths.empty');
 };
 
 export const handleDroppedImportPaths = async (

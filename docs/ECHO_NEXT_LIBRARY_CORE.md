@@ -1,75 +1,96 @@
-# ECHO Next Library Core
+# ECHO NEXT Library Core 指南
 
-Library Core v0.1 fixes the old ECHO library pain points by making SQLite the source of truth and by keeping heavy work behind native-worker-ready interfaces. Restarting the app reads folders, tracks, albums, artists, covers, and scan jobs directly from SQLite. It does not reparse every song, regenerate every cover, or regroup the album wall in Renderer memory.
+Library Core 是 ECHO NEXT 的本地曲库核心。它负责把磁盘上的音乐文件变成稳定、可分页、可搜索、可恢复的曲库数据，并保证扫描、封面、网络补全、实时更新等能力不会压垮播放。
 
-## Modules
+这份文档不是用户教程，而是给开发和维护用的工程边界说明。用户侧教程看 [USER_GUIDE.md](./USER_GUIDE.md)。
 
-`LibraryService`
+## 目标
 
-- public facade used by IPC
-- composes `LibraryStore`, `ScanJobQueue`, workers, and album grouping
-- depends on worker interfaces, not concrete TS implementations
+Library Core 要解决旧 ECHO 曲库常见痛点：
 
-`LibraryStore`
+1. 启动后不重新解析全库。
+2. 大曲库列表和专辑墙不把 Renderer 卡死。
+3. 扫描、封面、metadata、网络补全都有缓存和进度。
+4. SQLite 是事实来源，而不是 Renderer 内存临时模型。
+5. 本地 metadata 优先，网络结果只做弱补全。
+6. 删除、移动、重扫、修复都保守，不误删用户文件。
+7. 后台任务可取消、可诊断、播放期间可降载。
 
-- owns all SQLite reads and writes
-- runs paged track, album, album-track, folder, scan-job, and summary queries
-- writes scan results in transactions
-- persists album, artist, and cover cache rows
+一句话：Library Core 应该让曲库“可相信、可恢复、可扩展”，而不是让 UI 每次都重新猜一遍。
 
-`ScanJobQueue`
+## 核心边界
 
-- backgrounds scan jobs
-- reports progress, phases, cancellation, and collected warnings/errors
-- enforces metadata and cover worker concurrency limits
-- orchestrates scanner, metadata reader, cover extractor, and SQLite writes
+Library Core 负责：
 
-`LibraryWatcherService`
+- 导入本地文件夹。
+- 扫描音频文件。
+- 读取 metadata。
+- 提取和缓存封面。
+- 写入 SQLite。
+- 查询歌曲、专辑、艺术家、文件夹、收件箱、收藏、历史、歌单。
+- 曲库健康检查。
+- watcher 诊断、局部 rescan、move candidate、显式 move repair。
+- 网络 metadata / cover 候选和决策。
 
-- Phase 0 observation-only service for future Roon-like live library behavior
-- disabled by default and only starts when explicitly constructed with its feature flag enabled
-- watches imported library folder paths and stores normalized file events in memory diagnostics only
-- never calls `scanFolder`, never writes `tracks`, `albums`, `playback_history`, or scan tables, and never touches playback IPC/audio pipelines
+Library Core 不负责：
 
-`MetadataReader`
+- 播放音频。
+- 解码 PCM。
+- 控制输出设备。
+- 计算权威播放位置。
+- 渲染列表和封面墙。
+- 下载器策略。
+- 插件权限模型。
+- 自动删除、移动或重命名用户真实音频文件。
 
-- stable worker interface for tag parsing
-- TS v0.1 implementation: `TsMetadataReader`
-- future replacement: `RustMetadataWorker` or C++ equivalent
+Renderer 只能通过 typed preload API 读取分页数据和发起明确操作。SQL、扫描、封面、metadata、album grouping 都留在主进程 Library Core。
 
-`CoverExtractor`
+## 模块总览
 
-- stable worker interface for cover extraction and cache file generation
-- TS+sharp v0.2 implementation: `TsCoverExtractor`
-- `sharp` performs real resize output for `thumb.webp`, `album.webp`, and `large.webp`
-- TypeScript still owns cover priority, cache directory scheduling, and fallback behavior
-- highest-priority future native worker
+| 模块 | 责任 |
+| --- | --- |
+| `LibraryService` | IPC facade，组合 store、scan queue、watcher、diagnostics |
+| `LibraryStore` | SQLite 读写、migration、事务、分页查询 |
+| `ScanJobQueue` | 后台扫描任务、阶段进度、取消、worker 并发 |
+| `LibraryScanner` | 文件枚举和音频扩展过滤 |
+| `MetadataService` | metadata 读取和字段来源管理 |
+| `CoverService` / `CoverCacheManager` | 封面提取、缩略图生成、缓存版本 |
+| `AlbumService` | `album_key`、专辑聚合、曲目顺序 |
+| `SearchIndexTokens` | 搜索 tokens、中文/日文/罗马音等扩展 |
+| `LibraryWatcherService` | 文件变化观察、稳定性判断、诊断、可选自动 rescan |
+| `FileIdentityService` | 文件 identity / quick hash 观察 |
+| `LibraryMoveCandidateService` | 移动候选诊断 |
+| `LibraryMoveRepairService` | 显式 move repair lab |
+| `LibraryHealthReport` | 曲库健康和可维护性诊断 |
+| `TagWriter` | 受控标签写入 |
 
-`FileScanner`
+worker 边界：
 
-- stable worker interface for file enumeration and stat data
-- TS v0.1 implementation: `TsFileScanner`
-- Rust/C++ only if pressure tests prove it is needed
+- `MetadataReader`：tag parsing。
+- `CoverExtractor`：封面提取和尺寸生成。
+- `FileScanner`：目录枚举和 stat。
 
-`AlbumService`
+当前 TypeScript + sharp 实现可以继续用。不要因为边界存在就急着换 Rust / C++，除非 benchmark 或 smoke 证明瓶颈真实存在。
 
-- owns `album_key` generation
-- prevents empty album values from collapsing into one huge Unknown Album
+## SQLite 是事实来源
 
-## SQLite Schema
+核心表包括：
 
-Core tables:
+| 表 | 用途 |
+| --- | --- |
+| `folders` | 导入根目录、启用状态、扫描时间 |
+| `tracks` | 曲目路径、fingerprint、metadata、来源、封面、missing 状态 |
+| `albums` | 持久化专辑墙记录 |
+| `album_tracks` | 专辑内曲目顺序 |
+| `artists` | 艺术家聚合计数 |
+| `covers` | 封面缓存路径、hash、版本、来源 |
+| `scan_jobs` | 扫描任务状态、阶段、计数、错误 |
+| `network_metadata_candidates` | 网络 metadata 候选 |
+| `network_metadata_decisions` | 用户/自动决策 |
+| `network_cover_candidates` | 网络封面候选 |
+| playlists / history / liked | 用户长期行为数据 |
 
-- `folders`: `id`, `path`, `enabled`, `last_scan_at`, timestamps
-- `tracks`: path fingerprint, normalized metadata, `genre`, `metadata_status`, `embedded_metadata_status`, `embedded_cover_status`, `network_metadata_status`, `field_sources_json`, `cover_id`, `missing`, timestamps
-- `albums`: persisted album-wall records with `album_key`, title, artist, year, cover, count, duration
-- `album_tracks`: persisted track order with disc/track numbers
-- `artists`: persisted artist counts
-- `covers`: `source_type`, `thumb_path`, `album_path`, `large_path`, `original_ref`, hash, cache version, and MIME metadata
-- `scan_jobs`: status, phase, discovered/parsed/skipped/cover counts, errors, timestamps
-- `network_metadata_candidates`, `network_metadata_decisions`, `network_cover_candidates`: weak network completion candidates, user/auto decisions, and cover candidates
-
-Important indexes:
+重要索引：
 
 - `folders(path)`
 - `tracks(path)`
@@ -82,147 +103,64 @@ Important indexes:
 - `album_tracks(track_id)`
 - `covers(id)`
 
-Migrations are repeatable and use `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, and guarded `ALTER TABLE ADD COLUMN`.
+migration 规则：
 
-## Scan Pipeline
+- 可重复执行。
+- 新表用 `CREATE TABLE IF NOT EXISTS`。
+- 新索引用 `CREATE INDEX IF NOT EXISTS`。
+- 旧表补列必须用 `PRAGMA table_info(...)` 检查后 guarded `ALTER TABLE ... ADD COLUMN ...`。
+- 不要以为 `CREATE TABLE IF NOT EXISTS` 会修好旧表缺列。
 
-1. `library.scanFolder(folderId)` creates a `scan_jobs` row and returns immediately.
-2. `ScanJobQueue` runs in the background.
-3. `discovering`: `FileScanner` emits `path`, `sizeBytes`, and `mtimeMs`.
-4. `checking_cache`: `LibraryStore` compares each file against persisted `path + size_bytes + mtime_ms`.
-5. Unchanged files are skipped. Metadata and cover workers are not called for them.
-6. `reading_metadata`: changed/new files go through `MetadataReader`; embedded metadata readiness becomes `present`, `missing`, or `error`.
-7. `extracting_covers`: changed/new files go through `CoverExtractor`; embedded cover readiness becomes `present`, `missing`, or `error`.
-8. `grouping_albums`: `AlbumService` rebuilds persisted albums from track rows.
-9. `writing_database`: tracks, covers, albums, artists, folders, and scan status are committed through SQLite.
-10. Final phase becomes `finished`, `failed`, or `cancelled`.
+## 扫描流程
 
-Network completion is a separate Phase C. It is optional, manually triggered, non-blocking, and writes provider output to candidate tables before any merge is attempted.
+标准 full scan：
 
-Per-file worker warnings/errors are collected in `scan_jobs.errors_json`; they do not fail the whole scan.
+1. `library.scanFolder(folderId)` 创建 `scan_jobs` row 并立即返回。
+2. `ScanJobQueue` 在后台执行。
+3. `discovering`：枚举音频文件，记录 path、size、mtime。
+4. `checking_cache`：用 `path + size_bytes + mtime_ms` 对比 SQLite。
+5. unchanged 文件跳过 metadata 和 cover worker。
+6. `reading_metadata`：新/变更文件读取 embedded metadata。
+7. `extracting_covers`：新/变更文件提取封面并生成缓存尺寸。
+8. `writing_database`：事务写入 tracks、covers、scan 状态。
+9. `grouping_albums`：刷新 albums、album_tracks、artists。
+10. scan job 进入 `finished`、`failed` 或 `cancelled`。
 
-Deletion policy: when a file disappears from a scanned folder, the next scan marks its track row `missing = 1`. List APIs filter missing tracks out, preserving history while avoiding disk deletion. Library Core never deletes user audio files.
+单文件 worker warning / error 写入 `scan_jobs.errors_json`，不默认导致整轮扫描失败。
 
-## Library Watcher Phase 0
+删除策略：
 
-`LibraryWatcherService` is a low-risk observation layer only. It exists to validate event normalization, debouncing, and diagnostics before any automatic library mutation is allowed. Default app startup does not start the watcher. Enabling it must be an explicit feature-flag decision by the caller, such as `ECHO_LIBRARY_WATCHER=1`, and `start()` is a no-op when the flag is off.
+- full scan 发现文件消失时，标记 `missing = 1`。
+- 列表 API 默认过滤 missing track。
+- 历史、歌单等长期记录尽量保留引用。
+- Library Core 永远不直接删除用户真实音频文件。
 
-Phase 0 watches already imported local library folders, filters to scannable audio extensions, ignores obvious temporary files, hidden files, cover images, and database sidecars, then coalesces bursts into at most 100 recent in-memory diagnostic events. When a file can be safely statted, the watcher waits for size and mtime to be stable across two reads before reporting size, mtime, and `stableForMs`; otherwise the event remains diagnostic-only without pretending the file is ready for scanning.
+## 增量缓存
 
-The watcher does not participate in scanning, cache checking, missing-file marking, metadata parsing, cover extraction, album grouping, playback, or crash-report export. It does not change the current `path + size_bytes + mtime_ms` incremental-scan semantics. Next phases may add move reconciliation, file identity, quick hash support, and optional automatic incremental scan scheduling, but those are intentionally out of scope for Phase 0.
+增量 key：
 
-## Watcher / Local Rescan Phase 1
-
-The watcher still only discovers stable local file changes and records diagnostics. It does not call scanning APIs automatically. Phase 1 adds `LibraryService.rescanPaths(folderId, paths, options)` and `ScanJobQueue.scanPaths(folder, paths, options)` as a safe local rescan entrypoint for a known list of paths inside an already imported library folder.
-
-`rescanPaths` resolves and deduplicates input paths, rejects batches above 1000 paths, ignores paths outside the library folder, missing files, directories, non-audio files, hidden files, and obvious temporary files such as `.tmp`, `.temp`, `.part`, `.crdownload`, `.download`, `.swp`, `.DS_Store`, and `Thumbs.db`. Accepted files are converted into `ScannedAudioFile` records with `path`, `folderId`, `sizeBytes`, and `mtimeMs`, then passed through the same cache, metadata reader, cover extractor, cover repair, upsert, cancellation, concurrency, and scan-job status machinery used by full scans.
-
-Local rescans intentionally do not call `markTracksMissingFromFolder`, so delete/unlink events cannot immediately mark tracks missing. They also do not recognize renames, do not reconcile moves, do not update the current playback path, do not touch playback history, and do not affect AudioSession, DecoderPipeline, or playback IPC. Full folder scans keep their existing behavior: they enumerate the whole folder, skip unchanged files by `path + size_bytes + mtime_ms`, and mark disappeared files missing only after the full scan completes.
-
-Phase 1 conservatively keeps the existing full album/artist refresh after local file writes so the library indexes stay consistent without introducing an incremental album index. Phase 1.5 may wire stable watcher events to `rescanPaths` behind an explicit opt-in flag. Phase 2 adds identity observation fields only. Later phases may add move diagnostics and reconciliation.
-
-## Watcher / Local Rescan Phase 1.5
-
-Phase 1.5 adds the safe opt-in connection from stable watcher `add` / `change` events to `LibraryService.rescanPaths`. Automatic watcher rescan remains disabled by default and requires an explicit local flag such as `ECHO_LIBRARY_WATCHER_AUTO_RESCAN=1` or an equivalent development setting from the caller. The watcher never calls metadata readers or cover extractors directly; all file processing must go through `rescanPaths`.
-
-Stable `add` and `change` events are placed into an in-memory pending set keyed by folder and path. The queue debounces batches before triggering a local rescan, deduplicates repeated events for the same path, caps pending paths at 1000, and records dropped paths in diagnostics instead of escalating to an automatic full scan. If a scan job is already running, watcher-triggered local rescans are delayed and merged rather than launched concurrently.
-
-`unlink`, delete-like, `rename`, and `unknown` events are diagnostics-only in Phase 1.5. They do not call `rescanPaths`, do not mark tracks missing, do not attempt move reconciliation, do not create `file_identity` / `quick_hash` matches, and do not update playback state or playback history. Playback behavior and playback IPC are outside the watcher pipeline.
-
-## Library Identity Observation Phase 2
-
-Phase 2 adds nullable observation fields to `tracks`: `file_identity`, `file_identity_source`, `quick_hash`, `quick_hash_version`, `identity_status`, `identity_updated_at`, and `identity_error`. These fields are diagnostics and future-use data only. The core library identity remains path-centric, and existing `path + size_bytes + mtime_ms` cache semantics are unchanged.
-
-`file_identity` is best-effort. On POSIX platforms it can use `stat.dev + stat.ino`; on Windows it currently reports `unsupported` rather than adding a risky native dependency for volume serial and file index access. `quick_hash` is a lightweight versioned hash over file size plus bounded head/tail reads, not a full-file content hash.
-
-Full scans and `rescanPaths` may compute or backfill identity observation while they are already processing a file. Identity errors are stored in `identity_error` and do not fail scan jobs, metadata reads, cover extraction, or database upserts. Unchanged files with existing identity data continue to skip metadata and cover work; unchanged files without identity data may receive a low-cost identity backfill.
-
-Phase 2 does not participate in move reconciliation, duplicate merge, playlist resolution, playback history, lyrics, cover cache references, playback, AudioSession, DecoderPipeline, or playback IPC. It never updates `tracks.path` based on matching `file_identity` or `quick_hash`, never merges rows with matching identity fields, never auto-marks missing files, and never deletes user files.
-
-Phase 3 may add move-candidate diagnostics based on these observations. Phase 4 may add high-confidence move reconciliation, but only behind separate safety checks and explicit behavior changes.
-
-## Move Candidate Diagnostics Phase 3
-
-Phase 3 adds diagnostics-only move candidate reporting through `library.getMoveCandidates()` and the `moveCandidates` field on `library.getDiagnostics()`. It compares already-recorded `tracks.file_identity` and `tracks.quick_hash` observation fields between missing old rows and active new rows, then returns a capped list of likely move pairs for inspection.
-
-This phase does not repair anything automatically. It does not update `tracks.path`, does not merge track rows, does not delete rows, does not mark tracks missing, and does not touch playlist items, playback history, lyrics, cover cache references, AudioSession, DecoderPipeline, or playback IPC. Playback behavior remains unchanged.
-
-`file_identity` can produce a high-confidence candidate only when both sides have the same non-empty identity from a trusted source and the old and new paths differ. `unsupported` and `error` identity sources are never promoted to high confidence. `quick_hash` is only a candidate signal: it must use the same `quick_hash_version`, and it is never treated as strong identity by itself. Medium confidence additionally requires matching size, close duration, and highly consistent title/artist/album metadata; weaker or incomplete metadata remains low confidence.
-
-Ambiguous many-to-one or one-to-many matches are marked with `ambiguous: true` and are not promoted to high confidence. Results are capped at 100 candidates so diagnostics payloads stay small and never include cover, lyrics, or audio content. Phase 4 may consider high-confidence move reconciliation, but that will be a separate explicit behavior change.
-
-## Library Lab UI
-
-`Library Lab` is a developer testing panel inside Settings > Library. It provides an in-app way to test watcher startup, watcher auto rescan diagnostics, move candidate diagnostics, and the explicit move repair lab without relying on console output or environment variables.
-
-All Lab switches are off by default and are session-only. They are not persisted to user settings, are not recommended for normal users, and should only be used on test branches or test libraries. The panel does not change playback behavior and does not touch AudioSession, DecoderPipeline, or playback IPC.
-
-The watcher and auto-rescan switches only opt in to the current session. Auto rescan still uses the existing `rescanPaths` path and only reacts to stable add/change events when explicitly enabled. Delete-like, unlink, rename, and unknown events stay diagnostics-only and do not automatically mark tracks missing.
-
-Move Candidate Diagnostics in the panel only displays candidates generated from the Phase 3 diagnostics service. It does not automatically repair moves. `quick_hash` remains a candidate signal only, not strong identity.
-
-Move Repair Lab is an explicit developer action path. The panel hides dry-run/apply controls until the repair lab switch is enabled. Apply is disabled by default, requires a successful dry run with no blockers, rejects ambiguous and low-confidence candidates, and asks for confirmation before writing. It does not delete user audio files and does not run automatically.
-
-## Live Library Updates
-
-Settings > Library now includes an optional `Live Library Updates` path for real library use. It is persisted in app settings but remains off by default. When enabled, ECHO Next starts the library watcher on app startup for already imported local library folders, enables watcher auto-rescan for stable `add` / `change` audio events, and sends a `library:changed` notification to the renderer after the rescan job finishes so Songs, Albums, Artists, and folder views can refresh through their existing reload path.
-
-The live path still does not touch AudioSession, DecoderPipeline, playback IPC, playlists, lyrics, or playback history. It does not run a full-library scan in response to watcher events; it only calls the existing bounded `rescanPaths(folderId, paths)` entrypoint for stable changed paths inside a known library folder.
-
-Live local rescans update the track rows first and defer album/artist regrouping through the shared grouping refresh queue. If playback is currently loading or playing, the regrouping pass is delayed and coalesced so single-file watcher events do not immediately run the expensive full album/artist index rebuild on the Electron main process. This keeps the song list responsive while avoiding unnecessary playback-time work.
-
-The same grouping queue is used for ordinary tag edits, watcher delete/missing updates, move repair lab writes, imported single-file writes, and maintenance cleanup that changes track rows. `library.refreshAlbumGrouping()` remains an explicit immediate rebuild for users who request it. Diagnostics expose `groupingRefreshQueued`, `lastGroupingRefreshDurationMs`, `lastGroupingRefreshAt`, `groupingRefreshDelayedForPlaybackCount`, and `lastGroupingRefreshError` so playback-time deferrals and slow grouping passes can be inspected without touching the audio pipeline.
-
-Deleting files remains separately gated behind `Live Library Auto Hide Deleted`. That switch is off by default and only works while live updates are enabled. When enabled, delete-like events mark only the exact matching track path in that folder as `missing = 1`; they do not delete disk files, do not merge tracks, and do not perform move repair. Move candidates and move repair remain explicit diagnostics/lab flows.
-
-Manual test flow:
-
-1. Run `npm run dev`.
-2. Open Settings > Library > Library Lab.
-3. Enable Library Watcher.
-4. Click Start Watcher.
-5. Enable Auto Rescan for add/change.
-6. Copy one song into a test library folder.
-7. Click Refresh Diagnostics and confirm `triggeredRescanCount` increased.
-8. Move one already-scanned song into a new folder.
-9. Run a full scan once so the old path becomes missing.
-10. Click Refresh Move Candidates.
-11. Select a candidate.
-12. Click Dry Run Selected Move.
-13. If dry run passes, click Apply Selected Move and confirm.
-14. Confirm the library has one remaining track row for that song and playlist/history references still resolve.
-
-## Cache Strategy
-
-The incremental key is:
-
-- `path`
-- `size_bytes`
-- `mtime_ms`
-
-When all three match, ECHO Next trusts SQLite metadata and cover links. This avoids the old restart behavior where the whole library was parsed again.
-
-Covers are cached on disk and deduplicated by `sourceHash`. `getTracks` and `getAlbums` return only `coverThumb` protocol URLs. They never return `largePath`, `originalRef`, full cover binary, or base64 payloads.
-
-Albums are persisted in `albums` and `album_tracks`, so the album wall reads cached rows after restart instead of regrouping all tracks in Renderer memory.
-
-## Native SQLite In Dev
-
-Library Core uses `better-sqlite3`, which is a native Node/Electron module. The binary must match the Electron runtime ABI used by the desktop app, not only the system `node.exe` ABI. If it is built for the wrong ABI, Electron will show an error like `NODE_MODULE_VERSION ... requires NODE_MODULE_VERSION ...` and library APIs such as `library.getTracks` will fail.
-
-Current development uses Electron 37.x because `better-sqlite3@12.9.0` rebuilds cleanly for that Electron ABI on Windows. `npm run dev` runs `npm run rebuild:native` first, which executes:
-
-```bash
-electron-rebuild -w better-sqlite3
+```text
+path
+size_bytes
+mtime_ms
 ```
 
-After dependency changes or a clean install, use `npm run dev` normally; the predev step keeps the SQLite binding aligned with the Electron desktop runtime. Vitest global setup runs `scripts/ensure-native-abi.mjs node` first because tests execute under the system Node.js ABI, so direct `vitest` runs and editor-launched tests get the same protection as `npm test`. The `posttest` hook then runs the Electron ABI check so the working tree is left ready for Electron dev after `npm test`. The ABI helper caches rebuilt `better-sqlite3.node` binaries under `node_modules/.echo-native-cache`, so repeat switches between Node and Electron usually restore a cached binary instead of compiling again.
+三者相同就信任 SQLite 中已有 metadata 和 cover links。
 
-Browser-only Vite preview cannot scan folders because it has no Electron main process, preload bridge, or native SQLite access.
+这解决两个问题：
 
-## Metadata Priority
+- 启动不需要重扫全库。
+- 重扫时 unchanged 文件接近 100% skip。
 
-Fixed priority:
+注意：
+
+- 这个 key 是路径中心模型，不是文件 identity 模型。
+- 移动文件会表现为旧 path missing + 新 path added。
+- move repair 是后续显式流程，不是扫描时偷偷修。
+
+## Metadata 优先级
+
+字段来源优先级：
 
 1. manual
 2. embedded
@@ -231,52 +169,92 @@ Fixed priority:
 5. network completion
 6. filename fallback
 
-Network completion is weak. It can apply missing-only fields only after embedded metadata is `missing` or `error`, and only when field sources are `unknown`, `filename_fallback`, or `network`. It cannot overwrite `manual`, `embedded`, `sidecar`, or `folder_structure`.
+网络补全是弱来源：
 
-Filename guessing only fills fields that remain local fallbacks. Embedded `title`, `artist`, and `album` are never overwritten, which prevents valid files from being stuck as Unknown Artist.
+- 只补缺失或低可信字段。
+- 不覆盖 manual。
+- 不覆盖 embedded。
+- 不覆盖 sidecar。
+- 不覆盖 folder_structure。
+- 先写候选和决策，不直接把网络当事实。
 
-Every stored track writes `field_sources_json` for title, artist, album, albumArtist, trackNo, discNo, year, genre, duration, codec, sampleRate, bitDepth, and bitrate.
+`field_sources_json` 应记录 title、artist、album、albumArtist、trackNo、discNo、year、genre、duration、codec、sampleRate、bitDepth、bitrate 等字段来源。
 
-## Cover Priority
+filename fallback 只填最后还没有可信来源的字段。有效 embedded title / artist / album 不能被文件名猜测覆盖。
 
-Priority:
+## Cover 优先级
+
+封面来源优先级：
 
 1. manual cover
 2. embedded cover
-3. same-folder `cover`, `folder`, or `front` image
+3. 同文件夹 `cover` / `folder` / `front` 图片
 4. network cover
 5. generated default cover
 
-Network cover lookup is allowed only when local cover source is `default` and embedded cover readiness is `missing` or `error`. Network URLs are never sent to Renderer; accepted network covers must enter the cover cache pipeline and be stored in `covers`.
+网络封面只在本地封面是 default，且 embedded cover 状态为 missing 或 error 时考虑。
 
-Cover layers:
+封面缓存尺寸：
 
-- `thumb_path`: 96x96 `thumb.webp`; `LibraryTrack.coverThumb`; small list rows only
-- `album_path`: 320x320 `album.webp`; `LibraryAlbum.coverThumb`; album wall only
-- `large_path`: max 768x768 `large.webp`; reserved for NowPlaying/detail
-- `original_ref`: retained for on-demand original access
+| 字段 | 用途 |
+| --- | --- |
+| `thumb_path` | 约 96x96，列表行 |
+| `album_path` | 约 320x320，专辑墙 |
+| `large_path` | 最大约 768x768，详情/Now Playing |
+| `original_ref` | 原始来源引用，按需访问 |
 
-List and album-wall images must use `loading="lazy"` and `decoding="async"`. Renderer code must not request `large` or `original` variants during scrolling and must not generate cover derivatives.
+Renderer 列表和专辑墙只拿 `coverThumb` protocol URL。不要返回 `largePath`、`originalRef`、base64 或完整二进制。
+
+图片加载规则：
+
+- 列表用 `loading="lazy"`。
+- 图片用 `decoding="async"`。
+- 滚动时不请求 large / original。
+- Renderer 不生成封面衍生图。
 
 ## Album Grouping
 
-`album_key` is based on normalized:
+`album_key` 基于归一化后的：
 
 - `albumArtist || artist`
 - `album`
 - `year`
 
-Rules:
+规则：
 
-- same album + same albumArtist merges
-- same album + different albumArtist does not merge
-- missing/unknown albumArtist uses folder path as a weak separator
-- empty/unknown album values get per-track keys and do not create one giant Unknown Album
-- albums and album_tracks are persisted
+- 同 album + 同 albumArtist 合并。
+- 同 album + 不同 albumArtist 不合并。
+- 缺失 albumArtist 时用 folder path 做弱分隔。
+- 空/unknown album 不合并成一个巨大的 Unknown Album。
+- albums 和 album_tracks 持久化，不在 Renderer 内存临时重组。
 
-## API And UI Data Flow
+专辑聚合可能很重，所以要注意：
 
-Preload exposes typed methods only:
+- 普通列表查询不能顺手全量 regroup。
+- tag edit、watcher rescan、move repair 等写 track 后可通过 grouping refresh queue 合并。
+- 播放期间应延迟和合并昂贵 regroup。
+
+## 搜索和排序
+
+搜索应服务真实曲库使用：
+
+- title、artist、album。
+- 中文变体。
+- 日文罗马音 / kana 辅助 tokens。
+- 文件名 fallback。
+- genre、year 等可扩展字段。
+
+原则：
+
+- 搜索 tokens 写入或缓存，不在 render 时临时全库计算。
+- 搜索输入 debounce。
+- 查询分页。
+- 排序字段白名单。
+- 不把网络候选未确认内容当成本地事实优先展示。
+
+## API 和 UI 数据流
+
+Preload 暴露 typed API，例如：
 
 - `library.addFolder(path)`
 - `library.getFolders()`
@@ -290,78 +268,339 @@ Preload exposes typed methods only:
 - `library.getSummary()`
 - `library.getDiagnostics()`
 
-IPC handlers validate input and call `LibraryService`. SQL, scanning, metadata, cover, and grouping logic stay inside Library Core.
+UI 规则：
 
-`SongsPage` reads paged tracks with `pageSize = 100`, keeps search debounced, and renders a virtualized `TrackList`. Track rows receive `coverThumb` only.
+- `SongsPage` 读取分页 tracks，建议 `pageSize = 100`。
+- `AlbumsPage` 读取分页 albums，建议 `pageSize = 60`。
+- 专辑墙先读第一页，滚动接近底部再追加。
+- 不要循环请求所有页。
+- 不要把全曲库放进 Renderer state。
+- `TrackRow` 保持 memoized。
+- 播放状态只更新当前必要行，不让 position tick 重渲染整页。
 
-`AlbumsPage` reads albums with `pageSize = 60` from the persisted `albums` table. It loads page 1 first and appends later pages only when the album wall scrolls near the bottom. It must not loop through every page or put the full album library into Renderer state. It never regroups tracks in Renderer.
+导入流程：
 
-Current AlbumWall rendering is paged grid + lazy image loading. TODO: if 3000/10000 album smoke tests still show scroll jank after pagination, replace the grid with `@tanstack/react-virtual` grid virtualization.
+- `library.chooseFolder()` 由 main 打开系统目录选择。
+- `Folders` 是常规文件夹管理页面。
+- `Import Folder` 是聚焦导入页面，可复用 `LibraryFoldersPanel`。
+- 重复导入同一路径应幂等，变成 rescan。
+- scan 完成后发 `library:changed`，让 Songs / Albums 通过已有 reload path 刷新。
 
-Folders, Settings, and Import Folder share the same `LibraryFoldersPanel`. It supports:
+Library Core 不是文件管理器，不复制、不移动、不重命名、不删除真实音频文件。
 
-- system folder selection through `library.chooseFolder()`
-- manual path entry as an advanced fallback
-- add and scan
-- rescan for already imported folders
-- cancel scan
-- remove folder
+## Watcher Phase 0: 观察层
 
-Import flow:
+`LibraryWatcherService` 初始是低风险观察层：
 
-- `library.chooseFolder()` opens the Electron directory picker in main
-- the `Folders` route is the normal folder management surface
-- the `Import Folder` route is a focused import surface that uses the same panel with input focus
-- the SongsPage folder-plus action dispatches `app:navigate:import-folder`, keeping SongsPage thin
-- App chrome can still open the directory picker directly for quick import
-- Settings and the import view fill the chosen path into the input and immediately start import and scan
-- repeated imports of the same path are idempotent and become a rescan
-- when a scan completes, the panel calls `library.getSummary()` and emits a `library:changed` window event so SongsPage and AlbumsPage reload their first page
+- 默认不启动。
+- 只在显式 feature flag 或调用方开启时 start。
+- 观察已导入本地文件夹。
+- 过滤可扫描音频扩展。
+- 忽略临时文件、隐藏文件、封面图片、数据库 sidecar。
+- 对事件做 debounce 和 coalesce。
+- 最多保留约 100 条近期内存诊断事件。
 
-The sidebar `Import File` action opens the existing local audio file picker directly. Phase 1 does not add single-file library ingestion; that remains separate from the folder-based Library Core cache.
+Phase 0 不做：
 
-This is not a file manager and never copies, moves, renames, or deletes disk files.
+- 不调用 scan。
+- 不写 tracks / albums / history。
+- 不标记 missing。
+- 不碰 AudioSession / DecoderPipeline / playback IPC。
 
-## Phase 1.1 Playback And Diagnostics
+文件稳定性判断：
 
-`TrackRow` accepts `onPlay(track)` while staying memoized. `TrackList` passes the callback through, and `SongsPage` calls:
+- 能 stat 时等待 size / mtime 连续两次稳定。
+- 记录 `stableForMs`。
+- 不稳定事件只做诊断，不假装可扫描。
 
-```ts
-window.echo.playback.playLocalFile({
-  filePath: track.path,
-  trackId: track.id,
-});
+## Local Rescan Phase 1 / 1.5
+
+Phase 1 增加安全入口：
+
+- `LibraryService.rescanPaths(folderId, paths, options)`
+- `ScanJobQueue.scanPaths(folder, paths, options)`
+
+约束：
+
+- 路径必须在已导入 folder 内。
+- 去重。
+- batch 上限 1000。
+- 忽略 missing file、directory、非音频、隐藏文件、临时文件。
+- 复用 full scan 的 cache、metadata、cover、upsert、cancel、concurrency、scan-job 状态。
+
+局部 rescan 不做：
+
+- 不调用 `markTracksMissingFromFolder`。
+- delete/unlink 不能立即标记 missing。
+- 不识别 rename。
+- 不修 move。
+- 不更新播放 path。
+- 不碰播放历史。
+- 不碰 AudioSession / DecoderPipeline / playback IPC。
+
+Phase 1.5 把 stable watcher `add` / `change` 事件接到 `rescanPaths`，但仍然：
+
+- 默认关闭。
+- 需要显式开启 live updates 或开发 flag。
+- pending paths in-memory。
+- debounce。
+- 同 path 去重。
+- 上限 1000，超限写 diagnostics。
+- 如果已有 scan job，延迟合并，不并发乱跑。
+
+`unlink`、delete-like、rename、unknown 事件在 Phase 1.5 仍是 diagnostics-only。
+
+## File Identity Phase 2
+
+Phase 2 给 `tracks` 增加观察字段：
+
+- `file_identity`
+- `file_identity_source`
+- `quick_hash`
+- `quick_hash_version`
+- `identity_status`
+- `identity_updated_at`
+- `identity_error`
+
+这些字段是诊断和未来用途，不改变当前 path-centric 模型。
+
+规则：
+
+- POSIX 可用 `stat.dev + stat.ino`。
+- Windows 当前可报告 `unsupported`，不要为此仓促引入高风险 native 依赖。
+- `quick_hash` 是 size + bounded head/tail read，不是完整内容 hash。
+- identity error 不导致 scan 失败。
+- unchanged 文件可低成本 backfill identity。
+
+Phase 2 不做 move repair、不 merge track、不改 path、不删文件、不碰播放链路。
+
+## Move Candidate Phase 3
+
+Phase 3 通过 `library.getMoveCandidates()` 和 diagnostics 暴露候选：
+
+- 比较 missing old rows 和 active new rows。
+- 使用 `file_identity` / `quick_hash` / size / duration / metadata。
+- 返回 capped list，默认不超过 100。
+
+它只诊断，不自动修：
+
+- 不更新 `tracks.path`。
+- 不 merge rows。
+- 不 delete rows。
+- 不标记 missing。
+- 不改 playlist/history/lyrics/cover references。
+- 不碰 AudioSession / DecoderPipeline / playback IPC。
+
+置信规则：
+
+- trusted `file_identity` 双方一致才可 high confidence。
+- `unsupported` / `error` identity 不能 high confidence。
+- `quick_hash` 只是候选信号，不能单独作为强身份。
+- 多对一 / 一对多必须标记 ambiguous，不自动提升。
+
+## Move Repair Lab
+
+Move Repair Lab 是开发者显式操作路径：
+
+- 默认隐藏或关闭。
+- dry-run 先行。
+- apply 默认不可用。
+- 必须 dry-run 成功且无 blocker。
+- 拒绝 ambiguous 和 low confidence candidate。
+- apply 前确认。
+- 不删除真实音频文件。
+- 不自动运行。
+
+这不是普通用户的自动修复功能。未来若做用户可见修复，也必须保留同样的 dry-run 和确认原则。
+
+## Live Library Updates
+
+`Live Library Updates` 是真实使用路径，但默认关闭。
+
+开启后：
+
+- app startup 启动 watcher。
+- 只监听已导入本地文件夹。
+- stable add/change 音频事件进入 auto rescan。
+- rescan 完成后发 `library:changed`。
+- Songs / Albums / Artists / Folders 通过现有 reload path 刷新。
+
+仍然不做：
+
+- 不跑 full-library scan 响应单个 watcher event。
+- 不碰 AudioSession。
+- 不碰 DecoderPipeline。
+- 不碰 playback IPC。
+- 不改 playlists / lyrics / playback history。
+
+删除事件单独由 `Live Library Auto Hide Deleted` 控制：
+
+- 默认关闭。
+- 只有 live updates 开启时有效。
+- 只把同 folder 内精确 path 标记 `missing = 1`。
+- 不删磁盘文件。
+- 不做 move repair。
+- 不 merge track。
+
+## Grouping Refresh Queue
+
+以下操作可能需要刷新 album / artist grouping：
+
+- tag edit。
+- watcher add/change rescan。
+- delete/missing update。
+- move repair lab writes。
+- imported single-file writes。
+- maintenance cleanup。
+
+要求：
+
+- 合并多次请求。
+- 播放 loading/playing 时延迟昂贵 rebuild。
+- 记录 diagnostics。
+- `library.refreshAlbumGrouping()` 保留显式立即 rebuild 能力。
+
+诊断字段示例：
+
+- `groupingRefreshQueued`
+- `lastGroupingRefreshDurationMs`
+- `lastGroupingRefreshAt`
+- `groupingRefreshDelayedForPlaybackCount`
+- `lastGroupingRefreshError`
+
+## Diagnostics
+
+`library.getDiagnostics()` 可以返回：
+
+- counts。
+- last scan counters。
+- last paged query timings。
+- database path / size。
+- cover cache path / size。
+- cover cache version。
+- watcher 状态。
+- pending auto-rescan 状态。
+- move candidates。
+- grouping refresh 状态。
+
+它不能：
+
+- 触发扫描。
+- 返回全量 track list。
+- 返回 full cover payload。
+- 读取大文件。
+- 影响播放链路。
+
+Diagnostics 是证据，不是副作用入口。
+
+## Native SQLite / better-sqlite3
+
+Library Core 使用 `better-sqlite3`。它是 native Node/Electron 模块，ABI 必须匹配运行环境。
+
+注意：
+
+- Electron desktop runtime ABI 和系统 `node.exe` ABI 不同。
+- ABI 不匹配会导致 `NODE_MODULE_VERSION ...` 错误。
+- `npm run dev` 会先 rebuild native。
+- Vitest 运行在 Node ABI 下，需要测试前保证 Node ABI。
+- 测试后可能需要恢复 Electron ABI。
+
+缓存位置：
+
+```text
+node_modules/.echo-native-cache
 ```
 
-`SongsPage` updates only `currentTrackId` from the returned playback status. It does not subscribe to playback progress, so position polling cannot rerender the song list. The current `PlaybackQueueProvider` / `usePlaybackQueue` queue is only the already loaded tracks window, such as the visible SongsPage page or loaded album tracks. It is not a complete library playback queue; the full-library queue belongs in a later LibraryService or queue service, not in Phase 1.2.
+常见判断：
 
-`PlayerBar` owns lightweight 500 ms polling of `playback.getStatus()` and `audio.getStatus()` until push IPC exists. It displays current file, track id, state, position/duration, codec, `fileSampleRate`, `actualDeviceSampleRate`, `outputMode`, and `sampleRateMismatch`. TODO: replace polling with `playback:onStatus` and `audio:onStatus` IPC push events, throttle high-frequency position updates, and keep those updates out of SongsPage.
+- 文档或纯 UI 改动不需要碰 native ABI。
+- 窄测试可用环境变量跳过 native ABI 噪音时，要区分环境问题和真实回归。
+- Browser-only Vite preview 没有 Electron main、preload bridge、native SQLite，不能代表曲库功能。
 
-`library.getDiagnostics()` returns counts, last scan counters, last paged query timings, approximate average album payload size, database path/size, cover cache path/size, and cover cache version. It never triggers a scan and never returns track lists or full cover payloads. The diagnostics panel is dev-only in Settings > Library.
+## Benchmark 和性能预算
 
-`npm run benchmark:library` generates 3000 and 10000 fake tracks and 3000 and 10000 fake albums with cover cache rows. It measures SQLite insertion, album grouping, first-page track/album queries, album page 10, album total count, coverThumb payload length, forbidden cover payload checks (`large`, `original`, `base64`), unchanged scan skip simulation, memory, and database size. It does not need real audio files.
+目标：
 
-## Performance Budget
+- startup 不扫描全库。
+- `getTracks` first page 目标低于 200 ms。
+- `getAlbums` first page 目标低于 300 ms。
+- unchanged scan skip rate 接近 100%。
+- cover thumbs 扫描时生成，不在 UI scroll 时生成。
+- album wall 从 `albums` 表读取。
+- list API 不返回 full cover。
+- scan backgrounded and cancellable。
+- metadata / cover worker 有并发限制。
+- album wall 渲染不能让 CPU 长期高占用。
 
-- startup does not scan the full library
-- `getTracks` first page target: under 200 ms
-- `getAlbums` first page target: under 300 ms
-- AlbumsPage must request page 1 first and must not request every album page up front
-- unchanged scan skip rate should approach 100%
-- cover thumbs are generated during scan, not UI scroll
-- album wall reads `albums` after restart
-- list APIs do not return full covers
-- scans are backgrounded and cancellable
-- metadata and cover workers have concurrency limits
-- large libraries must not hold CPU near 50% because the album wall is rendering
+`npm run benchmark:library` 可生成 fake tracks / albums 验证：
 
-## Native CoverWorker Decision
+- SQLite insertion。
+- album grouping。
+- track / album first page。
+- album page 10。
+- coverThumb payload length。
+- forbidden cover payload。
+- unchanged scan skip。
+- memory。
+- database size。
 
-Do not start a Go/C#/Rust `CoverWorker` just because the boundary exists. TS+sharp v0.2 remains the current implementation until benchmark or smoke data proves it is not enough.
+不要用小样本“看起来没卡”证明大曲库没问题。
 
-Move cover generation native only if one or more of these is measured:
+## UI 验收路径
 
-- generating 1000 album thumbs keeps CPU above 50% for a long stretch
-- generating 3000 or 10000 covers creates unacceptable memory peaks
-- Electron packaging or native rebuilds for `sharp` become unstable
-- cover cache hits are still slow after `thumb.webp` and `album.webp` already exist
+常见页面责任：
+
+- `SongsPage`：分页歌曲、搜索、播放、右键、当前 track 高亮。
+- `AlbumsPage`：分页专辑墙、懒加载、专辑详情。
+- `FoldersPage`：导入根目录、扫描、取消、移除。
+- `InboxPage`：新导入内容。
+- `Settings > Library`：诊断、Live Updates、Library Lab。
+
+手动测试 Live Library / Move Lab：
+
+1. `npm run dev`。
+2. 打开 Settings > Library。
+3. 启用 Library Watcher。
+4. Start Watcher。
+5. 启用 Auto Rescan for add/change。
+6. 复制一首歌到测试库。
+7. Refresh Diagnostics，确认 triggered rescan 增加。
+8. 移动一首已扫描歌曲。
+9. 跑一次 full scan，让旧 path missing。
+10. Refresh Move Candidates。
+11. 选择 candidate。
+12. Dry Run Selected Move。
+13. dry run 通过后 Apply，并确认。
+14. 确认库里只剩正确 track row，playlist/history 仍可解析。
+
+这套测试只适合测试库，不要拿真实大库直接做 repair lab。
+
+## 开发检查清单
+
+改 Library Core 前先问：
+
+1. 会不会触发全库扫描或全库查询。
+2. 会不会在 Renderer 持有过多数据。
+3. 会不会播放期间跑重任务。
+4. 会不会覆盖 manual / embedded metadata。
+5. 会不会删除或移动真实文件。
+6. migration 是否兼容旧库。
+7. 诊断是否足够定位失败。
+8. 是否需要取消和并发限制。
+
+改完后按范围验证：
+
+| 改动 | 建议验证 |
+| --- | --- |
+| 纯文档 | diff 检查 |
+| SQL/migration | 对应 store / migration 窄测试 |
+| scan pipeline | `ScanJobQueue` / `LibraryCore` 测试 |
+| metadata / cover | 对应 service 测试 |
+| watcher / rescan | watcher / grouping refresh 测试 |
+| move candidate / repair | candidate / repair 测试 |
+| UI 页面 | 对应 renderer 页测试或手动打开 |
+| 大曲库性能 | `benchmark:library` 或目标 smoke |
+
+## 一句话标准
+
+Library Core 的好改动应该让曲库更可信、更快、更容易恢复，同时不打扰播放。任何自动删除、自动合并、全量重算、Renderer 全量持有、播放期间重任务，都要先证明它安全，否则不要做。

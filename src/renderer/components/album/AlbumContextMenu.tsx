@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { ChevronRight, Copy, Download, FileImage, Heart, ListEnd, Play, Plus, Tag, Trash2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { LibraryAlbum, LibraryPlaylist } from '../../../shared/types/library';
+import { useI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 
 export type AlbumMenuAction =
   | 'play-album'
@@ -25,7 +27,7 @@ type AlbumContextMenuProps = {
 
 type MenuItem = {
   action: AlbumMenuAction;
-  label: string;
+  labelKey: TranslationKey;
   icon: LucideIcon;
   danger?: boolean;
 };
@@ -41,6 +43,7 @@ const remoteHiddenActions = new Set<AlbumMenuAction>(['edit-tags', 'delete-album
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(value, max));
 
 export const AlbumContextMenu = ({ album, position, liked = false, onAction, onClose }: AlbumContextMenuProps): JSX.Element => {
+  const { t } = useI18n();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const playlistLoadStartedRef = useRef(false);
   const [playlistSubmenuOpen, setPlaylistSubmenuOpen] = useState(false);
@@ -117,15 +120,15 @@ export const AlbumContextMenu = ({ album, position, liked = false, onAction, onC
   }, [onClose]);
 
   const allItems: MenuItem[] = [
-    { action: 'play-album', label: '播放专辑', icon: Play },
-    { action: 'add-to-playlist', label: '加入歌单...', icon: Plus },
-    { action: 'add-to-queue', label: '加入队列', icon: ListEnd },
-    { action: 'toggle-liked', label: liked ? '取消喜欢专辑' : '喜欢专辑', icon: Heart },
-    { action: 'edit-tags', label: '编辑标签', icon: Tag },
-    { action: 'copy-info', label: '复制专辑信息', icon: Copy },
-    { action: 'copy-cover', label: '复制专辑封面', icon: FileImage },
-    { action: 'save-cover', label: '保存专辑封面', icon: Download },
-    { action: 'delete-album', label: '删除专辑', icon: Trash2, danger: true },
+    { action: 'play-album', labelKey: 'albumMenu.action.playAlbum', icon: Play },
+    { action: 'add-to-playlist', labelKey: 'albumMenu.action.addToPlaylist', icon: Plus },
+    { action: 'add-to-queue', labelKey: 'albumMenu.action.addToQueue', icon: ListEnd },
+    { action: 'toggle-liked', labelKey: liked ? 'albumMenu.action.unlikeAlbum' : 'albumMenu.action.likeAlbum', icon: Heart },
+    { action: 'edit-tags', labelKey: 'albumMenu.action.editTags', icon: Tag },
+    { action: 'copy-info', labelKey: 'albumMenu.action.copyInfo', icon: Copy },
+    { action: 'copy-cover', labelKey: 'albumMenu.action.copyCover', icon: FileImage },
+    { action: 'save-cover', labelKey: 'albumMenu.action.saveCover', icon: Download },
+    { action: 'delete-album', labelKey: 'albumMenu.action.deleteAlbum', icon: Trash2, danger: true },
   ];
   const items = allItems.filter((item) => album.mediaType !== 'remote' || !remoteHiddenActions.has(item.action));
 
@@ -152,7 +155,7 @@ export const AlbumContextMenu = ({ album, position, liked = false, onAction, onC
                 onMouseEnter={(event) => openPlaylistSubmenu(event.currentTarget)}
               >
                 <Icon size={16} />
-                <span>{item.label}</span>
+                <span>{t(item.labelKey)}</span>
                 <ChevronRight className="album-menu-branch-icon" size={15} />
               </button>
             );
@@ -168,7 +171,7 @@ export const AlbumContextMenu = ({ album, position, liked = false, onAction, onC
               onClick={() => onAction(item.action, album)}
             >
               <Icon size={16} />
-              <span>{item.label}</span>
+              <span>{t(item.labelKey)}</span>
             </button>
           );
         })}
@@ -177,12 +180,12 @@ export const AlbumContextMenu = ({ album, position, liked = false, onAction, onC
         <div
           className="album-playlist-submenu"
           role="menu"
-          aria-label="选择歌单"
+          aria-label={t('albumMenu.playlistSubmenu.aria')}
           style={{ left: playlistSubmenuPosition.x, top: playlistSubmenuPosition.y }}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          {playlistsLoading ? <div className="album-playlist-submenu-empty">读取歌单...</div> : null}
-          {!playlistsLoading && playlists.length === 0 ? <div className="album-playlist-submenu-empty">没有本地歌单</div> : null}
+          {playlistsLoading ? <div className="album-playlist-submenu-empty">{t('albumMenu.playlistSubmenu.loading')}</div> : null}
+          {!playlistsLoading && playlists.length === 0 ? <div className="album-playlist-submenu-empty">{t('albumMenu.playlistSubmenu.empty')}</div> : null}
           {!playlistsLoading
             ? playlists.map((playlist) => (
                 <button
@@ -196,7 +199,7 @@ export const AlbumContextMenu = ({ album, position, liked = false, onAction, onC
                   }}
                 >
                   <span>{playlist.name}</span>
-                  <small>{playlist.itemCount} 首</small>
+                  <small>{t('albumMenu.playlistSubmenu.itemCount', { count: playlist.itemCount })}</small>
                 </button>
               ))
             : null}

@@ -11,6 +11,8 @@ import type { MetadataReader } from './MetadataReader';
 const unknownArtist = 'Unknown Artist';
 const unknownAlbum = '';
 const waveInfoTagIds = new Set(['IART', 'INAM', 'IPRD', 'IGNR', 'ICRD', 'ITRK']);
+const waveContainerIds = new Set(['RIFF', 'RF64', 'BW64']);
+const riffSizePlaceholder = 0xffffffff;
 const tagLibPreferredExtensions = new Set([
   '.dsf',
   '.dff',
@@ -43,6 +45,7 @@ const maxMetadataTextLength = 512;
 const maxRawMetadataTextLength = 4096;
 const suspiciousMojibakePattern = /(?:[\u00c0-\u00ff]{2,}|[\u00c2-\u00f4][\u0080-\u00bf]|[\u00c3\u00c2][\u0080-\u00ffA-Za-z]|[\u93c4\u71b7\u5a07\u9287\u958e\u59b5\u7d0b]{2,}|\u{fffd}|\?{2,})/u;
 const binaryMetadataTextPattern = /(?:APIC|image\/(?:jpeg|jpg|png|webp|gif)|JFIF|Exif|\u0000)/iu;
+const japaneseKanaPattern = /[\u3040-\u30ff]/u;
 const unsafeEmbeddedMetadataWarning = 'embedded_metadata_skipped_unsafe_text';
 const commonTextMetadataKeys = new Set(['title', 'artist', 'artists', 'album', 'albumartist', 'genre', 'date']);
 const nativeArtworkTagIds = ['apic', 'pic', 'covr', 'coverart', 'metadata_block_picture', 'metadatablockpicture'];
@@ -70,7 +73,7 @@ const mojibakeFragments = [
   '\u{fffd}',
 ];
 
-type WaveInfoTags = Partial<Record<'IART' | 'INAM' | 'IPRD' | 'IGNR' | 'ICRD' | 'ITRK', string>>;
+type WaveInfoTags = Partial<Record<'IART' | 'INAM' | 'IPRD' | 'IGNR' | 'ICRD' | 'ITRK' | 'BEXT_DESCRIPTION' | 'BEXT_ORIGINATOR' | 'BEXT_ORIGINATION_DATE', string>>;
 
 type TagLibFallbackFields = {
   [Key in keyof MetadataFields]?: MetadataFields[Key] | null;
@@ -429,14 +432,15 @@ export const decodeWaveInfoText = (rawValue: Buffer): string | null => {
     // Legacy WAV INFO chunks often omit an encoding marker; fall through to heuristic decoding.
   }
 
-  const candidates = ['utf-8', 'gb18030', 'gbk', 'shift_jis', 'big5', 'windows-1252'].flatMap((encoding, index) => {
+  const candidates = ['utf-8', 'gb18030', 'gbk', 'shift_jis', 'euc-jp', 'iso-2022-jp', 'big5', 'windows-1252'].flatMap((encoding, index) => {
     try {
       const decoded =
-        encoding === 'utf-8'
-          ? new TextDecoder('utf-8').decode(data)
+        encoding === 'utf-8' || encoding === 'iso-2022-jp'
+          ? new TextDecoder(encoding).decode(data)
           : iconv.decode(data, encoding === 'windows-1252' ? 'win1252' : encoding);
       const text = cleanText(decoded);
-      return text ? [{ text, score: textQualityScore(text), priority: -index }] : [];
+      const legacyJapaneseBonus = (encoding === 'shift_jis' || encoding === 'euc-jp' || encoding === 'iso-2022-jp') && japaneseKanaPattern.test(text ?? '') && !text?.includes('\uFFFD') ? 2 : 0;
+      return text ? [{ text, score: textQualityScore(text) + legacyJapaneseBonus, priority: -index }] : [];
     } catch {
       return [];
     }
@@ -444,6 +448,71 @@ export const decodeWaveInfoText = (rawValue: Buffer): string | null => {
 
   candidates.sort((left, right) => right.score - left.score || right.priority - left.priority);
   return candidates[0]?.text ?? null;
+};
+
+const safeUInt64LeToNumber = (buffer: Buffer, offset: number): number | null => {
+  const value = buffer.readBigUInt64LE(offset);
+  return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null;
+};
+
+const parseDs64ChunkSizes = (data: Buffer): Map<string, number> => {
+  const sizes = new Map<string, number>();
+  if (data.length < 28) {
+    return sizes;
+  }
+
+  const dataSize = safeUInt64LeToNumber(data, 8);
+  if (dataSize !== null) {
+    sizes.set('data', dataSize);
+  }
+
+  const tableLength = data.readUInt32LE(24);
+  let position = 28;
+  for (let index = 0; index < tableLength && position + 12 <= data.length; index += 1) {
+    const chunkId = data.toString('ascii', position, position + 4);
+    const chunkSize = safeUInt64LeToNumber(data, position + 4);
+    if (chunkSize !== null) {
+      sizes.set(chunkId, chunkSize);
+    }
+    position += 12;
+  }
+
+  return sizes;
+};
+
+const resolveChunkSize = (chunkId: string, chunkSize: number, ds64ChunkSizes: Map<string, number>): number | null => {
+  if (chunkSize !== riffSizePlaceholder) {
+    return chunkSize;
+  }
+
+  return ds64ChunkSizes.get(chunkId) ?? null;
+};
+
+const decodeBextFixedText = (data: Buffer, start: number, length: number): string | null => {
+  if (data.length <= start) {
+    return null;
+  }
+
+  return decodeWaveInfoText(data.subarray(start, Math.min(start + length, data.length)));
+};
+
+const readBextTags = (data: Buffer): WaveInfoTags => {
+  const tags: WaveInfoTags = {};
+  const description = decodeBextFixedText(data, 0, 256);
+  const originator = decodeBextFixedText(data, 256, 32);
+  const originationDate = decodeBextFixedText(data, 320, 10);
+
+  if (description) {
+    tags.BEXT_DESCRIPTION = description;
+  }
+  if (originator) {
+    tags.BEXT_ORIGINATOR = originator;
+  }
+  if (originationDate) {
+    tags.BEXT_ORIGINATION_DATE = originationDate;
+  }
+
+  return tags;
 };
 
 const readWaveInfoTags = async (filePath: string): Promise<WaveInfoTags> => {
@@ -455,12 +524,13 @@ const readWaveInfoTags = async (filePath: string): Promise<WaveInfoTags> => {
   try {
     const header = Buffer.alloc(12);
     const headerRead = await file.read(header, 0, header.length, 0);
-    if (headerRead.bytesRead < header.length || header.toString('ascii', 0, 4) !== 'RIFF' || header.toString('ascii', 8, 12) !== 'WAVE') {
+    if (headerRead.bytesRead < header.length || !waveContainerIds.has(header.toString('ascii', 0, 4)) || header.toString('ascii', 8, 12) !== 'WAVE') {
       return {};
     }
 
     const fileSize = (await file.stat()).size;
     const tags: WaveInfoTags = {};
+    const ds64ChunkSizes = new Map<string, number>();
     let position = 12;
 
     while (position + 8 <= fileSize) {
@@ -472,14 +542,33 @@ const readWaveInfoTags = async (filePath: string): Promise<WaveInfoTags> => {
 
       const chunkId = chunkHeader.toString('ascii', 0, 4);
       const chunkSize = chunkHeader.readUInt32LE(4);
+      const resolvedChunkSize = resolveChunkSize(chunkId, chunkSize, ds64ChunkSizes);
+      if (resolvedChunkSize === null || resolvedChunkSize < 0) {
+        break;
+      }
       const chunkDataPosition = position + 8;
 
-      if (chunkId === 'LIST' && chunkSize >= 4) {
+      if (chunkId === 'ds64' && chunkDataPosition + resolvedChunkSize <= fileSize) {
+        const ds64Data = Buffer.alloc(resolvedChunkSize);
+        const ds64Read = await file.read(ds64Data, 0, ds64Data.length, chunkDataPosition);
+        if (ds64Read.bytesRead === ds64Data.length) {
+          for (const [id, size] of parseDs64ChunkSizes(ds64Data)) {
+            ds64ChunkSizes.set(id, size);
+          }
+        }
+      } else if (chunkId === 'bext' && chunkDataPosition < fileSize) {
+        const bextReadLength = Math.min(resolvedChunkSize, 602, fileSize - chunkDataPosition);
+        const bextData = Buffer.alloc(bextReadLength);
+        const bextRead = await file.read(bextData, 0, bextData.length, chunkDataPosition);
+        if (bextRead.bytesRead === bextData.length) {
+          Object.assign(tags, readBextTags(bextData));
+        }
+      } else if (chunkId === 'LIST' && resolvedChunkSize >= 4) {
         const listType = Buffer.alloc(4);
         const listTypeRead = await file.read(listType, 0, listType.length, chunkDataPosition);
         if (listTypeRead.bytesRead === listType.length && listType.toString('ascii') === 'INFO') {
           let infoPosition = chunkDataPosition + 4;
-          const infoEnd = Math.min(chunkDataPosition + chunkSize, fileSize);
+          const infoEnd = Math.min(chunkDataPosition + resolvedChunkSize, fileSize);
 
           while (infoPosition + 8 <= infoEnd) {
             const infoHeader = Buffer.alloc(8);
@@ -490,10 +579,14 @@ const readWaveInfoTags = async (filePath: string): Promise<WaveInfoTags> => {
 
             const infoId = infoHeader.toString('ascii', 0, 4);
             const infoSize = infoHeader.readUInt32LE(4);
+            const resolvedInfoSize = resolveChunkSize(infoId, infoSize, ds64ChunkSizes);
+            if (resolvedInfoSize === null || resolvedInfoSize < 0) {
+              break;
+            }
             const infoDataPosition = infoPosition + 8;
 
-            if (waveInfoTagIds.has(infoId) && infoDataPosition + infoSize <= fileSize) {
-              const value = Buffer.alloc(infoSize);
+            if (waveInfoTagIds.has(infoId) && infoDataPosition + resolvedInfoSize <= fileSize) {
+              const value = Buffer.alloc(resolvedInfoSize);
               const valueRead = await file.read(value, 0, value.length, infoDataPosition);
               if (valueRead.bytesRead === value.length) {
                 const decoded = decodeWaveInfoText(value);
@@ -503,12 +596,12 @@ const readWaveInfoTags = async (filePath: string): Promise<WaveInfoTags> => {
               }
             }
 
-            infoPosition += 8 + infoSize + (infoSize % 2);
+            infoPosition += 8 + resolvedInfoSize + (resolvedInfoSize % 2);
           }
         }
       }
 
-      position += 8 + chunkSize + (chunkSize % 2);
+      position += 8 + resolvedChunkSize + (resolvedChunkSize % 2);
     }
 
     return tags;
@@ -1138,10 +1231,10 @@ export class TsMetadataReader implements MetadataReader {
     const commonAlbum = skipEmbeddedMetadata ? null : cleanText(common.album);
     const embeddedTitle = skipEmbeddedMetadata
       ? null
-      : (preferHigherQualityText(commonTitle, cleanText(waveInfoTags.INAM)) ?? firstNativeText(metadata, ['TITLE', 'TIT2']));
+      : (preferHigherQualityText(commonTitle, cleanText(waveInfoTags.INAM)) ?? firstNativeText(metadata, ['TITLE', 'TIT2']) ?? cleanText(waveInfoTags.BEXT_DESCRIPTION));
     const embeddedArtist = skipEmbeddedMetadata
       ? null
-      : (preferHigherQualityText(commonArtist, cleanText(waveInfoTags.IART)) ?? firstNativeText(metadata, ['ARTIST', 'TPE1']));
+      : (preferHigherQualityText(commonArtist, cleanText(waveInfoTags.IART)) ?? firstNativeText(metadata, ['ARTIST', 'TPE1']) ?? cleanText(waveInfoTags.BEXT_ORIGINATOR));
     const embeddedAlbum = skipEmbeddedMetadata
       ? null
       : (preferHigherQualityText(commonAlbum, cleanText(waveInfoTags.IPRD)) ?? firstNativeText(metadata, ['ALBUM', 'TALB']));
@@ -1154,7 +1247,7 @@ export class TsMetadataReader implements MetadataReader {
     const embeddedTrackNo = skipEmbeddedMetadata
       ? null
       : (numberOrNull(common.track?.no) ?? numberOrNull(waveInfoTags.ITRK) ?? firstNativeNumber(metadata, ['TRACKNUMBER', 'TRACK', 'TRCK']));
-    const embeddedYear = skipEmbeddedMetadata ? null : (yearFromMetadata(common.year ?? common.date) ?? yearFromMetadata(waveInfoTags.ICRD));
+    const embeddedYear = skipEmbeddedMetadata ? null : (yearFromMetadata(common.year ?? common.date) ?? yearFromMetadata(waveInfoTags.ICRD) ?? yearFromMetadata(waveInfoTags.BEXT_ORIGINATION_DATE));
     const folderAlbum = folderAlbumFallback(filePath);
 
     const title = pickText('title', embeddedTitle, filenameGuess.title, 'filename_fallback');

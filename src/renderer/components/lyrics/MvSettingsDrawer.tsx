@@ -51,8 +51,8 @@ const isMvDatabaseError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
   return /MV 数据库暂时不可读|MV database is temporarily unavailable|database disk image is malformed|DatabaseHealthError|SQLITE_CORRUPT|file is not a database/i.test(message);
 };
-const summarizeMvDatabaseError = (error: unknown): string =>
-  isMvDatabaseError(error) ? 'MV 数据库暂时不可读，请先到曲库恢复里修复数据库。' : error instanceof Error ? error.message : String(error);
+const summarizeMvDatabaseError = (error: unknown, databaseUnavailableLabel: string): string =>
+  isMvDatabaseError(error) ? databaseUnavailableLabel : error instanceof Error ? error.message : String(error);
 const immersiveBackgroundDefaults = {
   immersiveBackgroundScalePercent: 115,
   immersiveBackgroundOffsetXPercent: 50,
@@ -383,7 +383,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
           setCandidates(savedCandidates.filter((candidate) => !candidate.selected).map(videoToCandidate));
         }
       } catch (loadError) {
-        setError(summarizeMvDatabaseError(loadError));
+        setError(summarizeMvDatabaseError(loadError, t('mvSettings.error.databaseUnavailable')));
         if (isMvDatabaseError(loadError)) {
           setSelectedVideo(null);
           setCandidates([]);
@@ -751,7 +751,7 @@ export const MvSettingsDrawer = ({ isOpen, onClose }: MvSettingsDrawerProps): JS
         }
         notifyMvChanged(targetTrackId);
       } catch (offsetError) {
-        setError(summarizeMvDatabaseError(offsetError));
+        setError(summarizeMvDatabaseError(offsetError, t('mvSettings.error.databaseUnavailable')));
         void loadCurrentMv(targetTrackId);
       } finally {
         setIsMvOffsetSaving(false);

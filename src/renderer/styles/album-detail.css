@@ -372,6 +372,163 @@
   font-size: 15px;
 }
 
+.album-release-detail-card,
+.album-release-version-card,
+.album-source-link-grid a {
+  min-width: 0;
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-panel-bg) 76%, transparent);
+}
+
+.album-release-detail-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.45fr);
+  gap: 22px;
+  padding: 18px;
+}
+
+.album-release-detail-card > div:first-child,
+.album-release-version-card > div:first-child {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: 6px;
+}
+
+.album-release-detail-card span,
+.album-release-version-card span,
+.album-source-link-grid span,
+.album-source-link-grid small {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.album-release-detail-card h3,
+.album-release-version-card h3 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--theme-heading-text);
+  font-size: 16px;
+  font-weight: 880;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-release-detail-card p,
+.album-release-version-card p {
+  margin: 0;
+  color: var(--theme-muted-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.album-release-facts,
+.album-release-version-meta {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.album-release-facts > span,
+.album-release-version-meta > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.album-release-facts small,
+.album-release-version-meta small {
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.album-release-facts strong,
+.album-release-version-meta strong {
+  overflow: hidden;
+  color: var(--theme-heading-text);
+  font-size: 12px;
+  font-weight: 790;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-source-link-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.album-source-link-grid a {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 74px;
+  padding: 13px;
+  color: var(--theme-page-text);
+  text-decoration: none;
+}
+
+.album-source-link-grid a:hover,
+.album-release-version-card a:hover {
+  border-color: var(--theme-accent-border);
+  background: color-mix(in srgb, var(--theme-button-bg-hover) 62%, transparent);
+}
+
+.album-source-link-grid svg {
+  grid-row: span 3;
+  color: var(--theme-accent-text-strong);
+}
+
+.album-source-link-grid strong {
+  overflow: hidden;
+  color: var(--theme-heading-text);
+  font-size: 13px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-release-version-list {
+  display: grid;
+  gap: 10px;
+}
+
+.album-release-version-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.44fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 15px;
+}
+
+.album-release-version-card[data-current='true'] {
+  border-color: var(--theme-accent-border);
+  background: color-mix(in srgb, var(--theme-button-bg-hover) 52%, transparent);
+}
+
+.album-release-version-card a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  color: var(--theme-accent-text-strong);
+  border: 1px solid var(--theme-accent-border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 820;
+  text-decoration: none;
+}
+
 .album-credit-overview,
 .album-information-overview {
   display: flex;
@@ -926,7 +1083,7 @@
 .album-track-row:hover {
   background: var(--theme-list-row-bg-hover);
   border-top-color: transparent;
-  border-radius: 8px;
+  border-radius: 0;
 }
 
 .album-track-row[data-playing='true'] {
@@ -935,7 +1092,7 @@
 
 .album-detail-page .album-track-row:hover,
 .album-detail-page .album-track-row[data-playing='true'] {
-  border-radius: 8px;
+  border-radius: 0;
   box-shadow: none;
 }
 
@@ -1280,6 +1437,15 @@ html[data-theme="dark"] .album-detail-error {
   .album-related-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .album-release-detail-card,
+  .album-release-version-card {
+    grid-template-columns: 1fr;
+  }
+
+  .album-source-link-grid {
+    grid-template-columns: 1fr;
   }
 
   .album-related-artist-grid {

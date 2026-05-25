@@ -7,6 +7,7 @@ const handleMock = vi.fn((channel: string, handler: (...args: unknown[]) => unkn
   handlers[channel] = handler;
 });
 const onMock = vi.fn();
+const setDesktopLyricsMousePassthroughMock = vi.fn();
 const setDesktopLyricsStyleMock = vi.fn((patch: DesktopLyricsStylePatch) => ({
   settings: patch,
   visible: true,
@@ -28,6 +29,7 @@ vi.mock('../app/desktopLyricsWindow', () => ({
   receiveDesktopLyricsRendererAudioStatus: vi.fn(),
   resetDesktopLyricsBounds: vi.fn(),
   setDesktopLyricsLocked: vi.fn(),
+  setDesktopLyricsMousePassthrough: setDesktopLyricsMousePassthroughMock,
   setDesktopLyricsStyle: setDesktopLyricsStyleMock,
   showDesktopLyricsWindow: vi.fn(),
 }));
@@ -43,6 +45,7 @@ describe('desktop lyrics IPC', () => {
     resetHandlers();
     handleMock.mockClear();
     onMock.mockClear();
+    setDesktopLyricsMousePassthroughMock.mockClear();
     setDesktopLyricsStyleMock.mockClear();
     vi.resetModules();
     const module = await import('./desktopLyricsIpc');
@@ -60,5 +63,12 @@ describe('desktop lyrics IPC', () => {
       desktopLyricsRomanizationEnabled: false,
       desktopLyricsTranslationEnabled: false,
     });
+  });
+
+  it('registers the desktop lyrics mouse passthrough channel', () => {
+    expect(onMock).toHaveBeenCalledWith(
+      IpcChannels.DesktopLyricsSetMousePassthrough,
+      setDesktopLyricsMousePassthroughMock,
+    );
   });
 });

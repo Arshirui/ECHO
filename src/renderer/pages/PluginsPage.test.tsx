@@ -25,6 +25,8 @@ const security: PluginSummary['security'] = {
   trustedPermissionCount: 0,
   untrustedPermissions: ['playback:read'],
   highRiskPermissions: [],
+  reservedPermissions: [],
+  limitedPermissions: [],
   hasEntry: true,
   hasPanel: true,
   sandboxedPanel: true,

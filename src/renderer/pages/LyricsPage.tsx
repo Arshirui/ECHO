@@ -188,7 +188,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
   lyricsOffsetControlsEnabled: false,
-  lyricsSmartAlignmentEnabled: false,
+  lyricsSmartAlignmentEnabled: true,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
   lyricsLineMaxChars: 0,
@@ -513,7 +513,12 @@ const shouldUseAudioStatusForCurrentPlayback = (
   );
 };
 
-const smartAlignmentOutputModes = new Set(["shared", "exclusive", "asio"]);
+const smartAlignmentOutputModes = new Set(["shared", "exclusive", "asio", "system"]);
+const lyricsClockStaleTelemetryThresholdMs = 750;
+const lyricsClockUnderrunBufferThresholdMs = 40;
+const lyricsClockStallDetectionMs = 900;
+const lyricsClockStallProgressRatio = 0.25;
+const smartAlignmentBackgroundCandidateLimit = 3;
 
 const isSmartAlignmentOutputMode = (
   outputMode: AudioStatus["outputMode"] | null | undefined,
@@ -526,6 +531,9 @@ const smartAlignmentModeLabel = (outputMode: LyricsSmartAlignmentOutputMode): st
   }
   if (outputMode === "exclusive") {
     return "WASAPI 独占";
+  }
+  if (outputMode === "system") {
+    return "System";
   }
   return "WASAPI 共享";
 };
@@ -748,7 +756,7 @@ const selectLyricsDisplaySettings = (
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
   lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
   lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
-  lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled === true,
+  lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled !== false,
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackLyricsDisplaySettings.lyricsSecondaryFontSizePx,
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackLyricsDisplaySettings.lyricsLineSpacingPercent,
   lyricsLineMaxChars: settings.lyricsLineMaxChars ?? fallbackLyricsDisplaySettings.lyricsLineMaxChars,
@@ -865,6 +873,9 @@ const clampPlaybackPosition = (
     : safePositionSeconds;
 };
 
+const finiteNonNegative = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+
 const useLyricsDisplayPosition = (
   audioStatus: AudioStatus | null,
   playbackStatus: PlaybackStatus | null,
@@ -889,6 +900,9 @@ const useLyricsDisplayPosition = (
     activeAudioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? null;
   const currentFilePath =
     activeAudioStatus?.currentFilePath ?? playbackStatus?.filePath ?? null;
+  const nativePositionStalenessMs = finiteNonNegative(activeAudioStatus?.nativePositionStalenessMs);
+  const nativeBufferedMs = finiteNonNegative(activeAudioStatus?.nativeBufferedMs);
+  const nativeUnderrunCallbacks = finiteNonNegative(activeAudioStatus?.nativeUnderrunCallbacks) ?? 0;
   const [audioClock, setAudioClock] = useState<MvAudioClock>(() => ({
     durationSeconds: sourceDurationSeconds,
     playbackRate,
@@ -912,6 +926,9 @@ const useLyricsDisplayPosition = (
       sourcePositionSeconds,
       sourceDurationSeconds,
     ),
+    nativePositionStalenessMs,
+    nativeBufferedMs,
+    nativeUnderrunCallbacks,
     state,
     updatedAtMs: performance.now(),
   });
@@ -937,6 +954,29 @@ const useLyricsDisplayPosition = (
       sourceDurationSeconds,
     );
     const updatedAtMs = now;
+    const wallElapsedSeconds = Math.max(0, (now - previous.updatedAtMs) / 1000);
+    const expectedMediaElapsedSeconds = wallElapsedSeconds * previous.playbackRate;
+    const sourceAdvancedSeconds = boundedSourcePosition - previous.sourcePositionSeconds;
+    const nativeUnderrunAdvanced = nativeUnderrunCallbacks > previous.nativeUnderrunCallbacks;
+    const sourceClockLooksStalled =
+      state === "playing" &&
+      samePlayback &&
+      !stateChanged &&
+      wallElapsedSeconds * 1000 >= lyricsClockStallDetectionMs &&
+      expectedMediaElapsedSeconds > 0 &&
+      sourceAdvancedSeconds >= -0.05 &&
+      sourceAdvancedSeconds < expectedMediaElapsedSeconds * lyricsClockStallProgressRatio;
+    const nativeClockLooksStale =
+      state === "playing" &&
+      samePlayback &&
+      (
+        (nativePositionStalenessMs !== null && nativePositionStalenessMs >= lyricsClockStaleTelemetryThresholdMs) ||
+        (
+          nativeUnderrunAdvanced &&
+          nativeBufferedMs !== null &&
+          nativeBufferedMs <= lyricsClockUnderrunBufferThresholdMs
+        )
+      );
     const seekAnchor = seekAnchorRef.current;
     if (seekAnchor) {
       if (seekAnchor.trackId && currentTrackId && seekAnchor.trackId !== currentTrackId) {
@@ -959,8 +999,9 @@ const useLyricsDisplayPosition = (
       }
     }
 
-    if (!seekAnchorRef.current && samePlayback && !stateChanged && state === "playing") {
-      const wallElapsedSeconds = Math.max(0, (now - previous.updatedAtMs) / 1000);
+    const shouldTrustReportedClock = nativeClockLooksStale || sourceClockLooksStalled;
+
+    if (!seekAnchorRef.current && samePlayback && !stateChanged && state === "playing" && !shouldTrustReportedClock) {
       const mediaElapsedSeconds = wallElapsedSeconds * previous.playbackRate;
       const estimatedPositionSeconds = Math.min(previous.positionSeconds + mediaElapsedSeconds, durationLimit);
       const sourceJumpedBackward = boundedSourcePosition + 1 < previous.sourcePositionSeconds;
@@ -993,6 +1034,9 @@ const useLyricsDisplayPosition = (
       playbackRate,
       positionSeconds: nextPositionSeconds,
       sourcePositionSeconds: boundedSourcePosition,
+      nativePositionStalenessMs,
+      nativeBufferedMs,
+      nativeUnderrunCallbacks,
       state,
       updatedAtMs,
     };
@@ -1000,12 +1044,15 @@ const useLyricsDisplayPosition = (
       durationSeconds: sourceDurationSeconds,
       playbackRate,
       positionSeconds: nextPositionSeconds,
-      state,
+      state: shouldTrustReportedClock ? "paused" : state,
       updatedAtMs,
     });
   }, [
     currentFilePath,
     currentTrackId,
+    nativeBufferedMs,
+    nativePositionStalenessMs,
+    nativeUnderrunCallbacks,
     playbackRate,
     sourceDurationSeconds,
     sourcePositionSeconds,
@@ -1034,6 +1081,9 @@ const useLyricsDisplayPosition = (
         playbackRate,
         positionSeconds: nextPositionSeconds,
         sourcePositionSeconds: nextPositionSeconds,
+        nativePositionStalenessMs,
+        nativeBufferedMs,
+        nativeUnderrunCallbacks,
         state,
         updatedAtMs,
       };
@@ -1043,12 +1093,27 @@ const useLyricsDisplayPosition = (
         trackId: eventTrackId ?? currentTrackId,
         updatedAtMs,
       };
-      setAudioClock(nextClock);
+      setAudioClock({
+        durationSeconds: nextClock.durationSeconds,
+        playbackRate: nextClock.playbackRate,
+        positionSeconds: nextClock.positionSeconds,
+        state: nextClock.state,
+        updatedAtMs: nextClock.updatedAtMs,
+      });
     };
 
     window.addEventListener(playbackSeekedEvent, handlePlaybackSeeked);
     return () => window.removeEventListener(playbackSeekedEvent, handlePlaybackSeeked);
-  }, [currentFilePath, currentTrackId, playbackRate, sourceDurationSeconds, state]);
+  }, [
+    currentFilePath,
+    currentTrackId,
+    nativeBufferedMs,
+    nativePositionStalenessMs,
+    nativeUnderrunCallbacks,
+    playbackRate,
+    sourceDurationSeconds,
+    state,
+  ]);
 
   return { audioClock };
 };
@@ -1108,6 +1173,8 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   const [isCustomLyricsDragging, setIsCustomLyricsDragging] = useState(false);
   const lyricsRequestRef = useRef(0);
   const smartAlignmentCandidateRequestRef = useRef(0);
+  const smartAlignmentBackgroundSearchKeyRef = useRef<string | null>(null);
+  const smartAlignmentAutoRematchKeyRef = useRef<string | null>(null);
   const smartAlignmentAutoAppliedKeyRef = useRef<string | null>(null);
   const smtcLyricsProgressKeyRef = useRef<string | null>(null);
   const albumNavigationTimeoutRef = useRef<number | null>(null);
@@ -1284,6 +1351,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     setSmartAlignmentAnchors([]);
     setSmartAlignmentCandidatePreviews([]);
     setSmartAlignmentAutoState(null);
+    smartAlignmentAutoRematchKeyRef.current = null;
     smartAlignmentAutoAppliedKeyRef.current = null;
   }, [lyrics.source, trackId]);
   const effectiveDisplayedLyrics = useMemo(
@@ -2882,6 +2950,74 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   );
 
   useEffect(() => {
+    const canSearchBackgroundCandidates =
+      lyricsDisplaySettings.lyricsSmartAlignmentEnabled === true &&
+      lyricsDisplaySettings.lyricsAutoSearch !== false &&
+      lyrics.kind === "synced" &&
+      lyrics.source !== "placeholder" &&
+      lyrics.lines.length > 0 &&
+      Boolean(trackId) &&
+      audioStatus?.currentTrackId === trackId &&
+      candidates.length === 0 &&
+      !isCandidateLoading &&
+      !isLyricsLoading &&
+      activeSearchProviders.length > 0 &&
+      Boolean(window.echo?.lyrics?.searchCandidates);
+
+    if (!canSearchBackgroundCandidates || !trackId) {
+      return;
+    }
+
+    const searchKey = `${trackId}|${lyrics.source}|${lyrics.lines.length}|${lyrics.offsetMs}|${activeSearchProviders.join(",")}`;
+    if (smartAlignmentBackgroundSearchKeyRef.current === searchKey) {
+      return;
+    }
+    smartAlignmentBackgroundSearchKeyRef.current = searchKey;
+
+    let isCancelled = false;
+    const providers = activeSearchProviders.slice(0, smartAlignmentBackgroundCandidateLimit);
+    void Promise.allSettled(
+      providers.map(async (provider) => searchLyricsCandidatesForProvider(provider)),
+    ).then((results) => {
+      if (isCancelled) {
+        return;
+      }
+
+      const nextCandidates = results.reduce<LyricsSearchCandidate[]>((merged, result) => {
+        if (result.status !== "fulfilled") {
+          return merged;
+        }
+        return mergeLyricsCandidates(merged, result.value);
+      }, []);
+
+      if (nextCandidates.length === 0) {
+        return;
+      }
+
+      setCandidates(nextCandidates);
+      setActiveCandidateSource(readRememberedCandidateSource());
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    activeSearchProviders,
+    audioStatus?.currentTrackId,
+    candidates.length,
+    isCandidateLoading,
+    isLyricsLoading,
+    lyrics.kind,
+    lyrics.lines.length,
+    lyrics.offsetMs,
+    lyrics.source,
+    lyricsDisplaySettings.lyricsAutoSearch,
+    lyricsDisplaySettings.lyricsSmartAlignmentEnabled,
+    searchLyricsCandidatesForProvider,
+    trackId,
+  ]);
+
+  useEffect(() => {
     const lyricsApi = window.echo?.lyrics;
     const canPreviewCandidates =
       lyricsDisplaySettings.lyricsSmartAlignmentEnabled === true &&
@@ -3023,6 +3159,49 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
   }, [
     lyricsDisplaySettings.lyricsSmartAlignmentEnabled,
     smartAlignmentEvaluation,
+  ]);
+
+  useEffect(() => {
+    const canAutoRematchDrift =
+      Boolean(trackId) &&
+      lyricsDisplaySettings.lyricsSmartAlignmentEnabled === true &&
+      lyricsDisplaySettings.lyricsAutoSearch !== false &&
+      lyrics.kind === "synced" &&
+      lyrics.source !== "placeholder" &&
+      smartAlignmentEvaluation?.reason === "possible_drift" &&
+      smartAlignmentEvaluation.matchedLineCount >= 3 &&
+      smartAlignmentPreviewCandidates.length > 0 &&
+      !applyingCandidateId &&
+      !isLyricsOffsetSaving;
+
+    if (!canAutoRematchDrift || !trackId || !smartAlignmentEvaluation) {
+      return;
+    }
+
+    const rematchKey = `${trackId}|${lyrics.source}|${lyrics.lines.length}|${lyrics.offsetMs}|${smartAlignmentEvaluation.driftMs}|${smartAlignmentPreviewCandidateKey}`;
+    if (smartAlignmentAutoRematchKeyRef.current === rematchKey) {
+      return;
+    }
+    smartAlignmentAutoRematchKeyRef.current = rematchKey;
+
+    void tryAutoApplyCandidate(
+      smartAlignmentPreviewCandidates,
+      () => smartAlignmentAutoRematchKeyRef.current === rematchKey,
+    );
+  }, [
+    applyingCandidateId,
+    isLyricsOffsetSaving,
+    lyrics.kind,
+    lyrics.lines.length,
+    lyrics.offsetMs,
+    lyrics.source,
+    lyricsDisplaySettings.lyricsAutoSearch,
+    lyricsDisplaySettings.lyricsSmartAlignmentEnabled,
+    smartAlignmentEvaluation,
+    smartAlignmentPreviewCandidateKey,
+    smartAlignmentPreviewCandidates,
+    trackId,
+    tryAutoApplyCandidate,
   ]);
 
   const lyricsOffsetControls = useMemo(() => {

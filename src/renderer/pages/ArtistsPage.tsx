@@ -585,7 +585,7 @@ export const ArtistsPage = (): JSX.Element => {
                 ) : null}
                 <div className="artist-copy">
                   <strong>{artist.name}</strong>
-                  {artist.mediaType === 'remote' ? <small className="remote-media-source">{artist.sourceDisplayName ?? artist.provider ?? '网盘'}</small> : null}
+                  {artist.mediaType === 'remote' ? <small className="remote-media-source">{artist.sourceDisplayName ?? artist.provider ?? t('library.source.remote')}</small> : null}
                   <small>{artistMeta(artist, t)}</small>
                 </div>
                 <span className="artist-card-action" aria-hidden="true">

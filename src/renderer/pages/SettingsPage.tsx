@@ -972,6 +972,8 @@ const isSafeMarkdownHref = (href: string): boolean => {
   return /^(https?:\/\/|mailto:|#|\/(?!\/))/iu.test(trimmed);
 };
 
+const looksLikeReleaseNotesHtml = (value: string): boolean => /<\/?[a-z][\s\S]*>/iu.test(value);
+
 const parseMarkdownInline = (text: string, keyPrefix: string): ReactNode[] => {
   const nodes: ReactNode[] = [];
   let cursor = 0;
@@ -1036,7 +1038,142 @@ const parseMarkdownInline = (text: string, keyPrefix: string): ReactNode[] => {
   return nodes;
 };
 
+const renderReleaseNotesHtmlInline = (node: ChildNode, keyPrefix: string): ReactNode => {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.textContent ?? '';
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return null;
+  }
+
+  const element = node as HTMLElement;
+  const tagName = element.tagName.toLowerCase();
+  const children = Array.from(element.childNodes).map((child, childIndex) =>
+    renderReleaseNotesHtmlInline(child, `${keyPrefix}-${childIndex}`),
+  );
+
+  if (tagName === 'br') {
+    return <br key={keyPrefix} />;
+  }
+
+  if (tagName === 'strong' || tagName === 'b') {
+    return <strong key={keyPrefix}>{children}</strong>;
+  }
+
+  if (tagName === 'em' || tagName === 'i') {
+    return <em key={keyPrefix}>{children}</em>;
+  }
+
+  if (tagName === 'code') {
+    return <code key={keyPrefix}>{element.textContent ?? ''}</code>;
+  }
+
+  if (tagName === 'a') {
+    const href = element.getAttribute('href') ?? '';
+    if (!isSafeMarkdownHref(href)) {
+      return <span key={keyPrefix}>{children}</span>;
+    }
+    return (
+      <a key={keyPrefix} href={href} target="_blank" rel="noreferrer">
+        {children.length ? children : href}
+      </a>
+    );
+  }
+
+  if (tagName === 'img') {
+    const src = element.getAttribute('src') ?? '';
+    if (!isSafeMarkdownHref(src)) {
+      return null;
+    }
+    return <img key={keyPrefix} src={src} alt={element.getAttribute('alt') ?? ''} loading="lazy" />;
+  }
+
+  return <span key={keyPrefix}>{children}</span>;
+};
+
+const renderReleaseNotesHtmlBlock = (node: ChildNode, keyPrefix: string): ReactNode => {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent?.trim();
+    return text ? <p key={keyPrefix}>{text}</p> : null;
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return null;
+  }
+
+  const element = node as HTMLElement;
+  const tagName = element.tagName.toLowerCase();
+  const children = Array.from(element.childNodes).map((child, childIndex) =>
+    renderReleaseNotesHtmlInline(child, `${keyPrefix}-inline-${childIndex}`),
+  );
+
+  if (tagName === 'h1' || tagName === 'h2') {
+    return <h3 key={keyPrefix}>{children}</h3>;
+  }
+
+  if (tagName === 'h3') {
+    return <h4 key={keyPrefix}>{children}</h4>;
+  }
+
+  if (tagName === 'h4' || tagName === 'h5' || tagName === 'h6') {
+    return <h5 key={keyPrefix}>{children}</h5>;
+  }
+
+  if (tagName === 'p') {
+    return <p key={keyPrefix}>{children}</p>;
+  }
+
+  if (tagName === 'ul' || tagName === 'ol') {
+    const items = Array.from(element.children)
+      .filter((child) => child.tagName.toLowerCase() === 'li')
+      .map((child, childIndex) => (
+        <li key={`${keyPrefix}-item-${childIndex}`}>
+          {Array.from(child.childNodes).map((grandChild, grandChildIndex) =>
+            renderReleaseNotesHtmlInline(grandChild, `${keyPrefix}-item-${childIndex}-${grandChildIndex}`),
+          )}
+        </li>
+      ));
+    return tagName === 'ol' ? <ol key={keyPrefix}>{items}</ol> : <ul key={keyPrefix}>{items}</ul>;
+  }
+
+  if (tagName === 'blockquote') {
+    return <blockquote key={keyPrefix}>{children}</blockquote>;
+  }
+
+  if (tagName === 'pre') {
+    return (
+      <pre key={keyPrefix}>
+        <code>{element.textContent ?? ''}</code>
+      </pre>
+    );
+  }
+
+  if (tagName === 'hr') {
+    return <hr key={keyPrefix} />;
+  }
+
+  if (tagName === 'img' || tagName === 'a') {
+    return <p key={keyPrefix}>{renderReleaseNotesHtmlInline(element, `${keyPrefix}-inline`)}</p>;
+  }
+
+  return (
+    <div key={keyPrefix}>
+      {Array.from(element.childNodes).map((child, childIndex) => renderReleaseNotesHtmlBlock(child, `${keyPrefix}-${childIndex}`))}
+    </div>
+  );
+};
+
 const ReleaseNotesMarkdown = ({ markdown }: { markdown: string }): JSX.Element => {
+  if (looksLikeReleaseNotesHtml(markdown) && typeof DOMParser !== 'undefined') {
+    const document = new DOMParser().parseFromString(markdown, 'text/html');
+    const blocks = Array.from(document.body.childNodes)
+      .map((child, childIndex) => renderReleaseNotesHtmlBlock(child, `html-${childIndex}`))
+      .filter(Boolean);
+
+    return <div className="settings-update-markdown settings-update-markdown--html">{blocks}</div>;
+  }
+
   const lines = markdown.replace(/\r\n?/gu, '\n').split('\n');
   const blocks: ReactNode[] = [];
   let index = 0;
@@ -8571,7 +8708,7 @@ export const SettingsPage = (): JSX.Element => {
                 description={t('settings.playback.automix.description')}
               >
                 <div className="settings-chip-row">
-                  {status?.automix?.active && status.automix.transitionMode ? (
+                  {status?.automix?.active && !status.automix.gapless && status.automix.transitionMode ? (
                     <StatusText tone="good">
                       {`${status.automix.engine ?? 'fallback'} / ${status.automix.transitionMode} / ${
                         status.automix.overlapSeconds?.toFixed(1) ?? '?'

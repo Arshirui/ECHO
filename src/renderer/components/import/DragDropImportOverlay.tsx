@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FolderPlus, Music, Upload } from 'lucide-react';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 
 type DragDropImportOverlayProps = {
   onNotice: (message: string) => void;
@@ -9,25 +11,33 @@ const getEventFiles = (event: DragEvent): File[] => Array.from(event.dataTransfe
 
 const hasFileDrag = (event: DragEvent): boolean => Array.from(event.dataTransfer?.types ?? []).includes('Files');
 
-const summarizeDroppedFilesImport = (result: Awaited<ReturnType<NonNullable<Window['echo']>['library']['importDroppedFiles']>>): string => {
+type Translate = (key: TranslationKey, options?: Record<string, string | number>) => string;
+
+const summarizeDroppedFilesImport = (
+  result: Awaited<ReturnType<NonNullable<Window['echo']>['library']['importDroppedFiles']>>,
+  t: Translate,
+): string => {
   const parts: string[] = [];
 
   if (result.importedCount > 0) {
-    parts.push(`已导入 ${result.importedCount} 首歌曲`);
+    parts.push(t('import.dragDrop.files.imported', { count: result.importedCount }));
   }
 
   if (result.ignoredCount > 0) {
-    parts.push(`忽略 ${result.ignoredCount} 个不支持文件`);
+    parts.push(t('import.dragDrop.files.ignored', { count: result.ignoredCount }));
   }
 
   if (result.failedCount > 0) {
-    parts.push(`${result.failedCount} 个文件导入失败`);
+    parts.push(t('import.dragDrop.files.failed', { count: result.failedCount }));
   }
 
-  return parts.length > 0 ? `${parts.join('，')}。文件已保存到：${result.outputDirectory}` : '未找到可导入的音频文件。';
+  return parts.length > 0
+    ? t('import.dragDrop.files.summaryWithOutput', { summary: parts.join(t('punctuation.clauseSeparator')), outputDirectory: result.outputDirectory })
+    : t('import.dragDrop.files.empty');
 };
 
 export const DragDropImportOverlay = ({ onNotice }: DragDropImportOverlayProps): JSX.Element | null => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const [isDragging, setIsDragging] = useState(false);
   const dragDepthRef = useRef(0);
 
@@ -81,18 +91,18 @@ export const DragDropImportOverlay = ({ onNotice }: DragDropImportOverlayProps):
 
       const library = window.echo?.library;
       if (!library) {
-        onNotice('桌面桥接不可用。请在 ECHO Next 桌面端导入拖拽文件。');
+        onNotice(t('import.dragDrop.desktopBridgeUnavailable'));
         return;
       }
 
       if (files.length === 0) {
-        onNotice('未读取到拖拽文件。');
+        onNotice(t('import.dragDrop.noDroppedFiles'));
         return;
       }
 
       void library.importDroppedFiles(files)
         .then((result) => {
-          onNotice(summarizeDroppedFilesImport(result));
+          onNotice(summarizeDroppedFilesImport(result, t));
           if (result.importedCount > 0) {
             window.dispatchEvent(new Event('library:changed'));
           }
@@ -113,7 +123,7 @@ export const DragDropImportOverlay = ({ onNotice }: DragDropImportOverlayProps):
       window.removeEventListener('dragleave', handleDragLeave);
       window.removeEventListener('drop', handleDrop);
     };
-  }, [onNotice, resetDragState]);
+  }, [onNotice, resetDragState, t]);
 
   if (!isDragging) {
     return null;
@@ -127,8 +137,8 @@ export const DragDropImportOverlay = ({ onNotice }: DragDropImportOverlayProps):
           <Upload size={38} />
           <Music size={32} />
         </div>
-        <strong>拖入音乐或 osu! 谱面以导入曲库</strong>
-        <span>文件会保存到下载文件夹并加入曲库</span>
+        <strong>{t('import.dragDrop.overlay.title')}</strong>
+        <span>{t('import.dragDrop.overlay.description')}</span>
       </div>
     </div>
   );

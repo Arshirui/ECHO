@@ -5,6 +5,7 @@ import { LyricsLine, getRenderableLyricWords } from './LyricsLine';
 import type { LyricsState } from './lyricsTypes';
 import type { LyricWordTiming } from '../../../shared/types/lyrics';
 import { shouldShowRomanizationForLyrics } from '../../../shared/utils/lyricsLanguage';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 
 type LyricScrollMode = 'animated' | 'instant' | 'recenter';
 const lyricsLayoutSettingKeys = new Set([
@@ -294,6 +295,7 @@ export const LyricsView = ({
   showTranslation = true,
   wordHighlightEnabled = true,
 }: LyricsViewProps): JSX.Element | null => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const scrollRef = useRef<HTMLElement | null>(null);
   const scrollAnimationFrameRef = useRef<number | null>(null);
   const activeCenterFrameRef = useRef<number | null>(null);
@@ -700,7 +702,7 @@ export const LyricsView = ({
     return (
       <section className="lyrics-empty" aria-label="Lyrics">
         <Music2 size={26} />
-        <strong>{lyrics.kind === 'instrumental' ? '纯音乐，请欣赏' : '暂无歌词'}</strong>
+        <strong>{lyrics.kind === 'instrumental' ? t('lyricsView.empty.instrumental') : t('lyricsView.empty.noLyrics')}</strong>
         {lyrics.kind === 'instrumental' ? <span>Instrumental track</span> : null}
       </section>
     );

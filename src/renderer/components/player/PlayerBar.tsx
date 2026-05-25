@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, FileDown, Loader2, Monitor } from 'lucide-react';
+import { Captions, Download, FileDown, Loader2, Monitor } from 'lucide-react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { audioExportFormats, type AudioExportFormat, type AudioStatus } from '../../../shared/types/audio';
 import { isReliableBpmAnalysis } from '../../../shared/constants/audioAnalysis';
@@ -29,8 +29,11 @@ import { applyMediaSessionSnapshot } from './mediaSession';
 import { titleFromPath } from './playerFormat';
 
 type PlayerBarProps = {
+  desktopLyricsVisible?: boolean;
+  hasDesktopLyricsBridge?: boolean;
   onOpenAudioSettings?: () => void;
   onOpenQueue?: () => void;
+  onToggleDesktopLyrics?: () => void;
 };
 
 const progressRenderIntervalMs = 250;
@@ -438,7 +441,13 @@ const PlayerMarqueeText = ({
   );
 };
 
-export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps): JSX.Element => {
+export const PlayerBar = ({
+  desktopLyricsVisible = false,
+  hasDesktopLyricsBridge = false,
+  onOpenAudioSettings,
+  onOpenQueue,
+  onToggleDesktopLyrics,
+}: PlayerBarProps): JSX.Element => {
   const queue = usePlaybackQueue();
   const sharedPlaybackStatus = useSharedPlaybackStatus();
   const setQueueCurrentTrackId = queue.setCurrentTrackId;
@@ -2038,6 +2047,18 @@ export const PlayerBar = ({ onOpenAudioSettings, onOpenQueue }: PlayerBarProps):
       </div>
 
       <div className="output-status">
+        {hasDesktopLyricsBridge ? (
+          <button
+            className={`icon-button ${desktopLyricsVisible ? 'is-soft-active' : ''}`}
+            type="button"
+            aria-label={desktopLyricsVisible ? '隐藏桌面歌词' : '显示桌面歌词'}
+            title={desktopLyricsVisible ? '隐藏桌面歌词' : '显示桌面歌词'}
+            aria-pressed={desktopLyricsVisible}
+            onClick={() => onToggleDesktopLyrics?.()}
+          >
+            <Captions size={17} />
+          </button>
+        ) : null}
         <button
           className={`icon-button ${miniPlayerState?.visible ? 'is-soft-active' : ''}`}
           type="button"

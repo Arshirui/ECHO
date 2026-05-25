@@ -1,7 +1,7 @@
 import type { AudioOutputMode } from '../../../shared/types/audio';
 import type { LyricLine } from '../../../shared/types/lyrics';
 
-export type LyricsSmartAlignmentOutputMode = Extract<AudioOutputMode, 'shared' | 'exclusive' | 'asio'>;
+export type LyricsSmartAlignmentOutputMode = Extract<AudioOutputMode, 'shared' | 'exclusive' | 'asio' | 'system'>;
 
 export type LyricsSmartAlignmentAnchor = {
   lyricLineTimeMs: number;
@@ -104,7 +104,12 @@ const isFiniteAnchor = (anchor: LyricsSmartAlignmentAnchor): boolean =>
   Number.isFinite(anchor.lyricLineTimeMs) &&
   Number.isFinite(anchor.playbackMs) &&
   Number.isFinite(anchor.globalOffsetMs) &&
-  (anchor.outputMode === 'shared' || anchor.outputMode === 'exclusive' || anchor.outputMode === 'asio');
+  (
+    anchor.outputMode === 'shared' ||
+    anchor.outputMode === 'exclusive' ||
+    anchor.outputMode === 'asio' ||
+    anchor.outputMode === 'system'
+  );
 
 export const getLyricsSmartAlignmentRawOffset = (anchor: LyricsSmartAlignmentAnchor): number =>
   anchor.lyricLineTimeMs - (anchor.playbackMs + anchor.globalOffsetMs);

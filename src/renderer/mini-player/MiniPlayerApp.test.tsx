@@ -97,7 +97,7 @@ const installEchoMock = (track: LibraryTrack): void => {
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue(audioStatus),
-        onStatus: vi.fn(() => undefined),
+        onStatus: vi.fn(() => vi.fn()),
       },
       playback: {
         getStatus: vi.fn().mockResolvedValue(playbackStatus),
@@ -109,7 +109,7 @@ const installEchoMock = (track: LibraryTrack): void => {
       },
       connect: {
         getStatus: vi.fn().mockResolvedValue(null),
-        onStatus: vi.fn(() => undefined),
+        onStatus: vi.fn(() => vi.fn()),
       },
       desktopLyrics: {
         getLastAudioStatus: vi.fn().mockResolvedValue(null),

@@ -387,8 +387,8 @@ describe('AlbumsPage', () => {
     await screen.findByText('Album 1');
     fireEvent.contextMenu(screen.getByText('Album 1'));
 
-    expect(screen.getByRole('menuitem', { name: '编辑标签' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: '删除专辑' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /编辑标签|Edit tags/u })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /删除专辑|Delete album/u })).toBeTruthy();
     expect(screen.queryByLabelText('Album 1 album details')).toBeNull();
   });
 
@@ -402,13 +402,13 @@ describe('AlbumsPage', () => {
 
     await screen.findByText('Album 1');
     fireEvent.contextMenu(screen.getByText('Album 1'));
-    fireEvent.click(screen.getByRole('menuitem', { name: '编辑标签' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /编辑标签|Edit tags/u }));
 
-    fireEvent.change(screen.getByLabelText('专辑'), { target: { value: 'Renamed Album' } });
-    fireEvent.change(screen.getByLabelText('专辑艺术家'), { target: { value: 'New Artist' } });
-    fireEvent.change(screen.getByLabelText('年份'), { target: { value: '2025' } });
-    fireEvent.change(screen.getByLabelText('流派'), { target: { value: 'Ambient' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存标签' }));
+    fireEvent.change(screen.getByLabelText(/^(专辑|Album)$/u), { target: { value: 'Renamed Album' } });
+    fireEvent.change(screen.getByLabelText(/^(专辑艺术家|Album artist)$/u), { target: { value: 'New Artist' } });
+    fireEvent.change(screen.getByLabelText(/^(年份|Year)$/u), { target: { value: '2025' } });
+    fireEvent.change(screen.getByLabelText(/^(流派|Genre)$/u), { target: { value: 'Ambient' } });
+    fireEvent.click(screen.getByRole('button', { name: /保存标签|Save tags/u }));
 
     await waitFor(() => expect(updateAlbumTags).toHaveBeenCalledWith({
       albumId: '1',
@@ -456,14 +456,14 @@ describe('AlbumsPage', () => {
 
     await screen.findByText('Album 1');
     fireEvent.contextMenu(screen.getByText('Album 1'));
-    fireEvent.click(screen.getByRole('menuitem', { name: '编辑标签' }));
-    fireEvent.click(screen.getByRole('button', { name: '从内嵌标签加载' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /编辑标签|Edit tags/u }));
+    fireEvent.click(screen.getByRole('button', { name: /从内嵌标签加载|Load embedded tags/u }));
 
     await waitFor(() => expect(loadEmbeddedTrackTags).toHaveBeenCalledWith('track-1'));
-    expect((screen.getByLabelText('专辑') as HTMLInputElement).value).toBe('Embedded Album');
-    expect((screen.getByLabelText('专辑艺术家') as HTMLInputElement).value).toBe('Embedded Album Artist');
-    expect((screen.getByLabelText('年份') as HTMLInputElement).value).toBe('2024');
-    expect((screen.getByLabelText('流派') as HTMLInputElement).value).toBe('Jazz');
+    expect((screen.getByLabelText(/^(专辑|Album)$/u) as HTMLInputElement).value).toBe('Embedded Album');
+    expect((screen.getByLabelText(/^(专辑艺术家|Album artist)$/u) as HTMLInputElement).value).toBe('Embedded Album Artist');
+    expect((screen.getByLabelText(/^(年份|Year)$/u) as HTMLInputElement).value).toBe('2024');
+    expect((screen.getByLabelText(/^(流派|Genre)$/u) as HTMLInputElement).value).toBe('Jazz');
   });
 
   it('applies network album candidates and submits the network cover url', async () => {
@@ -497,14 +497,14 @@ describe('AlbumsPage', () => {
 
     await screen.findByText('Album 1');
     fireEvent.contextMenu(screen.getByText('Album 1'));
-    fireEvent.click(screen.getByRole('menuitem', { name: '编辑标签' }));
-    fireEvent.click(screen.getByRole('button', { name: '从网络加载' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /编辑标签|Edit tags/u }));
+    fireEvent.click(screen.getByRole('button', { name: /从网络加载|Load from network/u }));
 
     await screen.findByText('Network Album');
     expect(searchNetworkTagCandidates).toHaveBeenCalledWith('track-1');
     fireEvent.click(screen.getByText('Network Album'));
-    fireEvent.click(screen.getByRole('button', { name: '应用到表单' }));
-    fireEvent.click(screen.getByRole('button', { name: '保存标签' }));
+    fireEvent.click(screen.getByRole('button', { name: /应用到表单|Apply to form/u }));
+    fireEvent.click(screen.getByRole('button', { name: /保存标签|Save tags/u }));
 
     await waitFor(() => expect(updateAlbumTags).toHaveBeenCalledWith({
       albumId: '1',
@@ -534,10 +534,10 @@ describe('AlbumsPage', () => {
 
     await screen.findByText('Album 1');
     fireEvent.contextMenu(screen.getByText('Album 1'));
-    fireEvent.click(screen.getByRole('menuitem', { name: '删除专辑' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /删除专辑|Delete album/u }));
 
     await waitFor(() => expect(deleteAlbumFiles).toHaveBeenCalledWith('1'));
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('2 首歌曲'));
+    expect(String(confirm.mock.calls[0]?.[0] ?? '')).toMatch(/2 首歌曲|2 tracks/u);
     await waitFor(() => expect(getAlbums).toHaveBeenCalledTimes(2));
   });
 

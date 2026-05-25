@@ -8,6 +8,7 @@ import { isSpotifyTrack, pauseSpotifyPlayback, resumeSpotifyPlayback, seekSpotif
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../stores/playbackStatusStore';
 import { formatTime, titleFromPath } from '../components/player/playerFormat';
+import { translateFallback, useOptionalI18n } from '../i18n/I18nProvider';
 
 type ForwardedAudioStatus = {
   status: AudioStatus;
@@ -50,6 +51,7 @@ const lightweightArtworkUrl = (track: { coverThumb: string | null } | null, audi
   track?.coverThumb ?? audioStatus?.currentTrackCoverUrl ?? null;
 
 export const MiniPlayerApp = (): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const queue = usePlaybackQueue();
   const setQueueCurrentTrackId = queue.setCurrentTrackId;
   const syncQueuePlaybackState = queue.syncPlaybackState;
@@ -164,7 +166,7 @@ export const MiniPlayerApp = (): JSX.Element => {
     currentTrack?.albumArtist?.trim() ||
     activeAudioStatus?.currentTrackArtist?.trim() ||
     activeAudioStatus?.currentTrackAlbumArtist?.trim() ||
-    (filePath ? 'Unknown Artist' : 'Ready');
+    (filePath ? t('miniPlayer.artist.unknown') : t('miniPlayer.status.ready'));
   const artworkUrl = lightweightArtworkUrl(currentTrack, activeAudioStatus);
   const isSpotifyCurrentTrack = isSpotifyTrack(currentTrack);
   const playbackRate = activeAudioStatus?.playbackRate ?? 1;
@@ -254,7 +256,7 @@ export const MiniPlayerApp = (): JSX.Element => {
 
     if (queue.hqPlayerTakeoverEnabled) {
       if (activeStates.has(visualState)) {
-        setError('HQPlayer 接管中');
+        setError(t('miniPlayer.status.hqPlayerTakeover'));
         return;
       }
 
@@ -289,7 +291,7 @@ export const MiniPlayerApp = (): JSX.Element => {
       }
       return playback.play();
     });
-  }, [currentTrack, isSpotifyCurrentTrack, queue, runPlaybackAction, visualState]);
+  }, [currentTrack, isSpotifyCurrentTrack, queue, runPlaybackAction, t, visualState]);
 
   const handlePrevious = useCallback((): void => {
     void runPlaybackAction(queue.playPrevious);
@@ -352,7 +354,7 @@ export const MiniPlayerApp = (): JSX.Element => {
       data-playback-state={visualState}
       style={style}
     >
-      <section className="mini-player-shell" aria-label="迷你播放器">
+      <section className="mini-player-shell" aria-label={t('miniPlayer.aria.shell')}>
         <div className="mini-player-cover" data-empty={!artworkUrl}>
           {artworkUrl ? (
             <img alt="" draggable={false} src={artworkUrl} />
@@ -369,30 +371,30 @@ export const MiniPlayerApp = (): JSX.Element => {
             </div>
             <div className="mini-player-transport">
               <button
-                aria-label="上一首"
+                aria-label={t('miniPlayer.action.previous')}
                 className="mini-player-icon-button mini-player-icon-button--transport"
                 disabled={!queue.canGoPrevious}
-                title="上一首"
+                title={t('miniPlayer.action.previous')}
                 type="button"
                 onClick={handlePrevious}
               >
                 <SkipBack size={15} />
               </button>
               <button
-                aria-label={activeStates.has(visualState) ? '暂停' : '播放'}
+                aria-label={activeStates.has(visualState) ? t('miniPlayer.action.pause') : t('miniPlayer.action.play')}
                 className="mini-player-icon-button mini-player-icon-button--play"
                 disabled={!hasPlayableTarget}
-                title={activeStates.has(visualState) ? '暂停' : '播放'}
+                title={activeStates.has(visualState) ? t('miniPlayer.action.pause') : t('miniPlayer.action.play')}
                 type="button"
                 onClick={() => void handlePlayPause()}
               >
                 {activeStates.has(visualState) ? <Pause size={16} /> : <Play size={16} />}
               </button>
               <button
-                aria-label="下一首"
+                aria-label={t('miniPlayer.action.next')}
                 className="mini-player-icon-button mini-player-icon-button--transport"
                 disabled={!queue.canGoNext}
-                title="下一首"
+                title={t('miniPlayer.action.next')}
                 type="button"
                 onClick={handleNext}
               >
@@ -400,9 +402,9 @@ export const MiniPlayerApp = (): JSX.Element => {
               </button>
             </div>
             <button
-              aria-label="关闭迷你播放器"
+              aria-label={t('miniPlayer.action.close')}
               className="mini-player-icon-button mini-player-close-button"
-              title="关闭"
+              title={t('miniPlayer.action.closeShort')}
               type="button"
               onClick={() => void window.echo?.miniPlayer?.hide?.()}
             >
@@ -410,9 +412,9 @@ export const MiniPlayerApp = (): JSX.Element => {
             </button>
             <div className="mini-player-actions">
               <button
-                aria-label="重置位置"
+                aria-label={t('miniPlayer.action.resetPosition')}
                 className="mini-player-icon-button"
-                title="重置位置"
+                title={t('miniPlayer.action.resetPosition')}
                 type="button"
                 onClick={handleResetBounds}
               >
@@ -424,7 +426,7 @@ export const MiniPlayerApp = (): JSX.Element => {
           <div className="mini-player-progress-row">
             <span>{formatTime(positionSeconds)}</span>
             <input
-              aria-label="播放进度"
+              aria-label={t('miniPlayer.aria.progress')}
               disabled={!durationSeconds || !hasPlayableTarget}
               max={Math.max(1, durationSeconds)}
               min={0}

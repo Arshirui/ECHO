@@ -177,8 +177,9 @@ describe('lyrics smart alignment', () => {
     expect(suggestLyricsSmartAlignment([anchor({ lyricLineTimeMs: 0, playbackMs: 60000 })])?.offsetMs).toBe(-10000);
   });
 
-  it('keeps ASIO and exclusive output modes on the suggestion', () => {
+  it('keeps ASIO, exclusive, and system output modes on the suggestion', () => {
     expect(suggestLyricsSmartAlignment([anchor({ outputMode: 'asio' })])?.outputMode).toBe('asio');
     expect(suggestLyricsSmartAlignment([anchor({ outputMode: 'exclusive' })])?.outputMode).toBe('exclusive');
+    expect(suggestLyricsSmartAlignment([anchor({ outputMode: 'system' })])?.outputMode).toBe('system');
   });
 });

@@ -8,6 +8,7 @@ import {
   receiveDesktopLyricsRendererAudioStatus,
   resetDesktopLyricsBounds,
   setDesktopLyricsLocked,
+  setDesktopLyricsMousePassthrough,
   setDesktopLyricsStyle,
   showDesktopLyricsWindow,
 } from '../app/desktopLyricsWindow';
@@ -46,4 +47,5 @@ export const registerDesktopLyricsIpc = (): void => {
   ipcMain.handle(IpcChannels.DesktopLyricsResetBounds, () => resetDesktopLyricsBounds());
   ipcMain.handle(IpcChannels.DesktopLyricsGetLastAudioStatus, () => getLastDesktopLyricsAudioStatus());
   ipcMain.on(IpcChannels.DesktopLyricsRendererAudioStatus, receiveDesktopLyricsRendererAudioStatus);
+  ipcMain.on(IpcChannels.DesktopLyricsSetMousePassthrough, setDesktopLyricsMousePassthrough);
 };

@@ -102,7 +102,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsGlobalSyncOffsetMs).toBe(0);
     expect(settings.lyricsTimelineCorrectionEnabled).toBe(true);
     expect(settings.lyricsOffsetControlsEnabled).toBe(false);
-    expect(settings.lyricsSmartAlignmentEnabled).toBe(false);
+    expect(settings.lyricsSmartAlignmentEnabled).toBe(true);
     expect(settings.lyricsEnabled).toBe(true);
     expect(settings.lyricsHeaderHidden).toBe(false);
     expect(settings.lyricsMvAutoShowTrackInfoDisabled).toBe(true);
@@ -1141,7 +1141,7 @@ describe('app settings normalization', () => {
       lyricsGlobalSyncOffsetMs: 1000,
       lyricsTimelineCorrectionEnabled: false,
       lyricsOffsetControlsEnabled: true,
-      lyricsSmartAlignmentEnabled: false,
+      lyricsSmartAlignmentEnabled: true,
       lyricsEnabled: false,
       lyricsHeaderHidden: true,
       lyricsMvAutoShowTrackInfoDisabled: false,

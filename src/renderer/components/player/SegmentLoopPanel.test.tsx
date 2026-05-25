@@ -39,7 +39,7 @@ describe('SegmentLoopPanel', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'B' }));
-    fireEvent.click(screen.getByRole('button', { name: '保存当前片段书签' }));
+    fireEvent.click(screen.getByRole('button', { name: /保存当前片段书签|Save current segment bookmark/u }));
 
     const stored = JSON.parse(window.localStorage.getItem('echo-next:segment-bookmarks:v1') ?? '{}') as Record<string, Array<{ title: string; startSeconds: number; endSeconds: number }>>;
     expect(stored['track-1']?.[0]).toMatchObject({
@@ -78,7 +78,7 @@ describe('SegmentLoopPanel', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'B' }));
-    fireEvent.click(screen.getByRole('button', { name: '切换 A-B 循环' }));
+    fireEvent.click(screen.getByRole('button', { name: /切换 A-B 循环|Toggle A-B loop/u }));
 
     rerender(
       <SegmentLoopPanel

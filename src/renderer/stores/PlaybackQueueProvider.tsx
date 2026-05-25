@@ -18,14 +18,36 @@ import type { PlayableTrack } from '../../shared/types/remoteSources';
 import type { ReplayGainTrackData } from '../../shared/utils/replayGain';
 import { streamingProviderNames, streamingStableKey } from '../../shared/types/streaming';
 import type { StreamingProviderName } from '../../shared/types/streaming';
+import { isReliableBpmAnalysis } from '../../shared/constants/audioAnalysis';
 import { isSpotifyTrack, pauseSpotifyPlayback, playSpotifyTrack } from '../integrations/spotify/spotifyPlayback';
 import { beginPlaybackSwitchSnapshot, setPlaybackStatusSnapshot } from './playbackStatusStore';
 
 const playbackCancellationErrorMessage = 'audio_session_run_cancelled';
 const activePlaybackStates = new Set<AudioStatus['state']>(['loading', 'playing', 'paused']);
+const automixLateArmWindowSeconds = 60;
+const automixShortTrackArmRatio = 0.35;
+const automixBpmAnalysisStatusPollMs = 1500;
 const clampPlaybackRate = (value: number): number => Math.max(0.5, Math.min(2, value));
 const normalizePlaybackSpeedMode = (value: unknown): PlaybackSpeedMode | null =>
   value === 'daycore' || value === 'speed' || value === 'nightcore' ? value : null;
+
+const hasPendingAutomixTransition = (automix: AudioStatus['automix']): boolean => {
+  if (!automix?.active) {
+    return false;
+  }
+
+  if (automix.mode === 'armed') {
+    return true;
+  }
+
+  const plannedTrackCount = Number.isFinite(automix.plannedTrackCount) ? automix.plannedTrackCount ?? 0 : 0;
+  const nextTransitionIndex = Number.isFinite(automix.nextTransitionIndex) ? automix.nextTransitionIndex ?? 0 : 0;
+  if (plannedTrackCount <= 1) {
+    return true;
+  }
+
+  return nextTransitionIndex < plannedTrackCount - 1;
+};
 
 const createPlaybackSpeedOutput = (
   playbackRate: unknown,
@@ -154,6 +176,10 @@ type PlayLocalTrackOptions = {
   forceHqPlayerConnect?: boolean;
   startSeconds?: number;
   forceRefresh?: boolean;
+  forceAutomix?: boolean;
+  automixIncludeUpcoming?: boolean;
+  automixProbeDurationSeconds?: number;
+  silentRearm?: boolean;
 };
 
 type PlaybackQueueContextValue = {
@@ -764,8 +790,11 @@ const createQueueId = (trackId: string): string => {
   return `${Date.now().toString(36)}-${queueIdCounter.toString(36)}-${trackId}`;
 };
 
-const createProbeFromTrack = (track: LibraryTrack) => ({
-  durationSeconds: track.duration,
+const createProbeFromTrack = (track: LibraryTrack, options: { durationSeconds?: number } = {}) => ({
+  durationSeconds:
+    typeof options.durationSeconds === 'number' && Number.isFinite(options.durationSeconds) && options.durationSeconds > 0
+      ? options.durationSeconds
+      : track.duration,
   fileSampleRate: track.sampleRate,
   channels: 2,
   codec: track.codec,
@@ -802,6 +831,44 @@ const createQueueItem = (track: LibraryTrack, source: QueueSource = manualSource
   addedAt: new Date().toISOString(),
 });
 
+const isLocalAutomixCandidate = (track: LibraryTrack): boolean =>
+  !isSpotifyTrack(track) && (track.mediaType === undefined || track.mediaType === 'local');
+
+const isAutomixQueueCandidate = (track: LibraryTrack): boolean =>
+  !isSpotifyTrack(track) && track.unavailable !== true;
+
+const shouldAnalyzeAutomixBpmCandidate = (track: LibraryTrack): boolean =>
+  isLocalAutomixCandidate(track) &&
+  !track.isTemporary &&
+  Boolean(track.path) &&
+  track.analysisStatus !== 'analyzing' &&
+  !isReliableBpmAnalysis(track.bpm, track.bpmConfidence, track.analysisStatus);
+
+const resolveAutomixArmStartSeconds = (durationSeconds: number): number => {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return 0;
+  }
+
+  if (durationSeconds > automixLateArmWindowSeconds) {
+    return Math.max(0, durationSeconds - automixLateArmWindowSeconds);
+  }
+
+  return Math.max(1, Math.min(Math.max(1, durationSeconds - 4.5), durationSeconds * automixShortTrackArmRatio));
+};
+
+const shouldArmAutomixForPlaybackStart = (track: LibraryTrack, startSeconds: number | undefined, forceAutomix: boolean): boolean => {
+  if (forceAutomix) {
+    return true;
+  }
+
+  const durationSeconds = Number(track.duration);
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return false;
+  }
+
+  return Math.max(0, startSeconds ?? 0) >= resolveAutomixArmStartSeconds(durationSeconds);
+};
+
 const findItemByQueueId = (items: QueueItem[], queueId: string | null): QueueItem | null =>
   queueId ? items.find((item) => item.queueId === queueId) ?? null : null;
 
@@ -813,6 +880,66 @@ const findCurrentIndex = (items: QueueItem[], currentQueueId: string | null, cur
   }
 
   return currentTrackId ? items.findIndex((item) => item.track.id === currentTrackId) : -1;
+};
+
+const findAutomixAdvanceItem = (
+  items: QueueItem[],
+  currentQueueId: string | null,
+  currentTrackId: string | null,
+  toTrackId: string | null | undefined,
+): QueueItem | null => {
+  if (!toTrackId) {
+    return null;
+  }
+
+  const currentIndex = findCurrentIndex(items, currentQueueId, currentTrackId);
+  const nextInPlaybackOrder = currentIndex >= 0
+    ? items.slice(currentIndex + 1).find((candidate) => candidate.track.id === toTrackId) ?? null
+    : null;
+
+  return nextInPlaybackOrder ?? items.find((candidate, index) => index !== currentIndex && candidate.track.id === toTrackId) ?? null;
+};
+
+const resolveSequentialNextItem = (items: QueueItem[], item: QueueItem, repeatMode: RepeatMode): QueueItem | null => {
+  const index = items.findIndex((candidate) => candidate.queueId === item.queueId);
+  if (index >= 0 && index < items.length - 1) {
+    return items[index + 1] ?? null;
+  }
+
+  return index === items.length - 1 && repeatMode === 'all' && items.length > 1 ? items[0] ?? null : null;
+};
+
+const resolveSequentialAutomixNextItem = (items: QueueItem[], item: QueueItem, repeatMode: RepeatMode): QueueItem | null => {
+  const index = items.findIndex((candidate) => candidate.queueId === item.queueId);
+  if (index < 0) {
+    return null;
+  }
+
+  const afterCurrent = items.slice(index + 1).find((candidate) => isAutomixQueueCandidate(candidate.track)) ?? null;
+  if (afterCurrent) {
+    return afterCurrent;
+  }
+
+  if (repeatMode !== 'all' || items.length <= 1) {
+    return null;
+  }
+
+  return items.slice(0, index).find((candidate) => isAutomixQueueCandidate(candidate.track)) ?? null;
+};
+
+const resolveShuffleAutomixNextItem = (items: QueueItem[], item: QueueItem, history: QueueItem[], repeatMode: RepeatMode): QueueItem | null => {
+  const candidates = getShuffleCandidates(items, item, history).filter((candidate) => isAutomixQueueCandidate(candidate.track));
+  const freshCandidate = pickRandom(candidates);
+  if (freshCandidate) {
+    return freshCandidate;
+  }
+
+  if (repeatMode !== 'all') {
+    return null;
+  }
+
+  const repeatCandidates = items.filter((candidate) => candidate.queueId !== item.queueId && isAutomixQueueCandidate(candidate.track));
+  return pickRandom(repeatCandidates);
 };
 
 const getShuffleCandidates = (items: QueueItem[], activeItem: QueueItem | null, history: QueueItem[]): QueueItem[] => {
@@ -866,15 +993,24 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   const automixEnabledRef = useRef(automixEnabled);
   const hqPlayerTakeoverEnabledRef = useRef(hqPlayerTakeoverEnabled);
   const gaplessPlaybackEnabledRef = useRef(gaplessPlaybackEnabled);
+  const audioAnalysisEnabledRef = useRef<boolean | null>(null);
   const isShuffleEnabledRef = useRef(isShuffleEnabled);
   const playbackHistorySessionRef = useRef<PlaybackHistorySession | null>(null);
   const pausedSessionTimerRef = useRef<number | null>(null);
   const playRequestTokenRef = useRef(0);
-  const rearmAutomixRef = useRef<(() => Promise<void>) | null>(null);
   const playbackStatusTokensRef = useRef<WeakMap<PlaybackStatus, number>>(new WeakMap());
   const playbackStatusPreviousItemRef = useRef<WeakMap<PlaybackStatus, QueueItem | null>>(new WeakMap());
   const cancelLocalPrepareRef = useRef<(() => void) | null>(null);
+  const prepareNextMediaItemRef = useRef<(item: QueueItem) => void>(() => undefined);
+  const cancelAutomixBpmAnalysisPrepareRef = useRef<(() => void) | null>(null);
+  const pendingAutomixBpmAnalysisTrackRef = useRef<LibraryTrack | null>(null);
+  const automixBpmAnalysisJobIdsRef = useRef<Map<string, string | 'done'>>(new Map());
+  const automixBpmAnalysisPollTimersRef = useRef<Map<string, number>>(new Map());
+  const scheduleAutomixBpmAnalysisRef = useRef<(track: LibraryTrack) => void>(() => undefined);
+  const automixLateArmRef = useRef<{ queueId: string; trackId: string } | null>(null);
+  const automixShuffleNextQueueIdRef = useRef<Map<string, string>>(new Map());
   const cancelPlaybackSessionPersistRef = useRef<(() => void) | null>(null);
+  const updateTrackSnapshotRef = useRef<PlaybackQueueContextValue['updateTrackSnapshot']>(() => undefined);
   const sessionHydratedRef = useRef(sessionHydrated);
 
   const setItems = useCallback((nextItems: QueueItem[] | ((current: QueueItem[]) => QueueItem[])): void => {
@@ -947,7 +1083,10 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       writeAutomixEnabledMemory(enabled);
     }
     if (enabled) {
-      void rearmAutomixRef.current?.();
+      const currentItem = findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
+      if (currentItem) {
+        prepareNextMediaItemRef.current(currentItem);
+      }
     }
   }, []);
 
@@ -1028,9 +1167,29 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   }, [cancelScheduledPlaybackSessionPersistence, persistPlaybackSessionNow]);
 
   const applyPlaybackSettings = useCallback((settings: Partial<AppSettings> | null | undefined): void => {
-    const enabled = settings?.gaplessPlaybackEnabled === true;
-    gaplessPlaybackEnabledRef.current = enabled;
-    setGaplessPlaybackEnabledState(enabled);
+    if (!settings) {
+      return;
+    }
+
+    if ('gaplessPlaybackEnabled' in settings) {
+      const enabled = settings.gaplessPlaybackEnabled === true;
+      gaplessPlaybackEnabledRef.current = enabled;
+      setGaplessPlaybackEnabledState(enabled);
+    }
+
+    if ('audioAnalysisEnabled' in settings) {
+      audioAnalysisEnabledRef.current = settings.audioAnalysisEnabled !== false;
+      if (!audioAnalysisEnabledRef.current) {
+        pendingAutomixBpmAnalysisTrackRef.current = null;
+        return;
+      }
+
+      const pendingTrack = pendingAutomixBpmAnalysisTrackRef.current;
+      pendingAutomixBpmAnalysisTrackRef.current = null;
+      if (pendingTrack) {
+        scheduleAutomixBpmAnalysisRef.current(pendingTrack);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -1044,7 +1203,12 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       .catch(() => undefined);
 
     const handleSettingsChanged = (event: Event): void => {
-      if (event instanceof CustomEvent && event.detail && typeof event.detail === 'object' && 'gaplessPlaybackEnabled' in event.detail) {
+      if (
+        event instanceof CustomEvent &&
+        event.detail &&
+        typeof event.detail === 'object' &&
+        ('gaplessPlaybackEnabled' in event.detail || 'audioAnalysisEnabled' in event.detail)
+      ) {
         applyPlaybackSettings(event.detail as Partial<AppSettings>);
         return;
       }
@@ -1064,6 +1228,16 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       window.removeEventListener('settings:changed', handleSettingsChanged);
     };
   }, [applyPlaybackSettings]);
+
+  useEffect(() => () => {
+    cancelAutomixBpmAnalysisPrepareRef.current?.();
+    cancelAutomixBpmAnalysisPrepareRef.current = null;
+    pendingAutomixBpmAnalysisTrackRef.current = null;
+    for (const timer of automixBpmAnalysisPollTimersRef.current.values()) {
+      window.clearTimeout(timer);
+    }
+    automixBpmAnalysisPollTimersRef.current.clear();
+  }, []);
 
   useEffect(() => {
     sessionHydratedRef.current = sessionHydrated;
@@ -1402,7 +1576,31 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     cancelLocalPrepareRef.current = null;
   }, []);
 
-  const createAutomixOptions = useCallback((item: QueueItem): {
+  const getStableShuffleAutomixNextItem = useCallback((item: QueueItem): QueueItem | null => {
+    const current = itemsRef.current;
+    const cachedQueueId = automixShuffleNextQueueIdRef.current.get(item.queueId) ?? null;
+    const cached = cachedQueueId ? findItemByQueueId(current, cachedQueueId) : null;
+    const historyQueueIds = new Set(historyRef.current.map((historyItem) => historyItem.queueId));
+    if (
+      cached &&
+      cached.queueId !== item.queueId &&
+      !historyQueueIds.has(cached.queueId) &&
+      isLocalAutomixCandidate(cached.track)
+    ) {
+      return cached;
+    }
+
+    const next = resolveShuffleAutomixNextItem(current, item, historyRef.current, repeatModeRef.current);
+    if (next) {
+      automixShuffleNextQueueIdRef.current.set(item.queueId, next.queueId);
+    } else {
+      automixShuffleNextQueueIdRef.current.delete(item.queueId);
+    }
+
+    return next;
+  }, []);
+
+  const createAutomixOptions = useCallback((item: QueueItem, options: { startSeconds?: number; force?: boolean; includeUpcoming?: boolean } = {}): {
     enabled: boolean;
     maxTransitionSeconds: number;
     beatAlignEnabled: boolean;
@@ -1411,36 +1609,43 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     upcomingItems?: PlayableTrack[];
     upcomingProbes?: ReturnType<typeof createProbeFromTrack>[];
   } | undefined => {
-    if (!automixEnabledRef.current || repeatModeRef.current === 'one' || isShuffleEnabledRef.current) {
+    if (!automixEnabledRef.current || repeatModeRef.current === 'one') {
+      return undefined;
+    }
+    if (!shouldArmAutomixForPlaybackStart(item.track, options.startSeconds, options.force === true)) {
       return undefined;
     }
 
     const current = itemsRef.current;
     const index = current.findIndex((candidate) => candidate.queueId === item.queueId);
-    const next =
-      index >= 0 && index < current.length - 1
-        ? current[index + 1]
-        : index === current.length - 1 && repeatModeRef.current === 'all' && current.length > 1
-          ? current[0]
-          : null;
-    if (!next || isSpotifyTrack(item.track) || isSpotifyTrack(next.track)) {
+    const next = isShuffleEnabledRef.current
+      ? getStableShuffleAutomixNextItem(item)
+      : resolveSequentialAutomixNextItem(current, item, repeatModeRef.current);
+    if (!next || isSpotifyTrack(item.track) || !isAutomixQueueCandidate(next.track)) {
       return undefined;
     }
-    const upcoming = current
-      .slice(index + 2)
-      .filter((candidate) => !isSpotifyTrack(candidate.track))
-      .slice(0, 3);
+    const upcoming = isShuffleEnabledRef.current
+      ? []
+      : current
+          .slice(index + 2)
+          .filter((candidate) => isAutomixQueueCandidate(candidate.track))
+          .slice(0, 2);
+    const includeUpcoming = options.includeUpcoming !== false;
 
     return {
       enabled: true,
-      maxTransitionSeconds: 12,
+      maxTransitionSeconds: 16,
       beatAlignEnabled: true,
       nextItem: toPlayableTrack(next.track),
       nextProbe: createProbeFromTrack(next.track),
-      upcomingItems: upcoming.map((candidate) => toPlayableTrack(candidate.track)),
-      upcomingProbes: upcoming.map((candidate) => createProbeFromTrack(candidate.track)),
+      ...(includeUpcoming && upcoming.length > 0
+        ? {
+            upcomingItems: upcoming.map((candidate) => toPlayableTrack(candidate.track)),
+            upcomingProbes: upcoming.map((candidate) => createProbeFromTrack(candidate.track)),
+          }
+        : {}),
     };
-  }, []);
+  }, [getStableShuffleAutomixNextItem]);
 
   const createGaplessOptions = useCallback((item: QueueItem): {
     enabled: boolean;
@@ -1478,82 +1683,6 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       upcomingProbes: upcoming.map((candidate) => createProbeFromTrack(candidate.track)),
     };
   }, []);
-
-  const rearmAutomixForCurrentPlayback = useCallback(async (): Promise<void> => {
-    const playback = window.echo?.playback;
-    if (!playback) {
-      return;
-    }
-
-    const item = findItemByQueueId(itemsRef.current, currentQueueIdRef.current);
-    if (!item || isSpotifyTrack(item.track)) {
-      return;
-    }
-
-    const automix = createAutomixOptions(item);
-    if (!automix) {
-      return;
-    }
-
-    const audioStatus = await window.echo?.audio?.getStatus?.().catch(() => null);
-    const playbackStatus = await playback.getStatus?.().catch(() => null);
-    const statusTrackId = audioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? null;
-    if (statusTrackId && statusTrackId !== item.track.id) {
-      return;
-    }
-
-    const state = audioStatus?.state ?? playbackStatus?.state ?? null;
-    if (state !== 'playing') {
-      return;
-    }
-
-    const positionSeconds = Math.max(
-      0,
-      audioStatus?.positionSeconds ?? (typeof playbackStatus?.positionMs === 'number' ? playbackStatus.positionMs / 1000 : 0),
-    );
-    if (item.track.duration > 0 && positionSeconds >= item.track.duration - 3) {
-      return;
-    }
-
-    const output = await resolvePlaybackSpeedOutput();
-    const requestToken = playRequestTokenRef.current + 1;
-    playRequestTokenRef.current = requestToken;
-    const rawStatus = await (
-      (item.track.mediaType === 'remote' || item.track.mediaType === 'streaming') && playback.playMediaItem
-        ? playback.playMediaItem({
-            item: toPlayableTrack(item.track),
-            startSeconds: positionSeconds,
-            output,
-            automix,
-          })
-        : playback.playLocalFile({
-            filePath: item.track.path,
-            trackId: item.track.id,
-            startSeconds: positionSeconds,
-            output,
-            probe: createProbeFromTrack(item.track),
-            automix,
-          })
-    );
-
-    if (playRequestTokenRef.current !== requestToken) {
-      return;
-    }
-
-    setPlaybackStatusSnapshot({
-      playbackStatus: playbackStatusForItem(rawStatus, item),
-      error: null,
-    });
-  }, [createAutomixOptions]);
-
-  useEffect(() => {
-    rearmAutomixRef.current = rearmAutomixForCurrentPlayback;
-    return () => {
-      if (rearmAutomixRef.current === rearmAutomixForCurrentPlayback) {
-        rearmAutomixRef.current = null;
-      }
-    };
-  }, [rearmAutomixForCurrentPlayback]);
 
   const getResumeStartSecondsForItem = useCallback((item: QueueItem): number | undefined => {
     const resume = resumeMemoryRef.current;
@@ -1631,19 +1760,29 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         ? Math.max(0, options.startSeconds)
         : undefined;
     const resumeStartSeconds = requestedStartSeconds ?? getResumeStartSecondsForItem(item);
-    const automix = createAutomixOptions(item);
-    const gapless = automix ? undefined : createGaplessOptions(item);
-    void finishPlaybackHistorySession();
-    setCurrentQueueId(item.queueId);
-    setCurrentTrackIdInternal(item.track.id);
-    setLastPlayedTrack(item.track);
-    beginPlaybackSwitchSnapshot({
-      state: 'loading',
-      currentTrackId: item.track.id,
-      positionMs: Math.round((resumeStartSeconds ?? 0) * 1000),
-      durationMs: Math.round(Math.max(0, item.track.duration) * 1000),
-      filePath: track.path,
+    if (options.forceAutomix !== true) {
+      automixLateArmRef.current = null;
+    }
+    const automix = createAutomixOptions(item, {
+      startSeconds: resumeStartSeconds,
+      force: options.forceAutomix === true,
+      includeUpcoming: options.automixIncludeUpcoming !== false,
     });
+    const gapless = automix ? undefined : createGaplessOptions(item);
+    const silentRearm = options.silentRearm === true && options.forceAutomix === true;
+    if (!silentRearm) {
+      void finishPlaybackHistorySession();
+      setCurrentQueueId(item.queueId);
+      setCurrentTrackIdInternal(item.track.id);
+      setLastPlayedTrack(item.track);
+      beginPlaybackSwitchSnapshot({
+        state: 'loading',
+        currentTrackId: item.track.id,
+        positionMs: Math.round((resumeStartSeconds ?? 0) * 1000),
+        durationMs: Math.round(Math.max(0, item.track.duration) * 1000),
+        filePath: track.path,
+      });
+    }
     const rawStatus = await (async () => {
       try {
         if (shouldPausePreviousSpotify && previousItem) {
@@ -1684,6 +1823,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
                     output,
                     automix,
                     gapless,
+                    ...(automixEnabledRef.current === true && !silentRearm ? { automixAnalyze: true } : {}),
                     forceRefresh: options.forceRefresh === true,
                   })
                 : playback.playLocalFile({
@@ -1698,8 +1838,9 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
                     },
                     startSeconds: resumeStartSeconds,
                     output,
-                    probe: createProbeFromTrack(track),
+                    probe: createProbeFromTrack(track, { durationSeconds: options.automixProbeDurationSeconds }),
                     replayGain: replayGainFromTrack(track),
+                    ...(automixEnabledRef.current === true && !silentRearm ? { automixAnalyze: true } : {}),
                     automix,
                     gapless,
                   });
@@ -1709,25 +1850,108 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
           throw new Error(playbackCancellationErrorMessage);
         }
 
-        setPlaybackStatusSnapshot({
-          playbackStatus: statusForPlaybackFailure(item.track),
-          error: error instanceof Error ? error.message : String(error),
-          playbackVisualIntent: null,
-        });
+        if (!silentRearm) {
+          setPlaybackStatusSnapshot({
+            playbackStatus: statusForPlaybackFailure(item.track),
+            error: error instanceof Error ? error.message : String(error),
+            playbackVisualIntent: null,
+          });
+        }
         throw error;
       }
     })();
-    if (resumeMemoryRef.current) {
+    if (!silentRearm && resumeMemoryRef.current) {
       setResumeMemory(null);
     }
     const status = playbackStatusForItem(rawStatus, item, resumeStartSeconds ?? 0);
     playbackStatusTokensRef.current.set(status, requestToken);
     playbackStatusPreviousItemRef.current.set(status, previousItem);
-    if (playRequestTokenRef.current === requestToken) {
+    if (!silentRearm && playRequestTokenRef.current === requestToken) {
       void startPlaybackHistorySession(item);
     }
     return status;
   }, [createAutomixOptions, createGaplessOptions, finishPlaybackHistorySession, getResumeStartSecondsForItem, playConnectOutputTrack, setCurrentQueueId, setCurrentTrackIdInternal, setLastPlayedTrack, setResumeMemory, startPlaybackHistorySession]);
+
+  useEffect(() => {
+    const audio = window.echo?.audio;
+    if (!audio?.onStatus) {
+      return undefined;
+    }
+
+    let arming = false;
+    const maybeArmAutomix = (status: AudioStatus): void => {
+      if (
+        arming ||
+        !automixEnabledRef.current ||
+        status.state !== 'playing' ||
+        hasPendingAutomixTransition(status.automix)
+      ) {
+        return;
+      }
+
+      const item =
+        findItemByQueueId(itemsRef.current, currentQueueIdRef.current) ??
+        itemsRef.current.find((candidate) => candidate.track.id === status.currentTrackId) ??
+        null;
+      if (!item || isSpotifyTrack(item.track) || item.track.id !== status.currentTrackId) {
+        return;
+      }
+
+      const durationSeconds = status.durationSeconds > 0 ? status.durationSeconds : item.track.duration;
+      const positionSeconds = Math.max(0, status.positionSeconds);
+      if (
+        positionSeconds < resolveAutomixArmStartSeconds(durationSeconds) ||
+        positionSeconds >= durationSeconds - 4
+      ) {
+        return;
+      }
+
+      const armKey = { queueId: item.queueId, trackId: item.track.id };
+      const previousArm = automixLateArmRef.current;
+      if (previousArm?.queueId === armKey.queueId && previousArm.trackId === armKey.trackId) {
+        return;
+      }
+      if (!createAutomixOptions(item, { startSeconds: positionSeconds, force: true })) {
+        return;
+      }
+
+      const itemForAutomix =
+        durationSeconds > 0 && item.track.duration <= 0
+          ? { ...item, track: { ...item.track, duration: durationSeconds } }
+          : item;
+      if (itemForAutomix !== item) {
+        setItems((current) => current.map((candidate) => (candidate.queueId === item.queueId ? itemForAutomix : candidate)));
+      }
+
+      automixLateArmRef.current = armKey;
+      arming = true;
+      void playLocalTrack(itemForAutomix, {
+        routeToConnectOutput: false,
+        startSeconds: positionSeconds,
+        forceAutomix: true,
+        automixIncludeUpcoming: false,
+        automixProbeDurationSeconds: durationSeconds,
+        silentRearm: true,
+      })
+        .then((nextStatus) => {
+          setPlaybackStatusSnapshot({
+            playbackStatus: playbackStatusForItem(nextStatus, item, positionSeconds),
+            error: null,
+          });
+        })
+        .catch(() => {
+          automixLateArmRef.current = null;
+        })
+        .finally(() => {
+          arming = false;
+        });
+    };
+
+    const unsubscribe = audio.onStatus(maybeArmAutomix);
+    return () => {
+      unsubscribe();
+    };
+  }, [createAutomixOptions, playLocalTrack]);
 
   const autoSearchMv = useCallback((trackId: string): void => {
     const mvApi = window.echo?.mv;
@@ -1746,10 +1970,109 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     });
   }, []);
 
+  const refreshAutomixBpmAnalysisTrack = useCallback(async (trackId: string): Promise<void> => {
+    const library = window.echo?.library;
+    if (!library?.getTrack) {
+      return;
+    }
+
+    const refreshed = await library.getTrack(trackId);
+    if (!refreshed || refreshed.id !== trackId) {
+      return;
+    }
+
+    updateTrackSnapshotRef.current(trackId, {
+      bpm: refreshed.bpm,
+      bpmConfidence: refreshed.bpmConfidence,
+      beatOffsetMs: refreshed.beatOffsetMs,
+      analysisStatus: refreshed.analysisStatus,
+      analysisUpdatedAt: refreshed.analysisUpdatedAt,
+    });
+  }, []);
+
+  const pollAutomixBpmAnalysisJob = useCallback((trackId: string, jobId: string): void => {
+    if (automixBpmAnalysisPollTimersRef.current.has(trackId)) {
+      return;
+    }
+
+    const pollTimer = window.setTimeout(() => {
+      automixBpmAnalysisPollTimersRef.current.delete(trackId);
+      void (async () => {
+        try {
+          const status = await window.echo?.library?.getBpmAnalysisStatus?.(jobId);
+          if (status?.status === 'queued' || status?.status === 'running') {
+            pollAutomixBpmAnalysisJob(trackId, jobId);
+            return;
+          }
+
+          await refreshAutomixBpmAnalysisTrack(trackId);
+          automixBpmAnalysisJobIdsRef.current.set(trackId, 'done');
+        } catch {
+          automixBpmAnalysisJobIdsRef.current.delete(trackId);
+        }
+      })();
+    }, automixBpmAnalysisStatusPollMs);
+    automixBpmAnalysisPollTimersRef.current.set(trackId, pollTimer);
+  }, [refreshAutomixBpmAnalysisTrack]);
+
+  const scheduleAutomixBpmAnalysis = useCallback((track: LibraryTrack): void => {
+    const library = window.echo?.library;
+    if (audioAnalysisEnabledRef.current === null) {
+      pendingAutomixBpmAnalysisTrackRef.current = track;
+      return;
+    }
+
+    if (
+      !automixEnabledRef.current ||
+      audioAnalysisEnabledRef.current !== true ||
+      !shouldAnalyzeAutomixBpmCandidate(track) ||
+      !library?.startBpmAnalysis ||
+      !library.getBpmAnalysisStatus ||
+      !library.getTrack
+    ) {
+      return;
+    }
+
+    const existingJobId = automixBpmAnalysisJobIdsRef.current.get(track.id);
+    if (existingJobId === 'done') {
+      return;
+    }
+
+    if (existingJobId) {
+      pollAutomixBpmAnalysisJob(track.id, existingJobId);
+      return;
+    }
+
+    cancelAutomixBpmAnalysisPrepareRef.current?.();
+    cancelAutomixBpmAnalysisPrepareRef.current = deferQueueBackgroundTask(() => {
+      cancelAutomixBpmAnalysisPrepareRef.current = null;
+      void (async () => {
+        try {
+          const job = await library.startBpmAnalysis({ trackIds: [track.id] });
+          updateTrackSnapshotRef.current(track.id, { analysisStatus: 'analyzing' });
+
+          if (job.status === 'queued' || job.status === 'running') {
+            automixBpmAnalysisJobIdsRef.current.set(track.id, job.id);
+            pollAutomixBpmAnalysisJob(track.id, job.id);
+            return;
+          }
+
+          await refreshAutomixBpmAnalysisTrack(track.id);
+          automixBpmAnalysisJobIdsRef.current.set(track.id, 'done');
+        } catch {
+          automixBpmAnalysisJobIdsRef.current.delete(track.id);
+        }
+      })();
+    });
+  }, [pollAutomixBpmAnalysisJob, refreshAutomixBpmAnalysisTrack]);
+  scheduleAutomixBpmAnalysisRef.current = scheduleAutomixBpmAnalysis;
+
   const prepareNextMediaItem = useCallback((item: QueueItem): void => {
     const playback = window.echo?.playback;
     cancelLocalPrepareRef.current?.();
     cancelLocalPrepareRef.current = null;
+    cancelAutomixBpmAnalysisPrepareRef.current?.();
+    cancelAutomixBpmAnalysisPrepareRef.current = null;
 
     if (!playback?.prepareMediaItem && !playback?.prepareLocalFile) {
       return;
@@ -1757,10 +2080,14 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
     const current = itemsRef.current;
     const index = current.findIndex((candidate) => candidate.queueId === item.queueId);
-    const next = index >= 0 && index < current.length - 1 ? current[index + 1] : null;
+    const next = automixEnabledRef.current && isShuffleEnabledRef.current
+      ? getStableShuffleAutomixNextItem(item)
+      : resolveSequentialNextItem(current, item, repeatModeRef.current);
     if (!next) {
       return;
     }
+
+    scheduleAutomixBpmAnalysis(next.track);
 
     if (isSpotifyTrack(next.track)) {
       return;
@@ -1768,7 +2095,10 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
     if (next.track.mediaType === 'remote' || next.track.mediaType === 'streaming') {
       if (playback.prepareMediaItem) {
-        void playback.prepareMediaItem({ item: toPlayableTrack(next.track) }).catch(() => undefined);
+        void playback.prepareMediaItem({
+          item: toPlayableTrack(next.track),
+          ...(automixEnabledRef.current === true ? { automixAnalyze: true } : {}),
+        }).catch(() => undefined);
       }
       return;
     }
@@ -1782,8 +2112,14 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     cancelLocalPrepareRef.current = deferQueueBackgroundTask(() => {
       const latestItems = itemsRef.current;
       const latestIndex = latestItems.findIndex((candidate) => candidate.queueId === expectedCurrentQueueId);
+      const latestItem = latestIndex >= 0 ? latestItems[latestIndex] : null;
       const stillCurrent = currentQueueIdRef.current === expectedCurrentQueueId;
-      const stillNext = latestIndex >= 0 && latestItems[latestIndex + 1]?.queueId === expectedNextQueueId;
+      const stillNext = automixEnabledRef.current && isShuffleEnabledRef.current
+        ? automixShuffleNextQueueIdRef.current.get(expectedCurrentQueueId) === expectedNextQueueId &&
+          latestItems.some((candidate) => candidate.queueId === expectedNextQueueId)
+        : latestItem
+          ? resolveSequentialNextItem(latestItems, latestItem, repeatModeRef.current)?.queueId === expectedNextQueueId
+          : false;
 
       if (!stillCurrent || !stillNext) {
         return;
@@ -1794,9 +2130,11 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
         trackId: next.track.id,
         probe: createProbeFromTrack(next.track),
         replayGain: replayGainFromTrack(next.track),
+        ...(automixEnabledRef.current === true ? { automixAnalyze: true } : {}),
       }).catch(() => undefined);
     });
-  }, []);
+  }, [getStableShuffleAutomixNextItem, scheduleAutomixBpmAnalysis]);
+  prepareNextMediaItemRef.current = prepareNextMediaItem;
 
   const commitPlayedItem = useCallback(
     (item: QueueItem, status: PlaybackStatus, options: { recordHistory?: boolean; previousItem?: QueueItem | null } = {}): void => {
@@ -1829,7 +2167,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
 
   useEffect(() => {
     const unsubscribe = window.echo?.playback?.onAutomixAdvance?.((event) => {
-      const next = itemsRef.current.find((candidate) => candidate.track.id === event.toTrackId) ?? null;
+      const next = findAutomixAdvanceItem(itemsRef.current, currentQueueIdRef.current, currentTrackIdRef.current, event.toTrackId);
       if (!next) {
         return;
       }
@@ -1843,6 +2181,13 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       setCurrentQueueId(next.queueId);
       setCurrentTrackIdInternal(next.track.id);
       setLastPlayedTrack(next.track);
+      beginPlaybackSwitchSnapshot({
+        state: 'playing',
+        currentTrackId: next.track.id,
+        positionMs: Math.round(Math.max(0, event.nextStartSeconds ?? 0) * 1000),
+        durationMs: Math.round(Math.max(0, next.track.duration) * 1000),
+        filePath: next.track.path,
+      });
       void startPlaybackHistorySession(next);
       prepareNextMediaItem(next);
       schedulePlaybackSessionPersistence();
@@ -2357,6 +2702,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     },
     [setItems, setLastPlayedTrack],
   );
+  updateTrackSnapshotRef.current = updateTrackSnapshot;
 
   const canGoPrevious = useMemo(() => {
     if (history.length > 0) {

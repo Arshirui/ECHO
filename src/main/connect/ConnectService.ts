@@ -106,12 +106,16 @@ const hqPlayerReasonText = (reason: string | null | undefined): string =>
 const hqPlayerPlaybackConfirmAttempts = 4;
 const hqPlayerPlaybackConfirmDelayMs = 250;
 const hqPlayerStatusSyncIntervalMs = 2500;
+const hqPlayerEndedGraceSeconds = 5;
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
 
 const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value);
+
+const positiveNumberOrNull = (value: number | null | undefined): number | null =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 
 const formatSeekTarget = (positionSeconds: number): string => {
   const safe = Math.max(0, Math.floor(positionSeconds));
@@ -433,7 +437,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   }
 
   private withInterpolatedPosition(status: ConnectSessionStatus): ConnectSessionStatus {
-    if (status.protocol !== 'dlna' || status.state !== 'playing' || status.durationSeconds <= 0) {
+    if ((status.protocol !== 'dlna' && status.protocol !== 'hqplayer') || status.state !== 'playing' || status.durationSeconds <= 0) {
       return status;
     }
 
@@ -447,6 +451,82 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
       ...status,
       positionSeconds: Math.min(status.durationSeconds, status.positionSeconds + elapsedSeconds),
     };
+  }
+
+  private shouldPreserveHqPlayerNaturalEndPosition(
+    playbackStatus: HqPlayerRemotePlaybackStatus,
+    previous: ConnectSessionStatus,
+    durationSeconds: number,
+  ): boolean {
+    if (playbackStatus.state !== 'stopped' && playbackStatus.state !== 'stop-requested') {
+      return false;
+    }
+
+    if (
+      previous.protocol !== 'hqplayer' ||
+      previous.deviceId !== hqPlayerConnectDeviceId ||
+      previous.state !== 'playing' ||
+      durationSeconds <= 0
+    ) {
+      return false;
+    }
+
+    const previousAtTail = previous.positionSeconds >= Math.max(0, durationSeconds - hqPlayerEndedGraceSeconds);
+    if (!previousAtTail) {
+      return false;
+    }
+
+    const reportedPosition = playbackStatus.positionSeconds;
+    return reportedPosition == null || reportedPosition <= 1 || reportedPosition < previous.positionSeconds - 1;
+  }
+
+  private shouldCompleteHqPlayerFromClock(previous: ConnectSessionStatus): boolean {
+    return (
+      previous.protocol === 'hqplayer' &&
+      previous.deviceId === hqPlayerConnectDeviceId &&
+      previous.state === 'playing' &&
+      previous.durationSeconds > 0 &&
+      previous.positionSeconds >= previous.durationSeconds
+    );
+  }
+
+  private shouldKeepHqPlayerClockPosition(
+    playbackStatus: HqPlayerRemotePlaybackStatus,
+    previous: ConnectSessionStatus,
+    durationSeconds: number,
+  ): boolean {
+    if (playbackStatus.state !== 'playing') {
+      return false;
+    }
+
+    if (
+      previous.protocol !== 'hqplayer' ||
+      previous.deviceId !== hqPlayerConnectDeviceId ||
+      previous.state !== 'playing' ||
+      durationSeconds <= 0 ||
+      previous.positionSeconds <= 3
+    ) {
+      return false;
+    }
+
+    const reportedPosition = playbackStatus.positionSeconds;
+    return reportedPosition != null && reportedPosition <= 1;
+  }
+
+  private resolveHqPlayerPositionSeconds(
+    playbackStatus: HqPlayerRemotePlaybackStatus,
+    previous: ConnectSessionStatus,
+    durationSeconds: number,
+  ): number {
+    if (this.shouldPreserveHqPlayerNaturalEndPosition(playbackStatus, previous, durationSeconds)) {
+      return durationSeconds;
+    }
+
+    if (this.shouldKeepHqPlayerClockPosition(playbackStatus, previous, durationSeconds)) {
+      return previous.positionSeconds;
+    }
+
+    return playbackStatus.positionSeconds ?? previous.positionSeconds;
   }
 
   private resolveCoverPath(coverId: string | null | undefined): string | null {
@@ -653,6 +733,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
 
     this.hqPlayerStatusSyncInFlight = true;
     try {
+      const previous = this.withInterpolatedPosition(this.session);
       const result = await this.hqPlayerService.testConnection();
       if (this.session.protocol !== 'hqplayer' || this.session.deviceId !== hqPlayerConnectDeviceId) {
         return;
@@ -670,14 +751,26 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
 
       const playbackStatus = result.playbackStatus ?? null;
       if (!playbackStatus) {
+        if (this.shouldCompleteHqPlayerFromClock(previous)) {
+          this.setSession({
+            ...previous,
+            state: 'stopped',
+            positionSeconds: previous.durationSeconds,
+            error: null,
+            updatedAt: new Date().toISOString(),
+          });
+        }
         return;
       }
 
+      const durationSeconds = positiveNumberOrNull(playbackStatus.durationSeconds) ?? previous.durationSeconds;
+      const positionSeconds = this.resolveHqPlayerPositionSeconds(playbackStatus, previous, durationSeconds);
+
       this.setSession({
-        ...this.session,
+        ...previous,
         state: this.mapHqPlayerPlaybackState(playbackStatus),
-        positionSeconds: playbackStatus.positionSeconds ?? this.session.positionSeconds,
-        durationSeconds: playbackStatus.durationSeconds ?? this.session.durationSeconds,
+        positionSeconds,
+        durationSeconds,
         error: null,
         updatedAt: new Date().toISOString(),
       });
@@ -734,7 +827,7 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
         currentTrackId: item.trackId,
         metadata: this.createHqPlayerMetadata(item),
         positionSeconds: playbackStatus?.positionSeconds ?? request.positionSeconds ?? 0,
-        durationSeconds: playbackStatus?.durationSeconds ?? item.duration ?? 0,
+        durationSeconds: positiveNumberOrNull(playbackStatus?.durationSeconds) ?? item.duration ?? 0,
         latencyMs: Date.now() - startedAt,
         error: null,
         updatedAt: new Date().toISOString(),

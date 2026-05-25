@@ -149,7 +149,7 @@ describe('ArtistOnlineInfoService', () => {
 
   it('falls back to the Baidu Baike item page when the card API has no abstract', async () => {
     const database = createDatabase(':memory:');
-    const fetcher = vi.fn(async (url: string) => {
+    const fetcher = vi.fn(async (url: string, _options?: RequestInit) => {
       if (url.includes('baike.baidu.com/api/openapi/BaikeLemmaCardApi')) {
         return {
           ok: true,

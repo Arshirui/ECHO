@@ -126,7 +126,7 @@ describe('AlbumOnlineInfoService', () => {
     const insertSql = String((database.prepare as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] ?? '');
     expect(insertSql).toContain('related_json');
     expect(run.mock.calls[0]).toContain(JSON.stringify({}));
-    expect(run.mock.calls[0]).toContain(JSON.stringify({ version: 2, album: null, artist: null }));
+    expect(run.mock.calls[0]).toContain(JSON.stringify({ version: 3, album: null, artist: null, sourceLinks: [], releaseDetails: null, releaseVersions: [] }));
     vi.unstubAllGlobals();
   });
 

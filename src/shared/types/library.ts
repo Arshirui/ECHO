@@ -1163,6 +1163,24 @@ export type AlbumOnlineInfoSource = {
   label: string;
 };
 
+export type AlbumSourceLink = {
+  provider:
+    | 'musicbrainz'
+    | 'wikipedia'
+    | 'wikidata'
+    | 'vgmdb'
+    | 'discogs'
+    | 'spotify'
+    | 'appleMusic'
+    | 'youtubeMusic'
+    | 'bandcamp'
+    | 'official'
+    | 'other';
+  label: string;
+  url: string;
+  kind: 'database' | 'streaming' | 'official' | 'reference' | 'other';
+};
+
 export type AlbumOnlineInfoMatch = {
   provider: 'musicbrainz';
   providerItemId: string;
@@ -1199,11 +1217,49 @@ export type AlbumInformationSummary = {
   }>;
 };
 
+export type AlbumReleaseLabel = {
+  name: string;
+  catalogNumber: string | null;
+};
+
+export type AlbumReleaseDetails = {
+  title: string;
+  date: string | null;
+  country: string | null;
+  barcode: string | null;
+  status: string | null;
+  labels: AlbumReleaseLabel[];
+  mediaFormats: string[];
+  copyrights: string[];
+};
+
+export type AlbumReleaseVersion = {
+  providerItemId: string;
+  title: string;
+  artist: string;
+  year: number | null;
+  date: string | null;
+  country: string | null;
+  barcode: string | null;
+  status: string | null;
+  disambiguation: string | null;
+  mediaFormats: string[];
+  trackCount: number | null;
+  catalogNumbers: string[];
+  labels: string[];
+  url: string;
+  confidence: number;
+  isMatched: boolean;
+};
+
 export type AlbumOnlineInfo = {
   albumId: string;
   status: AlbumOnlineInfoStatus;
   sources: AlbumOnlineInfoSource[];
   match: AlbumOnlineInfoMatch | null;
+  sourceLinks: AlbumSourceLink[];
+  releaseDetails: AlbumReleaseDetails | null;
+  releaseVersions: AlbumReleaseVersion[];
   credits: AlbumCreditGroup[];
   information: AlbumInformationSummary | null;
   artistInformation: AlbumInformationSummary | null;

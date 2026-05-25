@@ -236,8 +236,11 @@ struct DeviceDescriptor
 struct AutomixNativePlan
 {
     std::atomic<bool> enabled { false };
+    std::atomic<bool> fadeActivated { false };
     std::atomic<uint64_t> fadeStartFrame { 0 };
     std::atomic<uint64_t> fadeEndFrame { 0 };
+    std::atomic<uint64_t> gainReleaseEndFrame { 0 };
+    std::atomic<uint64_t> overlapFrames { 1 };
     std::atomic<float> currentGain { 1.0f };
     std::atomic<float> nextGain { 1.0f };
 };
@@ -1413,6 +1416,7 @@ public:
             return 0;
 
         const uint64_t absoluteStartFrame = framesPlayed.load(std::memory_order_relaxed);
+        activateAutomixFadeIfReady(absoluteStartFrame, frameCount);
         int framesNeeded = frameCount;
         int outputOffset = 0;
         uint64_t framesReadTotal = 0;
@@ -1550,6 +1554,7 @@ public:
         const double safeSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
         const auto fadeStart = static_cast<uint64_t>(std::max(0.0, fadeStartSeconds) * safeSampleRate);
         const auto overlapFrames = static_cast<uint64_t>(std::max(0.001, overlapSeconds) * safeSampleRate);
+        const auto gainReleaseFrames = static_cast<uint64_t>(std::max(0.05, std::min(4.0, std::max(0.001, overlapSeconds) * 0.5)) * safeSampleRate);
 
         {
             std::lock_guard<std::mutex> lock(automixMutex);
@@ -1559,8 +1564,11 @@ public:
 
         automixPlan.fadeStartFrame.store(fadeStart, std::memory_order_release);
         automixPlan.fadeEndFrame.store(fadeStart + std::max<uint64_t>(1, overlapFrames), std::memory_order_release);
+        automixPlan.gainReleaseEndFrame.store(fadeStart + std::max<uint64_t>(1, overlapFrames) + std::max<uint64_t>(1, gainReleaseFrames), std::memory_order_release);
+        automixPlan.overlapFrames.store(std::max<uint64_t>(1, overlapFrames), std::memory_order_release);
         automixPlan.currentGain.store(dbToGain(currentGainDb), std::memory_order_release);
         automixPlan.nextGain.store(dbToGain(nextGainDb), std::memory_order_release);
+        automixPlan.fadeActivated.store(false, std::memory_order_release);
         automixPlan.enabled.store(true, std::memory_order_release);
         automixNextInputEnded.store(false, std::memory_order_release);
         automixNextHasAudio.store(false, std::memory_order_release);
@@ -1574,6 +1582,7 @@ public:
     void cancelAutomix()
     {
         automixPlan.enabled.store(false, std::memory_order_release);
+        automixPlan.fadeActivated.store(false, std::memory_order_release);
         automixNextInputEnded.store(false, std::memory_order_release);
         automixNextHasAudio.store(false, std::memory_order_release);
         {
@@ -1687,6 +1696,38 @@ private:
         return static_cast<float>(std::pow(10.0, std::max(-24.0, std::min(12.0, db)) / 20.0));
     }
 
+    void activateAutomixFadeIfReady(uint64_t absoluteStartFrame, int frameCount)
+    {
+        if (
+            frameCount <= 0
+            || ! automixPlan.enabled.load(std::memory_order_acquire)
+            || automixPlan.fadeActivated.load(std::memory_order_acquire))
+        {
+            return;
+        }
+
+        const uint64_t plannedFadeStartFrame = automixPlan.fadeStartFrame.load(std::memory_order_acquire);
+        if (absoluteStartFrame + static_cast<uint64_t>(frameCount) <= plannedFadeStartFrame)
+            return;
+
+        {
+            std::lock_guard<std::mutex> lock(automixMutex);
+            if (automixFifo.getNumReady() <= 0)
+                return;
+        }
+
+        const uint64_t effectiveFadeStartFrame = std::max(absoluteStartFrame, plannedFadeStartFrame);
+        const uint64_t overlapFrames = std::max<uint64_t>(1, automixPlan.overlapFrames.load(std::memory_order_acquire));
+        const uint64_t releaseFrames = std::max<uint64_t>(
+            1,
+            automixPlan.gainReleaseEndFrame.load(std::memory_order_acquire)
+                - automixPlan.fadeEndFrame.load(std::memory_order_acquire));
+        automixPlan.fadeStartFrame.store(effectiveFadeStartFrame, std::memory_order_release);
+        automixPlan.fadeEndFrame.store(effectiveFadeStartFrame + overlapFrames, std::memory_order_release);
+        automixPlan.gainReleaseEndFrame.store(effectiveFadeStartFrame + overlapFrames + releaseFrames, std::memory_order_release);
+        automixPlan.fadeActivated.store(true, std::memory_order_release);
+    }
+
     void configureDeclickRamp(double sampleRate)
     {
         const double safeSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
@@ -1727,31 +1768,47 @@ private:
     float currentAutomixEnvelope(uint64_t absoluteFrame) const
     {
         const bool enabled = automixPlan.enabled.load(std::memory_order_acquire);
+        const bool fadeActivated = automixPlan.fadeActivated.load(std::memory_order_acquire);
         const uint64_t fadeStartFrame = automixPlan.fadeStartFrame.load(std::memory_order_acquire);
         const uint64_t fadeEndFrame = automixPlan.fadeEndFrame.load(std::memory_order_acquire);
         const float currentGain = automixPlan.currentGain.load(std::memory_order_acquire);
-        if (! enabled || absoluteFrame < fadeStartFrame)
-            return enabled ? currentGain : 1.0f;
+        if (! enabled)
+            return 1.0f;
+
+        if (! fadeActivated || absoluteFrame < fadeStartFrame)
+            return 1.0f;
 
         if (absoluteFrame >= fadeEndFrame)
             return 0.0f;
 
         const double progress = static_cast<double>(absoluteFrame - fadeStartFrame)
             / static_cast<double>(std::max<uint64_t>(1, fadeEndFrame - fadeStartFrame));
-        return currentGain * static_cast<float>(std::cos(progress * juce::MathConstants<double>::halfPi));
+        const auto smoothProgress = static_cast<float>(std::sin(progress * juce::MathConstants<double>::halfPi));
+        const float gainMatch = 1.0f + ((currentGain - 1.0f) * smoothProgress);
+        return gainMatch * static_cast<float>(std::cos(progress * juce::MathConstants<double>::halfPi));
     }
 
     float nextAutomixEnvelope(uint64_t absoluteFrame) const
     {
         const bool enabled = automixPlan.enabled.load(std::memory_order_acquire);
+        const bool fadeActivated = automixPlan.fadeActivated.load(std::memory_order_acquire);
         const uint64_t fadeStartFrame = automixPlan.fadeStartFrame.load(std::memory_order_acquire);
         const uint64_t fadeEndFrame = automixPlan.fadeEndFrame.load(std::memory_order_acquire);
+        const uint64_t gainReleaseEndFrame = automixPlan.gainReleaseEndFrame.load(std::memory_order_acquire);
         const float nextGain = automixPlan.nextGain.load(std::memory_order_acquire);
-        if (! enabled || absoluteFrame < fadeStartFrame)
+        if (! enabled || ! fadeActivated || absoluteFrame < fadeStartFrame)
             return 0.0f;
 
+        if (absoluteFrame >= gainReleaseEndFrame)
+            return 1.0f;
+
         if (absoluteFrame >= fadeEndFrame)
-            return nextGain;
+        {
+            const double releaseProgress = static_cast<double>(absoluteFrame - fadeEndFrame)
+                / static_cast<double>(std::max<uint64_t>(1, gainReleaseEndFrame - fadeEndFrame));
+            const float smoothRelease = static_cast<float>(std::sin(releaseProgress * juce::MathConstants<double>::halfPi));
+            return nextGain + ((1.0f - nextGain) * smoothRelease);
+        }
 
         const double progress = static_cast<double>(absoluteFrame - fadeStartFrame)
             / static_cast<double>(std::max<uint64_t>(1, fadeEndFrame - fadeStartFrame));

@@ -13,6 +13,7 @@ import { clearFfmpegToolchainCache, resolveFfmpegToolchain } from './FfmpegToolc
 import { getEqBridge } from './EqBridge';
 import { NativeOutputBridge, resolveHostBinary } from './NativeOutputBridge';
 import type { HostSpawner } from './NativeOutputBridge';
+import { createEstimatedAutomixAnalysis } from './AutomixPlanner';
 import type {
   AudioDeviceInfo,
   AudioProbeResult,
@@ -20,6 +21,7 @@ import type {
   NativeBridgeReadyResult,
   NativeHostNotificationEvent,
   NativeOutputStartOptions,
+  PcmAutomixDecodeRequest,
   PcmDecodeRequest,
 } from './audioTypes';
 
@@ -124,6 +126,15 @@ class FakeDecoder {
       stop,
       done: Promise.resolve(),
     };
+  }
+}
+
+class AutomixPairDecoder extends FakeDecoder {
+  readonly automixRequests: PcmAutomixDecodeRequest[] = [];
+
+  decodeAutomixPair(request: PcmAutomixDecodeRequest): DecoderRun {
+    this.automixRequests.push(request);
+    return this.decodeLocalFile(request.current);
   }
 }
 
@@ -363,6 +374,7 @@ class FakeBridge extends EventEmitter {
   sessionBegins = 0;
   sessionEnds = 0;
   readonly sessionChunks: Array<{ sessionId: number; chunk: Buffer }> = [];
+  readonly sessionBeginOptions: Array<{ startSeconds?: number; playbackRate?: number; durationSeconds?: number }> = [];
   readonly writable = new Writable({
     write(_chunk, _encoding, callback) {
       callback();
@@ -487,8 +499,9 @@ class FakeBridge extends EventEmitter {
     });
   }
 
-  beginSession(options: { startSeconds?: number } = {}): number {
+  beginSession(options: { startSeconds?: number; playbackRate?: number; durationSeconds?: number } = {}): number {
     this.sessionBegins += 1;
+    this.sessionBeginOptions.push(options);
     this.inputEnded = false;
     this.positionSeconds = options.startSeconds ?? 0;
     this.sessionId += 1;
@@ -512,6 +525,20 @@ class FakeBridge extends EventEmitter {
     void _sessionId;
     this.sessionEnds += 1;
     this.inputEnded = true;
+  }
+}
+
+class NativeAutomixBridge extends FakeBridge {
+  readonly prepareAutomixPlan = vi.fn();
+  readonly nextChunks: Buffer[] = [];
+
+  createAutomixNextWritable(): Writable {
+    return new Writable({
+      write: (chunk, _encoding, callback) => {
+        this.nextChunks.push(Buffer.from(chunk));
+        callback();
+      },
+    });
   }
 }
 
@@ -791,6 +818,38 @@ describe('AudioSession stability cleanup', () => {
       expect(ended).not.toHaveBeenCalled();
       expect(session.getStatus().state).toBe('error');
       expect(session.getStatus().error).toContain('audio_file_decode_failed_or_corrupt');
+      expect(session.getDiagnostics().recentPlaybackEvents?.at(-1)).toMatchObject({
+        kind: 'ended',
+        severity: 'suspect',
+        reason: 'ended_before_duration',
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('does not fail playback when a local file ends near a loose reported duration', async () => {
+    const looseProbe = { ...probe('loose-duration.flac', 44100), durationSeconds: 347.293 };
+    const decoder = new PcmChunkDecoder(new Map([['loose-duration.flac', looseProbe]]), [pcmBuffer([0, 0, 0, 0])]);
+    const bridge = new FakeBridge();
+    const ended = vi.fn();
+    const session = createAudioSessionForTest({
+      decoder,
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+    session.on('ended', ended);
+
+    try {
+      await session.playLocalFile({ filePath: 'loose-duration.flac', output: { outputMode: 'shared' } });
+      bridge.positionSeconds = 267.271;
+      bridge.emit('ended');
+
+      expect(ended).toHaveBeenCalledTimes(1);
+      expect(session.getStatus().state).toBe('ended');
+      expect(session.getStatus().error).toBeNull();
       expect(session.getDiagnostics().recentPlaybackEvents?.at(-1)).toMatchObject({
         kind: 'ended',
         severity: 'suspect',
@@ -1552,6 +1611,77 @@ describe('Audio Core sample-rate regression guard', () => {
     await session.prepareLocalFile({ filePath: 'prepared.flac', trackId: 'prepared', probe: completeProbe });
 
     expect(decoder.probeRequests).toEqual([]);
+  });
+
+  it('prepareLocalFile can prewarm Automix analysis without probing the file', async () => {
+    const completeProbe = {
+      durationSeconds: 120,
+      fileSampleRate: 44100,
+      channels: 2,
+      codec: 'flac',
+      bitDepth: 16,
+      bitrate: 900000,
+    };
+    const analysis = createEstimatedAutomixAnalysis({ durationSeconds: 120 });
+    const analyze = vi.fn().mockResolvedValue(analysis);
+    const { decoder, session } = createSessionHarness([probe('automix-prepared.flac', 44100)], [], [], {
+      automixAnalyzer: { analyze },
+    });
+
+    await session.prepareLocalFile({
+      filePath: 'automix-prepared.flac',
+      trackId: 'automix-prepared',
+      probe: completeProbe,
+      automixAnalyze: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(decoder.probeRequests).toEqual([]);
+    expect(analyze).toHaveBeenCalledWith(expect.objectContaining({
+      filePath: 'automix-prepared.flac',
+      probe: expect.objectContaining({
+        durationSeconds: 120,
+        fileSampleRate: 44100,
+      }),
+    }));
+  });
+
+  it('starts current-track Automix analysis after playback has started', async () => {
+    const completeProbe = {
+      durationSeconds: 120,
+      fileSampleRate: 44100,
+      channels: 2,
+      codec: 'flac',
+      bitDepth: 16,
+      bitrate: 900000,
+    };
+    const analysis = createEstimatedAutomixAnalysis({ durationSeconds: 120 });
+    const analyze = vi.fn().mockResolvedValue(analysis);
+    const { decoder, session } = createSessionHarness([probe('automix-current.flac', 44100)], [], [], {
+      automixAnalyzer: { analyze },
+    });
+
+    const status = await session.playLocalFile({
+      filePath: 'automix-current.flac',
+      trackId: 'automix-current',
+      probe: { ...completeProbe, bpm: 128, bpmConfidence: 0.91, beatOffsetMs: 12 },
+      automixAnalyze: true,
+    });
+
+    expect(status.state).toBe('playing');
+    expect(decoder.probeRequests).toEqual([]);
+    expect(analyze).toHaveBeenCalledWith(expect.objectContaining({
+      filePath: 'automix-current.flac',
+      probe: expect.objectContaining({
+        durationSeconds: 120,
+        fileSampleRate: 44100,
+      }),
+      hint: expect.objectContaining({
+        bpm: 128,
+        bpmConfidence: 0.91,
+        beatOffsetMs: 12,
+      }),
+    }));
   });
 
   it('prepareLocalFile probes and caches when the provided probe is incomplete', async () => {
@@ -6657,6 +6787,220 @@ describe('AudioSession host availability', () => {
     }
   });
 
+  it('starts Automix from an estimated plan without waiting for background analysis', async () => {
+    const decoder = new AutomixPairDecoder(new Map([
+      ['current.flac', probe('current.flac', 44100)],
+      ['next.flac', probe('next.flac', 44100)],
+    ]));
+    const analyze = vi.fn(() => new Promise<never>(() => undefined));
+    const session = createAudioSessionForTest({
+      decoder,
+      automixAnalyzer: { analyze },
+      deviceService: { listDevices: () => [] },
+      createBridge: () => new FakeBridge(),
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+
+    try {
+      const status = await session.playLocalFile({
+        filePath: 'current.flac',
+        trackId: 'current-track',
+        probe: {
+          durationSeconds: 120,
+          fileSampleRate: 44100,
+          channels: 2,
+        },
+        automix: {
+          enabled: true,
+          maxTransitionSeconds: 12,
+          next: {
+            filePath: 'next.flac',
+            trackId: 'next-track',
+            probe: {
+              durationSeconds: 150,
+              fileSampleRate: 44100,
+              channels: 2,
+            },
+          },
+        },
+      });
+
+      expect(status.state).toBe('playing');
+      expect(analyze).toHaveBeenCalledTimes(2);
+      expect(decoder.automixRequests).toHaveLength(1);
+      expect(decoder.automixRequests[0]?.plan.mode).toBe('energyFade');
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('uses native dual-deck Automix only when armed near the transition window', async () => {
+    const decoder = new AutomixPairDecoder(new Map([
+      ['current.flac', probe('current.flac', 44100)],
+      ['next.flac', probe('next.flac', 44100)],
+    ]));
+    const bridge = new NativeAutomixBridge();
+    const session = createAudioSessionForTest({
+      decoder,
+      automixAnalyzer: { analyze: vi.fn(() => Promise.resolve(createEstimatedAutomixAnalysis({ durationSeconds: 120 }))) },
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+    const advanceEvents: Array<{ toTrackId?: string; nextStartSeconds?: number }> = [];
+    session.on('automix-advance', (event) => {
+      advanceEvents.push(event as { toTrackId?: string; nextStartSeconds?: number });
+    });
+
+    try {
+      await session.playLocalFile({
+        filePath: 'current.flac',
+        trackId: 'current-track',
+        probe: {
+          durationSeconds: 120,
+          fileSampleRate: 44100,
+          channels: 2,
+        },
+        automix: {
+          enabled: true,
+          next: {
+            filePath: 'next.flac',
+            trackId: 'next-track',
+            probe: {
+              durationSeconds: 150,
+              fileSampleRate: 44100,
+              channels: 2,
+            },
+          },
+        },
+      });
+
+      expect(bridge.prepareAutomixPlan).not.toHaveBeenCalled();
+      expect(session.getStatus().automix?.engine).toBe('ffmpegPremix');
+      await session.stop();
+
+      await session.playLocalFile({
+        filePath: 'current.flac',
+        trackId: 'current-track',
+        startSeconds: 80,
+        probe: {
+          durationSeconds: 120,
+          fileSampleRate: 44100,
+          channels: 2,
+        },
+        automix: {
+          enabled: true,
+          next: {
+            filePath: 'next.flac',
+            trackId: 'next-track',
+            probe: {
+              durationSeconds: 150,
+              fileSampleRate: 44100,
+              channels: 2,
+            },
+          },
+        },
+      });
+
+      expect(bridge.prepareAutomixPlan).toHaveBeenCalledTimes(1);
+      expect(session.getStatus().automix?.engine).toBe('nativeDualDeck');
+      expect(bridge.sessionBeginOptions.at(-1)).toMatchObject({ startSeconds: 80 });
+      expect(bridge.sessionBeginOptions.at(-1)?.durationSeconds).toBeGreaterThan(220);
+      const nativeCurrentDecode = decoder.decodeRequests.find((request) => request.filePath === 'current.flac' && request.startSeconds === 80);
+      const nativeNextDecode = decoder.decodeRequests.find((request) => request.filePath === 'next.flac');
+      expect(nativeCurrentDecode).toMatchObject({
+        filePath: 'current.flac',
+        startSeconds: 80,
+        durationSeconds: expect.any(Number),
+      });
+      expect(nativeCurrentDecode?.durationSeconds).toBeLessThan(40);
+      expect(nativeNextDecode).toMatchObject({
+        filePath: 'next.flac',
+        startSeconds: expect.any(Number),
+      });
+      expect(nativeNextDecode?.durationSeconds).toBeUndefined();
+
+      const [plan, prepareOptions] = bridge.prepareAutomixPlan.mock.calls.at(-1) ?? [];
+      expect(plan).toBeDefined();
+      expect(prepareOptions).toBeDefined();
+      const fadeStartSeconds = prepareOptions?.fadeStartSeconds ?? 0;
+      const overlapSeconds = plan?.overlapSeconds ?? 0;
+      const outputSampleRate = bridge.startOptions?.requestedOutputSampleRate ?? 48000;
+      bridge.emit('position', Math.floor((fadeStartSeconds + (overlapSeconds * 0.49)) * outputSampleRate));
+      expect(advanceEvents).toHaveLength(0);
+
+      bridge.emit('position', Math.ceil((fadeStartSeconds + (overlapSeconds * 0.5)) * outputSampleRate));
+      expect(advanceEvents).toHaveLength(1);
+      expect(advanceEvents[0]).toMatchObject({ toTrackId: 'next-track' });
+      expect(advanceEvents[0]?.nextStartSeconds).toBeGreaterThan(plan?.nextStartSeconds ?? 0);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it('keeps multi-track Automix on the ffmpeg sequence path instead of dropping following tracks in native dual-deck', async () => {
+    const decoder = new AutomixPairDecoder(new Map([
+      ['current.flac', probe('current.flac', 44100)],
+      ['next.flac', probe('next.flac', 44100)],
+      ['third.flac', probe('third.flac', 44100)],
+    ]));
+    const bridge = new NativeAutomixBridge();
+    const session = createAudioSessionForTest({
+      decoder,
+      automixAnalyzer: { analyze: vi.fn(() => Promise.resolve(createEstimatedAutomixAnalysis({ durationSeconds: 120 }))) },
+      deviceService: { listDevices: () => [] },
+      createBridge: () => bridge,
+      logger: noopLogger,
+      disableWatchdogTimer: true,
+    });
+
+    try {
+      await session.playLocalFile({
+        filePath: 'current.flac',
+        trackId: 'current-track',
+        startSeconds: 80,
+        probe: {
+          durationSeconds: 120,
+          fileSampleRate: 44100,
+          channels: 2,
+        },
+        automix: {
+          enabled: true,
+          next: {
+            filePath: 'next.flac',
+            trackId: 'next-track',
+            probe: {
+              durationSeconds: 150,
+              fileSampleRate: 44100,
+              channels: 2,
+            },
+          },
+          following: [
+            {
+              filePath: 'third.flac',
+              trackId: 'third-track',
+              probe: {
+                durationSeconds: 180,
+                fileSampleRate: 44100,
+                channels: 2,
+              },
+            },
+          ],
+        },
+      });
+
+      expect(bridge.prepareAutomixPlan).not.toHaveBeenCalled();
+      expect(decoder.automixRequests).toHaveLength(1);
+      expect(decoder.automixRequests[0]?.following).toHaveLength(1);
+      expect(session.getStatus().automix?.engine).toBe('ffmpegPremix');
+      expect(session.getStatus().automix?.plannedTrackCount).toBe(3);
+    } finally {
+      session.dispose();
+    }
+  });
+
 });
 
 describe('AudioSession graceful output cleanup', () => {
@@ -7440,6 +7784,36 @@ describe('DecoderPipeline ffmpeg resolution', () => {
     expect(spawnedArgs).toEqual(expect.arrayContaining(['-map', '0:a:0', '-vn', '-sn', '-dn']));
   });
 
+  it('limits ffmpeg decode duration when requested by native Automix', async () => {
+    let spawnedArgs: string[] = [];
+    const spawn: NonNullable<DecoderPipelineDependencies['spawn']> = (_file, args) => {
+      spawnedArgs = args;
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: vi.fn(() => true),
+      });
+
+      queueMicrotask(() => child.emit('exit', 0, null));
+      return child as unknown as ReturnType<NonNullable<DecoderPipelineDependencies['spawn']>>;
+    };
+    const decoder = new DecoderPipeline({
+      ffmpegPath: 'test-ffmpeg',
+      spawn,
+      logger: noopLogger,
+    });
+    const run = decoder.decodeLocalFile({
+      filePath: 'song.flac',
+      startSeconds: 80,
+      durationSeconds: 24.5,
+      channels: 2,
+      decoderOutputSampleRate: 44100,
+    });
+
+    await expect(run.done).resolves.toBeUndefined();
+    expect(spawnedArgs).toEqual(expect.arrayContaining(['-ss', '80', '-t', '24.5']));
+  });
+
   it('builds Automix ffmpeg filters that skip next-track leading silence and use smooth curves', async () => {
     let spawnedArgs: string[] = [];
     const spawn: NonNullable<DecoderPipelineDependencies['spawn']> = (_file, args) => {
@@ -7477,14 +7851,14 @@ describe('DecoderPipeline ffmpeg resolution', () => {
         mode: 'smartCrossfade',
         currentStartSeconds: 12,
         currentEndSeconds: 110,
-        currentFadeStartSeconds: 98,
+        currentFadeStartSeconds: 94,
         nextStartSeconds: 2.5,
-        overlapSeconds: 12,
+        overlapSeconds: 16,
         curve: 'hsin',
         currentGainDb: -1,
         nextGainDb: 2,
         tempoRatio: 1,
-        advanceAtSeconds: 98,
+        advanceAtSeconds: 94,
         skipIntroSilence: false,
         beatAligned: false,
         fallbackReason: null,
@@ -7497,9 +7871,9 @@ describe('DecoderPipeline ffmpeg resolution', () => {
     expect(filter).toContain('atrim=0:98.000');
     expect(filter).toContain('areverse,silenceremove=start_periods=1:start_duration=0.180:start_threshold=-42dB,areverse');
     expect(filter).toContain('silenceremove=start_periods=1:start_duration=0.035:start_threshold=-48dB');
-    expect(filter).toContain('volume=-1.000dB');
-    expect(filter).toContain('volume=2.000dB');
-    expect(filter).toContain('acrossfade=d=12.000:c1=hsin:c2=hsin');
+    expect(filter).toContain("volume='if(lt(t\\,82.000)\\,1\\,if(lt(t\\,98.000)\\,1+(0.891251-1)*((t-82.000)/16.000)\\,0.891251))':eval=frame");
+    expect(filter).toContain("volume='if(lt(t\\,16.000)\\,1.258925\\,if(lt(t\\,20.000)\\,1.258925+(1-1.258925)*((t-16.000)/4.000)\\,1))':eval=frame");
+    expect(filter).toContain('acrossfade=d=16.000:c1=hsin:c2=hsin');
     const secondSeekIndex = spawnedArgs.lastIndexOf('-ss');
     expect(spawnedArgs[secondSeekIndex + 1]).toBe('2.5');
   });
@@ -7532,7 +7906,7 @@ describe('DecoderPipeline ffmpeg resolution', () => {
       curve: 'hsin' as const,
       currentGainDb: 0,
       nextGainDb: 0,
-      tempoRatio: 1,
+      tempoRatio: 1.018,
       advanceAtSeconds: 108,
       skipIntroSilence: true,
       beatAligned: true,
@@ -7584,7 +7958,7 @@ describe('DecoderPipeline ffmpeg resolution', () => {
     expect(filter).toContain('[s0][s1]acrossfade=d=10.000:c1=hsin:c2=hsin[m1]');
     expect(filter).toContain('[m1][s2]acrossfade=d=9.000:c1=hsin:c2=hsin[aout]');
     expect(filter).toContain('[1:a]atrim=0:149.000');
-    expect(filter).toContain('[1:a]atrim=0:149.000,areverse,silenceremove=start_periods=1:start_duration=0.180:start_threshold=-42dB,areverse');
+    expect(filter).toContain('[1:a]atrim=0:149.000,areverse,silenceremove=start_periods=1:start_duration=0.180:start_threshold=-42dB,areverse,atempo=1.015000');
   });
 
   it('builds a gapless ffmpeg concat graph without crossfade and applies in-stream ReplayGain', async () => {

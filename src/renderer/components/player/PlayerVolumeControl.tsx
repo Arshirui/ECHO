@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WheelEvent } from 'react';
 import { Lock, Volume1, Volume2, VolumeX } from 'lucide-react';
 import type { AudioStatus } from '../../../shared/types/audio';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 import { formatPercent } from './playerFormat';
 
 type PlayerVolumeControlProps = {
@@ -38,6 +39,7 @@ export const PlayerVolumeControl = ({
   fixedVolumeEnabled = false,
   onFixedVolumeChange,
 }: PlayerVolumeControlProps): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const [volume, setVolume] = useState(volumeFromStatus(status));
   const [shouldRenderPopover, setShouldRenderPopover] = useState(isOpen);
   const [isPopoverVisible, setIsPopoverVisible] = useState(false);
@@ -288,8 +290,8 @@ export const PlayerVolumeControl = ({
             className={`volume-fixed-button ${fixedVolumeEnabled ? 'volume-fixed-button--active' : ''}`}
             type="button"
             aria-pressed={fixedVolumeEnabled}
-            aria-label={fixedVolumeEnabled ? '关闭固定音量' : '开启固定音量'}
-            title={fixedVolumeEnabled ? '固定音量已开启' : '固定音量'}
+            aria-label={fixedVolumeEnabled ? t('playerVolume.fixed.disable') : t('playerVolume.fixed.enable')}
+            title={fixedVolumeEnabled ? t('playerVolume.fixed.enabled') : t('playerVolume.fixed.title')}
             onClick={() => void toggleFixedVolume()}
           >
             <Lock size={14} />

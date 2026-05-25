@@ -5,6 +5,8 @@ import type { AudioPlaybackState } from '../../../shared/types/audio';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type { MvMatchCandidate, MvSettings, MvTrackSnapshotSearchRequest, TrackVideo } from '../../../shared/types/mv';
 import type { StreamingMvItem, StreamingProviderName } from '../../../shared/types/streaming';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 import { sampleVideoElement } from './lyricsReadableColor';
 import { mvDiagnosticsPreferenceChangedEvent, readMvDiagnosticsEnabled } from './mvDiagnostics';
 
@@ -78,15 +80,17 @@ const isAdaptiveStream = (video: TrackVideo | null): boolean =>
 const isUnplayableSearchCandidate = (video: TrackVideo | null): boolean =>
   Boolean(video && video.sourceType === 'search_candidate' && (!video.playableInApp || !video.mediaUrl));
 
-const summarizeMvLoadError = (message: string): string => {
+type Translate = (key: TranslationKey, options?: Record<string, string | number>) => string;
+
+const summarizeMvLoadError = (message: string, t: Translate): string => {
   if (/MV database is temporarily unavailable|database disk image is malformed|DatabaseHealthError|SQLITE_CORRUPT|file is not a database/i.test(message)) {
-    return 'MV 数据库不可读';
+    return t('mvPanel.status.databaseUnread');
   }
   if (/network|fetch|timeout|ECONN|ENOTFOUND/i.test(message)) {
-    return '网络 MV 请求失败';
+    return t('mvPanel.status.networkFailed');
   }
 
-  return message.trim() || 'MV 加载失败';
+  return message.trim() || t('mvPanel.status.loadFailed');
 };
 
 const isMvDatabaseLoadError = (error: unknown): boolean => {
@@ -99,47 +103,55 @@ const getUnavailableReason = ({
   isLoading,
   selectedVideo,
   shouldSurfaceSelectedFallback,
+  t,
   videoError,
 }: {
   error: string | null;
   isLoading: boolean;
   selectedVideo: TrackVideo | null;
   shouldSurfaceSelectedFallback: boolean;
+  t: Translate;
   videoError: boolean;
 }): string => {
   if (error) {
-    return summarizeMvLoadError(error);
+    return summarizeMvLoadError(error, t);
   }
   if (isLoading) {
-    return '正在加载 MV';
+    return t('mvPanel.status.loading');
   }
   if (!selectedVideo) {
-    return '未找到可播放 MV';
+    return t('mvPanel.status.notFound');
   }
   if (videoError) {
-    return '视频加载失败';
+    return t('mvPanel.status.videoFailed');
   }
   if (!selectedVideo.playableInApp) {
-    return selectedVideo.provider === 'local' ? '本地视频格式不支持' : '当前 MV 需要外部播放';
+    return selectedVideo.provider === 'local' ? t('mvPanel.status.localUnsupported') : t('mvPanel.status.externalRequired');
   }
   if (!selectedVideo.mediaUrl) {
-    return '缺少可播放地址';
+    return t('mvPanel.status.missingUrl');
   }
   if (shouldSurfaceSelectedFallback) {
-    return '当前 MV 无法在应用内播放';
+    return t('mvPanel.status.inAppUnavailable');
   }
 
-  return 'MV 不可用';
+  return t('mvPanel.status.unavailable');
 };
 
 const mvSyncCorrectionCooldownMs = 1000;
 const mvUnavailableNoticeAutoDismissMs = 3000;
 const mvSyncProfiles: Record<NonNullable<MvSettings['syncMode']>, { toleranceSeconds: number; hardSeekSeconds: number; maxRateDelta: number }> = {
   stable: { toleranceSeconds: 1.2, hardSeekSeconds: 4, maxRateDelta: 0.06 },
-  balanced: { toleranceSeconds: 0.7, hardSeekSeconds: 2.5, maxRateDelta: 0.1 },
-  precise: { toleranceSeconds: 0.3, hardSeekSeconds: 1.2, maxRateDelta: 0.15 },
+  balanced: { toleranceSeconds: 0.45, hardSeekSeconds: 2, maxRateDelta: 0.12 },
+  precise: { toleranceSeconds: 0.2, hardSeekSeconds: 0.9, maxRateDelta: 0.18 },
 };
 const directBilibiliStreamingSyncProfile = { toleranceSeconds: 0.18, hardSeekSeconds: 0.75, maxRateDelta: 0.18 };
+const mvSyncTrackingIntervalsMs: Record<NonNullable<MvSettings['syncMode']>, number> = {
+  stable: 750,
+  balanced: 400,
+  precise: 250,
+};
+const directBilibiliStreamingSyncIntervalMs = 250;
 const playbackSeekedEvent = 'playback:seeked';
 const mvEndedBeforeAudioEvent = 'mv:ended-before-audio';
 const lyricsSmartReadableVideoSampleEvent = 'lyrics:smart-readable-video-sample';
@@ -347,6 +359,24 @@ const isDirectBilibiliStreamingVideo = (
   return Boolean(videoId && video.sourceId === videoId);
 };
 
+const shouldFollowMusicProgress = (
+  settings: MvSettings,
+  video: TrackVideo | null,
+  target: { provider: StreamingProviderName; providerTrackId: string } | null | undefined,
+): boolean => settings.restartAudioOnLoad === true || isDirectBilibiliStreamingVideo(video, target);
+
+const mvSyncTrackingIntervalForSettings = (
+  settings: MvSettings,
+  video: TrackVideo | null,
+  target: { provider: StreamingProviderName; providerTrackId: string } | null | undefined,
+): number => {
+  if (isDirectBilibiliStreamingVideo(video, target)) {
+    return directBilibiliStreamingSyncIntervalMs;
+  }
+
+  return mvSyncTrackingIntervalsMs[settings.syncMode ?? 'balanced'] ?? mvSyncTrackingIntervalsMs.balanced;
+};
+
 const snapshotSearchRequestForTrack = ({
   artist,
   audioClock,
@@ -485,6 +515,7 @@ export const MvPanel = ({
   title,
   trackId,
 }: MvPanelProps): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const [selectedVideo, setSelectedVideo] = useState<TrackVideo | null>(null);
   const [settings, setSettings] = useState<MvSettings>(fallbackMvSettings);
   const [hasLoadedSettings, setHasLoadedSettings] = useState(() => !window.echo?.mv);
@@ -910,9 +941,10 @@ export const MvPanel = ({
         isLoading,
         selectedVideo,
         shouldSurfaceSelectedFallback,
+        t,
         videoError,
       });
-  const temporaryPlaybackNotice = showVideo && selectedVideo?.temporary ? '临时 MV 播放中，数据库待修复' : null;
+  const temporaryPlaybackNotice = showVideo && selectedVideo?.temporary ? t('mvPanel.status.temporaryPlayback') : null;
   const mvNotice = unavailableReason ?? temporaryPlaybackNotice;
   const mvDiagnosticsReport = useMemo(() => {
     if (!isDiagnosticsReportEnabled || showVideo) {
@@ -1083,7 +1115,7 @@ export const MvPanel = ({
 
   const syncVideoElementToAudio = useCallback((video: HTMLVideoElement | null, options: { force?: boolean; bypassCooldown?: boolean; recordCooldown?: boolean } = {}): boolean => {
     const directBilibiliStreamingVideo = isDirectBilibiliStreamingVideo(selectedVideo, streamingTarget);
-    const followMusicProgress = settingsRef.current.restartAudioOnLoad || directBilibiliStreamingVideo;
+    const followMusicProgress = shouldFollowMusicProgress(settingsRef.current, selectedVideo, streamingTarget);
     if (!followMusicProgress || !video || videoSeekingRef.current) {
       return false;
     }
@@ -1100,10 +1132,6 @@ export const MvPanel = ({
       return false;
     }
 
-    if (!options.force && !options.bypassCooldown && now - lastVideoSyncAtRef.current < syncCooldownMs) {
-      return false;
-    }
-
     if (!options.force && drift < syncProfile.hardSeekSeconds) {
       const correction = Math.max(-syncProfile.maxRateDelta, Math.min(syncProfile.maxRateDelta, signedDrift / syncProfile.hardSeekSeconds));
       try {
@@ -1112,6 +1140,10 @@ export const MvPanel = ({
       } catch {
         return false;
       }
+    }
+
+    if (!options.force && !options.bypassCooldown && now - lastVideoSyncAtRef.current < syncCooldownMs) {
+      return false;
     }
 
     try {
@@ -1224,6 +1256,25 @@ export const MvPanel = ({
       syncVideoToAudio({ force: true, bypassCooldown: true });
     }
   }, [selectedMvOffsetMs, showVideo, syncVideoToAudio]);
+
+  useEffect(() => {
+    if (!showVideo || !isAudioPlaying || !shouldFollowMusicProgress(settings, selectedVideo, streamingTarget)) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      syncVideoToAudio();
+    }, mvSyncTrackingIntervalForSettings(settings, selectedVideo, streamingTarget));
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    isAudioPlaying,
+    selectedVideo,
+    settings,
+    showVideo,
+    streamingTarget,
+    syncVideoToAudio,
+  ]);
 
   useEffect(() => {
     if (!showVideo || !adaptiveStream || !videoMediaUrl || !videoRef.current) {
@@ -1359,13 +1410,13 @@ export const MvPanel = ({
     <>
       {mvNotice && !isUnavailableNoticeDismissed ? (
         <div className="lyrics-mv-unavailable-reason" aria-live="polite">
-          <span>MV 不可用</span>
+          <span>{t('mvPanel.notice.unavailable')}</span>
           <strong>{mvNotice}</strong>
           <button
             type="button"
             className="lyrics-mv-unavailable-close"
-            aria-label="关闭 MV 不可用提示"
-            title="关闭"
+            aria-label={t('mvPanel.action.dismissUnavailable')}
+            title={t('mvPanel.action.close')}
             onClick={() => setUnavailableNoticeDismissed(true)}
           >
             <X size={13} aria-hidden="true" />
@@ -1376,10 +1427,10 @@ export const MvPanel = ({
       {mvDiagnosticsReport ? (
         <section className="lyrics-mv-diagnostics-report" aria-label="MV diagnostics">
           <div>
-            <strong>MV 诊断报告</strong>
+            <strong>{t('mvPanel.diagnostics.title')}</strong>
             <button type="button" onClick={copyDiagnosticsReport}>
               <Clipboard size={13} />
-              {hasCopiedDiagnosticsReport ? '已复制' : '复制'}
+              {hasCopiedDiagnosticsReport ? t('mvPanel.action.copied') : t('mvPanel.action.copy')}
             </button>
           </div>
           <textarea readOnly value={mvDiagnosticsReport} />

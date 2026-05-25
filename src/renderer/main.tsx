@@ -8,6 +8,7 @@ import '@fontsource/outfit/800.css';
 import '@fontsource/outfit/900.css';
 import { App } from './app/App';
 import { DesktopLyricsApp } from './desktop-lyrics/DesktopLyricsApp';
+import { I18nProvider } from './i18n/I18nProvider';
 import { MiniPlayerApp } from './mini-player/MiniPlayerApp';
 import {
   applyAppearancePreferences,
@@ -121,9 +122,15 @@ const isMiniPlayerWindow = new URLSearchParams(window.location.search).get('mini
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     {isMiniPlayerWindow ? (
-      <PlaybackQueueProvider>
-        <MiniPlayerApp />
-      </PlaybackQueueProvider>
-    ) : isDesktopLyricsWindow ? <DesktopLyricsApp /> : <App />}
+      <I18nProvider>
+        <PlaybackQueueProvider>
+          <MiniPlayerApp />
+        </PlaybackQueueProvider>
+      </I18nProvider>
+    ) : isDesktopLyricsWindow ? (
+      <I18nProvider>
+        <DesktopLyricsApp />
+      </I18nProvider>
+    ) : <App />}
   </React.StrictMode>,
 );

@@ -11,6 +11,8 @@ import type {
   DownloadToolsStatus,
 } from '../../shared/types/downloads';
 import { EmptyState } from '../components/ui/EmptyState';
+import { translateFallback, useOptionalI18n } from '../i18n/I18nProvider';
+import type { TranslationKey } from '../i18n/locales';
 import { getDownloadsBridge } from '../utils/echoBridge';
 
 const terminalStatuses = new Set<DownloadJobStatus>(['completed', 'failed', 'cancelled']);
@@ -23,16 +25,16 @@ const defaultSettings: DownloadSettings = {
   outputDirectory: null,
 };
 
-const statusLabels: Record<DownloadJobStatus, string> = {
-  queued: '排队中',
-  probing: '解析链接',
-  downloading: '下载中',
-  extracting_audio: '提取音频',
-  importing: '导入曲库',
-  binding_mv: '绑定 MV',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
+const statusLabelKeys: Record<DownloadJobStatus, TranslationKey> = {
+  queued: 'downloads.status.queued',
+  probing: 'downloads.status.probing',
+  downloading: 'downloads.status.downloading',
+  extracting_audio: 'downloads.status.extractingAudio',
+  importing: 'downloads.status.importing',
+  binding_mv: 'downloads.status.bindingMv',
+  completed: 'downloads.status.completed',
+  failed: 'downloads.status.failed',
+  cancelled: 'downloads.status.cancelled',
 };
 
 const providerLabels: Record<DownloadJob['provider'], string> & Record<DownloadSearchProvider, string> = {
@@ -51,18 +53,20 @@ const searchScopeLabels: Record<DownloadSearchScope, string> = {
 
 const searchScopes: DownloadSearchScope[] = ['all', 'youtube', 'bilibili'];
 
-const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error || '下载操作失败'));
+type Translate = (key: TranslationKey, options?: Record<string, string | number>) => string;
 
-const formatSearchProviderError = (error: string): string => {
+const formatError = (error: unknown, t: Translate): string => (error instanceof Error ? error.message : String(error || t('downloads.error.operationFailed')));
+
+const formatSearchProviderError = (error: string, t: Translate): string => {
   const message = error.replace(/\s+/gu, ' ').trim();
   if (/could not copy .*cookie database/iu.test(message)) {
-    return '无法读取浏览器 Cookie，已自动尝试不使用登录状态搜索。';
+    return t('downloads.error.cookieFallback');
   }
 
   return message.length > 180 ? `${message.slice(0, 177)}...` : message;
 };
 
-const formatPath = (path: string | null): string => path || '请选择下载文件夹';
+const formatPath = (path: string | null, t: Translate): string => path || t('downloads.folder.required');
 
 const formatDuration = (seconds: number | null): string | null => {
   if (!seconds || !Number.isFinite(seconds)) {
@@ -100,16 +104,16 @@ const formatEta = (seconds: number | null): string | null => {
   return `${minutes}:${String(restSeconds).padStart(2, '0')}`;
 };
 
-const formatViews = (views: number | null): string | null => {
+const formatViews = (views: number | null, t: Translate): string | null => {
   if (views === null || !Number.isFinite(views)) {
     return null;
   }
 
   if (views >= 10000) {
-    return `${(views / 10000).toFixed(views >= 100000 ? 0 : 1)} 万次播放`;
+    return t('downloads.search.viewsWan', { count: (views / 10000).toFixed(views >= 100000 ? 0 : 1) });
   }
 
-  return `${Math.round(views)} 次播放`;
+  return t('downloads.search.views', { count: Math.round(views) });
 };
 
 const searchResultKey = (result: DownloadSearchResult): string => `${result.provider}:${result.id}`;
@@ -123,6 +127,7 @@ const ToolStatus = ({ label, ready, detail }: { label: string; ready: boolean; d
 );
 
 const JobRow = ({ job, onCancel }: { job: DownloadJob; onCancel: (jobId: string) => void }): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const canCancel = runningStatuses.has(job.status);
   const duration = formatDuration(job.durationSeconds);
   const downloaded = formatBytes(job.downloadedBytes);
@@ -139,7 +144,7 @@ const JobRow = ({ job, onCancel }: { job: DownloadJob; onCancel: (jobId: string)
         <div className="download-job-copy">
           <strong>{job.title ?? 'Untitled download'}</strong>
           <span title={job.sourceUrl}>{job.sourceUrl}</span>
-          {job.outputPath ? <small title={job.outputPath}>保存到 {job.outputPath}</small> : null}
+          {job.outputPath ? <small title={job.outputPath}>{t('downloads.job.savedTo', { path: job.outputPath })}</small> : null}
           {duration ? <small>{duration}</small> : null}
         </div>
         <span className="download-provider-chip">{providerLabels[job.provider]}</span>
@@ -150,18 +155,18 @@ const JobRow = ({ job, onCancel }: { job: DownloadJob; onCancel: (jobId: string)
           <span style={{ width: `${job.progress}%` }} />
         </div>
         <div className="download-job-meta">
-          <span>{statusLabels[job.status]}</span>
+          <span>{t(statusLabelKeys[job.status])}</span>
           <em>{Math.round(job.progress)}%</em>
         </div>
         <div className="download-job-meta">
-          <span>{downloaded && total ? `${downloaded} / ${total}` : downloaded ?? '等待进度'}</span>
+          <span>{downloaded && total ? `${downloaded} / ${total}` : downloaded ?? t('downloads.job.waitingProgress')}</span>
           <em>{speed ? `${speed}/s` : eta ? `ETA ${eta}` : ''}</em>
         </div>
-        {job.importedTrackId ? <small>已导入曲库</small> : null}
+        {job.importedTrackId ? <small>{t('downloads.job.imported')}</small> : null}
         {job.error ? <p>{job.error}</p> : null}
       </div>
 
-      <button className="download-icon-button" type="button" disabled={!canCancel} onClick={() => onCancel(job.id)} aria-label="取消任务" title="取消任务">
+      <button className="download-icon-button" type="button" disabled={!canCancel} onClick={() => onCancel(job.id)} aria-label={t('downloads.action.cancelJob')} title={t('downloads.action.cancelJob')}>
         <Square size={15} />
       </button>
     </article>
@@ -178,7 +183,8 @@ const SearchResultRow = ({
   onDownload: (result: DownloadSearchResult) => void;
 }): JSX.Element => {
   const duration = formatDuration(result.durationSeconds);
-  const views = formatViews(result.viewCount);
+  const t = useOptionalI18n()?.t ?? translateFallback;
+  const views = formatViews(result.viewCount, t);
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
 
   useEffect(() => {
@@ -200,18 +206,19 @@ const SearchResultRow = ({
           {duration ? <em>{duration}</em> : null}
         </div>
         <strong title={result.title}>{result.title}</strong>
-        <span title={result.uploader ?? undefined}>{result.uploader ?? '未知作者'}</span>
+        <span title={result.uploader ?? undefined}>{result.uploader ?? t('downloads.search.unknownUploader')}</span>
         <small>{[views, result.publishedAt].filter(Boolean).join(' · ') || result.webpageUrl}</small>
       </div>
       <button className="downloads-action-button" type="button" disabled={joined} onClick={() => onDownload(result)}>
         <Download size={15} />
-        {joined ? '已加入队列' : '下载音频'}
+        {joined ? t('downloads.search.joined') : t('downloads.search.downloadAudio')}
       </button>
     </article>
   );
 };
 
 export const DownloadsPage = (): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const [url, setUrl] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [searchScope, setSearchScope] = useState<DownloadSearchScope>('all');
@@ -233,8 +240,8 @@ export const DownloadsPage = (): JSX.Element => {
   const visibleSearchErrors =
     searchScope === 'all' ? searchResponse.errors : searchResponse.errors.filter((item) => item.provider === searchScope);
   const searchProviderErrors = visibleSearchErrors
-    .map((item) => `${providerLabels[item.provider]}：${formatSearchProviderError(item.error)}`)
-    .join('；');
+    .map((item) => t('downloads.search.providerErrorItem', { provider: providerLabels[item.provider], error: formatSearchProviderError(item.error, t) }))
+    .join(t('punctuation.clauseSeparator'));
 
   const refreshJobs = useCallback(async (): Promise<void> => {
     if (!bridge?.getJobs) {
@@ -247,9 +254,9 @@ export const DownloadsPage = (): JSX.Element => {
       jobStatusRef.current = new Map(nextJobs.map((job) => [job.id, job.status]));
       setJobs(nextJobs);
     } catch (jobsError) {
-      setError(formatError(jobsError));
+      setError(formatError(jobsError, t));
     }
-  }, [bridge]);
+  }, [bridge, t]);
 
   const refreshTools = useCallback(async (): Promise<void> => {
     if (!bridge?.checkTools) {
@@ -261,27 +268,27 @@ export const DownloadsPage = (): JSX.Element => {
     try {
       setTools(await bridge.checkTools());
     } catch (toolsError) {
-      setError(formatError(toolsError));
+      setError(formatError(toolsError, t));
     } finally {
       setBusyAction(null);
     }
-  }, [bridge]);
+  }, [bridge, t]);
 
   useEffect(() => {
     if (!bridge) {
-      setError('当前运行环境未暴露下载 IPC。');
+      setError(t('downloads.error.ipcUnavailable'));
       return undefined;
     }
 
     void refreshJobs();
-    void bridge.getSettings?.().then(setSettings).catch((settingsError) => setError(formatError(settingsError)));
+    void bridge.getSettings?.().then(setSettings).catch((settingsError) => setError(formatError(settingsError, t)));
     void refreshTools();
 
     return bridge.onJobsUpdated?.((nextJobs) => {
       for (const job of nextJobs) {
         const previousStatus = jobStatusRef.current.get(job.id);
         if (previousStatus && previousStatus !== 'completed' && job.status === 'completed') {
-          setMessage(`下载完成：${job.title ?? job.sourceUrl}`);
+          setMessage(t('downloads.message.completed', { title: job.title ?? job.sourceUrl }));
           setError(null);
           break;
         }
@@ -289,7 +296,7 @@ export const DownloadsPage = (): JSX.Element => {
       jobStatusRef.current = new Map(nextJobs.map((job) => [job.id, job.status]));
       setJobs(nextJobs);
     });
-  }, [bridge, refreshJobs, refreshTools]);
+  }, [bridge, refreshJobs, refreshTools, t]);
 
   const createDownload = useCallback(
     async (sourceUrl: string): Promise<DownloadJob | null> => {
@@ -299,7 +306,7 @@ export const DownloadsPage = (): JSX.Element => {
 
       if (!settings.outputDirectory) {
         setNeedsFolder(true);
-        setError('请选择下载文件夹');
+        setError(t('downloads.folder.required'));
         setMessage(null);
         return null;
       }
@@ -313,7 +320,7 @@ export const DownloadsPage = (): JSX.Element => {
       setNeedsFolder(false);
       return job;
     },
-    [bridge, settings],
+    [bridge, settings, t],
   );
 
   const handleCreate = useCallback(async (): Promise<void> => {
@@ -330,16 +337,16 @@ export const DownloadsPage = (): JSX.Element => {
       const job = await createDownload(trimmedUrl);
       if (job) {
         setUrl('');
-        setMessage('已加入下载队列。');
+        setMessage(t('downloads.message.queued'));
       }
     } catch (createError) {
-      const nextError = formatError(createError);
-      setNeedsFolder(nextError.includes('请选择下载文件夹'));
+      const nextError = formatError(createError, t);
+      setNeedsFolder(nextError.includes(t('downloads.folder.required')));
       setError(nextError);
     } finally {
       setBusyAction(null);
     }
-  }, [createDownload, url]);
+  }, [createDownload, t, url]);
 
   const handleSearch = useCallback(async (): Promise<void> => {
     const query = searchInput.trim();
@@ -356,11 +363,11 @@ export const DownloadsPage = (): JSX.Element => {
     try {
       setSearchResponse(await bridge.search({ query, limitPerProvider: 10, provider: searchScope }));
     } catch (searchError) {
-      setError(formatError(searchError));
+      setError(formatError(searchError, t));
     } finally {
       setBusyAction(null);
     }
-  }, [bridge, searchInput, searchScope]);
+  }, [bridge, searchInput, searchScope, t]);
 
   const handleDownloadSearchResult = useCallback(
     async (result: DownloadSearchResult): Promise<void> => {
@@ -374,14 +381,14 @@ export const DownloadsPage = (): JSX.Element => {
         }
 
         setJoinedResultKeys((current) => new Set([...current, searchResultKey(result)]));
-        setMessage(`已加入队列：${result.title}`);
+        setMessage(t('downloads.message.resultQueued', { title: result.title }));
       } catch (downloadError) {
-        const nextError = formatError(downloadError);
-        setNeedsFolder(nextError.includes('请选择下载文件夹'));
+        const nextError = formatError(downloadError, t);
+        setNeedsFolder(nextError.includes(t('downloads.folder.required')));
         setError(nextError);
       }
     },
-    [createDownload],
+    [createDownload, t],
   );
 
   const handleChooseDirectory = useCallback(async (): Promise<void> => {
@@ -398,11 +405,11 @@ export const DownloadsPage = (): JSX.Element => {
         setNeedsFolder(false);
       }
     } catch (directoryError) {
-      setError(formatError(directoryError));
+      setError(formatError(directoryError, t));
     } finally {
       setBusyAction(null);
     }
-  }, [bridge]);
+  }, [bridge, t]);
 
   const handleCancel = useCallback(
     async (jobId: string): Promise<void> => {
@@ -416,10 +423,10 @@ export const DownloadsPage = (): JSX.Element => {
           setJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
         }
       } catch (cancelError) {
-        setError(formatError(cancelError));
+        setError(formatError(cancelError, t));
       }
     },
-    [bridge],
+    [bridge, t],
   );
 
   const handleClearCompleted = useCallback(async (): Promise<void> => {
@@ -432,13 +439,13 @@ export const DownloadsPage = (): JSX.Element => {
 
     try {
       setJobs(await bridge.clearCompleted());
-      setMessage('已清除完成、失败和取消的任务。');
+      setMessage(t('downloads.message.clearedTerminal'));
     } catch (clearError) {
-      setError(formatError(clearError));
+      setError(formatError(clearError, t));
     } finally {
       setBusyAction(null);
     }
-  }, [bridge]);
+  }, [bridge, t]);
 
   const patchSettings = useCallback(
     async (patch: Partial<DownloadSettings>): Promise<void> => {
@@ -452,10 +459,10 @@ export const DownloadsPage = (): JSX.Element => {
       try {
         setSettings(await bridge.setSettings(patch));
       } catch (settingsError) {
-        setError(formatError(settingsError));
+        setError(formatError(settingsError, t));
       }
     },
-    [bridge, settings],
+    [bridge, settings, t],
   );
 
   return (
@@ -463,12 +470,12 @@ export const DownloadsPage = (): JSX.Element => {
       <header className="downloads-header">
         <div>
           <span className="panel-kicker">Downloader</span>
-          <h1>下载</h1>
-          <p>使用内置 yt-dlp 搜索 YouTube / Bilibili，并只下载最高可用音频。</p>
+          <h1>{t('downloads.title')}</h1>
+          <p>{t('downloads.description')}</p>
         </div>
         <button className="downloads-action-button" type="button" onClick={() => void refreshTools()} disabled={busyAction === 'tools'}>
           <Wrench size={16} />
-          检测环境
+          {t('downloads.action.checkTools')}
         </button>
       </header>
 
@@ -476,13 +483,13 @@ export const DownloadsPage = (): JSX.Element => {
         <section className="downloads-panel downloads-url-panel">
           <div className="downloads-section-title">
             <Link2 size={17} />
-            <h2>粘贴链接下载</h2>
+            <h2>{t('downloads.url.title')}</h2>
           </div>
           <div className="downloads-url-box">
             <input
               type="url"
               value={url}
-              placeholder="粘贴 YouTube / Bilibili / SoundCloud / osu! 链接"
+              placeholder={t('downloads.url.placeholder')}
               onChange={(event) => setUrl(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
@@ -492,18 +499,18 @@ export const DownloadsPage = (): JSX.Element => {
             />
             <button className="primary-action" type="button" disabled={!url.trim() || busyAction === 'create'} onClick={() => void handleCreate()}>
               <Download size={16} />
-              {busyAction === 'create' ? '创建中' : '加入队列'}
+              {busyAction === 'create' ? t('downloads.action.creating') : t('downloads.action.addToQueue')}
             </button>
           </div>
           {message ? <p className="downloads-note">{message}</p> : null}
           {error ? <p className="downloads-error">{error}</p> : null}
         </section>
 
-        <section className="downloads-panel downloads-search-panel" aria-label="搜索下载">
+        <section className="downloads-panel downloads-search-panel" aria-label={t('downloads.search.aria')}>
           <div className="downloads-section-title">
             <Search size={17} />
-            <h2>搜索下载</h2>
-            <div className="download-search-scope" role="group" aria-label="搜索平台">
+            <h2>{t('downloads.search.title')}</h2>
+            <div className="download-search-scope" role="group" aria-label={t('downloads.search.scopeAria')}>
               {searchScopes.map((scope) => (
                 <button
                   type="button"
@@ -533,22 +540,22 @@ export const DownloadsPage = (): JSX.Element => {
               <input
                 type="search"
                 value={searchInput}
-                placeholder="搜索歌曲、艺人或视频标题"
+                placeholder={t('downloads.search.placeholder')}
                 onChange={(event) => setSearchInput(event.target.value)}
               />
             </label>
             <button className="downloads-action-button" type="submit" disabled={!searchInput.trim() || busyAction === 'search'}>
               <Search size={16} />
-              {busyAction === 'search' ? '搜索中' : '搜索'}
+              {busyAction === 'search' ? t('downloads.action.searching') : t('downloads.action.search')}
             </button>
           </form>
 
-          {searchProviderErrors ? <p className="downloads-note">部分平台搜索失败：{searchProviderErrors}</p> : null}
+          {searchProviderErrors ? <p className="downloads-note">{t('downloads.search.providerErrors', { errors: searchProviderErrors })}</p> : null}
           <div className="download-search-results">
             {busyAction === 'search' ? (
-              <EmptyState icon={Search} title="正在搜索" description={`正在查询 ${searchScopeLabels[searchScope]}。`} meta="Searching" />
+              <EmptyState icon={Search} title={t('downloads.empty.searching.title')} description={t('downloads.empty.searching.description', { scope: searchScopeLabels[searchScope] })} meta="Searching" />
             ) : visibleSearchResults.length === 0 && searchInput.trim() ? (
-              <EmptyState icon={Search} title="暂无搜索结果" description="换个关键词再试试。" meta="Search" />
+              <EmptyState icon={Search} title={t('downloads.empty.noResults.title')} description={t('downloads.empty.noResults.description')} meta="Search" />
             ) : (
               visibleSearchResults.map((result) => (
                 <SearchResultRow
@@ -566,16 +573,16 @@ export const DownloadsPage = (): JSX.Element => {
           <div className="downloads-section-title downloads-section-title--split">
             <div>
               <Download size={17} />
-              <h2>下载队列</h2>
+              <h2>{t('downloads.queue.title')}</h2>
             </div>
             <button className="downloads-action-button" type="button" disabled={completedCount === 0 || busyAction === 'clear'} onClick={() => void handleClearCompleted()}>
-              清除已完成
+              {t('downloads.action.clearCompleted')}
             </button>
           </div>
 
           <div className="download-job-list">
             {jobs.length === 0 ? (
-              <EmptyState icon={Download} title="队列为空" description="粘贴链接或搜索结果下载后，会在这里看到真实进度。" meta="Idle" />
+              <EmptyState icon={Download} title={t('downloads.empty.queue.title')} description={t('downloads.empty.queue.description')} meta="Idle" />
             ) : (
               jobs.map((job) => <JobRow job={job} key={job.id} onCancel={(jobId) => void handleCancel(jobId)} />)
             )}
@@ -586,38 +593,38 @@ export const DownloadsPage = (): JSX.Element => {
           <section className="downloads-panel" data-attention={needsFolder}>
             <div className="downloads-section-title">
               <Settings2 size={17} />
-              <h2>下载设置</h2>
+              <h2>{t('downloads.settings.title')}</h2>
             </div>
             <div className="download-output-path">
-              <em>音频策略</em>
-              <strong>最高可用音质</strong>
+              <em>{t('downloads.settings.audioStrategy')}</em>
+              <strong>{t('downloads.settings.bestAvailable')}</strong>
             </div>
             <div className="download-output-path">
-              <em>下载文件夹</em>
-              <strong title={formatPath(settings.outputDirectory)}>{formatPath(settings.outputDirectory)}</strong>
+              <em>{t('downloads.settings.outputDirectory')}</em>
+              <strong title={formatPath(settings.outputDirectory, t)}>{formatPath(settings.outputDirectory, t)}</strong>
             </div>
             <button className="downloads-action-button" type="button" onClick={() => void handleChooseDirectory()} disabled={busyAction === 'folder'}>
               <FolderOpen size={16} />
-              {settings.outputDirectory ? '更换文件夹' : '选择文件夹'}
+              {settings.outputDirectory ? t('downloads.action.changeFolder') : t('downloads.action.chooseFolder')}
             </button>
             <label className="download-toggle-row">
               <input type="checkbox" checked={settings.importToLibrary} onChange={(event) => void patchSettings({ importToLibrary: event.target.checked })} />
-              <span>完成后导入曲库</span>
+              <span>{t('downloads.settings.importToLibrary')}</span>
             </label>
             <label className="download-toggle-row">
               <input type="checkbox" checked={settings.bindMvAfterImport} onChange={(event) => void patchSettings({ bindMvAfterImport: event.target.checked })} />
-              <span>导入后绑定源 URL 为 MV</span>
+              <span>{t('downloads.settings.bindMvAfterImport')}</span>
             </label>
           </section>
 
           <section className="downloads-panel">
             <div className="downloads-section-title">
               <Wrench size={17} />
-              <h2>环境检测</h2>
+              <h2>{t('downloads.tools.title')}</h2>
             </div>
             <div className="download-tools-list">
-              <ToolStatus label="yt-dlp" ready={tools?.ytDlpAvailable ?? false} detail={tools?.ytDlpVersion ?? '未随应用安装'} />
-              <ToolStatus label="ffmpeg" ready={tools?.ffmpegAvailable ?? false} detail={tools?.ffmpegPath ?? '未检测到'} />
+              <ToolStatus label="yt-dlp" ready={tools?.ytDlpAvailable ?? false} detail={tools?.ytDlpVersion ?? t('downloads.tools.notBundled')} />
+              <ToolStatus label="ffmpeg" ready={tools?.ffmpegAvailable ?? false} detail={tools?.ffmpegPath ?? t('downloads.tools.notDetected')} />
             </div>
           </section>
         </aside>

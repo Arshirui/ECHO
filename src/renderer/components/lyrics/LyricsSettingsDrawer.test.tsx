@@ -385,7 +385,7 @@ describe('LyricsSettingsDrawer', () => {
     expect((screen.getByRole('checkbox', { name: /关闭MV自动显示歌曲信息/ }) as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('checkbox', { name: /迷你底栏/ }) as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('checkbox', { name: /隐藏纯音乐提示/ }) as HTMLInputElement).disabled).toBe(false);
-    expect((screen.getByRole('checkbox', { name: /显示罗马音/ }) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('checkbox', { name: /^显示罗马音$/ }) as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('checkbox', { name: /显示中文翻译/ }) as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('checkbox', { name: /逐字歌词高亮/ }) as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('checkbox', { name: /智能可读颜色/ }) as HTMLInputElement).disabled).toBe(false);
@@ -604,7 +604,7 @@ describe('LyricsSettingsDrawer', () => {
 
     render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    const toggle = (await screen.findByRole('checkbox', { name: /显示罗马音/ })) as HTMLInputElement;
+    const toggle = (await screen.findByRole('checkbox', { name: /^显示罗马音$/ })) as HTMLInputElement;
     fireEvent.click(toggle);
 
     await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsRomanizationEnabled: false }));
@@ -914,7 +914,7 @@ describe('LyricsSettingsDrawer', () => {
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
     await waitFor(() => expect(screen.queryByText('辅歌词字号')).toBeNull());
-    fireEvent.click(await screen.findByRole('checkbox', { name: /显示罗马音/ }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: /^显示罗马音$/ }));
 
     expect(await screen.findByText('辅歌词字号')).toBeTruthy();
     const secondarySizeSlider = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]')).find((input) =>
@@ -947,12 +947,12 @@ describe('LyricsSettingsDrawer', () => {
 
     await waitFor(() => expect(container.querySelector('.lyrics-style-toggle input')).toBeTruthy());
     expect((container.querySelector('.lyrics-style-toggle input') as HTMLInputElement).checked).toBe(true);
-    expect(container.querySelector('.lyrics-drawer-range[hidden]')).toBeNull();
+    expect(container.querySelector('.lyrics-style-range-grid[hidden]')).toBeNull();
     expect(container.textContent).toContain('包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。');
 
     fireEvent.click(container.querySelector('.lyrics-style-toggle input') as HTMLInputElement);
 
-    expect(container.querySelector('.lyrics-drawer-range[hidden]')).toBeTruthy();
+    expect(container.querySelector('.lyrics-style-range-grid[hidden]')).toBeTruthy();
   });
 
   it('lets users pick an installed system font for lyrics', async () => {

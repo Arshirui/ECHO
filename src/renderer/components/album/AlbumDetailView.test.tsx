@@ -19,14 +19,27 @@ vi.mock('../../stores/PlaybackQueueProvider', () => ({
 vi.mock('../../i18n/I18nProvider', () => {
   const strings: Record<string, string> = {
     'albumDetail.action.back': 'Albums',
+    'albumDetail.action.openSource': 'Open source',
     'albumDetail.aria.openArtist': 'Open artist {artist}',
     'albumDetail.online.match': 'MusicBrainz match',
     'albumDetail.information.artistProfile': 'Artist profile',
     'albumDetail.information.externalLinks': 'External links',
+    'albumDetail.releases.count': '{count} release versions',
+    'albumDetail.releases.current': 'Current match',
+    'albumDetail.releases.currentHint': 'Shows the matched release',
+    'albumDetail.releases.heading': 'Versions / Releases',
+    'albumDetail.sources.barcode': 'Barcode',
+    'albumDetail.sources.catalogNumber': 'Catalog no.',
+    'albumDetail.sources.kind.database': 'Database',
+    'albumDetail.sources.kind.streaming': 'Streaming',
+    'albumDetail.sources.labels': 'Label / catalog',
+    'albumDetail.sources.releaseDetails': 'Current release',
     'albumDetail.related.heading': 'My Library',
     'albumDetail.related.thisAlbum': 'This album',
     'albumDetail.tab.credits': 'Credits',
     'albumDetail.tab.information': 'Information',
+    'albumDetail.tab.releases': 'Versions',
+    'albumDetail.tab.sources': 'Sources',
     'albumDetail.tab.tracks': 'Tracks',
   };
 
@@ -113,7 +126,68 @@ const onlineInfo = (): AlbumOnlineInfo => ({
   albumId: 'album-1',
   status: 'ready',
   sources: [{ provider: 'wikipedia', label: 'en.wikipedia.org' }],
-  match: null,
+  match: {
+    provider: 'musicbrainz',
+    providerItemId: 'mb-release-1',
+    title: 'Mock Album',
+    artist: 'Echo Unit',
+    year: 2026,
+    confidence: 0.96,
+    url: 'https://musicbrainz.org/release/mb-release-1',
+    possible: false,
+  },
+  sourceLinks: [
+    { provider: 'musicbrainz', label: 'MusicBrainz', url: 'https://musicbrainz.org/release/mb-release-1', kind: 'database' },
+    { provider: 'spotify', label: 'Spotify', url: 'https://open.spotify.com/album/mock', kind: 'streaming' },
+  ],
+  releaseDetails: {
+    title: 'Mock Album',
+    date: '2026-05-01',
+    country: 'JP',
+    barcode: '1234567890123',
+    status: 'Official',
+    labels: [{ name: 'Mock Label', catalogNumber: 'MOCK-1' }],
+    mediaFormats: ['Digital Media'],
+    copyrights: [],
+  },
+  releaseVersions: [
+    {
+      providerItemId: 'mb-release-1',
+      title: 'Mock Album',
+      artist: 'Echo Unit',
+      year: 2026,
+      date: '2026-05-01',
+      country: 'JP',
+      barcode: '1234567890123',
+      status: 'Official',
+      disambiguation: null,
+      mediaFormats: ['Digital Media'],
+      trackCount: 1,
+      catalogNumbers: ['MOCK-1'],
+      labels: ['Mock Label'],
+      url: 'https://musicbrainz.org/release/mb-release-1',
+      confidence: 0.96,
+      isMatched: true,
+    },
+    {
+      providerItemId: 'mb-release-2',
+      title: 'Mock Album',
+      artist: 'Echo Unit',
+      year: 2026,
+      date: '2026-06-01',
+      country: 'US',
+      barcode: null,
+      status: 'Official',
+      disambiguation: 'CD',
+      mediaFormats: ['CD'],
+      trackCount: 1,
+      catalogNumbers: ['MOCK-CD'],
+      labels: ['Mock Label'],
+      url: 'https://musicbrainz.org/release/mb-release-2',
+      confidence: 0.82,
+      isMatched: false,
+    },
+  ],
   credits: [
     {
       role: 'Composer',
@@ -231,8 +305,20 @@ describe('AlbumDetailView', () => {
     expect(screen.getByText('Mock album tracks')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Tracks' }).getAttribute('aria-current')).toBe('page');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Credits' }));
-    expect(await screen.findByText('Mock Composer')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Sources' }));
+    expect(await screen.findByText('1234567890123')).toBeTruthy();
+    expect(screen.getAllByText('Spotify').length).toBeGreaterThan(0);
+  });
+
+  it('shows MusicBrainz release versions and marks the current match', async () => {
+    installLibrary();
+
+    render(<AlbumDetailView album={album()} onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Versions' }));
+
+    expect(await screen.findByText('Current match')).toBeTruthy();
+    expect(screen.getByText('MOCK-CD')).toBeTruthy();
   });
 
   it('shows artist information after opening the information tab', async () => {

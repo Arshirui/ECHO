@@ -21,6 +21,7 @@ import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadJob } from '../../shared/types/downloads';
 import type { UpdateStatus } from '../../shared/types/updates';
 import { useI18n } from '../i18n/I18nProvider';
+import type { TranslationKey } from '../i18n/locales';
 import { rememberLibraryScanStatus } from '../stores/libraryScanSession';
 import { clearSongsFirstPageSnapshot } from '../stores/songsFirstPageSnapshot';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
@@ -101,14 +102,14 @@ const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
 };
 
 const persistentRouteIds = new Set<AppRouteId>(['songs']);
-const accountProviderLabels: Record<AccountProvider, string> = {
-  netease: '网易云音乐',
-  qqmusic: 'QQ 音乐',
-  bilibili: 'Bilibili',
-  youtube: 'YouTube',
-  soundcloud: 'SoundCloud',
-  spotify: 'Spotify',
-  osu: 'osu!',
+const accountProviderLabelKeys: Record<AccountProvider, TranslationKey> = {
+  netease: 'accountProvider.netease',
+  qqmusic: 'accountProvider.qqmusic',
+  bilibili: 'accountProvider.bilibili',
+  youtube: 'accountProvider.youtube',
+  soundcloud: 'accountProvider.soundcloud',
+  spotify: 'accountProvider.spotify',
+  osu: 'accountProvider.osu',
 };
 
 const isSpotifyPlaybackSetupError = (message: string): boolean =>
@@ -208,6 +209,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isLyricsDrawerOpen, setIsLyricsDrawerOpen] = useState(false);
   const [isMvDrawerOpen, setIsMvDrawerOpen] = useState(false);
   const [isLyricsQueueDrawerOpen, setIsLyricsQueueDrawerOpen] = useState(false);
+  const [desktopLyricsVisible, setDesktopLyricsVisible] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
   const [audioIssueDiagnosticsWindowEnabled, setAudioIssueDiagnosticsWindowEnabled] = useState(false);
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
@@ -263,6 +265,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const isLyricsRoute = activeRouteId === 'lyrics';
   const shouldUseLyricsPlayerDrawer = isLyricsRoute && lyricsMiniPlayerSettings.lyricsPlayerBarDrawerEnabled === true;
   const shouldRenderPlayerBar = !isStandaloneRoute || isLyricsRoute;
+  const hasDesktopLyricsBridge = Boolean(window.echo?.desktopLyrics);
   const currentMiniPlayerTrack = playbackQueue.currentTrack ?? playbackQueue.lastPlayedTrack ?? null;
   const lyricsMiniPlayerCoverUrl = useMemo(
     () => miniPlayerArtworkUrl(currentMiniPlayerTrack),
@@ -746,12 +749,12 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         return;
       }
 
-      const names = disconnected.map((status) => accountProviderLabels[status.provider] ?? status.provider);
-      setAccountNotice(`账号登录状态可能已失效：${names.join('、')}。请到设置 > 集成重新登录。`);
+      const names = disconnected.map((status) => t(accountProviderLabelKeys[status.provider] ?? 'accountProvider.unknown'));
+      setAccountNotice(t('notice.accountExpired', { names: names.join(t('punctuation.listSeparator')) }));
     });
 
     return () => unsubscribe?.();
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const rawError = playbackStatusSnapshot.audioStatus?.error ?? playbackStatusSnapshot.error;
@@ -805,6 +808,24 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, [audioErrorNotice]);
 
   useEffect(() => {
+    const desktopLyrics = window.echo?.desktopLyrics;
+    if (!desktopLyrics) {
+      setDesktopLyricsVisible(false);
+      return undefined;
+    }
+
+    void desktopLyrics.getState()
+      .then((state) => setDesktopLyricsVisible(state.visible === true))
+      .catch(() => setDesktopLyricsVisible(false));
+
+    const unsubscribe = desktopLyrics.onStateChanged?.((state) => {
+      setDesktopLyricsVisible(state.visible === true);
+    });
+
+    return () => unsubscribe?.();
+  }, [hasDesktopLyricsBridge]);
+
+  useEffect(() => {
     const notifyUpdateStatus = (status: UpdateStatus): void => {
       if (status.state !== 'available' && status.state !== 'downloaded') {
         return;
@@ -818,18 +839,18 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
       notifiedUpdateKeysRef.current.add(noticeKey);
       if (status.state === 'downloaded') {
-        setChromeNotice(version ? `ECHO NEXT ${version} 已下载完成，准备安装。` : 'ECHO NEXT 更新已下载完成，准备安装。');
+        setChromeNotice(version ? t('notice.updateDownloadedVersion', { version }) : t('notice.updateDownloaded'));
         return;
       }
 
-      setChromeNotice(version ? `发现 ECHO NEXT 新版本 ${version}。` : '发现 ECHO NEXT 新版本。');
+      setChromeNotice(version ? t('notice.updateAvailableVersion', { version }) : t('notice.updateAvailable'));
     };
 
     const unsubscribe = window.echo?.app?.onUpdateStatus?.(notifyUpdateStatus);
     void window.echo?.app?.getUpdateStatus?.().then(notifyUpdateStatus).catch(() => undefined);
 
     return () => unsubscribe?.();
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1232,18 +1253,18 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         }
 
         const details = [
-          result.importedCount > 0 ? `已入库 ${result.importedCount} 个文件` : null,
-          result.skippedCount > 0 ? `忽略 ${result.skippedCount} 个不支持或不可用文件` : null,
-          result.failedCount > 0 ? `${result.failedCount} 个文件导入失败` : null,
-        ].filter(Boolean).join('，');
-        setChromeNotice(details || '没有可导入的音频文件。');
+          result.importedCount > 0 ? t('notice.importFiles.imported', { count: result.importedCount }) : null,
+          result.skippedCount > 0 ? t('notice.importFiles.skipped', { count: result.skippedCount }) : null,
+          result.failedCount > 0 ? t('notice.importFiles.failed', { count: result.failedCount }) : null,
+        ].filter(Boolean).join(t('punctuation.clauseSeparator'));
+        setChromeNotice(details || t('notice.importFiles.empty'));
         return;
       }
 
       const result = await playbackQueue.openTemporaryLocalFiles(filePaths);
       navigateRoute('queue');
       if (result.rejected.length > 0) {
-        setChromeNotice(`已打开 ${result.tracks.length} 个文件，忽略 ${result.rejected.length} 个不支持或不可用文件。`);
+        setChromeNotice(t('notice.openFiles.partial', { opened: result.tracks.length, rejected: result.rejected.length }));
       }
     } catch (error) {
       console.error('Failed to open local audio file from app chrome', error);
@@ -1261,7 +1282,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         .then((result) => {
           navigateRoute('queue');
           if (result.rejected.length > 0) {
-            setChromeNotice(`已打开 ${result.tracks.length} 个文件，忽略 ${result.rejected.length} 个不支持或不可用文件。`);
+            setChromeNotice(t('notice.openFiles.partial', { opened: result.tracks.length, rejected: result.rejected.length }));
           }
         })
         .catch((error) => {
@@ -1270,7 +1291,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     });
 
     return () => unsubscribe?.();
-  }, [navigateRoute, playbackQueue]);
+  }, [navigateRoute, playbackQueue, t]);
 
   const handleWindowAction = useCallback(
     async (action: 'minimize' | 'toggleMaximize' | 'close'): Promise<void> => {
@@ -1290,11 +1311,11 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     try {
       const reportPath = await window.echo?.diagnostics.openCrashReport();
       setDiagnosticsNotice(false);
-      setChromeNotice(reportPath ? `Markdown 报告已打开：${reportPath}` : 'Markdown 报告已打开。');
+      setChromeNotice(reportPath ? t('notice.reportOpenedPath', { path: reportPath }) : t('notice.reportOpened'));
     } catch (error) {
       setChromeNotice(error instanceof Error ? error.message : String(error));
     }
-  }, []);
+  }, [t]);
 
   const handleDismissDiagnosticsNotice = useCallback(async (): Promise<void> => {
     setDiagnosticsNotice(false);
@@ -1335,6 +1356,22 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
     setChromeNotice(t('notice.browserFilePicker', { name: `"${file.name}"` }));
   };
+
+  const handleToggleDesktopLyrics = useCallback(async (): Promise<void> => {
+    const desktopLyrics = window.echo?.desktopLyrics;
+    if (!desktopLyrics) {
+      return;
+    }
+
+    try {
+      const state = desktopLyricsVisible
+        ? await desktopLyrics.hide()
+        : await desktopLyrics.show();
+      setDesktopLyricsVisible(state.visible === true);
+    } catch {
+      setDesktopLyricsVisible((current) => current);
+    }
+  }, [desktopLyricsVisible]);
 
   return (
     <div
@@ -1470,7 +1507,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       {chromeNotice ? (
         <div className={`chrome-notice ${isChromeNoticeVisible ? 'is-visible' : 'is-hiding'}`} role="status">
           <span className="chrome-notice-message">{chromeNotice}</span>
-          <button className="chrome-notice-close" type="button" aria-label="关闭提示" title="关闭提示" onClick={dismissChromeNotice}>
+          <button className="chrome-notice-close" type="button" aria-label={t('notice.action.closeNotice')} title={t('notice.action.closeNotice')} onClick={dismissChromeNotice}>
             <X size={14} />
           </button>
         </div>
@@ -1478,13 +1515,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
       {diagnosticsNotice ? (
         <div className="chrome-notice chrome-notice--diagnostics" role="status">
-          <span>上次 ECHO Next 没有正常退出，已准备 Markdown 报告用于排查。</span>
+          <span>{t('notice.diagnosticsCrash.description')}</span>
           <div className="chrome-notice-actions">
             <button type="button" onClick={() => void handleOpenCrashReportNotice()}>
-              打开报告
+              {t('notice.action.openReport')}
             </button>
             <button type="button" onClick={() => void handleDismissDiagnosticsNotice()}>
-              忽略
+              {t('notice.action.ignore')}
             </button>
           </div>
         </div>
@@ -1492,22 +1529,22 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
       {accountNotice ? (
         <div className="chrome-notice chrome-notice--account" role="alert">
-          <strong>账号登录失效</strong>
+          <strong>{t('notice.accountExpired.title')}</strong>
           <span>{accountNotice}</span>
         </div>
       ) : null}
 
       {audioErrorNotice ? (
         <div className="chrome-notice chrome-notice--audio-error" role="alert">
-          <strong>音频错误</strong>
+          <strong>{t('notice.audioError.title')}</strong>
           <span>{audioErrorNotice.message}</span>
-          <small>已生成 Markdown 诊断报告，里面有详细原因和排查线索。</small>
+          <small>{t('notice.audioError.description')}</small>
           <div className="chrome-notice-actions">
             <button type="button" onClick={() => void handleOpenAudioCrashReport()}>
-              打开报告
+              {t('notice.action.openReport')}
             </button>
             <button type="button" onClick={() => setAudioErrorNotice(null)}>
-              关闭
+              {t('notice.action.close')}
             </button>
           </div>
         </div>
@@ -1543,8 +1580,11 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           style={shouldUseLyricsPlayerDrawer ? lyricsMiniPlayerStyle : undefined}
         >
           <PlayerBar
+            desktopLyricsVisible={desktopLyricsVisible}
+            hasDesktopLyricsBridge={hasDesktopLyricsBridge}
             onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
             onOpenQueue={isLyricsRoute ? handleOpenLyricsQueueDrawer : undefined}
+            onToggleDesktopLyrics={handleToggleDesktopLyrics}
           />
         </div>
       ) : null}

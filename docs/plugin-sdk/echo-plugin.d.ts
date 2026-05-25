@@ -1,11 +1,19 @@
 type EchoPluginPermission =
+  /** Active: read the current playback state snapshot. */
   | 'playback:read'
+  /** Active: play, pause, stop, or seek. */
   | 'playback:control'
+  /** Active: read library summaries and paged public track fields. */
   | 'library:read'
+  /** Reserved in v1: declared for forward compatibility, but no write API is exposed. */
   | 'library:write'
+  /** Active: read an application settings snapshot. */
   | 'settings:read'
+  /** Active high-risk permission: write a small settings patch, not a full settings object. */
   | 'settings:write'
+  /** Reserved in v1: declared for forward compatibility, but no network API is exposed. */
   | 'network'
+  /** Limited in v1: use echo.storage only; no arbitrary file API is exposed. */
   | 'fs:plugin';
 
 type EchoPluginEventName = 'playback:status' | 'library:changed';
@@ -83,6 +91,16 @@ type EchoPluginCommandOptions = {
   description?: string;
 };
 
+/**
+ * ECHO Next plugin API v1.
+ *
+ * Runtime guardrails:
+ * - command args are limited to 64 KB serialized JSON
+ * - command results are limited to 256 KB serialized JSON
+ * - commands time out after 2 seconds
+ * - async event handlers that exceed 2 seconds are logged as timeouts
+ * - plugins do not get Node, Electron, SQLite, app DOM, decoder, DSP, or output access
+ */
 type EchoPluginApi = {
   events: {
     on(eventName: 'playback:status', handler: (status: EchoPlaybackStatus) => void | Promise<void>): () => void;

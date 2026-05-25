@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { analyzePcmTransitionSegment } from './AutomixAnalyzer';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { describe, expect, it, vi } from 'vitest';
+import { AutomixAnalyzer, analyzePcmTransitionSegment } from './AutomixAnalyzer';
 
 const samplesForSeconds = (seconds: number, sampleRate: number, value: number): Float32Array =>
   new Float32Array(Math.max(0, Math.round(seconds * sampleRate))).fill(value);
@@ -32,5 +34,151 @@ describe('AutomixAnalyzer PCM helpers', () => {
     expect(analysis.energyCurve).toHaveLength(8);
     expect(Math.max(...analysis.energyCurve)).toBeCloseTo(1, 1);
     expect(analysis.energyCurve[0]).toBe(0);
+  });
+
+  it('exposes completed analysis from the in-memory cache', async () => {
+    const spawn = vi.fn(() => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+      });
+      const buffer = Buffer.alloc(22050 * 2 * 2);
+      for (let index = 0; index < buffer.length / 2; index += 1) {
+        buffer.writeInt16LE(index % 64 < 32 ? 12000 : -12000, index * 2);
+      }
+
+      queueMicrotask(() => {
+        child.stdout.end(buffer);
+        child.stderr.end();
+        child.emit('exit', 0, null);
+      });
+      return child;
+    });
+    const analyzer = new AutomixAnalyzer({
+      ffmpegPath: 'ffmpeg-test',
+      spawn: spawn as never,
+      logger: () => undefined,
+    });
+    const request = {
+      filePath: 'song.flac',
+      probe: {
+        durationSeconds: 120,
+      },
+    };
+
+    expect(analyzer.getCachedAnalysis(request)).toBeNull();
+    const analysis = await analyzer.analyze(request);
+
+    expect(analysis.status).toBe('complete');
+    expect(analysis.introRmsDb).toBeLessThan(0);
+    expect(analysis.outroRmsDb).toBeLessThan(0);
+    expect(analyzer.getCachedAnalysis(request)).toBe(analysis);
+  });
+
+  it('keeps separate cached analyses for different beat offsets', async () => {
+    const spawn = vi.fn(() => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+      });
+      const buffer = Buffer.alloc(22050 * 2 * 2);
+      for (let index = 0; index < buffer.length / 2; index += 1) {
+        buffer.writeInt16LE(index % 64 < 32 ? 12000 : -12000, index * 2);
+      }
+
+      queueMicrotask(() => {
+        child.stdout.end(buffer);
+        child.stderr.end();
+        child.emit('exit', 0, null);
+      });
+      return child;
+    });
+    const analyzer = new AutomixAnalyzer({
+      ffmpegPath: 'ffmpeg-test',
+      spawn: spawn as never,
+      logger: () => undefined,
+    });
+    const baseRequest = {
+      filePath: 'song.flac',
+      probe: {
+        durationSeconds: 120,
+      },
+    };
+
+    await analyzer.analyze({ ...baseRequest, hint: { bpm: 128, bpmConfidence: 0.9, beatOffsetMs: 12 } });
+    await analyzer.analyze({ ...baseRequest, hint: { bpm: 128, bpmConfidence: 0.9, beatOffsetMs: 48 } });
+
+    expect(spawn).toHaveBeenCalledTimes(4);
+  });
+
+  it('keeps separate cached analyses for different input header values', async () => {
+    const spawn = vi.fn(() => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+      });
+      const buffer = Buffer.alloc(22050 * 2 * 2);
+      for (let index = 0; index < buffer.length / 2; index += 1) {
+        buffer.writeInt16LE(index % 64 < 32 ? 12000 : -12000, index * 2);
+      }
+
+      queueMicrotask(() => {
+        child.stdout.end(buffer);
+        child.stderr.end();
+        child.emit('exit', 0, null);
+      });
+      return child;
+    });
+    const analyzer = new AutomixAnalyzer({
+      ffmpegPath: 'ffmpeg-test',
+      spawn: spawn as never,
+      logger: () => undefined,
+    });
+    const baseRequest = {
+      filePath: 'https://example.test/song.flac',
+      probe: {
+        durationSeconds: 120,
+      },
+    };
+
+    await analyzer.analyze({ ...baseRequest, headers: { Authorization: 'Bearer one' } });
+    await analyzer.analyze({ ...baseRequest, headers: { Authorization: 'Bearer two' } });
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps an estimated outro shape for HTTP inputs without decoding a remote tail segment', async () => {
+    const spawn = vi.fn(() => {
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+      });
+      const buffer = Buffer.alloc(22050 * 2 * 2);
+      for (let index = 0; index < buffer.length / 2; index += 1) {
+        buffer.writeInt16LE(index % 64 < 32 ? 12000 : -12000, index * 2);
+      }
+
+      queueMicrotask(() => {
+        child.stdout.end(buffer);
+        child.stderr.end();
+        child.emit('exit', 0, null);
+      });
+      return child;
+    });
+    const analyzer = new AutomixAnalyzer({
+      ffmpegPath: 'ffmpeg-test',
+      spawn: spawn as never,
+      logger: () => undefined,
+    });
+
+    const analysis = await analyzer.analyze({
+      filePath: 'https://example.test/song.flac',
+      probe: { durationSeconds: 180 },
+    });
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(analysis.status).toBe('estimated');
+    expect(analysis.energyCurve).toHaveLength(18);
+    expect(analysis.energyCurve.at(-1)).toBeLessThan(analysis.energyCurve.at(-5) ?? 0);
   });
 });

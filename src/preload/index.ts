@@ -80,6 +80,7 @@ const maxSystemMediaRecoveryAttempts = 1;
 const systemSeekConfirmTimeoutMs = 2500;
 const systemSeekToleranceSeconds = 0.75;
 const systemPrematureEndToleranceSeconds = 5;
+const systemCorruptEndRatioThreshold = 0.75;
 const systemSeekConfirmEvents: Array<keyof HTMLMediaElementEventMap> = [
   'seeked',
   'timeupdate',
@@ -157,6 +158,14 @@ const createSystemAudioMediaErrorMessage = (element: HTMLAudioElement, fallback 
 
 const createSystemAudioPrematureEndMessage = (positionSeconds: number, durationSeconds: number): string =>
   `system_audio_decode_error; positionSeconds=${positionSeconds.toFixed(3)}; durationSeconds=${durationSeconds.toFixed(3)}`;
+
+const createSystemAudioLooseDurationMessage = (positionSeconds: number, durationSeconds: number): string =>
+  `system_audio_ended_before_reported_duration; positionSeconds=${positionSeconds.toFixed(3)}; durationSeconds=${durationSeconds.toFixed(3)}`;
+
+const isClearlyCorruptSystemEnd = (positionSeconds: number, durationSeconds: number): boolean =>
+  durationSeconds > 0 &&
+  positionSeconds < durationSeconds - systemPrematureEndToleranceSeconds &&
+  positionSeconds / durationSeconds < systemCorruptEndRatioThreshold;
 
 const nextSystemPlaybackGeneration = (): number => {
   systemPlaybackGeneration += 1;
@@ -696,7 +705,8 @@ const ensureSystemAudioElement = (): HTMLAudioElement => {
       isLocalSystemSource(systemAudioSource) &&
       durationSeconds > 0 &&
       endedPositionSeconds < durationSeconds - systemPrematureEndToleranceSeconds;
-    if (premature) {
+    const clearlyCorrupt = premature && isClearlyCorruptSystemEnd(endedPositionSeconds, durationSeconds);
+    if (clearlyCorrupt) {
       systemAudioState = 'error';
       systemAudioError = createSystemAudioPrematureEndMessage(endedPositionSeconds, durationSeconds);
       stopSystemStatusTimer();
@@ -713,6 +723,19 @@ const ensureSystemAudioElement = (): HTMLAudioElement => {
         htmlAudio: htmlAudioDiagnostics(),
       });
       return;
+    }
+    if (premature) {
+      reportSystemPlaybackError({
+        phase: 'system-audio-ended-before-reported-duration',
+        message: createSystemAudioLooseDurationMessage(endedPositionSeconds, durationSeconds),
+        recovered: true,
+        ...mediaRequestDiagnostics(systemMediaPlaybackContext?.request ?? null),
+        ...sourceDiagnostics(systemAudioSource),
+        trackId: systemAudioSource?.trackId ?? null,
+        recoveryAttempt: systemMediaPlaybackContext?.recoveryAttempts ?? 0,
+        maxRecoveryAttempts: maxSystemMediaRecoveryAttempts,
+        htmlAudio: htmlAudioDiagnostics(),
+      });
     }
     systemAudioState = 'ended';
     stopSystemStatusTimer();
@@ -953,6 +976,18 @@ const stopSystemPlayback = (
 const isSystemOutputRequest = (settings: unknown): boolean =>
   Boolean(settings && typeof settings === 'object' && (settings as Partial<AudioOutputSettings>).outputMode === 'system');
 
+const requiresNativeChainedPlayback = (request: Pick<PlaybackStartRequest, 'automix' | 'gapless'>): boolean =>
+  (request.automix?.enabled === true && Boolean(request.automix.nextItem)) ||
+  (request.gapless?.enabled === true && Boolean(request.gapless.nextItem));
+
+const withNativeSharedOutput = <T extends { output?: AudioOutputSettings }>(request: T): T => ({
+  ...request,
+  output: {
+    ...(request.output ?? {}),
+    outputMode: 'shared',
+  },
+});
+
 const shouldUseSystemAudioMode = (): boolean =>
   systemAudioModeActive || lastNativeAudioStatus?.outputMode === 'system';
 
@@ -1134,6 +1169,9 @@ const echoApi: EchoApi = {
     setLocked: (locked) => ipcRenderer.invoke(IpcChannels.DesktopLyricsSetLocked, locked),
     setStyle: (patch) => ipcRenderer.invoke(IpcChannels.DesktopLyricsSetStyle, patch),
     resetBounds: () => ipcRenderer.invoke(IpcChannels.DesktopLyricsResetBounds),
+    setMousePassthrough: (passthrough) => {
+      ipcRenderer.send(IpcChannels.DesktopLyricsSetMousePassthrough, passthrough);
+    },
     getLastAudioStatus: () => ipcRenderer.invoke(IpcChannels.DesktopLyricsGetLastAudioStatus),
     onStateChanged: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, state: unknown): void => {
@@ -1354,14 +1392,28 @@ const echoApi: EchoApi = {
   },
   playback: {
     getStatus: () => systemAudioModeActive ? Promise.resolve(toSystemPlaybackStatus()) : ipcRenderer.invoke(IpcChannels.PlaybackGetStatus),
-    playLocalFile: async (request) =>
-      await shouldUseSystemAudioForPlayback(request.output)
+    playLocalFile: async (request) => {
+      if (requiresNativeChainedPlayback(request)) {
+        stopSystemPlayback('stopped', false);
+        systemAudioModeActive = false;
+        return ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, withNativeSharedOutput(request));
+      }
+
+      return await shouldUseSystemAudioForPlayback(request.output)
         ? playLocalFileWithSystemAudio(request)
-        : ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, request),
-    playMediaItem: async (request) =>
-      await shouldUseSystemAudioForPlayback(request.output)
+        : ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, request);
+    },
+    playMediaItem: async (request) => {
+      if (requiresNativeChainedPlayback(request)) {
+        stopSystemPlayback('stopped', false);
+        systemAudioModeActive = false;
+        return ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, withNativeSharedOutput(request));
+      }
+
+      return await shouldUseSystemAudioForPlayback(request.output)
         ? playMediaItemWithSystemAudio(request)
-        : ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, request),
+        : ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, request);
+    },
     prepareMediaItem: (request) => ipcRenderer.invoke(IpcChannels.PlaybackPrepareMediaItem, request),
     prepareLocalFile: (request) => ipcRenderer.invoke(IpcChannels.PlaybackPrepareLocalFile, request),
     play: async () => {

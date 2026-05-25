@@ -5,7 +5,11 @@ import type {
   AlbumInformationSummary,
   AlbumOnlineInfo,
   AlbumOnlineInfoMatch,
+  AlbumReleaseDetails,
+  AlbumReleaseLabel,
+  AlbumReleaseVersion,
   AlbumOnlineInfoSource,
+  AlbumSourceLink,
   LibraryAlbumDetail,
   LibraryTrack,
 } from '../../../shared/types/library';
@@ -25,6 +29,9 @@ type OnlinePayload = {
   artistInformation: AlbumInformationSummary | null;
   match: AlbumOnlineInfoMatch | null;
   sources: AlbumOnlineInfoSource[];
+  sourceLinks: AlbumSourceLink[];
+  releaseDetails: AlbumReleaseDetails | null;
+  releaseVersions: AlbumReleaseVersion[];
   errors: string[];
 };
 
@@ -36,6 +43,9 @@ type ParsedInformationCache = {
   version: number;
   information: AlbumInformationSummary | null;
   artistInformation: AlbumInformationSummary | null;
+  sourceLinks: AlbumSourceLink[];
+  releaseDetails: AlbumReleaseDetails | null;
+  releaseVersions: AlbumReleaseVersion[];
 };
 
 type MusicBrainzReleaseSearchResult = {
@@ -44,6 +54,13 @@ type MusicBrainzReleaseSearchResult = {
   artist: string;
   artistId: string | null;
   date: string | null;
+  country: string | null;
+  barcode: string | null;
+  status: string | null;
+  disambiguation: string | null;
+  mediaFormats: string[];
+  catalogNumbers: string[];
+  labels: string[];
   trackCount: number | null;
   score: number;
 };
@@ -51,6 +68,7 @@ type MusicBrainzReleaseSearchResult = {
 type MusicBrainzReleasePayload = {
   release: Record<string, unknown>;
   search: MusicBrainzReleaseSearchResult;
+  versions: MusicBrainzReleaseSearchResult[];
 };
 
 class AsyncLimiter {
@@ -95,6 +113,8 @@ const successTtlMs = 30 * 24 * 60 * 60 * 1000;
 const shortTtlMs = 60 * 60 * 1000;
 const maxCreditGroups = 12;
 const maxPeoplePerGroup = 12;
+const maxSourceLinks = 18;
+const maxReleaseVersions = 8;
 
 const asRecord = (value: unknown): Record<string, unknown> => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {});
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
@@ -102,6 +122,9 @@ const yearFromDate = (value: string | null): number | null => {
   const year = value?.slice(0, 4);
   return year && /^\d{4}$/u.test(year) ? Number(year) : null;
 };
+
+const uniqueText = (values: Array<string | null | undefined>): string[] =>
+  Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))));
 
 const normalizeText = (value: string | null | undefined): string =>
   (value ?? '')
@@ -277,6 +300,87 @@ const normalizeInformationSummary = (value: unknown): AlbumInformationSummary | 
   };
 };
 
+const normalizeSourceLink = (value: unknown): AlbumSourceLink | null => {
+  const record = asRecord(value);
+  const provider = text(record.provider);
+  const label = text(record.label);
+  const url = text(record.url);
+  const kind = text(record.kind);
+  if (!label || !url) {
+    return null;
+  }
+  const normalizedProvider: AlbumSourceLink['provider'] =
+    provider === 'musicbrainz' ||
+    provider === 'wikipedia' ||
+    provider === 'wikidata' ||
+    provider === 'vgmdb' ||
+    provider === 'discogs' ||
+    provider === 'spotify' ||
+    provider === 'appleMusic' ||
+    provider === 'youtubeMusic' ||
+    provider === 'bandcamp' ||
+    provider === 'official' ||
+    provider === 'other'
+      ? provider
+      : 'other';
+  const normalizedKind: AlbumSourceLink['kind'] =
+    kind === 'database' || kind === 'streaming' || kind === 'official' || kind === 'reference' || kind === 'other' ? kind : 'other';
+  return { provider: normalizedProvider, label, url, kind: normalizedKind };
+};
+
+const normalizeReleaseLabel = (value: unknown): AlbumReleaseLabel | null => {
+  const record = asRecord(value);
+  const name = text(record.name);
+  return name ? { name, catalogNumber: text(record.catalogNumber) } : null;
+};
+
+const normalizeReleaseDetails = (value: unknown): AlbumReleaseDetails | null => {
+  const record = asRecord(value);
+  const title = text(record.title);
+  if (!title) {
+    return null;
+  }
+  return {
+    title,
+    date: text(record.date),
+    country: text(record.country),
+    barcode: text(record.barcode),
+    status: text(record.status),
+    labels: Array.isArray(record.labels) ? record.labels.map(normalizeReleaseLabel).filter((label): label is AlbumReleaseLabel => Boolean(label)) : [],
+    mediaFormats: Array.isArray(record.mediaFormats) ? uniqueText(record.mediaFormats.map((value) => text(value))) : [],
+    copyrights: Array.isArray(record.copyrights) ? uniqueText(record.copyrights.map((value) => text(value))) : [],
+  };
+};
+
+const normalizeReleaseVersion = (value: unknown): AlbumReleaseVersion | null => {
+  const record = asRecord(value);
+  const providerItemId = text(record.providerItemId);
+  const title = text(record.title);
+  const artist = text(record.artist);
+  const url = text(record.url);
+  if (!providerItemId || !title || !artist || !url) {
+    return null;
+  }
+  return {
+    providerItemId,
+    title,
+    artist,
+    year: Number.isFinite(Number(record.year)) ? Number(record.year) : null,
+    date: text(record.date),
+    country: text(record.country),
+    barcode: text(record.barcode),
+    status: text(record.status),
+    disambiguation: text(record.disambiguation),
+    mediaFormats: Array.isArray(record.mediaFormats) ? uniqueText(record.mediaFormats.map((value) => text(value))) : [],
+    trackCount: Number.isFinite(Number(record.trackCount)) ? Number(record.trackCount) : null,
+    catalogNumbers: Array.isArray(record.catalogNumbers) ? uniqueText(record.catalogNumbers.map((value) => text(value))) : [],
+    labels: Array.isArray(record.labels) ? uniqueText(record.labels.map((value) => text(value))) : [],
+    url,
+    confidence: Number.isFinite(Number(record.confidence)) ? Number(record.confidence) : 0,
+    isMatched: record.isMatched === true,
+  };
+};
+
 const pageExtractFromQuery = (value: unknown): string | null => {
   const pages = asRecord(asRecord(asRecord(value).query).pages);
   for (const page of Object.values(pages).map(asRecord)) {
@@ -343,27 +447,35 @@ const normalizeExtract = (value: string, maxLength: number): string => {
 const parseInformationCache = (value: unknown): ParsedInformationCache => {
   const parsed = parseJson<unknown>(value, null);
   if (!parsed) {
-    return { version: 1, information: null, artistInformation: null };
+    return { version: 1, information: null, artistInformation: null, sourceLinks: [], releaseDetails: null, releaseVersions: [] };
   }
 
   const legacyInformation = normalizeInformationSummary(parsed);
   if (legacyInformation) {
-    return { version: 1, information: legacyInformation, artistInformation: null };
+    return { version: 1, information: legacyInformation, artistInformation: null, sourceLinks: [], releaseDetails: null, releaseVersions: [] };
   }
 
   const record = asRecord(parsed);
   return {
-    version: Number(record.version) === 2 ? 2 : 1,
+    version: Number(record.version) >= 3 ? 3 : Number(record.version) === 2 ? 2 : 1,
     information: normalizeInformationSummary(record.album),
     artistInformation: normalizeInformationSummary(record.artist),
+    sourceLinks: Array.isArray(record.sourceLinks) ? record.sourceLinks.map(normalizeSourceLink).filter((link): link is AlbumSourceLink => Boolean(link)) : [],
+    releaseDetails: normalizeReleaseDetails(record.releaseDetails),
+    releaseVersions: Array.isArray(record.releaseVersions)
+      ? record.releaseVersions.map(normalizeReleaseVersion).filter((version): version is AlbumReleaseVersion => Boolean(version))
+      : [],
   };
 };
 
 const serializeInformationCache = (info: AlbumOnlineInfo): string =>
   JSON.stringify({
-    version: 2,
+    version: 3,
     album: info.information,
     artist: info.artistInformation,
+    sourceLinks: info.sourceLinks,
+    releaseDetails: info.releaseDetails,
+    releaseVersions: info.releaseVersions,
   });
 
 const mergeSources = (fresh: AlbumOnlineInfoSource[], cached: AlbumOnlineInfoSource[]): AlbumOnlineInfoSource[] => {
@@ -374,6 +486,23 @@ const mergeSources = (fresh: AlbumOnlineInfoSource[], cached: AlbumOnlineInfoSou
     if (!seen.has(key)) {
       seen.add(key);
       merged.push(source);
+    }
+  }
+  return merged;
+};
+
+const mergeSourceLinks = (fresh: AlbumSourceLink[], cached: AlbumSourceLink[]): AlbumSourceLink[] => {
+  const seen = new Set<string>();
+  const merged: AlbumSourceLink[] = [];
+  for (const link of [...fresh, ...cached]) {
+    const key = `${link.provider}:${link.url}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(link);
+    if (merged.length >= maxSourceLinks) {
+      break;
     }
   }
   return merged;
@@ -491,11 +620,17 @@ export class AlbumOnlineInfoService {
             artistInformation: fetchedPayload.artistInformation ?? cachedArtistInformation,
             match: fetchedPayload.match ?? legacyCache.match,
             sources: mergeSources(fetchedPayload.sources, cachedSources),
+            sourceLinks: mergeSourceLinks(fetchedPayload.sourceLinks, legacyCache.sourceLinks),
+            releaseDetails: fetchedPayload.releaseDetails ?? legacyCache.releaseDetails,
+            releaseVersions: fetchedPayload.releaseVersions.length > 0 ? fetchedPayload.releaseVersions : legacyCache.releaseVersions,
           };
         })()
       : fetchedPayload;
     const hasData =
       payload.credits.length > 0 ||
+      payload.sourceLinks.length > 0 ||
+      payload.releaseVersions.length > 0 ||
+      Boolean(payload.releaseDetails) ||
       Boolean(payload.information) ||
       Boolean(payload.artistInformation);
     const status = hasData ? (payload.errors.length > 0 ? 'partial' : 'ready') : payload.errors.length > 0 ? 'error' : 'empty';
@@ -506,6 +641,9 @@ export class AlbumOnlineInfoService {
       status,
       sources: payload.sources,
       match: payload.match,
+      sourceLinks: payload.sourceLinks,
+      releaseDetails: payload.releaseDetails,
+      releaseVersions: payload.releaseVersions,
       credits: payload.credits,
       information: payload.information,
       artistInformation: payload.artistInformation,
@@ -539,6 +677,9 @@ export class AlbumOnlineInfoService {
 
     const credits = musicBrainz ? this.extractCredits(musicBrainz.release) : [];
     const match = musicBrainz ? this.toMatch(musicBrainz.search) : null;
+    const releaseDetails = musicBrainz ? this.extractReleaseDetails(musicBrainz.release) : null;
+    const releaseVersions = musicBrainz ? this.toReleaseVersions(musicBrainz.versions, musicBrainz.search.id) : [];
+    const sourceLinks = this.collectSourceLinks(musicBrainz?.release ?? null, match, information, artistInformation);
     const sources: AlbumOnlineInfoSource[] = [];
     if (musicBrainz) {
       sources.push({ provider: 'musicbrainz', label: 'MusicBrainz' });
@@ -553,6 +694,9 @@ export class AlbumOnlineInfoService {
       artistInformation,
       match,
       sources,
+      sourceLinks,
+      releaseDetails,
+      releaseVersions,
       errors,
     };
   }
@@ -576,9 +720,9 @@ export class AlbumOnlineInfoService {
 
     const lookupUrl =
       `https://musicbrainz.org/ws/2/release/${encodeURIComponent(best.id)}` +
-      '?fmt=json&inc=recordings+artist-credits+labels+artist-rels+recording-rels+work-rels+release-groups';
+      '?fmt=json&inc=recordings+artist-credits+labels+url-rels+artist-rels+recording-rels+work-rels+release-groups';
     const release = asRecord(await musicBrainzJson(lookupUrl));
-    return { release, search: best };
+    return { release, search: best, versions: scored.slice(0, maxReleaseVersions) };
   }
 
   private scoreMusicBrainzRelease(release: Record<string, unknown>, snapshot: AlbumSnapshot): MusicBrainzReleaseSearchResult | null {
@@ -591,6 +735,10 @@ export class AlbumOnlineInfoService {
     const artist = pickArtistCredit(release['artist-credit']);
     const media = Array.isArray(release.media) ? release.media.map(asRecord) : [];
     const mediumTrackCount = media.reduce((sum, item) => sum + Math.max(0, Number(item['track-count'] ?? 0)), 0);
+    const labels = Array.isArray(release['label-info']) ? release['label-info'].map(asRecord) : [];
+    const labelNames = labels.map((labelInfo) => text(asRecord(labelInfo.label).name));
+    const catalogNumbers = labels.map((labelInfo) => text(labelInfo['catalog-number']));
+    const mediaFormats = media.map((medium) => text(medium.format));
     const year = yearFromDate(text(release.date));
     let score = similarity(snapshot.album.title, title) * 0.45 + similarity(snapshot.album.albumArtist, artist.name) * 0.3;
     if (year && snapshot.album.year && year === snapshot.album.year) {
@@ -606,6 +754,13 @@ export class AlbumOnlineInfoService {
       artist: artist.name ?? snapshot.album.albumArtist,
       artistId: artist.id,
       date: text(release.date),
+      country: text(release.country),
+      barcode: text(release.barcode),
+      status: text(release.status),
+      disambiguation: text(release.disambiguation),
+      mediaFormats: uniqueText(mediaFormats),
+      catalogNumbers: uniqueText(catalogNumbers),
+      labels: uniqueText(labelNames),
       trackCount: mediumTrackCount || null,
       score: Math.min(1, score),
     };
@@ -634,6 +789,141 @@ export class AlbumOnlineInfoService {
     }
 
     return groupsFromMap(groups);
+  }
+
+  private extractReleaseDetails(release: Record<string, unknown>): AlbumReleaseDetails {
+    const labels = Array.isArray(release['label-info']) ? release['label-info'].map(asRecord) : [];
+    const media = Array.isArray(release.media) ? release.media.map(asRecord) : [];
+    const relations = Array.isArray(release.relations) ? release.relations.map(asRecord) : [];
+    const copyrightRelations = relations
+      .map((relation) => {
+        const type = text(relation.type);
+        const normalizedType = type?.toLocaleLowerCase() ?? '';
+        if (!normalizedType.includes('copyright') && !normalizedType.includes('phonographic')) {
+          return null;
+        }
+        const targetName = text(asRecord(relation.artist).name) ?? text(asRecord(relation.label).name) ?? text(asRecord(relation.url).resource);
+        return [targetName, type].filter(Boolean).join(' - ');
+      })
+      .filter((value): value is string => Boolean(value));
+
+    return {
+      title: text(release.title) ?? '',
+      date: text(release.date),
+      country: text(release.country),
+      barcode: text(release.barcode),
+      status: text(release.status),
+      labels: labels
+        .map((labelInfo): AlbumReleaseLabel | null => {
+          const name = text(asRecord(labelInfo.label).name);
+          return name ? { name, catalogNumber: text(labelInfo['catalog-number']) } : null;
+        })
+        .filter((label): label is AlbumReleaseLabel => Boolean(label)),
+      mediaFormats: uniqueText(media.map((medium) => text(medium.format))),
+      copyrights: uniqueText(copyrightRelations),
+    };
+  }
+
+  private toReleaseVersions(versions: MusicBrainzReleaseSearchResult[], matchedId: string): AlbumReleaseVersion[] {
+    return versions.map((version) => ({
+      providerItemId: version.id,
+      title: version.title,
+      artist: version.artist,
+      year: yearFromDate(version.date),
+      date: version.date,
+      country: version.country,
+      barcode: version.barcode,
+      status: version.status,
+      disambiguation: version.disambiguation,
+      mediaFormats: version.mediaFormats,
+      trackCount: version.trackCount,
+      catalogNumbers: version.catalogNumbers,
+      labels: version.labels,
+      url: `https://musicbrainz.org/release/${version.id}`,
+      confidence: Number(version.score.toFixed(2)),
+      isMatched: version.id === matchedId,
+    }));
+  }
+
+  private collectSourceLinks(
+    release: Record<string, unknown> | null,
+    match: AlbumOnlineInfoMatch | null,
+    information: AlbumInformationSummary | null,
+    artistInformation: AlbumInformationSummary | null,
+  ): AlbumSourceLink[] {
+    const links: AlbumSourceLink[] = [];
+    const addLink = (link: AlbumSourceLink): void => {
+      if (!link.url || links.some((item) => item.url === link.url)) {
+        return;
+      }
+      links.push(link);
+    };
+
+    if (match?.url) {
+      addLink({ provider: 'musicbrainz', label: 'MusicBrainz', url: match.url, kind: 'database' });
+    }
+
+    for (const item of [information, artistInformation]) {
+      if (item?.url) {
+        addLink({ provider: 'wikipedia', label: `${item.language}.wikipedia.org`, url: item.url, kind: 'reference' });
+      }
+      for (const link of item?.externalLinks ?? []) {
+        addLink(this.sourceLinkFromUrl(link.url, link.label));
+      }
+    }
+
+    const relations = release && Array.isArray(release.relations) ? release.relations.map(asRecord) : [];
+    for (const relation of relations) {
+      const resource = text(asRecord(relation.url).resource);
+      if (resource) {
+        addLink(this.sourceLinkFromUrl(resource, text(relation.type) ?? undefined));
+      }
+      if (links.length >= maxSourceLinks) {
+        break;
+      }
+    }
+
+    return links.slice(0, maxSourceLinks);
+  }
+
+  private sourceLinkFromUrl(url: string, fallbackLabel?: string): AlbumSourceLink {
+    let host = '';
+    try {
+      host = new URL(url).hostname.replace(/^www\./iu, '').toLocaleLowerCase();
+    } catch {
+      return { provider: 'other', label: fallbackLabel ?? linkLabelFromUrl(url), url, kind: 'other' };
+    }
+
+    if (host.includes('musicbrainz.org')) {
+      return { provider: 'musicbrainz', label: 'MusicBrainz', url, kind: 'database' };
+    }
+    if (host.includes('wikidata.org')) {
+      return { provider: 'wikidata', label: 'Wikidata', url, kind: 'database' };
+    }
+    if (host.includes('vgmdb.net')) {
+      return { provider: 'vgmdb', label: 'VGMdb', url, kind: 'database' };
+    }
+    if (host.includes('discogs.com')) {
+      return { provider: 'discogs', label: 'Discogs', url, kind: 'database' };
+    }
+    if (host.includes('spotify.com')) {
+      return { provider: 'spotify', label: 'Spotify', url, kind: 'streaming' };
+    }
+    if (host.includes('music.apple.com') || host.includes('itunes.apple.com')) {
+      return { provider: 'appleMusic', label: 'Apple Music', url, kind: 'streaming' };
+    }
+    if (host.includes('music.youtube.com') || host.includes('youtube.com')) {
+      return { provider: 'youtubeMusic', label: 'YouTube Music', url, kind: 'streaming' };
+    }
+    if (host.includes('bandcamp.com')) {
+      return { provider: 'bandcamp', label: 'Bandcamp', url, kind: 'streaming' };
+    }
+    if (host.includes('wikipedia.org')) {
+      return { provider: 'wikipedia', label: host, url, kind: 'reference' };
+    }
+    const lowerLabel = (fallbackLabel ?? '').toLocaleLowerCase();
+    const isOfficial = lowerLabel.includes('official') || lowerLabel.includes('主页') || lowerLabel.includes('website') || lowerLabel.includes('site');
+    return { provider: isOfficial ? 'official' : 'other', label: isOfficial ? 'Official' : linkLabelFromUrl(url), url, kind: isOfficial ? 'official' : 'other' };
   }
 
   private extractRelations(
@@ -800,6 +1090,9 @@ export class AlbumOnlineInfoService {
       status: row.status === 'ready' || row.status === 'partial' || row.status === 'empty' || row.status === 'error' ? row.status : 'empty',
       sources: parseJson<AlbumOnlineInfoSource[]>(row.sources_json, []),
       match: parseJson<AlbumOnlineInfoMatch | null>(row.match_json, null),
+      sourceLinks: cachedInformation.sourceLinks,
+      releaseDetails: cachedInformation.releaseDetails,
+      releaseVersions: cachedInformation.releaseVersions,
       credits: parseJson<AlbumCreditGroup[]>(row.credits_json, []),
       information: cachedInformation.information,
       artistInformation: cachedInformation.artistInformation,

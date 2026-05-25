@@ -87,7 +87,7 @@ afterEach(() => {
   });
   vi.useRealTimers();
   if (typeof window !== 'undefined') {
-    window.echo = undefined;
+    Reflect.deleteProperty(window, 'echo');
   }
 });
 

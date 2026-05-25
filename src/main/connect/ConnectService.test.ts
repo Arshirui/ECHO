@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hqPlayerConnectDeviceId, type ConnectStartRequest } from '../../shared/types/connect';
 import type { LibraryTrack } from '../../shared/types/library';
 import type { HqPlayerConnectionTestResult, HqPlayerSettings, HqPlayerStatus } from '../../shared/types/hqplayer';
@@ -186,6 +186,10 @@ const hqConnectionWithoutPlayback: HqPlayerConnectionTestResult = {
 };
 
 describe('ConnectService HQPlayer output device', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.audioSession.getStatus.mockReturnValue({
@@ -379,6 +383,115 @@ describe('ConnectService HQPlayer output device', () => {
       positionSeconds: 0,
     });
     expect(hqPlayer.stopPlayback).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a natural HQPlayer track end actionable when the stopped status resets position', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-21T01:00:00.000Z'));
+    const { ConnectService } = await import('./ConnectService');
+    const hqPlayer = createHqPlayerService();
+    const service = new ConnectService(hqPlayer);
+
+    await service.connect({
+      deviceId: hqPlayerConnectDeviceId,
+      track: localTrack,
+      filePath: localTrack.path,
+      positionSeconds: 7,
+    });
+
+    vi.setSystemTime(new Date('2026-05-21T01:02:55.000Z'));
+    const stopped = hqConnectionOk().playbackStatus!;
+    hqPlayer.testConnection.mockResolvedValue({
+      ...hqConnectionOk(),
+      playbackStatus: {
+        ...stopped,
+        state: 'stopped',
+        stateCode: 0,
+        positionSeconds: 0,
+        durationSeconds: 0,
+      },
+    });
+
+    await (service as unknown as { syncHqPlayerSessionStatus: () => Promise<void> }).syncHqPlayerSessionStatus();
+
+    expect(service.getStatus()).toMatchObject({
+      deviceId: hqPlayerConnectDeviceId,
+      protocol: 'hqplayer',
+      state: 'stopped',
+      currentTrackId: localTrack.id,
+      positionSeconds: localTrack.duration,
+      durationSeconds: localTrack.duration,
+    });
+    await service.dispose();
+  });
+
+  it('does not let zero HQPlayer playing positions reset the local session clock', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-21T01:00:00.000Z'));
+    const { ConnectService } = await import('./ConnectService');
+    const hqPlayer = createHqPlayerService();
+    const service = new ConnectService(hqPlayer);
+
+    await service.connect({
+      deviceId: hqPlayerConnectDeviceId,
+      track: localTrack,
+      filePath: localTrack.path,
+      positionSeconds: 7,
+    });
+
+    vi.setSystemTime(new Date('2026-05-21T01:00:30.000Z'));
+    hqPlayer.testConnection.mockResolvedValue({
+      ...hqConnectionOk(),
+      playbackStatus: {
+        ...hqConnectionOk().playbackStatus!,
+        state: 'playing',
+        stateCode: 2,
+        positionSeconds: 0,
+        durationSeconds: localTrack.duration,
+      },
+    });
+
+    await (service as unknown as { syncHqPlayerSessionStatus: () => Promise<void> }).syncHqPlayerSessionStatus();
+
+    expect(service.getStatus()).toMatchObject({
+      deviceId: hqPlayerConnectDeviceId,
+      protocol: 'hqplayer',
+      state: 'playing',
+      currentTrackId: localTrack.id,
+      positionSeconds: 37,
+      durationSeconds: localTrack.duration,
+    });
+    await service.dispose();
+  });
+
+  it('marks HQPlayer ended from the local session clock when Status is temporarily unavailable', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-21T01:00:00.000Z'));
+    const { ConnectService } = await import('./ConnectService');
+    const hqPlayer = createHqPlayerService();
+    const service = new ConnectService(hqPlayer);
+
+    await service.connect({
+      deviceId: hqPlayerConnectDeviceId,
+      track: localTrack,
+      filePath: localTrack.path,
+      positionSeconds: 7,
+    });
+
+    vi.setSystemTime(new Date('2026-05-21T01:03:10.000Z'));
+    hqPlayer.testConnection.mockResolvedValue(hqConnectionWithoutPlayback);
+
+    await (service as unknown as { syncHqPlayerSessionStatus: () => Promise<void> }).syncHqPlayerSessionStatus();
+
+    expect(service.getStatus()).toMatchObject({
+      deviceId: hqPlayerConnectDeviceId,
+      protocol: 'hqplayer',
+      state: 'stopped',
+      currentTrackId: localTrack.id,
+      positionSeconds: localTrack.duration,
+      durationSeconds: localTrack.duration,
+    });
+    await service.dispose();
   });
 
   it('keeps HQPlayer connection failures visible on the Connect session', async () => {

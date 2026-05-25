@@ -16,12 +16,14 @@ export const pluginPermissions = [
 export type PluginPermission = (typeof pluginPermissions)[number];
 
 export type PluginPermissionRisk = 'low' | 'medium' | 'high';
+export type PluginPermissionAvailability = 'active' | 'reserved' | 'limited';
 
 export type PluginPermissionDescriptor = {
   permission: PluginPermission;
   label: string;
   description: string;
   risk: PluginPermissionRisk;
+  availability: PluginPermissionAvailability;
 };
 
 export const pluginPermissionDescriptors: Record<PluginPermission, PluginPermissionDescriptor> = {
@@ -30,48 +32,56 @@ export const pluginPermissionDescriptors: Record<PluginPermission, PluginPermiss
     label: '读取播放状态',
     description: '可读取当前播放状态、曲目 id、进度和音频状态快照。',
     risk: 'low',
+    availability: 'active',
   },
   'playback:control': {
     permission: 'playback:control',
     label: '控制播放',
     description: '可触发播放、暂停、停止和跳转位置。',
     risk: 'medium',
+    availability: 'active',
   },
   'library:read': {
     permission: 'library:read',
     label: '读取曲库',
     description: '可分页读取曲库摘要和公开曲目信息。',
     risk: 'medium',
+    availability: 'active',
   },
   'library:write': {
     permission: 'library:write',
-    label: '修改曲库',
-    description: '预留给曲库写入能力，启用前应确认插件来源。',
+    label: '修改曲库（预留）',
+    description: '预留给未来曲库写入能力；v1 不提供实际写入 API。',
     risk: 'high',
+    availability: 'reserved',
   },
   'settings:read': {
     permission: 'settings:read',
     label: '读取设置',
     description: '可读取应用设置快照。',
     risk: 'medium',
+    availability: 'active',
   },
   'settings:write': {
     permission: 'settings:write',
     label: '修改设置',
-    description: '可写入应用设置，属于高风险能力。',
+    description: '可写入小型设置 patch，属于高风险能力。',
     risk: 'high',
+    availability: 'active',
   },
   network: {
     permission: 'network',
-    label: '访问网络',
-    description: '预留给网络访问能力，插件可能连接外部服务。',
+    label: '访问网络（预留）',
+    description: '预留给未来网络访问能力；v1 不提供实际网络 API。',
     risk: 'high',
+    availability: 'reserved',
   },
   'fs:plugin': {
     permission: 'fs:plugin',
-    label: '插件目录文件',
-    description: '可读写插件自身目录内的数据。',
+    label: '插件目录文件（受限）',
+    description: 'v1 仅通过 storage API 读写插件自身存储，不开放任意文件 API。',
     risk: 'medium',
+    availability: 'limited',
   },
 };
 
@@ -229,6 +239,8 @@ export type PluginSecuritySummary = {
   trustedPermissionCount: number;
   untrustedPermissions: PluginPermission[];
   highRiskPermissions: PluginPermission[];
+  reservedPermissions: PluginPermission[];
+  limitedPermissions: PluginPermission[];
   hasEntry: boolean;
   hasPanel: boolean;
   sandboxedPanel: boolean;

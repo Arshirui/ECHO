@@ -65,6 +65,7 @@ export type AudioResamplerEngine = 'default' | 'soxr';
 export type PcmDecodeRequest = {
   filePath: string;
   startSeconds: number;
+  durationSeconds?: number;
   channels: number;
   decoderOutputSampleRate: number;
   resamplerEngine?: AudioResamplerEngine;
@@ -209,6 +210,7 @@ export type AudioSessionPlayRequest = LocalAudioSource & {
   probe?: PlaybackProbeHint;
   automix?: AudioSessionAutomixRequest;
   gapless?: AudioSessionGaplessRequest;
+  automixAnalyze?: boolean;
 };
 
 export type AudioSessionPlayPcmStreamRequest = {
@@ -223,6 +225,7 @@ export type AudioSessionPlayPcmStreamRequest = {
 
 export type AudioSessionPrepareLocalFileRequest = LocalAudioSource & {
   probe?: PlaybackProbeHint;
+  automixAnalyze?: boolean;
 };
 
 export type AudioSessionAutomixNextTrack = LocalAudioSource & {

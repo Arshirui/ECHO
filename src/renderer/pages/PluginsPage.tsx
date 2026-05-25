@@ -19,6 +19,12 @@ const permissionRiskLabels = {
   high: '高风险',
 } as const;
 
+const permissionAvailabilityLabels = {
+  active: '已开放',
+  reserved: '预留',
+  limited: '受限',
+} as const;
+
 const exampleLabels: Array<{ kind: PluginCreateExampleKind; label: string; description: string }> = [
   { kind: 'playback-panel', label: '播放状态面板', description: '监听播放状态，带一个可编辑面板。' },
   { kind: 'command-tool', label: '命令工具', description: '注册一个手动执行的工具命令。' },
@@ -34,7 +40,7 @@ const getPermissionLabel = (permission: PluginPermission): string => pluginPermi
 const formatPermissionForConfirm = (permission: PluginPermission): string => {
   const descriptor = pluginPermissionDescriptors[permission];
   return descriptor
-    ? `- ${descriptor.label}（${permissionRiskLabels[descriptor.risk]}）：${descriptor.description}`
+    ? `- ${descriptor.label}（${permissionRiskLabels[descriptor.risk]}，${permissionAvailabilityLabels[descriptor.availability]}）：${descriptor.description}`
     : `- ${permission}`;
 };
 
@@ -89,7 +95,7 @@ const PermissionList = ({ plugin }: { plugin: PluginSummary }): JSX.Element => (
         return (
           <span key={permission} data-risk={descriptor?.risk ?? 'medium'} title={descriptor?.description ?? permission}>
             {getPermissionLabel(permission)}
-            <em>{trusted ? '已信任' : '未信任'}</em>
+            <em>{descriptor ? permissionAvailabilityLabels[descriptor.availability] : trusted ? '已信任' : '未信任'} · {trusted ? '已信任' : '未信任'}</em>
           </span>
         );
       })
@@ -99,6 +105,8 @@ const PermissionList = ({ plugin }: { plugin: PluginSummary }): JSX.Element => (
 
 const SecurityOverview = ({ plugin }: { plugin: PluginSummary }): JSX.Element => {
   const highRiskCount = plugin.security.highRiskPermissions.length;
+  const reservedCount = plugin.security.reservedPermissions.length;
+  const limitedCount = plugin.security.limitedPermissions.length;
   return (
     <section className="plugin-security-panel">
       <header>
@@ -113,6 +121,14 @@ const SecurityOverview = ({ plugin }: { plugin: PluginSummary }): JSX.Element =>
         <span data-risk={highRiskCount > 0 ? 'high' : 'low'}>
           <AlertTriangle size={16} />
           {highRiskCount > 0 ? `${highRiskCount} 个高风险权限` : '无高风险权限'}
+        </span>
+        <span data-risk={reservedCount > 0 ? 'medium' : 'low'}>
+          <LockKeyhole size={16} />
+          {reservedCount > 0 ? `${reservedCount} 个预留权限` : '无预留权限'}
+        </span>
+        <span data-risk={limitedCount > 0 ? 'medium' : 'low'}>
+          <ShieldCheck size={16} />
+          {limitedCount > 0 ? `${limitedCount} 个受限权限` : '无受限权限'}
         </span>
         <span>
           <Eye size={16} />
@@ -276,7 +292,10 @@ export const PluginsPage = (): JSX.Element => {
     const highRiskText = plugin.security.highRiskPermissions.length > 0
       ? '\n\n包含高风险权限，请确认插件来源可信。'
       : '';
-    const confirmed = window.confirm(`启用插件「${plugin.name}」？\n\n请求权限：\n${permissionText}${highRiskText}\n\n插件会在主进程受控沙盒和面板 iframe 沙盒中运行，连续启动失败会自动隔离。`);
+    const reservedText = plugin.security.reservedPermissions.length > 0 || plugin.security.limitedPermissions.length > 0
+      ? '\n\n部分权限在 v1 只是预留或受限能力，启用不会额外开放 Node、Electron、SQLite、主界面 DOM 或音频热路径。'
+      : '';
+    const confirmed = window.confirm(`启用插件「${plugin.name}」？\n\n请求权限：\n${permissionText}${highRiskText}${reservedText}\n\n插件会在主进程受控沙盒和面板 iframe 沙盒中运行，连续启动失败会自动隔离。`);
     if (!confirmed) {
       return;
     }

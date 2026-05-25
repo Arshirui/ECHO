@@ -910,6 +910,68 @@ describe('China streaming providers', () => {
     });
   });
 
+  it('loads QQ Music playlists with a same-origin legacy API referer', async () => {
+    const fetchRunner = vi.fn().mockResolvedValue(
+      jsonResponse({
+        code: 0,
+        subcode: 0,
+        cdlist: [
+          {
+            disstid: '9648223902',
+            dissname: 'QQ Imported Playlist',
+            logo: 'https://y.gtimg.cn/music/photo_new/T002R300x300M000playlist.jpg',
+            songnum: 1,
+            total_song_num: 1,
+            songlist: [
+              {
+                songmid: 'playlist-song-mid',
+                songname: 'Playlist Song',
+                interval: 240,
+                albummid: 'album-mid',
+                albumname: 'Playlist Album',
+                singer: [{ mid: 'artist-mid', name: 'Playlist Artist' }],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const detail = await new QQMusicStreamingProvider().getPlaylist({ providerPlaylistId: '9648223902', page: 1, pageSize: 500 });
+    const headers = fetchRunner.mock.calls[0][1]?.headers as Record<string, string>;
+
+    expect(headers.Referer).toBe('https://c.y.qq.com/');
+    expect(String(fetchRunner.mock.calls[0][0])).toContain('disstid=9648223902');
+    expect(detail).toMatchObject({
+      provider: 'qqmusic',
+      providerPlaylistId: '9648223902',
+      title: 'QQ Imported Playlist',
+      total: 1,
+      hasMore: false,
+    });
+    expect(detail.tracks[0]).toMatchObject({
+      providerTrackId: 'playlist-song-mid',
+      title: 'Playlist Song',
+      artist: 'Playlist Artist',
+    });
+  });
+
+  it('does not silently import an empty QQ Music playlist when the detail body is missing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          code: 0,
+          subcode: 1,
+          message: 'invalid referer',
+        }),
+      ),
+    );
+
+    await expect(new QQMusicStreamingProvider().getPlaylist({ providerPlaylistId: '9648223902' })).rejects.toThrow('invalid referer');
+  });
+
   it('loads QQ Music album details for clickable streaming albums', async () => {
     vi.stubGlobal(
       'fetch',

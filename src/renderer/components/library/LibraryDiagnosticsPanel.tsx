@@ -1,6 +1,7 @@
 import { ChevronDown } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LibraryLabState, LibraryMoveCandidate, LibraryMoveRepairResult } from '../../../shared/types/library';
+import { useI18n } from '../../i18n/I18nProvider';
 import { getLibraryLabBridge } from '../../utils/echoBridge';
 
 const emptyState: LibraryLabState = {
@@ -103,6 +104,7 @@ const canApplyCandidate = (
 };
 
 export const LibraryDiagnosticsPanel = (): JSX.Element => {
+  const { t } = useI18n();
   const [isExpanded, setIsExpanded] = useState(false);
   const [labState, setLabState] = useState<LibraryLabState>(emptyState);
   const [candidates, setCandidates] = useState<LibraryMoveCandidate[]>([]);
@@ -291,9 +293,7 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
       <div className="settings-cache-header">
         <div>
           <h3 id="library-lab-title">Library Lab</h3>
-          <p className="settings-inline-note">
-            这些功能用于开发测试实时媒体库行为。默认关闭，不会影响普通用户。请只在测试分支或测试曲库中使用。
-          </p>
+          <p className="settings-inline-note">{t('libraryDiagnostics.lab.description')}</p>
         </div>
         <button
           className="settings-collapse-toggle settings-library-lab-toggle"

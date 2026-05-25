@@ -79,17 +79,33 @@ type EventernoteEventsRequest = {
   now?: Date;
 };
 
+type EplusEventsRequest = EventernoteEventsRequest;
+
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
 const normalizeFilterText = (value: string): string => value.trim().toLocaleLowerCase();
+const regionAliases = (value: string): string[] => {
+  const normalized = normalizeFilterText(value);
+  const aliases: Record<string, string[]> = {
+    hk: ['hk', 'hong kong', '香港'],
+    hongkong: ['hk', 'hong kong', '香港'],
+    'hong kong': ['hk', 'hong kong', '香港'],
+    jp: ['jp', 'japan', '日本'],
+    jpn: ['jp', 'japan', '日本'],
+    japan: ['jp', 'japan', '日本'],
+    日本: ['jp', 'japan', '日本'],
+  };
+  return aliases[normalized] ?? [normalized];
+};
 const successTtlMs = 30 * 24 * 60 * 60 * 1000;
 const shortTtlMs = 60 * 60 * 1000;
 const fallbackTtlMs = 12 * 60 * 60 * 1000;
 const maxFallbackEvents = 12;
 const eventernoteBaseUrl = 'https://www.eventernote.com';
+const eplusBaseUrl = 'https://eplus.jp';
 let lastFallbackFetchAt = 0;
 
 const normalizeCacheText = (value: string | null | undefined): string =>
@@ -128,7 +144,7 @@ const decodeHtml = (value: string): string =>
     .replace(/\s+/gu, ' ')
     .trim();
 
-const eventernoteSearchUrl = (artistName: string): string => {
+const eventernoteSearchUrl = (artistName: string, year?: number): string => {
   const params = new URLSearchParams({
     keyword: artistName.trim(),
     facet: '1',
@@ -136,12 +152,23 @@ const eventernoteSearchUrl = (artistName: string): string => {
     sort: 'event_date',
     order: 'ASC',
   });
+  if (year && Number.isFinite(year)) {
+    params.set('year', String(year));
+  }
   return `${eventernoteBaseUrl}/events/search?${params.toString()}`;
 };
 
-const eventernoteCandidateUrls = (artistName: string): string[] => {
+const eplusSearchUrl = (artistName: string): string =>
+  `${eplusBaseUrl}/sf/search?keyword=${encodeURIComponent(artistName.trim())}`;
+
+const eventernoteCandidateUrls = (artistName: string, now: Date): string[] => {
   const normalized = normalizeCacheText(artistName);
-  const urls = [eventernoteSearchUrl(artistName)];
+  const year = now.getFullYear();
+  const urls = [
+    eventernoteSearchUrl(artistName, year),
+    eventernoteSearchUrl(artistName, year + 1),
+    eventernoteSearchUrl(artistName),
+  ];
   if (normalized === 'mygo') {
     urls.unshift(`${eventernoteBaseUrl}/actors/MyGO%21%21%21%21%21/66346`);
   }
@@ -162,19 +189,22 @@ const fallbackSourceCandidates = (artistName: string): NonNullable<ArtistConcert
   {
     source: 'eplus',
     label: 'eplus',
-    url: `https://eplus.jp/sf/search?keyword=${encodeURIComponent(artistName.trim())}`,
+    url: eplusSearchUrl(artistName),
   },
 ];
 
 const matchesRegion = (event: ArtistConcertEvent, region: string | null | undefined): boolean => {
-  const filter = normalizeFilterText(region ?? '');
-  if (!filter) {
+  const filters = regionAliases(region ?? '').filter(Boolean);
+  if (filters.length === 0) {
     return true;
   }
 
   return [event.city, event.region, event.country]
     .filter((part): part is string => Boolean(part))
-    .some((part) => normalizeFilterText(part).includes(filter));
+    .some((part) => {
+      const normalized = normalizeFilterText(part);
+      return filters.some((filter) => normalized.includes(filter) || filter.includes(normalized));
+    });
 };
 
 const buildBandsintownEventsUrl = (artistName: string, appId: string): string => {
@@ -372,6 +402,115 @@ const parseEventernoteEvents = (html: string, request: Pick<EventernoteEventsReq
     .slice(0, maxFallbackEvents);
 };
 
+const textLines = (html: string): string[] => {
+  const marker = '__ECHO_EVENT_LINE__';
+  return decodeHtml(html.replace(/<\/(?:a|div|h[1-6]|li|main|p|section)>/giu, marker))
+    .split(new RegExp(`${marker}|(?<=。)|(?<=受付中)|(?<=受付終了)|(?<=予定枚数終了)`, 'u'))
+    .map((line) => line.trim())
+    .filter(Boolean);
+};
+
+const eplusLinkForText = (html: string, title: string): string | null => {
+  const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  const linkMatch = html.match(new RegExp(`<a[^>]+href="([^"]+)"[^>]*>[\\s\\S]{0,240}?${escapedTitle}[\\s\\S]{0,240}?<\\/a>`, 'u'));
+  const href = linkMatch?.[1] ?? html.match(/href="([^"]*\/sf\/detail\/[^"]+)"/u)?.[1] ?? null;
+  return href ? new URL(href, eplusBaseUrl).toString() : null;
+};
+
+const eplusStartsAt = (year: string, month: string, day: string, hour?: string, minute?: string): string =>
+  `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${(hour ?? '00').padStart(2, '0')}:${minute ?? '00'}:00`;
+
+const parseEplusEvents = (html: string, request: Pick<EplusEventsRequest, 'artistName' | 'region' | 'now'>): ArtistConcertEvent[] => {
+  const now = request.now ?? new Date();
+  const artistNeedle = normalizeCacheText(request.artistName);
+  const pageHasArtist = artistNeedle ? normalizeCacheText(html).includes(artistNeedle) : true;
+  const lines = textLines(html);
+  const events = new Map<string, ArtistConcertEvent>();
+  const datePattern = /(\d{4})\/\s*(\d{1,2})\/\s*(\d{1,2})\([^)]*\)(?:(?:\s|　)*(?:開演[:：]\s*)?(\d{1,2}):(\d{2}))?/u;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    const dateMatch = line.match(datePattern);
+    if (!dateMatch) {
+      continue;
+    }
+
+    const titleLine = line.slice(0, dateMatch.index).trim() || lines[index - 1] || request.artistName;
+    const title = titleLine.replace(/^(公演|配信|受付中|受付終了)\s*/u, '').trim() || request.artistName;
+    const combined = normalizeCacheText([title, line, lines[index - 1], lines[index + 1]].filter(Boolean).join(' '));
+    if (artistNeedle && !pageHasArtist && !combined.includes(artistNeedle)) {
+      continue;
+    }
+
+    const startsAt = eplusStartsAt(dateMatch[1], dateMatch[2], dateMatch[3], dateMatch[4], dateMatch[5]);
+    if (Date.parse(startsAt) < now.getTime()) {
+      continue;
+    }
+
+    const event: ArtistConcertEvent = {
+      id: `eplus:${normalizeCacheText(`${title}:${startsAt}`)}`,
+      source: 'eplus',
+      sourceLabel: 'eplus',
+      title,
+      startsAt,
+      timezone: 'Asia/Tokyo',
+      timeTbd: !dateMatch[4],
+      venueName: null,
+      city: null,
+      region: null,
+      country: 'Japan',
+      url: eplusLinkForText(html, title),
+      ticketUrl: eplusLinkForText(html, title),
+      venueUrl: null,
+      imageUrl: null,
+    };
+
+    if (matchesRegion(event, request.region)) {
+      events.set(event.id, event);
+    }
+  }
+
+  return Array.from(events.values())
+    .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))
+    .slice(0, maxFallbackEvents);
+};
+
+const appendNoKeyFallbackEvents = async (
+  service: ArtistEventsService,
+  results: ArtistConcertInfo[],
+  request: ArtistEventsRequest,
+  artistName: string,
+  region: string | null,
+  now: Date,
+): Promise<void> => {
+  if (results.some((result) => result.events.length > 0)) {
+    return;
+  }
+
+  const eventernoteResult = await service.getEventernoteEvents({
+    artistId: request.artistId,
+    artistName,
+    region,
+    force: request.force,
+    timeoutMs: Math.min(request.timeoutMs ?? 7000, 7000),
+    fetcher: request.fetcher,
+    now,
+  });
+  results.push(eventernoteResult);
+
+  if (eventernoteResult.events.length === 0) {
+    results.push(await service.getEplusEvents({
+      artistId: request.artistId,
+      artistName,
+      region,
+      force: request.force,
+      timeoutMs: Math.min(request.timeoutMs ?? 7000, 7000),
+      fetcher: request.fetcher,
+      now,
+    }));
+  }
+};
+
 const fetchJsonWithTimeout = async (url: string, fetcher: FetchLike, timeoutMs: number, source: ArtistConcertEvent['source']): Promise<unknown> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -393,11 +532,13 @@ const fetchJsonWithTimeout = async (url: string, fetcher: FetchLike, timeoutMs: 
 };
 
 const fetchTextWithTimeout = async (url: string, fetcher: FetchLike, timeoutMs: number, source: ArtistConcertEvent['source']): Promise<string> => {
-  const waitMs = Math.max(0, 1200 - (Date.now() - lastFallbackFetchAt));
-  if (waitMs > 0) {
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  if (process.env.VITEST !== 'true') {
+    const waitMs = Math.max(0, 1200 - (Date.now() - lastFallbackFetchAt));
+    if (waitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+    lastFallbackFetchAt = Date.now();
   }
-  lastFallbackFetchAt = Date.now();
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -459,7 +600,7 @@ export class ArtistEventsService {
       }));
     }
 
-    if (!artistName || tasks.length === 0) {
+    if (!artistName) {
       return {
         status: 'not_configured',
         region,
@@ -471,17 +612,7 @@ export class ArtistEventsService {
     }
 
     const results = await Promise.all(tasks);
-    if (results.every((result) => result.events.length === 0)) {
-      results.push(await this.getEventernoteEvents({
-        artistId: request.artistId,
-        artistName,
-        region,
-        force: request.force,
-        timeoutMs: Math.min(request.timeoutMs ?? 7000, 4500),
-        fetcher: request.fetcher,
-        now,
-      }));
-    }
+    await appendNoKeyFallbackEvents(this, results, request, artistName, region, now);
 
     const sources = Array.from(new Set(results.flatMap((result) => result.sources)));
     const deduped = new Map<string, ArtistConcertEvent>();
@@ -542,7 +673,7 @@ export class ArtistEventsService {
 
     try {
       const fetchedEvents: ArtistConcertEvent[] = [];
-      for (const url of eventernoteCandidateUrls(artistName)) {
+      for (const url of eventernoteCandidateUrls(artistName, now)) {
         const html = await fetchTextWithTimeout(
           url,
           request.fetcher ?? this.fetcher,
@@ -579,6 +710,65 @@ export class ArtistEventsService {
         status: 'unavailable',
         region,
         sources: ['eventernote'],
+        events: [],
+        fetchedAt,
+        message: error instanceof Error ? error.message : String(error),
+        candidateSources: fallbackSourceCandidates(artistName),
+      };
+      this.writeEventCache(cacheKey, request.artistId ?? null, artistName, region, result, now);
+      return result;
+    }
+  }
+
+  async getEplusEvents(request: EplusEventsRequest): Promise<ArtistConcertInfo> {
+    const artistName = request.artistName.trim();
+    const region = request.region?.trim() || null;
+    const now = request.now ?? new Date();
+    const fetchedAt = now.toISOString();
+    const cacheKey = cacheKeyFor('eplus', request.artistId, artistName, region);
+
+    if (!artistName) {
+      return {
+        status: 'not_configured',
+        region,
+        sources: [],
+        events: [],
+        fetchedAt: null,
+        message: 'Artist name is empty.',
+      };
+    }
+
+    if (request.force !== true) {
+      const cached = this.readEventCache(cacheKey, now);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    try {
+      const html = await fetchTextWithTimeout(
+        eplusSearchUrl(artistName),
+        request.fetcher ?? this.fetcher,
+        request.timeoutMs ?? 4500,
+        'eplus',
+      );
+      const events = parseEplusEvents(html, { artistName, region, now });
+      const result: ArtistConcertInfo = {
+        status: 'ready',
+        region,
+        sources: ['eplus'],
+        events,
+        fetchedAt,
+        message: events.length ? undefined : 'No upcoming eplus events matched this artist and region.',
+        candidateSources: fallbackSourceCandidates(artistName),
+      };
+      this.writeEventCache(cacheKey, request.artistId ?? null, artistName, region, result, now);
+      return result;
+    } catch (error) {
+      const result: ArtistConcertInfo = {
+        status: 'unavailable',
+        region,
+        sources: ['eplus'],
         events: [],
         fetchedAt,
         message: error instanceof Error ? error.message : String(error),

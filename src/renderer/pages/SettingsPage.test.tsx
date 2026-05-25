@@ -143,6 +143,7 @@ const openExternalUrlMock = vi.fn();
 const getDownloadSettingsMock = vi.fn();
 const chooseDownloadOutputDirectoryMock = vi.fn();
 const getCacheInventoryMock = vi.fn();
+const getUpdateStatusMock = vi.fn();
 const audioGetStatusMock = vi.fn();
 const audioGetDiagnosticsMock = vi.fn();
 const audioListDevicesMock = vi.fn();
@@ -275,6 +276,7 @@ vi.mock('../utils/echoBridge', () => ({
     getCacheInventory: getCacheInventoryMock,
     getSettings: getSettingsMock,
     getVersion: vi.fn().mockResolvedValue('1.0.1'),
+    getUpdateStatus: getUpdateStatusMock,
     chooseAppWallpaper: chooseAppWallpaperMock,
     openExternalUrl: openExternalUrlMock,
     validateGlobalShortcut: validateGlobalShortcutMock,
@@ -445,6 +447,7 @@ beforeEach(() => {
     totalSizeBytes: 0,
     items: [],
   });
+  getUpdateStatusMock.mockResolvedValue(null);
   getDatabaseProtectionStatusMock.mockResolvedValue(healthyDatabaseProtectionStatus);
   createDatabaseSnapshotMock.mockResolvedValue(healthyDatabaseProtectionStatus);
   restoreDatabaseSnapshotMock.mockResolvedValue({
@@ -701,6 +704,38 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(openExternalUrlMock).toHaveBeenCalledWith('https://github.com/moekotori/echo/releases'));
     expect(openExternalUrlMock).toHaveBeenCalledWith('https://qm.qq.com/q/KrJE8PIqSQ');
     expect(openExternalUrlMock).toHaveBeenCalledWith('https://discord.gg/g7v4WMRq3K');
+  });
+
+  it('renders GitHub HTML release notes without exposing raw tags', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    getUpdateStatusMock.mockResolvedValue({
+      bytesPerSecond: null,
+      checkedAt: '2026-05-25T00:00:00.000Z',
+      currentVersion: '26.5.24',
+      downloadPercent: null,
+      error: null,
+      latestVersion: '26.5.25',
+      releaseName: '26.5.25',
+      releaseNotes:
+        '<h1>ECHO Next Update</h1><p>Fix <strong>release notes</strong><br><a href="https://example.com/release">Read more</a><a href="javascript:alert(1)">bad</a><img src="https://example.com/preview.png" alt="preview"></p>',
+      state: 'available',
+      totalBytes: null,
+      transferredBytes: null,
+    });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.about\\.label');
+
+    expect(await screen.findByRole('heading', { name: 'ECHO Next Update' })).toBeTruthy();
+    expect(screen.queryByText(/<h1>/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Read more' }).getAttribute('href')).toBe('https://example.com/release');
+    expect(screen.queryByRole('link', { name: 'bad' })).toBeNull();
+    expect(screen.getByAltText('preview').getAttribute('src')).toBe('https://example.com/preview.png');
   });
 
   it('toggles Safe mode from the About diagnostics section', async () => {

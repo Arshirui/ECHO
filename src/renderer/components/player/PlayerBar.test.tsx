@@ -758,7 +758,7 @@ describe('PlayerBar', () => {
     fireEvent.mouseEnter(screen.getByRole('button', { name: 'Volume' }).parentElement!);
     expect(screen.getByText('100%')).toBeTruthy();
 
-    fireEvent.mouseEnter(screen.getByRole('button', { name: '播放速度' }).parentElement!);
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /播放速度|Playback speed/u }).parentElement!);
     expect(screen.getByText('1.00x')).toBeTruthy();
     await waitFor(() => expect(screen.queryByText('100%')).toBeNull());
 

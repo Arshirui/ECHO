@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { Languages, Lock, Minus, Palette, Plus, RotateCcw, X } from 'lucide-react';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { AppSettings } from '../../shared/types/appSettings';
+import type { ConnectSessionStatus } from '../../shared/types/connect';
 import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../../shared/types/desktopLyrics';
 import type { LibraryTrack } from '../../shared/types/library';
 import type { LyricLine, LyricsKind, TrackLyrics } from '../../shared/types/lyrics';
@@ -11,6 +12,7 @@ import type { StreamingLyricsResult, StreamingProviderName } from '../../shared/
 import { streamingProviderNames } from '../../shared/types/streaming';
 import { shouldShowRomanizationForLyrics } from '../../shared/utils/lyricsLanguage';
 import { getActiveLyricIndex } from '../components/lyrics/LyricsView';
+import { translateFallback, useOptionalI18n } from '../i18n/I18nProvider';
 import { registerAppearanceFontFile, serializeFontList } from '../preferences/appearancePreferences';
 
 type DesktopLyricsSettings = Required<Pick<
@@ -35,6 +37,7 @@ type DesktopLyricsStateSnapshot = {
 };
 
 type PlaybackClock = {
+  source: 'playback' | 'connect' | 'forwarded';
   currentTrackId: string | null;
   filePath: string | null;
   state: string;
@@ -42,6 +45,9 @@ type PlaybackClock = {
   durationMs: number;
   playbackRate: number;
   updatedAtMs: number;
+  nativePositionStalenessMs?: number | null;
+  nativeBufferedMs?: number | null;
+  nativeUnderrunCallbacks?: number;
 };
 
 const fallbackSettings: DesktopLyricsSettings = {
@@ -61,8 +67,11 @@ const fallbackSettings: DesktopLyricsSettings = {
 
 const colorSwatches = ['#FFFFFF', '#FFD166', '#6EE7B7', '#7DD3FC', '#F0ABFC', '#FB7185'];
 const forwardedStatusMaxAgeMs = 45_000;
+const desktopLyricsClockStaleTelemetryThresholdMs = 750;
+const desktopLyricsClockUnderrunBufferThresholdMs = 40;
 const desktopLyricsStageHorizontalPaddingPx = 36;
 const desktopLyricsOverflowTolerancePx = 4;
+const desktopLyricsMouseInteractiveSelector = '.desktop-lyrics-lines, .desktop-lyrics-menu';
 
 type DesktopLyricsTextFitOptions = {
   text: string;
@@ -128,6 +137,29 @@ export const shouldShowDesktopLyricsText = ({
   const scaledTextWidth =
     measureDesktopLyricsTextWidth(normalizedText, fontSizePx, fontFamily, fontWeight) * (scalePercent / 100);
   return scaledTextWidth <= Math.max(0, availableWidthPx) + desktopLyricsOverflowTolerancePx;
+};
+
+export const getDesktopLyricsTextFitScale = ({
+  text,
+  availableWidthPx,
+  fontSizePx,
+  fontFamily,
+  fontWeight,
+  scalePercent,
+}: DesktopLyricsTextFitOptions): number => {
+  const normalizedText = text.trim();
+  if (!normalizedText) {
+    return 1;
+  }
+
+  const scaledTextWidth =
+    measureDesktopLyricsTextWidth(normalizedText, fontSizePx, fontFamily, fontWeight) * (scalePercent / 100);
+  const availableWidth = Math.max(0, availableWidthPx) + desktopLyricsOverflowTolerancePx;
+  if (scaledTextWidth <= availableWidth || availableWidth <= 0) {
+    return 1;
+  }
+
+  return Math.max(0.62, Math.min(1, availableWidth / scaledTextWidth));
 };
 
 const emptyLyrics = (offsetMs = 0): DesktopLyricsStateSnapshot => ({
@@ -197,6 +229,14 @@ const isStreamingTrack = (
   typeof track.providerTrackId === 'string' &&
   track.providerTrackId.trim().length > 0;
 
+const finiteNonNegative = (value: number | null | undefined): number | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(0, value);
+};
+
 const parseStreamingTrackId = (trackId: string | null): { provider: StreamingProviderName; providerTrackId: string } | null => {
   const match = /^streaming:([^:]+):(.+)$/u.exec(trackId ?? '');
   if (!match || !isStreamingProviderName(match[1])) {
@@ -210,6 +250,7 @@ const parseStreamingTrackId = (trackId: string | null): { provider: StreamingPro
 };
 
 const playbackStatusToClock = (status: PlaybackStatus, updatedAtMs: number): PlaybackClock => ({
+  source: 'playback',
   currentTrackId: status.currentTrackId,
   filePath: status.filePath,
   state: status.state,
@@ -219,7 +260,34 @@ const playbackStatusToClock = (status: PlaybackStatus, updatedAtMs: number): Pla
   updatedAtMs,
 });
 
+const hqPlayerDesktopLyricsStates = new Set(['connecting', 'ready', 'playing', 'paused', 'stopped']);
+
+export const hqPlayerConnectStatusToDesktopLyricsClock = (
+  status: ConnectSessionStatus | null | undefined,
+  updatedAtMs: number,
+): PlaybackClock | null => {
+  if (
+    status?.protocol !== 'hqplayer' ||
+    !status.currentTrackId ||
+    !hqPlayerDesktopLyricsStates.has(status.state)
+  ) {
+    return null;
+  }
+
+  return {
+    source: 'connect',
+    currentTrackId: status.currentTrackId,
+    filePath: null,
+    state: status.state === 'ready' || status.state === 'connecting' ? 'loading' : status.state,
+    positionMs: Math.round(Math.max(0, status.positionSeconds) * 1000),
+    durationMs: Math.round(Math.max(0, status.durationSeconds || status.metadata?.durationSeconds || 0) * 1000),
+    playbackRate: 1,
+    updatedAtMs,
+  };
+};
+
 const audioStatusToClock = (status: AudioStatus, updatedAtMs: number): PlaybackClock => ({
+  source: 'forwarded',
   currentTrackId: status.currentTrackId,
   filePath: status.currentFilePath,
   state: status.state,
@@ -227,9 +295,25 @@ const audioStatusToClock = (status: AudioStatus, updatedAtMs: number): PlaybackC
   durationMs: Math.round(status.durationSeconds * 1000),
   playbackRate: status.playbackRate ?? 1,
   updatedAtMs,
+  nativePositionStalenessMs: finiteNonNegative(status.nativePositionStalenessMs),
+  nativeBufferedMs: finiteNonNegative(status.nativeBufferedMs),
+  nativeUnderrunCallbacks: status.nativeUnderrunCallbacks,
 });
 
 const clockHasIdentity = (clock: PlaybackClock | null): boolean => Boolean(clock?.currentTrackId || clock?.filePath);
+
+const clocksHaveSameIdentity = (left: PlaybackClock | null, right: PlaybackClock | null): boolean =>
+  Boolean(
+    left &&
+    right &&
+    (
+      (left.currentTrackId && left.currentTrackId === right.currentTrackId) ||
+      (left.filePath && left.filePath === right.filePath)
+    ),
+  );
+
+const isActiveClock = (clock: PlaybackClock | null): boolean =>
+  Boolean(clock && clockHasIdentity(clock) && ['loading', 'playing', 'paused'].includes(clock.state));
 
 const getEstimatedPlainLyricIndex = (lines: LyricLine[], positionMs: number, durationMs: number): number => {
   if (!lines.length) {
@@ -244,8 +328,23 @@ const getEstimatedPlainLyricIndex = (lines: LyricLine[], positionMs: number, dur
   return Math.max(0, Math.min(lines.length - 1, Math.floor(progress * lines.length)));
 };
 
-const getInterpolatedPositionMs = (clock: PlaybackClock): number => {
+export const getInterpolatedPositionMs = (clock: PlaybackClock): number => {
   if (clock.state !== 'playing') {
+    return Math.max(0, clock.positionMs);
+  }
+
+  const nativePositionStalenessMs = finiteNonNegative(clock.nativePositionStalenessMs);
+  const nativeBufferedMs = finiteNonNegative(clock.nativeBufferedMs);
+  const nativeUnderrunCallbacks = finiteNonNegative(clock.nativeUnderrunCallbacks);
+  if (
+    (nativePositionStalenessMs !== null && nativePositionStalenessMs >= desktopLyricsClockStaleTelemetryThresholdMs) ||
+    (
+      nativeUnderrunCallbacks !== null &&
+      nativeUnderrunCallbacks > 0 &&
+      nativeBufferedMs !== null &&
+      nativeBufferedMs <= desktopLyricsClockUnderrunBufferThresholdMs
+    )
+  ) {
     return Math.max(0, clock.positionMs);
   }
 
@@ -280,6 +379,7 @@ const secondaryLineTexts = (
 };
 
 export const DesktopLyricsApp = (): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const [settings, setSettings] = useState<DesktopLyricsSettings>(fallbackSettings);
   const [playbackClock, setPlaybackClock] = useState<PlaybackClock | null>(null);
   const [forwardedClock, setForwardedClock] = useState<PlaybackClock | null>(null);
@@ -291,10 +391,18 @@ export const DesktopLyricsApp = (): JSX.Element => {
   const animationFrameRef = useRef<number | null>(null);
 
   const activeClock = useMemo(() => {
-    if (
+    const forwardedClockFresh =
       forwardedClock &&
       clockHasIdentity(forwardedClock) &&
-      performance.now() - forwardedUpdatedAtMs <= forwardedStatusMaxAgeMs
+      performance.now() - forwardedUpdatedAtMs <= forwardedStatusMaxAgeMs;
+
+    if (isActiveClock(playbackClock) && playbackClock?.source === 'connect') {
+      return playbackClock;
+    }
+
+    if (
+      forwardedClockFresh &&
+      (!isActiveClock(playbackClock) || clocksHaveSameIdentity(forwardedClock, playbackClock))
     ) {
       return forwardedClock;
     }
@@ -311,8 +419,13 @@ export const DesktopLyricsApp = (): JSX.Element => {
     }
 
     try {
-      const status = await playback.getStatus();
-      setPlaybackClock(playbackStatusToClock(status, performance.now()));
+      const [playbackStatus, connectStatus] = await Promise.all([
+        playback.getStatus().catch(() => null),
+        window.echo?.connect?.getStatus?.().catch(() => null) ?? Promise.resolve(null),
+      ]);
+      const updatedAtMs = performance.now();
+      const connectClock = hqPlayerConnectStatusToDesktopLyricsClock(connectStatus, updatedAtMs);
+      setPlaybackClock(connectClock ?? (playbackStatus ? playbackStatusToClock(playbackStatus, updatedAtMs) : null));
     } catch {
       setPlaybackClock(null);
     }
@@ -356,6 +469,39 @@ export const DesktopLyricsApp = (): JSX.Element => {
   }, []);
 
   useEffect(() => {
+    const desktopLyrics = window.echo?.desktopLyrics;
+    if (!desktopLyrics?.setMousePassthrough || settings.desktopLyricsLocked) {
+      desktopLyrics?.setMousePassthrough?.(false);
+      return undefined;
+    }
+
+    let lastPassthrough: boolean | null = null;
+    const setPassthrough = (passthrough: boolean): void => {
+      if (lastPassthrough === passthrough) {
+        return;
+      }
+
+      lastPassthrough = passthrough;
+      desktopLyrics.setMousePassthrough(passthrough);
+    };
+    const updatePassthrough = (event: MouseEvent): void => {
+      const target = document.elementFromPoint(event.clientX, event.clientY);
+      setPassthrough(!target?.closest(desktopLyricsMouseInteractiveSelector));
+    };
+    const passthroughOnLeave = (): void => setPassthrough(true);
+
+    window.addEventListener('mousemove', updatePassthrough);
+    window.addEventListener('mouseleave', passthroughOnLeave);
+    setPassthrough(false);
+
+    return () => {
+      window.removeEventListener('mousemove', updatePassthrough);
+      window.removeEventListener('mouseleave', passthroughOnLeave);
+      desktopLyrics.setMousePassthrough(false);
+    };
+  }, [settings.desktopLyricsLocked]);
+
+  useEffect(() => {
     if (!settings.desktopLyricsFontFilePath) {
       return;
     }
@@ -390,6 +536,20 @@ export const DesktopLyricsApp = (): JSX.Element => {
     }, 700);
 
     return () => window.clearInterval(timer);
+  }, [refreshPlaybackClock]);
+
+  useEffect(() => {
+    const unsubscribe = window.echo?.connect?.onStatus?.((status) => {
+      const connectClock = hqPlayerConnectStatusToDesktopLyricsClock(status, performance.now());
+      if (connectClock) {
+        setPlaybackClock(connectClock);
+        return;
+      }
+
+      void refreshPlaybackClock();
+    });
+
+    return () => unsubscribe?.();
   }, [refreshPlaybackClock]);
 
   useEffect(() => {
@@ -515,8 +675,8 @@ export const DesktopLyricsApp = (): JSX.Element => {
   const canShowRomanization = shouldShowRomanizationForLyrics(lyrics.lines);
   const primaryText =
     lyrics.kind === 'instrumental'
-      ? '纯音乐，请欣赏'
-      : lineText(currentLine) || (clockHasIdentity(activeClock) ? '暂无歌词' : 'ECHO NEXT');
+      ? t('desktopLyrics.primary.instrumental')
+      : lineText(currentLine) || (clockHasIdentity(activeClock) ? t('desktopLyrics.primary.empty') : 'ECHO NEXT');
   const secondaryTexts =
     lyrics.kind === 'instrumental'
       ? []
@@ -529,7 +689,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
     ? []
     : lineText(currentLine)
       ? secondaryTexts
-      : [clockHasIdentity(activeClock) ? 'Desktop Lyrics' : '等待播放'];
+      : [clockHasIdentity(activeClock) ? 'Desktop Lyrics' : t('desktopLyrics.secondary.waiting')];
   const desktopLyricsFontFamily = [
     serializeFontList(settings.desktopLyricsFontFamily),
     '"Noto Sans SC"',
@@ -538,7 +698,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
     'sans-serif',
   ].join(', ');
   const availableTextWidthPx = Math.max(0, viewportWidthPx - desktopLyricsStageHorizontalPaddingPx);
-  const shouldShowPrimaryText = shouldShowDesktopLyricsText({
+  const primaryTextFitScale = getDesktopLyricsTextFitScale({
     text: primaryText,
     availableWidthPx: availableTextWidthPx,
     fontSizePx: settings.desktopLyricsFontSizePx,
@@ -565,6 +725,9 @@ export const DesktopLyricsApp = (): JSX.Element => {
     '--desktop-lyrics-stroke-color': settings.desktopLyricsStrokeColor,
     '--desktop-lyrics-opacity': (settings.desktopLyricsOpacityPercent / 100).toFixed(2),
   } as CSSProperties;
+  const primaryTextStyle = {
+    '--desktop-lyrics-text-fit-scale': primaryTextFitScale.toFixed(3),
+  } as CSSProperties;
 
   return (
     <main
@@ -572,9 +735,9 @@ export const DesktopLyricsApp = (): JSX.Element => {
       data-locked={settings.desktopLyricsLocked}
       style={style}
     >
-      <section className="desktop-lyrics-stage" aria-label="Desktop lyrics">
+      <section className="desktop-lyrics-stage" aria-label={t('desktopLyrics.aria.stage')}>
         <div className="desktop-lyrics-lines">
-          {shouldShowPrimaryText ? <strong>{primaryText}</strong> : null}
+          <strong style={primaryTextStyle}>{primaryText}</strong>
           {visibleFittingSecondaryTexts.map((text, index) => (
             <span key={`${index}-${text}`}>{text}</span>
           ))}
@@ -584,8 +747,8 @@ export const DesktopLyricsApp = (): JSX.Element => {
           <div className="desktop-lyrics-menu">
             <button
               type="button"
-              title="减小字号"
-              aria-label="减小字号"
+              title={t('desktopLyrics.control.decreaseFontSize')}
+              aria-label={t('desktopLyrics.control.decreaseFontSize')}
               onClick={() => void patchStyle({ desktopLyricsFontSizePx: settings.desktopLyricsFontSizePx - 2 })}
             >
               <Minus size={14} />
@@ -593,16 +756,16 @@ export const DesktopLyricsApp = (): JSX.Element => {
             <output>{settings.desktopLyricsFontSizePx}px</output>
             <button
               type="button"
-              title="增大字号"
-              aria-label="增大字号"
+              title={t('desktopLyrics.control.increaseFontSize')}
+              aria-label={t('desktopLyrics.control.increaseFontSize')}
               onClick={() => void patchStyle({ desktopLyricsFontSizePx: settings.desktopLyricsFontSizePx + 2 })}
             >
               <Plus size={14} />
             </button>
             <button
               type="button"
-              title="缩小"
-              aria-label="缩小"
+              title={t('desktopLyrics.control.decreaseScale')}
+              aria-label={t('desktopLyrics.control.decreaseScale')}
               onClick={() => void patchStyle({ desktopLyricsScalePercent: settings.desktopLyricsScalePercent - 5 })}
             >
               <Minus size={14} />
@@ -610,8 +773,8 @@ export const DesktopLyricsApp = (): JSX.Element => {
             <output>{settings.desktopLyricsScalePercent}%</output>
             <button
               type="button"
-              title="放大"
-              aria-label="放大"
+              title={t('desktopLyrics.control.increaseScale')}
+              aria-label={t('desktopLyrics.control.increaseScale')}
               onClick={() => void patchStyle({ desktopLyricsScalePercent: settings.desktopLyricsScalePercent + 5 })}
             >
               <Plus size={14} />
@@ -620,7 +783,7 @@ export const DesktopLyricsApp = (): JSX.Element => {
             <div className="desktop-lyrics-swatches">
               {colorSwatches.map((color) => (
                 <button
-                  aria-label={`颜色 ${color}`}
+                  aria-label={t('desktopLyrics.control.colorSwatch', { color })}
                   aria-pressed={settings.desktopLyricsColor.toUpperCase() === color}
                   key={color}
                   style={{ background: color }}
@@ -631,8 +794,8 @@ export const DesktopLyricsApp = (): JSX.Element => {
               ))}
             </div>
             <input
-              aria-label="自定义颜色"
-              title="自定义颜色"
+              aria-label={t('desktopLyrics.control.customColor')}
+              title={t('desktopLyrics.control.customColor')}
               type="color"
               value={settings.desktopLyricsColor}
               onChange={(event) => void patchStyle({ desktopLyricsColor: event.currentTarget.value })}
@@ -640,8 +803,8 @@ export const DesktopLyricsApp = (): JSX.Element => {
             <button
               className="desktop-lyrics-menu-toggle"
               type="button"
-              title="桌面歌词显示罗马音"
-              aria-label="桌面歌词显示罗马音"
+              title={t('desktopLyrics.control.romanization')}
+              aria-label={t('desktopLyrics.control.romanization')}
               aria-pressed={settings.desktopLyricsRomanizationEnabled}
               onClick={() =>
                 void patchStyle({ desktopLyricsRomanizationEnabled: !settings.desktopLyricsRomanizationEnabled })}
@@ -652,22 +815,22 @@ export const DesktopLyricsApp = (): JSX.Element => {
             <button
               className="desktop-lyrics-menu-toggle"
               type="button"
-              title="桌面歌词显示翻译"
-              aria-label="桌面歌词显示翻译"
+              title={t('desktopLyrics.control.translation')}
+              aria-label={t('desktopLyrics.control.translation')}
               aria-pressed={settings.desktopLyricsTranslationEnabled}
               onClick={() =>
                 void patchStyle({ desktopLyricsTranslationEnabled: !settings.desktopLyricsTranslationEnabled })}
             >
               <Languages size={14} />
-              <span>译</span>
+              <span>{t('desktopLyrics.control.translationShort')}</span>
             </button>
-            <button type="button" title="锁定" aria-label="锁定" onClick={() => void setLocked()}>
+            <button type="button" title={t('desktopLyrics.control.lock')} aria-label={t('desktopLyrics.control.lock')} onClick={() => void setLocked()}>
               <Lock size={14} />
             </button>
-            <button type="button" title="重置位置" aria-label="重置位置" onClick={resetBounds}>
+            <button type="button" title={t('desktopLyrics.control.resetPosition')} aria-label={t('desktopLyrics.control.resetPosition')} onClick={resetBounds}>
               <RotateCcw size={14} />
             </button>
-            <button type="button" title="关闭" aria-label="关闭" onClick={hideWindow}>
+            <button type="button" title={t('desktopLyrics.control.close')} aria-label={t('desktopLyrics.control.close')} onClick={hideWindow}>
               <X size={14} />
             </button>
           </div>

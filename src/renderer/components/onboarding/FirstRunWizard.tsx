@@ -4,6 +4,8 @@ import type { LucideIcon } from 'lucide-react';
 import type { AudioOutputMode } from '../../../shared/types/audio';
 import type { AppSettings, ScanPerformanceMode } from '../../../shared/types/appSettings';
 import { detectRendererPlatform, isAdvancedNativeOutputPlatform, isNativeSharedOutputPlatform } from '../../../shared/utils/audioPlatformCapabilities';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 import { rememberLibraryScanStatus } from '../../stores/libraryScanSession';
 
 type FirstRunWizardProps = {
@@ -16,24 +18,31 @@ type FirstRunStepId = 'library' | 'cache' | 'scan' | 'audio' | 'summary';
 
 type FirstRunStep = {
   id: FirstRunStepId;
-  label: string;
-  eyebrow: string;
-  title: string;
-  description: string;
+  labelKey: TranslationKey;
+  eyebrowKey: TranslationKey;
+  titleKey: TranslationKey;
+  descriptionKey: TranslationKey;
   icon: LucideIcon;
 };
 
-const scanModes: Array<{ mode: ScanPerformanceMode; label: string; description: string; hint: string }> = [
-  { mode: 'balanced', label: '均衡', description: '推荐。扫描速度和后台占用都比较稳。', hint: '默认' },
-  { mode: 'low', label: '低占用', description: '更少打扰播放，扫描会慢一些。', hint: '边听边扫' },
-  { mode: 'performance', label: '快速', description: '优先尽快建库，适合电脑空闲时使用。', hint: '空闲时' },
+type FirstRunOption<T extends string> = {
+  mode: T;
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
+  hintKey: TranslationKey;
+};
+
+const scanModes: Array<FirstRunOption<ScanPerformanceMode>> = [
+  { mode: 'balanced', labelKey: 'firstRun.scan.balanced.label', descriptionKey: 'firstRun.scan.balanced.description', hintKey: 'firstRun.scan.balanced.hint' },
+  { mode: 'low', labelKey: 'firstRun.scan.low.label', descriptionKey: 'firstRun.scan.low.description', hintKey: 'firstRun.scan.low.hint' },
+  { mode: 'performance', labelKey: 'firstRun.scan.performance.label', descriptionKey: 'firstRun.scan.performance.description', hintKey: 'firstRun.scan.performance.hint' },
 ];
 
-const outputModes: Array<{ mode: AudioOutputMode; label: string; description: string; hint: string }> = [
-  { mode: 'system', label: '标准输出（推荐）', description: '最稳定，适合普通耳机、蓝牙、电脑扬声器。', hint: '推荐' },
-  { mode: 'shared', label: 'WASAPI Shared', description: '高级音频引擎的日常共享输出。', hint: '高级' },
-  { mode: 'exclusive', label: 'WASAPI Exclusive', description: '独占设备，适合确认稳定的外置声卡或 HiFi 调试。', hint: '高级' },
-  { mode: 'asio', label: 'ASIO', description: '需要 ASIO 设备和可靠驱动。', hint: '专业' },
+const outputModes: Array<FirstRunOption<AudioOutputMode>> = [
+  { mode: 'system', labelKey: 'firstRun.audio.system.label', descriptionKey: 'firstRun.audio.system.description', hintKey: 'firstRun.audio.system.hint' },
+  { mode: 'shared', labelKey: 'firstRun.audio.shared.label', descriptionKey: 'firstRun.audio.shared.description', hintKey: 'firstRun.audio.shared.hint' },
+  { mode: 'exclusive', labelKey: 'firstRun.audio.exclusive.label', descriptionKey: 'firstRun.audio.exclusive.description', hintKey: 'firstRun.audio.exclusive.hint' },
+  { mode: 'asio', labelKey: 'firstRun.audio.asio.label', descriptionKey: 'firstRun.audio.asio.description', hintKey: 'firstRun.audio.asio.hint' },
 ];
 
 const detectFirstRunPlatform = (): NodeJS.Platform | 'unknown' =>
@@ -41,7 +50,7 @@ const detectFirstRunPlatform = (): NodeJS.Platform | 'unknown' =>
 
 const getSupportedFirstRunOutputModes = (
   platform: NodeJS.Platform | 'unknown',
-): Array<{ mode: AudioOutputMode; label: string; description: string; hint: string }> =>
+): Array<FirstRunOption<AudioOutputMode>> =>
   outputModes
     .filter((item) => {
       if (item.mode === 'system') {
@@ -58,9 +67,9 @@ const getSupportedFirstRunOutputModes = (
       platform === 'linux' && item.mode === 'shared'
         ? {
             ...item,
-            label: 'Linux Shared',
-            description: 'Use ECHO native output through the Linux audio stack.',
-            hint: 'Advanced',
+            labelKey: 'firstRun.audio.linuxShared.label',
+            descriptionKey: 'firstRun.audio.linuxShared.description',
+            hintKey: 'firstRun.audio.linuxShared.hint',
           }
         : item,
     );
@@ -68,47 +77,48 @@ const getSupportedFirstRunOutputModes = (
 const firstRunSteps: FirstRunStep[] = [
   {
     id: 'library',
-    label: '音乐',
-    eyebrow: '1 / 5',
-    title: '选择音乐文件夹',
-    description: 'ECHO 会从这里建立曲库。也可以先跳过，之后再添加。',
+    labelKey: 'firstRun.step.library.label',
+    eyebrowKey: 'firstRun.step.library.eyebrow',
+    titleKey: 'firstRun.step.library.title',
+    descriptionKey: 'firstRun.step.library.description',
     icon: FolderOpen,
   },
   {
     id: 'cache',
-    label: '缓存',
-    eyebrow: '2 / 5',
-    title: '选择缓存位置',
-    description: '封面缓存会占用磁盘空间。C 盘紧张时，建议换到其他盘。',
+    labelKey: 'firstRun.step.cache.label',
+    eyebrowKey: 'firstRun.step.cache.eyebrow',
+    titleKey: 'firstRun.step.cache.title',
+    descriptionKey: 'firstRun.step.cache.description',
     icon: HardDrive,
   },
   {
     id: 'scan',
-    label: '扫描',
-    eyebrow: '3 / 5',
-    title: '选择扫描方式',
-    description: '不确定就保持均衡。它会尽量兼顾速度和播放稳定性。',
+    labelKey: 'firstRun.step.scan.label',
+    eyebrowKey: 'firstRun.step.scan.eyebrow',
+    titleKey: 'firstRun.step.scan.title',
+    descriptionKey: 'firstRun.step.scan.description',
     icon: ScanLine,
   },
   {
     id: 'audio',
-    label: '输出',
-    eyebrow: '4 / 5',
-    title: '选择音频输出',
-    description: '普通耳机、蓝牙和电脑扬声器建议使用标准输出；外置声卡和 HiFi 调试再选高级音频引擎。',
+    labelKey: 'firstRun.step.audio.label',
+    eyebrowKey: 'firstRun.step.audio.eyebrow',
+    titleKey: 'firstRun.step.audio.title',
+    descriptionKey: 'firstRun.step.audio.description',
     icon: Headphones,
   },
   {
     id: 'summary',
-    label: '确认',
-    eyebrow: '5 / 5',
-    title: '确认设置',
-    description: '这些选项之后都能改。这里不会移动或删除你的音乐文件。',
+    labelKey: 'firstRun.step.summary.label',
+    eyebrowKey: 'firstRun.step.summary.eyebrow',
+    titleKey: 'firstRun.step.summary.title',
+    descriptionKey: 'firstRun.step.summary.description',
     icon: CheckCircle2,
   },
 ];
 
 export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstRunWizardProps): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const [rendererPlatform] = useState<NodeJS.Platform | 'unknown'>(() => detectFirstRunPlatform());
   const firstRunOutputModes = useMemo(() => getSupportedFirstRunOutputModes(rendererPlatform), [rendererPlatform]);
   const [activeStepId, setActiveStepId] = useState<FirstRunStepId>('library');
@@ -132,18 +142,18 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
 
   const cacheDirectoryLabel = useMemo(() => {
     if (cacheDirectory === undefined) {
-      return initialSettings?.coverCacheDir ?? '默认位置';
+      return initialSettings?.coverCacheDir ?? t('firstRun.defaultLocation');
     }
-    return cacheDirectory ?? '默认位置';
-  }, [cacheDirectory, initialSettings?.coverCacheDir]);
+    return cacheDirectory ?? t('firstRun.defaultLocation');
+  }, [cacheDirectory, initialSettings?.coverCacheDir, t]);
 
-  const scanModeLabel = scanModes.find((item) => item.mode === scanMode)?.label ?? scanMode;
-  const outputModeLabel = firstRunOutputModes.find((item) => item.mode === outputMode)?.label ?? outputMode;
+  const scanModeLabel = t(scanModes.find((item) => item.mode === scanMode)?.labelKey ?? 'firstRun.scan.balanced.label');
+  const outputModeLabel = t(firstRunOutputModes.find((item) => item.mode === outputMode)?.labelKey ?? 'firstRun.audio.system.label');
 
   const chooseMusicFolder = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
     if (!library?.chooseFolder) {
-      setError('桌面桥接不可用，暂时不能选择音乐文件夹。');
+      setError(t('firstRun.error.desktopBridgeMusicFolder'));
       return;
     }
 
@@ -159,12 +169,12 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
     } finally {
       setBusy(null);
     }
-  }, []);
+  }, [t]);
 
   const chooseCacheDirectory = useCallback(async (): Promise<void> => {
     const app = window.echo?.app;
     if (!app?.chooseCacheDirectory) {
-      setError('桌面桥接不可用，暂时不能选择缓存位置。');
+      setError(t('firstRun.error.desktopBridgeCache'));
       return;
     }
 
@@ -180,7 +190,7 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
     } finally {
       setBusy(null);
     }
-  }, []);
+  }, [t]);
 
   const skip = useCallback(async (): Promise<void> => {
     try {
@@ -202,7 +212,7 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
     const library = window.echo?.library;
 
     if (!app?.setSettings) {
-      setError('桌面桥接不可用，暂时不能保存首次启动设置。');
+      setError(t('firstRun.error.desktopBridgeSave'));
       return;
     }
 
@@ -238,7 +248,7 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
       }
 
       window.dispatchEvent(new CustomEvent('settings:changed', { detail: nextSettings }));
-      setMessage('首次启动设置已保存。');
+      setMessage(t('firstRun.message.saved'));
       onCompleted(nextSettings);
       onClose();
     } catch (finishError) {
@@ -246,7 +256,7 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
     } finally {
       setBusy(null);
     }
-  }, [cacheDirectory, initialSettings, musicFolderPath, onClose, onCompleted, outputMode, scanMode, scanNow]);
+  }, [cacheDirectory, initialSettings, musicFolderPath, onClose, onCompleted, outputMode, scanMode, scanNow, t]);
 
   const goToPreviousStep = (): void => {
     setActiveStepId(firstRunSteps[Math.max(0, activeStepIndex - 1)]!.id);
@@ -261,15 +271,15 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
       case 'library':
         return (
           <div className="first-run-control-panel">
-            <p className="first-run-selection-label">当前选择</p>
-            <div className="first-run-path-preview">{musicFolderPath ?? '未选择，稍后添加也可以。'}</div>
+            <p className="first-run-selection-label">{t('firstRun.currentSelection')}</p>
+            <div className="first-run-path-preview">{musicFolderPath ?? t('firstRun.library.noneSelected')}</div>
             <div className="settings-chip-row settings-chip-row--left">
               <button className="settings-action-button" type="button" disabled={busy !== null} onClick={() => void chooseMusicFolder()}>
                 {busy === 'folder' ? <Loader2 className="spinning-icon" size={15} /> : <FolderOpen size={15} />}
-                选择文件夹
+                {t('firstRun.library.chooseFolder')}
               </button>
               <label className="settings-inline-toggle">
-                <span>完成后扫描</span>
+                <span>{t('firstRun.library.scanAfterFinish')}</span>
                 <input type="checkbox" checked={scanNow} onChange={(event) => setScanNow(event.target.checked)} />
               </label>
             </div>
@@ -278,15 +288,15 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
       case 'cache':
         return (
           <div className="first-run-control-panel">
-            <p className="first-run-selection-label">当前选择</p>
+            <p className="first-run-selection-label">{t('firstRun.currentSelection')}</p>
             <div className="first-run-path-preview">{cacheDirectoryLabel}</div>
             <div className="settings-chip-row settings-chip-row--left">
               <button className="settings-action-button" type="button" disabled={busy !== null} onClick={() => void chooseCacheDirectory()}>
                 {busy === 'cache' ? <Loader2 className="spinning-icon" size={15} /> : <HardDrive size={15} />}
-                选择缓存位置
+                {t('firstRun.cache.chooseLocation')}
               </button>
               <button className="settings-action-button" type="button" disabled={busy !== null} onClick={() => setCacheDirectory(null)}>
-                使用默认
+                {t('firstRun.cache.useDefault')}
               </button>
             </div>
           </div>
@@ -302,9 +312,9 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
                 aria-pressed={scanMode === item.mode}
                 onClick={() => setScanMode(item.mode)}
               >
-                <strong>{item.label}</strong>
-                <span>{item.description}</span>
-                <em>{item.hint}</em>
+                <strong>{t(item.labelKey)}</strong>
+                <span>{t(item.descriptionKey)}</span>
+                <em>{t(item.hintKey)}</em>
               </button>
             ))}
           </div>
@@ -320,9 +330,9 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
                 aria-pressed={outputMode === item.mode}
                 onClick={() => setOutputMode(item.mode)}
               >
-                <strong>{item.label}</strong>
-                <span>{item.description}</span>
-                <em>{item.hint}</em>
+                <strong>{t(item.labelKey)}</strong>
+                <span>{t(item.descriptionKey)}</span>
+                <em>{t(item.hintKey)}</em>
               </button>
             ))}
           </div>
@@ -332,8 +342,8 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
           <div className="first-run-final-card">
             <Sparkles size={24} aria-hidden="true" />
             <div>
-              <h3>可以开始了</h3>
-              <p>点击完成后保存设置。若已选择文件夹并勾选扫描，ECHO 会开始建立曲库索引。</p>
+              <h3>{t('firstRun.summary.readyTitle')}</h3>
+              <p>{t('firstRun.summary.readyDescription')}</p>
             </div>
           </div>
         );
@@ -348,10 +358,10 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
         <header className="first-run-header">
           <div>
             <span className="section-kicker">ECHO Next</span>
-            <h2 id="first-run-title">欢迎使用 ECHO Next</h2>
-            <p id="first-run-description">先完成几个基础设置。不确定的地方保留推荐值就好。</p>
+            <h2 id="first-run-title">{t('firstRun.title')}</h2>
+            <p id="first-run-description">{t('firstRun.description')}</p>
           </div>
-          <button className="queue-icon-button" type="button" aria-label="跳过向导" title="跳过向导" disabled={busy !== null} onClick={() => void skip()}>
+          <button className="queue-icon-button" type="button" aria-label={t('firstRun.action.skipWizard')} title={t('firstRun.action.skipWizard')} disabled={busy !== null} onClick={() => void skip()}>
             <X size={17} />
           </button>
         </header>
@@ -360,7 +370,7 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
           <span style={{ width: `${progressPercent}%` }} />
         </div>
 
-        <nav className="first-run-stepper" aria-label="首次启动步骤">
+        <nav className="first-run-stepper" aria-label={t('firstRun.aria.steps')}>
           {firstRunSteps.map((step, index) => {
             const StepIcon = step.icon;
             const isActive = step.id === activeStep.id;
@@ -375,7 +385,7 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
                 onClick={() => setActiveStepId(step.id)}
               >
                 <span>{isDone ? <CheckCircle2 size={14} /> : <StepIcon size={14} />}</span>
-                {step.label}
+                {t(step.labelKey)}
               </button>
             );
           })}
@@ -387,34 +397,34 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
               <ActiveIcon size={26} />
             </div>
             <div className="first-run-stage-copy">
-              <span>{activeStep.eyebrow}</span>
-              <h3>{activeStep.title}</h3>
-              <p>{activeStep.description}</p>
+              <span>{t(activeStep.eyebrowKey)}</span>
+              <h3>{t(activeStep.titleKey)}</h3>
+              <p>{t(activeStep.descriptionKey)}</p>
             </div>
             {renderStepBody()}
           </main>
 
-          <aside className="first-run-summary" aria-label="当前向导选择摘要">
-            <span className="first-run-summary-kicker">摘要</span>
+          <aside className="first-run-summary" aria-label={t('firstRun.aria.summary')}>
+            <span className="first-run-summary-kicker">{t('firstRun.summary.kicker')}</span>
             <dl>
               <div>
-                <dt>音乐</dt>
-                <dd>{musicFolderPath ?? '稍后添加'}</dd>
+                <dt>{t('firstRun.summary.music')}</dt>
+                <dd>{musicFolderPath ?? t('firstRun.summary.addLater')}</dd>
               </div>
               <div>
-                <dt>扫描</dt>
-                <dd>{scanNow && musicFolderPath ? `${scanModeLabel}，完成后扫描` : scanModeLabel}</dd>
+                <dt>{t('firstRun.summary.scan')}</dt>
+                <dd>{scanNow && musicFolderPath ? t('firstRun.summary.scanWithFolder', { mode: scanModeLabel }) : scanModeLabel}</dd>
               </div>
               <div>
-                <dt>缓存</dt>
+                <dt>{t('firstRun.summary.cache')}</dt>
                 <dd>{cacheDirectoryLabel}</dd>
               </div>
               <div>
-                <dt>输出</dt>
+                <dt>{t('firstRun.summary.output')}</dt>
                 <dd>{outputModeLabel}</dd>
               </div>
             </dl>
-            <p>不会移动或删除你的音乐文件。</p>
+            <p>{t('firstRun.summary.noFileMove')}</p>
           </aside>
         </div>
 
@@ -423,21 +433,21 @@ export const FirstRunWizard = ({ initialSettings, onClose, onCompleted }: FirstR
 
         <footer className="first-run-actions">
           <button className="settings-action-button" type="button" disabled={busy !== null} onClick={() => void skip()}>
-            跳过
+            {t('firstRun.action.skip')}
           </button>
           <div className="first-run-action-cluster">
             <button className="settings-action-button" type="button" disabled={busy !== null || activeStepIndex === 0} onClick={goToPreviousStep}>
               <ArrowLeft size={15} />
-              上一步
+              {t('firstRun.action.previous')}
             </button>
             {isFinalStep ? (
               <button className="settings-action-button first-run-primary" type="button" disabled={busy !== null} onClick={() => void finish()}>
                 {busy === 'finish' ? <Loader2 className="spinning-icon" size={15} /> : <CheckCircle2 size={15} />}
-                完成设置
+                {t('firstRun.action.finish')}
               </button>
             ) : (
               <button className="settings-action-button first-run-primary" type="button" disabled={busy !== null} onClick={goToNextStep}>
-                下一步
+                {t('firstRun.action.next')}
                 <ArrowRight size={15} />
               </button>
             )}

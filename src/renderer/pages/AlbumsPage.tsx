@@ -296,7 +296,7 @@ export const AlbumsPage = (): JSX.Element => {
       const tracks = await getAllAlbumTracks(album.id);
       const firstTrack = tracks[0];
       if (!firstTrack) {
-        setError('这张专辑没有可播放的歌曲。');
+        setError(t('library.albums.error.noPlayableTracks'));
         return;
       }
 
@@ -338,7 +338,7 @@ export const AlbumsPage = (): JSX.Element => {
         setError(null);
 
         if (album.mediaType === 'remote' && (action === 'edit-tags' || action === 'delete-album')) {
-          setError('远程专辑暂不支持编辑标签或删除服务器文件。');
+          setError(t('library.albums.error.remoteEditUnsupported'));
           return;
         }
 
@@ -403,16 +403,16 @@ export const AlbumsPage = (): JSX.Element => {
             return;
           case 'copy-cover':
             if (!(await library.copyAlbumCover(album.id))) {
-              setError('这张专辑没有可复制的封面。');
+              setError(t('library.albums.error.noCopyableCover'));
             }
             return;
           case 'save-cover':
             if (!(await library.saveAlbumCover(album.id))) {
-              setError('没有保存专辑封面。');
+              setError(t('library.albums.error.coverNotSaved'));
             }
             return;
           case 'delete-album':
-            if (!window.confirm(`删除专辑文件？\n${album.title}\n\n这会把 ${album.trackCount} 首歌曲移到系统回收站，并从媒体库移除。`)) {
+            if (!window.confirm(t('library.albums.confirm.deleteAlbumFiles', { title: album.title, count: album.trackCount }))) {
               return;
             }
             await library.deleteAlbumFiles(album.id);
@@ -600,7 +600,7 @@ export const AlbumsPage = (): JSX.Element => {
                 <div className="album-copy">
                   <strong>{album.title}</strong>
                   <span>{album.albumArtist}</span>
-                  {album.mediaType === 'remote' ? <small className="remote-media-source">{album.sourceDisplayName ?? album.provider ?? '网盘'}</small> : null}
+                  {album.mediaType === 'remote' ? <small className="remote-media-source">{album.sourceDisplayName ?? album.provider ?? t('library.source.remote')}</small> : null}
                   <small>{t('library.albums.card.tracks', { count: album.trackCount })}</small>
                 </div>
               </article>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WheelEvent } from 'react';
 import { Gauge, RotateCcw } from 'lucide-react';
 import type { AudioStatus, PlaybackSpeedMode } from '../../../shared/types/audio';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 
 type PlayerSpeedControlProps = {
   status: AudioStatus | null;
@@ -32,6 +33,7 @@ export const PlayerSpeedControl = ({
   isOpen,
   onOpenChange,
 }: PlayerSpeedControlProps): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const [playbackRate, setPlaybackRate] = useState(speedFromStatus(status));
   const [mode, setMode] = useState<PlaybackSpeedMode>(modeFromStatus(status));
   const [shouldRenderPopover, setShouldRenderPopover] = useState(isOpen);
@@ -185,8 +187,8 @@ export const PlayerSpeedControl = ({
       <button
         className="icon-button"
         type="button"
-        aria-label="播放速度"
-        title="播放速度"
+        aria-label={t('playerSpeed.label')}
+        title={t('playerSpeed.label')}
         onClick={() => onOpenChange(true)}
         onFocus={() => onOpenChange(true)}
       >
@@ -199,8 +201,8 @@ export const PlayerSpeedControl = ({
             <button
               className="speed-reset-button"
               type="button"
-              aria-label="重置播放速度"
-              title="重置播放速度"
+              aria-label={t('playerSpeed.reset')}
+              title={t('playerSpeed.reset')}
               disabled={playbackRate === 1}
               onClick={() => void commitSpeed(1)}
             >
@@ -208,7 +210,7 @@ export const PlayerSpeedControl = ({
             </button>
           </div>
           <input
-            aria-label="播放速度"
+            aria-label={t('playerSpeed.label')}
             max={2}
             min={0.5}
             onChange={(event) => setPlaybackRate(Number(event.currentTarget.value))}

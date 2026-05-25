@@ -460,6 +460,7 @@ const normalizePlayRequest = (value: unknown): PlaybackStartRequest => {
     replayGain: normalizeReplayGainTrackData(input.replayGain),
     automix: normalizeAutomixOptions(input.automix),
     gapless: normalizeGaplessOptions(input.gapless),
+    automixAnalyze: input.automixAnalyze === true,
   };
 };
 
@@ -475,6 +476,7 @@ const normalizePrepareLocalFileRequest = (value: unknown): PlaybackPrepareLocalF
     trackId: typeof input.trackId === 'string' && input.trackId.trim() ? input.trackId : undefined,
     probe: normalizeProbeHint(input.probe),
     replayGain: normalizeReplayGainTrackData(input.replayGain),
+    automixAnalyze: input.automixAnalyze === true,
   };
 };
 
@@ -543,6 +545,7 @@ const normalizeMediaPlayRequest = (value: unknown): PlaybackMediaStartRequest =>
     output: normalizeOutputSettings(input.output),
     automix: normalizeAutomixOptions(input.automix),
     gapless: normalizeGaplessOptions(input.gapless),
+    automixAnalyze: input.automixAnalyze === true,
     forceRefresh: input.forceRefresh === true,
   };
 };
@@ -557,7 +560,7 @@ const normalizeAutomixOptions = (value: unknown): PlaybackStartRequest['automix'
   const maxTransitionSeconds = optionalPositiveNumber(input.maxTransitionSeconds);
   return {
     enabled,
-    maxTransitionSeconds: maxTransitionSeconds === undefined ? undefined : Math.max(2, Math.min(12, maxTransitionSeconds)),
+    maxTransitionSeconds: maxTransitionSeconds === undefined ? undefined : Math.max(2, Math.min(16, maxTransitionSeconds)),
     beatAlignEnabled: input.beatAlignEnabled !== false,
     nextItem: input.nextItem ? normalizeMediaItem(input.nextItem) : null,
     nextProbe: normalizeProbeHint(input.nextProbe),
@@ -702,6 +705,19 @@ const prepareMediaItem = async (request: PlaybackMediaStartRequest): Promise<voi
     prepared,
     expiresAt: Date.now() + preparedMediaTtlMs,
   });
+  if (request.automixAnalyze === true) {
+    const audioSession = getAudioSession() as { prepareLocalFile?: (request: PlaybackPrepareLocalFileRequest) => Promise<void> };
+    void audioSession.prepareLocalFile?.({
+      filePath: prepared.filePath,
+      inputHeaders: prepared.inputHeaders,
+      trackId: request.item.trackId,
+      probe: createProbeHintForMediaItem(request.item, prepared.probe),
+      replayGain: createReplayGainHintForMediaItem(request.item),
+      automixAnalyze: true,
+    }).catch((error) => {
+      console.warn(`[playback] prepareMediaItem Automix analysis failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
 };
 
 const createProbeHintForMediaItem = (item: PlayableTrack, hint?: PlaybackProbeHint): PlaybackProbeHint | undefined => {
@@ -857,7 +873,7 @@ const resolveAutomixRequest = async (
   const following = await Promise.all(
     (automix.upcomingItems ?? [])
       .filter((item) => !(item.mediaType === 'streaming' && item.provider === 'spotify'))
-      .slice(0, 3)
+      .slice(0, 2)
       .map(async (item, index) => {
         const preparedItem = await resolveMediaItemForPlayback({ item });
         return {
@@ -1313,6 +1329,7 @@ export const registerPlaybackIpc = (): void => {
           startSeconds: request.startSeconds,
           output: request.output,
           probe: prepared.probe,
+          automixAnalyze: request.automixAnalyze === true,
           automix: await resolveAutomixRequest(request.automix),
           gapless: await resolveGaplessRequest(request.gapless),
         });
@@ -1362,6 +1379,7 @@ export const registerPlaybackIpc = (): void => {
             startSeconds: request.startSeconds,
             output: request.output,
             probe: prepared.probe,
+            automixAnalyze: request.automixAnalyze === true,
             automix: await resolveAutomixRequest(request.automix),
             gapless: await resolveGaplessRequest(request.gapless),
           });

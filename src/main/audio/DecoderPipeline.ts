@@ -64,6 +64,9 @@ const defaultLogger = (message: string): void => {
 };
 
 const verboseAudioLogsEnabled = process.env.ECHO_VERBOSE_AUDIO_LOGS === '1';
+const automixTransitionGainReleaseSeconds = 4;
+const minAutomixTempoRatio = 0.985;
+const maxAutomixTempoRatio = 1.015;
 
 const appendTailLine = (lines: string[], line: string): void => {
   const trimmed = line.trim();
@@ -76,6 +79,44 @@ const appendTailLine = (lines: string[], line: string): void => {
   if (lines.length > 8) {
     lines.shift();
   }
+};
+
+const dbToFilterGain = (db: number): number => 10 ** (Math.max(-24, Math.min(12, db)) / 20);
+
+const escapeFfmpegExpression = (expression: string): string => expression.replace(/,/gu, '\\,');
+
+const createVolumeExpressionFilter = (expression: string): string => `volume='${escapeFfmpegExpression(expression)}':eval=frame`;
+
+const createAutomixCurrentGainFilter = (gainDb: number, transitionStartSeconds: number, transitionSeconds: number): string | null => {
+  if (Math.abs(gainDb) < 0.01 || transitionSeconds <= 0) {
+    return null;
+  }
+
+  const gain = dbToFilterGain(gainDb).toFixed(6);
+  const start = Math.max(0, transitionStartSeconds).toFixed(3);
+  const end = Math.max(0, transitionStartSeconds + transitionSeconds).toFixed(3);
+  const duration = Math.max(0.001, transitionSeconds).toFixed(3);
+  return createVolumeExpressionFilter(`if(lt(t,${start}),1,if(lt(t,${end}),1+(${gain}-1)*((t-${start})/${duration}),${gain}))`);
+};
+
+const createAutomixNextGainFilter = (gainDb: number, transitionSeconds: number): string | null => {
+  if (Math.abs(gainDb) < 0.01 || transitionSeconds <= 0) {
+    return null;
+  }
+
+  const gain = dbToFilterGain(gainDb).toFixed(6);
+  const overlap = Math.max(0.001, transitionSeconds).toFixed(3);
+  const release = Math.max(0.05, Math.min(automixTransitionGainReleaseSeconds, transitionSeconds * 0.5)).toFixed(3);
+  const releaseEnd = (Number(overlap) + Number(release)).toFixed(3);
+  return createVolumeExpressionFilter(`if(lt(t,${overlap}),${gain},if(lt(t,${releaseEnd}),${gain}+(1-${gain})*((t-${overlap})/${release}),1))`);
+};
+
+const resolveAutomixIncomingTempoRatio = (plan: PcmAutomixDecodeRequest['plan'] | null): number => {
+  if (!plan?.beatAligned) {
+    return 1;
+  }
+
+  return Math.max(minAutomixTempoRatio, Math.min(maxAutomixTempoRatio, normalizeTempoRatio(plan.tempoRatio)));
 };
 
 export const classifyFfmpegDecodeError = (stderrLines: string[], reason = ''): FfmpegDecodeErrorKind => {
@@ -378,6 +419,14 @@ export class DecoderPipeline {
       cueTrack?.endSeconds !== null && cueTrack?.endSeconds !== undefined
         ? Math.max(0, cueTrack.endSeconds - cueTrack.startSeconds - cueRelativeStart)
         : null;
+    const requestedDuration =
+      typeof request.durationSeconds === 'number' && Number.isFinite(request.durationSeconds) && request.durationSeconds > 0
+        ? request.durationSeconds
+        : null;
+    const decodeDuration =
+      cueDuration !== null && requestedDuration !== null
+        ? Math.min(cueDuration, requestedDuration)
+        : cueDuration ?? requestedDuration;
     const pcmStartupTimeoutMs = getPcmStartupTimeoutMs(decodePath);
     const baseArgs = [
       '-hide_banner',
@@ -393,7 +442,7 @@ export class DecoderPipeline {
       decodePath,
       ...mapFirstAudioStreamArgs(0),
       ...disableNonAudioStreamArgs(),
-      ...(cueDuration !== null ? ['-t', String(cueDuration)] : []),
+      ...(decodeDuration !== null ? ['-t', String(decodeDuration)] : []),
       '-f',
       'f32le',
       '-ac',
@@ -470,10 +519,12 @@ export class DecoderPipeline {
     const segmentFilters = tracks.map((track, index) => {
       const nextPlan = plans[index] ?? null;
       const previousPlan = index > 0 ? plans[index - 1] : null;
+      const incomingTempoRatio = resolveAutomixIncomingTempoRatio(previousPlan);
       const endSeconds = nextPlan
         ? Math.max(track.startSeconds + 0.001, Math.min(track.request.durationSeconds, nextPlan.currentEndSeconds))
         : track.request.durationSeconds;
       const durationSeconds = Math.max(0.001, endSeconds - track.startSeconds);
+      const effectiveDurationSeconds = durationSeconds / incomingTempoRatio;
       const filters = [
         `atrim=0:${durationSeconds.toFixed(3)}`,
         ...(index > 0 && previousPlan && !previousPlan.skipIntroSilence
@@ -486,13 +537,27 @@ export class DecoderPipeline {
               'areverse',
             ]
           : []),
+        ...(Math.abs(incomingTempoRatio - 1) >= 0.001 ? [`atempo=${incomingTempoRatio.toFixed(6)}`] : []),
         'asetpts=PTS-STARTPTS',
       ];
-      const gainDb = index === 0 ? nextPlan?.currentGainDb ?? 0 : previousPlan?.nextGainDb ?? 0;
       const replayGainDb = Number(track.request.replayGainDb ?? 0);
-      const totalGainDb = gainDb + (Number.isFinite(replayGainDb) ? replayGainDb : 0);
-      if (Math.abs(totalGainDb) >= 0.01) {
-        filters.push(`volume=${totalGainDb.toFixed(3)}dB`);
+      if (Number.isFinite(replayGainDb) && Math.abs(replayGainDb) >= 0.01) {
+        filters.push(`volume=${replayGainDb.toFixed(3)}dB`);
+      }
+
+      const previousGainFilter = previousPlan
+        ? createAutomixNextGainFilter(previousPlan.nextGainDb, previousPlan.overlapSeconds)
+        : null;
+      if (previousGainFilter) {
+        filters.push(previousGainFilter);
+      }
+
+      const nextTransitionStartSeconds = nextPlan ? Math.max(0, effectiveDurationSeconds - nextPlan.overlapSeconds) : 0;
+      const nextGainFilter = nextPlan
+        ? createAutomixCurrentGainFilter(nextPlan.currentGainDb, nextTransitionStartSeconds, nextPlan.overlapSeconds)
+        : null;
+      if (nextGainFilter) {
+        filters.push(nextGainFilter);
       }
 
       return `[${index}:a]${filters.join(',')}[s${index}]`;
@@ -501,7 +566,7 @@ export class DecoderPipeline {
       const left = index === 0 ? '[s0]' : `[m${index}]`;
       const right = `[s${index + 1}]`;
       const output = index === plans.length - 1 ? '[aout]' : `[m${index + 1}]`;
-      const transitionSeconds = Math.max(0.25, Math.min(12, plan.overlapSeconds));
+      const transitionSeconds = Math.max(0.25, Math.min(16, plan.overlapSeconds));
       return `${left}${right}acrossfade=d=${transitionSeconds.toFixed(3)}:c1=${plan.curve}:c2=${plan.curve}${output}`;
     });
     const filter = [...segmentFilters, ...mixFilters].join(';');

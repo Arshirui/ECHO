@@ -41,6 +41,7 @@ export type AudioAutomixStatus = {
   transitionMode?: 'smartCrossfade' | 'beatAligned' | 'energyFade' | 'gaplessFallback' | null;
   fallbackReason?: string | null;
   beatAligned?: boolean;
+  gapless?: boolean;
   skipIntroSilence?: boolean;
   engine?: 'nativeDualDeck' | 'ffmpegPremix' | 'nativeGapless' | 'ffmpegGapless' | 'fallback' | null;
   tempoRatio?: number | null;

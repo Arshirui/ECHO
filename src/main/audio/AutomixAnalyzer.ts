@@ -178,6 +178,7 @@ export const analyzePcmTransitionSegment = (
 type CachedAutomixAnalysis = {
   expiresAt: number;
   value: Promise<TrackTransitionAnalysis>;
+  resolved?: TrackTransitionAnalysis;
 };
 
 export class AutomixAnalyzer {
@@ -206,19 +207,39 @@ export class AutomixAnalyzer {
       this.logger(`[AutomixAnalyzer] fallback analysis for "${request.filePath}": ${error instanceof Error ? error.message : String(error)}`);
       return createEstimatedAutomixAnalysis(request.probe, request.hint);
     });
-    this.cache.set(key, {
+    const entry: CachedAutomixAnalysis = {
       expiresAt: nowMs + cacheTtlMs,
       value,
-    });
+    };
+    value.then((analysis) => {
+      entry.resolved = analysis;
+    }).catch(() => undefined);
+    this.cache.set(key, entry);
     this.pruneCache();
     return value;
+  }
+
+  getCachedAnalysis(request: AutomixAnalyzeRequest): TrackTransitionAnalysis | null {
+    const key = this.createCacheKey(request);
+    const nowMs = this.now().getTime();
+    const cached = this.cache.get(key);
+    if (!cached || cached.expiresAt <= nowMs || !cached.resolved) {
+      return null;
+    }
+
+    return cached.resolved;
   }
 
   private createCacheKey(request: AutomixAnalyzeRequest): string {
     const duration = Number.isFinite(request.probe.durationSeconds) ? Math.round(request.probe.durationSeconds * 1000) : 0;
     const bpm = Number.isFinite(Number(request.hint?.bpm)) ? Math.round(Number(request.hint?.bpm) * 100) : 'n';
-    const headersKey = Object.keys(request.headers ?? {}).sort().join(',');
-    return `${request.filePath}|${duration}|${bpm}|${headersKey}`;
+    const bpmConfidence = Number.isFinite(Number(request.hint?.bpmConfidence)) ? Math.round(Number(request.hint?.bpmConfidence) * 1000) : 'n';
+    const beatOffsetMs = Number.isFinite(Number(request.hint?.beatOffsetMs)) ? Math.round(Number(request.hint?.beatOffsetMs)) : 'n';
+    const headersKey = Object.entries(request.headers ?? {})
+      .map(([name, value]) => `${name.trim().toLowerCase()}:${String(value).trim()}`)
+      .sort()
+      .join(',');
+    return `${request.filePath}|${duration}|${bpm}|${bpmConfidence}|${beatOffsetMs}|${headersKey}`;
   }
 
   private pruneCache(): void {
@@ -257,8 +278,13 @@ export class AutomixAnalyzer {
     const introEndSeconds = Math.min(estimated.durationSeconds, Math.max(leadingSilenceSeconds + 8, estimated.introEndSeconds));
     const outroEndSeconds = Math.max(0, estimated.durationSeconds - trailingSilenceSeconds);
     const outroStartSeconds = Math.max(0, Math.min(estimated.outroStartSeconds, outroEndSeconds - 8));
-    const rmsDb = tail?.rmsDb ?? head.rmsDb;
-    const energyCurve = tail ? [...head.energyCurve.slice(0, 9), ...tail.energyCurve.slice(-9)] : head.energyCurve;
+    const introRmsDb = head.rmsDb;
+    const outroRmsDb = tail?.rmsDb ?? head.rmsDb;
+    const rmsDb = outroRmsDb;
+    const estimatedTailEnergy = estimated.energyCurve.slice(Math.max(0, estimated.energyCurve.length - 9));
+    const energyCurve = tail
+      ? [...head.energyCurve.slice(0, 9), ...tail.energyCurve.slice(-9)]
+      : [...head.energyCurve.slice(0, 9), ...estimatedTailEnergy];
 
     return {
       ...estimated,
@@ -271,6 +297,8 @@ export class AutomixAnalyzer {
       trailingSilenceSeconds: roundToMillis(trailingSilenceSeconds),
       rmsDb,
       lufsDb: rmsDb,
+      introRmsDb,
+      outroRmsDb,
       energyCurve,
       analyzedAt: this.now().toISOString(),
     };

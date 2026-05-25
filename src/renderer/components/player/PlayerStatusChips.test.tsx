@@ -125,4 +125,73 @@ describe('PlayerStatusChips', () => {
 
     expect(screen.queryByText('AIRPLAY')).toBeNull();
   });
+
+  it('shows an Automix chip only when the engine has an active transition plan', () => {
+    const { rerender } = render(
+      <PlayerStatusChips
+        status={{
+          sampleRateMismatch: false,
+          automix: {
+            enabled: true,
+            active: false,
+            mode: 'off',
+            transitionSeconds: null,
+            transitionStartedAtSeconds: null,
+            nextTrackId: null,
+          },
+        } as never}
+        state="playing"
+        track={track()}
+      />,
+    );
+
+    expect(screen.queryByText(/Automix/u)).toBeNull();
+
+    rerender(
+      <PlayerStatusChips
+        status={{
+          sampleRateMismatch: false,
+          automix: {
+            enabled: false,
+            active: true,
+            mode: 'armed',
+            transitionSeconds: 0,
+            transitionStartedAtSeconds: null,
+            nextTrackId: 'track-2',
+            transitionMode: 'gaplessFallback',
+            engine: 'nativeGapless',
+            gapless: true,
+            overlapSeconds: 0,
+          },
+        } as never}
+        state="playing"
+        track={track()}
+      />,
+    );
+
+    expect(screen.queryByText(/Automix/u)).toBeNull();
+
+    rerender(
+      <PlayerStatusChips
+        status={{
+          sampleRateMismatch: false,
+          automix: {
+            enabled: true,
+            active: true,
+            mode: 'armed',
+            transitionSeconds: 16,
+            transitionStartedAtSeconds: 72,
+            nextTrackId: 'track-2',
+            transitionMode: 'beatAligned',
+            beatAligned: true,
+            overlapSeconds: 15.8,
+          },
+        } as never}
+        state="playing"
+        track={track()}
+      />,
+    );
+
+    expect(screen.getByText('Automix beat 16s')).toBeTruthy();
+  });
 });

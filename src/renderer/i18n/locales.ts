@@ -74,10 +74,27 @@ type AlbumDetailTranslationKey =
   | 'albumDetail.online.reading'
   | 'albumDetail.online.sources'
   | 'albumDetail.online.unavailable'
+  | 'albumDetail.releases.count'
+  | 'albumDetail.releases.current'
+  | 'albumDetail.releases.currentHint'
+  | 'albumDetail.releases.heading'
+  | 'albumDetail.releases.overviewAria'
   | 'albumDetail.related.aria'
   | 'albumDetail.related.heading'
   | 'albumDetail.related.loading'
   | 'albumDetail.related.thisAlbum'
+  | 'albumDetail.sources.barcode'
+  | 'albumDetail.sources.catalogNumber'
+  | 'albumDetail.sources.copyright'
+  | 'albumDetail.sources.kind.database'
+  | 'albumDetail.sources.kind.official'
+  | 'albumDetail.sources.kind.other'
+  | 'albumDetail.sources.kind.reference'
+  | 'albumDetail.sources.kind.streaming'
+  | 'albumDetail.sources.labels'
+  | 'albumDetail.sources.linksAria'
+  | 'albumDetail.sources.releaseAria'
+  | 'albumDetail.sources.releaseDetails'
   | 'albumDetail.status.libraryReady'
   | 'albumDetail.status.readingSignal'
   | 'albumDetail.status.unknownGenre'
@@ -85,6 +102,8 @@ type AlbumDetailTranslationKey =
   | 'albumDetail.status.unknownYear'
   | 'albumDetail.tab.credits'
   | 'albumDetail.tab.information'
+  | 'albumDetail.tab.releases'
+  | 'albumDetail.tab.sources'
   | 'albumDetail.tab.tracks'
   | 'albumDetail.texture.discs'
   | 'albumDetail.tracks.action.like'
@@ -222,6 +241,78 @@ type ArtistDetailTranslationKey =
 export type TranslationKey =
   | AlbumDetailTranslationKey
   | ArtistDetailTranslationKey
+  | 'albumTagEditor.action.applyToForm'
+  | 'albumTagEditor.action.cancel'
+  | 'albumTagEditor.action.chooseCover'
+  | 'albumTagEditor.action.close'
+  | 'albumTagEditor.action.loadEmbedded'
+  | 'albumTagEditor.action.loading'
+  | 'albumTagEditor.action.loadNetwork'
+  | 'albumTagEditor.action.saveTags'
+  | 'albumTagEditor.action.saving'
+  | 'albumTagEditor.action.searchCandidates'
+  | 'albumTagEditor.action.searching'
+  | 'albumTagEditor.albumSummary'
+  | 'albumTagEditor.cover.embeddedSuffix'
+  | 'albumTagEditor.cover.localSuffix'
+  | 'albumTagEditor.cover.networkSuffix'
+  | 'albumTagEditor.currentAlbum'
+  | 'albumTagEditor.currentAlbumAria'
+  | 'albumTagEditor.discard.continue'
+  | 'albumTagEditor.discard.discard'
+  | 'albumTagEditor.discard.prompt'
+  | 'albumTagEditor.duration.hoursMinutes'
+  | 'albumTagEditor.duration.minutes'
+  | 'albumTagEditor.duration.unknown'
+  | 'albumTagEditor.error.chooseCoverUnsupported'
+  | 'albumTagEditor.error.embeddedUnsupported'
+  | 'albumTagEditor.error.fixYearBeforeSave'
+  | 'albumTagEditor.error.networkTemporary'
+  | 'albumTagEditor.error.networkUnsupported'
+  | 'albumTagEditor.error.noReadableTrack'
+  | 'albumTagEditor.error.positiveInteger'
+  | 'albumTagEditor.error.readTracksUnsupported'
+  | 'albumTagEditor.field.album'
+  | 'albumTagEditor.field.albumArtist'
+  | 'albumTagEditor.field.cover'
+  | 'albumTagEditor.field.genre'
+  | 'albumTagEditor.field.year'
+  | 'albumTagEditor.message.appliedNetwork'
+  | 'albumTagEditor.message.noNetworkTags'
+  | 'albumTagEditor.message.searchingNetwork'
+  | 'albumTagEditor.network.aria'
+  | 'albumTagEditor.network.column.candidate'
+  | 'albumTagEditor.network.column.current'
+  | 'albumTagEditor.network.column.field'
+  | 'albumTagEditor.network.selectAll'
+  | 'albumTagEditor.network.selectFields'
+  | 'albumTagEditor.network.title'
+  | 'albumTagEditor.saveDescription'
+  | 'albumTagEditor.section.albumInfo'
+  | 'albumTagEditor.section.albumInfoDescription'
+  | 'albumTagEditor.subtitle.albumBatch'
+  | 'albumTagEditor.subtitle.unsaved'
+  | 'albumTagEditor.title'
+  | 'albumTagEditor.value.albumCandidate'
+  | 'albumTagEditor.value.empty'
+  | 'albumTagEditor.value.existingCover'
+  | 'albumTagEditor.value.networkCover'
+  | 'albumTagEditor.value.unknownAlbum'
+  | 'albumTagEditor.value.unknownArtist'
+  | 'albumMenu.action.addToPlaylist'
+  | 'albumMenu.action.addToQueue'
+  | 'albumMenu.action.copyCover'
+  | 'albumMenu.action.copyInfo'
+  | 'albumMenu.action.deleteAlbum'
+  | 'albumMenu.action.editTags'
+  | 'albumMenu.action.likeAlbum'
+  | 'albumMenu.action.playAlbum'
+  | 'albumMenu.action.saveCover'
+  | 'albumMenu.action.unlikeAlbum'
+  | 'albumMenu.playlistSubmenu.aria'
+  | 'albumMenu.playlistSubmenu.empty'
+  | 'albumMenu.playlistSubmenu.itemCount'
+  | 'albumMenu.playlistSubmenu.loading'
   | 'app.navigation.main'
   | 'app.navigation.utility'
   | 'app.toolbar.quickActions'
@@ -229,6 +320,221 @@ export type TranslationKey =
   | 'app.window.minimize'
   | 'app.window.maximize'
   | 'app.window.close'
+  | 'firstRun.action.finish'
+  | 'firstRun.action.next'
+  | 'firstRun.action.previous'
+  | 'firstRun.action.skip'
+  | 'firstRun.action.skipWizard'
+  | 'firstRun.aria.steps'
+  | 'firstRun.aria.summary'
+  | 'firstRun.audio.asio.description'
+  | 'firstRun.audio.asio.hint'
+  | 'firstRun.audio.asio.label'
+  | 'firstRun.audio.exclusive.description'
+  | 'firstRun.audio.exclusive.hint'
+  | 'firstRun.audio.exclusive.label'
+  | 'firstRun.audio.linuxShared.description'
+  | 'firstRun.audio.linuxShared.hint'
+  | 'firstRun.audio.linuxShared.label'
+  | 'firstRun.audio.shared.description'
+  | 'firstRun.audio.shared.hint'
+  | 'firstRun.audio.shared.label'
+  | 'firstRun.audio.system.description'
+  | 'firstRun.audio.system.hint'
+  | 'firstRun.audio.system.label'
+  | 'firstRun.cache.chooseLocation'
+  | 'firstRun.cache.useDefault'
+  | 'firstRun.currentSelection'
+  | 'firstRun.defaultLocation'
+  | 'firstRun.description'
+  | 'firstRun.error.desktopBridgeCache'
+  | 'firstRun.error.desktopBridgeMusicFolder'
+  | 'firstRun.error.desktopBridgeSave'
+  | 'firstRun.library.chooseFolder'
+  | 'firstRun.library.noneSelected'
+  | 'firstRun.library.scanAfterFinish'
+  | 'firstRun.message.saved'
+  | 'firstRun.scan.balanced.description'
+  | 'firstRun.scan.balanced.hint'
+  | 'firstRun.scan.balanced.label'
+  | 'firstRun.scan.low.description'
+  | 'firstRun.scan.low.hint'
+  | 'firstRun.scan.low.label'
+  | 'firstRun.scan.performance.description'
+  | 'firstRun.scan.performance.hint'
+  | 'firstRun.scan.performance.label'
+  | 'firstRun.step.audio.description'
+  | 'firstRun.step.audio.eyebrow'
+  | 'firstRun.step.audio.label'
+  | 'firstRun.step.audio.title'
+  | 'firstRun.step.cache.description'
+  | 'firstRun.step.cache.eyebrow'
+  | 'firstRun.step.cache.label'
+  | 'firstRun.step.cache.title'
+  | 'firstRun.step.library.description'
+  | 'firstRun.step.library.eyebrow'
+  | 'firstRun.step.library.label'
+  | 'firstRun.step.library.title'
+  | 'firstRun.step.scan.description'
+  | 'firstRun.step.scan.eyebrow'
+  | 'firstRun.step.scan.label'
+  | 'firstRun.step.scan.title'
+  | 'firstRun.step.summary.description'
+  | 'firstRun.step.summary.eyebrow'
+  | 'firstRun.step.summary.label'
+  | 'firstRun.step.summary.title'
+  | 'firstRun.summary.addLater'
+  | 'firstRun.summary.cache'
+  | 'firstRun.summary.kicker'
+  | 'firstRun.summary.music'
+  | 'firstRun.summary.noFileMove'
+  | 'firstRun.summary.output'
+  | 'firstRun.summary.readyDescription'
+  | 'firstRun.summary.readyTitle'
+  | 'firstRun.summary.scan'
+  | 'firstRun.summary.scanWithFolder'
+  | 'firstRun.title'
+  | 'downloads.action.addToQueue'
+  | 'downloads.action.cancelJob'
+  | 'downloads.action.changeFolder'
+  | 'downloads.action.checkTools'
+  | 'downloads.action.chooseFolder'
+  | 'downloads.action.clearCompleted'
+  | 'downloads.action.creating'
+  | 'downloads.action.search'
+  | 'downloads.action.searching'
+  | 'downloads.description'
+  | 'downloads.empty.noResults.description'
+  | 'downloads.empty.noResults.title'
+  | 'downloads.empty.queue.description'
+  | 'downloads.empty.queue.title'
+  | 'downloads.empty.searching.description'
+  | 'downloads.empty.searching.title'
+  | 'downloads.error.cookieFallback'
+  | 'downloads.error.ipcUnavailable'
+  | 'downloads.error.operationFailed'
+  | 'downloads.folder.required'
+  | 'downloads.job.imported'
+  | 'downloads.job.savedTo'
+  | 'downloads.job.waitingProgress'
+  | 'downloads.message.clearedTerminal'
+  | 'downloads.message.completed'
+  | 'downloads.message.queued'
+  | 'downloads.message.resultQueued'
+  | 'downloads.queue.title'
+  | 'downloads.search.aria'
+  | 'downloads.search.downloadAudio'
+  | 'downloads.search.joined'
+  | 'downloads.search.placeholder'
+  | 'downloads.search.providerErrorItem'
+  | 'downloads.search.providerErrors'
+  | 'downloads.search.scopeAria'
+  | 'downloads.search.title'
+  | 'downloads.search.unknownUploader'
+  | 'downloads.search.views'
+  | 'downloads.search.viewsWan'
+  | 'downloads.settings.audioStrategy'
+  | 'downloads.settings.bestAvailable'
+  | 'downloads.settings.bindMvAfterImport'
+  | 'downloads.settings.importToLibrary'
+  | 'downloads.settings.outputDirectory'
+  | 'downloads.settings.title'
+  | 'downloads.status.bindingMv'
+  | 'downloads.status.cancelled'
+  | 'downloads.status.completed'
+  | 'downloads.status.downloading'
+  | 'downloads.status.extractingAudio'
+  | 'downloads.status.failed'
+  | 'downloads.status.importing'
+  | 'downloads.status.probing'
+  | 'downloads.status.queued'
+  | 'downloads.title'
+  | 'downloads.tools.notBundled'
+  | 'downloads.tools.notDetected'
+  | 'downloads.tools.title'
+  | 'downloads.url.placeholder'
+  | 'downloads.url.title'
+  | 'accountProvider.bilibili'
+  | 'accountProvider.netease'
+  | 'accountProvider.osu'
+  | 'accountProvider.qqmusic'
+  | 'accountProvider.soundcloud'
+  | 'accountProvider.spotify'
+  | 'accountProvider.unknown'
+  | 'accountProvider.youtube'
+  | 'desktopLyrics.aria.stage'
+  | 'desktopLyrics.control.close'
+  | 'desktopLyrics.control.colorSwatch'
+  | 'desktopLyrics.control.customColor'
+  | 'desktopLyrics.control.decreaseFontSize'
+  | 'desktopLyrics.control.decreaseScale'
+  | 'desktopLyrics.control.increaseFontSize'
+  | 'desktopLyrics.control.increaseScale'
+  | 'desktopLyrics.control.lock'
+  | 'desktopLyrics.control.resetPosition'
+  | 'desktopLyrics.control.romanization'
+  | 'desktopLyrics.control.translation'
+  | 'desktopLyrics.control.translationShort'
+  | 'desktopLyrics.primary.empty'
+  | 'desktopLyrics.primary.instrumental'
+  | 'desktopLyrics.secondary.waiting'
+  | 'lyricsView.empty.instrumental'
+  | 'lyricsView.empty.noLyrics'
+  | 'mvPanel.action.close'
+  | 'mvPanel.action.copied'
+  | 'mvPanel.action.copy'
+  | 'mvPanel.action.dismissUnavailable'
+  | 'mvPanel.diagnostics.title'
+  | 'mvPanel.notice.unavailable'
+  | 'mvPanel.status.databaseUnread'
+  | 'mvPanel.status.externalRequired'
+  | 'mvPanel.status.inAppUnavailable'
+  | 'mvPanel.status.loadFailed'
+  | 'mvPanel.status.loading'
+  | 'mvPanel.status.localUnsupported'
+  | 'mvPanel.status.missingUrl'
+  | 'mvPanel.status.networkFailed'
+  | 'mvPanel.status.notFound'
+  | 'mvPanel.status.temporaryPlayback'
+  | 'mvPanel.status.unavailable'
+  | 'mvPanel.status.videoFailed'
+  | 'miniPlayer.action.close'
+  | 'miniPlayer.action.closeShort'
+  | 'miniPlayer.action.next'
+  | 'miniPlayer.action.pause'
+  | 'miniPlayer.action.play'
+  | 'miniPlayer.action.previous'
+  | 'miniPlayer.action.resetPosition'
+  | 'miniPlayer.aria.progress'
+  | 'miniPlayer.aria.shell'
+  | 'miniPlayer.artist.unknown'
+  | 'miniPlayer.status.hqPlayerTakeover'
+  | 'miniPlayer.status.ready'
+  | 'playerStatus.audioSpecifications'
+  | 'playerStatus.ready'
+  | 'playerStatus.streaming'
+  | 'playerSpeed.label'
+  | 'playerSpeed.reset'
+  | 'playerVolume.fixed.disable'
+  | 'playerVolume.fixed.enable'
+  | 'playerVolume.fixed.enabled'
+  | 'playerVolume.fixed.title'
+  | 'import.dragDrop.desktopBridgeUnavailable'
+  | 'import.dragDrop.files.empty'
+  | 'import.dragDrop.files.failed'
+  | 'import.dragDrop.files.ignored'
+  | 'import.dragDrop.files.imported'
+  | 'import.dragDrop.files.summaryWithOutput'
+  | 'import.dragDrop.noDroppedFiles'
+  | 'import.dragDrop.overlay.description'
+  | 'import.dragDrop.overlay.title'
+  | 'import.dragDrop.paths.addedFolders'
+  | 'import.dragDrop.paths.empty'
+  | 'import.dragDrop.paths.failed'
+  | 'import.dragDrop.paths.ignored'
+  | 'import.dragDrop.paths.importedFiles'
+  | 'import.dragDrop.paths.missing'
+  | 'import.dragDrop.paths.scannedAudioFolders'
   | 'audioDrawer.action.close'
   | 'audioDrawer.action.copiedDiagnostics'
   | 'audioDrawer.action.copyDiagnostics'
@@ -450,7 +756,12 @@ export type TranslationKey =
   | 'common.yes'
   | 'library.action.refresh'
   | 'library.albums.card.tracks'
+  | 'library.albums.confirm.deleteAlbumFiles'
+  | 'library.albums.error.coverNotSaved'
   | 'library.albums.error.desktopBridge'
+  | 'library.albums.error.noCopyableCover'
+  | 'library.albums.error.noPlayableTracks'
+  | 'library.albums.error.remoteEditUnsupported'
   | 'library.albums.listAria'
   | 'library.albums.loading'
   | 'library.albums.searchPlaceholder'
@@ -459,6 +770,7 @@ export type TranslationKey =
   | 'library.albums.sort.titleAsc'
   | 'library.albums.sort.titleDesc'
   | 'library.albums.title'
+  | 'libraryDiagnostics.lab.description'
   | 'library.artists.error.desktopBridge'
   | 'library.artists.avatarPriority'
   | 'library.artists.listAria'
@@ -484,7 +796,26 @@ export type TranslationKey =
   | 'library.sort.recent'
   | 'library.source.aria'
   | 'library.source.local'
+  | 'library.source.allRemote'
   | 'library.source.remote'
+  | 'library.trackRow.action.addToPlaylist'
+  | 'library.trackRow.action.addToPlaylistLabel'
+  | 'library.trackRow.action.addToQueue'
+  | 'library.trackRow.action.addToQueueLabel'
+  | 'library.trackRow.action.download'
+  | 'library.trackRow.action.downloadLabel'
+  | 'library.trackRow.action.downloading'
+  | 'library.trackRow.action.downloadingLabel'
+  | 'library.trackRow.action.more'
+  | 'library.trackRow.action.moreLabel'
+  | 'library.trackRow.actions'
+  | 'library.trackRow.audioSpecifications'
+  | 'library.trackRow.duplicateVersions.count'
+  | 'library.trackRow.duplicateVersions.title'
+  | 'library.trackRow.openAlbum'
+  | 'library.trackRow.openArtist'
+  | 'library.trackRow.status.playing'
+  | 'library.trackRow.status.unavailable'
   | 'trackMenu.action.addToPlaylist'
   | 'trackMenu.action.playNext'
   | 'trackMenu.action.addToQueue'
@@ -590,6 +921,28 @@ export type TranslationKey =
   | 'notice.browserFolderPicker'
   | 'notice.browserFilePicker'
   | 'notice.windowControlsDesktop'
+  | 'notice.accountExpired'
+  | 'notice.accountExpired.title'
+  | 'notice.action.close'
+  | 'notice.action.closeNotice'
+  | 'notice.action.ignore'
+  | 'notice.action.openReport'
+  | 'notice.audioError.description'
+  | 'notice.audioError.title'
+  | 'notice.diagnosticsCrash.description'
+  | 'notice.importFiles.empty'
+  | 'notice.importFiles.failed'
+  | 'notice.importFiles.imported'
+  | 'notice.importFiles.skipped'
+  | 'notice.openFiles.partial'
+  | 'notice.reportOpened'
+  | 'notice.reportOpenedPath'
+  | 'notice.updateAvailable'
+  | 'notice.updateAvailableVersion'
+  | 'notice.updateDownloaded'
+  | 'notice.updateDownloadedVersion'
+  | 'punctuation.clauseSeparator'
+  | 'punctuation.listSeparator'
   | 'queue.action.clear'
   | 'queue.action.dragLabel'
   | 'queue.action.dragTitle'
@@ -646,16 +999,187 @@ export type TranslationKey =
   | 'route.folders.label'
   | 'route.history.description'
   | 'route.history.label'
+  | 'route.inbox.description'
+  | 'route.inbox.label'
   | 'route.importFile.description'
   | 'route.importFile.label'
   | 'route.importFolder.description'
   | 'route.importFolder.label'
+  | 'importFolder.hero.note'
+  | 'nowPlaying.action.openLyrics'
+  | 'nowPlaying.description'
+  | 'nowPlaying.emptyDescription'
+  | 'nowPlaying.emptyTitle'
+  | 'nowPlaying.kicker'
+  | 'nowPlaying.localFile'
+  | 'nowPlaying.ready'
+  | 'nowPlaying.state.idle'
+  | 'nowPlaying.state.playing'
+  | 'nowPlaying.title'
   | 'route.liked.description'
   | 'route.liked.label'
   | 'route.lyrics.description'
   | 'route.lyrics.label'
   | 'route.lyricsSettings.description'
   | 'route.lyricsSettings.label'
+  | 'lyricsSettings.background.mode.cover'
+  | 'lyricsSettings.action.reset'
+  | 'lyricsSettings.background.blur'
+  | 'lyricsSettings.background.brightness'
+  | 'lyricsSettings.background.chooseWallpaper'
+  | 'lyricsSettings.background.clearWallpaper'
+  | 'lyricsSettings.background.clearWallpaperHint'
+  | 'lyricsSettings.background.highResolutionCover'
+  | 'lyricsSettings.background.highResolutionCoverDescription'
+  | 'lyricsSettings.background.mode.customWallpaper'
+  | 'lyricsSettings.background.mode.theme'
+  | 'lyricsSettings.background.modeAria'
+  | 'lyricsSettings.background.modeDescription'
+  | 'lyricsSettings.background.opacity'
+  | 'lyricsSettings.background.readability'
+  | 'lyricsSettings.background.readabilityDescription'
+  | 'lyricsSettings.background.scale'
+  | 'lyricsSettings.background.showControls'
+  | 'lyricsSettings.background.smartReadable'
+  | 'lyricsSettings.background.smartReadableDescription'
+  | 'lyricsSettings.background.title'
+  | 'lyricsSettings.background.tuningDescription'
+  | 'lyricsSettings.background.wallpaperSaved'
+  | 'lyricsSettings.candidate.allSources'
+  | 'lyricsSettings.candidate.results'
+  | 'lyricsSettings.candidate.risk.high'
+  | 'lyricsSettings.candidate.risk.low'
+  | 'lyricsSettings.candidate.risk.medium'
+  | 'lyricsSettings.candidate.sourceFilters'
+  | 'lyricsSettings.currentTrack.instrumentalMarked'
+  | 'lyricsSettings.currentTrack.markInstrumental'
+  | 'lyricsSettings.currentTrack.markInstrumentalHint'
+  | 'lyricsSettings.currentTrack.rematch'
+  | 'lyricsSettings.currentTrack.rematchHint'
+  | 'lyricsSettings.currentTrack.searchHint'
+  | 'lyricsSettings.currentTrack.searchInput'
+  | 'lyricsSettings.currentTrack.searchLyrics'
+  | 'lyricsSettings.currentTrack.searchPlaceholder'
+  | 'lyricsSettings.currentTrack.title'
+  | 'lyricsSettings.display.autoOpenCandidatePanel'
+  | 'lyricsSettings.display.chooseMiniPlayerColor'
+  | 'lyricsSettings.display.coverMiniPlayerHint'
+  | 'lyricsSettings.display.customColor'
+  | 'lyricsSettings.display.defaultMicrosoftYahei'
+  | 'lyricsSettings.display.desktopFont'
+  | 'lyricsSettings.display.desktopLyrics'
+  | 'lyricsSettings.display.desktopLyricsDescription'
+  | 'lyricsSettings.display.desktopRomanization'
+  | 'lyricsSettings.display.desktopTranslation'
+  | 'lyricsSettings.display.disableMvTrackInfoAutoShow'
+  | 'lyricsSettings.display.enableLyrics'
+  | 'lyricsSettings.display.enableLyricsDescription'
+  | 'lyricsSettings.display.hideEmptyState'
+  | 'lyricsSettings.display.hideEmptyStateDescription'
+  | 'lyricsSettings.display.hideTrackInfo'
+  | 'lyricsSettings.display.lockDesktopLyrics'
+  | 'lyricsSettings.display.lockDesktopLyricsDescription'
+  | 'lyricsSettings.display.matchThreshold'
+  | 'lyricsSettings.display.matchThresholdDescription'
+  | 'lyricsSettings.display.miniPlayer'
+  | 'lyricsSettings.display.miniPlayerColor'
+  | 'lyricsSettings.display.miniPlayerColorMode'
+  | 'lyricsSettings.display.miniPlayerDefaultDark'
+  | 'lyricsSettings.display.miniPlayerDescription'
+  | 'lyricsSettings.display.miniPlayerHint'
+  | 'lyricsSettings.display.miniPlayerOpacity'
+  | 'lyricsSettings.display.miniPlayerPalette'
+  | 'lyricsSettings.display.preferUtatenKana'
+  | 'lyricsSettings.display.preferUtatenKanaDescription'
+  | 'lyricsSettings.display.resetDesktopPosition'
+  | 'lyricsSettings.display.resetDesktopPositionHint'
+  | 'lyricsSettings.display.showRomanization'
+  | 'lyricsSettings.display.showRomanizationDescription'
+  | 'lyricsSettings.display.showTranslation'
+  | 'lyricsSettings.display.showTranslationDescription'
+  | 'lyricsSettings.display.title'
+  | 'lyricsSettings.display.useMiniPlayerColor'
+  | 'lyricsSettings.drawer.aria'
+  | 'lyricsSettings.drawer.close'
+  | 'lyricsSettings.drawer.title'
+  | 'lyricsSettings.engine.autoMatch'
+  | 'lyricsSettings.engine.provider'
+  | 'lyricsSettings.engine.threshold'
+  | 'lyricsSettings.engine.title'
+  | 'lyricsSettings.font.applySystem'
+  | 'lyricsSettings.font.chooseInstalled'
+  | 'lyricsSettings.font.custom'
+  | 'lyricsSettings.font.desktopOnly'
+  | 'lyricsSettings.font.importDesktop'
+  | 'lyricsSettings.font.importFile'
+  | 'lyricsSettings.font.lyricsOnly'
+  | 'lyricsSettings.font.restoreDesktopDefault'
+  | 'lyricsSettings.font.restoreLyricsDefault'
+  | 'lyricsSettings.font.system'
+  | 'lyricsSettings.fontPicker.aria'
+  | 'lyricsSettings.fontPicker.chooseFile'
+  | 'lyricsSettings.fontPicker.close'
+  | 'lyricsSettings.fontPicker.preview'
+  | 'lyricsSettings.fontPicker.searchPlaceholder'
+  | 'lyricsSettings.fontPicker.title'
+  | 'lyricsSettings.provider.cached'
+  | 'lyricsSettings.provider.chineseCatalogDescription'
+  | 'lyricsSettings.provider.genius'
+  | 'lyricsSettings.provider.local'
+  | 'lyricsSettings.provider.lrclib'
+  | 'lyricsSettings.provider.lrclibDescription'
+  | 'lyricsSettings.provider.manual'
+  | 'lyricsSettings.provider.musixmatch'
+  | 'lyricsSettings.provider.netease'
+  | 'lyricsSettings.provider.none'
+  | 'lyricsSettings.provider.qqmusic'
+  | 'lyricsSettings.online.autoSearch'
+  | 'lyricsSettings.online.autoSearchDescription'
+  | 'lyricsSettings.online.deepSearch'
+  | 'lyricsSettings.online.deepSearchDescription'
+  | 'lyricsSettings.online.enable'
+  | 'lyricsSettings.online.enableDescription'
+  | 'lyricsSettings.online.sources'
+  | 'lyricsSettings.online.sourcesDescription'
+  | 'lyricsSettings.online.title'
+  | 'lyricsSettings.status.applied'
+  | 'lyricsSettings.status.applying'
+  | 'lyricsSettings.status.markedInstrumental'
+  | 'lyricsSettings.status.noCandidates'
+  | 'lyricsSettings.status.noPlayingTrack'
+  | 'lyricsSettings.status.normal'
+  | 'lyricsSettings.status.off'
+  | 'lyricsSettings.status.on'
+  | 'lyricsSettings.status.auto'
+  | 'lyricsSettings.status.rematchingCandidates'
+  | 'lyricsSettings.status.searchingCandidates'
+  | 'lyricsSettings.style.chooseLyricsColor'
+  | 'lyricsSettings.style.contextOpacity'
+  | 'lyricsSettings.style.fontSize'
+  | 'lyricsSettings.style.lineMaxChars'
+  | 'lyricsSettings.style.lineMaxCharsValue'
+  | 'lyricsSettings.style.lineSpacing'
+  | 'lyricsSettings.style.lyricsColor'
+  | 'lyricsSettings.style.lyricsColorPalette'
+  | 'lyricsSettings.style.lyricsFont'
+  | 'lyricsSettings.style.secondaryFontSize'
+  | 'lyricsSettings.style.showControls'
+  | 'lyricsSettings.style.showControlsDescription'
+  | 'lyricsSettings.style.useColor'
+  | 'lyricsSettings.timing.defaultOffset'
+  | 'lyricsSettings.timing.globalOffset'
+  | 'lyricsSettings.timing.restoreDefaults'
+  | 'lyricsSettings.timing.restoreDefaultsHint'
+  | 'lyricsSettings.timing.showPerTrackOffset'
+  | 'lyricsSettings.timing.smartAlignment'
+  | 'lyricsSettings.timing.smartAlignmentDescription'
+  | 'lyricsSettings.timing.timelineCorrection'
+  | 'lyricsSettings.timing.timelineCorrectionDescription'
+  | 'lyricsSettings.timing.title'
+  | 'lyricsSettings.wordHighlight.clarity'
+  | 'lyricsSettings.wordHighlight.clarityDescription'
+  | 'lyricsSettings.wordHighlight.description'
+  | 'lyricsSettings.wordHighlight.title'
   | 'route.mvSettings.description'
   | 'route.mvSettings.label'
   | 'mvSettings.action.chooseFile'
@@ -699,6 +1223,7 @@ export type TranslationKey =
   | 'mvSettings.error.noActiveTrackBinding'
   | 'mvSettings.error.noActiveTrackMatching'
   | 'mvSettings.error.noActiveTrackNetworkSearch'
+  | 'mvSettings.error.databaseUnavailable'
   | 'mvSettings.error.noLocalCandidates'
   | 'mvSettings.error.noNetworkCandidates'
   | 'mvSettings.general.enabled'
@@ -755,6 +1280,8 @@ export type TranslationKey =
   | 'mvSettings.title'
   | 'route.playlists.description'
   | 'route.playlists.label'
+  | 'route.plugins.description'
+  | 'route.plugins.label'
   | 'route.queue.description'
   | 'route.queue.label'
   | 'route.remote.description'
@@ -763,6 +1290,8 @@ export type TranslationKey =
   | 'route.settings.label'
   | 'route.songs.description'
   | 'route.songs.label'
+  | 'route.streaming.description'
+  | 'route.streaming.label'
   | 'settings.about.audioHost.description'
   | 'settings.about.audioHost.title'
   | 'settings.about.devMode.description'
@@ -985,8 +1514,16 @@ export type TranslationKey =
   | 'settings.general.backup.import'
   | 'settings.general.backup.title'
   | 'settings.general.closeToTray'
+  | 'settings.general.fastStartup.description'
+  | 'settings.general.fastStartup.title'
+  | 'settings.general.firstRunWizard.description'
+  | 'settings.general.firstRunWizard.title'
   | 'settings.general.language.description'
   | 'settings.general.language.title'
+  | 'settings.general.rememberWindowSize.description'
+  | 'settings.general.rememberWindowSize.title'
+  | 'settings.general.searchTraditionalVariants.description'
+  | 'settings.general.searchTraditionalVariants.title'
   | 'settings.header.searchPlaceholder'
   | 'settings.integrations.discord.description'
   | 'settings.integrations.discord.action.refresh'
@@ -1427,11 +1964,99 @@ export type TranslationKey =
   | 'settings.shortcuts.scope.local'
   | 'settings.shortcuts.title'
   | 'settings.remote.library.description'
-  | 'settings.remote.library.title';
+  | 'settings.remote.library.title'
+  | 'segmentLoop.action.clear'
+  | 'segmentLoop.action.deleteBookmark'
+  | 'segmentLoop.action.deleteBookmarkTitle'
+  | 'segmentLoop.action.loopBookmark'
+  | 'segmentLoop.action.loopBookmarkTitle'
+  | 'segmentLoop.action.saveBookmark'
+  | 'segmentLoop.action.setA'
+  | 'segmentLoop.action.setB'
+  | 'segmentLoop.action.toggle'
+  | 'segmentLoop.action.toggleTitle'
+  | 'segmentLoop.aria.bookmarks'
+  | 'segmentLoop.aria.panel'
+  | 'segmentLoop.empty'
+  | 'segmentLoop.notSet'
+  | 'spotifyPlayback.error.noDevice'
+  | 'spotifyPlayback.error.noDrmKeysystem';
 
 type TranslationMap = Record<TranslationKey, string>;
 
 const zhCN: TranslationMap = {
+  'albumTagEditor.action.applyToForm': '应用到表单',
+  'albumTagEditor.action.cancel': '取消',
+  'albumTagEditor.action.chooseCover': '选择封面',
+  'albumTagEditor.action.close': '关闭编辑标签',
+  'albumTagEditor.action.loadEmbedded': '从内嵌标签加载',
+  'albumTagEditor.action.loading': '读取中',
+  'albumTagEditor.action.loadNetwork': '从网络加载',
+  'albumTagEditor.action.saveTags': '保存标签',
+  'albumTagEditor.action.saving': '保存中',
+  'albumTagEditor.action.searchCandidates': '搜索候选',
+  'albumTagEditor.action.searching': '搜索中',
+  'albumTagEditor.albumSummary': '{count} 首 / {duration}',
+  'albumTagEditor.cover.embeddedSuffix': ' / 已从内嵌标签重新载入封面',
+  'albumTagEditor.cover.localSuffix': ' / 本地封面：{path}',
+  'albumTagEditor.cover.networkSuffix': ' / 网络封面将在保存时下载并写入',
+  'albumTagEditor.currentAlbum': '当前专辑',
+  'albumTagEditor.currentAlbumAria': '当前专辑',
+  'albumTagEditor.discard.continue': '继续编辑',
+  'albumTagEditor.discard.discard': '丢弃更改',
+  'albumTagEditor.discard.prompt': '有未保存更改，确认关闭并丢弃吗？',
+  'albumTagEditor.duration.hoursMinutes': '{hours} 小时 {minutes} 分钟',
+  'albumTagEditor.duration.minutes': '{minutes} 分钟',
+  'albumTagEditor.duration.unknown': '未知时长',
+  'albumTagEditor.error.chooseCoverUnsupported': '当前运行环境不支持选择封面。',
+  'albumTagEditor.error.embeddedUnsupported': '当前运行环境不支持读取内嵌标签。',
+  'albumTagEditor.error.fixYearBeforeSave': '请先修正年份，再保存标签。',
+  'albumTagEditor.error.networkTemporary': '网络来源暂时不可用，请稍后再试。',
+  'albumTagEditor.error.networkUnsupported': '当前运行环境不支持网络标签搜索。',
+  'albumTagEditor.error.noReadableTrack': '这张专辑没有可读取标签的歌曲。',
+  'albumTagEditor.error.positiveInteger': '{label}必须是正整数或留空',
+  'albumTagEditor.error.readTracksUnsupported': '当前运行环境不支持读取专辑曲目。',
+  'albumTagEditor.field.album': '专辑',
+  'albumTagEditor.field.albumArtist': '专辑艺术家',
+  'albumTagEditor.field.cover': '封面',
+  'albumTagEditor.field.genre': '流派',
+  'albumTagEditor.field.year': '年份',
+  'albumTagEditor.message.appliedNetwork': '已应用到表单，点击保存后才会写入专辑内歌曲。',
+  'albumTagEditor.message.noNetworkTags': '没有找到合适的网络标签。',
+  'albumTagEditor.message.searchingNetwork': '正在搜索网络标签...',
+  'albumTagEditor.network.aria': '网络候选对比',
+  'albumTagEditor.network.column.candidate': '候选',
+  'albumTagEditor.network.column.current': '当前',
+  'albumTagEditor.network.column.field': '字段',
+  'albumTagEditor.network.selectAll': '全选',
+  'albumTagEditor.network.selectFields': '选择要应用到专辑的字段',
+  'albumTagEditor.network.title': '网络候选',
+  'albumTagEditor.saveDescription': '保存会写入这张专辑内所有歌曲的嵌入标签，并立即同步媒体库。',
+  'albumTagEditor.section.albumInfo': '专辑信息',
+  'albumTagEditor.section.albumInfoDescription': '会批量写入这张专辑内的歌曲',
+  'albumTagEditor.subtitle.albumBatch': '专辑级批量标签',
+  'albumTagEditor.subtitle.unsaved': '未保存更改',
+  'albumTagEditor.title': '编辑标签',
+  'albumTagEditor.value.albumCandidate': '专辑候选',
+  'albumTagEditor.value.empty': '空',
+  'albumTagEditor.value.existingCover': '已有封面',
+  'albumTagEditor.value.networkCover': '网络封面',
+  'albumTagEditor.value.unknownAlbum': '未知专辑',
+  'albumTagEditor.value.unknownArtist': '未知艺术家',
+  'albumMenu.action.addToPlaylist': '加入歌单...',
+  'albumMenu.action.addToQueue': '加入队列',
+  'albumMenu.action.copyCover': '复制专辑封面',
+  'albumMenu.action.copyInfo': '复制专辑信息',
+  'albumMenu.action.deleteAlbum': '删除专辑',
+  'albumMenu.action.editTags': '编辑标签',
+  'albumMenu.action.likeAlbum': '喜欢专辑',
+  'albumMenu.action.playAlbum': '播放专辑',
+  'albumMenu.action.saveCover': '保存专辑封面',
+  'albumMenu.action.unlikeAlbum': '取消喜欢专辑',
+  'albumMenu.playlistSubmenu.aria': '选择歌单',
+  'albumMenu.playlistSubmenu.empty': '没有本地歌单',
+  'albumMenu.playlistSubmenu.itemCount': '{count} 首',
+  'albumMenu.playlistSubmenu.loading': '读取歌单...',
   'app.navigation.main': '主导航',
   'app.navigation.utility': '工具导航',
   'app.toolbar.quickActions': '快捷操作',
@@ -1439,6 +2064,221 @@ const zhCN: TranslationMap = {
   'app.window.minimize': '最小化',
   'app.window.maximize': '最大化',
   'app.window.close': '关闭',
+  'firstRun.action.finish': '完成设置',
+  'firstRun.action.next': '下一步',
+  'firstRun.action.previous': '上一步',
+  'firstRun.action.skip': '跳过',
+  'firstRun.action.skipWizard': '跳过向导',
+  'firstRun.aria.steps': '首次启动步骤',
+  'firstRun.aria.summary': '当前向导选择摘要',
+  'firstRun.audio.asio.description': '需要 ASIO 设备和可靠驱动。',
+  'firstRun.audio.asio.hint': '专业',
+  'firstRun.audio.asio.label': 'ASIO',
+  'firstRun.audio.exclusive.description': '独占设备，适合确认稳定的外置声卡或 HiFi 调试。',
+  'firstRun.audio.exclusive.hint': '高级',
+  'firstRun.audio.exclusive.label': 'WASAPI Exclusive',
+  'firstRun.audio.linuxShared.description': '通过 Linux 音频栈使用 ECHO 原生输出。',
+  'firstRun.audio.linuxShared.hint': '高级',
+  'firstRun.audio.linuxShared.label': 'Linux Shared',
+  'firstRun.audio.shared.description': '高级音频引擎的日常共享输出。',
+  'firstRun.audio.shared.hint': '高级',
+  'firstRun.audio.shared.label': 'WASAPI Shared',
+  'firstRun.audio.system.description': '最稳定，适合普通耳机、蓝牙、电脑扬声器。',
+  'firstRun.audio.system.hint': '推荐',
+  'firstRun.audio.system.label': '标准输出（推荐）',
+  'firstRun.cache.chooseLocation': '选择缓存位置',
+  'firstRun.cache.useDefault': '使用默认',
+  'firstRun.currentSelection': '当前选择',
+  'firstRun.defaultLocation': '默认位置',
+  'firstRun.description': '先完成几个基础设置。不确定的地方保留推荐值就好。',
+  'firstRun.error.desktopBridgeCache': '桌面桥接不可用，暂时不能选择缓存位置。',
+  'firstRun.error.desktopBridgeMusicFolder': '桌面桥接不可用，暂时不能选择音乐文件夹。',
+  'firstRun.error.desktopBridgeSave': '桌面桥接不可用，暂时不能保存首次启动设置。',
+  'firstRun.library.chooseFolder': '选择文件夹',
+  'firstRun.library.noneSelected': '未选择，稍后添加也可以。',
+  'firstRun.library.scanAfterFinish': '完成后扫描',
+  'firstRun.message.saved': '首次启动设置已保存。',
+  'firstRun.scan.balanced.description': '推荐。扫描速度和后台占用都比较稳。',
+  'firstRun.scan.balanced.hint': '默认',
+  'firstRun.scan.balanced.label': '均衡',
+  'firstRun.scan.low.description': '更少打扰播放，扫描会慢一些。',
+  'firstRun.scan.low.hint': '边听边扫',
+  'firstRun.scan.low.label': '低占用',
+  'firstRun.scan.performance.description': '优先尽快建库，适合电脑空闲时使用。',
+  'firstRun.scan.performance.hint': '空闲时',
+  'firstRun.scan.performance.label': '快速',
+  'firstRun.step.audio.description': '普通耳机、蓝牙和电脑扬声器建议使用标准输出；外置声卡和 HiFi 调试再选高级音频引擎。',
+  'firstRun.step.audio.eyebrow': '4 / 5',
+  'firstRun.step.audio.label': '输出',
+  'firstRun.step.audio.title': '选择音频输出',
+  'firstRun.step.cache.description': '封面缓存会占用磁盘空间。C 盘紧张时，建议换到其他盘。',
+  'firstRun.step.cache.eyebrow': '2 / 5',
+  'firstRun.step.cache.label': '缓存',
+  'firstRun.step.cache.title': '选择缓存位置',
+  'firstRun.step.library.description': 'ECHO 会从这里建立曲库。也可以先跳过，之后再添加。',
+  'firstRun.step.library.eyebrow': '1 / 5',
+  'firstRun.step.library.label': '音乐',
+  'firstRun.step.library.title': '选择音乐文件夹',
+  'firstRun.step.scan.description': '不确定就保持均衡。它会尽量兼顾速度和播放稳定性。',
+  'firstRun.step.scan.eyebrow': '3 / 5',
+  'firstRun.step.scan.label': '扫描',
+  'firstRun.step.scan.title': '选择扫描方式',
+  'firstRun.step.summary.description': '这些选项之后都能改。这里不会移动或删除你的音乐文件。',
+  'firstRun.step.summary.eyebrow': '5 / 5',
+  'firstRun.step.summary.label': '确认',
+  'firstRun.step.summary.title': '确认设置',
+  'firstRun.summary.addLater': '稍后添加',
+  'firstRun.summary.cache': '缓存',
+  'firstRun.summary.kicker': '摘要',
+  'firstRun.summary.music': '音乐',
+  'firstRun.summary.noFileMove': '不会移动或删除你的音乐文件。',
+  'firstRun.summary.output': '输出',
+  'firstRun.summary.readyDescription': '点击完成后保存设置。若已选择文件夹并勾选扫描，ECHO 会开始建立曲库索引。',
+  'firstRun.summary.readyTitle': '可以开始了',
+  'firstRun.summary.scan': '扫描',
+  'firstRun.summary.scanWithFolder': '{mode}，完成后扫描',
+  'firstRun.title': '欢迎使用 ECHO Next',
+  'downloads.action.addToQueue': '加入队列',
+  'downloads.action.cancelJob': '取消任务',
+  'downloads.action.changeFolder': '更换文件夹',
+  'downloads.action.checkTools': '检测环境',
+  'downloads.action.chooseFolder': '选择文件夹',
+  'downloads.action.clearCompleted': '清除已完成',
+  'downloads.action.creating': '创建中',
+  'downloads.action.search': '搜索',
+  'downloads.action.searching': '搜索中',
+  'downloads.description': '使用内置 yt-dlp 搜索 YouTube / Bilibili，并只下载最高可用音频。',
+  'downloads.empty.noResults.description': '换个关键词再试试。',
+  'downloads.empty.noResults.title': '暂无搜索结果',
+  'downloads.empty.queue.description': '粘贴链接或搜索结果下载后，会在这里看到真实进度。',
+  'downloads.empty.queue.title': '队列为空',
+  'downloads.empty.searching.description': '正在查询 {scope}。',
+  'downloads.empty.searching.title': '正在搜索',
+  'downloads.error.cookieFallback': '无法读取浏览器 Cookie，已自动尝试不使用登录状态搜索。',
+  'downloads.error.ipcUnavailable': '当前运行环境未暴露下载 IPC。',
+  'downloads.error.operationFailed': '下载操作失败',
+  'downloads.folder.required': '请选择下载文件夹',
+  'downloads.job.imported': '已导入曲库',
+  'downloads.job.savedTo': '保存到 {path}',
+  'downloads.job.waitingProgress': '等待进度',
+  'downloads.message.clearedTerminal': '已清除完成、失败和取消的任务。',
+  'downloads.message.completed': '下载完成：{title}',
+  'downloads.message.queued': '已加入下载队列。',
+  'downloads.message.resultQueued': '已加入队列：{title}',
+  'downloads.queue.title': '下载队列',
+  'downloads.search.aria': '搜索下载',
+  'downloads.search.downloadAudio': '下载音频',
+  'downloads.search.joined': '已加入队列',
+  'downloads.search.placeholder': '搜索歌曲、艺人或视频标题',
+  'downloads.search.providerErrorItem': '{provider}：{error}',
+  'downloads.search.providerErrors': '部分平台搜索失败：{errors}',
+  'downloads.search.scopeAria': '搜索平台',
+  'downloads.search.title': '搜索下载',
+  'downloads.search.unknownUploader': '未知作者',
+  'downloads.search.views': '{count} 次播放',
+  'downloads.search.viewsWan': '{count} 万次播放',
+  'downloads.settings.audioStrategy': '音频策略',
+  'downloads.settings.bestAvailable': '最高可用音质',
+  'downloads.settings.bindMvAfterImport': '导入后绑定源 URL 为 MV',
+  'downloads.settings.importToLibrary': '完成后导入曲库',
+  'downloads.settings.outputDirectory': '下载文件夹',
+  'downloads.settings.title': '下载设置',
+  'downloads.status.bindingMv': '绑定 MV',
+  'downloads.status.cancelled': '已取消',
+  'downloads.status.completed': '已完成',
+  'downloads.status.downloading': '下载中',
+  'downloads.status.extractingAudio': '提取音频',
+  'downloads.status.failed': '失败',
+  'downloads.status.importing': '导入曲库',
+  'downloads.status.probing': '解析链接',
+  'downloads.status.queued': '排队中',
+  'downloads.title': '下载',
+  'downloads.tools.notBundled': '未随应用安装',
+  'downloads.tools.notDetected': '未检测到',
+  'downloads.tools.title': '环境检测',
+  'downloads.url.placeholder': '粘贴 YouTube / Bilibili / SoundCloud / osu! 链接',
+  'downloads.url.title': '粘贴链接下载',
+  'accountProvider.bilibili': 'Bilibili',
+  'accountProvider.netease': '网易云音乐',
+  'accountProvider.osu': 'osu!',
+  'accountProvider.qqmusic': 'QQ 音乐',
+  'accountProvider.soundcloud': 'SoundCloud',
+  'accountProvider.spotify': 'Spotify',
+  'accountProvider.unknown': '未知账号',
+  'accountProvider.youtube': 'YouTube',
+  'desktopLyrics.aria.stage': '桌面歌词',
+  'desktopLyrics.control.close': '关闭',
+  'desktopLyrics.control.colorSwatch': '颜色 {color}',
+  'desktopLyrics.control.customColor': '自定义颜色',
+  'desktopLyrics.control.decreaseFontSize': '减小字号',
+  'desktopLyrics.control.decreaseScale': '缩小',
+  'desktopLyrics.control.increaseFontSize': '增大字号',
+  'desktopLyrics.control.increaseScale': '放大',
+  'desktopLyrics.control.lock': '锁定',
+  'desktopLyrics.control.resetPosition': '重置位置',
+  'desktopLyrics.control.romanization': '桌面歌词显示罗马音',
+  'desktopLyrics.control.translation': '桌面歌词显示翻译',
+  'desktopLyrics.control.translationShort': '译',
+  'desktopLyrics.primary.empty': '暂无歌词',
+  'desktopLyrics.primary.instrumental': '纯音乐，请欣赏',
+  'desktopLyrics.secondary.waiting': '等待播放',
+  'lyricsView.empty.instrumental': '纯音乐，请欣赏',
+  'lyricsView.empty.noLyrics': '暂无歌词',
+  'mvPanel.action.close': '关闭',
+  'mvPanel.action.copied': '已复制',
+  'mvPanel.action.copy': '复制',
+  'mvPanel.action.dismissUnavailable': '关闭 MV 不可用提示',
+  'mvPanel.diagnostics.title': 'MV 诊断报告',
+  'mvPanel.notice.unavailable': 'MV 不可用',
+  'mvPanel.status.databaseUnread': 'MV 数据库不可读',
+  'mvPanel.status.externalRequired': '当前 MV 需要外部播放',
+  'mvPanel.status.inAppUnavailable': '当前 MV 无法在应用内播放',
+  'mvPanel.status.loadFailed': 'MV 加载失败',
+  'mvPanel.status.loading': '正在加载 MV',
+  'mvPanel.status.localUnsupported': '本地视频格式不支持',
+  'mvPanel.status.missingUrl': '缺少可播放地址',
+  'mvPanel.status.networkFailed': '网络 MV 请求失败',
+  'mvPanel.status.notFound': '未找到可播放 MV',
+  'mvPanel.status.temporaryPlayback': '临时 MV 播放中，数据库待修复',
+  'mvPanel.status.unavailable': 'MV 不可用',
+  'mvPanel.status.videoFailed': '视频加载失败',
+  'miniPlayer.action.close': '关闭迷你播放器',
+  'miniPlayer.action.closeShort': '关闭',
+  'miniPlayer.action.next': '下一首',
+  'miniPlayer.action.pause': '暂停',
+  'miniPlayer.action.play': '播放',
+  'miniPlayer.action.previous': '上一首',
+  'miniPlayer.action.resetPosition': '重置位置',
+  'miniPlayer.aria.progress': '播放进度',
+  'miniPlayer.aria.shell': '迷你播放器',
+  'miniPlayer.artist.unknown': '未知艺术家',
+  'miniPlayer.status.hqPlayerTakeover': 'HQPlayer 接管中',
+  'miniPlayer.status.ready': '就绪',
+  'playerStatus.audioSpecifications': '音频规格',
+  'playerStatus.ready': '就绪',
+  'playerStatus.streaming': '流媒体',
+  'playerSpeed.label': '播放速度',
+  'playerSpeed.reset': '重置播放速度',
+  'playerVolume.fixed.disable': '关闭固定音量',
+  'playerVolume.fixed.enable': '开启固定音量',
+  'playerVolume.fixed.enabled': '固定音量已开启',
+  'playerVolume.fixed.title': '固定音量',
+  'import.dragDrop.desktopBridgeUnavailable': '桌面桥接不可用。请在 ECHO Next 桌面端导入拖拽文件。',
+  'import.dragDrop.files.empty': '未找到可导入的音频文件。',
+  'import.dragDrop.files.failed': '{count} 个文件导入失败',
+  'import.dragDrop.files.ignored': '忽略 {count} 个不支持文件',
+  'import.dragDrop.files.imported': '已导入 {count} 首歌曲',
+  'import.dragDrop.files.summaryWithOutput': '{summary}。文件已保存到：{outputDirectory}',
+  'import.dragDrop.noDroppedFiles': '未读取到拖拽文件。',
+  'import.dragDrop.overlay.description': '文件会保存到下载文件夹并加入曲库',
+  'import.dragDrop.overlay.title': '拖入音乐或 osu! 谱面以导入曲库',
+  'import.dragDrop.paths.addedFolders': '已添加 {count} 个文件夹',
+  'import.dragDrop.paths.empty': '未找到可导入的音乐文件或文件夹',
+  'import.dragDrop.paths.failed': '{count} 个路径导入失败',
+  'import.dragDrop.paths.ignored': '忽略 {count} 个不支持文件',
+  'import.dragDrop.paths.importedFiles': '已导入 {count} 个文件',
+  'import.dragDrop.paths.missing': '跳过 {count} 个不可访问路径',
+  'import.dragDrop.paths.scannedAudioFolders': '已扫描 {count} 个音乐文件所在文件夹',
   'albumDetail.action.back': '专辑',
   'albumDetail.action.likeAlbum': '喜欢专辑',
   'albumDetail.action.more': '更多专辑操作',
@@ -1505,10 +2345,27 @@ const zhCN: TranslationMap = {
   'albumDetail.online.reading': '正在读取在线专辑信息...',
   'albumDetail.online.sources': '在线来源',
   'albumDetail.online.unavailable': '在线信息不可用',
+  'albumDetail.releases.count': '{count} 个发行版本',
+  'albumDetail.releases.current': '当前匹配',
+  'albumDetail.releases.currentHint': '标记当前本地专辑匹配到的 MusicBrainz 版本',
+  'albumDetail.releases.heading': '版本 / 发行',
+  'albumDetail.releases.overviewAria': '专辑发行版本概览',
   'albumDetail.related.aria': '{artist} 在曲库中的专辑',
   'albumDetail.related.heading': '我的曲库',
   'albumDetail.related.loading': '正在加载专辑',
   'albumDetail.related.thisAlbum': '当前专辑',
+  'albumDetail.sources.barcode': '条码',
+  'albumDetail.sources.catalogNumber': '目录号',
+  'albumDetail.sources.copyright': '版权信息',
+  'albumDetail.sources.kind.database': '数据库',
+  'albumDetail.sources.kind.official': '官方',
+  'albumDetail.sources.kind.other': '网页',
+  'albumDetail.sources.kind.reference': '资料',
+  'albumDetail.sources.kind.streaming': '流媒体',
+  'albumDetail.sources.labels': '厂牌 / 目录',
+  'albumDetail.sources.linksAria': '专辑外部来源链接',
+  'albumDetail.sources.releaseAria': '当前匹配发行信息',
+  'albumDetail.sources.releaseDetails': '当前发行',
   'albumDetail.status.libraryReady': '{value} 就绪',
   'albumDetail.status.readingSignal': '正在读取信号',
   'albumDetail.status.unknownGenre': '未知流派',
@@ -1516,6 +2373,8 @@ const zhCN: TranslationMap = {
   'albumDetail.status.unknownYear': '未知年份',
   'albumDetail.tab.credits': '贡献',
   'albumDetail.tab.information': '信息',
+  'albumDetail.tab.releases': '版本',
+  'albumDetail.tab.sources': '来源',
   'albumDetail.tab.tracks': '曲目',
   'albumDetail.texture.discs': '{count} 张碟',
   'albumDetail.tracks.action.like': '喜欢 {title}',
@@ -1614,7 +2473,7 @@ const zhCN: TranslationMap = {
   'audioDrawer.mode.directSound': 'DirectSound 兼容',
   'audioDrawer.mode.shared': '共享',
   'audioDrawer.note.asio': '低延迟专业音频接口，需要驱动支持。',
-  'audioDrawer.note.asioWarning': '开启 ASIO 会占用您的音频通道；如果没有原厂或可信 ASIO 驱动，请不要使用，也不建议为了适配 ASIO 安装来路不明的虚拟驱动，收益有限且可能导致不稳定。',
+  'audioDrawer.note.asioWarning': '开启 ASIO 会占用您的音频通道；如果没有原厂或可信 ASIO 驱动，请不要使用，也不建议为了适配 ASIO 安装来路不明的虚拟驱动，收益有限且可能导致不稳定。此外，如果您使用 ASIO4ALL 等第三方驱动出现任何问题，请不要说是软件 Bug；这类问题完全不被接受，请使用原生 ASIO 驱动。',
   'audioDrawer.note.outputResponsibilityTitle': '独占 / ASIO 使用提示',
   'audioDrawer.note.outputResponsibilityPrimary': '如果您直推耳机或音响，通常没有开启独占的必要。如果非要开启独占 / ASIO 后出现问题，而共享模式正常，请先排查 DAC、声卡、驱动和连接链路，不要一遇到就直接判断为软件 Bug；如果嫌麻烦，建议使用独立解码设备。',
   'audioDrawer.note.outputResponsibilitySecondary': '如果使用独立解码后仍有问题，请到 设置 - 播放 重置引擎；若仍无法解决，请在群聊发送错误报告。',
@@ -1765,7 +2624,12 @@ const zhCN: TranslationMap = {
   'common.yes': '是',
   'library.action.refresh': '刷新',
   'library.albums.card.tracks': '{count} 首歌',
+  'library.albums.confirm.deleteAlbumFiles': '删除专辑文件？\n{title}\n\n这会把 {count} 首歌曲移到系统回收站，并从媒体库移除。',
+  'library.albums.error.coverNotSaved': '没有保存专辑封面。',
   'library.albums.error.desktopBridge': '桌面桥接不可用。请在 ECHO Next 桌面版中读取专辑。',
+  'library.albums.error.noCopyableCover': '这张专辑没有可复制的封面。',
+  'library.albums.error.noPlayableTracks': '这张专辑没有可播放的歌曲。',
+  'library.albums.error.remoteEditUnsupported': '远程专辑暂不支持编辑标签或删除服务器文件。',
   'library.albums.listAria': '专辑列表',
   'library.albums.loading': '正在加载专辑...',
   'library.albums.searchPlaceholder': '搜索专辑 / 艺术家',
@@ -1774,6 +2638,7 @@ const zhCN: TranslationMap = {
   'library.albums.sort.titleAsc': '标题 A-Z',
   'library.albums.sort.titleDesc': '标题 Z-A',
   'library.albums.title': '专辑',
+  'libraryDiagnostics.lab.description': '这些功能用于开发测试实时媒体库行为。默认关闭，不会影响普通用户。请只在测试分支或测试曲库中使用。',
   'library.artists.error.desktopBridge': '桌面桥接不可用。请在 ECHO Next 桌面版中读取艺术家。',
   'library.artists.avatarPriority': '头像优先',
   'library.artists.listAria': '艺术家列表',
@@ -1902,7 +2767,26 @@ const zhCN: TranslationMap = {
   'library.sort.recent': '最近',
   'library.source.aria': '曲库来源',
   'library.source.local': '本地',
+  'library.source.allRemote': '全部网盘来源',
   'library.source.remote': '网盘',
+  'library.trackRow.action.addToPlaylist': '添加到歌单',
+  'library.trackRow.action.addToPlaylistLabel': '添加到歌单 {title}',
+  'library.trackRow.action.addToQueue': '加入队列',
+  'library.trackRow.action.addToQueueLabel': '加入队列 {title}',
+  'library.trackRow.action.download': '下载',
+  'library.trackRow.action.downloadLabel': '下载 {title}',
+  'library.trackRow.action.downloading': '下载中 {percent}%',
+  'library.trackRow.action.downloadingLabel': '正在下载 {title} {percent}%',
+  'library.trackRow.action.more': '更多',
+  'library.trackRow.action.moreLabel': '更多 {title}',
+  'library.trackRow.actions': '{title} 操作',
+  'library.trackRow.audioSpecifications': '音频规格',
+  'library.trackRow.duplicateVersions.count': '有 {count} 个版本',
+  'library.trackRow.duplicateVersions.title': '查看重复歌曲版本',
+  'library.trackRow.openAlbum': '打开专辑：{album}',
+  'library.trackRow.openArtist': '打开艺术家：{artist}',
+  'library.trackRow.status.playing': '播放中',
+  'library.trackRow.status.unavailable': '不可用',
   'trackMenu.action.addToPlaylist': '加入歌单...',
   'trackMenu.action.playNext': '下一首播放',
   'trackMenu.action.addToQueue': '加入队列',
@@ -2008,6 +2892,28 @@ const zhCN: TranslationMap = {
   'notice.browserFolderPicker': '浏览器预览已打开文件夹选择器。真实曲库导入需要使用 Electron 桌面应用。',
   'notice.browserFilePicker': '浏览器预览已选择 {name}。请在 ECHO Next 桌面端通过 Audio Core 播放。',
   'notice.windowControlsDesktop': '窗口控制只在 Electron 桌面窗口中可用。',
+  'notice.accountExpired': '账号登录状态可能已失效：{names}。请到设置 > 集成重新登录。',
+  'notice.accountExpired.title': '账号登录失效',
+  'notice.action.close': '关闭',
+  'notice.action.closeNotice': '关闭提示',
+  'notice.action.ignore': '忽略',
+  'notice.action.openReport': '打开报告',
+  'notice.audioError.description': '已生成 Markdown 诊断报告，里面有详细原因和排查线索。',
+  'notice.audioError.title': '音频错误',
+  'notice.diagnosticsCrash.description': '上次 ECHO Next 没有正常退出，已准备 Markdown 报告用于排查。',
+  'notice.importFiles.empty': '没有可导入的音频文件。',
+  'notice.importFiles.failed': '{count} 个文件导入失败',
+  'notice.importFiles.imported': '已入库 {count} 个文件',
+  'notice.importFiles.skipped': '忽略 {count} 个不支持或不可用文件',
+  'notice.openFiles.partial': '已打开 {opened} 个文件，忽略 {rejected} 个不支持或不可用文件。',
+  'notice.reportOpened': 'Markdown 报告已打开。',
+  'notice.reportOpenedPath': 'Markdown 报告已打开：{path}',
+  'notice.updateAvailable': '发现 ECHO NEXT 新版本。',
+  'notice.updateAvailableVersion': '发现 ECHO NEXT 新版本 {version}。',
+  'notice.updateDownloaded': 'ECHO NEXT 更新已下载完成，准备安装。',
+  'notice.updateDownloadedVersion': 'ECHO NEXT {version} 已下载完成，准备安装。',
+  'punctuation.clauseSeparator': '，',
+  'punctuation.listSeparator': '、',
   'queue.action.clear': '清空队列',
   'queue.action.dragLabel': '拖拽 {title}',
   'queue.action.dragTitle': '拖拽排序',
@@ -2064,16 +2970,187 @@ const zhCN: TranslationMap = {
   'route.folders.label': '文件夹',
   'route.history.description': '播放历史。',
   'route.history.label': '历史',
+  'route.inbox.description': '每次扫描新增歌曲。',
+  'route.inbox.label': '收件箱',
   'route.importFile.description': '导入单个音频文件。',
   'route.importFile.label': '导入文件',
   'route.importFolder.description': '选择本地音乐文件夹。',
   'route.importFolder.label': '导入文件夹',
+  'importFolder.hero.note': '此页面只用于本地曲库导入和扫描状态查看。',
+  'nowPlaying.action.openLyrics': '打开歌词',
+  'nowPlaying.description': '当前曲目概览。歌词请从底部播放器的麦克风按钮进入独立页面。',
+  'nowPlaying.emptyDescription': '从歌曲列表或专辑开始播放后，这里会显示当前曲目。',
+  'nowPlaying.emptyTitle': '暂无播放',
+  'nowPlaying.kicker': '正在播放',
+  'nowPlaying.localFile': '本地文件',
+  'nowPlaying.ready': '就绪',
+  'nowPlaying.state.idle': '空闲',
+  'nowPlaying.state.playing': '播放中',
+  'nowPlaying.title': '正在播放',
   'route.liked.description': '收藏曲目。',
   'route.liked.label': '喜欢',
   'route.lyrics.description': '歌词与沉浸播放。',
   'route.lyrics.label': '歌词',
   'route.lyricsSettings.description': '歌词偏好设置。',
   'route.lyricsSettings.label': '歌词设置',
+  'lyricsSettings.action.reset': '重置',
+  'lyricsSettings.background.blur': '背景模糊度',
+  'lyricsSettings.background.brightness': '背景亮度',
+  'lyricsSettings.background.chooseWallpaper': '选择自定义壁纸',
+  'lyricsSettings.background.clearWallpaper': '清除自定义壁纸',
+  'lyricsSettings.background.clearWallpaperHint': '恢复为跟随主题',
+  'lyricsSettings.background.highResolutionCover': '请求网络元数据的高清封面',
+  'lyricsSettings.background.highResolutionCoverDescription': '仅在跟随封面时临时请求高清封面作为歌词背景；关闭时只使用本地封面兜底。',
+  'lyricsSettings.background.mode.cover': '跟随封面',
+  'lyricsSettings.background.mode.customWallpaper': '自定义壁纸',
+  'lyricsSettings.background.mode.theme': '跟随主题',
+  'lyricsSettings.background.modeAria': '歌词背景模式',
+  'lyricsSettings.background.modeDescription': '封面模式会使用当前歌曲封面；自定义壁纸会保存到应用数据目录。',
+  'lyricsSettings.background.opacity': '背景透明度',
+  'lyricsSettings.background.readability': '歌词可读性增强',
+  'lyricsSettings.background.readabilityDescription': '为沉浸式 MV 背景上的歌词增加描边和投影；不用展开沉浸式 MV 背景设置也可以常驻开关。',
+  'lyricsSettings.background.scale': '背景放大',
+  'lyricsSettings.background.showControls': '显示歌词背景设置',
+  'lyricsSettings.background.smartReadable': '智能可读颜色',
+  'lyricsSettings.background.smartReadableDescription': '根据封面、壁纸或 MV 画面自动选择高对比文字色，并按需增加轻遮罩、描边和阴影。关闭时继续使用手动歌词颜色。',
+  'lyricsSettings.background.title': '歌词背景',
+  'lyricsSettings.background.tuningDescription': '跟随封面和自定义壁纸都会使用这里的透明度、模糊度和亮度。',
+  'lyricsSettings.background.wallpaperSaved': '已保存到应用壁纸目录',
+  'lyricsSettings.candidate.allSources': '全部来源',
+  'lyricsSettings.candidate.results': '歌词搜索结果',
+  'lyricsSettings.candidate.risk.high': '需要确认',
+  'lyricsSettings.candidate.risk.low': '精准匹配',
+  'lyricsSettings.candidate.risk.medium': '可能匹配',
+  'lyricsSettings.candidate.sourceFilters': '歌词来源筛选',
+  'lyricsSettings.currentTrack.instrumentalMarked': '已标记为纯音乐',
+  'lyricsSettings.currentTrack.markInstrumental': '标记为纯音乐',
+  'lyricsSettings.currentTrack.markInstrumentalHint': '记忆当前歌曲并停止自动歌词匹配',
+  'lyricsSettings.currentTrack.rematch': '重新匹配',
+  'lyricsSettings.currentTrack.rematchHint': '清理当前缓存并重新查找',
+  'lyricsSettings.currentTrack.searchHint': '留空则使用当前歌曲信息',
+  'lyricsSettings.currentTrack.searchInput': '搜索歌词文本',
+  'lyricsSettings.currentTrack.searchLyrics': '搜索歌词',
+  'lyricsSettings.currentTrack.searchPlaceholder': '歌名 / 艺术家 / 关键词',
+  'lyricsSettings.currentTrack.title': '当前歌曲',
+  'lyricsSettings.display.autoOpenCandidatePanel': '自动弹出歌词选择栏',
+  'lyricsSettings.display.chooseMiniPlayerColor': '选择底栏颜色',
+  'lyricsSettings.display.coverMiniPlayerHint': '会从当前歌曲封面提取颜色，并自动压暗成适合按钮阅读的玻璃色。',
+  'lyricsSettings.display.customColor': '自定义颜色',
+  'lyricsSettings.display.defaultMicrosoftYahei': '默认微软雅黑，可换系统字体',
+  'lyricsSettings.display.desktopFont': '桌面歌词字体',
+  'lyricsSettings.display.desktopLyrics': '桌面歌词',
+  'lyricsSettings.display.desktopLyricsDescription': '开启后用独立透明窗口在桌面置顶显示当前歌词。',
+  'lyricsSettings.display.desktopRomanization': '桌面歌词显示罗马音',
+  'lyricsSettings.display.desktopTranslation': '桌面歌词显示翻译',
+  'lyricsSettings.display.disableMvTrackInfoAutoShow': '关闭MV自动显示歌曲信息',
+  'lyricsSettings.display.enableLyrics': '启用歌词',
+  'lyricsSettings.display.enableLyricsDescription': '关闭后歌词页不会加载、搜索或匹配歌词。',
+  'lyricsSettings.display.hideEmptyState': '隐藏纯音乐提示',
+  'lyricsSettings.display.hideEmptyStateDescription': '隐藏歌词页中央的“纯音乐，请欣赏”和“暂无歌词”提示，默认开启。',
+  'lyricsSettings.display.hideTrackInfo': '隐藏歌曲信息',
+  'lyricsSettings.display.lockDesktopLyrics': '锁定桌面歌词',
+  'lyricsSettings.display.lockDesktopLyricsDescription': '锁定后鼠标会穿透桌面歌词，避免挡住桌面操作；回到这里可解锁。',
+  'lyricsSettings.display.matchThreshold': '歌词匹配度设置',
+  'lyricsSettings.display.matchThresholdDescription': '在线结果达到 {threshold}% 才会自动应用',
+  'lyricsSettings.display.miniPlayer': '迷你底栏',
+  'lyricsSettings.display.miniPlayerColor': '底栏颜色',
+  'lyricsSettings.display.miniPlayerColorMode': '迷你底栏颜色模式',
+  'lyricsSettings.display.miniPlayerDefaultDark': '默认深色',
+  'lyricsSettings.display.miniPlayerDescription': '开启后歌词页会隐藏默认底部播放栏，改用贴在底部中央的小号控制条。',
+  'lyricsSettings.display.miniPlayerHint': '默认关闭；适合想保留歌词沉浸感、但仍要快速切歌和拖动进度时使用。',
+  'lyricsSettings.display.miniPlayerOpacity': '底栏透明度',
+  'lyricsSettings.display.miniPlayerPalette': '迷你底栏颜色调色盘',
+  'lyricsSettings.display.preferUtatenKana': '优先 UtaTen 假名注音',
+  'lyricsSettings.display.preferUtatenKanaDescription': '默认关闭；开启后日文歌词会尝试用 UtaTen 的ふりがな替代罗马音显示，匹配不到会自动回退。',
+  'lyricsSettings.display.resetDesktopPosition': '重置桌面歌词位置',
+  'lyricsSettings.display.resetDesktopPositionHint': '移回屏幕下方中央',
+  'lyricsSettings.display.showRomanization': '显示罗马音',
+  'lyricsSettings.display.showRomanizationDescription': '优先使用歌词源提供的罗马音；没有时会为日文歌词本地生成。',
+  'lyricsSettings.display.showTranslation': '显示中文翻译',
+  'lyricsSettings.display.showTranslationDescription': '优先显示歌词源提供的中文翻译；没有翻译时不显示额外文本。',
+  'lyricsSettings.display.title': '歌词显示',
+  'lyricsSettings.display.useMiniPlayerColor': '使用底栏颜色 {color}',
+  'lyricsSettings.drawer.aria': '歌词设置',
+  'lyricsSettings.drawer.close': '关闭歌词设置',
+  'lyricsSettings.drawer.title': '歌词设置',
+  'lyricsSettings.engine.autoMatch': '自动匹配',
+  'lyricsSettings.engine.provider': '来源',
+  'lyricsSettings.engine.threshold': '阈值',
+  'lyricsSettings.engine.title': '歌词引擎',
+  'lyricsSettings.font.applySystem': '应用系统字体',
+  'lyricsSettings.font.chooseInstalled': '选择已安装字体',
+  'lyricsSettings.font.custom': '自定义',
+  'lyricsSettings.font.desktopOnly': '只影响桌面歌词',
+  'lyricsSettings.font.importDesktop': '导入桌面歌词字体',
+  'lyricsSettings.font.importFile': '导入字体文件',
+  'lyricsSettings.font.lyricsOnly': '只影响歌词页和歌词行',
+  'lyricsSettings.font.restoreDesktopDefault': '恢复桌面歌词默认字体',
+  'lyricsSettings.font.restoreLyricsDefault': '恢复默认歌词字体',
+  'lyricsSettings.font.system': '系统字体',
+  'lyricsSettings.fontPicker.aria': '选择歌词字体',
+  'lyricsSettings.fontPicker.chooseFile': '从文件选择字体',
+  'lyricsSettings.fontPicker.close': '关闭歌词字体选择',
+  'lyricsSettings.fontPicker.preview': '歌词字体预览 Aa 你好',
+  'lyricsSettings.fontPicker.searchPlaceholder': '搜索已安装字体',
+  'lyricsSettings.fontPicker.title': '选择歌词字体',
+  'lyricsSettings.provider.cached': '缓存歌词',
+  'lyricsSettings.provider.chineseCatalogDescription': '中文曲库补充',
+  'lyricsSettings.provider.genius': 'Genius',
+  'lyricsSettings.provider.local': '本地歌词',
+  'lyricsSettings.provider.lrclib': 'LRCLIB',
+  'lyricsSettings.provider.lrclibDescription': '开放歌词库',
+  'lyricsSettings.provider.manual': '手动歌词',
+  'lyricsSettings.provider.musixmatch': 'Musixmatch',
+  'lyricsSettings.provider.netease': '网易云音乐',
+  'lyricsSettings.provider.none': '未应用歌词',
+  'lyricsSettings.provider.qqmusic': 'QQ 音乐',
+  'lyricsSettings.online.autoSearch': '自动匹配歌词',
+  'lyricsSettings.online.autoSearchDescription': '本地歌词始终优先；在线结果达到阈值才会自动应用。',
+  'lyricsSettings.online.deepSearch': '深度优先搜索',
+  'lyricsSettings.online.deepSearchDescription': '开启后多个在线平台会并发搜索，并按下方优先级与匹配分数返回最快的最优解。',
+  'lyricsSettings.online.enable': '启用在线歌词匹配',
+  'lyricsSettings.online.enableDescription': '仅发送标题、艺术家、专辑和时长用于匹配。',
+  'lyricsSettings.online.sources': '歌词源',
+  'lyricsSettings.online.sourcesDescription': '本地歌词会一直优先；未勾选的在线源不会参与自动匹配或重新匹配。',
+  'lyricsSettings.online.title': '在线匹配',
+  'lyricsSettings.status.applied': '已应用歌词',
+  'lyricsSettings.status.applying': '应用中',
+  'lyricsSettings.status.auto': '自动',
+  'lyricsSettings.status.markedInstrumental': '已标记为纯音乐',
+  'lyricsSettings.status.noCandidates': '未找到歌词候选',
+  'lyricsSettings.status.noPlayingTrack': '没有正在播放的歌曲',
+  'lyricsSettings.status.normal': '正常',
+  'lyricsSettings.status.off': '关闭',
+  'lyricsSettings.status.on': '开启',
+  'lyricsSettings.status.rematchingCandidates': '正在重新匹配歌词...',
+  'lyricsSettings.status.searchingCandidates': '正在搜索歌词候选...',
+  'lyricsSettings.style.chooseLyricsColor': '选择歌词颜色',
+  'lyricsSettings.style.contextOpacity': '上下文透明度',
+  'lyricsSettings.style.fontSize': '歌词字号',
+  'lyricsSettings.style.lineMaxChars': '每行字数',
+  'lyricsSettings.style.lineMaxCharsValue': '{count}字',
+  'lyricsSettings.style.lineSpacing': '歌词行距',
+  'lyricsSettings.style.lyricsColor': '歌词颜色',
+  'lyricsSettings.style.lyricsColorPalette': '歌词颜色调色盘',
+  'lyricsSettings.style.lyricsFont': '歌词字体',
+  'lyricsSettings.style.secondaryFontSize': '辅歌词字号',
+  'lyricsSettings.style.showControls': '显示歌词样式设置',
+  'lyricsSettings.style.showControlsDescription': '包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。',
+  'lyricsSettings.style.useColor': '使用颜色 {color}',
+  'lyricsSettings.timing.defaultOffset': '新歌词默认延迟',
+  'lyricsSettings.timing.globalOffset': '全局延迟',
+  'lyricsSettings.timing.restoreDefaults': '恢复歌词默认值',
+  'lyricsSettings.timing.restoreDefaultsHint': '匹配阈值 50% / 延迟 0ms',
+  'lyricsSettings.timing.showPerTrackOffset': '显示本歌曲延迟校准',
+  'lyricsSettings.timing.smartAlignment': '智能歌词校准',
+  'lyricsSettings.timing.smartAlignmentDescription': '高置信时自动保存当前歌曲延迟；异常漂移只提示换源，可撤回。',
+  'lyricsSettings.timing.timelineCorrection': '应用歌词时间轴校准',
+  'lyricsSettings.timing.timelineCorrectionDescription': '全局延迟会影响所有歌曲；本歌曲延迟请在歌词页校准条里调整，会跟随当前歌曲单独记忆。',
+  'lyricsSettings.timing.title': '匹配与延迟',
+  'lyricsSettings.wordHighlight.clarity': '逐字高亮清晰度',
+  'lyricsSettings.wordHighlight.clarityDescription': '默认“正常”；调高会让当前词未唱到的部分更完整，调低会更有逐字推进感。',
+  'lyricsSettings.wordHighlight.description': '仅在歌词文件含真实逐字时间戳时启用；否则保持整行高亮。',
+  'lyricsSettings.wordHighlight.title': '逐字歌词高亮',
   'route.mvSettings.description': 'MV 绑定与本地匹配设置。',
   'route.mvSettings.label': 'MV 设置',
   'mvSettings.action.chooseFile': '选择文件',
@@ -2117,6 +3194,7 @@ const zhCN: TranslationMap = {
   'mvSettings.error.noActiveTrackBinding': '没有可用于 MV 绑定的当前曲库歌曲',
   'mvSettings.error.noActiveTrackMatching': '没有可用于 MV 匹配的当前曲库歌曲',
   'mvSettings.error.noActiveTrackNetworkSearch': '没有可用于网络 MV 搜索的当前曲库歌曲',
+  'mvSettings.error.databaseUnavailable': 'MV 数据库暂时不可读，请先到曲库恢复里修复数据库。',
   'mvSettings.error.noLocalCandidates': '没有找到本地 MV 候选',
   'mvSettings.error.noNetworkCandidates': '没有找到网络 MV 候选',
   'mvSettings.general.enabled': '启用 MV',
@@ -2147,7 +3225,7 @@ const zhCN: TranslationMap = {
   'mvSettings.network.replayAudioOnChange': '切换MV后自动重播音乐',
   'mvSettings.network.replayAudioOnChangeDescription': '开启后，手动选择或绑定新的 MV 会重新播放当前歌曲，让新 MV 立即生效。',
   'mvSettings.network.restartAudioOnLoad': 'MV 跟随音乐进度',
-  'mvSettings.network.restartAudioOnLoadDescription': '开启后，只校准 MV 视频时间，不会 seek 或重启音频；歌词同步偏移不会影响 MV。',
+  'mvSettings.network.restartAudioOnLoadDescription': '开启后，会持续校准 MV 视频时间，不会 seek 或重启音频；歌词同步偏移不会影响 MV。',
   'mvSettings.network.syncMode': '同步模式',
   'mvSettings.network.syncModeDescription': '轻微偏差用变速追平，大偏差才跳转视频。',
   'mvSettings.network.syncMode.stable': '稳定',
@@ -2173,6 +3251,8 @@ const zhCN: TranslationMap = {
   'mvSettings.title': 'MV 设置',
   'route.playlists.description': '用户歌单。',
   'route.playlists.label': '歌单',
+  'route.plugins.description': '本地可编辑插件。',
+  'route.plugins.label': '插件',
   'route.queue.description': '播放队列。',
   'route.queue.label': '队列',
   'route.remote.description': '远程来源。',
@@ -2181,6 +3261,8 @@ const zhCN: TranslationMap = {
   'route.settings.label': '设置',
   'route.songs.description': '本地曲库歌曲列表。',
   'route.songs.label': '歌曲',
+  'route.streaming.description': '流媒体音乐源。',
+  'route.streaming.label': '流媒体',
   'settings.about.audioHost.description': 'echo-audio-host.exe 当前用于本地迁移验收，正式发布后走 extraResources。',
   'settings.about.audioHost.title': '音频宿主',
   'settings.about.devMode.description': '当前正在使用 ECHO Next Phase 1：Library Core + Audio Host 验收。',
@@ -2403,8 +3485,16 @@ const zhCN: TranslationMap = {
   'settings.general.backup.import': '导入设置',
   'settings.general.backup.title': '设置参数备份',
   'settings.general.closeToTray': '关闭时隐藏到托盘',
+  'settings.general.fastStartup.description': '开启后，启动时只做轻量只读曲库验证；完整数据保护快照会在窗口打开后后台完成。默认关闭。',
+  'settings.general.fastStartup.title': '快速启动',
+  'settings.general.firstRunWizard.description': '打开后会重新显示第一次启动时的向导，可选择标准输出（系统音频）、WASAPI、Exclusive 或 ASIO；完成或跳过后会自动关闭这个开关。',
+  'settings.general.firstRunWizard.title': '首次启动指引',
   'settings.general.language.description': '选择菜单、应用内设置与系统对话框的显示语言。',
   'settings.general.language.title': '显示语言',
+  'settings.general.rememberWindowSize.description': '开启后会记住你上次拖拽后的窗口宽高，下次启动自动恢复。',
+  'settings.general.rememberWindowSize.title': '记住窗口尺寸',
+  'settings.general.searchTraditionalVariants.description': '开启后，输入繁体可以搜到简体结果，输入简体也可以搜到繁体结果。',
+  'settings.general.searchTraditionalVariants.title': '简繁互搜',
   'settings.header.searchPlaceholder': '搜索设置...',
   'settings.integrations.discord.action.refresh': '刷新状态',
   'settings.integrations.discord.description': '将当前播放状态同步到 Discord Rich Presence，可显示歌曲、艺术家、进度和播放状态。',
@@ -2846,10 +3936,329 @@ const zhCN: TranslationMap = {
   'settings.shortcuts.title': '快捷键',
   'settings.remote.library.description': '本阶段禁止网盘 / 远程 / 流媒体，只保留设置分组占位。',
   'settings.remote.library.title': '远程音乐库',
+  'segmentLoop.action.clear': '清除当前 A-B 点',
+  'segmentLoop.action.deleteBookmark': '删除片段书签 {label}',
+  'segmentLoop.action.deleteBookmarkTitle': '删除片段书签',
+  'segmentLoop.action.loopBookmark': '循环片段 {label}',
+  'segmentLoop.action.loopBookmarkTitle': '循环 {label}',
+  'segmentLoop.action.saveBookmark': '保存当前片段书签',
+  'segmentLoop.action.setA': '把当前位置设为 A 点',
+  'segmentLoop.action.setB': '把当前位置设为 B 点',
+  'segmentLoop.action.toggle': '切换 A-B 循环',
+  'segmentLoop.action.toggleTitle': '开启或关闭 A-B 循环',
+  'segmentLoop.aria.bookmarks': '当前曲目的片段书签',
+  'segmentLoop.aria.panel': 'A-B 循环和片段书签',
+  'segmentLoop.empty': '保存片段后会显示在这里',
+  'segmentLoop.notSet': '未设置',
+  'spotifyPlayback.error.noDevice': '没有可用的 Spotify 播放设备。请开启“自动启动官方播放器”，或先打开 Spotify 桌面端/网页版。{hint}',
+  'spotifyPlayback.error.noDrmKeysystem': '当前 Electron 构建没有可用的 DRM/Widevine keysystem，Spotify 官方播放器无法在 ECHO 内注册设备。',
 };
 
 const zhTW: TranslationMap = {
   ...zhCN,
+  'albumTagEditor.action.applyToForm': '套用到表單',
+  'albumTagEditor.action.cancel': '取消',
+  'albumTagEditor.action.chooseCover': '選擇封面',
+  'albumTagEditor.action.close': '關閉編輯標籤',
+  'albumTagEditor.action.loadEmbedded': '從嵌入標籤載入',
+  'albumTagEditor.action.loading': '讀取中',
+  'albumTagEditor.action.loadNetwork': '從網路載入',
+  'albumTagEditor.action.saveTags': '儲存標籤',
+  'albumTagEditor.action.saving': '儲存中',
+  'albumTagEditor.action.searchCandidates': '搜尋候選',
+  'albumTagEditor.action.searching': '搜尋中',
+  'albumTagEditor.albumSummary': '{count} 首 / {duration}',
+  'albumTagEditor.cover.embeddedSuffix': ' / 已從嵌入標籤重新載入封面',
+  'albumTagEditor.cover.localSuffix': ' / 本機封面：{path}',
+  'albumTagEditor.cover.networkSuffix': ' / 網路封面會在儲存時下載並寫入',
+  'albumTagEditor.currentAlbum': '目前專輯',
+  'albumTagEditor.currentAlbumAria': '目前專輯',
+  'albumTagEditor.discard.continue': '繼續編輯',
+  'albumTagEditor.discard.discard': '捨棄更改',
+  'albumTagEditor.discard.prompt': '有未儲存更改，確認關閉並捨棄嗎？',
+  'albumTagEditor.duration.hoursMinutes': '{hours} 小時 {minutes} 分鐘',
+  'albumTagEditor.duration.minutes': '{minutes} 分鐘',
+  'albumTagEditor.duration.unknown': '未知時長',
+  'albumTagEditor.error.chooseCoverUnsupported': '目前執行環境不支援選擇封面。',
+  'albumTagEditor.error.embeddedUnsupported': '目前執行環境不支援讀取嵌入標籤。',
+  'albumTagEditor.error.fixYearBeforeSave': '請先修正年份，再儲存標籤。',
+  'albumTagEditor.error.networkTemporary': '網路來源暫時不可用，請稍後再試。',
+  'albumTagEditor.error.networkUnsupported': '目前執行環境不支援網路標籤搜尋。',
+  'albumTagEditor.error.noReadableTrack': '這張專輯沒有可讀取標籤的歌曲。',
+  'albumTagEditor.error.positiveInteger': '{label}必須是正整數或留空',
+  'albumTagEditor.error.readTracksUnsupported': '目前執行環境不支援讀取專輯曲目。',
+  'albumTagEditor.field.album': '專輯',
+  'albumTagEditor.field.albumArtist': '專輯演出者',
+  'albumTagEditor.field.cover': '封面',
+  'albumTagEditor.field.genre': '曲風',
+  'albumTagEditor.field.year': '年份',
+  'albumTagEditor.message.appliedNetwork': '已套用到表單，點擊儲存後才會寫入專輯內歌曲。',
+  'albumTagEditor.message.noNetworkTags': '沒有找到合適的網路標籤。',
+  'albumTagEditor.message.searchingNetwork': '正在搜尋網路標籤...',
+  'albumTagEditor.network.aria': '網路候選對比',
+  'albumTagEditor.network.column.candidate': '候選',
+  'albumTagEditor.network.column.current': '目前',
+  'albumTagEditor.network.column.field': '欄位',
+  'albumTagEditor.network.selectAll': '全選',
+  'albumTagEditor.network.selectFields': '選擇要套用到專輯的欄位',
+  'albumTagEditor.network.title': '網路候選',
+  'albumTagEditor.saveDescription': '儲存會寫入這張專輯內所有歌曲的嵌入標籤，並立即同步媒體庫。',
+  'albumTagEditor.section.albumInfo': '專輯資訊',
+  'albumTagEditor.section.albumInfoDescription': '會批次寫入這張專輯內的歌曲',
+  'albumTagEditor.subtitle.albumBatch': '專輯級批次標籤',
+  'albumTagEditor.subtitle.unsaved': '未儲存更改',
+  'albumTagEditor.title': '編輯標籤',
+  'albumTagEditor.value.albumCandidate': '專輯候選',
+  'albumTagEditor.value.empty': '空',
+  'albumTagEditor.value.existingCover': '已有封面',
+  'albumTagEditor.value.networkCover': '網路封面',
+  'albumTagEditor.value.unknownAlbum': '未知專輯',
+  'albumTagEditor.value.unknownArtist': '未知演出者',
+  'firstRun.action.finish': '完成設定',
+  'firstRun.action.next': '下一步',
+  'firstRun.action.previous': '上一步',
+  'firstRun.action.skip': '跳過',
+  'firstRun.action.skipWizard': '跳過精靈',
+  'firstRun.aria.steps': '首次啟動步驟',
+  'firstRun.aria.summary': '目前精靈選擇摘要',
+  'firstRun.audio.asio.description': '需要 ASIO 裝置和可靠驅動。',
+  'firstRun.audio.asio.hint': '專業',
+  'firstRun.audio.asio.label': 'ASIO',
+  'firstRun.audio.exclusive.description': '獨佔裝置，適合確認穩定的外接音效卡或 HiFi 調試。',
+  'firstRun.audio.exclusive.hint': '進階',
+  'firstRun.audio.exclusive.label': 'WASAPI Exclusive',
+  'firstRun.audio.linuxShared.description': '透過 Linux 音訊堆疊使用 ECHO 原生輸出。',
+  'firstRun.audio.linuxShared.hint': '進階',
+  'firstRun.audio.linuxShared.label': 'Linux Shared',
+  'firstRun.audio.shared.description': '進階音訊引擎的日常共享輸出。',
+  'firstRun.audio.shared.hint': '進階',
+  'firstRun.audio.shared.label': 'WASAPI Shared',
+  'firstRun.audio.system.description': '最穩定，適合一般耳機、藍牙、電腦喇叭。',
+  'firstRun.audio.system.hint': '推薦',
+  'firstRun.audio.system.label': '標準輸出（推薦）',
+  'firstRun.cache.chooseLocation': '選擇快取位置',
+  'firstRun.cache.useDefault': '使用預設',
+  'firstRun.currentSelection': '目前選擇',
+  'firstRun.defaultLocation': '預設位置',
+  'firstRun.description': '先完成幾個基礎設定。不確定的地方保留推薦值即可。',
+  'firstRun.error.desktopBridgeCache': '桌面橋接不可用，暫時不能選擇快取位置。',
+  'firstRun.error.desktopBridgeMusicFolder': '桌面橋接不可用，暫時不能選擇音樂資料夾。',
+  'firstRun.error.desktopBridgeSave': '桌面橋接不可用，暫時不能儲存首次啟動設定。',
+  'firstRun.library.chooseFolder': '選擇資料夾',
+  'firstRun.library.noneSelected': '未選擇，稍後新增也可以。',
+  'firstRun.library.scanAfterFinish': '完成後掃描',
+  'firstRun.message.saved': '首次啟動設定已儲存。',
+  'firstRun.scan.balanced.description': '推薦。掃描速度和背景占用都比較穩。',
+  'firstRun.scan.balanced.hint': '預設',
+  'firstRun.scan.balanced.label': '均衡',
+  'firstRun.scan.low.description': '更少打擾播放，掃描會慢一些。',
+  'firstRun.scan.low.hint': '邊聽邊掃',
+  'firstRun.scan.low.label': '低占用',
+  'firstRun.scan.performance.description': '優先盡快建庫，適合電腦閒置時使用。',
+  'firstRun.scan.performance.hint': '閒置時',
+  'firstRun.scan.performance.label': '快速',
+  'firstRun.step.audio.description': '一般耳機、藍牙和電腦喇叭建議使用標準輸出；外接音效卡和 HiFi 調試再選進階音訊引擎。',
+  'firstRun.step.audio.eyebrow': '4 / 5',
+  'firstRun.step.audio.label': '輸出',
+  'firstRun.step.audio.title': '選擇音訊輸出',
+  'firstRun.step.cache.description': '封面快取會占用磁碟空間。C 槽緊張時，建議換到其他磁碟。',
+  'firstRun.step.cache.eyebrow': '2 / 5',
+  'firstRun.step.cache.label': '快取',
+  'firstRun.step.cache.title': '選擇快取位置',
+  'firstRun.step.library.description': 'ECHO 會從這裡建立媒體庫。也可以先跳過，之後再新增。',
+  'firstRun.step.library.eyebrow': '1 / 5',
+  'firstRun.step.library.label': '音樂',
+  'firstRun.step.library.title': '選擇音樂資料夾',
+  'firstRun.step.scan.description': '不確定就保持均衡。它會盡量兼顧速度和播放穩定性。',
+  'firstRun.step.scan.eyebrow': '3 / 5',
+  'firstRun.step.scan.label': '掃描',
+  'firstRun.step.scan.title': '選擇掃描方式',
+  'firstRun.step.summary.description': '這些選項之後都能改。這裡不會移動或刪除你的音樂檔案。',
+  'firstRun.step.summary.eyebrow': '5 / 5',
+  'firstRun.step.summary.label': '確認',
+  'firstRun.step.summary.title': '確認設定',
+  'firstRun.summary.addLater': '稍後新增',
+  'firstRun.summary.cache': '快取',
+  'firstRun.summary.kicker': '摘要',
+  'firstRun.summary.music': '音樂',
+  'firstRun.summary.noFileMove': '不會移動或刪除你的音樂檔案。',
+  'firstRun.summary.output': '輸出',
+  'firstRun.summary.readyDescription': '點擊完成後儲存設定。若已選擇資料夾並勾選掃描，ECHO 會開始建立媒體庫索引。',
+  'firstRun.summary.readyTitle': '可以開始了',
+  'firstRun.summary.scan': '掃描',
+  'firstRun.summary.scanWithFolder': '{mode}，完成後掃描',
+  'firstRun.title': '歡迎使用 ECHO Next',
+  'downloads.action.addToQueue': '加入佇列',
+  'downloads.action.cancelJob': '取消任務',
+  'downloads.action.changeFolder': '更換資料夾',
+  'downloads.action.checkTools': '檢測環境',
+  'downloads.action.chooseFolder': '選擇資料夾',
+  'downloads.action.clearCompleted': '清除已完成',
+  'downloads.action.creating': '建立中',
+  'downloads.action.search': '搜尋',
+  'downloads.action.searching': '搜尋中',
+  'downloads.description': '使用內建 yt-dlp 搜尋 YouTube / Bilibili，並只下載最高可用音訊。',
+  'downloads.empty.noResults.description': '換個關鍵字再試試。',
+  'downloads.empty.noResults.title': '暫無搜尋結果',
+  'downloads.empty.queue.description': '貼上連結或從搜尋結果下載後，會在這裡看到真實進度。',
+  'downloads.empty.queue.title': '佇列為空',
+  'downloads.empty.searching.description': '正在查詢 {scope}。',
+  'downloads.empty.searching.title': '正在搜尋',
+  'downloads.error.cookieFallback': '無法讀取瀏覽器 Cookie，已自動嘗試不使用登入狀態搜尋。',
+  'downloads.error.ipcUnavailable': '目前執行環境未暴露下載 IPC。',
+  'downloads.error.operationFailed': '下載操作失敗',
+  'downloads.folder.required': '請選擇下載資料夾',
+  'downloads.job.imported': '已匯入媒體庫',
+  'downloads.job.savedTo': '儲存到 {path}',
+  'downloads.job.waitingProgress': '等待進度',
+  'downloads.message.clearedTerminal': '已清除完成、失敗和取消的任務。',
+  'downloads.message.completed': '下載完成：{title}',
+  'downloads.message.queued': '已加入下載佇列。',
+  'downloads.message.resultQueued': '已加入佇列：{title}',
+  'downloads.queue.title': '下載佇列',
+  'downloads.search.aria': '搜尋下載',
+  'downloads.search.downloadAudio': '下載音訊',
+  'downloads.search.joined': '已加入佇列',
+  'downloads.search.placeholder': '搜尋歌曲、藝人或影片標題',
+  'downloads.search.providerErrorItem': '{provider}：{error}',
+  'downloads.search.providerErrors': '部分平台搜尋失敗：{errors}',
+  'downloads.search.scopeAria': '搜尋平台',
+  'downloads.search.title': '搜尋下載',
+  'downloads.search.unknownUploader': '未知作者',
+  'downloads.search.views': '{count} 次播放',
+  'downloads.search.viewsWan': '{count} 萬次播放',
+  'downloads.settings.audioStrategy': '音訊策略',
+  'downloads.settings.bestAvailable': '最高可用音質',
+  'downloads.settings.bindMvAfterImport': '匯入後綁定來源 URL 為 MV',
+  'downloads.settings.importToLibrary': '完成後匯入媒體庫',
+  'downloads.settings.outputDirectory': '下載資料夾',
+  'downloads.settings.title': '下載設定',
+  'downloads.status.bindingMv': '綁定 MV',
+  'downloads.status.cancelled': '已取消',
+  'downloads.status.completed': '已完成',
+  'downloads.status.downloading': '下載中',
+  'downloads.status.extractingAudio': '提取音訊',
+  'downloads.status.failed': '失敗',
+  'downloads.status.importing': '匯入媒體庫',
+  'downloads.status.probing': '解析連結',
+  'downloads.status.queued': '佇列中',
+  'downloads.title': '下載',
+  'downloads.tools.notBundled': '未隨應用程式安裝',
+  'downloads.tools.notDetected': '未檢測到',
+  'downloads.tools.title': '環境檢測',
+  'downloads.url.placeholder': '貼上 YouTube / Bilibili / SoundCloud / osu! 連結',
+  'downloads.url.title': '貼上連結下載',
+  'albumMenu.action.addToPlaylist': '加入播放清單...',
+  'albumMenu.action.addToQueue': '加入佇列',
+  'albumMenu.action.copyCover': '複製專輯封面',
+  'albumMenu.action.copyInfo': '複製專輯資訊',
+  'albumMenu.action.deleteAlbum': '刪除專輯',
+  'albumMenu.action.editTags': '編輯標籤',
+  'albumMenu.action.likeAlbum': '喜歡專輯',
+  'albumMenu.action.playAlbum': '播放專輯',
+  'albumMenu.action.saveCover': '儲存專輯封面',
+  'albumMenu.action.unlikeAlbum': '取消喜歡專輯',
+  'albumMenu.playlistSubmenu.aria': '選擇播放清單',
+  'albumMenu.playlistSubmenu.empty': '沒有本機播放清單',
+  'albumMenu.playlistSubmenu.itemCount': '{count} 首',
+  'albumMenu.playlistSubmenu.loading': '正在讀取播放清單...',
+  'accountProvider.netease': '網易雲音樂',
+  'accountProvider.unknown': '未知帳號',
+  'desktopLyrics.aria.stage': '桌面歌詞',
+  'desktopLyrics.control.close': '關閉',
+  'desktopLyrics.control.colorSwatch': '顏色 {color}',
+  'desktopLyrics.control.customColor': '自訂顏色',
+  'desktopLyrics.control.decreaseFontSize': '縮小字號',
+  'desktopLyrics.control.decreaseScale': '縮小',
+  'desktopLyrics.control.increaseFontSize': '放大字號',
+  'desktopLyrics.control.increaseScale': '放大',
+  'desktopLyrics.control.lock': '鎖定',
+  'desktopLyrics.control.resetPosition': '重設位置',
+  'desktopLyrics.control.romanization': '桌面歌詞顯示羅馬音',
+  'desktopLyrics.control.translation': '桌面歌詞顯示翻譯',
+  'desktopLyrics.control.translationShort': '譯',
+  'desktopLyrics.primary.empty': '暫無歌詞',
+  'desktopLyrics.primary.instrumental': '純音樂，請欣賞',
+  'desktopLyrics.secondary.waiting': '等待播放',
+  'lyricsView.empty.instrumental': '純音樂，請欣賞',
+  'lyricsView.empty.noLyrics': '暫無歌詞',
+  'mvPanel.action.close': '關閉',
+  'mvPanel.action.copied': '已複製',
+  'mvPanel.action.copy': '複製',
+  'mvPanel.action.dismissUnavailable': '關閉 MV 不可用提示',
+  'mvPanel.diagnostics.title': 'MV 診斷報告',
+  'mvPanel.notice.unavailable': 'MV 不可用',
+  'mvPanel.status.databaseUnread': 'MV 資料庫不可讀',
+  'mvPanel.status.externalRequired': '目前 MV 需要外部播放',
+  'mvPanel.status.inAppUnavailable': '目前 MV 無法在應用程式內播放',
+  'mvPanel.status.loadFailed': 'MV 載入失敗',
+  'mvPanel.status.loading': '正在載入 MV',
+  'mvPanel.status.localUnsupported': '本機影片格式不支援',
+  'mvPanel.status.missingUrl': '缺少可播放位址',
+  'mvPanel.status.networkFailed': '網路 MV 請求失敗',
+  'mvPanel.status.notFound': '找不到可播放 MV',
+  'mvPanel.status.temporaryPlayback': '臨時 MV 播放中，資料庫待修復',
+  'mvPanel.status.unavailable': 'MV 不可用',
+  'mvPanel.status.videoFailed': '影片載入失敗',
+  'miniPlayer.action.close': '關閉迷你播放器',
+  'miniPlayer.action.closeShort': '關閉',
+  'miniPlayer.action.next': '下一首',
+  'miniPlayer.action.pause': '暫停',
+  'miniPlayer.action.play': '播放',
+  'miniPlayer.action.previous': '上一首',
+  'miniPlayer.action.resetPosition': '重置位置',
+  'miniPlayer.aria.progress': '播放進度',
+  'miniPlayer.aria.shell': '迷你播放器',
+  'miniPlayer.artist.unknown': '未知演出者',
+  'miniPlayer.status.hqPlayerTakeover': 'HQPlayer 接管中',
+  'miniPlayer.status.ready': '就緒',
+  'playerStatus.audioSpecifications': '音訊規格',
+  'playerStatus.ready': '就緒',
+  'playerStatus.streaming': '串流媒體',
+  'playerSpeed.label': '播放速度',
+  'playerSpeed.reset': '重置播放速度',
+  'playerVolume.fixed.disable': '關閉固定音量',
+  'playerVolume.fixed.enable': '開啟固定音量',
+  'playerVolume.fixed.enabled': '固定音量已開啟',
+  'playerVolume.fixed.title': '固定音量',
+  'import.dragDrop.desktopBridgeUnavailable': '桌面橋接不可用。請在 ECHO Next 桌面端匯入拖放檔案。',
+  'import.dragDrop.files.empty': '找不到可匯入的音訊檔案。',
+  'import.dragDrop.files.failed': '{count} 個檔案匯入失敗',
+  'import.dragDrop.files.ignored': '忽略 {count} 個不支援檔案',
+  'import.dragDrop.files.imported': '已匯入 {count} 首歌曲',
+  'import.dragDrop.files.summaryWithOutput': '{summary}。檔案已儲存到：{outputDirectory}',
+  'import.dragDrop.noDroppedFiles': '未讀取到拖放檔案。',
+  'import.dragDrop.overlay.description': '檔案會儲存到下載資料夾並加入曲庫',
+  'import.dragDrop.overlay.title': '拖入音樂或 osu! 譜面以匯入曲庫',
+  'import.dragDrop.paths.addedFolders': '已新增 {count} 個資料夾',
+  'import.dragDrop.paths.empty': '找不到可匯入的音樂檔案或資料夾',
+  'import.dragDrop.paths.failed': '{count} 個路徑匯入失敗',
+  'import.dragDrop.paths.ignored': '忽略 {count} 個不支援檔案',
+  'import.dragDrop.paths.importedFiles': '已匯入 {count} 個檔案',
+  'import.dragDrop.paths.missing': '跳過 {count} 個無法存取的路徑',
+  'import.dragDrop.paths.scannedAudioFolders': '已掃描 {count} 個音樂檔案所在資料夾',
+  'notice.accountExpired': '帳號登入狀態可能已失效：{names}。請到設定 > 整合重新登入。',
+  'notice.accountExpired.title': '帳號登入失效',
+  'notice.action.close': '關閉',
+  'notice.action.closeNotice': '關閉提示',
+  'notice.action.ignore': '忽略',
+  'notice.action.openReport': '開啟報告',
+  'notice.audioError.description': '已產生 Markdown 診斷報告，裡面有詳細原因與排查線索。',
+  'notice.audioError.title': '音訊錯誤',
+  'notice.diagnosticsCrash.description': '上次 ECHO Next 未正常結束，已準備 Markdown 報告用於排查。',
+  'notice.importFiles.empty': '沒有可匯入的音訊檔案。',
+  'notice.importFiles.failed': '{count} 個檔案匯入失敗',
+  'notice.importFiles.imported': '已加入曲庫 {count} 個檔案',
+  'notice.importFiles.skipped': '略過 {count} 個不支援或不可用檔案',
+  'notice.openFiles.partial': '已開啟 {opened} 個檔案，略過 {rejected} 個不支援或不可用檔案。',
+  'notice.reportOpened': 'Markdown 報告已開啟。',
+  'notice.reportOpenedPath': 'Markdown 報告已開啟：{path}',
+  'notice.updateAvailable': '發現 ECHO NEXT 新版本。',
+  'notice.updateAvailableVersion': '發現 ECHO NEXT 新版本 {version}。',
+  'notice.updateDownloaded': 'ECHO NEXT 更新已下載完成，準備安裝。',
+  'notice.updateDownloadedVersion': 'ECHO NEXT {version} 已下載完成，準備安裝。',
+  'punctuation.clauseSeparator': '，',
+  'punctuation.listSeparator': '、',
   'library.action.refresh': '重新整理',
   'albumDetail.action.back': '專輯',
   'albumDetail.action.likeAlbum': '喜歡專輯',
@@ -2916,10 +4325,27 @@ const zhTW: TranslationMap = {
   'albumDetail.online.reading': '正在讀取線上專輯資訊...',
   'albumDetail.online.sources': '線上來源',
   'albumDetail.online.unavailable': '線上資訊不可用',
+  'albumDetail.releases.count': '{count} 個發行版本',
+  'albumDetail.releases.current': '目前匹配',
+  'albumDetail.releases.currentHint': '標記目前本地專輯匹配到的 MusicBrainz 版本',
+  'albumDetail.releases.heading': '版本 / 發行',
+  'albumDetail.releases.overviewAria': '專輯發行版本概覽',
   'albumDetail.related.aria': '{artist} 在曲庫中的專輯',
   'albumDetail.related.heading': '我的曲庫',
   'albumDetail.related.loading': '正在載入專輯',
   'albumDetail.related.thisAlbum': '目前專輯',
+  'albumDetail.sources.barcode': '條碼',
+  'albumDetail.sources.catalogNumber': '目錄號',
+  'albumDetail.sources.copyright': '版權資訊',
+  'albumDetail.sources.kind.database': '資料庫',
+  'albumDetail.sources.kind.official': '官方',
+  'albumDetail.sources.kind.other': '網頁',
+  'albumDetail.sources.kind.reference': '資料',
+  'albumDetail.sources.kind.streaming': '串流',
+  'albumDetail.sources.labels': '廠牌 / 目錄',
+  'albumDetail.sources.linksAria': '專輯外部來源連結',
+  'albumDetail.sources.releaseAria': '目前匹配發行資訊',
+  'albumDetail.sources.releaseDetails': '目前發行',
   'albumDetail.status.libraryReady': '{value} 就緒',
   'albumDetail.status.readingSignal': '正在讀取訊號',
   'albumDetail.status.unknownGenre': '未知曲風',
@@ -2927,6 +4353,8 @@ const zhTW: TranslationMap = {
   'albumDetail.status.unknownYear': '未知年份',
   'albumDetail.tab.credits': '貢獻',
   'albumDetail.tab.information': '資訊',
+  'albumDetail.tab.releases': '版本',
+  'albumDetail.tab.sources': '來源',
   'albumDetail.tab.tracks': '曲目',
   'albumDetail.texture.discs': '{count} 張碟',
   'albumDetail.tracks.action.like': '喜歡 {title}',
@@ -2956,7 +4384,12 @@ const zhTW: TranslationMap = {
   'albumDetail.tracks.status.removedFromQueue': '已從佇列移除：{title}',
   'albumDetail.tracks.summaryAria': '曲目摘要',
   'library.albums.card.tracks': '{count} 首歌',
+  'library.albums.confirm.deleteAlbumFiles': '刪除專輯檔案？\n{title}\n\n這會把 {count} 首歌曲移到系統回收站，並從媒體庫移除。',
+  'library.albums.error.coverNotSaved': '沒有儲存專輯封面。',
   'library.albums.error.desktopBridge': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取專輯。',
+  'library.albums.error.noCopyableCover': '這張專輯沒有可複製的封面。',
+  'library.albums.error.noPlayableTracks': '這張專輯沒有可播放的歌曲。',
+  'library.albums.error.remoteEditUnsupported': '遠端專輯暫不支援編輯標籤或刪除伺服器檔案。',
   'library.albums.listAria': '專輯列表',
   'library.albums.loading': '正在載入專輯...',
   'library.albums.searchPlaceholder': '搜尋專輯 / 藝術家',
@@ -2965,6 +4398,7 @@ const zhTW: TranslationMap = {
   'library.albums.sort.titleAsc': '標題 A-Z',
   'library.albums.sort.titleDesc': '標題 Z-A',
   'library.albums.title': '專輯',
+  'libraryDiagnostics.lab.description': '這些功能用於開發測試即時媒體庫行為。預設關閉，不會影響一般使用者。請只在測試分支或測試曲庫中使用。',
   'library.artists.error.desktopBridge': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取藝術家。',
   'library.artists.avatarPriority': '頭像優先',
   'library.artists.listAria': '藝術家列表',
@@ -3093,7 +4527,26 @@ const zhTW: TranslationMap = {
   'library.sort.recent': '最近',
   'library.source.aria': '媒體庫來源',
   'library.source.local': '本機',
+  'library.source.allRemote': '全部網路硬碟來源',
   'library.source.remote': '網路硬碟',
+  'library.trackRow.action.addToPlaylist': '加入歌單',
+  'library.trackRow.action.addToPlaylistLabel': '加入歌單 {title}',
+  'library.trackRow.action.addToQueue': '加入佇列',
+  'library.trackRow.action.addToQueueLabel': '加入佇列 {title}',
+  'library.trackRow.action.download': '下載',
+  'library.trackRow.action.downloadLabel': '下載 {title}',
+  'library.trackRow.action.downloading': '下載中 {percent}%',
+  'library.trackRow.action.downloadingLabel': '正在下載 {title} {percent}%',
+  'library.trackRow.action.more': '更多',
+  'library.trackRow.action.moreLabel': '更多 {title}',
+  'library.trackRow.actions': '{title} 操作',
+  'library.trackRow.audioSpecifications': '音訊規格',
+  'library.trackRow.duplicateVersions.count': '有 {count} 個版本',
+  'library.trackRow.duplicateVersions.title': '查看重複歌曲版本',
+  'library.trackRow.openAlbum': '打開專輯：{album}',
+  'library.trackRow.openArtist': '打開演出者：{artist}',
+  'library.trackRow.status.playing': '播放中',
+  'library.trackRow.status.unavailable': '不可用',
   'audioDrawer.action.close': '關閉音訊設定',
   'audioDrawer.action.copiedDiagnostics': '已複製播放診斷資訊',
   'audioDrawer.action.copyDiagnostics': '複製播放診斷資訊',
@@ -3164,7 +4617,7 @@ const zhTW: TranslationMap = {
   'audioDrawer.mode.directSound': 'DirectSound 相容',
   'audioDrawer.mode.shared': '共享',
   'audioDrawer.note.asio': '低延遲專業音訊介面，需要驅動支援。',
-  'audioDrawer.note.asioWarning': '開啟 ASIO 會占用您的音訊通道；如果沒有原廠或可信 ASIO 驅動，請不要使用，也不建議為了適配 ASIO 安裝來源不明的虛擬驅動，收益有限且可能導致不穩定。',
+  'audioDrawer.note.asioWarning': '開啟 ASIO 會占用您的音訊通道；如果沒有原廠或可信 ASIO 驅動，請不要使用，也不建議為了適配 ASIO 安裝來源不明的虛擬驅動，收益有限且可能導致不穩定。此外，如果您使用 ASIO4ALL 等第三方驅動出現任何問題，請不要說是軟體 Bug；這類問題完全不被接受，請使用原生 ASIO 驅動。',
   'audioDrawer.note.outputResponsibilityTitle': '獨佔 / ASIO 使用提示',
   'audioDrawer.note.outputResponsibilityPrimary': '如果您直推耳機或音響，通常沒有開啟獨佔的必要。如果非要開啟獨佔 / ASIO 後出現問題，而共享模式正常，請先排查 DAC、音效卡、驅動和連接鏈路，不要一遇到就直接判斷為軟體 Bug；如果嫌麻煩，建議使用獨立解碼設備。',
   'audioDrawer.note.outputResponsibilitySecondary': '如果使用獨立解碼後仍有問題，請到 設定 - 播放 重置引擎；若仍無法解決，請在群聊發送錯誤報告。',
@@ -3411,12 +4864,115 @@ const zhTW: TranslationMap = {
   'route.downloads.description': '下載任務佔位。',
   'route.downloads.label': '下載',
   'route.folders.label': '資料夾',
+  'route.inbox.description': '每次掃描新增的歌曲。',
+  'route.inbox.label': '收件箱',
   'route.importFile.label': '匯入檔案',
+  'route.importFolder.description': '選擇本機音樂資料夾。',
   'route.importFolder.label': '匯入資料夾',
+  'importFolder.hero.note': '此頁面只用於本機曲庫匯入和掃描狀態查看。',
+  'nowPlaying.action.openLyrics': '打開歌詞',
+  'nowPlaying.description': '目前曲目概覽。歌詞請從底部播放器的麥克風按鈕進入獨立頁面。',
+  'nowPlaying.emptyDescription': '從歌曲列表或專輯開始播放後，這裡會顯示目前曲目。',
+  'nowPlaying.emptyTitle': '暫無播放',
+  'nowPlaying.kicker': '正在播放',
+  'nowPlaying.localFile': '本機檔案',
+  'nowPlaying.ready': '就緒',
+  'nowPlaying.state.idle': '閒置',
+  'nowPlaying.state.playing': '播放中',
+  'nowPlaying.title': '正在播放',
   'route.liked.label': '喜歡',
   'route.lyrics.description': '歌詞與沉浸播放。',
   'route.lyrics.label': '歌詞',
   'route.lyricsSettings.label': '歌詞設定',
+  'lyricsSettings.background.mode.cover': '跟隨封面',
+  'lyricsSettings.candidate.allSources': '全部來源',
+  'lyricsSettings.candidate.results': '歌詞搜尋結果',
+  'lyricsSettings.candidate.risk.high': '需要確認',
+  'lyricsSettings.candidate.risk.low': '精準匹配',
+  'lyricsSettings.candidate.risk.medium': '可能匹配',
+  'lyricsSettings.candidate.sourceFilters': '歌詞來源篩選',
+  'lyricsSettings.currentTrack.instrumentalMarked': '已標記為純音樂',
+  'lyricsSettings.currentTrack.markInstrumental': '標記為純音樂',
+  'lyricsSettings.currentTrack.markInstrumentalHint': '記住目前歌曲並停止自動歌詞匹配',
+  'lyricsSettings.currentTrack.rematch': '重新匹配',
+  'lyricsSettings.currentTrack.rematchHint': '清理目前快取並重新尋找',
+  'lyricsSettings.currentTrack.searchHint': '留空則使用目前歌曲資訊',
+  'lyricsSettings.currentTrack.searchInput': '搜尋歌詞文字',
+  'lyricsSettings.currentTrack.searchLyrics': '搜尋歌詞',
+  'lyricsSettings.currentTrack.searchPlaceholder': '歌名 / 演出者 / 關鍵字',
+  'lyricsSettings.currentTrack.title': '目前歌曲',
+  'lyricsSettings.display.autoOpenCandidatePanel': '自動彈出歌詞選擇欄',
+  'lyricsSettings.display.chooseMiniPlayerColor': '選擇底欄顏色',
+  'lyricsSettings.display.coverMiniPlayerHint': '會從目前歌曲封面擷取顏色，並自動壓暗成適合按鈕閱讀的玻璃色。',
+  'lyricsSettings.display.customColor': '自訂顏色',
+  'lyricsSettings.display.defaultMicrosoftYahei': '預設微軟雅黑，可換系統字體',
+  'lyricsSettings.display.desktopFont': '桌面歌詞字體',
+  'lyricsSettings.display.desktopLyrics': '桌面歌詞',
+  'lyricsSettings.display.desktopLyricsDescription': '開啟後用獨立透明視窗在桌面置頂顯示目前歌詞。',
+  'lyricsSettings.display.desktopRomanization': '桌面歌詞顯示羅馬音',
+  'lyricsSettings.display.desktopTranslation': '桌面歌詞顯示翻譯',
+  'lyricsSettings.display.disableMvTrackInfoAutoShow': '關閉 MV 自動顯示歌曲資訊',
+  'lyricsSettings.display.enableLyrics': '啟用歌詞',
+  'lyricsSettings.display.enableLyricsDescription': '關閉後歌詞頁不會載入、搜尋或匹配歌詞。',
+  'lyricsSettings.display.hideEmptyState': '隱藏純音樂提示',
+  'lyricsSettings.display.hideEmptyStateDescription': '隱藏歌詞頁中央的「純音樂，請欣賞」和「暫無歌詞」提示，預設開啟。',
+  'lyricsSettings.display.hideTrackInfo': '隱藏歌曲資訊',
+  'lyricsSettings.display.lockDesktopLyrics': '鎖定桌面歌詞',
+  'lyricsSettings.display.lockDesktopLyricsDescription': '鎖定後滑鼠會穿透桌面歌詞，避免擋住桌面操作；回到這裡可解鎖。',
+  'lyricsSettings.display.matchThreshold': '歌詞匹配度設定',
+  'lyricsSettings.display.matchThresholdDescription': '線上結果達到 {threshold}% 才會自動套用',
+  'lyricsSettings.display.miniPlayer': '迷你底欄',
+  'lyricsSettings.display.miniPlayerColor': '底欄顏色',
+  'lyricsSettings.display.miniPlayerColorMode': '迷你底欄顏色模式',
+  'lyricsSettings.display.miniPlayerDefaultDark': '預設深色',
+  'lyricsSettings.display.miniPlayerDescription': '開啟後歌詞頁會隱藏預設底部播放欄，改用貼在底部中央的小型控制條。',
+  'lyricsSettings.display.miniPlayerHint': '預設關閉；適合想保留歌詞沉浸感、但仍要快速切歌和拖動進度時使用。',
+  'lyricsSettings.display.miniPlayerOpacity': '底欄透明度',
+  'lyricsSettings.display.miniPlayerPalette': '迷你底欄顏色調色盤',
+  'lyricsSettings.display.preferUtatenKana': '優先 UtaTen 假名注音',
+  'lyricsSettings.display.preferUtatenKanaDescription': '預設關閉；開啟後日文歌詞會嘗試用 UtaTen 的ふりがな替代羅馬音顯示，匹配不到會自動回退。',
+  'lyricsSettings.display.resetDesktopPosition': '重置桌面歌詞位置',
+  'lyricsSettings.display.resetDesktopPositionHint': '移回螢幕下方中央',
+  'lyricsSettings.display.showRomanization': '顯示羅馬音',
+  'lyricsSettings.display.showRomanizationDescription': '優先使用歌詞源提供的羅馬音；沒有時會為日文歌詞本機生成。',
+  'lyricsSettings.display.showTranslation': '顯示中文翻譯',
+  'lyricsSettings.display.showTranslationDescription': '優先顯示歌詞源提供的中文翻譯；沒有翻譯時不顯示額外文字。',
+  'lyricsSettings.display.title': '歌詞顯示',
+  'lyricsSettings.display.useMiniPlayerColor': '使用底欄顏色 {color}',
+  'lyricsSettings.engine.autoMatch': '自動匹配',
+  'lyricsSettings.engine.provider': '來源',
+  'lyricsSettings.engine.threshold': '閾值',
+  'lyricsSettings.engine.title': '歌詞引擎',
+  'lyricsSettings.font.applySystem': '套用系統字體',
+  'lyricsSettings.font.custom': '自訂',
+  'lyricsSettings.font.desktopOnly': '只影響桌面歌詞',
+  'lyricsSettings.font.importDesktop': '匯入桌面歌詞字體',
+  'lyricsSettings.font.restoreDesktopDefault': '恢復桌面歌詞預設字體',
+  'lyricsSettings.font.system': '系統字體',
+  'lyricsSettings.fontPicker.aria': '選擇歌詞字體',
+  'lyricsSettings.fontPicker.chooseFile': '從檔案選擇字體',
+  'lyricsSettings.fontPicker.close': '關閉歌詞字體選擇',
+  'lyricsSettings.fontPicker.preview': '歌詞字體預覽 Aa 你好',
+  'lyricsSettings.fontPicker.searchPlaceholder': '搜尋已安裝字體',
+  'lyricsSettings.fontPicker.title': '選擇歌詞字體',
+  'lyricsSettings.provider.cached': '快取歌詞',
+  'lyricsSettings.provider.chineseCatalogDescription': '中文曲庫補充',
+  'lyricsSettings.provider.local': '本地歌詞',
+  'lyricsSettings.provider.lrclibDescription': '開放歌詞庫',
+  'lyricsSettings.provider.manual': '手動歌詞',
+  'lyricsSettings.provider.netease': '網易雲音樂',
+  'lyricsSettings.provider.none': '未套用歌詞',
+  'lyricsSettings.provider.qqmusic': 'QQ 音樂',
+  'lyricsSettings.status.applied': '已套用歌詞',
+  'lyricsSettings.status.applying': '套用中',
+  'lyricsSettings.status.markedInstrumental': '已標記為純音樂',
+  'lyricsSettings.status.noCandidates': '未找到歌詞候選',
+  'lyricsSettings.status.noPlayingTrack': '沒有正在播放的歌曲',
+  'lyricsSettings.status.normal': '正常',
+  'lyricsSettings.status.off': '關閉',
+  'lyricsSettings.status.on': '開啟',
+  'lyricsSettings.status.rematchingCandidates': '正在重新匹配歌詞...',
+  'lyricsSettings.status.searchingCandidates': '正在搜尋歌詞候選...',
   'route.mvSettings.description': 'MV 綁定與本地匹配設定。',
   'route.mvSettings.label': 'MV 設定',
   'mvSettings.action.chooseFile': '選擇檔案',
@@ -3460,6 +5016,7 @@ const zhTW: TranslationMap = {
   'mvSettings.error.noActiveTrackBinding': '沒有可用於 MV 綁定的目前曲庫歌曲',
   'mvSettings.error.noActiveTrackMatching': '沒有可用於 MV 匹配的目前曲庫歌曲',
   'mvSettings.error.noActiveTrackNetworkSearch': '沒有可用於網路 MV 搜尋的目前曲庫歌曲',
+  'mvSettings.error.databaseUnavailable': 'MV 資料庫暫時無法讀取，請先到曲庫恢復裡修復資料庫。',
   'mvSettings.error.noLocalCandidates': '沒有找到本地 MV 候選',
   'mvSettings.error.noNetworkCandidates': '沒有找到網路 MV 候選',
   'mvSettings.general.enabled': '啟用 MV',
@@ -3490,7 +5047,7 @@ const zhTW: TranslationMap = {
   'mvSettings.network.replayAudioOnChange': '切換 MV 後自動重播音樂',
   'mvSettings.network.replayAudioOnChangeDescription': '開啟後，手動選擇或綁定新的 MV 會重新播放目前歌曲，讓新 MV 立即生效。',
   'mvSettings.network.restartAudioOnLoad': 'MV 跟隨音樂進度',
-  'mvSettings.network.restartAudioOnLoadDescription': '開啟後，只校準 MV 影片時間，不會 seek 或重啟音訊；歌詞同步偏移不會影響 MV。',
+  'mvSettings.network.restartAudioOnLoadDescription': '開啟後，會持續校準 MV 影片時間，不會 seek 或重啟音訊；歌詞同步偏移不會影響 MV。',
   'mvSettings.network.syncMode': '同步模式',
   'mvSettings.network.syncModeDescription': '輕微偏差用變速追平，大偏差才跳轉影片。',
   'mvSettings.network.syncMode.stable': '穩定',
@@ -3515,6 +5072,8 @@ const zhTW: TranslationMap = {
   'mvSettings.status.on': '開啟',
   'mvSettings.title': 'MV 設定',
   'route.playlists.label': '播放清單',
+  'route.plugins.description': '本機可編輯外掛。',
+  'route.plugins.label': '外掛',
   'route.queue.label': '佇列',
   'queue.action.clear': '清空佇列',
   'queue.action.dragLabel': '拖曳 {title}',
@@ -3561,6 +5120,8 @@ const zhTW: TranslationMap = {
   'route.remote.label': '網路硬碟 / 遠端',
   'route.settings.label': '設定',
   'route.songs.label': '曲目',
+  'route.streaming.description': '串流音樂來源。',
+  'route.streaming.label': '串流',
   'settings.general.language.title': '顯示語言',
   'settings.general.language.description': '選擇選單、應用程式內設定與系統對話框的顯示語言。',
   'settings.header.searchPlaceholder': '搜尋設定...',
@@ -3754,6 +5315,22 @@ const zhTW: TranslationMap = {
   'settings.integrations.mobile.title': '手機遙控',
   'settings.remote.library.title': '遠端音樂庫',
   'settings.remote.library.description': '本階段禁止網路硬碟 / 遠端 / 串流，只保留設定分組佔位。',
+  'segmentLoop.action.clear': '清除目前 A-B 點',
+  'segmentLoop.action.deleteBookmark': '刪除片段書籤 {label}',
+  'segmentLoop.action.deleteBookmarkTitle': '刪除片段書籤',
+  'segmentLoop.action.loopBookmark': '循環片段 {label}',
+  'segmentLoop.action.loopBookmarkTitle': '循環 {label}',
+  'segmentLoop.action.saveBookmark': '儲存目前片段書籤',
+  'segmentLoop.action.setA': '把目前位置設為 A 點',
+  'segmentLoop.action.setB': '把目前位置設為 B 點',
+  'segmentLoop.action.toggle': '切換 A-B 循環',
+  'segmentLoop.action.toggleTitle': '開啟或關閉 A-B 循環',
+  'segmentLoop.aria.bookmarks': '目前曲目的片段書籤',
+  'segmentLoop.aria.panel': 'A-B 循環和片段書籤',
+  'segmentLoop.empty': '儲存片段後會顯示在這裡',
+  'segmentLoop.notSet': '未設定',
+  'spotifyPlayback.error.noDevice': '沒有可用的 Spotify 播放裝置。請開啟「自動啟動官方播放器」，或先打開 Spotify 桌面端/網頁版。{hint}',
+  'spotifyPlayback.error.noDrmKeysystem': '目前 Electron 建置沒有可用的 DRM/Widevine keysystem，Spotify 官方播放器無法在 ECHO 內註冊裝置。',
   'settings.eq.ab.summary': '{preset} / 峰值 {peak} / 輸出 {output} / 前級 {preamp}',
   'settings.eq.level.clips': '削波 {count}',
   'settings.eq.level.estimatedOutputPeak': '估算輸出峰值',
@@ -3963,9 +5540,318 @@ const zhTW: TranslationMap = {
 
 const jaJP: TranslationMap = {
   ...zhCN,
+  'albumTagEditor.action.applyToForm': 'フォームに適用',
+  'albumTagEditor.action.cancel': 'キャンセル',
+  'albumTagEditor.action.chooseCover': 'カバーを選択',
+  'albumTagEditor.action.close': 'タグ編集を閉じる',
+  'albumTagEditor.action.loadEmbedded': '埋め込みタグから読み込み',
+  'albumTagEditor.action.loading': '読み込み中',
+  'albumTagEditor.action.loadNetwork': 'ネットワークから読み込み',
+  'albumTagEditor.action.saveTags': 'タグを保存',
+  'albumTagEditor.action.saving': '保存中',
+  'albumTagEditor.action.searchCandidates': '候補を検索',
+  'albumTagEditor.action.searching': '検索中',
+  'albumTagEditor.albumSummary': '{count} 曲 / {duration}',
+  'albumTagEditor.cover.embeddedSuffix': ' / 埋め込みタグからカバーを再読み込み済み',
+  'albumTagEditor.cover.localSuffix': ' / ローカルカバー: {path}',
+  'albumTagEditor.cover.networkSuffix': ' / ネットワークカバーは保存時にダウンロードして書き込みます',
+  'albumTagEditor.currentAlbum': '現在のアルバム',
+  'albumTagEditor.currentAlbumAria': '現在のアルバム',
+  'albumTagEditor.discard.continue': '編集を続ける',
+  'albumTagEditor.discard.discard': '変更を破棄',
+  'albumTagEditor.discard.prompt': '未保存の変更があります。閉じて破棄しますか？',
+  'albumTagEditor.duration.hoursMinutes': '{hours} 時間 {minutes} 分',
+  'albumTagEditor.duration.minutes': '{minutes} 分',
+  'albumTagEditor.duration.unknown': '長さ不明',
+  'albumTagEditor.error.chooseCoverUnsupported': '現在の実行環境ではカバーを選択できません。',
+  'albumTagEditor.error.embeddedUnsupported': '現在の実行環境では埋め込みタグを読み取れません。',
+  'albumTagEditor.error.fixYearBeforeSave': '保存する前に年を修正してください。',
+  'albumTagEditor.error.networkTemporary': 'ネットワークソースは一時的に利用できません。後でもう一度試してください。',
+  'albumTagEditor.error.networkUnsupported': '現在の実行環境ではネットワークタグ検索を利用できません。',
+  'albumTagEditor.error.noReadableTrack': 'このアルバムにはタグを読み取れる曲がありません。',
+  'albumTagEditor.error.positiveInteger': '{label} は正の整数または空欄にしてください',
+  'albumTagEditor.error.readTracksUnsupported': '現在の実行環境ではアルバム曲目を読み取れません。',
+  'albumTagEditor.field.album': 'アルバム',
+  'albumTagEditor.field.albumArtist': 'アルバムアーティスト',
+  'albumTagEditor.field.cover': 'カバー',
+  'albumTagEditor.field.genre': 'ジャンル',
+  'albumTagEditor.field.year': '年',
+  'albumTagEditor.message.appliedNetwork': 'フォームに適用しました。保存するとアルバム内の曲へ書き込まれます。',
+  'albumTagEditor.message.noNetworkTags': '適切なネットワークタグが見つかりませんでした。',
+  'albumTagEditor.message.searchingNetwork': 'ネットワークタグを検索中...',
+  'albumTagEditor.network.aria': 'ネットワーク候補の比較',
+  'albumTagEditor.network.column.candidate': '候補',
+  'albumTagEditor.network.column.current': '現在',
+  'albumTagEditor.network.column.field': '項目',
+  'albumTagEditor.network.selectAll': 'すべて選択',
+  'albumTagEditor.network.selectFields': 'アルバムに適用する項目を選択',
+  'albumTagEditor.network.title': 'ネットワーク候補',
+  'albumTagEditor.saveDescription': '保存すると、このアルバム内のすべての曲の埋め込みタグを書き込み、ライブラリをすぐ同期します。',
+  'albumTagEditor.section.albumInfo': 'アルバム情報',
+  'albumTagEditor.section.albumInfoDescription': 'このアルバム内の曲へ一括書き込みします',
+  'albumTagEditor.subtitle.albumBatch': 'アルバム単位の一括タグ',
+  'albumTagEditor.subtitle.unsaved': '未保存の変更',
+  'albumTagEditor.title': 'タグを編集',
+  'albumTagEditor.value.albumCandidate': 'アルバム候補',
+  'albumTagEditor.value.empty': '空',
+  'albumTagEditor.value.existingCover': '既存カバー',
+  'albumTagEditor.value.networkCover': 'ネットワークカバー',
+  'albumTagEditor.value.unknownAlbum': '不明なアルバム',
+  'albumTagEditor.value.unknownArtist': '不明なアーティスト',
+  'firstRun.action.finish': '設定を完了',
+  'firstRun.action.next': '次へ',
+  'firstRun.action.previous': '戻る',
+  'firstRun.action.skip': 'スキップ',
+  'firstRun.action.skipWizard': 'ウィザードをスキップ',
+  'firstRun.aria.steps': '初回起動の手順',
+  'firstRun.aria.summary': '現在のウィザード選択の概要',
+  'firstRun.audio.asio.description': 'ASIO デバイスと安定したドライバーが必要です。',
+  'firstRun.audio.asio.hint': 'プロ向け',
+  'firstRun.audio.asio.label': 'ASIO',
+  'firstRun.audio.exclusive.description': '安定確認済みの外部オーディオ機器や HiFi 調整向けの排他出力です。',
+  'firstRun.audio.exclusive.hint': '詳細',
+  'firstRun.audio.exclusive.label': 'WASAPI Exclusive',
+  'firstRun.audio.linuxShared.description': 'Linux オーディオスタック経由で ECHO ネイティブ出力を使います。',
+  'firstRun.audio.linuxShared.hint': '詳細',
+  'firstRun.audio.linuxShared.label': 'Linux Shared',
+  'firstRun.audio.shared.description': '詳細オーディオエンジンの日常用共有出力です。',
+  'firstRun.audio.shared.hint': '詳細',
+  'firstRun.audio.shared.label': 'WASAPI Shared',
+  'firstRun.audio.system.description': '最も安定しています。一般的なヘッドホン、Bluetooth、PC スピーカー向けです。',
+  'firstRun.audio.system.hint': '推奨',
+  'firstRun.audio.system.label': '標準出力（推奨）',
+  'firstRun.cache.chooseLocation': 'キャッシュ場所を選択',
+  'firstRun.cache.useDefault': '既定を使用',
+  'firstRun.currentSelection': '現在の選択',
+  'firstRun.defaultLocation': '既定の場所',
+  'firstRun.description': '基本設定をいくつか済ませましょう。迷ったら推奨値のままで大丈夫です。',
+  'firstRun.error.desktopBridgeCache': 'デスクトップブリッジを利用できないため、キャッシュ場所を選択できません。',
+  'firstRun.error.desktopBridgeMusicFolder': 'デスクトップブリッジを利用できないため、音楽フォルダーを選択できません。',
+  'firstRun.error.desktopBridgeSave': 'デスクトップブリッジを利用できないため、初回起動設定を保存できません。',
+  'firstRun.library.chooseFolder': 'フォルダーを選択',
+  'firstRun.library.noneSelected': '未選択です。後から追加してもかまいません。',
+  'firstRun.library.scanAfterFinish': '完了後にスキャン',
+  'firstRun.message.saved': '初回起動設定を保存しました。',
+  'firstRun.scan.balanced.description': '推奨。スキャン速度とバックグラウンド負荷のバランスが安定しています。',
+  'firstRun.scan.balanced.hint': '既定',
+  'firstRun.scan.balanced.label': 'バランス',
+  'firstRun.scan.low.description': '再生への影響を抑えます。スキャンは少し遅くなります。',
+  'firstRun.scan.low.hint': '聴きながら',
+  'firstRun.scan.low.label': '低負荷',
+  'firstRun.scan.performance.description': 'できるだけ早くライブラリを構築します。PC が空いている時に向いています。',
+  'firstRun.scan.performance.hint': '空き時間',
+  'firstRun.scan.performance.label': '高速',
+  'firstRun.step.audio.description': '一般的なヘッドホン、Bluetooth、PC スピーカーには標準出力を推奨します。外部オーディオ機器や HiFi 調整では詳細エンジンを選びます。',
+  'firstRun.step.audio.eyebrow': '4 / 5',
+  'firstRun.step.audio.label': '出力',
+  'firstRun.step.audio.title': 'オーディオ出力を選択',
+  'firstRun.step.cache.description': 'カバーキャッシュはディスク容量を使います。C ドライブに余裕がない場合は別ドライブをおすすめします。',
+  'firstRun.step.cache.eyebrow': '2 / 5',
+  'firstRun.step.cache.label': 'キャッシュ',
+  'firstRun.step.cache.title': 'キャッシュ場所を選択',
+  'firstRun.step.library.description': 'ここから ECHO がライブラリを作成します。今はスキップして後から追加することもできます。',
+  'firstRun.step.library.eyebrow': '1 / 5',
+  'firstRun.step.library.label': '音楽',
+  'firstRun.step.library.title': '音楽フォルダーを選択',
+  'firstRun.step.scan.description': '迷ったらバランスのままにしてください。速度と再生安定性の両方を考慮します。',
+  'firstRun.step.scan.eyebrow': '3 / 5',
+  'firstRun.step.scan.label': 'スキャン',
+  'firstRun.step.scan.title': 'スキャン方法を選択',
+  'firstRun.step.summary.description': 'これらの項目は後から変更できます。音楽ファイルを移動または削除することはありません。',
+  'firstRun.step.summary.eyebrow': '5 / 5',
+  'firstRun.step.summary.label': '確認',
+  'firstRun.step.summary.title': '設定を確認',
+  'firstRun.summary.addLater': '後で追加',
+  'firstRun.summary.cache': 'キャッシュ',
+  'firstRun.summary.kicker': '概要',
+  'firstRun.summary.music': '音楽',
+  'firstRun.summary.noFileMove': '音楽ファイルを移動または削除することはありません。',
+  'firstRun.summary.output': '出力',
+  'firstRun.summary.readyDescription': '完了を押すと設定を保存します。フォルダーを選び、スキャンにチェックしている場合は ECHO がライブラリインデックスを作成します。',
+  'firstRun.summary.readyTitle': '準備できました',
+  'firstRun.summary.scan': 'スキャン',
+  'firstRun.summary.scanWithFolder': '{mode}、完了後にスキャン',
+  'firstRun.title': 'ECHO Next へようこそ',
+  'downloads.action.addToQueue': 'キューに追加',
+  'downloads.action.cancelJob': 'タスクをキャンセル',
+  'downloads.action.changeFolder': 'フォルダーを変更',
+  'downloads.action.checkTools': '環境をチェック',
+  'downloads.action.chooseFolder': 'フォルダーを選択',
+  'downloads.action.clearCompleted': '完了済みをクリア',
+  'downloads.action.creating': '作成中',
+  'downloads.action.search': '検索',
+  'downloads.action.searching': '検索中',
+  'downloads.description': '内蔵 yt-dlp で YouTube / Bilibili を検索し、利用可能な最高音質だけをダウンロードします。',
+  'downloads.empty.noResults.description': '別のキーワードで試してください。',
+  'downloads.empty.noResults.title': '検索結果なし',
+  'downloads.empty.queue.description': 'リンク貼り付けや検索結果からダウンロードすると、ここに実際の進捗が表示されます。',
+  'downloads.empty.queue.title': 'キューは空です',
+  'downloads.empty.searching.description': '{scope} を検索中です。',
+  'downloads.empty.searching.title': '検索中',
+  'downloads.error.cookieFallback': 'ブラウザー Cookie を読み取れません。ログイン状態なしでの検索を自動的に試しました。',
+  'downloads.error.ipcUnavailable': '現在の実行環境ではダウンロード IPC が公開されていません。',
+  'downloads.error.operationFailed': 'ダウンロード操作に失敗しました',
+  'downloads.folder.required': 'ダウンロードフォルダーを選択してください',
+  'downloads.job.imported': 'ライブラリにインポート済み',
+  'downloads.job.savedTo': '{path} に保存',
+  'downloads.job.waitingProgress': '進捗待ち',
+  'downloads.message.clearedTerminal': '完了、失敗、キャンセル済みのタスクをクリアしました。',
+  'downloads.message.completed': 'ダウンロード完了: {title}',
+  'downloads.message.queued': 'ダウンロードキューに追加しました。',
+  'downloads.message.resultQueued': 'キューに追加しました: {title}',
+  'downloads.queue.title': 'ダウンロードキュー',
+  'downloads.search.aria': '検索ダウンロード',
+  'downloads.search.downloadAudio': '音声をダウンロード',
+  'downloads.search.joined': 'キューに追加済み',
+  'downloads.search.placeholder': '曲、アーティスト、動画タイトルを検索',
+  'downloads.search.providerErrorItem': '{provider}: {error}',
+  'downloads.search.providerErrors': '一部プラットフォームの検索に失敗しました: {errors}',
+  'downloads.search.scopeAria': '検索プラットフォーム',
+  'downloads.search.title': '検索ダウンロード',
+  'downloads.search.unknownUploader': '不明な投稿者',
+  'downloads.search.views': '{count} 回再生',
+  'downloads.search.viewsWan': '{count} 万回再生',
+  'downloads.settings.audioStrategy': '音声方針',
+  'downloads.settings.bestAvailable': '利用可能な最高音質',
+  'downloads.settings.bindMvAfterImport': 'インポート後にソース URL を MV として紐付け',
+  'downloads.settings.importToLibrary': '完了後にライブラリへインポート',
+  'downloads.settings.outputDirectory': 'ダウンロードフォルダー',
+  'downloads.settings.title': 'ダウンロード設定',
+  'downloads.status.bindingMv': 'MV 紐付け中',
+  'downloads.status.cancelled': 'キャンセル済み',
+  'downloads.status.completed': '完了',
+  'downloads.status.downloading': 'ダウンロード中',
+  'downloads.status.extractingAudio': '音声抽出中',
+  'downloads.status.failed': '失敗',
+  'downloads.status.importing': 'ライブラリへインポート中',
+  'downloads.status.probing': 'リンク解析中',
+  'downloads.status.queued': 'キュー待ち',
+  'downloads.title': 'ダウンロード',
+  'downloads.tools.notBundled': 'アプリに同梱されていません',
+  'downloads.tools.notDetected': '検出されていません',
+  'downloads.tools.title': '環境チェック',
+  'downloads.url.placeholder': 'YouTube / Bilibili / SoundCloud / osu! リンクを貼り付け',
+  'downloads.url.title': 'リンクを貼り付けてダウンロード',
+  'albumMenu.action.addToPlaylist': 'プレイリストに追加...',
+  'albumMenu.action.addToQueue': 'キューに追加',
+  'albumMenu.action.copyCover': 'アルバムカバーをコピー',
+  'albumMenu.action.copyInfo': 'アルバム情報をコピー',
+  'albumMenu.action.deleteAlbum': 'アルバムを削除',
+  'albumMenu.action.editTags': 'タグを編集',
+  'albumMenu.action.likeAlbum': 'アルバムをお気に入りに追加',
+  'albumMenu.action.playAlbum': 'アルバムを再生',
+  'albumMenu.action.saveCover': 'アルバムカバーを保存',
+  'albumMenu.action.unlikeAlbum': 'アルバムのお気に入りを解除',
+  'albumMenu.playlistSubmenu.aria': 'プレイリストを選択',
+  'albumMenu.playlistSubmenu.empty': 'ローカルプレイリストなし',
+  'albumMenu.playlistSubmenu.itemCount': '{count} 曲',
+  'albumMenu.playlistSubmenu.loading': 'プレイリストを読み込み中...',
+  'accountProvider.netease': 'NetEase Cloud Music',
+  'accountProvider.qqmusic': 'QQ Music',
+  'accountProvider.unknown': '不明なアカウント',
+  'desktopLyrics.aria.stage': 'デスクトップ歌詞',
+  'desktopLyrics.control.close': '閉じる',
+  'desktopLyrics.control.colorSwatch': '色 {color}',
+  'desktopLyrics.control.customColor': 'カスタムカラー',
+  'desktopLyrics.control.decreaseFontSize': '文字サイズを小さく',
+  'desktopLyrics.control.decreaseScale': '縮小',
+  'desktopLyrics.control.increaseFontSize': '文字サイズを大きく',
+  'desktopLyrics.control.increaseScale': '拡大',
+  'desktopLyrics.control.lock': 'ロック',
+  'desktopLyrics.control.resetPosition': '位置をリセット',
+  'desktopLyrics.control.romanization': 'デスクトップ歌詞にローマ字を表示',
+  'desktopLyrics.control.translation': 'デスクトップ歌詞に翻訳を表示',
+  'desktopLyrics.control.translationShort': '訳',
+  'desktopLyrics.primary.empty': '歌詞がありません',
+  'desktopLyrics.primary.instrumental': 'インストゥルメンタルです',
+  'desktopLyrics.secondary.waiting': '再生待ち',
+  'lyricsView.empty.instrumental': 'インストゥルメンタルです',
+  'lyricsView.empty.noLyrics': '歌詞がありません',
+  'mvPanel.action.close': '閉じる',
+  'mvPanel.action.copied': 'コピーしました',
+  'mvPanel.action.copy': 'コピー',
+  'mvPanel.action.dismissUnavailable': 'MV 利用不可の通知を閉じる',
+  'mvPanel.diagnostics.title': 'MV 診断レポート',
+  'mvPanel.notice.unavailable': 'MV を利用できません',
+  'mvPanel.status.databaseUnread': 'MV データベースを読み取れません',
+  'mvPanel.status.externalRequired': 'この MV は外部再生が必要です',
+  'mvPanel.status.inAppUnavailable': 'この MV はアプリ内で再生できません',
+  'mvPanel.status.loadFailed': 'MV の読み込みに失敗しました',
+  'mvPanel.status.loading': 'MV を読み込み中',
+  'mvPanel.status.localUnsupported': 'ローカル動画形式に対応していません',
+  'mvPanel.status.missingUrl': '再生できる URL がありません',
+  'mvPanel.status.networkFailed': 'ネットワーク MV リクエストに失敗しました',
+  'mvPanel.status.notFound': '再生できる MV が見つかりません',
+  'mvPanel.status.temporaryPlayback': '一時 MV を再生中。データベースの修復待ちです',
+  'mvPanel.status.unavailable': 'MV を利用できません',
+  'mvPanel.status.videoFailed': '動画の読み込みに失敗しました',
+  'miniPlayer.action.close': 'ミニプレイヤーを閉じる',
+  'miniPlayer.action.closeShort': '閉じる',
+  'miniPlayer.action.next': '次の曲',
+  'miniPlayer.action.pause': '一時停止',
+  'miniPlayer.action.play': '再生',
+  'miniPlayer.action.previous': '前の曲',
+  'miniPlayer.action.resetPosition': '位置をリセット',
+  'miniPlayer.aria.progress': '再生位置',
+  'miniPlayer.aria.shell': 'ミニプレイヤー',
+  'miniPlayer.artist.unknown': '不明なアーティスト',
+  'miniPlayer.status.hqPlayerTakeover': 'HQPlayer が引き継ぎ中',
+  'miniPlayer.status.ready': '準備完了',
+  'playerStatus.audioSpecifications': 'オーディオ仕様',
+  'playerStatus.ready': '準備完了',
+  'playerStatus.streaming': 'ストリーミング',
+  'playerSpeed.label': '再生速度',
+  'playerSpeed.reset': '再生速度をリセット',
+  'playerVolume.fixed.disable': '固定音量をオフ',
+  'playerVolume.fixed.enable': '固定音量をオン',
+  'playerVolume.fixed.enabled': '固定音量がオン',
+  'playerVolume.fixed.title': '固定音量',
+  'import.dragDrop.desktopBridgeUnavailable': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でドロップしたファイルを取り込んでください。',
+  'import.dragDrop.files.empty': '取り込める音声ファイルが見つかりません。',
+  'import.dragDrop.files.failed': '{count} 個のファイルの取り込みに失敗しました',
+  'import.dragDrop.files.ignored': '未対応ファイル {count} 個をスキップしました',
+  'import.dragDrop.files.imported': '{count} 曲を取り込みました',
+  'import.dragDrop.files.summaryWithOutput': '{summary}。ファイルの保存先: {outputDirectory}',
+  'import.dragDrop.noDroppedFiles': 'ドロップされたファイルを読み取れませんでした。',
+  'import.dragDrop.overlay.description': 'ファイルはダウンロードフォルダーに保存され、ライブラリに追加されます',
+  'import.dragDrop.overlay.title': '音楽または osu! 譜面をドロップしてライブラリに取り込む',
+  'import.dragDrop.paths.addedFolders': '{count} 個のフォルダーを追加しました',
+  'import.dragDrop.paths.empty': '取り込める音楽ファイルまたはフォルダーが見つかりません',
+  'import.dragDrop.paths.failed': '{count} 個のパスの取り込みに失敗しました',
+  'import.dragDrop.paths.ignored': '未対応ファイル {count} 個をスキップしました',
+  'import.dragDrop.paths.importedFiles': '{count} 個のファイルを取り込みました',
+  'import.dragDrop.paths.missing': 'アクセスできないパス {count} 個をスキップしました',
+  'import.dragDrop.paths.scannedAudioFolders': '音楽ファイルを含むフォルダー {count} 個をスキャンしました',
+  'notice.accountExpired': 'アカウントのログイン状態が失効している可能性があります: {names}。設定 > 連携 から再ログインしてください。',
+  'notice.accountExpired.title': 'アカウントログイン失効',
+  'notice.action.close': '閉じる',
+  'notice.action.closeNotice': '通知を閉じる',
+  'notice.action.ignore': '無視',
+  'notice.action.openReport': 'レポートを開く',
+  'notice.audioError.description': 'Markdown 診断レポートを作成しました。詳しい原因と調査の手がかりが含まれています。',
+  'notice.audioError.title': '音声エラー',
+  'notice.diagnosticsCrash.description': '前回 ECHO Next は正常終了しませんでした。調査用の Markdown レポートを準備しました。',
+  'notice.importFiles.empty': '取り込める音声ファイルがありません。',
+  'notice.importFiles.failed': '{count} 個のファイルの取り込みに失敗しました',
+  'notice.importFiles.imported': '{count} 個のファイルをライブラリに追加しました',
+  'notice.importFiles.skipped': '未対応または利用不可のファイル {count} 個をスキップしました',
+  'notice.openFiles.partial': '{opened} 個のファイルを開き、未対応または利用不可のファイル {rejected} 個をスキップしました。',
+  'notice.reportOpened': 'Markdown レポートを開きました。',
+  'notice.reportOpenedPath': 'Markdown レポートを開きました: {path}',
+  'notice.updateAvailable': 'ECHO NEXT の新しいバージョンが見つかりました。',
+  'notice.updateAvailableVersion': 'ECHO NEXT の新しいバージョン {version} が見つかりました。',
+  'notice.updateDownloaded': 'ECHO NEXT の更新をダウンロードしました。インストール準備ができています。',
+  'notice.updateDownloadedVersion': 'ECHO NEXT {version} をダウンロードしました。インストール準備ができています。',
+  'punctuation.clauseSeparator': '、',
+  'punctuation.listSeparator': '、',
   'library.action.refresh': '更新',
   'library.albums.card.tracks': '{count} 曲',
+  'library.albums.confirm.deleteAlbumFiles': 'アルバムファイルを削除しますか？\n{title}\n\n{count} 曲をシステムのごみ箱へ移動し、メディアライブラリから削除します。',
+  'library.albums.error.coverNotSaved': 'アルバムカバーを保存しませんでした。',
   'library.albums.error.desktopBridge': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でアルバムを読み込んでください。',
+  'library.albums.error.noCopyableCover': 'このアルバムにはコピーできるカバーがありません。',
+  'library.albums.error.noPlayableTracks': 'このアルバムには再生可能な曲がありません。',
+  'library.albums.error.remoteEditUnsupported': 'リモートアルバムはタグ編集やサーバーファイル削除にまだ対応していません。',
   'library.albums.listAria': 'アルバム一覧',
   'library.albums.loading': 'アルバムを読み込み中...',
   'library.albums.searchPlaceholder': 'アルバム / アーティストを検索',
@@ -3974,6 +5860,7 @@ const jaJP: TranslationMap = {
   'library.albums.sort.titleAsc': 'タイトル A-Z',
   'library.albums.sort.titleDesc': 'タイトル Z-A',
   'library.albums.title': 'アルバム',
+  'libraryDiagnostics.lab.description': 'これらの機能はリアルタイムメディアライブラリ動作の開発テスト用です。既定ではオフで、通常ユーザーには影響しません。テストブランチまたはテストライブラリでのみ使ってください。',
   'library.artists.error.desktopBridge': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でアーティストを読み込んでください。',
   'library.artists.avatarPriority': '画像優先',
   'library.artists.listAria': 'アーティスト一覧',
@@ -4102,7 +5989,26 @@ const jaJP: TranslationMap = {
   'library.sort.recent': '最近',
   'library.source.aria': 'ライブラリソース',
   'library.source.local': 'ローカル',
+  'library.source.allRemote': 'すべてのクラウドソース',
   'library.source.remote': 'クラウド',
+  'library.trackRow.action.addToPlaylist': 'プレイリストに追加',
+  'library.trackRow.action.addToPlaylistLabel': '{title} をプレイリストに追加',
+  'library.trackRow.action.addToQueue': 'キューに追加',
+  'library.trackRow.action.addToQueueLabel': '{title} をキューに追加',
+  'library.trackRow.action.download': 'ダウンロード',
+  'library.trackRow.action.downloadLabel': '{title} をダウンロード',
+  'library.trackRow.action.downloading': 'ダウンロード中 {percent}%',
+  'library.trackRow.action.downloadingLabel': '{title} をダウンロード中 {percent}%',
+  'library.trackRow.action.more': 'その他',
+  'library.trackRow.action.moreLabel': '{title} のその他の操作',
+  'library.trackRow.actions': '{title} の操作',
+  'library.trackRow.audioSpecifications': 'オーディオ仕様',
+  'library.trackRow.duplicateVersions.count': '{count} バージョン',
+  'library.trackRow.duplicateVersions.title': '重複曲のバージョンを表示',
+  'library.trackRow.openAlbum': 'アルバムを開く: {album}',
+  'library.trackRow.openArtist': 'アーティストを開く: {artist}',
+  'library.trackRow.status.playing': '再生中',
+  'library.trackRow.status.unavailable': '利用不可',
   'app.navigation.main': 'メインナビゲーション',
   'app.navigation.utility': 'ユーティリティナビゲーション',
   'app.toolbar.quickActions': 'クイック操作',
@@ -4176,10 +6082,27 @@ const jaJP: TranslationMap = {
   'albumDetail.online.reading': 'オンラインのアルバム情報を読み込み中...',
   'albumDetail.online.sources': 'オンラインソース',
   'albumDetail.online.unavailable': 'オンライン情報を利用できません',
+  'albumDetail.releases.count': '{count} 件のリリース',
+  'albumDetail.releases.current': '現在の一致',
+  'albumDetail.releases.currentHint': 'ローカルアルバムが一致した MusicBrainz リリースを示します',
+  'albumDetail.releases.heading': 'バージョン / リリース',
+  'albumDetail.releases.overviewAria': 'アルバムリリース概要',
   'albumDetail.related.aria': '{artist} のライブラリアルバム',
   'albumDetail.related.heading': 'マイライブラリ',
   'albumDetail.related.loading': 'アルバムを読み込み中',
   'albumDetail.related.thisAlbum': 'このアルバム',
+  'albumDetail.sources.barcode': 'バーコード',
+  'albumDetail.sources.catalogNumber': 'カタログ番号',
+  'albumDetail.sources.copyright': '著作権情報',
+  'albumDetail.sources.kind.database': 'データベース',
+  'albumDetail.sources.kind.official': '公式',
+  'albumDetail.sources.kind.other': 'Web',
+  'albumDetail.sources.kind.reference': '資料',
+  'albumDetail.sources.kind.streaming': 'ストリーミング',
+  'albumDetail.sources.labels': 'レーベル / カタログ',
+  'albumDetail.sources.linksAria': 'アルバム外部ソースリンク',
+  'albumDetail.sources.releaseAria': '現在一致したリリース情報',
+  'albumDetail.sources.releaseDetails': '現在のリリース',
   'albumDetail.status.libraryReady': '{value} 準備完了',
   'albumDetail.status.readingSignal': '信号を読み込み中',
   'albumDetail.status.unknownGenre': '不明なジャンル',
@@ -4187,6 +6110,8 @@ const jaJP: TranslationMap = {
   'albumDetail.status.unknownYear': '年不明',
   'albumDetail.tab.credits': 'クレジット',
   'albumDetail.tab.information': '情報',
+  'albumDetail.tab.releases': 'バージョン',
+  'albumDetail.tab.sources': 'ソース',
   'albumDetail.tab.tracks': 'トラック',
   'albumDetail.texture.discs': '{count} 枚組',
   'albumDetail.tracks.action.like': '{title} をお気に入りに追加',
@@ -4285,7 +6210,7 @@ const jaJP: TranslationMap = {
   'audioDrawer.mode.directSound': 'DirectSound 互換',
   'audioDrawer.mode.shared': '共有',
   'audioDrawer.note.asio': '低遅延のプロ向け音声インターフェイスです。ドライバー対応が必要です。',
-  'audioDrawer.note.asioWarning': 'ASIO を有効にすると音声チャンネルを占有します。メーカー純正または信頼できる ASIO ドライバーがない場合は使わないでください。ASIO 対応のために出所不明の仮想ドライバーを入れることも推奨しません。効果は限定的で、不安定になる可能性があります。',
+  'audioDrawer.note.asioWarning': 'ASIO を有効にすると音声チャンネルを占有します。メーカー純正または信頼できる ASIO ドライバーがない場合は使わないでください。ASIO 対応のために出所不明の仮想ドライバーを入れることも推奨しません。効果は限定的で、不安定になる可能性があります。また、ASIO4ALL などのサードパーティ製ドライバーで問題が起きた場合、それをソフトウェアのバグとして扱わないでください。この種の問題は受け付けません。ネイティブ ASIO ドライバーを使用してください。',
   'audioDrawer.note.outputResponsibilityTitle': '排他 / ASIO 使用時の注意',
   'audioDrawer.note.outputResponsibilityPrimary': 'ヘッドホンやスピーカーを直挿ししている場合、通常は排他を有効にする必要はありません。排他 / ASIO で問題が出て共有モードでは正常な場合は、まず DAC、オーディオデバイス、ドライバー、接続経路を確認してください。すぐにソフトウェアの不具合と判断しないでください。手間を避けたい場合は独立した DAC の使用を推奨します。',
   'audioDrawer.note.outputResponsibilitySecondary': '独立 DAC でも問題が続く場合は、設定 - 再生 でエンジンをリセットしてください。それでも解決しない場合は、グループチャットへエラーレポートを送信してください。',
@@ -4536,16 +6461,118 @@ const jaJP: TranslationMap = {
   'route.folders.label': 'フォルダ',
   'route.history.description': '再生履歴。',
   'route.history.label': '履歴',
+  'route.inbox.description': '各スキャンで追加された新しい曲。',
+  'route.inbox.label': '受信箱',
   'route.importFile.description': '音声ファイルを 1 件取り込む。',
   'route.importFile.label': 'ファイルを取り込む',
   'route.importFolder.description': 'ローカル音楽フォルダを選択。',
   'route.importFolder.label': 'フォルダを取り込む',
+  'importFolder.hero.note': 'このページはローカルライブラリへの取り込みとスキャン状態の確認に使います。',
+  'nowPlaying.action.openLyrics': '歌詞を開く',
+  'nowPlaying.description': '現在の曲の概要です。歌詞は下部プレイヤーのマイクボタンから専用ページを開いてください。',
+  'nowPlaying.emptyDescription': '曲リストやアルバムから再生を始めると、ここに現在の曲が表示されます。',
+  'nowPlaying.emptyTitle': '再生中の曲はありません',
+  'nowPlaying.kicker': '再生中',
+  'nowPlaying.localFile': 'ローカルファイル',
+  'nowPlaying.ready': '準備完了',
+  'nowPlaying.state.idle': '待機中',
+  'nowPlaying.state.playing': '再生中',
+  'nowPlaying.title': '再生中',
   'route.liked.description': '保存した曲。',
   'route.liked.label': 'お気に入り',
   'route.lyrics.description': '歌詞と没入再生。',
   'route.lyrics.label': '歌詞',
   'route.lyricsSettings.description': '歌詞の設定。',
   'route.lyricsSettings.label': '歌詞設定',
+  'lyricsSettings.background.mode.cover': 'カバーに合わせる',
+  'lyricsSettings.candidate.allSources': 'すべてのソース',
+  'lyricsSettings.candidate.results': '歌詞検索結果',
+  'lyricsSettings.candidate.risk.high': '確認が必要',
+  'lyricsSettings.candidate.risk.low': '高精度一致',
+  'lyricsSettings.candidate.risk.medium': '一致の可能性',
+  'lyricsSettings.candidate.sourceFilters': '歌詞ソースフィルター',
+  'lyricsSettings.currentTrack.instrumentalMarked': 'インストゥルメンタルとして設定済み',
+  'lyricsSettings.currentTrack.markInstrumental': 'インストゥルメンタルに設定',
+  'lyricsSettings.currentTrack.markInstrumentalHint': '現在の曲を記憶し、自動歌詞マッチングを停止します',
+  'lyricsSettings.currentTrack.rematch': '再マッチ',
+  'lyricsSettings.currentTrack.rematchHint': '現在のキャッシュを消して再検索します',
+  'lyricsSettings.currentTrack.searchHint': '空欄なら現在の曲情報を使います',
+  'lyricsSettings.currentTrack.searchInput': '歌詞検索テキスト',
+  'lyricsSettings.currentTrack.searchLyrics': '歌詞を検索',
+  'lyricsSettings.currentTrack.searchPlaceholder': '曲名 / アーティスト / キーワード',
+  'lyricsSettings.currentTrack.title': '現在の曲',
+  'lyricsSettings.display.autoOpenCandidatePanel': '歌詞選択パネルを自動表示',
+  'lyricsSettings.display.chooseMiniPlayerColor': '下部バーの色を選択',
+  'lyricsSettings.display.coverMiniPlayerHint': '現在の曲のカバーから色を抽出し、ボタンが読みやすい暗めのガラス色に調整します。',
+  'lyricsSettings.display.customColor': 'カスタム色',
+  'lyricsSettings.display.defaultMicrosoftYahei': '既定は Microsoft YaHei。システムフォントに変更できます',
+  'lyricsSettings.display.desktopFont': 'デスクトップ歌詞フォント',
+  'lyricsSettings.display.desktopLyrics': 'デスクトップ歌詞',
+  'lyricsSettings.display.desktopLyricsDescription': '独立した透明ウィンドウで現在の歌詞をデスクトップ最前面に表示します。',
+  'lyricsSettings.display.desktopRomanization': 'デスクトップ歌詞にローマ字を表示',
+  'lyricsSettings.display.desktopTranslation': 'デスクトップ歌詞に翻訳を表示',
+  'lyricsSettings.display.disableMvTrackInfoAutoShow': 'MV で曲情報を自動表示しない',
+  'lyricsSettings.display.enableLyrics': '歌詞を有効化',
+  'lyricsSettings.display.enableLyricsDescription': 'オフにすると歌詞ページは歌詞を読み込み、検索、マッチングしません。',
+  'lyricsSettings.display.hideEmptyState': 'インストゥルメンタル表示を隠す',
+  'lyricsSettings.display.hideEmptyStateDescription': '歌詞ページ中央のインストゥルメンタル表示と歌詞なし表示を隠します。既定はオンです。',
+  'lyricsSettings.display.hideTrackInfo': '曲情報を隠す',
+  'lyricsSettings.display.lockDesktopLyrics': 'デスクトップ歌詞をロック',
+  'lyricsSettings.display.lockDesktopLyricsDescription': 'ロックするとマウスがデスクトップ歌詞を通過し、操作の邪魔を防ぎます。ここで解除できます。',
+  'lyricsSettings.display.matchThreshold': '歌詞一致度設定',
+  'lyricsSettings.display.matchThresholdDescription': 'オンライン結果が {threshold}% 以上の場合だけ自動適用します',
+  'lyricsSettings.display.miniPlayer': 'ミニ下部バー',
+  'lyricsSettings.display.miniPlayerColor': '下部バーの色',
+  'lyricsSettings.display.miniPlayerColorMode': 'ミニ下部バーの色モード',
+  'lyricsSettings.display.miniPlayerDefaultDark': '既定のダーク',
+  'lyricsSettings.display.miniPlayerDescription': 'オンにすると歌詞ページの既定の下部再生バーを隠し、中央下の小さなコントロールバーに置き換えます。',
+  'lyricsSettings.display.miniPlayerHint': '既定はオフです。没入感を保ちながら曲送りやシークを素早く使いたい場合に向いています。',
+  'lyricsSettings.display.miniPlayerOpacity': '下部バーの透明度',
+  'lyricsSettings.display.miniPlayerPalette': 'ミニ下部バー色パレット',
+  'lyricsSettings.display.preferUtatenKana': 'UtaTen ふりがなを優先',
+  'lyricsSettings.display.preferUtatenKanaDescription': '既定はオフです。オンにすると日本語歌詞は UtaTen のふりがなをローマ字表示の代わりに使い、見つからない場合は自動で戻します。',
+  'lyricsSettings.display.resetDesktopPosition': 'デスクトップ歌詞位置をリセット',
+  'lyricsSettings.display.resetDesktopPositionHint': '画面下中央へ戻す',
+  'lyricsSettings.display.showRomanization': 'ローマ字を表示',
+  'lyricsSettings.display.showRomanizationDescription': '歌詞ソース提供のローマ字を優先し、ない場合は日本語歌詞をローカル生成します。',
+  'lyricsSettings.display.showTranslation': '中国語翻訳を表示',
+  'lyricsSettings.display.showTranslationDescription': '歌詞ソース提供の中国語翻訳を優先し、翻訳がない場合は追加テキストを表示しません。',
+  'lyricsSettings.display.title': '歌詞表示',
+  'lyricsSettings.display.useMiniPlayerColor': '下部バー色 {color} を使用',
+  'lyricsSettings.engine.autoMatch': '自動マッチ',
+  'lyricsSettings.engine.provider': 'ソース',
+  'lyricsSettings.engine.threshold': 'しきい値',
+  'lyricsSettings.engine.title': '歌詞エンジン',
+  'lyricsSettings.font.applySystem': 'システムフォントを適用',
+  'lyricsSettings.font.custom': 'カスタム',
+  'lyricsSettings.font.desktopOnly': 'デスクトップ歌詞のみに影響',
+  'lyricsSettings.font.importDesktop': 'デスクトップ歌詞フォントを取り込む',
+  'lyricsSettings.font.restoreDesktopDefault': 'デスクトップ歌詞の既定フォントに戻す',
+  'lyricsSettings.font.system': 'システムフォント',
+  'lyricsSettings.fontPicker.aria': '歌詞フォントを選択',
+  'lyricsSettings.fontPicker.chooseFile': 'ファイルからフォントを選択',
+  'lyricsSettings.fontPicker.close': '歌詞フォント選択を閉じる',
+  'lyricsSettings.fontPicker.preview': '歌詞フォントプレビュー Aa こんにちは',
+  'lyricsSettings.fontPicker.searchPlaceholder': 'インストール済みフォントを検索',
+  'lyricsSettings.fontPicker.title': '歌詞フォントを選択',
+  'lyricsSettings.provider.cached': 'キャッシュ歌詞',
+  'lyricsSettings.provider.chineseCatalogDescription': '中国語カタログ補完',
+  'lyricsSettings.provider.local': 'ローカル歌詞',
+  'lyricsSettings.provider.lrclibDescription': 'オープン歌詞ライブラリ',
+  'lyricsSettings.provider.manual': '手動歌詞',
+  'lyricsSettings.provider.netease': 'NetEase Cloud Music',
+  'lyricsSettings.provider.none': '未適用の歌詞',
+  'lyricsSettings.provider.qqmusic': 'QQ Music',
+  'lyricsSettings.status.applied': '歌詞を適用しました',
+  'lyricsSettings.status.applying': '適用中',
+  'lyricsSettings.status.markedInstrumental': 'インストゥルメンタルとして設定しました',
+  'lyricsSettings.status.noCandidates': '歌詞候補が見つかりません',
+  'lyricsSettings.status.noPlayingTrack': '再生中の曲がありません',
+  'lyricsSettings.status.normal': '標準',
+  'lyricsSettings.status.off': 'オフ',
+  'lyricsSettings.status.on': 'オン',
+  'lyricsSettings.status.rematchingCandidates': '歌詞候補を再検索中...',
+  'lyricsSettings.status.searchingCandidates': '歌詞候補を検索中...',
   'route.mvSettings.description': 'MV の紐付けとローカル検索設定。',
   'route.mvSettings.label': 'MV 設定',
   'mvSettings.action.chooseFile': 'ファイルを選択',
@@ -4589,6 +6616,7 @@ const jaJP: TranslationMap = {
   'mvSettings.error.noActiveTrackBinding': 'MV の紐付けに使えるライブラリ曲が選択されていません',
   'mvSettings.error.noActiveTrackMatching': 'MV 検索に使えるライブラリ曲が選択されていません',
   'mvSettings.error.noActiveTrackNetworkSearch': 'ネットワーク MV 検索に使えるライブラリ曲が選択されていません',
+  'mvSettings.error.databaseUnavailable': 'MV データベースを一時的に読み取れません。先にライブラリ復旧でデータベースを修復してください。',
   'mvSettings.error.noLocalCandidates': 'ローカル MV 候補が見つかりません',
   'mvSettings.error.noNetworkCandidates': 'ネットワーク MV 候補が見つかりません',
   'mvSettings.general.enabled': 'MV を有効化',
@@ -4619,7 +6647,7 @@ const jaJP: TranslationMap = {
   'mvSettings.network.replayAudioOnChange': 'MV 切り替え後に音楽を自動再生',
   'mvSettings.network.replayAudioOnChangeDescription': 'オンにすると、MV を手動で選択または紐付けた後、現在の曲を再生し直して新しい MV をすぐ反映します。',
   'mvSettings.network.restartAudioOnLoad': 'MV を音楽の進行に追従',
-  'mvSettings.network.restartAudioOnLoadDescription': 'オンにすると MV の映像時間だけを補正し、音声のシークや再起動は行いません。歌詞同期オフセットの影響も受けません。',
+  'mvSettings.network.restartAudioOnLoadDescription': 'オンにすると MV の映像時間を継続的に補正し、音声のシークや再起動は行いません。歌詞同期オフセットの影響も受けません。',
   'mvSettings.network.syncMode': '同期モード',
   'mvSettings.network.syncModeDescription': '小さなズレは再生速度で追従し、大きなズレだけ映像をシークします。',
   'mvSettings.network.syncMode.stable': '安定',
@@ -4662,6 +6690,8 @@ const jaJP: TranslationMap = {
   'trackMenu.action.deleteSong': '曲を削除',
   'route.playlists.description': 'ユーザープレイリスト。',
   'route.playlists.label': 'プレイリスト',
+  'route.plugins.description': 'ローカルで編集できるプラグイン。',
+  'route.plugins.label': 'プラグイン',
   'route.queue.description': '再生キュー。',
   'route.queue.label': 'キュー',
   'queue.action.clear': 'キューを空にする',
@@ -4712,6 +6742,8 @@ const jaJP: TranslationMap = {
   'route.settings.label': '設定',
   'route.songs.description': 'ローカルライブラリの曲一覧。',
   'route.songs.label': '曲',
+  'route.streaming.description': 'ストリーミング音楽ソース。',
+  'route.streaming.label': 'ストリーミング',
   'settings.header.searchPlaceholder': '設定を検索...',
   'settings.nav.general.label': '一般',
   'settings.nav.general.description': '言語、ウィンドウ、基本動作',
@@ -4952,6 +6984,22 @@ const jaJP: TranslationMap = {
   'settings.integrations.mobile.description': '将来の外部デバイス機能は制御された IPC を通し、Renderer がシステムリソースへ直接接続しないようにします。',
   'settings.remote.library.title': 'リモート音楽ライブラリ',
   'settings.remote.library.description': 'この段階ではクラウド / リモート / ストリーミングを禁止し、設定グループの場所だけ残します。',
+  'segmentLoop.action.clear': '現在の A-B 点をクリア',
+  'segmentLoop.action.deleteBookmark': '区間ブックマーク {label} を削除',
+  'segmentLoop.action.deleteBookmarkTitle': '区間ブックマークを削除',
+  'segmentLoop.action.loopBookmark': '区間 {label} をループ',
+  'segmentLoop.action.loopBookmarkTitle': '{label} をループ',
+  'segmentLoop.action.saveBookmark': '現在の区間ブックマークを保存',
+  'segmentLoop.action.setA': '現在位置を A 点に設定',
+  'segmentLoop.action.setB': '現在位置を B 点に設定',
+  'segmentLoop.action.toggle': 'A-B ループを切り替え',
+  'segmentLoop.action.toggleTitle': 'A-B ループをオン/オフ',
+  'segmentLoop.aria.bookmarks': '現在の曲の区間ブックマーク',
+  'segmentLoop.aria.panel': 'A-B ループと区間ブックマーク',
+  'segmentLoop.empty': '区間を保存するとここに表示されます',
+  'segmentLoop.notSet': '未設定',
+  'spotifyPlayback.error.noDevice': '利用可能な Spotify 再生デバイスがありません。「公式プレイヤーを自動起動」を有効にするか、Spotify デスクトップ版または Web 版を先に開いてください。{hint}',
+  'spotifyPlayback.error.noDrmKeysystem': '現在の Electron ビルドには利用可能な DRM/Widevine keysystem がないため、Spotify 公式プレイヤーを ECHO 内でデバイス登録できません。',
   'settings.appearance.theme.title': 'テーマ',
   'settings.appearance.theme.description': 'ライト、ダーク、またはシステム設定に合わせます。',
   'settings.appearance.theme.light': 'ライト',
@@ -5157,9 +7205,318 @@ const jaJP: TranslationMap = {
 
 const enUS: TranslationMap = {
   ...zhCN,
+  'albumTagEditor.action.applyToForm': 'Apply to form',
+  'albumTagEditor.action.cancel': 'Cancel',
+  'albumTagEditor.action.chooseCover': 'Choose cover',
+  'albumTagEditor.action.close': 'Close tag editor',
+  'albumTagEditor.action.loadEmbedded': 'Load embedded tags',
+  'albumTagEditor.action.loading': 'Loading',
+  'albumTagEditor.action.loadNetwork': 'Load from network',
+  'albumTagEditor.action.saveTags': 'Save tags',
+  'albumTagEditor.action.saving': 'Saving',
+  'albumTagEditor.action.searchCandidates': 'Search candidates',
+  'albumTagEditor.action.searching': 'Searching',
+  'albumTagEditor.albumSummary': '{count} tracks / {duration}',
+  'albumTagEditor.cover.embeddedSuffix': ' / cover reloaded from embedded tags',
+  'albumTagEditor.cover.localSuffix': ' / local cover: {path}',
+  'albumTagEditor.cover.networkSuffix': ' / network cover will download and write on save',
+  'albumTagEditor.currentAlbum': 'Current album',
+  'albumTagEditor.currentAlbumAria': 'Current album',
+  'albumTagEditor.discard.continue': 'Keep editing',
+  'albumTagEditor.discard.discard': 'Discard changes',
+  'albumTagEditor.discard.prompt': 'You have unsaved changes. Close and discard them?',
+  'albumTagEditor.duration.hoursMinutes': '{hours} hr {minutes} min',
+  'albumTagEditor.duration.minutes': '{minutes} min',
+  'albumTagEditor.duration.unknown': 'Unknown length',
+  'albumTagEditor.error.chooseCoverUnsupported': 'The current runtime cannot choose covers.',
+  'albumTagEditor.error.embeddedUnsupported': 'The current runtime cannot read embedded tags.',
+  'albumTagEditor.error.fixYearBeforeSave': 'Fix the year before saving tags.',
+  'albumTagEditor.error.networkTemporary': 'Network sources are temporarily unavailable. Try again later.',
+  'albumTagEditor.error.networkUnsupported': 'The current runtime cannot search network tags.',
+  'albumTagEditor.error.noReadableTrack': 'This album has no track that can be used to read tags.',
+  'albumTagEditor.error.positiveInteger': '{label} must be a positive integer or empty',
+  'albumTagEditor.error.readTracksUnsupported': 'The current runtime cannot read album tracks.',
+  'albumTagEditor.field.album': 'Album',
+  'albumTagEditor.field.albumArtist': 'Album artist',
+  'albumTagEditor.field.cover': 'Cover',
+  'albumTagEditor.field.genre': 'Genre',
+  'albumTagEditor.field.year': 'Year',
+  'albumTagEditor.message.appliedNetwork': 'Applied to the form. Save to write it to songs in this album.',
+  'albumTagEditor.message.noNetworkTags': 'No suitable network tags found.',
+  'albumTagEditor.message.searchingNetwork': 'Searching network tags...',
+  'albumTagEditor.network.aria': 'Network candidate comparison',
+  'albumTagEditor.network.column.candidate': 'Candidate',
+  'albumTagEditor.network.column.current': 'Current',
+  'albumTagEditor.network.column.field': 'Field',
+  'albumTagEditor.network.selectAll': 'Select all',
+  'albumTagEditor.network.selectFields': 'Choose fields to apply to the album',
+  'albumTagEditor.network.title': 'Network candidates',
+  'albumTagEditor.saveDescription': 'Saving writes embedded tags to every song in this album and syncs the library immediately.',
+  'albumTagEditor.section.albumInfo': 'Album information',
+  'albumTagEditor.section.albumInfoDescription': 'Writes in bulk to songs in this album',
+  'albumTagEditor.subtitle.albumBatch': 'Album-level batch tags',
+  'albumTagEditor.subtitle.unsaved': 'Unsaved changes',
+  'albumTagEditor.title': 'Edit tags',
+  'albumTagEditor.value.albumCandidate': 'Album candidate',
+  'albumTagEditor.value.empty': 'Empty',
+  'albumTagEditor.value.existingCover': 'Existing cover',
+  'albumTagEditor.value.networkCover': 'Network cover',
+  'albumTagEditor.value.unknownAlbum': 'Unknown album',
+  'albumTagEditor.value.unknownArtist': 'Unknown artist',
+  'firstRun.action.finish': 'Finish setup',
+  'firstRun.action.next': 'Next',
+  'firstRun.action.previous': 'Back',
+  'firstRun.action.skip': 'Skip',
+  'firstRun.action.skipWizard': 'Skip wizard',
+  'firstRun.aria.steps': 'First-run steps',
+  'firstRun.aria.summary': 'Current wizard selection summary',
+  'firstRun.audio.asio.description': 'Requires an ASIO device and reliable driver.',
+  'firstRun.audio.asio.hint': 'Pro',
+  'firstRun.audio.asio.label': 'ASIO',
+  'firstRun.audio.exclusive.description': 'Exclusive device access for stable external interfaces or HiFi tuning.',
+  'firstRun.audio.exclusive.hint': 'Advanced',
+  'firstRun.audio.exclusive.label': 'WASAPI Exclusive',
+  'firstRun.audio.linuxShared.description': 'Use ECHO native output through the Linux audio stack.',
+  'firstRun.audio.linuxShared.hint': 'Advanced',
+  'firstRun.audio.linuxShared.label': 'Linux Shared',
+  'firstRun.audio.shared.description': 'Everyday shared output through the advanced audio engine.',
+  'firstRun.audio.shared.hint': 'Advanced',
+  'firstRun.audio.shared.label': 'WASAPI Shared',
+  'firstRun.audio.system.description': 'Most stable for regular headphones, Bluetooth, and computer speakers.',
+  'firstRun.audio.system.hint': 'Recommended',
+  'firstRun.audio.system.label': 'Standard Output (Recommended)',
+  'firstRun.cache.chooseLocation': 'Choose cache location',
+  'firstRun.cache.useDefault': 'Use default',
+  'firstRun.currentSelection': 'Current selection',
+  'firstRun.defaultLocation': 'Default location',
+  'firstRun.description': 'Finish a few basic settings first. Keep the recommended values when unsure.',
+  'firstRun.error.desktopBridgeCache': 'Desktop bridge unavailable, so the cache location cannot be selected right now.',
+  'firstRun.error.desktopBridgeMusicFolder': 'Desktop bridge unavailable, so the music folder cannot be selected right now.',
+  'firstRun.error.desktopBridgeSave': 'Desktop bridge unavailable, so first-run settings cannot be saved right now.',
+  'firstRun.library.chooseFolder': 'Choose folder',
+  'firstRun.library.noneSelected': 'Nothing selected. You can add one later.',
+  'firstRun.library.scanAfterFinish': 'Scan after finishing',
+  'firstRun.message.saved': 'First-run settings saved.',
+  'firstRun.scan.balanced.description': 'Recommended. Scan speed and background load stay balanced.',
+  'firstRun.scan.balanced.hint': 'Default',
+  'firstRun.scan.balanced.label': 'Balanced',
+  'firstRun.scan.low.description': 'Less disruption during playback. Scanning will be slower.',
+  'firstRun.scan.low.hint': 'While listening',
+  'firstRun.scan.low.label': 'Low impact',
+  'firstRun.scan.performance.description': 'Build the library as quickly as possible. Best while the computer is idle.',
+  'firstRun.scan.performance.hint': 'Idle time',
+  'firstRun.scan.performance.label': 'Fast',
+  'firstRun.step.audio.description': 'Use standard output for regular headphones, Bluetooth, and speakers. Choose the advanced engine for external interfaces or HiFi tuning.',
+  'firstRun.step.audio.eyebrow': '4 / 5',
+  'firstRun.step.audio.label': 'Output',
+  'firstRun.step.audio.title': 'Choose audio output',
+  'firstRun.step.cache.description': 'Cover cache uses disk space. If the C drive is tight, choose another drive.',
+  'firstRun.step.cache.eyebrow': '2 / 5',
+  'firstRun.step.cache.label': 'Cache',
+  'firstRun.step.cache.title': 'Choose cache location',
+  'firstRun.step.library.description': 'ECHO builds your library from here. You can skip this and add folders later.',
+  'firstRun.step.library.eyebrow': '1 / 5',
+  'firstRun.step.library.label': 'Music',
+  'firstRun.step.library.title': 'Choose music folder',
+  'firstRun.step.scan.description': 'Keep Balanced if unsure. It aims to balance speed and playback stability.',
+  'firstRun.step.scan.eyebrow': '3 / 5',
+  'firstRun.step.scan.label': 'Scan',
+  'firstRun.step.scan.title': 'Choose scan mode',
+  'firstRun.step.summary.description': 'You can change these later. This will not move or delete your music files.',
+  'firstRun.step.summary.eyebrow': '5 / 5',
+  'firstRun.step.summary.label': 'Confirm',
+  'firstRun.step.summary.title': 'Confirm settings',
+  'firstRun.summary.addLater': 'Add later',
+  'firstRun.summary.cache': 'Cache',
+  'firstRun.summary.kicker': 'Summary',
+  'firstRun.summary.music': 'Music',
+  'firstRun.summary.noFileMove': 'Your music files will not be moved or deleted.',
+  'firstRun.summary.output': 'Output',
+  'firstRun.summary.readyDescription': 'Finish will save these settings. If a folder is selected and scanning is enabled, ECHO will start building the library index.',
+  'firstRun.summary.readyTitle': 'Ready to start',
+  'firstRun.summary.scan': 'Scan',
+  'firstRun.summary.scanWithFolder': '{mode}, scan after finishing',
+  'firstRun.title': 'Welcome to ECHO Next',
+  'downloads.action.addToQueue': 'Add to queue',
+  'downloads.action.cancelJob': 'Cancel task',
+  'downloads.action.changeFolder': 'Change folder',
+  'downloads.action.checkTools': 'Check environment',
+  'downloads.action.chooseFolder': 'Choose folder',
+  'downloads.action.clearCompleted': 'Clear completed',
+  'downloads.action.creating': 'Creating',
+  'downloads.action.search': 'Search',
+  'downloads.action.searching': 'Searching',
+  'downloads.description': 'Search YouTube / Bilibili with bundled yt-dlp and download the best available audio only.',
+  'downloads.empty.noResults.description': 'Try another keyword.',
+  'downloads.empty.noResults.title': 'No search results',
+  'downloads.empty.queue.description': 'Paste a link or download a search result to see real progress here.',
+  'downloads.empty.queue.title': 'Queue is empty',
+  'downloads.empty.searching.description': 'Querying {scope}.',
+  'downloads.empty.searching.title': 'Searching',
+  'downloads.error.cookieFallback': 'Could not read browser cookies. Search was retried automatically without signed-in state.',
+  'downloads.error.ipcUnavailable': 'Download IPC is not exposed in the current runtime.',
+  'downloads.error.operationFailed': 'Download operation failed',
+  'downloads.folder.required': 'Choose a download folder',
+  'downloads.job.imported': 'Imported to library',
+  'downloads.job.savedTo': 'Saved to {path}',
+  'downloads.job.waitingProgress': 'Waiting for progress',
+  'downloads.message.clearedTerminal': 'Cleared completed, failed, and cancelled tasks.',
+  'downloads.message.completed': 'Download complete: {title}',
+  'downloads.message.queued': 'Added to download queue.',
+  'downloads.message.resultQueued': 'Added to queue: {title}',
+  'downloads.queue.title': 'Download queue',
+  'downloads.search.aria': 'Search downloads',
+  'downloads.search.downloadAudio': 'Download audio',
+  'downloads.search.joined': 'Added to queue',
+  'downloads.search.placeholder': 'Search songs, artists, or video titles',
+  'downloads.search.providerErrorItem': '{provider}: {error}',
+  'downloads.search.providerErrors': 'Some platform searches failed: {errors}',
+  'downloads.search.scopeAria': 'Search platform',
+  'downloads.search.title': 'Search downloads',
+  'downloads.search.unknownUploader': 'Unknown uploader',
+  'downloads.search.views': '{count} views',
+  'downloads.search.viewsWan': '{count}0k views',
+  'downloads.settings.audioStrategy': 'Audio strategy',
+  'downloads.settings.bestAvailable': 'Best available quality',
+  'downloads.settings.bindMvAfterImport': 'Bind source URL as MV after import',
+  'downloads.settings.importToLibrary': 'Import to library when complete',
+  'downloads.settings.outputDirectory': 'Download folder',
+  'downloads.settings.title': 'Download settings',
+  'downloads.status.bindingMv': 'Binding MV',
+  'downloads.status.cancelled': 'Cancelled',
+  'downloads.status.completed': 'Completed',
+  'downloads.status.downloading': 'Downloading',
+  'downloads.status.extractingAudio': 'Extracting audio',
+  'downloads.status.failed': 'Failed',
+  'downloads.status.importing': 'Importing to library',
+  'downloads.status.probing': 'Parsing link',
+  'downloads.status.queued': 'Queued',
+  'downloads.title': 'Downloads',
+  'downloads.tools.notBundled': 'Not bundled with app',
+  'downloads.tools.notDetected': 'Not detected',
+  'downloads.tools.title': 'Environment check',
+  'downloads.url.placeholder': 'Paste a YouTube / Bilibili / SoundCloud / osu! link',
+  'downloads.url.title': 'Paste link to download',
+  'albumMenu.action.addToPlaylist': 'Add to playlist...',
+  'albumMenu.action.addToQueue': 'Add to queue',
+  'albumMenu.action.copyCover': 'Copy album cover',
+  'albumMenu.action.copyInfo': 'Copy album info',
+  'albumMenu.action.deleteAlbum': 'Delete album',
+  'albumMenu.action.editTags': 'Edit tags',
+  'albumMenu.action.likeAlbum': 'Like album',
+  'albumMenu.action.playAlbum': 'Play album',
+  'albumMenu.action.saveCover': 'Save album cover',
+  'albumMenu.action.unlikeAlbum': 'Unlike album',
+  'albumMenu.playlistSubmenu.aria': 'Choose playlist',
+  'albumMenu.playlistSubmenu.empty': 'No local playlists',
+  'albumMenu.playlistSubmenu.itemCount': '{count} tracks',
+  'albumMenu.playlistSubmenu.loading': 'Loading playlists...',
+  'accountProvider.netease': 'NetEase Cloud Music',
+  'accountProvider.qqmusic': 'QQ Music',
+  'accountProvider.unknown': 'Unknown account',
+  'desktopLyrics.aria.stage': 'Desktop lyrics',
+  'desktopLyrics.control.close': 'Close',
+  'desktopLyrics.control.colorSwatch': 'Color {color}',
+  'desktopLyrics.control.customColor': 'Custom color',
+  'desktopLyrics.control.decreaseFontSize': 'Decrease font size',
+  'desktopLyrics.control.decreaseScale': 'Scale down',
+  'desktopLyrics.control.increaseFontSize': 'Increase font size',
+  'desktopLyrics.control.increaseScale': 'Scale up',
+  'desktopLyrics.control.lock': 'Lock',
+  'desktopLyrics.control.resetPosition': 'Reset position',
+  'desktopLyrics.control.romanization': 'Show romanization in desktop lyrics',
+  'desktopLyrics.control.translation': 'Show translation in desktop lyrics',
+  'desktopLyrics.control.translationShort': 'T',
+  'desktopLyrics.primary.empty': 'No lyrics',
+  'desktopLyrics.primary.instrumental': 'Instrumental',
+  'desktopLyrics.secondary.waiting': 'Waiting for playback',
+  'lyricsView.empty.instrumental': 'Instrumental',
+  'lyricsView.empty.noLyrics': 'No lyrics',
+  'mvPanel.action.close': 'Close',
+  'mvPanel.action.copied': 'Copied',
+  'mvPanel.action.copy': 'Copy',
+  'mvPanel.action.dismissUnavailable': 'Dismiss MV unavailable notice',
+  'mvPanel.diagnostics.title': 'MV Diagnostics Report',
+  'mvPanel.notice.unavailable': 'MV unavailable',
+  'mvPanel.status.databaseUnread': 'MV database is unreadable',
+  'mvPanel.status.externalRequired': 'This MV requires external playback',
+  'mvPanel.status.inAppUnavailable': 'This MV cannot play inside the app',
+  'mvPanel.status.loadFailed': 'MV failed to load',
+  'mvPanel.status.loading': 'Loading MV',
+  'mvPanel.status.localUnsupported': 'Local video format is not supported',
+  'mvPanel.status.missingUrl': 'Missing playable URL',
+  'mvPanel.status.networkFailed': 'Network MV request failed',
+  'mvPanel.status.notFound': 'No playable MV found',
+  'mvPanel.status.temporaryPlayback': 'Temporary MV playing; database still needs repair',
+  'mvPanel.status.unavailable': 'MV unavailable',
+  'mvPanel.status.videoFailed': 'Video failed to load',
+  'miniPlayer.action.close': 'Close mini player',
+  'miniPlayer.action.closeShort': 'Close',
+  'miniPlayer.action.next': 'Next track',
+  'miniPlayer.action.pause': 'Pause',
+  'miniPlayer.action.play': 'Play',
+  'miniPlayer.action.previous': 'Previous track',
+  'miniPlayer.action.resetPosition': 'Reset position',
+  'miniPlayer.aria.progress': 'Playback progress',
+  'miniPlayer.aria.shell': 'Mini player',
+  'miniPlayer.artist.unknown': 'Unknown Artist',
+  'miniPlayer.status.hqPlayerTakeover': 'HQPlayer takeover active',
+  'miniPlayer.status.ready': 'Ready',
+  'playerStatus.audioSpecifications': 'Audio specifications',
+  'playerStatus.ready': 'Ready',
+  'playerStatus.streaming': 'Streaming',
+  'playerSpeed.label': 'Playback speed',
+  'playerSpeed.reset': 'Reset playback speed',
+  'playerVolume.fixed.disable': 'Disable fixed volume',
+  'playerVolume.fixed.enable': 'Enable fixed volume',
+  'playerVolume.fixed.enabled': 'Fixed volume enabled',
+  'playerVolume.fixed.title': 'Fixed volume',
+  'import.dragDrop.desktopBridgeUnavailable': 'Desktop bridge unavailable. Import dropped files in ECHO Next desktop.',
+  'import.dragDrop.files.empty': 'No importable audio files found.',
+  'import.dragDrop.files.failed': '{count} files failed to import',
+  'import.dragDrop.files.ignored': 'Ignored {count} unsupported files',
+  'import.dragDrop.files.imported': 'Imported {count} songs',
+  'import.dragDrop.files.summaryWithOutput': '{summary}. Files were saved to: {outputDirectory}',
+  'import.dragDrop.noDroppedFiles': 'No dropped files were read.',
+  'import.dragDrop.overlay.description': 'Files are saved to Downloads and added to the library',
+  'import.dragDrop.overlay.title': 'Drop music or osu! beatmaps to import into your library',
+  'import.dragDrop.paths.addedFolders': 'Added {count} folders',
+  'import.dragDrop.paths.empty': 'No importable music files or folders found',
+  'import.dragDrop.paths.failed': '{count} paths failed to import',
+  'import.dragDrop.paths.ignored': 'Ignored {count} unsupported files',
+  'import.dragDrop.paths.importedFiles': 'Imported {count} files',
+  'import.dragDrop.paths.missing': 'Skipped {count} inaccessible paths',
+  'import.dragDrop.paths.scannedAudioFolders': 'Scanned {count} folders containing music files',
+  'notice.accountExpired': 'Account login may have expired: {names}. Go to Settings > Integrations to sign in again.',
+  'notice.accountExpired.title': 'Account Login Expired',
+  'notice.action.close': 'Close',
+  'notice.action.closeNotice': 'Close notice',
+  'notice.action.ignore': 'Ignore',
+  'notice.action.openReport': 'Open Report',
+  'notice.audioError.description': 'A Markdown diagnostics report was generated with detailed causes and troubleshooting clues.',
+  'notice.audioError.title': 'Audio Error',
+  'notice.diagnosticsCrash.description': 'ECHO Next did not exit normally last time. A Markdown report is ready for troubleshooting.',
+  'notice.importFiles.empty': 'No audio files can be imported.',
+  'notice.importFiles.failed': '{count} files failed to import',
+  'notice.importFiles.imported': 'Imported {count} files into the library',
+  'notice.importFiles.skipped': 'Skipped {count} unsupported or unavailable files',
+  'notice.openFiles.partial': 'Opened {opened} files and skipped {rejected} unsupported or unavailable files.',
+  'notice.reportOpened': 'Markdown report opened.',
+  'notice.reportOpenedPath': 'Markdown report opened: {path}',
+  'notice.updateAvailable': 'A new ECHO NEXT version is available.',
+  'notice.updateAvailableVersion': 'A new ECHO NEXT version {version} is available.',
+  'notice.updateDownloaded': 'ECHO NEXT update has been downloaded and is ready to install.',
+  'notice.updateDownloadedVersion': 'ECHO NEXT {version} has been downloaded and is ready to install.',
+  'punctuation.clauseSeparator': ', ',
+  'punctuation.listSeparator': ', ',
   'library.action.refresh': 'Refresh',
   'library.albums.card.tracks': '{count} tracks',
+  'library.albums.confirm.deleteAlbumFiles': 'Delete album files?\n{title}\n\nThis will move {count} tracks to the system recycle bin and remove them from the media library.',
+  'library.albums.error.coverNotSaved': 'Album cover was not saved.',
   'library.albums.error.desktopBridge': 'Desktop bridge unavailable. Open ECHO Next in Electron to read albums.',
+  'library.albums.error.noCopyableCover': 'This album has no copyable cover.',
+  'library.albums.error.noPlayableTracks': 'This album has no playable tracks.',
+  'library.albums.error.remoteEditUnsupported': 'Remote albums do not support tag editing or deleting server files yet.',
   'library.albums.listAria': 'Album list',
   'library.albums.loading': 'Loading albums...',
   'library.albums.searchPlaceholder': 'Search albums / artists',
@@ -5168,6 +7525,7 @@ const enUS: TranslationMap = {
   'library.albums.sort.titleAsc': 'Title A-Z',
   'library.albums.sort.titleDesc': 'Title Z-A',
   'library.albums.title': 'Albums',
+  'libraryDiagnostics.lab.description': 'These tools are for development testing of live media-library behavior. They are off by default and do not affect regular users. Use them only on test branches or test libraries.',
   'library.artists.error.desktopBridge': 'Desktop bridge unavailable. Open ECHO Next in Electron to read artists.',
   'library.artists.avatarPriority': 'Avatar First',
   'library.artists.listAria': 'Artist list',
@@ -5296,7 +7654,26 @@ const enUS: TranslationMap = {
   'library.sort.recent': 'Recent',
   'library.source.aria': 'Library source',
   'library.source.local': 'Local',
+  'library.source.allRemote': 'All cloud sources',
   'library.source.remote': 'Cloud',
+  'library.trackRow.action.addToPlaylist': 'Add to playlist',
+  'library.trackRow.action.addToPlaylistLabel': 'Add {title} to playlist',
+  'library.trackRow.action.addToQueue': 'Add to queue',
+  'library.trackRow.action.addToQueueLabel': 'Add {title} to queue',
+  'library.trackRow.action.download': 'Download',
+  'library.trackRow.action.downloadLabel': 'Download {title}',
+  'library.trackRow.action.downloading': 'Downloading {percent}%',
+  'library.trackRow.action.downloadingLabel': 'Downloading {title} {percent}%',
+  'library.trackRow.action.more': 'More',
+  'library.trackRow.action.moreLabel': 'More actions for {title}',
+  'library.trackRow.actions': '{title} actions',
+  'library.trackRow.audioSpecifications': 'Audio specifications',
+  'library.trackRow.duplicateVersions.count': '{count} versions',
+  'library.trackRow.duplicateVersions.title': 'View duplicate song versions',
+  'library.trackRow.openAlbum': 'Open album: {album}',
+  'library.trackRow.openArtist': 'Open artist: {artist}',
+  'library.trackRow.status.playing': 'Playing',
+  'library.trackRow.status.unavailable': 'Unavailable',
   'app.navigation.main': 'Main navigation',
   'app.navigation.utility': 'Utility navigation',
   'app.toolbar.quickActions': 'Quick actions',
@@ -5370,10 +7747,27 @@ const enUS: TranslationMap = {
   'albumDetail.online.reading': 'Reading online album info...',
   'albumDetail.online.sources': 'Online sources',
   'albumDetail.online.unavailable': 'Online info unavailable',
+  'albumDetail.releases.count': '{count} release versions',
+  'albumDetail.releases.current': 'Current match',
+  'albumDetail.releases.currentHint': 'Shows the MusicBrainz release matched to this local album',
+  'albumDetail.releases.heading': 'Versions / Releases',
+  'albumDetail.releases.overviewAria': 'Album release version overview',
   'albumDetail.related.aria': '{artist} albums in your library',
   'albumDetail.related.heading': 'My Library',
   'albumDetail.related.loading': 'Loading albums',
   'albumDetail.related.thisAlbum': 'This album',
+  'albumDetail.sources.barcode': 'Barcode',
+  'albumDetail.sources.catalogNumber': 'Catalog no.',
+  'albumDetail.sources.copyright': 'Copyright',
+  'albumDetail.sources.kind.database': 'Database',
+  'albumDetail.sources.kind.official': 'Official',
+  'albumDetail.sources.kind.other': 'Web',
+  'albumDetail.sources.kind.reference': 'Reference',
+  'albumDetail.sources.kind.streaming': 'Streaming',
+  'albumDetail.sources.labels': 'Label / catalog',
+  'albumDetail.sources.linksAria': 'Album external source links',
+  'albumDetail.sources.releaseAria': 'Current matched release info',
+  'albumDetail.sources.releaseDetails': 'Current release',
   'albumDetail.status.libraryReady': '{value} ready',
   'albumDetail.status.readingSignal': 'Reading signal',
   'albumDetail.status.unknownGenre': 'Unknown genre',
@@ -5381,6 +7775,8 @@ const enUS: TranslationMap = {
   'albumDetail.status.unknownYear': 'Unknown year',
   'albumDetail.tab.credits': 'Credits',
   'albumDetail.tab.information': 'Information',
+  'albumDetail.tab.releases': 'Versions',
+  'albumDetail.tab.sources': 'Sources',
   'albumDetail.tab.tracks': 'Tracks',
   'albumDetail.texture.discs': '{count} discs',
   'albumDetail.tracks.action.like': 'Like {title}',
@@ -5479,7 +7875,7 @@ const enUS: TranslationMap = {
   'audioDrawer.mode.directSound': 'DirectSound Compatibility',
   'audioDrawer.mode.shared': 'Shared',
   'audioDrawer.note.asio': 'Low-latency professional audio interface support requires a driver.',
-  'audioDrawer.note.asioWarning': 'ASIO takes over your audio channels. Use it only with an official or trusted ASIO driver; installing obscure virtual drivers just to force ASIO is not recommended, has limited benefit, and may make playback unstable.',
+  'audioDrawer.note.asioWarning': 'ASIO takes over your audio channels. Use it only with an official or trusted ASIO driver; installing obscure virtual drivers just to force ASIO is not recommended, has limited benefit, and may make playback unstable. Also, if you use third-party drivers such as ASIO4ALL and run into any issue, do not call it a software bug; these issues are not accepted. Use the device native ASIO driver.',
   'audioDrawer.note.outputResponsibilityTitle': 'Exclusive / ASIO Note',
   'audioDrawer.note.outputResponsibilityPrimary': 'If you are driving headphones or speakers directly, Exclusive mode is usually unnecessary. If Exclusive / ASIO causes problems while Shared mode is fine, check your DAC, sound card, driver, and connection path first instead of treating it as a software bug immediately. If you want less hassle, use a dedicated DAC.',
   'audioDrawer.note.outputResponsibilitySecondary': 'If problems still happen with a dedicated DAC, try Settings - Playback - Reset engine. If it still fails, send an error report in the group chat.',
@@ -5730,16 +8126,184 @@ const enUS: TranslationMap = {
   'route.folders.label': 'Folders',
   'route.history.description': 'Playback history.',
   'route.history.label': 'History',
+  'route.inbox.description': 'New tracks from each scan.',
+  'route.inbox.label': 'Inbox',
   'route.importFile.description': 'Import a single audio file.',
   'route.importFile.label': 'Import File',
   'route.importFolder.description': 'Choose a local music folder.',
   'route.importFolder.label': 'Import Folder',
+  'importFolder.hero.note': 'This page is only for importing local library folders and checking scan status.',
+  'nowPlaying.action.openLyrics': 'Open lyrics',
+  'nowPlaying.description': 'Current track overview. Use the microphone button in the bottom player to open the dedicated lyrics page.',
+  'nowPlaying.emptyDescription': 'Start playback from Songs or Albums and the current track will appear here.',
+  'nowPlaying.emptyTitle': 'Nothing is playing',
+  'nowPlaying.kicker': 'Now Playing',
+  'nowPlaying.localFile': 'Local file',
+  'nowPlaying.ready': 'Ready',
+  'nowPlaying.state.idle': 'Idle',
+  'nowPlaying.state.playing': 'Playing',
+  'nowPlaying.title': 'Now Playing',
   'route.liked.description': 'Saved tracks.',
   'route.liked.label': 'Liked',
   'route.lyrics.description': 'Lyrics and immersive playback.',
   'route.lyrics.label': 'Lyrics',
   'route.lyricsSettings.description': 'Lyrics preferences.',
   'route.lyricsSettings.label': 'Lyrics Settings',
+  'lyricsSettings.action.reset': 'Reset',
+  'lyricsSettings.background.blur': 'Background blur',
+  'lyricsSettings.background.brightness': 'Background brightness',
+  'lyricsSettings.background.chooseWallpaper': 'Choose custom wallpaper',
+  'lyricsSettings.background.clearWallpaper': 'Clear custom wallpaper',
+  'lyricsSettings.background.clearWallpaperHint': 'Restore follow theme',
+  'lyricsSettings.background.highResolutionCover': 'Request high-res covers from network metadata',
+  'lyricsSettings.background.highResolutionCoverDescription': 'Only request a high-res cover temporarily when following the cover; when off, local cover art is used as fallback.',
+  'lyricsSettings.background.mode.cover': 'Follow cover',
+  'lyricsSettings.background.mode.customWallpaper': 'Custom wallpaper',
+  'lyricsSettings.background.mode.theme': 'Follow theme',
+  'lyricsSettings.background.modeAria': 'Lyrics background mode',
+  'lyricsSettings.background.modeDescription': 'Cover mode uses the current track cover; custom wallpapers are saved to the app data directory.',
+  'lyricsSettings.background.opacity': 'Background opacity',
+  'lyricsSettings.background.readability': 'Lyrics readability boost',
+  'lyricsSettings.background.readabilityDescription': 'Adds outline and shadow to lyrics over immersive MV backgrounds; this can stay on without expanding immersive MV background settings.',
+  'lyricsSettings.background.scale': 'Background scale',
+  'lyricsSettings.background.showControls': 'Show lyrics background settings',
+  'lyricsSettings.background.smartReadable': 'Smart readable colors',
+  'lyricsSettings.background.smartReadableDescription': 'Automatically picks high-contrast text colors from the cover, wallpaper, or MV frame, adding a light mask, outline, and shadow when needed. Manual lyrics color is used when off.',
+  'lyricsSettings.background.title': 'Lyrics Background',
+  'lyricsSettings.background.tuningDescription': 'Follow cover and custom wallpaper both use these opacity, blur, and brightness settings.',
+  'lyricsSettings.background.wallpaperSaved': 'Saved to the app wallpaper directory',
+  'lyricsSettings.candidate.allSources': 'All sources',
+  'lyricsSettings.candidate.results': 'Lyrics search results',
+  'lyricsSettings.candidate.risk.high': 'Needs review',
+  'lyricsSettings.candidate.risk.low': 'Exact match',
+  'lyricsSettings.candidate.risk.medium': 'Possible match',
+  'lyricsSettings.candidate.sourceFilters': 'Lyrics source filters',
+  'lyricsSettings.currentTrack.instrumentalMarked': 'Marked as instrumental',
+  'lyricsSettings.currentTrack.markInstrumental': 'Mark as instrumental',
+  'lyricsSettings.currentTrack.markInstrumentalHint': 'Remember this track and stop automatic lyrics matching',
+  'lyricsSettings.currentTrack.rematch': 'Rematch',
+  'lyricsSettings.currentTrack.rematchHint': 'Clear the current cache and search again',
+  'lyricsSettings.currentTrack.searchHint': 'Leave empty to use the current track info',
+  'lyricsSettings.currentTrack.searchInput': 'Lyrics search text',
+  'lyricsSettings.currentTrack.searchLyrics': 'Search lyrics',
+  'lyricsSettings.currentTrack.searchPlaceholder': 'Title / artist / keyword',
+  'lyricsSettings.currentTrack.title': 'Current Track',
+  'lyricsSettings.display.autoOpenCandidatePanel': 'Auto open lyrics chooser',
+  'lyricsSettings.display.chooseMiniPlayerColor': 'Choose bottom bar color',
+  'lyricsSettings.display.coverMiniPlayerHint': 'Extracts color from the current cover and darkens it into a glass color that keeps buttons readable.',
+  'lyricsSettings.display.customColor': 'Custom color',
+  'lyricsSettings.display.defaultMicrosoftYahei': 'Defaults to Microsoft YaHei; you can switch to a system font',
+  'lyricsSettings.display.desktopFont': 'Desktop lyrics font',
+  'lyricsSettings.display.desktopLyrics': 'Desktop Lyrics',
+  'lyricsSettings.display.desktopLyricsDescription': 'Shows the current lyrics in an independent transparent always-on-top desktop window.',
+  'lyricsSettings.display.desktopRomanization': 'Show romanization in desktop lyrics',
+  'lyricsSettings.display.desktopTranslation': 'Show translation in desktop lyrics',
+  'lyricsSettings.display.disableMvTrackInfoAutoShow': 'Disable MV auto track info',
+  'lyricsSettings.display.enableLyrics': 'Enable lyrics',
+  'lyricsSettings.display.enableLyricsDescription': 'When off, the lyrics page will not load, search, or match lyrics.',
+  'lyricsSettings.display.hideEmptyState': 'Hide instrumental notice',
+  'lyricsSettings.display.hideEmptyStateDescription': 'Hide the centered instrumental and no-lyrics prompts on the lyrics page. Enabled by default.',
+  'lyricsSettings.display.hideTrackInfo': 'Hide track info',
+  'lyricsSettings.display.lockDesktopLyrics': 'Lock desktop lyrics',
+  'lyricsSettings.display.lockDesktopLyricsDescription': 'When locked, the mouse passes through desktop lyrics so they do not block desktop actions. Return here to unlock.',
+  'lyricsSettings.display.matchThreshold': 'Lyrics match threshold',
+  'lyricsSettings.display.matchThresholdDescription': 'Automatically apply online results only at {threshold}% or higher',
+  'lyricsSettings.display.miniPlayer': 'Mini bottom bar',
+  'lyricsSettings.display.miniPlayerColor': 'Bottom bar color',
+  'lyricsSettings.display.miniPlayerColorMode': 'Mini bottom bar color mode',
+  'lyricsSettings.display.miniPlayerDefaultDark': 'Default dark',
+  'lyricsSettings.display.miniPlayerDescription': 'Hides the default bottom player bar on the lyrics page and uses a smaller control bar centered at the bottom.',
+  'lyricsSettings.display.miniPlayerHint': 'Off by default; useful when you want immersive lyrics while keeping quick track changes and seeking.',
+  'lyricsSettings.display.miniPlayerOpacity': 'Bottom bar opacity',
+  'lyricsSettings.display.miniPlayerPalette': 'Mini bottom bar color palette',
+  'lyricsSettings.display.preferUtatenKana': 'Prefer UtaTen kana',
+  'lyricsSettings.display.preferUtatenKanaDescription': 'Off by default; Japanese lyrics will try UtaTen furigana instead of romanization and fall back automatically when unavailable.',
+  'lyricsSettings.display.resetDesktopPosition': 'Reset desktop lyrics position',
+  'lyricsSettings.display.resetDesktopPositionHint': 'Move back to bottom center',
+  'lyricsSettings.display.showRomanization': 'Show romanization',
+  'lyricsSettings.display.showRomanizationDescription': 'Prefer romanization from the lyrics source; otherwise generate it locally for Japanese lyrics.',
+  'lyricsSettings.display.showTranslation': 'Show Chinese translation',
+  'lyricsSettings.display.showTranslationDescription': 'Prefer Chinese translations from the lyrics source; no extra text is shown when no translation exists.',
+  'lyricsSettings.display.title': 'Lyrics Display',
+  'lyricsSettings.display.useMiniPlayerColor': 'Use bottom bar color {color}',
+  'lyricsSettings.drawer.aria': 'Lyrics settings',
+  'lyricsSettings.drawer.close': 'Close lyrics settings',
+  'lyricsSettings.drawer.title': 'Lyrics Settings',
+  'lyricsSettings.engine.autoMatch': 'Auto match',
+  'lyricsSettings.engine.provider': 'Provider',
+  'lyricsSettings.engine.threshold': 'Threshold',
+  'lyricsSettings.engine.title': 'Lyrics Engine',
+  'lyricsSettings.font.applySystem': 'Apply system font',
+  'lyricsSettings.font.chooseInstalled': 'Choose installed font',
+  'lyricsSettings.font.custom': 'Custom',
+  'lyricsSettings.font.desktopOnly': 'Desktop lyrics only',
+  'lyricsSettings.font.importDesktop': 'Import desktop lyrics font',
+  'lyricsSettings.font.importFile': 'Import font file',
+  'lyricsSettings.font.lyricsOnly': 'Lyrics page and lyrics lines only',
+  'lyricsSettings.font.restoreDesktopDefault': 'Restore desktop lyrics default font',
+  'lyricsSettings.font.restoreLyricsDefault': 'Restore default lyrics font',
+  'lyricsSettings.font.system': 'System font',
+  'lyricsSettings.fontPicker.aria': 'Choose lyrics font',
+  'lyricsSettings.fontPicker.chooseFile': 'Choose font from file',
+  'lyricsSettings.fontPicker.close': 'Close lyrics font picker',
+  'lyricsSettings.fontPicker.preview': 'Lyrics font preview Aa Hello',
+  'lyricsSettings.fontPicker.searchPlaceholder': 'Search installed fonts',
+  'lyricsSettings.fontPicker.title': 'Choose Lyrics Font',
+  'lyricsSettings.provider.cached': 'Cached lyrics',
+  'lyricsSettings.provider.chineseCatalogDescription': 'Chinese catalog supplement',
+  'lyricsSettings.provider.local': 'Local lyrics',
+  'lyricsSettings.provider.lrclibDescription': 'Open lyrics library',
+  'lyricsSettings.provider.manual': 'Manual lyrics',
+  'lyricsSettings.provider.netease': 'NetEase Cloud Music',
+  'lyricsSettings.provider.none': 'No lyrics applied',
+  'lyricsSettings.provider.qqmusic': 'QQ Music',
+  'lyricsSettings.online.autoSearch': 'Auto match lyrics',
+  'lyricsSettings.online.autoSearchDescription': 'Local lyrics always take priority; online results are applied automatically only when they reach the threshold.',
+  'lyricsSettings.online.deepSearch': 'Deep priority search',
+  'lyricsSettings.online.deepSearchDescription': 'When enabled, multiple online platforms search in parallel and return the fastest best match by priority and score.',
+  'lyricsSettings.online.enable': 'Enable online lyrics matching',
+  'lyricsSettings.online.enableDescription': 'Only title, artist, album, and duration are sent for matching.',
+  'lyricsSettings.online.sources': 'Lyrics sources',
+  'lyricsSettings.online.sourcesDescription': 'Local lyrics always take priority; unchecked online sources will not participate in automatic matching or rematching.',
+  'lyricsSettings.online.title': 'Online Matching',
+  'lyricsSettings.status.applied': 'Lyrics applied',
+  'lyricsSettings.status.applying': 'Applying',
+  'lyricsSettings.status.auto': 'Auto',
+  'lyricsSettings.status.markedInstrumental': 'Marked as instrumental',
+  'lyricsSettings.status.noCandidates': 'No lyrics candidates found',
+  'lyricsSettings.status.noPlayingTrack': 'No track is playing',
+  'lyricsSettings.status.normal': 'Normal',
+  'lyricsSettings.status.off': 'Off',
+  'lyricsSettings.status.on': 'On',
+  'lyricsSettings.status.rematchingCandidates': 'Rematching lyrics candidates...',
+  'lyricsSettings.status.searchingCandidates': 'Searching lyrics candidates...',
+  'lyricsSettings.style.chooseLyricsColor': 'Choose lyrics color',
+  'lyricsSettings.style.contextOpacity': 'Context opacity',
+  'lyricsSettings.style.fontSize': 'Lyrics font size',
+  'lyricsSettings.style.lineMaxChars': 'Characters per line',
+  'lyricsSettings.style.lineMaxCharsValue': '{count} chars',
+  'lyricsSettings.style.lineSpacing': 'Lyrics line spacing',
+  'lyricsSettings.style.lyricsColor': 'Lyrics color',
+  'lyricsSettings.style.lyricsColorPalette': 'Lyrics color palette',
+  'lyricsSettings.style.lyricsFont': 'Lyrics font',
+  'lyricsSettings.style.secondaryFontSize': 'Secondary lyrics font size',
+  'lyricsSettings.style.showControls': 'Show lyrics style settings',
+  'lyricsSettings.style.showControlsDescription': 'Includes secondary font size, lyrics font size, line spacing, context opacity, and lyrics color.',
+  'lyricsSettings.style.useColor': 'Use color {color}',
+  'lyricsSettings.timing.defaultOffset': 'Default offset for new lyrics',
+  'lyricsSettings.timing.globalOffset': 'Global offset',
+  'lyricsSettings.timing.restoreDefaults': 'Restore lyrics defaults',
+  'lyricsSettings.timing.restoreDefaultsHint': 'Match threshold 50% / offset 0ms',
+  'lyricsSettings.timing.showPerTrackOffset': 'Show this-track offset calibration',
+  'lyricsSettings.timing.smartAlignment': 'Smart lyrics alignment',
+  'lyricsSettings.timing.smartAlignmentDescription': 'Automatically saves the current track offset at high confidence; abnormal drift only suggests changing sources and can be reverted.',
+  'lyricsSettings.timing.timelineCorrection': 'Apply lyrics timeline calibration',
+  'lyricsSettings.timing.timelineCorrectionDescription': 'Global offset affects every song; adjust this-track offset from the lyrics page calibration bar, where it is remembered per track.',
+  'lyricsSettings.timing.title': 'Matching And Offset',
+  'lyricsSettings.wordHighlight.clarity': 'Word highlight clarity',
+  'lyricsSettings.wordHighlight.clarityDescription': 'Default is "Normal"; higher keeps the unsung part of the current word more complete, lower gives a stronger word-by-word progression.',
+  'lyricsSettings.wordHighlight.description': 'Only enabled when the lyrics file contains real word timestamps; otherwise line highlighting is used.',
+  'lyricsSettings.wordHighlight.title': 'Word-by-word lyrics highlight',
   'route.mvSettings.description': 'MV binding and local matching settings.',
   'route.mvSettings.label': 'MV Settings',
   'mvSettings.action.chooseFile': 'Choose file',
@@ -5783,6 +8347,7 @@ const enUS: TranslationMap = {
   'mvSettings.error.noActiveTrackBinding': 'No active library track for MV binding',
   'mvSettings.error.noActiveTrackMatching': 'No active library track for MV matching',
   'mvSettings.error.noActiveTrackNetworkSearch': 'No active library track for network MV search',
+  'mvSettings.error.databaseUnavailable': 'MV database is temporarily unavailable. Repair the database in Library Recovery first.',
   'mvSettings.error.noLocalCandidates': 'No local MV candidates found',
   'mvSettings.error.noNetworkCandidates': 'No network MV candidates found',
   'mvSettings.general.enabled': 'Enable MV',
@@ -5813,7 +8378,7 @@ const enUS: TranslationMap = {
   'mvSettings.network.replayAudioOnChange': 'Replay music after switching MV',
   'mvSettings.network.replayAudioOnChangeDescription': 'When enabled, manually selecting or binding a new MV replays the current song so the MV applies immediately.',
   'mvSettings.network.restartAudioOnLoad': 'Follow music progress',
-  'mvSettings.network.restartAudioOnLoadDescription': 'When enabled, only the MV video time is corrected. Audio is not seeked or restarted, and lyrics sync offsets do not affect the MV.',
+  'mvSettings.network.restartAudioOnLoadDescription': 'When enabled, the MV video time is continuously corrected. Audio is not seeked or restarted, and lyrics sync offsets do not affect the MV.',
   'mvSettings.network.syncMode': 'Sync mode',
   'mvSettings.network.syncModeDescription': 'Small drift is corrected by video speed; large drift seeks the video.',
   'mvSettings.network.syncMode.stable': 'Stable',
@@ -5856,6 +8421,8 @@ const enUS: TranslationMap = {
   'trackMenu.action.deleteSong': 'Delete song',
   'route.playlists.description': 'User playlists.',
   'route.playlists.label': 'Playlists',
+  'route.plugins.description': 'Local editable plugins.',
+  'route.plugins.label': 'Plugins',
   'route.queue.description': 'Playback queue.',
   'route.queue.label': 'Queue',
   'queue.action.clear': 'Clear queue',
@@ -5906,6 +8473,8 @@ const enUS: TranslationMap = {
   'route.settings.label': 'Settings',
   'route.songs.description': 'Local library song list.',
   'route.songs.label': 'Songs',
+  'route.streaming.description': 'Streaming music sources.',
+  'route.streaming.label': 'Streaming',
   'settings.header.searchPlaceholder': 'Search settings...',
   'settings.nav.general.label': 'General',
   'settings.nav.general.description': 'Language, window, and basic behavior',
@@ -6352,6 +8921,22 @@ const enUS: TranslationMap = {
   'settings.library.networkPanel.untitled': 'Untitled',
   'settings.remote.library.title': 'Remote Music Library',
   'settings.remote.library.description': 'Cloud / remote / streaming sources are blocked in this phase; only the settings group remains.',
+  'segmentLoop.action.clear': 'Clear current A-B points',
+  'segmentLoop.action.deleteBookmark': 'Delete segment bookmark {label}',
+  'segmentLoop.action.deleteBookmarkTitle': 'Delete segment bookmark',
+  'segmentLoop.action.loopBookmark': 'Loop segment {label}',
+  'segmentLoop.action.loopBookmarkTitle': 'Loop {label}',
+  'segmentLoop.action.saveBookmark': 'Save current segment bookmark',
+  'segmentLoop.action.setA': 'Set current position as point A',
+  'segmentLoop.action.setB': 'Set current position as point B',
+  'segmentLoop.action.toggle': 'Toggle A-B loop',
+  'segmentLoop.action.toggleTitle': 'Turn A-B loop on or off',
+  'segmentLoop.aria.bookmarks': 'Segment bookmarks for current track',
+  'segmentLoop.aria.panel': 'A-B loop and segment bookmarks',
+  'segmentLoop.empty': 'Saved segments will appear here',
+  'segmentLoop.notSet': 'Not set',
+  'spotifyPlayback.error.noDevice': 'No Spotify playback device is available. Enable "auto-launch official player", or open Spotify desktop/web first.{hint}',
+  'spotifyPlayback.error.noDrmKeysystem': 'This Electron build has no available DRM/Widevine keysystem, so the official Spotify player cannot register a device inside ECHO.',
   'settings.appearance.theme.title': 'Theme',
   'settings.appearance.theme.description': 'Choose light, dark, or follow the system appearance.',
   'settings.appearance.theme.light': 'Light',

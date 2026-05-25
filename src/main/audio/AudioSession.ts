@@ -71,7 +71,7 @@ type DecoderPipelineLike = Pick<DecoderPipeline, 'probeLocalFile' | 'decodeLocal
 type JuceDecodePipelineLike = Pick<JuceDecodePipeline, 'decodeLocalFile'> & {
   dispose?: () => void;
 };
-type AutomixAnalyzerLike = Pick<AutomixAnalyzer, 'analyze'>;
+type AutomixAnalyzerLike = Pick<AutomixAnalyzer, 'analyze'> & Partial<Pick<AutomixAnalyzer, 'getCachedAnalysis'>>;
 type DeviceServiceLike = Pick<DeviceService, 'listDevices'> &
   Partial<Pick<DeviceService, 'listDevicesAsync' | 'refresh' | 'invalidateCache' | 'openAsioControlPanel'>>;
 type OutputBridgeLike = {
@@ -436,6 +436,13 @@ const createPossibleCorruptAudioFileError = (positionSeconds: number, durationSe
   new Error(
     `audio_file_decode_failed_or_corrupt; positionSeconds=${positionSeconds.toFixed(3)}; durationSeconds=${durationSeconds.toFixed(3)}`,
   );
+
+const prematureLocalEndToleranceSeconds = 5;
+const corruptLocalEndRatioThreshold = 0.75;
+const isClearlyCorruptLocalEnd = (positionSeconds: number, durationSeconds: number): boolean =>
+  durationSeconds > 0 &&
+  positionSeconds < durationSeconds - prematureLocalEndToleranceSeconds &&
+  positionSeconds / durationSeconds < corruptLocalEndRatioThreshold;
 
 const isLocalJuceDecodePilotPath = (value: string): boolean => {
   if (isHttpPlaybackUrl(value) || isCueTrackPath(value)) {
@@ -813,8 +820,16 @@ const isProbeHintCompleteEnough = (probe: AudioSessionPrepareLocalFileRequest['p
 
 const clampAutomixTransitionSeconds = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value)
-    ? Math.max(2, Math.min(12, value))
-    : 8;
+    ? Math.max(2, Math.min(16, value))
+    : 16;
+
+const nativeAutomixDualDeckLateArmWindowSeconds = 60;
+const automixAdvanceAudibleRatio = 0.5;
+
+const getAutomixAudibleAdvanceSeconds = (transition: ActiveAutomixTransition): number => {
+  const transitionSeconds = Number.isFinite(transition.transitionSeconds) ? Math.max(0, transition.transitionSeconds) : 0;
+  return transition.transitionStartSeconds + (transitionSeconds * automixAdvanceAudibleRatio);
+};
 
 const createAutomixAnalysisHint = (probe: AudioSessionPlayRequest['probe'] | undefined) => ({
   bpm: probe?.bpm ?? null,
@@ -1361,6 +1376,18 @@ export class AudioSession extends EventEmitter {
         warnings: plan?.warnings,
       });
 
+      if (request.automixAnalyze === true && probe) {
+        const analysisHint = createAutomixAnalysisHint(probeHint);
+        void this.automixAnalyzer.analyze({
+          filePath: request.filePath,
+          probe,
+          headers: request.inputHeaders,
+          hint: analysisHint,
+        }).catch((error) => {
+          this.logger(`[AudioSession] Automix prepare analysis skipped: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
+
       if (verboseAudioLogsEnabled) {
         this.logger(JSON.stringify({
           event: 'local_prepare_completed',
@@ -1904,10 +1931,14 @@ export class AudioSession extends EventEmitter {
 
       await this.syncEqStateForPlayback();
       this.assertCurrentRun(token);
+      const bridgeStartSeconds = activeChainedState?.compositeStartSeconds ?? request.startSeconds ?? 0;
+      const bridgeDurationSeconds = activeChainedState
+        ? activeChainedState.compositeStartSeconds + activeChainedState.compositeDurationSeconds
+        : probe.durationSeconds;
       const sessionId = bridge.beginSession?.({
-        startSeconds: activeChainedState?.compositeStartSeconds ?? request.startSeconds ?? 0,
+        startSeconds: bridgeStartSeconds,
         playbackRate: this.currentOutputSettings.playbackRate,
-        durationSeconds: activeChainedState?.compositeDurationSeconds ?? probe.durationSeconds,
+        durationSeconds: bridgeDurationSeconds,
       });
       const writable = bridge.createSessionWritable?.(sessionId) ?? bridge.writable;
       if (!writable) {
@@ -1950,6 +1981,17 @@ export class AudioSession extends EventEmitter {
       this.resetWatchdogProgress();
       this.markNativeStartupStatusGuard();
       this.emitStatus();
+      if (request.automixAnalyze === true) {
+        const analysisHint = createAutomixAnalysisHint(playbackProbeHint);
+        void this.automixAnalyzer.analyze({
+          filePath: request.filePath,
+          probe,
+          headers: request.inputHeaders,
+          hint: analysisHint,
+        }).catch((error) => {
+          this.logger(`[AudioSession] Automix playback analysis skipped: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
       return this.getStatus();
     } catch (error) {
       if (this.runToken === token) {
@@ -2729,17 +2771,21 @@ export class AudioSession extends EventEmitter {
     const audioLevels = createAudioLevelTelemetry(this.levelSnapshot, eqState, channelBalanceState);
     const realtimeLevelClippingRisk = audioLevels.estimatedOutputPeakDb !== null && audioLevels.estimatedOutputPeakDb >= 0;
     const realtimeLevelClipped = audioLevels.clipCount > 0;
-    const automixActive = this.activeAutomix !== null;
+    const chainedPlaybackActive = this.activeAutomix !== null;
+    const gaplessActive = this.activeAutomix?.gapless === true;
+    const automixActive = chainedPlaybackActive && !gaplessActive;
     const settings = getReplayGainAudioSettings();
     const replayGainCalculation = this.currentReplayGainCalculation;
     const replayGainActive = replayGainCalculation.active && Math.abs(replayGainCalculation.appliedDb) >= 0.001;
-    const dspActive = eqState.enabled || channelBalanceState.enabled || automixActive || replayGainActive;
+    const dspActive = eqState.enabled || channelBalanceState.enabled || chainedPlaybackActive || replayGainActive;
     const bitPerfectDisabledReason = eqState.enabled
       ? 'eq_enabled'
       : channelBalanceState.enabled
         ? 'channel_balance_enabled'
-        : automixActive
-          ? 'automix_enabled'
+        : chainedPlaybackActive
+          ? gaplessActive
+            ? 'gapless_enabled'
+            : 'automix_enabled'
           : replayGainActive
             ? 'replay_gain_enabled'
             : null;
@@ -2754,8 +2800,8 @@ export class AudioSession extends EventEmitter {
       warnings.push('eq_enabled_bit_perfect_disabled');
     } else if (channelBalanceState.enabled) {
       warnings.push('channel_balance_bit_perfect_disabled');
-    } else if (automixActive) {
-      warnings.push('automix_enabled_bit_perfect_disabled');
+    } else if (chainedPlaybackActive) {
+      warnings.push(gaplessActive ? 'gapless_enabled_bit_perfect_disabled' : 'automix_enabled_bit_perfect_disabled');
     } else if (replayGainActive) {
       warnings.push('replay_gain_bit_perfect_disabled');
     }
@@ -2837,13 +2883,14 @@ export class AudioSession extends EventEmitter {
             ? 'transitioning'
             : 'armed'
           : 'off',
-        active: automixActive,
+        active: chainedPlaybackActive,
         transitionSeconds: this.activeAutomix?.transitionSeconds ?? null,
         transitionStartedAtSeconds: this.activeAutomix?.transitionStartSeconds ?? null,
         nextTrackId: this.activeAutomix?.nextTrackId ?? null,
         transitionMode: this.activeAutomix?.plan.mode ?? null,
         fallbackReason: this.activeAutomix?.plan.fallbackReason ?? null,
         beatAligned: this.activeAutomix?.plan.beatAligned ?? false,
+        gapless: gaplessActive,
         skipIntroSilence: this.activeAutomix?.plan.skipIntroSilence ?? false,
         engine: this.currentDecodeBackendImpl === 'native-gapless-dual-deck'
           ? 'nativeGapless'
@@ -2853,7 +2900,7 @@ export class AudioSession extends EventEmitter {
               ? 'nativeDualDeck'
               : this.currentDecodeBackendImpl === 'ffmpeg-automix'
                 ? 'ffmpegPremix'
-                : automixActive
+                : chainedPlaybackActive
                   ? 'fallback'
                   : null,
         tempoRatio: this.activeAutomix?.plan.tempoRatio ?? null,
@@ -3357,23 +3404,22 @@ export class AudioSession extends EventEmitter {
     }
 
     const analysisHint = createAutomixAnalysisHint(hint);
-    const estimated = createEstimatedAutomixAnalysis(probe, analysisHint);
-    try {
-      const analysisPromise = this.automixAnalyzer.analyze({
-        filePath,
-        probe,
-        headers: inputHeaders,
-        hint: analysisHint,
-      });
-      const timeoutPromise = new Promise<TrackTransitionAnalysis>((resolve) => {
-        const timer = setTimeout(() => resolve(estimated), 1800);
-        timer.unref?.();
-      });
-      return await Promise.race([analysisPromise, timeoutPromise]);
-    } catch (error) {
-      this.logger(`[AudioSession] Automix analysis fallback: ${error instanceof Error ? error.message : String(error)}`);
-      return estimated;
+    const analysisRequest = {
+      filePath,
+      probe,
+      headers: inputHeaders,
+      hint: analysisHint,
+    };
+    const cached = this.automixAnalyzer.getCachedAnalysis?.(analysisRequest) ?? null;
+    if (cached) {
+      return cached;
     }
+
+    const estimated = createEstimatedAutomixAnalysis(probe, analysisHint);
+    void this.automixAnalyzer.analyze(analysisRequest).catch((error) => {
+      this.logger(`[AudioSession] Automix background analysis skipped: ${error instanceof Error ? error.message : String(error)}`);
+    });
+    return estimated;
   }
 
   private createGaplessTransitionPlan(
@@ -3440,6 +3486,7 @@ export class AudioSession extends EventEmitter {
     if (
       automix?.enabled !== true ||
       !next ||
+      (automix.following?.length ?? 0) > 0 ||
       typeof bridge.prepareAutomixPlan !== 'function' ||
       typeof bridge.createAutomixNextWritable !== 'function' ||
       outputSettings.playbackRate !== 1 ||
@@ -3453,6 +3500,10 @@ export class AudioSession extends EventEmitter {
     const currentStartSeconds = Math.max(0, request.startSeconds ?? 0);
     const currentRemainingSeconds = Math.max(0, currentProbe.durationSeconds - currentStartSeconds);
     if (currentRemainingSeconds < 4) {
+      return null;
+    }
+    const lateArmThresholdSeconds = Math.max(0, currentProbe.durationSeconds - nativeAutomixDualDeckLateArmWindowSeconds);
+    if (currentStartSeconds <= 0 || currentStartSeconds < lateArmThresholdSeconds) {
       return null;
     }
 
@@ -3500,6 +3551,7 @@ export class AudioSession extends EventEmitter {
       plan,
       outputSettings,
     );
+    currentDecodeRequest.durationSeconds = Math.max(0.001, transitionPlan.currentEndSeconds - transitionPlan.currentStartSeconds);
     const nextDecodeRequest = this.createDecodeRequest(
       next.filePath,
       next.inputHeaders,
@@ -5242,7 +5294,9 @@ export class AudioSession extends EventEmitter {
         this.state = 'ended';
         const endedPositionSeconds = this.clock.getPositionSeconds();
         const durationSeconds = this.currentProbe?.durationSeconds ?? 0;
-        const premature = durationSeconds > 0 && endedPositionSeconds < durationSeconds - 5;
+        const premature =
+          durationSeconds > 0 && endedPositionSeconds < durationSeconds - prematureLocalEndToleranceSeconds;
+        const clearlyCorrupt = premature && isClearlyCorruptLocalEnd(endedPositionSeconds, durationSeconds);
         this.recordPlaybackDiagnosticEvent('ended', premature ? 'suspect' : 'info', premature ? 'ended_before_duration' : 'ended', {
           positionSeconds: endedPositionSeconds,
           durationSeconds,
@@ -5251,7 +5305,7 @@ export class AudioSession extends EventEmitter {
             remainingSeconds: durationSeconds > 0 ? Math.max(0, durationSeconds - endedPositionSeconds) : null,
           },
         });
-        if (premature && isLocalPlaybackPath(this.currentFilePath)) {
+        if (clearlyCorrupt && isLocalPlaybackPath(this.currentFilePath)) {
           this.handleError(createPossibleCorruptAudioFileError(endedPositionSeconds, durationSeconds));
           return;
         }
@@ -5662,10 +5716,12 @@ export class AudioSession extends EventEmitter {
     let advanced = false;
     while (automix.nextTransitionIndex < automix.transitions.length) {
       const transition = automix.transitions[automix.nextTransitionIndex];
-      if (!transition || compositePositionSeconds < transition.transitionStartSeconds) {
+      const advanceAtSeconds = transition ? getAutomixAudibleAdvanceSeconds(transition) : 0;
+      if (!transition || compositePositionSeconds < advanceAtSeconds) {
         break;
       }
 
+      const nextPositionSeconds = transition.trackStartSourceSeconds + Math.max(0, compositePositionSeconds - transition.transitionStartSeconds);
       automix.nextTransitionIndex += 1;
       automix.fromTrackId = transition.fromTrackId;
       automix.nextTrackId = transition.nextTrackId;
@@ -5690,7 +5746,7 @@ export class AudioSession extends EventEmitter {
         fallbackReason: transition.plan.fallbackReason,
         beatAligned: transition.plan.beatAligned,
         skipIntroSilence: transition.plan.skipIntroSilence,
-        nextStartSeconds: transition.plan.nextStartSeconds,
+        nextStartSeconds: nextPositionSeconds,
       });
       advanced = true;
     }

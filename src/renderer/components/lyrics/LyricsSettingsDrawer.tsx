@@ -30,6 +30,8 @@ import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../../../share
 import type { MvSettings } from '../../../shared/types/mv';
 import type { LyricsProviderId, LyricsSearchCandidate, LyricsSource, TrackLyrics } from '../../../shared/types/lyrics';
 import { registerAppearanceFontFile } from '../../preferences/appearancePreferences';
+import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
+import type { TranslationKey } from '../../i18n/locales';
 
 type LyricsSettingsDrawerProps = {
   isOpen: boolean;
@@ -111,7 +113,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
   lyricsOffsetControlsEnabled: false,
-  lyricsSmartAlignmentEnabled: false,
+  lyricsSmartAlignmentEnabled: true,
   lyricsPreferredProvider: 'lrclib',
   lyricsEnabledProviders: ['local', 'lrclib', 'netease', 'qqmusic'],
   lyricsProviderOrder: ['local', 'lrclib', 'netease', 'qqmusic'],
@@ -175,26 +177,28 @@ type OnlineLyricsProviderId = Extract<LyricsProviderId, 'lrclib' | 'netease' | '
 const onlineLyricsProviderIds: OnlineLyricsProviderId[] = ['lrclib', 'netease', 'qqmusic'];
 const isOnlineLyricsProvider = (provider: LyricsProviderId): provider is OnlineLyricsProviderId => onlineLyricsProviderIds.includes(provider as OnlineLyricsProviderId);
 const lyricsSourceOptions = [
-  { id: 'lrclib', label: 'LRCLIB', description: '开放歌词库' },
-  { id: 'netease', label: '网易云音乐', description: '中文曲库补充' },
-  { id: 'qqmusic', label: 'QQ 音乐', description: '中文曲库补充' },
-] satisfies Array<{ id: LyricsProviderId; label: string; description: string }>;
+  { id: 'lrclib', labelKey: 'lyricsSettings.provider.lrclib', descriptionKey: 'lyricsSettings.provider.lrclibDescription' },
+  { id: 'netease', labelKey: 'lyricsSettings.provider.netease', descriptionKey: 'lyricsSettings.provider.chineseCatalogDescription' },
+  { id: 'qqmusic', labelKey: 'lyricsSettings.provider.qqmusic', descriptionKey: 'lyricsSettings.provider.chineseCatalogDescription' },
+] satisfies Array<{ id: LyricsProviderId; labelKey: TranslationKey; descriptionKey: TranslationKey }>;
 const lyricsSourceOptionById = new Map(lyricsSourceOptions.map((source) => [source.id, source]));
 
-const lyricsProviderLabels: Record<LyricsSource, string> = {
-  none: '未应用歌词',
-  local: '本地歌词',
-  lrclib: 'LRCLIB',
-  netease: '网易云音乐',
-  qqmusic: 'QQ 音乐',
-  musixmatch: 'Musixmatch',
-  genius: 'Genius',
-  manual: '手动歌词',
-  cached: '缓存歌词',
+const lyricsProviderLabelKeys: Record<LyricsSource, TranslationKey> = {
+  none: 'lyricsSettings.provider.none',
+  local: 'lyricsSettings.provider.local',
+  lrclib: 'lyricsSettings.provider.lrclib',
+  netease: 'lyricsSettings.provider.netease',
+  qqmusic: 'lyricsSettings.provider.qqmusic',
+  musixmatch: 'lyricsSettings.provider.musixmatch',
+  genius: 'lyricsSettings.provider.genius',
+  manual: 'lyricsSettings.provider.manual',
+  cached: 'lyricsSettings.provider.cached',
 };
 
-const providerLabelFor = (provider: LyricsSource | null | undefined): string =>
-  provider ? lyricsProviderLabels[provider] : '未应用歌词';
+const providerLabelFor = (
+  provider: LyricsSource | null | undefined,
+  t: (key: TranslationKey, options?: Record<string, string | number>) => string = translateFallback,
+): string => t(provider ? lyricsProviderLabelKeys[provider] : 'lyricsSettings.provider.none');
 
 const dispatchSettingsChanged = (patch?: Partial<AppSettings> | Partial<MvSettings>): void => {
   window.dispatchEvent(patch ? new CustomEvent('settings:changed', { detail: patch }) : new Event('settings:changed'));
@@ -283,6 +287,7 @@ const LyricsFontPickerModal = ({
   query: string;
   setQuery: (query: string) => void;
 }): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const normalizedQuery = query.trim().toLowerCase();
   const filteredFonts = normalizedQuery ? fonts.filter((font) => font.toLowerCase().includes(normalizedQuery)) : fonts;
 
@@ -292,22 +297,22 @@ const LyricsFontPickerModal = ({
         className="settings-font-modal lyrics-font-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="选择歌词字体"
+        aria-label={t('lyricsSettings.fontPicker.aria')}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="settings-font-modal-header">
-          <h3>选择歌词字体</h3>
-          <button className="settings-icon-button" type="button" onClick={onClose} aria-label="关闭歌词字体选择">
+          <h3>{t('lyricsSettings.fontPicker.title')}</h3>
+          <button className="settings-icon-button" type="button" onClick={onClose} aria-label={t('lyricsSettings.fontPicker.close')}>
             <X size={15} />
           </button>
         </header>
         <label className="settings-font-search">
           <Search size={15} aria-hidden="true" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} autoFocus placeholder="搜索已安装字体" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} autoFocus placeholder={t('lyricsSettings.fontPicker.searchPlaceholder')} />
         </label>
         <button className="settings-font-file-button" type="button" disabled={isBusy} onClick={onChooseFile}>
           <FolderOpen size={15} aria-hidden="true" />
-          从文件选择字体
+          {t('lyricsSettings.fontPicker.chooseFile')}
         </button>
         <div className="settings-font-list">
           {filteredFonts.map((font) => (
@@ -319,7 +324,7 @@ const LyricsFontPickerModal = ({
               onClick={() => onSelect(font)}
             >
               <span>{font}</span>
-              <em>歌词字体预览 Aa 你好</em>
+              <em>{t('lyricsSettings.fontPicker.preview')}</em>
             </button>
           ))}
         </div>
@@ -328,10 +333,13 @@ const LyricsFontPickerModal = ({
   );
 };
 
-const riskLabel = (risk: LyricsSearchCandidate['risk']): string => {
-  if (risk === 'low') return '精准匹配';
-  if (risk === 'medium') return '可能匹配';
-  return '需要确认';
+const riskLabel = (
+  risk: LyricsSearchCandidate['risk'],
+  t: (key: TranslationKey, options?: Record<string, string | number>) => string = translateFallback,
+): string => {
+  if (risk === 'low') return t('lyricsSettings.candidate.risk.low');
+  if (risk === 'medium') return t('lyricsSettings.candidate.risk.medium');
+  return t('lyricsSettings.candidate.risk.high');
 };
 
 const sourceFilterKey = (candidate: LyricsSearchCandidate): string => `${candidate.provider}:${candidate.sourceLabel}`;
@@ -366,7 +374,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
   lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
   lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
-  lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled === true,
+  lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled !== false,
   lyricsPreferredProvider: settings.lyricsPreferredProvider,
   lyricsEnabledProviders: settings.lyricsEnabledProviders?.length ? settings.lyricsEnabledProviders : defaultLyricsEnabledProviders,
   lyricsProviderOrder: settings.lyricsProviderOrder?.length ? settings.lyricsProviderOrder : defaultLyricsProviderOrder,
@@ -408,10 +416,11 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
 });
 
 export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSettingsPanelProps): JSX.Element => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const [settings, setSettings] = useState<LyricsDrawerSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [currentLyricsProviderLabel, setCurrentLyricsProviderLabel] = useState(providerLabelFor(null));
+  const [currentLyricsProviderLabel, setCurrentLyricsProviderLabel] = useState(providerLabelFor(null, t));
   const [draggingSourceId, setDraggingSourceId] = useState<LyricsProviderId | null>(null);
   const [isLyricsStyleControlsOpen, setIsLyricsStyleControlsOpen] = useState(true);
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackLyricsFontFamilies);
@@ -462,7 +471,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     fallbackSettings.desktopLyricsTranslationEnabled;
   const wordHighlightClarityPercent = effectiveSettings.lyricsWordHighlightClarityPercent ?? fallbackSettings.lyricsWordHighlightClarityPercent ?? 70;
   const wordHighlightClarityLabel =
-    wordHighlightClarityPercent === fallbackSettings.lyricsWordHighlightClarityPercent ? '正常' : `${wordHighlightClarityPercent}%`;
+    wordHighlightClarityPercent === fallbackSettings.lyricsWordHighlightClarityPercent ? t('lyricsSettings.status.normal') : `${wordHighlightClarityPercent}%`;
   const enabledProviderSet = new Set(effectiveSettings.lyricsEnabledProviders ?? defaultLyricsEnabledProviders);
   const orderedLyricsSourceOptions = useMemo(() => {
     const orderedIds = [
@@ -533,10 +542,10 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     }
 
     return [
-      { key: 'all', label: '全部来源', count: lyricsCandidates.length, order: -1 },
+      { key: 'all', label: t('lyricsSettings.candidate.allSources'), count: lyricsCandidates.length, order: -1 },
       ...Array.from(sourceMap.values()).sort((left, right) => left.order - right.order || left.label.localeCompare(right.label)),
     ];
-  }, [lyricsCandidates]);
+  }, [lyricsCandidates, t]);
   const visibleLyricsCandidates = useMemo(
     () =>
       activeLyricsCandidateSource === 'all'
@@ -609,7 +618,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     const audio = window.echo?.audio;
     const lyrics = window.echo?.lyrics;
     if (!lyrics || (!playback && !audio)) {
-      setCurrentLyricsProviderLabel(providerLabelFor(null));
+      setCurrentLyricsProviderLabel(providerLabelFor(null, t));
       return;
     }
 
@@ -620,19 +629,19 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       ]);
       const trackId = playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
       if (!trackId) {
-        setCurrentLyricsProviderLabel('未播放歌曲');
+        setCurrentLyricsProviderLabel(t('lyricsSettings.status.noPlayingTrack'));
         setCurrentLyricsKind(null);
         return;
       }
 
       const trackLyrics = await lyrics.getForTrack(trackId);
-      setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics?.provider));
+      setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics?.provider, t));
       setCurrentLyricsKind(trackLyrics?.kind ?? null);
     } catch {
-      setCurrentLyricsProviderLabel(providerLabelFor(null));
+      setCurrentLyricsProviderLabel(providerLabelFor(null, t));
       setCurrentLyricsKind(null);
     }
-  }, []);
+  }, [t]);
 
   const loadSettings = useCallback(async (): Promise<void> => {
     const app = window.echo?.app;
@@ -1069,14 +1078,14 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       }
 
       setIsLyricsCandidateLoading(true);
-      setLyricsCandidateStatus('正在搜索歌词候选...');
+      setLyricsCandidateStatus(t('lyricsSettings.status.searchingCandidates'));
       setLyricsCandidates([]);
       setActiveLyricsCandidateSource('all');
 
       try {
         const currentTrackId = await resolveCurrentTrackId();
         if (!currentTrackId) {
-          setLyricsCandidateStatus('没有正在播放的歌曲');
+          setLyricsCandidateStatus(t('lyricsSettings.status.noPlayingTrack'));
           return;
         }
 
@@ -1099,16 +1108,16 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
         setLyricsCandidates(collectedCandidates);
         setActiveLyricsCandidateSource('all');
-        setLyricsCandidateStatus(collectedCandidates.length ? null : '未找到歌词候选');
+        setLyricsCandidateStatus(collectedCandidates.length ? null : t('lyricsSettings.status.noCandidates'));
         setError(null);
       } catch (candidateError) {
-        setLyricsCandidateStatus('未找到歌词候选');
+        setLyricsCandidateStatus(t('lyricsSettings.status.noCandidates'));
         setError(candidateError instanceof Error ? candidateError.message : String(candidateError));
       } finally {
         setIsLyricsCandidateLoading(false);
       }
     },
-    [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId],
+    [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId, t],
   );
 
   const rematchLyricsCandidates = useCallback(async (): Promise<void> => {
@@ -1124,14 +1133,14 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     }
 
     setIsLyricsCandidateLoading(true);
-    setLyricsCandidateStatus('正在重新匹配歌词...');
+    setLyricsCandidateStatus(t('lyricsSettings.status.rematchingCandidates'));
     setLyricsCandidates([]);
     setActiveLyricsCandidateSource('all');
 
     try {
       const currentTrackId = await resolveCurrentTrackId();
       if (!currentTrackId) {
-        setLyricsCandidateStatus('没有正在播放的歌曲');
+        setLyricsCandidateStatus(t('lyricsSettings.status.noPlayingTrack'));
         return;
       }
 
@@ -1152,15 +1161,15 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
       setLyricsCandidates(collectedCandidates);
       setActiveLyricsCandidateSource('all');
-      setLyricsCandidateStatus(collectedCandidates.length ? null : '未找到歌词候选');
+      setLyricsCandidateStatus(collectedCandidates.length ? null : t('lyricsSettings.status.noCandidates'));
       setError(null);
     } catch (candidateError) {
-      setLyricsCandidateStatus('未找到歌词候选');
+      setLyricsCandidateStatus(t('lyricsSettings.status.noCandidates'));
       setError(candidateError instanceof Error ? candidateError.message : String(candidateError));
     } finally {
       setIsLyricsCandidateLoading(false);
     }
-  }, [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId]);
+  }, [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentTrackId, t]);
 
   const applyLyricsCandidate = useCallback(
     async (candidateId: string): Promise<void> => {
@@ -1179,16 +1188,16 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       try {
         const currentTrackId = await resolveCurrentTrackId();
         if (!currentTrackId) {
-          setLyricsCandidateStatus('没有正在播放的歌曲');
+          setLyricsCandidateStatus(t('lyricsSettings.status.noPlayingTrack'));
           return;
         }
 
         const trackLyrics = await lyricsApi.applyCandidate(currentTrackId, candidateId);
-        setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider));
+        setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider, t));
         setCurrentLyricsKind(trackLyrics.kind);
         setLyricsCandidates([]);
         setActiveLyricsCandidateSource('all');
-        setLyricsCandidateStatus('已应用歌词');
+        setLyricsCandidateStatus(t('lyricsSettings.status.applied'));
         setError(null);
         dispatchLyricsCandidateApplied(currentTrackId, trackLyrics);
       } catch (applyError) {
@@ -1197,7 +1206,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         setApplyingLyricsCandidateId(null);
       }
     },
-    [effectiveSettings.lyricsEnabled, resolveCurrentTrackId],
+    [effectiveSettings.lyricsEnabled, resolveCurrentTrackId, t],
   );
 
   const markCurrentTrackInstrumental = useCallback(async (): Promise<void> => {
@@ -1216,16 +1225,16 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     try {
       const currentTrackId = await resolveCurrentTrackId();
       if (!currentTrackId) {
-        setLyricsCandidateStatus('没有正在播放的歌曲');
+        setLyricsCandidateStatus(t('lyricsSettings.status.noPlayingTrack'));
         return;
       }
 
       const trackLyrics = await lyricsApi.markInstrumental(currentTrackId);
-      setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider));
+      setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider, t));
       setCurrentLyricsKind(trackLyrics.kind);
       setLyricsCandidates([]);
       setActiveLyricsCandidateSource('all');
-      setLyricsCandidateStatus('已标记为纯音乐');
+      setLyricsCandidateStatus(t('lyricsSettings.status.markedInstrumental'));
       setError(null);
       dispatchLyricsCandidateApplied(currentTrackId, trackLyrics);
     } catch (markError) {
@@ -1233,7 +1242,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     } finally {
       setIsMarkingInstrumental(false);
     }
-  }, [effectiveSettings.lyricsEnabled, resolveCurrentTrackId]);
+  }, [effectiveSettings.lyricsEnabled, resolveCurrentTrackId, t]);
 
   useEffect(() => {
     void refreshDrawerSummary();
@@ -1242,12 +1251,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   useEffect(() => {
     const handleCurrentLyricsProviderChanged = (event: Event): void => {
       const provider = (event as CustomEvent<{ provider?: LyricsSource | null }>).detail?.provider;
-      setCurrentLyricsProviderLabel(providerLabelFor(provider));
+      setCurrentLyricsProviderLabel(providerLabelFor(provider, t));
     };
 
     window.addEventListener('lyrics:current-provider-changed', handleCurrentLyricsProviderChanged);
     return () => window.removeEventListener('lyrics:current-provider-changed', handleCurrentLyricsProviderChanged);
-  }, []);
+  }, [t]);
 
   return (
     <div className={`lyrics-settings-panel ${className ?? ''}`.trim()}>
@@ -1258,22 +1267,22 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               <Captions size={17} />
             </span>
             <div>
-            <span>Lyrics Engine</span>
+            <span>{t('lyricsSettings.engine.title')}</span>
               <strong>{currentLyricsProviderLabel}</strong>
             </div>
             <RefreshCw size={15} />
           </div>
           <div className="audio-engine-meter__grid">
             <span>
-              <em>Provider</em>
+              <em>{t('lyricsSettings.engine.provider')}</em>
               <strong>{currentLyricsProviderLabel}</strong>
             </span>
             <span>
-              <em>Auto match</em>
-              <strong>{effectiveSettings.lyricsAutoSearch ? 'On' : 'Off'}</strong>
+              <em>{t('lyricsSettings.engine.autoMatch')}</em>
+              <strong>{effectiveSettings.lyricsAutoSearch ? t('lyricsSettings.status.on') : t('lyricsSettings.status.off')}</strong>
             </span>
             <span>
-              <em>Threshold</em>
+              <em>{t('lyricsSettings.engine.threshold')}</em>
               <strong>{thresholdPercent}%</strong>
             </span>
           </div>
@@ -1284,7 +1293,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         <section className="audio-drawer-section audio-drawer-options audio-drawer-options--open">
           <div className="audio-drawer-section-title">
             <Search size={17} />
-            <h3>当前歌曲</h3>
+            <h3>{t('lyricsSettings.currentTrack.title')}</h3>
           </div>
 
           <form
@@ -1297,16 +1306,16 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           >
             <Search size={15} />
             <span>
-              <strong>搜索歌词</strong>
-              <small>留空则使用当前歌曲信息</small>
+              <strong>{t('lyricsSettings.currentTrack.searchLyrics')}</strong>
+              <small>{t('lyricsSettings.currentTrack.searchHint')}</small>
             </span>
             <div className="lyrics-search-pill__field">
               <input
                 type="search"
                 value={lyricsSearchQuery}
                 disabled={isBusy || isLyricsCandidateLoading || !effectiveSettings.lyricsEnabled}
-                placeholder="歌名 / 艺术家 / 关键词"
-                aria-label="搜索歌词文本"
+                placeholder={t('lyricsSettings.currentTrack.searchPlaceholder')}
+                aria-label={t('lyricsSettings.currentTrack.searchInput')}
                 onChange={(event) => setLyricsSearchQuery(event.currentTarget.value)}
               />
             </div>
@@ -1316,11 +1325,11 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </form>
 
           {(lyricsCandidateStatus || lyricsCandidates.length > 0) ? (
-            <div className="lyrics-drawer-candidates" aria-label="歌词搜索结果">
+            <div className="lyrics-drawer-candidates" aria-label={t('lyricsSettings.candidate.results')}>
               {lyricsCandidateStatus ? <p className="lyrics-match-status">{lyricsCandidateStatus}</p> : null}
               {lyricsCandidates.length > 0 ? (
                 <>
-                  <div className="lyrics-source-filters" aria-label="歌词来源筛选">
+                  <div className="lyrics-source-filters" aria-label={t('lyricsSettings.candidate.sourceFilters')}>
                     {lyricsCandidateSourceOptions.map((option) => (
                       <button
                         type="button"
@@ -1351,7 +1360,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                         </span>
                         <span className="lyrics-candidate-badges">
                           <small className={`lyrics-risk-badge lyrics-risk-badge--${candidate.risk ?? 'high'}`}>
-                            {riskLabel(candidate.risk)}
+                            {riskLabel(candidate.risk, t)}
                           </small>
                           <small>
                             {candidate.hasSynced
@@ -1364,7 +1373,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                           </small>
                           <small>{candidate.sourceLabel}</small>
                           <small>{formatScore(candidate.score)}</small>
-                          {applyingLyricsCandidateId === candidate.id ? <small>应用中</small> : null}
+                          {applyingLyricsCandidateId === candidate.id ? <small>{t('lyricsSettings.status.applying')}</small> : null}
                         </span>
                       </button>
                     ))}
@@ -1385,8 +1394,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           >
             <RotateCcw size={15} />
             <span>
-              <strong>重新匹配</strong>
-              <small>清理当前缓存并重新查找</small>
+              <strong>{t('lyricsSettings.currentTrack.rematch')}</strong>
+              <small>{t('lyricsSettings.currentTrack.rematchHint')}</small>
             </span>
             <em>Match</em>
           </button>
@@ -1405,8 +1414,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           >
             <Music2 size={15} />
             <span>
-              <strong>{currentLyricsKind === 'instrumental' ? '已标记为纯音乐' : '标记为纯音乐'}</strong>
-              <small>记忆当前歌曲并停止自动歌词匹配</small>
+              <strong>{currentLyricsKind === 'instrumental' ? t('lyricsSettings.currentTrack.instrumentalMarked') : t('lyricsSettings.currentTrack.markInstrumental')}</strong>
+              <small>{t('lyricsSettings.currentTrack.markInstrumentalHint')}</small>
             </span>
             <em>Music</em>
           </button>
@@ -1416,13 +1425,13 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         <section className="audio-drawer-section audio-drawer-options audio-drawer-options--open">
           <div className="audio-drawer-section-title">
             <Captions size={17} />
-            <h3>歌词显示</h3>
+            <h3>{t('lyricsSettings.display.title')}</h3>
           </div>
 
           <label className="audio-toggle-row">
             <span>
               <Captions size={17} />
-              <strong>启用歌词</strong>
+              <strong>{t('lyricsSettings.display.enableLyrics')}</strong>
             </span>
             <input
               type="checkbox"
@@ -1431,14 +1440,14 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>关闭后歌词页不会加载、搜索或匹配歌词。</p>
+          <p>{t('lyricsSettings.display.enableLyricsDescription')}</p>
 
           {showPersistentControls ? (
             <>
               <label className="audio-toggle-row">
                 <span>
                   <Monitor size={17} />
-                  <strong>桌面歌词</strong>
+                  <strong>{t('lyricsSettings.display.desktopLyrics')}</strong>
                 </span>
                 <input
                   type="checkbox"
@@ -1447,16 +1456,16 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   onChange={(event) => setDesktopLyricsVisible(event.currentTarget.checked)}
                 />
               </label>
-              <p>开启后用独立透明窗口在桌面置顶显示当前歌词。</p>
+              <p>{t('lyricsSettings.display.desktopLyricsDescription')}</p>
 
               <div className="lyrics-font-panel lyrics-desktop-font-panel">
                 <div className="lyrics-color-panel__header">
                   <span>
                     <Type size={15} />
-                    <strong>桌面歌词字体</strong>
+                    <strong>{t('lyricsSettings.display.desktopFont')}</strong>
                   </span>
                   <em title={desktopLyricsFontFilePath ?? undefined}>
-                    {desktopLyricsFontFilePath ? '自定义字体' : '系统字体'}
+                    {desktopLyricsFontFilePath ? t('lyricsSettings.font.custom') : t('lyricsSettings.font.system')}
                   </em>
                 </div>
                 <button
@@ -1468,7 +1477,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   <span style={{ fontFamily: `"${desktopLyricsFontFamily}", "Microsoft YaHei", var(--echo-font-family)` }}>
                     {desktopLyricsFontFamily}
                   </span>
-                  <em>默认微软雅黑，可换系统字体</em>
+                  <em>{t('lyricsSettings.display.defaultMicrosoftYahei')}</em>
                 </button>
                 <div className="lyrics-font-actions">
                   <button
@@ -1479,8 +1488,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   >
                     <Check size={15} />
                     <span>
-                      <strong>应用系统字体</strong>
-                      <small>只影响桌面歌词</small>
+                      <strong>{t('lyricsSettings.font.applySystem')}</strong>
+                      <small>{t('lyricsSettings.font.desktopOnly')}</small>
                     </span>
                     <em>Fonts</em>
                   </button>
@@ -1492,7 +1501,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   >
                     <Upload size={15} />
                     <span>
-                      <strong>导入桌面歌词字体</strong>
+                      <strong>{t('lyricsSettings.font.importDesktop')}</strong>
                       <small>TTF / OTF / WOFF / WOFF2</small>
                     </span>
                     <em>Choose</em>
@@ -1511,7 +1520,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   >
                     <RotateCcw size={15} />
                     <span>
-                      <strong>恢复桌面歌词默认字体</strong>
+                      <strong>{t('lyricsSettings.font.restoreDesktopDefault')}</strong>
                       <small>{fallbackSettings.desktopLyricsFontFamily}</small>
                     </span>
                     <em>Reset</em>
@@ -1522,7 +1531,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               <label className="audio-toggle-row">
                 <span>
                   <Languages size={17} />
-                  <strong>桌面歌词显示罗马音</strong>
+                  <strong>{t('lyricsSettings.display.desktopRomanization')}</strong>
                 </span>
                 <input
                   type="checkbox"
@@ -1534,7 +1543,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               <label className="audio-toggle-row">
                 <span>
                   <Languages size={17} />
-                  <strong>桌面歌词显示翻译</strong>
+                  <strong>{t('lyricsSettings.display.desktopTranslation')}</strong>
                 </span>
                 <input
                   type="checkbox"
@@ -1549,7 +1558,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   <label className="audio-toggle-row">
                     <span>
                       <Lock size={17} />
-                      <strong>锁定桌面歌词</strong>
+                      <strong>{t('lyricsSettings.display.lockDesktopLyrics')}</strong>
                     </span>
                     <input
                       type="checkbox"
@@ -1558,7 +1567,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                       onChange={(event) => setDesktopLyricsLocked(event.currentTarget.checked)}
                     />
                   </label>
-                  <p>锁定后鼠标会穿透桌面歌词，避免挡住桌面操作；回到这里可解锁。</p>
+                  <p>{t('lyricsSettings.display.lockDesktopLyricsDescription')}</p>
                   <button
                     className="audio-device-pill"
                     type="button"
@@ -1567,8 +1576,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   >
                     <RotateCcw size={15} />
                     <span>
-                      <strong>重置桌面歌词位置</strong>
-                      <small>移回屏幕下方中央</small>
+                      <strong>{t('lyricsSettings.display.resetDesktopPosition')}</strong>
+                      <small>{t('lyricsSettings.display.resetDesktopPositionHint')}</small>
                     </span>
                     <em>Reset</em>
                   </button>
@@ -1580,8 +1589,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           {showPersistentControls ? (
           <label className="mv-threshold-control lyrics-match-threshold-control">
             <span className="mv-threshold-copy">
-              <strong>歌词匹配度设置</strong>
-              <em>在线结果达到 {thresholdPercent}% 才会自动应用</em>
+              <strong>{t('lyricsSettings.display.matchThreshold')}</strong>
+              <em>{t('lyricsSettings.display.matchThresholdDescription', { threshold: thresholdPercent })}</em>
             </span>
             <span className="mv-threshold-slider">
               <input
@@ -1590,7 +1599,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 max="100"
                 step="1"
                 value={thresholdPercent}
-                aria-label="歌词匹配度设置"
+                aria-label={t('lyricsSettings.display.matchThreshold')}
                 disabled={isBusy}
                 onChange={(event) => patchSettingsDebounced({ lyricsAutoAcceptScore: thresholdFromPercent(event.currentTarget.value) })}
               />
@@ -1602,7 +1611,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           <label className="audio-toggle-row">
             <span>
               <EyeOff size={17} />
-              <strong>隐藏歌曲信息</strong>
+              <strong>{t('lyricsSettings.display.hideTrackInfo')}</strong>
             </span>
             <input
               type="checkbox"
@@ -1615,7 +1624,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <label className="audio-toggle-row">
               <span>
                 <EyeOff size={17} />
-                <strong>关闭MV自动显示歌曲信息</strong>
+                <strong>{t('lyricsSettings.display.disableMvTrackInfoAutoShow')}</strong>
               </span>
               <input
                 type="checkbox"
@@ -1628,7 +1637,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           <label className="audio-toggle-row">
             <span>
               <Captions size={17} />
-              <strong>自动弹出歌词选择栏</strong>
+              <strong>{t('lyricsSettings.display.autoOpenCandidatePanel')}</strong>
             </span>
             <input
               type="checkbox"
@@ -1640,7 +1649,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           <label className="audio-toggle-row">
             <span>
               <EyeOff size={17} />
-              <strong>迷你底栏</strong>
+              <strong>{t('lyricsSettings.display.miniPlayer')}</strong>
             </span>
             <input
               type="checkbox"
@@ -1649,8 +1658,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsPlayerBarDrawerEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>开启后歌词页会隐藏默认底部播放栏，改用贴在底部中央的小号控制条。</p>
-          <p>默认关闭；适合想保留歌词沉浸感、但仍要快速切歌和拖动进度时使用。</p>
+          <p>{t('lyricsSettings.display.miniPlayerDescription')}</p>
+          <p>{t('lyricsSettings.display.miniPlayerHint')}</p>
 
           {effectiveSettings.lyricsPlayerBarDrawerEnabled ? (
             <div className="audio-drawer-mini-grid lyrics-mini-player-options">
@@ -1658,7 +1667,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 <span>
                   <strong>
                     <EyeOff size={15} />
-                    底栏透明度
+                    {t('lyricsSettings.display.miniPlayerOpacity')}
                   </strong>
                   <em>{miniPlayerOpacityPercent}%</em>
                 </span>
@@ -1682,21 +1691,21 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 <div className="lyrics-color-panel__header">
                   <span>
                     <Palette size={15} />
-                    <strong>底栏颜色</strong>
+                    <strong>{t('lyricsSettings.display.miniPlayerColor')}</strong>
                   </span>
                   <em>
                     {effectiveSettings.lyricsPlayerBarDrawerColorMode === 'cover'
-                      ? '跟随封面'
+                      ? t('lyricsSettings.background.mode.cover')
                       : effectiveSettings.lyricsPlayerBarDrawerColorMode === 'custom'
                         ? miniPlayerColor
-                        : '默认深色'}
+                        : t('lyricsSettings.display.miniPlayerDefaultDark')}
                   </em>
                 </div>
-                <div className="lyrics-background-segmented lyrics-mini-player-color-modes" aria-label="迷你底栏颜色模式">
+                <div className="lyrics-background-segmented lyrics-mini-player-color-modes" aria-label={t('lyricsSettings.display.miniPlayerColorMode')}>
                   {[
-                    ['default', '默认深色'],
-                    ['custom', '自定义'],
-                    ['cover', '跟随封面'],
+                    ['default', t('lyricsSettings.display.miniPlayerDefaultDark')],
+                    ['custom', t('lyricsSettings.font.custom')],
+                    ['cover', t('lyricsSettings.background.mode.cover')],
                   ].map(([mode, label]) => (
                     <button
                       type="button"
@@ -1715,9 +1724,9 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                     <div className="lyrics-color-panel__header lyrics-mini-player-custom-color">
                       <span>
                         <Palette size={15} />
-                        <strong>自定义颜色</strong>
+                        <strong>{t('lyricsSettings.display.customColor')}</strong>
                       </span>
-                      <label className="lyrics-color-input" title="选择底栏颜色">
+                      <label className="lyrics-color-input" title={t('lyricsSettings.display.chooseMiniPlayerColor')}>
                         <input
                           type="color"
                           value={miniPlayerColor}
@@ -1727,14 +1736,14 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                         <em>{miniPlayerColor}</em>
                       </label>
                     </div>
-                    <div className="lyrics-color-swatches" aria-label="迷你底栏颜色调色盘">
+                    <div className="lyrics-color-swatches" aria-label={t('lyricsSettings.display.miniPlayerPalette')}>
                       {colorSwatches.map((color) => (
                         <button
                           className="lyrics-color-swatch"
                           type="button"
                           key={color}
                           style={{ backgroundColor: color }}
-                          aria-label={`使用底栏颜色 ${color}`}
+                          aria-label={t('lyricsSettings.display.useMiniPlayerColor', { color })}
                           aria-pressed={miniPlayerColor.toUpperCase() === color}
                           disabled={isBusy}
                           onClick={() => void patchSettings({ lyricsPlayerBarDrawerColor: color })}
@@ -1746,7 +1755,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   </>
                 ) : null}
                 {effectiveSettings.lyricsPlayerBarDrawerColorMode === 'cover' ? (
-                  <p>会从当前歌曲封面提取颜色，并自动压暗成适合按钮阅读的玻璃色。</p>
+                  <p>{t('lyricsSettings.display.coverMiniPlayerHint')}</p>
                 ) : null}
               </div>
             </div>
@@ -1755,7 +1764,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           <label className="audio-toggle-row">
             <span>
               <EyeOff size={17} />
-              <strong>隐藏纯音乐提示</strong>
+              <strong>{t('lyricsSettings.display.hideEmptyState')}</strong>
             </span>
             <input
               type="checkbox"
@@ -1764,12 +1773,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsEmptyStateHidden: event.currentTarget.checked })}
             />
           </label>
-          <p>隐藏歌词页中央的“纯音乐，请欣赏”和“暂无歌词”提示，默认开启。</p>
+          <p>{t('lyricsSettings.display.hideEmptyStateDescription')}</p>
 
           <label className="audio-toggle-row">
             <span>
               <Captions size={17} />
-              <strong>显示罗马音</strong>
+              <strong>{t('lyricsSettings.display.showRomanization')}</strong>
             </span>
             <input
               type="checkbox"
@@ -1778,12 +1787,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsRomanizationEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>优先使用歌词源提供的罗马音；没有时会为日文歌词本地生成。</p>
+          <p>{t('lyricsSettings.display.showRomanizationDescription')}</p>
 
           <label className="audio-toggle-row">
             <span>
               <Captions size={17} />
-              <strong>优先 UtaTen 假名注音</strong>
+              <strong>{t('lyricsSettings.display.preferUtatenKana')}</strong>
             </span>
             <input
               type="checkbox"
@@ -1792,12 +1801,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsUtatenKanaEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>默认关闭；开启后日文歌词会尝试用 UtaTen 的ふりがな替代罗马音显示，匹配不到会自动回退。</p>
+          <p>{t('lyricsSettings.display.preferUtatenKanaDescription')}</p>
 
           <label className="audio-toggle-row">
             <span>
               <Captions size={17} />
-              <strong>显示中文翻译</strong>
+              <strong>{t('lyricsSettings.display.showTranslation')}</strong>
             </span>
             <input
               type="checkbox"
@@ -1806,13 +1815,13 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsTranslationEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>优先显示歌词源提供的中文翻译；没有翻译时不显示额外文本。</p>
+          <p>{t('lyricsSettings.display.showTranslationDescription')}</p>
 
           <div className="lyrics-word-highlight-settings">
             <label className="audio-toggle-row lyrics-word-highlight-toggle">
               <span>
                 <Captions size={17} />
-                <strong>逐字歌词高亮</strong>
+                <strong>{t('lyricsSettings.wordHighlight.title')}</strong>
               </span>
               <input
                 type="checkbox"
@@ -1826,7 +1835,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 <span>
                   <strong>
                     <SlidersHorizontal size={15} />
-                    逐字高亮清晰度
+                    {t('lyricsSettings.wordHighlight.clarity')}
                   </strong>
                   <em>{wordHighlightClarityLabel}</em>
                 </span>
@@ -1843,8 +1852,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             ) : null}
           </div>
           <div className="lyrics-word-highlight-notes">
-            <p>仅在歌词文件含真实逐字时间戳时启用；否则保持整行高亮。</p>
-            {showPersistentControls ? <p>默认“正常”；调高会让当前词未唱到的部分更完整，调低会更有逐字推进感。</p> : null}
+            <p>{t('lyricsSettings.wordHighlight.description')}</p>
+            {showPersistentControls ? <p>{t('lyricsSettings.wordHighlight.clarityDescription')}</p> : null}
           </div>
 
           {showPersistentControls ? (
@@ -1852,11 +1861,11 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           <label className="audio-toggle-row lyrics-style-toggle">
             <span>
               <Type size={17} />
-              <strong>显示歌词样式设置</strong>
+              <strong>{t('lyricsSettings.style.showControls')}</strong>
             </span>
             <input type="checkbox" checked={isLyricsStyleControlsOpen} onChange={(event) => setIsLyricsStyleControlsOpen(event.currentTarget.checked)} />
           </label>
-          <p>包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。</p>
+          <p>{t('lyricsSettings.style.showControlsDescription')}</p>
           </>
           ) : null}
 
@@ -1865,10 +1874,10 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <div className="lyrics-color-panel__header">
               <span>
                 <Type size={15} />
-                <strong>歌词字体</strong>
+                <strong>{t('lyricsSettings.style.lyricsFont')}</strong>
               </span>
               <em title={effectiveSettings.lyricsFontFilePath ?? undefined}>
-                {effectiveSettings.lyricsFontFilePath ? '自定义字体' : '系统字体'}
+                {effectiveSettings.lyricsFontFilePath ? t('lyricsSettings.font.custom') : t('lyricsSettings.font.system')}
               </em>
             </div>
             <button
@@ -1878,7 +1887,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onClick={() => openFontPicker('lyrics')}
             >
               <span style={{ fontFamily: `"${lyricsFontFamily}", var(--echo-font-family)` }}>{lyricsFontFamily}</span>
-              <em>选择已安装字体</em>
+              <em>{t('lyricsSettings.font.chooseInstalled')}</em>
             </button>
             <div className="lyrics-font-actions">
               <button
@@ -1889,15 +1898,15 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               >
                 <Check size={15} />
                 <span>
-                  <strong>应用系统字体</strong>
-                  <small>只影响歌词页和歌词行</small>
+                  <strong>{t('lyricsSettings.font.applySystem')}</strong>
+                  <small>{t('lyricsSettings.font.lyricsOnly')}</small>
                 </span>
                 <em>Fonts</em>
               </button>
               <button className="audio-device-pill" type="button" disabled={isBusy} onClick={() => void chooseFontFileForTarget('lyrics')}>
                 <Upload size={15} />
                 <span>
-                  <strong>导入字体文件</strong>
+                  <strong>{t('lyricsSettings.font.importFile')}</strong>
                   <small>TTF / OTF / WOFF / WOFF2</small>
                 </span>
                 <em>Choose</em>
@@ -1917,7 +1926,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               >
                 <RotateCcw size={15} />
                 <span>
-                  <strong>恢复默认歌词字体</strong>
+                  <strong>{t('lyricsSettings.font.restoreLyricsDefault')}</strong>
                   <small>{fallbackSettings.lyricsFontFamily}</small>
                 </span>
                 <em>Reset</em>
@@ -1933,7 +1942,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               <span>
                 <strong>
                   <Type size={15} />
-                  辅歌词字号
+                  {t('lyricsSettings.style.secondaryFontSize')}
                 </strong>
                 <em>{effectiveSettings.lyricsSecondaryFontSizePx}px</em>
               </span>
@@ -1952,7 +1961,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <span>
               <strong>
                 <Type size={15} />
-                歌词字号
+                {t('lyricsSettings.style.fontSize')}
               </strong>
               <em>{effectiveSettings.lyricsFontSizePx}px</em>
             </span>
@@ -1969,7 +1978,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <span>
               <strong>
                 <SlidersHorizontal size={15} />
-                歌词行距
+                {t('lyricsSettings.style.lineSpacing')}
               </strong>
               <em>{effectiveSettings.lyricsLineSpacingPercent}%</em>
             </span>
@@ -1986,9 +1995,9 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <span>
               <strong>
                 <Type size={15} />
-                每行字数
+                {t('lyricsSettings.style.lineMaxChars')}
               </strong>
-              <em>{lyricsLineMaxChars > 0 ? `${lyricsLineMaxChars}字` : '自动'}</em>
+              <em>{lyricsLineMaxChars > 0 ? t('lyricsSettings.style.lineMaxCharsValue', { count: lyricsLineMaxChars }) : t('lyricsSettings.status.auto')}</em>
             </span>
             <input
               type="range"
@@ -2003,7 +2012,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <span>
               <strong>
                 <EyeOff size={15} />
-                上下文透明度
+                {t('lyricsSettings.style.contextOpacity')}
               </strong>
               <em>{lyricsContextOpacityPercent}%</em>
             </span>
@@ -2024,9 +2033,9 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <div className="lyrics-color-panel__header">
               <span>
                 <Palette size={15} />
-                <strong>歌词颜色</strong>
+                <strong>{t('lyricsSettings.style.lyricsColor')}</strong>
               </span>
-              <label className="lyrics-color-input" title="选择歌词颜色">
+              <label className="lyrics-color-input" title={t('lyricsSettings.style.chooseLyricsColor')}>
                 <input
                   type="color"
                   value={effectiveSettings.lyricsColor}
@@ -2035,14 +2044,14 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 <em>{effectiveSettings.lyricsColor}</em>
               </label>
             </div>
-            <div className="lyrics-color-swatches" aria-label="歌词颜色调色盘">
+            <div className="lyrics-color-swatches" aria-label={t('lyricsSettings.style.lyricsColorPalette')}>
               {colorSwatches.map((color) => (
                 <button
                   className="lyrics-color-swatch"
                   type="button"
                   key={color}
                   style={{ backgroundColor: color }}
-                  aria-label={`使用颜色 ${color}`}
+                  aria-label={t('lyricsSettings.style.useColor', { color })}
                   aria-pressed={effectiveSettings.lyricsColor.toUpperCase() === color}
                   disabled={isBusy}
                   onClick={() => void patchSettings({ lyricsColor: color })}
@@ -2057,7 +2066,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                 onClick={() => void patchSettings({ lyricsColor: fallbackSettings.lyricsColor })}
               >
                 <RotateCcw size={14} />
-                重置
+                {t('lyricsSettings.action.reset')}
               </button>
             </div>
             <div
@@ -2075,13 +2084,13 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         <section className="audio-drawer-section audio-drawer-options audio-drawer-options--open">
           <div className="audio-drawer-section-title">
             <ImageIcon size={17} />
-            <h3>歌词背景</h3>
+            <h3>{t('lyricsSettings.background.title')}</h3>
           </div>
 
           <label className="audio-toggle-row lyrics-smart-readable-toggle">
             <span>
               <EyeOff size={17} />
-              <strong>智能可读颜色</strong>
+              <strong>{t('lyricsSettings.background.smartReadable')}</strong>
             </span>
             <input
               type="checkbox"
@@ -2090,31 +2099,31 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsSmartReadableColorsEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>根据封面、壁纸或 MV 画面自动选择高对比文字色，并按需增加轻遮罩、描边和阴影。关闭时继续使用手动歌词颜色。</p>
+          <p>{t('lyricsSettings.background.smartReadableDescription')}</p>
 
           <label className="audio-toggle-row lyrics-readability-toggle">
             <span>
               <EyeOff size={17} />
-              <strong>歌词可读性增强</strong>
+              <strong>{t('lyricsSettings.background.readability')}</strong>
             </span>
             <input type="checkbox" checked={lyricsReadabilityEnhanced} onChange={toggleLyricsReadabilityEnhanced} />
           </label>
-          <p>为沉浸式 MV 背景上的歌词增加描边和投影；不用展开沉浸式 MV 背景设置也可以常驻开关。</p>
+          <p>{t('lyricsSettings.background.readabilityDescription')}</p>
 
           <label className="audio-toggle-row lyrics-background-toggle">
             <span>
               <ImageIcon size={17} />
-              <strong>显示歌词背景设置</strong>
+              <strong>{t('lyricsSettings.background.showControls')}</strong>
             </span>
             <input type="checkbox" checked={isBackgroundControlsOpen} onChange={(event) => setIsBackgroundControlsOpen(event.currentTarget.checked)} />
           </label>
 
           <div className="lyrics-background-controls" hidden={!isBackgroundControlsOpen}>
-          <div className="lyrics-background-segmented" aria-label="歌词背景模式">
+          <div className="lyrics-background-segmented" aria-label={t('lyricsSettings.background.modeAria')}>
             {[
-              ['theme', '跟随主题'],
-              ['cover', '跟随封面'],
-              ['customWallpaper', '自定义壁纸'],
+              ['theme', t('lyricsSettings.background.mode.theme')],
+              ['cover', t('lyricsSettings.background.mode.cover')],
+              ['customWallpaper', t('lyricsSettings.background.mode.customWallpaper')],
             ].map(([mode, label]) => (
               <button
                 type="button"
@@ -2134,12 +2143,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               </button>
             ))}
           </div>
-          <p>封面模式会使用当前歌曲封面；自定义壁纸会保存到应用数据目录。</p>
+          <p>{t('lyricsSettings.background.modeDescription')}</p>
 
           <label className="audio-toggle-row lyrics-background-network-cover-toggle">
             <span>
               <ImageIcon size={17} />
-              <strong>请求网络元数据的高清封面</strong>
+              <strong>{t('lyricsSettings.background.highResolutionCover')}</strong>
             </span>
             <input
               type="checkbox"
@@ -2148,13 +2157,13 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsHighResolutionNetworkCoverEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>仅在跟随封面时临时请求高清封面作为歌词背景；关闭时只使用本地封面兜底。</p>
+          <p>{t('lyricsSettings.background.highResolutionCoverDescription')}</p>
 
           <div className="lyrics-cover-tuning">
-            <p>跟随封面和自定义壁纸都会使用这里的透明度、模糊度和亮度。</p>
+            <p>{t('lyricsSettings.background.tuningDescription')}</p>
             <label className="lyrics-drawer-range">
               <span>
-                <strong>背景放大</strong>
+                <strong>{t('lyricsSettings.background.scale')}</strong>
                 <em>{effectiveSettings.lyricsBackgroundScalePercent}%</em>
               </span>
               <input
@@ -2168,7 +2177,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             </label>
             <label className="lyrics-drawer-range">
               <span>
-                <strong>背景透明度</strong>
+                <strong>{t('lyricsSettings.background.opacity')}</strong>
                 <em>{effectiveSettings.lyricsCoverOpacityPercent}%</em>
               </span>
               <input
@@ -2182,7 +2191,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             </label>
             <label className="lyrics-drawer-range">
               <span>
-                <strong>背景模糊度</strong>
+                <strong>{t('lyricsSettings.background.blur')}</strong>
                 <em>{effectiveSettings.lyricsCoverBlurPx}px</em>
               </span>
               <input
@@ -2196,7 +2205,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             </label>
             <label className="lyrics-drawer-range">
               <span>
-                <strong>背景亮度</strong>
+                <strong>{t('lyricsSettings.background.brightness')}</strong>
                 <em>{effectiveSettings.lyricsCoverBrightnessPercent}%</em>
               </span>
               <input
@@ -2214,8 +2223,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             <button className="audio-device-pill" type="button" disabled={isBusy} onClick={() => void chooseWallpaper()}>
               <Upload size={15} />
               <span>
-                <strong>选择自定义壁纸</strong>
-                <small>{effectiveSettings.lyricsCustomWallpaperPath ? '已保存到应用壁纸目录' : 'JPG / PNG / WEBP'}</small>
+                <strong>{t('lyricsSettings.background.chooseWallpaper')}</strong>
+                <small>{effectiveSettings.lyricsCustomWallpaperPath ? t('lyricsSettings.background.wallpaperSaved') : 'JPG / PNG / WEBP'}</small>
               </span>
               <em>Choose</em>
             </button>
@@ -2228,8 +2237,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               >
                 <Trash2 size={15} />
                 <span>
-                  <strong>清除自定义壁纸</strong>
-                  <small>恢复为跟随主题</small>
+                  <strong>{t('lyricsSettings.background.clearWallpaper')}</strong>
+                  <small>{t('lyricsSettings.background.clearWallpaperHint')}</small>
                 </span>
                 <em>Clear</em>
               </button>
@@ -2247,13 +2256,13 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         <section className="audio-drawer-section audio-drawer-options audio-drawer-options--open">
           <div className="audio-drawer-section-title">
             <Globe2 size={17} />
-            <h3>在线匹配</h3>
+            <h3>{t('lyricsSettings.online.title')}</h3>
           </div>
 
           <label className="audio-toggle-row">
             <span>
               <Globe2 size={17} />
-              <strong>启用在线歌词匹配</strong>
+              <strong>{t('lyricsSettings.online.enable')}</strong>
             </span>
             <input
               type="checkbox"
@@ -2262,12 +2271,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsNetworkEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>仅发送标题、艺术家、专辑和时长用于匹配。</p>
+          <p>{t('lyricsSettings.online.enableDescription')}</p>
 
           <label className="audio-toggle-row">
             <span>
               <Zap size={17} />
-              <strong>深度优先搜索</strong>
+              <strong>{t('lyricsSettings.online.deepSearch')}</strong>
             </span>
             <input
               type="checkbox"
@@ -2276,15 +2285,15 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsDeepSearchEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>开启后多个在线平台会并发搜索，并按下方优先级与匹配分数返回最快的最优解。</p>
+          <p>{t('lyricsSettings.online.deepSearchDescription')}</p>
 
           {showPersistentControls ? (
           <div className="lyrics-source-panel">
             <span>
               <Globe2 size={15} />
-              <strong>歌词源</strong>
+              <strong>{t('lyricsSettings.online.sources')}</strong>
             </span>
-            <div className="lyrics-source-grid" aria-label="歌词源">
+            <div className="lyrics-source-grid" aria-label={t('lyricsSettings.online.sources')}>
               {orderedLyricsSourceOptions.map((source) => (
                 <label
                   className="lyrics-source-option"
@@ -2334,20 +2343,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                     }}
                   />
                   <span>
-                    <strong>{source.label}</strong>
-                    <small>{source.description}</small>
+                    <strong>{t(source.labelKey)}</strong>
+                    <small>{t(source.descriptionKey)}</small>
                   </span>
                 </label>
               ))}
             </div>
-            <p>本地歌词会一直优先；未勾选的在线源不会参与自动匹配或重新匹配。</p>
+            <p>{t('lyricsSettings.online.sourcesDescription')}</p>
           </div>
           ) : null}
 
           <label className="audio-toggle-row">
             <span>
               <Database size={17} />
-              <strong>自动匹配歌词</strong>
+              <strong>{t('lyricsSettings.online.autoSearch')}</strong>
             </span>
             <input
               type="checkbox"
@@ -2356,20 +2365,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsAutoSearch: event.currentTarget.checked })}
             />
           </label>
-          <p>本地歌词始终优先；在线结果达到阈值才会自动应用。</p>
+          <p>{t('lyricsSettings.online.autoSearchDescription')}</p>
         </section>
 
         {showPersistentControls ? (
         <section className="audio-drawer-section audio-drawer-options audio-drawer-options--open">
           <div className="audio-drawer-section-title">
             <TimerReset size={17} />
-            <h3>匹配与延迟</h3>
+            <h3>{t('lyricsSettings.timing.title')}</h3>
           </div>
 
           <div className="lyrics-delay-range-grid">
           <label className="lyrics-drawer-range">
             <span>
-              <strong>新歌词默认延迟</strong>
+              <strong>{t('lyricsSettings.timing.defaultOffset')}</strong>
               <em>{offsetSeconds}s</em>
             </span>
             <input
@@ -2384,7 +2393,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
           <label className="lyrics-drawer-range">
             <span>
-              <strong>全局延迟</strong>
+              <strong>{t('lyricsSettings.timing.globalOffset')}</strong>
               <em>{globalSyncOffsetSeconds}s</em>
             </span>
             <input
@@ -2401,7 +2410,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           <label className="audio-toggle-row">
             <span>
               <TimerReset size={17} />
-              <strong>应用歌词时间轴校准</strong>
+              <strong>{t('lyricsSettings.timing.timelineCorrection')}</strong>
             </span>
             <input
               type="checkbox"
@@ -2410,12 +2419,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsTimelineCorrectionEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>全局延迟会影响所有歌曲；本歌曲延迟请在歌词页校准条里调整，会跟随当前歌曲单独记忆。</p>
+          <p>{t('lyricsSettings.timing.timelineCorrectionDescription')}</p>
 
           <label className="audio-toggle-row">
             <span>
               <TimerReset size={17} />
-              <strong>显示本歌曲延迟校准</strong>
+              <strong>{t('lyricsSettings.timing.showPerTrackOffset')}</strong>
             </span>
             <input
               type="checkbox"
@@ -2428,7 +2437,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           <label className="audio-toggle-row">
             <span>
               <TimerReset size={17} />
-              <strong>智能歌词校准</strong>
+              <strong>{t('lyricsSettings.timing.smartAlignment')}</strong>
             </span>
             <input
               type="checkbox"
@@ -2437,7 +2446,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               onChange={(event) => void patchSettings({ lyricsSmartAlignmentEnabled: event.currentTarget.checked })}
             />
           </label>
-          <p>高置信时自动保存当前歌曲延迟；异常漂移只提示换源，可撤回。</p>
+          <p>{t('lyricsSettings.timing.smartAlignmentDescription')}</p>
 
           <button
             className="audio-device-pill"
@@ -2447,8 +2456,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           >
             <RotateCcw size={15} />
             <span>
-              <strong>恢复歌词默认值</strong>
-              <small>匹配阈值 50% / 延迟 0ms</small>
+              <strong>{t('lyricsSettings.timing.restoreDefaults')}</strong>
+              <small>{t('lyricsSettings.timing.restoreDefaultsHint')}</small>
             </span>
             <em>Reset</em>
           </button>
@@ -2474,6 +2483,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 };
 
 export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerProps): JSX.Element | null => {
+  const t = useOptionalI18n()?.t ?? translateFallback;
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isMotionOpen, setIsMotionOpen] = useState(false);
 
@@ -2521,15 +2531,15 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
 
   return (
     <div className="audio-drawer-root lyrics-settings-drawer-root no-drag" role="presentation" data-open={isMotionOpen}>
-      <button className="audio-drawer-scrim" type="button" aria-label="关闭歌词设置" onClick={onClose} />
-      <aside className="audio-drawer lyrics-settings-drawer" aria-label="歌词设置">
+      <button className="audio-drawer-scrim" type="button" aria-label={t('lyricsSettings.drawer.close')} onClick={onClose} />
+      <aside className="audio-drawer lyrics-settings-drawer" aria-label={t('lyricsSettings.drawer.aria')}>
         <div className="audio-drawer-scroll">
           <header className="audio-drawer-header">
           <div>
             <SlidersHorizontal size={18} />
-            <h2>歌词设置</h2>
+            <h2>{t('lyricsSettings.drawer.title')}</h2>
           </div>
-          <button className="audio-drawer-close" type="button" aria-label="关闭歌词设置" title="关闭歌词设置" onClick={onClose}>
+          <button className="audio-drawer-close" type="button" aria-label={t('lyricsSettings.drawer.close')} title={t('lyricsSettings.drawer.close')} onClick={onClose}>
             <X size={20} />
           </button>
           </header>
