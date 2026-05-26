@@ -74,6 +74,68 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(isPlaybackCancellationError(new Error('native device failed'))).toBe(false);
   });
 
+  it('hydrates queue changes pushed from another playback window', async () => {
+    const first = makeTrack(1);
+    const second = makeTrack(2);
+    let handleQueueSessionChanged: ((snapshot: PersistedPlaybackSessionV1 | null) => void) | null = null;
+    const unsubscribe = vi.fn();
+
+    window.echo = {
+      playback: {
+        onQueueSessionChanged: vi.fn((handler: (snapshot: PersistedPlaybackSessionV1 | null) => void) => {
+          handleQueueSessionChanged = handler;
+          return unsubscribe;
+        }),
+      },
+    } as unknown as Window['echo'];
+
+    const QueueProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="current-title">{queue.currentTrack?.title ?? ''}</output>
+          <output aria-label="queue-size">{queue.items.length}</output>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(window.echo?.playback?.onQueueSessionChanged).toHaveBeenCalled());
+
+    const snapshot = makePersistedQueueSession([first, second], {
+      currentQueueId: 'queue-2',
+      currentTrackId: second.id,
+      lastPlayedTrack: second,
+      history: [
+        {
+          queueId: 'queue-1',
+          track: first,
+          source: { type: 'manual', label: 'Manual queue' },
+          addedAt: '2026-05-21T00:00:00.000Z',
+        },
+      ],
+      updatedAt: '2026-05-21T00:00:10.000Z',
+    });
+
+    act(() => {
+      handleQueueSessionChanged?.(snapshot);
+    });
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe(second.id));
+    expect(screen.getByLabelText('current-title').textContent).toBe(second.title);
+    expect(screen.getByLabelText('queue-size').textContent).toBe('2');
+
+    cleanup();
+    expect(unsubscribe).toHaveBeenCalled();
+  });
+
   it('routes manual playback to the active HQPlayer Connect output instead of local playback', async () => {
     const track = makeTrack(1);
     const playLocalFile = vi.fn();

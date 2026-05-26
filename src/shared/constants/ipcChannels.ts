@@ -366,6 +366,7 @@ export const IpcChannels = {
   PlaybackGetQueueSession: 'playback:get-queue-session',
   PlaybackSaveQueueSession: 'playback:save-queue-session',
   PlaybackClearQueueSession: 'playback:clear-queue-session',
+  PlaybackQueueSessionChanged: 'playback:queue-session-changed',
   PlaybackMainWindowCommand: 'playback:main-window-command',
   PlaybackMainWindowCommandRequest: 'playback:main-window-command-request',
   PlaybackMainWindowCommandResult: 'playback:main-window-command-result',

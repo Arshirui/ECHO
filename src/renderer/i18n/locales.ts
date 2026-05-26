@@ -537,9 +537,11 @@ export type TranslationKey =
   | 'miniPlayer.action.play'
   | 'miniPlayer.action.previous'
   | 'miniPlayer.action.resetPosition'
+  | 'miniPlayer.action.volume'
   | 'miniPlayer.aria.progress'
   | 'miniPlayer.aria.queue'
   | 'miniPlayer.aria.shell'
+  | 'miniPlayer.aria.volume'
   | 'miniPlayer.artist.unknown'
   | 'miniPlayer.status.hqPlayerTakeover'
   | 'miniPlayer.status.queueEmpty'
@@ -1105,6 +1107,8 @@ export type TranslationKey =
   | 'lyricsSettings.currentTrack.markInstrumentalHint'
   | 'lyricsSettings.currentTrack.rematch'
   | 'lyricsSettings.currentTrack.rematchHint'
+  | 'lyricsSettings.currentTrack.restartOnApply'
+  | 'lyricsSettings.currentTrack.restartOnApplyDescription'
   | 'lyricsSettings.currentTrack.searchHint'
   | 'lyricsSettings.currentTrack.searchInput'
   | 'lyricsSettings.currentTrack.searchLyrics'
@@ -2441,9 +2445,11 @@ const zhCN: TranslationMap = {
   'miniPlayer.action.play': '播放',
   'miniPlayer.action.previous': '上一首',
   'miniPlayer.action.resetPosition': '重置位置',
+  'miniPlayer.action.volume': '调节音量',
   'miniPlayer.aria.progress': '播放进度',
   'miniPlayer.aria.queue': '播放队列',
   'miniPlayer.aria.shell': '迷你播放器',
+  'miniPlayer.aria.volume': '音量',
   'miniPlayer.artist.unknown': '未知艺术家',
   'miniPlayer.status.hqPlayerTakeover': 'HQPlayer 接管中',
   'miniPlayer.status.queueEmpty': '队列为空',
@@ -3236,6 +3242,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.currentTrack.markInstrumentalHint': '记忆当前歌曲并停止自动歌词匹配',
   'lyricsSettings.currentTrack.rematch': '重新匹配',
   'lyricsSettings.currentTrack.rematchHint': '清理当前缓存并重新查找',
+  'lyricsSettings.currentTrack.restartOnApply': '应用歌词后自动重播音乐',
+  'lyricsSettings.currentTrack.restartOnApplyDescription': '默认关闭；开启后，成功应用当前歌曲歌词时会从头播放，避免歌词时间轴沿用旧进度导致不同步。',
   'lyricsSettings.currentTrack.searchHint': '留空则使用当前歌曲信息',
   'lyricsSettings.currentTrack.searchInput': '搜索歌词文本',
   'lyricsSettings.currentTrack.searchLyrics': '搜索歌词',
@@ -4559,9 +4567,11 @@ const zhTW: TranslationMap = {
   'miniPlayer.action.play': '播放',
   'miniPlayer.action.previous': '上一首',
   'miniPlayer.action.resetPosition': '重置位置',
+  'miniPlayer.action.volume': '調整音量',
   'miniPlayer.aria.progress': '播放進度',
   'miniPlayer.aria.queue': '播放佇列',
   'miniPlayer.aria.shell': '迷你播放器',
+  'miniPlayer.aria.volume': '音量',
   'miniPlayer.artist.unknown': '未知演出者',
   'miniPlayer.status.hqPlayerTakeover': 'HQPlayer 接管中',
   'miniPlayer.status.queueEmpty': '佇列為空',
@@ -5287,6 +5297,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.currentTrack.markInstrumentalHint': '記住目前歌曲並停止自動歌詞匹配',
   'lyricsSettings.currentTrack.rematch': '重新匹配',
   'lyricsSettings.currentTrack.rematchHint': '清理目前快取並重新尋找',
+  'lyricsSettings.currentTrack.restartOnApply': '套用歌詞後自動重播音樂',
+  'lyricsSettings.currentTrack.restartOnApplyDescription': '預設關閉；開啟後，成功套用目前歌曲歌詞時會從頭播放，避免歌詞時間軸沿用舊進度而不同步。',
   'lyricsSettings.currentTrack.searchHint': '留空則使用目前歌曲資訊',
   'lyricsSettings.currentTrack.searchInput': '搜尋歌詞文字',
   'lyricsSettings.currentTrack.searchLyrics': '搜尋歌詞',
@@ -6382,9 +6394,11 @@ const jaJP: TranslationMap = {
   'miniPlayer.action.play': '再生',
   'miniPlayer.action.previous': '前の曲',
   'miniPlayer.action.resetPosition': '位置をリセット',
+  'miniPlayer.action.volume': '音量を調整',
   'miniPlayer.aria.progress': '再生位置',
   'miniPlayer.aria.queue': '再生キュー',
   'miniPlayer.aria.shell': 'ミニプレイヤー',
+  'miniPlayer.aria.volume': '音量',
   'miniPlayer.artist.unknown': '不明なアーティスト',
   'miniPlayer.status.hqPlayerTakeover': 'HQPlayer が引き継ぎ中',
   'miniPlayer.status.queueEmpty': 'キューは空です',
@@ -7124,6 +7138,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.currentTrack.markInstrumentalHint': '現在の曲を記憶し、自動歌詞マッチングを停止します',
   'lyricsSettings.currentTrack.rematch': '再マッチ',
   'lyricsSettings.currentTrack.rematchHint': '現在のキャッシュを消して再検索します',
+  'lyricsSettings.currentTrack.restartOnApply': '歌詞適用後に自動で再生し直す',
+  'lyricsSettings.currentTrack.restartOnApplyDescription': '既定はオフです。オンにすると、現在の曲へ歌詞を適用した後に先頭から再生し、新しいタイムラインで同期し直します。',
   'lyricsSettings.currentTrack.searchHint': '空欄なら現在の曲情報を使います',
   'lyricsSettings.currentTrack.searchInput': '歌詞検索テキスト',
   'lyricsSettings.currentTrack.searchLyrics': '歌詞を検索',
@@ -8284,9 +8300,11 @@ const enUS: TranslationMap = {
   'miniPlayer.action.play': 'Play',
   'miniPlayer.action.previous': 'Previous track',
   'miniPlayer.action.resetPosition': 'Reset position',
+  'miniPlayer.action.volume': 'Adjust volume',
   'miniPlayer.aria.progress': 'Playback progress',
   'miniPlayer.aria.queue': 'Playback queue',
   'miniPlayer.aria.shell': 'Mini player',
+  'miniPlayer.aria.volume': 'Volume',
   'miniPlayer.artist.unknown': 'Unknown Artist',
   'miniPlayer.status.hqPlayerTakeover': 'HQPlayer takeover active',
   'miniPlayer.status.queueEmpty': 'Queue is empty',
@@ -9026,6 +9044,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.currentTrack.markInstrumentalHint': 'Remember this track and stop automatic lyrics matching',
   'lyricsSettings.currentTrack.rematch': 'Rematch',
   'lyricsSettings.currentTrack.rematchHint': 'Clear the current cache and search again',
+  'lyricsSettings.currentTrack.restartOnApply': 'Auto-replay after applying lyrics',
+  'lyricsSettings.currentTrack.restartOnApplyDescription': 'Off by default. When enabled, ECHO restarts the current song after lyrics are applied so the new timeline starts cleanly.',
   'lyricsSettings.currentTrack.searchHint': 'Leave empty to use the current track info',
   'lyricsSettings.currentTrack.searchInput': 'Lyrics search text',
   'lyricsSettings.currentTrack.searchLyrics': 'Search lyrics',

@@ -1159,6 +1159,7 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
   const cancelPlaybackSessionPersistRef = useRef<(() => void) | null>(null);
   const updateTrackSnapshotRef = useRef<PlaybackQueueContextValue['updateTrackSnapshot']>(() => undefined);
   const sessionHydratedRef = useRef(sessionHydrated);
+  const suppressNextSessionPersistenceRef = useRef(false);
 
   const setItems = useCallback((nextItems: QueueItem[] | ((current: QueueItem[]) => QueueItem[])): void => {
     const resolved = typeof nextItems === 'function' ? nextItems(itemsRef.current) : nextItems;
@@ -1499,6 +1500,11 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
       return;
     }
 
+    if (suppressNextSessionPersistenceRef.current) {
+      suppressNextSessionPersistenceRef.current = false;
+      return;
+    }
+
     schedulePlaybackSessionPersistence();
 
     return () => {
@@ -1518,6 +1524,19 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     sessionHydrated,
     isShuffleEnabled,
   ]);
+
+  useEffect(() => {
+    const unsubscribe = window.echo?.playback?.onQueueSessionChanged?.((snapshot) => {
+      suppressNextSessionPersistenceRef.current = true;
+      applyHydratedPlaybackSession(playbackSessionFromPersisted(snapshot));
+      sessionHydratedRef.current = true;
+      setSessionHydrated(true);
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [applyHydratedPlaybackSession]);
 
   useEffect(() => {
     const flush = (): void => {

@@ -1098,6 +1098,21 @@ describe('preload SMTC API', () => {
     expect(handler).not.toHaveBeenCalledWith(['D:\\Music\\after-unsubscribe.flac']);
   });
 
+  it('subscribes to playback queue session changes and unsubscribes cleanly', () => {
+    const handler = vi.fn();
+    const unsubscribe = exposedApi!.playback.onQueueSessionChanged?.(handler);
+    const listener = listeners.get(IpcChannels.PlaybackQueueSessionChanged);
+    const snapshot = { version: 1, items: [], updatedAt: '2026-05-26T00:00:00.000Z' };
+
+    expect(listener).toBeTruthy();
+    listener?.({}, snapshot);
+    expect(handler).toHaveBeenCalledWith(snapshot);
+
+    unsubscribe?.();
+    expect(ipcRenderer.off).toHaveBeenCalledWith(IpcChannels.PlaybackQueueSessionChanged, listener);
+    expect(listeners.get(IpcChannels.PlaybackQueueSessionChanged)).toBeUndefined();
+  });
+
   it('exposes lyrics wallpaper picker through IPC', async () => {
     await exposedApi!.app.chooseLyricsWallpaper();
 

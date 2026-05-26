@@ -1,4 +1,4 @@
-import { dialog, ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain } from 'electron';
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron';
 import { SUPPORTED_AUDIO_DIALOG_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
@@ -1322,6 +1322,19 @@ const receiveMainWindowPlaybackCommandResult = (event: IpcMainEvent, rawResult: 
   pending.reject(new Error(typeof rawResult.error === 'string' ? rawResult.error : 'main_window_playback_command_failed'));
 };
 
+const broadcastPlaybackQueueSessionChanged = (
+  sender: Electron.WebContents | null,
+  snapshot: PersistedPlaybackSessionV1 | null,
+): void => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed() || window.webContents === sender) {
+      continue;
+    }
+
+    window.webContents.send(IpcChannels.PlaybackQueueSessionChanged, snapshot);
+  }
+};
+
 export const registerPlaybackIpc = (): void => {
   registerPlaybackMemoryPersistence();
   registerExpiredUrlRecovery();
@@ -1329,11 +1342,14 @@ export const registerPlaybackIpc = (): void => {
   ipcMain.on(IpcChannels.PlaybackMainWindowCommandResult, receiveMainWindowPlaybackCommandResult);
   ipcMain.handle(IpcChannels.PlaybackGetStatus, (): PlaybackStatus => toPlaybackStatus());
   ipcMain.handle(IpcChannels.PlaybackGetQueueSession, (): PersistedPlaybackSessionV1 | null => getPlaybackSessionStore().load());
-  ipcMain.handle(IpcChannels.PlaybackSaveQueueSession, (_event, snapshot: unknown): PersistedPlaybackSessionV1 =>
-    getPlaybackSessionStore().saveWithAudioStatus(snapshot as PersistedPlaybackSessionV1, getAudioSession().getStatus()),
-  );
-  ipcMain.handle(IpcChannels.PlaybackClearQueueSession, (): void => {
+  ipcMain.handle(IpcChannels.PlaybackSaveQueueSession, (event, snapshot: unknown): PersistedPlaybackSessionV1 => {
+    const saved = getPlaybackSessionStore().saveWithAudioStatus(snapshot as PersistedPlaybackSessionV1, getAudioSession().getStatus());
+    broadcastPlaybackQueueSessionChanged(event.sender, saved);
+    return saved;
+  });
+  ipcMain.handle(IpcChannels.PlaybackClearQueueSession, (event): void => {
     getPlaybackSessionStore().clear();
+    broadcastPlaybackQueueSessionChanged(event.sender, null);
   });
   ipcMain.handle(IpcChannels.PlaybackPlayLocalFile, async (_event, request: unknown): Promise<PlaybackStatus> => enqueuePlaybackStatusCommand(async () => {
     clearActiveMediaPlayback();

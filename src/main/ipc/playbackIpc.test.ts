@@ -75,8 +75,10 @@ describe('playback media prepare IPC', () => {
     });
 
     vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
       dialog: { showOpenDialog: vi.fn() },
       ipcMain: {
+        on: vi.fn(),
         handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
           handlers.set(channel, handler);
         }),
@@ -244,8 +246,10 @@ describe('playback media prepare IPC', () => {
       });
 
     vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
       dialog: { showOpenDialog: vi.fn() },
       ipcMain: {
+        on: vi.fn(),
         handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
           handlers.set(channel, handler);
         }),
@@ -333,8 +337,10 @@ describe('playback media prepare IPC', () => {
     const startReplayGainAnalysis = vi.fn();
 
     vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
       dialog: { showOpenDialog: vi.fn() },
       ipcMain: {
+        on: vi.fn(),
         handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
           handlers.set(channel, handler);
         }),
@@ -447,8 +453,10 @@ describe('playback media prepare IPC', () => {
     const resolvePlayback = vi.fn(() => streamingSource);
 
     vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
       dialog: { showOpenDialog: vi.fn() },
       ipcMain: {
+        on: vi.fn(),
         handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
           handlers.set(channel, handler);
         }),
@@ -523,7 +531,11 @@ describe('playback media prepare IPC', () => {
       requiresProxy: false,
     });
 
-    await expect(staleStreamingPlay).rejects.toThrow('audio_session_run_cancelled');
+    await expect(staleStreamingPlay).resolves.toEqual(expect.objectContaining({
+      state: 'playing',
+      currentTrackId: 'local-track',
+      filePath: 'D:\\Music\\local.flac',
+    }));
     expect(playLocalFile).toHaveBeenCalledTimes(1);
     expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({
       filePath: 'D:\\Music\\local.flac',
@@ -556,8 +568,10 @@ describe('playback media prepare IPC', () => {
     });
 
     vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
       dialog: { showOpenDialog: vi.fn() },
       ipcMain: {
+        on: vi.fn(),
         handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
           handlers.set(channel, handler);
         }),
@@ -706,8 +720,10 @@ describe('playback media prepare IPC', () => {
       });
 
     vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
       dialog: { showOpenDialog: vi.fn() },
       ipcMain: {
+        on: vi.fn(),
         handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
           handlers.set(channel, handler);
         }),
@@ -810,8 +826,10 @@ describe('playback media prepare IPC', () => {
     });
 
     vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
       dialog: { showOpenDialog: vi.fn() },
       ipcMain: {
+        on: vi.fn(),
         handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
           handlers.set(channel, handler);
         }),
@@ -915,8 +933,10 @@ describe('playback media prepare IPC', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
       dialog: { showOpenDialog: vi.fn() },
       ipcMain: {
+        on: vi.fn(),
         handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
           handlers.set(channel, handler);
         }),
@@ -993,8 +1013,10 @@ describe('playback media prepare IPC', () => {
     const pause = vi.fn(() => new Promise<void>(() => undefined));
 
     vi.doMock('electron', () => ({
+      BrowserWindow: { getAllWindows: vi.fn(() => []) },
       dialog: { showOpenDialog: vi.fn() },
       ipcMain: {
+        on: vi.fn(),
         handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
           handlers.set(channel, handler);
         }),

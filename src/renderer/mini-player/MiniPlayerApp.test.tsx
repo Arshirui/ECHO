@@ -101,10 +101,15 @@ const installEchoMock = (
     value: {
       app: {
         getSettings: vi.fn().mockResolvedValue({ gaplessPlaybackEnabled: false }),
+        setSettings: vi.fn().mockResolvedValue({ gaplessPlaybackEnabled: false }),
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue(audioStatus),
         onStatus: vi.fn(() => vi.fn()),
+        setOutput: vi.fn(async (settings: { volume?: number }) => ({
+          ...audioStatus,
+          volume: typeof settings.volume === 'number' ? Math.max(0, Math.min(1, settings.volume)) : audioStatus.volume,
+        })),
       },
       playback: {
         getStatus: vi.fn().mockResolvedValue(playbackStatus),
@@ -195,6 +200,33 @@ describe('MiniPlayerApp', () => {
     fireEvent.pointerUp(slider);
 
     await waitFor(() => expect(window.echo?.playback?.seek).toHaveBeenCalledWith(90));
+  });
+
+  it('commits volume changes from the mini player slider', async () => {
+    const track = makeTrack();
+    installEchoMock(track, {
+      audioStatus: {
+        ...makeAudioStatus(track),
+        volume: 0.42,
+      },
+    });
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track} />
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText('Mini Song')).toBeTruthy();
+    fireEvent.click(document.querySelector('.mini-player-volume-toggle') as HTMLButtonElement);
+    const volumeSlider = document.querySelector('.mini-player-volume-row input') as HTMLInputElement;
+    expect(volumeSlider.value).toBe('0.42');
+
+    fireEvent.change(volumeSlider, { target: { value: '0.35' } });
+    fireEvent.pointerUp(volumeSlider);
+
+    await waitFor(() => expect(window.echo?.audio?.setOutput).toHaveBeenCalledWith({ volume: 0.35 }));
+    expect(window.echo?.app?.setSettings).toHaveBeenCalledWith({ playerVolume: 0.35 });
   });
 
   it('opens the mini queue and plays a selected queue item', async () => {

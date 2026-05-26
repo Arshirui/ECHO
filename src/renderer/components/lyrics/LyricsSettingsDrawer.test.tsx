@@ -361,6 +361,28 @@ describe('LyricsSettingsDrawer', () => {
     expect(setSettings).toHaveBeenCalledWith({ lyricsAutoAcceptScore: 0.3 });
   });
 
+  it('toggles auto replay after applying lyrics from the current-track tools', async () => {
+    const setSettings = vi.fn((patch: Partial<AppSettings>) => Promise.resolve(makeSettings(patch)));
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsRestartOnApplyEnabled: false })),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    const label = await screen.findByText('应用歌词后自动重播音乐');
+    const toggle = label.closest('label')?.querySelector('input') as HTMLInputElement | null;
+    expect(toggle).not.toBeNull();
+    expect(toggle?.checked).toBe(false);
+
+    fireEvent.click(toggle!);
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsRestartOnApplyEnabled: true }));
+  });
+
   it('keeps lyrics display preferences editable when lyrics loading is disabled', async () => {
     window.echo = {
       app: {
@@ -1195,6 +1217,43 @@ describe('LyricsSettingsDrawer', () => {
     expect((await screen.findByRole('button', { name: /已标记为纯音乐/ }) as HTMLButtonElement).disabled).toBe(true);
 
     window.removeEventListener('lyrics:candidate-applied', appliedListener);
+  });
+
+  it('restarts playback after applying lyrics when the current-track option is enabled', async () => {
+    const seek = vi.fn().mockResolvedValue({ currentTrackId: 'track-1' });
+    const play = vi.fn().mockResolvedValue({ currentTrackId: 'track-1' });
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsRestartOnApplyEnabled: true })),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
+        seek,
+        play,
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
+      },
+      lyrics: {
+        getForTrack: vi.fn().mockResolvedValue(null),
+        searchCandidates: vi.fn().mockResolvedValue([makeLyricsCandidate()]),
+        applyCandidate: vi.fn().mockResolvedValue(makeTrackLyrics()),
+        markInstrumental: vi.fn(),
+        clearCache: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '搜索' }));
+    const candidateTitle = await screen.findByText('Low Match Song');
+    fireEvent.click(candidateTitle.closest('button')!);
+
+    await waitFor(() => expect(window.echo?.lyrics.applyCandidate).toHaveBeenCalledWith('track-1', 'candidate-1'));
+    expect(seek).toHaveBeenCalledWith(0);
+    expect(play).toHaveBeenCalled();
   });
 
   it('dispatches current-track lyric actions from settings', async () => {

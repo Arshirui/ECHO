@@ -98,6 +98,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsDeepSearchEnabled).toBe(true);
     expect(settings.lyricsAutoSearch).toBe(true);
     expect(settings.lyricsAutoAcceptScore).toBe(0.5);
+    expect(settings.lyricsRestartOnApplyEnabled).toBe(false);
     expect(settings.lyricsDefaultOffsetMs).toBe(0);
     expect(settings.lyricsGlobalSyncOffsetMs).toBe(0);
     expect(settings.lyricsTimelineCorrectionEnabled).toBe(true);

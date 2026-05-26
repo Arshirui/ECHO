@@ -1515,6 +1515,13 @@ const echoApi: EchoApi = {
     getQueueSession: () => ipcRenderer.invoke(IpcChannels.PlaybackGetQueueSession),
     saveQueueSession: (snapshot) => ipcRenderer.invoke(IpcChannels.PlaybackSaveQueueSession, snapshot),
     clearQueueSession: () => ipcRenderer.invoke(IpcChannels.PlaybackClearQueueSession),
+    onQueueSessionChanged: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown): void => {
+        handler(snapshot as Awaited<ReturnType<EchoApi['playback']['getQueueSession']>>);
+      };
+      ipcRenderer.on(IpcChannels.PlaybackQueueSessionChanged, listener);
+      return () => ipcRenderer.off(IpcChannels.PlaybackQueueSessionChanged, listener);
+    },
     onLocalAudioFilesOpened: (handler) => {
       localAudioFileOpenHandlers.add(handler);
       for (const paths of pendingLocalAudioFileOpenEvents.splice(0)) {

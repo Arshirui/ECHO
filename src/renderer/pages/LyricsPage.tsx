@@ -137,6 +137,7 @@ type LyricsDisplaySettings = Pick<
   | "lyricsWordHighlightClarityPercent"
   | "lyricsAutoSearch"
   | "lyricsAutoAcceptScore"
+  | "lyricsRestartOnApplyEnabled"
   | "lyricsGlobalSyncOffsetMs"
   | "lyricsTimelineCorrectionEnabled"
   | "lyricsOffsetControlsEnabled"
@@ -185,6 +186,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsWordHighlightClarityPercent: 70,
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.5,
+  lyricsRestartOnApplyEnabled: false,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
   lyricsOffsetControlsEnabled: false,
@@ -348,6 +350,18 @@ const dispatchCurrentLyricsProviderChanged = (lyrics: TrackLyrics | null): void 
 
 const dispatchPlaybackSeeked = (positionSeconds: number, trackId: string | null): void => {
   window.dispatchEvent(new CustomEvent(playbackSeekedEvent, { detail: { positionSeconds, trackId } }));
+};
+
+const restartCurrentPlaybackForLyrics = async (trackId: string | null): Promise<void> => {
+  const playback = window.echo?.playback;
+  if (!playback) {
+    return;
+  }
+
+  await playback.seek(0);
+  await playback.play();
+  dispatchPlaybackSeeked(0, trackId);
+  await refreshPlaybackStatus();
 };
 
 type PlaybackSeekedDetail = {
@@ -815,6 +829,7 @@ const selectLyricsDisplaySettings = (
     settings.lyricsWordHighlightClarityPercent ?? fallbackLyricsDisplaySettings.lyricsWordHighlightClarityPercent,
   lyricsAutoSearch: settings.lyricsAutoSearch,
   lyricsAutoAcceptScore: settings.lyricsAutoAcceptScore,
+  lyricsRestartOnApplyEnabled: settings.lyricsRestartOnApplyEnabled === true,
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
   lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
   lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
@@ -2316,6 +2331,9 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         setActiveCandidateSource(readRememberedCandidateSource());
         setLyricsStatus(null);
         setError(null);
+        if (lyricsDisplaySettings.lyricsRestartOnApplyEnabled === true) {
+          await restartCurrentPlaybackForLyrics(trackId);
+        }
         return true;
       } catch (applyError) {
         setError(
@@ -2331,6 +2349,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
     [
       applyLyricsCandidateForActiveTrack,
       lyricsDisplaySettings.lyricsAutoSearch,
+      lyricsDisplaySettings.lyricsRestartOnApplyEnabled,
       trackId,
     ],
   );
@@ -2833,6 +2852,9 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         setActiveCandidateSource(readRememberedCandidateSource());
         setLyricsStatus(null);
         setError(null);
+        if (lyricsDisplaySettings.lyricsRestartOnApplyEnabled === true) {
+          await restartCurrentPlaybackForLyrics(trackId);
+        }
       } catch (applyError) {
         setError(
           applyError instanceof Error ? applyError.message : String(applyError),
@@ -2841,7 +2863,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         setApplyingCandidateId(null);
       }
     },
-    [applyLyricsCandidateForActiveTrack, lyricsDisplaySettings.lyricsEnabled, trackId],
+    [applyLyricsCandidateForActiveTrack, lyricsDisplaySettings.lyricsEnabled, lyricsDisplaySettings.lyricsRestartOnApplyEnabled, trackId],
   );
 
   const applyCustomLyricsFile = useCallback(
@@ -2872,6 +2894,9 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         setActiveCandidateSource(readRememberedCandidateSource());
         setLyricsStatus(null);
         setError(null);
+        if (lyricsDisplaySettings.lyricsRestartOnApplyEnabled === true) {
+          await restartCurrentPlaybackForLyrics(trackId);
+        }
       } catch (customLyricsError) {
         setLyricsStatus(null);
         setError(
@@ -2883,7 +2908,7 @@ export const LyricsPage = ({ initialLyrics }: LyricsPageProps): JSX.Element => {
         setIsCustomLyricsApplying(false);
       }
     },
-    [trackId],
+    [lyricsDisplaySettings.lyricsRestartOnApplyEnabled, trackId],
   );
 
   const handleLyricsDragOver = useCallback((event: DragEvent<HTMLDivElement>): void => {

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ChangeEvent, PointerEvent } from 'react';
-import { ListMusic, Pause, Play, RotateCcw, SkipBack, SkipForward, X } from 'lucide-react';
+import { ListMusic, Pause, Play, RotateCcw, SkipBack, SkipForward, Volume1, Volume2, VolumeX, X } from 'lucide-react';
 import type { AudioPlaybackState, AudioStatus } from '../../shared/types/audio';
 import type { MiniPlayerState } from '../../shared/types/miniPlayer';
 import type { PlaybackStatus } from '../../shared/types/playback';
-import { isSpotifyTrack, pauseSpotifyPlayback, resumeSpotifyPlayback, seekSpotifyPlayback } from '../integrations/spotify/spotifyPlayback';
+import { isSpotifyTrack, pauseSpotifyPlayback, resumeSpotifyPlayback, seekSpotifyPlayback, setSpotifyVolume } from '../integrations/spotify/spotifyPlayback';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../stores/playbackStatusStore';
-import { formatTime, titleFromPath } from '../components/player/playerFormat';
+import { formatPercent, formatTime, titleFromPath } from '../components/player/playerFormat';
 import { translateFallback, useOptionalI18n } from '../i18n/I18nProvider';
 
 type ForwardedAudioStatus = {
@@ -51,6 +51,25 @@ const defaultMiniPlayerState: MiniPlayerState = {
 };
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+const volumeFromStatus = (status: AudioStatus | null | undefined): number => clamp(status?.volume ?? 1, 0, 1);
+
+const readFixedVolumeEnabled = (settings: unknown): boolean => {
+  if (!settings || typeof settings !== 'object') {
+    return false;
+  }
+
+  return (settings as { fixedVolumeEnabled?: unknown }).fixedVolumeEnabled === true;
+};
+
+const readFixedVolumeEnabledPatch = (patch: unknown): boolean | null => {
+  if (!patch || typeof patch !== 'object') {
+    return null;
+  }
+
+  const value = (patch as { fixedVolumeEnabled?: unknown }).fixedVolumeEnabled;
+  return typeof value === 'boolean' ? value : null;
+};
 
 const playbackTrackKey = (audioStatus: AudioStatus | null, playbackStatus: PlaybackStatus | null, fallbackTrackId: string | null): string | null =>
   audioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? fallbackTrackId ?? audioStatus?.currentFilePath ?? playbackStatus?.filePath ?? null;
@@ -119,7 +138,12 @@ export const MiniPlayerApp = (): JSX.Element => {
   const [realtimePositionSeconds, setRealtimePositionSeconds] = useState(0);
   const [seekPreviewSeconds, setSeekPreviewSeconds] = useState<number | null>(null);
   const [isQueueOpen, setIsQueueOpen] = useState(false);
+  const [isVolumeOpen, setIsVolumeOpen] = useState(false);
+  const [volumePreview, setVolumePreview] = useState(1);
+  const [fixedVolumeEnabled, setFixedVolumeEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const volumeInteractingRef = useRef(false);
+  const pendingVolumeRef = useRef<number | null>(null);
   const clockRef = useRef<MiniPlaybackClock>({
     durationSeconds: 0,
     playbackRate: 1,
@@ -205,6 +229,7 @@ export const MiniPlayerApp = (): JSX.Element => {
     sharedPlaybackStatus.playbackVisualIntent,
   ]);
 
+  const statusVolume = volumeFromStatus(activeAudioStatus);
   const playbackStatus = sharedPlaybackStatus.playbackStatus;
   const visualState = getVisualPlaybackState({
     audioStatus: activeAudioStatus,
@@ -256,6 +281,59 @@ export const MiniPlayerApp = (): JSX.Element => {
   const queueItems = queue.items;
   const activeQueueId = queue.currentQueueId ?? queueItems.find((item) => item.track.id === trackId)?.queueId ?? null;
   const hasQueuePreview = queueItems.length > 0 || Boolean(currentTrack || title);
+  const displayVolume = fixedVolumeEnabled ? 1 : volumePreview;
+  const VolumeIcon = displayVolume <= 0 ? VolumeX : displayVolume < 0.5 ? Volume1 : Volume2;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshMiniPlayerAudioSettings = (): void => {
+      const getSettings = window.echo?.app?.getSettings;
+      if (typeof getSettings !== 'function') {
+        setFixedVolumeEnabled(false);
+        return;
+      }
+
+      void getSettings()
+        .then((settings) => {
+          if (!cancelled) {
+            setFixedVolumeEnabled(readFixedVolumeEnabled(settings));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setFixedVolumeEnabled(false);
+          }
+        });
+    };
+
+    const handleSettingsChanged = (event: Event): void => {
+      if (event instanceof CustomEvent) {
+        const fixedVolumePatch = readFixedVolumeEnabledPatch(event.detail);
+        if (fixedVolumePatch !== null) {
+          setFixedVolumeEnabled(fixedVolumePatch);
+        }
+      }
+
+      refreshMiniPlayerAudioSettings();
+    };
+
+    refreshMiniPlayerAudioSettings();
+    window.addEventListener('settings:changed', handleSettingsChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (volumeInteractingRef.current || pendingVolumeRef.current !== null) {
+      return;
+    }
+
+    setVolumePreview(fixedVolumeEnabled ? 1 : statusVolume);
+  }, [fixedVolumeEnabled, statusVolume]);
 
   useEffect(() => {
     if (trackId) {
@@ -425,6 +503,58 @@ export const MiniPlayerApp = (): JSX.Element => {
     void commitSeek(Number(event.currentTarget.value));
   };
 
+  const commitVolume = useCallback(
+    async (nextVolume: number): Promise<void> => {
+      const safeVolume = fixedVolumeEnabled ? 1 : clamp(nextVolume, 0, 1);
+      pendingVolumeRef.current = safeVolume;
+      setVolumePreview(safeVolume);
+
+      try {
+        setError(null);
+        if (fixedVolumeEnabled) {
+          const nextStatus = await window.echo?.audio?.setOutput?.({ volume: 1 });
+          if (nextStatus) {
+            setPlaybackStatusSnapshot({ audioStatus: nextStatus, error: null });
+          }
+          return;
+        }
+
+        if (isSpotifyCurrentTrack && currentTrack) {
+          await setSpotifyVolume(safeVolume);
+        } else {
+          const audio = window.echo?.audio;
+          if (!audio) {
+            throw new Error('Desktop bridge unavailable');
+          }
+
+          const nextStatus = await audio.setOutput({ volume: safeVolume });
+          setPlaybackStatusSnapshot({ audioStatus: nextStatus, error: null });
+        }
+
+        void window.echo?.app?.setSettings?.({ playerVolume: safeVolume }).catch(() => undefined);
+        void refreshPlaybackStatus();
+      } catch (volumeError) {
+        const message = volumeError instanceof Error ? volumeError.message : String(volumeError);
+        setError(message);
+        setPlaybackStatusSnapshot({ error: message });
+      } finally {
+        if (pendingVolumeRef.current === safeVolume) {
+          pendingVolumeRef.current = null;
+        }
+      }
+    },
+    [currentTrack, fixedVolumeEnabled, isSpotifyCurrentTrack],
+  );
+
+  const handleVolumeChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    setVolumePreview(Number(event.currentTarget.value));
+  };
+
+  const finishVolumeInteraction = (nextVolume: number): void => {
+    volumeInteractingRef.current = false;
+    void commitVolume(nextVolume);
+  };
+
   const handleResetBounds = useCallback((): void => {
     setIsQueueOpen(false);
     void window.echo?.miniPlayer?.resetBounds?.().then(setMiniPlayerState).catch(() => undefined);
@@ -447,6 +577,7 @@ export const MiniPlayerApp = (): JSX.Element => {
 
   const style = {
     '--mini-player-progress': `${progress * 100}%`,
+    '--mini-player-volume': `${displayVolume * 100}%`,
   } as CSSProperties;
 
   return (
@@ -504,6 +635,16 @@ export const MiniPlayerApp = (): JSX.Element => {
               </button>
             </div>
             <button
+              aria-label={t('miniPlayer.action.volume')}
+              aria-pressed={isVolumeOpen}
+              className={`mini-player-icon-button mini-player-volume-toggle ${isVolumeOpen ? 'is-active' : ''}`}
+              title={fixedVolumeEnabled ? t('playerVolume.fixed.enabled') : t('miniPlayer.action.volume')}
+              type="button"
+              onClick={() => setIsVolumeOpen((open) => !open)}
+            >
+              <VolumeIcon size={14} />
+            </button>
+            <button
               aria-label={t('miniPlayer.action.resetPosition')}
               className="mini-player-icon-button mini-player-reset-button"
               title={t('miniPlayer.action.resetPosition')}
@@ -537,21 +678,53 @@ export const MiniPlayerApp = (): JSX.Element => {
             </button>
           </div>
 
-          <div className="mini-player-progress-row">
-            <span>{formatTime(positionSeconds)}</span>
-            <input
-              aria-label={t('miniPlayer.aria.progress')}
-              disabled={!durationSeconds || !hasPlayableTarget}
-              max={Math.max(1, durationSeconds)}
-              min={0}
-              step={0.5}
-              type="range"
-              value={clamp(positionSeconds, 0, Math.max(1, durationSeconds))}
-              onChange={handleProgressChange}
-              onPointerUp={handleProgressPointerUp}
-            />
-            <span>{formatTime(durationSeconds)}</span>
-          </div>
+          {isVolumeOpen ? (
+            <div className="mini-player-volume-row">
+              <VolumeIcon size={13} aria-hidden="true" />
+              <input
+                aria-label={t('miniPlayer.aria.volume')}
+                disabled={fixedVolumeEnabled}
+                max={1}
+                min={0}
+                step={0.01}
+                type="range"
+                value={displayVolume}
+                onBlur={(event) => {
+                  if (volumeInteractingRef.current) {
+                    finishVolumeInteraction(Number(event.currentTarget.value));
+                  }
+                }}
+                onChange={handleVolumeChange}
+                onKeyUp={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ' || event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') {
+                    void commitVolume(Number(event.currentTarget.value));
+                  }
+                }}
+                onPointerCancel={(event) => finishVolumeInteraction(Number(event.currentTarget.value))}
+                onPointerDown={() => {
+                  volumeInteractingRef.current = true;
+                }}
+                onPointerUp={(event) => finishVolumeInteraction(Number(event.currentTarget.value))}
+              />
+              <span>{formatPercent(displayVolume)}</span>
+            </div>
+          ) : (
+            <div className="mini-player-progress-row">
+              <span>{formatTime(positionSeconds)}</span>
+              <input
+                aria-label={t('miniPlayer.aria.progress')}
+                disabled={!durationSeconds || !hasPlayableTarget}
+                max={Math.max(1, durationSeconds)}
+                min={0}
+                step={0.5}
+                type="range"
+                value={clamp(positionSeconds, 0, Math.max(1, durationSeconds))}
+                onChange={handleProgressChange}
+                onPointerUp={handleProgressPointerUp}
+              />
+              <span>{formatTime(durationSeconds)}</span>
+            </div>
+          )}
           {error ? <p className="mini-player-error" title={error}>{error}</p> : null}
         </div>
         {isQueueOpen ? (

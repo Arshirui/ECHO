@@ -369,6 +369,7 @@ export const defaultSettings: AppSettings = {
   lyricsDeepSearchEnabled: true,
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.5,
+  lyricsRestartOnApplyEnabled: false,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
@@ -1381,6 +1382,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsAutoAcceptScore: Number.isFinite(lyricsAutoAcceptScore)
       ? clamp(lyricsAutoAcceptScore, 0.3, 1)
       : defaultSettings.lyricsAutoAcceptScore,
+    lyricsRestartOnApplyEnabled: settings.lyricsRestartOnApplyEnabled === true,
     lyricsDefaultOffsetMs: Number.isFinite(lyricsDefaultOffsetMs)
       ? Math.round(clamp(lyricsDefaultOffsetMs, -10000, 10000))
       : defaultSettings.lyricsDefaultOffsetMs,

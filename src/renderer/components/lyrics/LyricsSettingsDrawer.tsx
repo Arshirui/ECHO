@@ -60,6 +60,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsNetworkEnabled'
   | 'lyricsAutoSearch'
   | 'lyricsAutoAcceptScore'
+  | 'lyricsRestartOnApplyEnabled'
   | 'lyricsDefaultOffsetMs'
   | 'lyricsGlobalSyncOffsetMs'
   | 'lyricsTimelineCorrectionEnabled'
@@ -109,6 +110,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsNetworkEnabled: true,
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.5,
+  lyricsRestartOnApplyEnabled: false,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
@@ -370,10 +372,21 @@ const dispatchLyricsCandidateApplied = (trackId: string, lyrics: TrackLyrics): v
   window.dispatchEvent(new CustomEvent('lyrics:candidate-applied', { detail: { trackId, lyrics } }));
 };
 
+const restartCurrentPlaybackForLyrics = async (): Promise<void> => {
+  const playback = window.echo?.playback;
+  if (!playback) {
+    return;
+  }
+
+  await playback.seek(0);
+  await playback.play();
+};
+
 const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsNetworkEnabled: settings.lyricsNetworkEnabled,
   lyricsAutoSearch: settings.lyricsAutoSearch,
   lyricsAutoAcceptScore: settings.lyricsAutoAcceptScore,
+  lyricsRestartOnApplyEnabled: settings.lyricsRestartOnApplyEnabled === true,
   lyricsDefaultOffsetMs: settings.lyricsDefaultOffsetMs,
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
   lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
@@ -1206,13 +1219,16 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         setLyricsCandidateStatus(t('lyricsSettings.status.applied'));
         setError(null);
         dispatchLyricsCandidateApplied(currentTrackId, trackLyrics);
+        if (effectiveSettings.lyricsRestartOnApplyEnabled === true) {
+          await restartCurrentPlaybackForLyrics();
+        }
       } catch (applyError) {
         setError(applyError instanceof Error ? applyError.message : String(applyError));
       } finally {
         setApplyingLyricsCandidateId(null);
       }
     },
-    [effectiveSettings.lyricsEnabled, resolveCurrentTrackId, t],
+    [effectiveSettings.lyricsEnabled, effectiveSettings.lyricsRestartOnApplyEnabled, resolveCurrentTrackId, t],
   );
 
   const markCurrentTrackInstrumental = useCallback(async (): Promise<void> => {
@@ -1425,6 +1441,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             </span>
             <em>{t('lyricsSettings.action.music')}</em>
           </button>
+
+          <label className="audio-toggle-row">
+            <span>
+              <RotateCcw size={17} />
+              <strong>{t('lyricsSettings.currentTrack.restartOnApply')}</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={effectiveSettings.lyricsRestartOnApplyEnabled === true}
+              disabled={isBusy}
+              onChange={(event) => void patchSettings({ lyricsRestartOnApplyEnabled: event.currentTarget.checked })}
+            />
+          </label>
+          <p>{t('lyricsSettings.currentTrack.restartOnApplyDescription')}</p>
         </section>
       ) : null}
 

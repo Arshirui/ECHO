@@ -481,6 +481,7 @@ export type EchoApi = {
     getQueueSession: () => Promise<PersistedPlaybackSessionV1 | null>;
     saveQueueSession: (snapshot: PersistedPlaybackSessionV1) => Promise<PersistedPlaybackSessionV1>;
     clearQueueSession: () => Promise<void>;
+    onQueueSessionChanged?: (handler: (snapshot: PersistedPlaybackSessionV1 | null) => void) => () => void;
     onLocalAudioFilesOpened: (handler: (paths: string[]) => void) => () => void;
     onAutomixAdvance?: (handler: (event: {
       fromTrackId: string | null;
