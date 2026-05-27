@@ -34,6 +34,8 @@ const audioExtensionValues = [
   '.dts',
   '.cue',
   '.ncm',
+  '.kgm',
+  '.kgma',
 ] as const;
 
 export const SUPPORTED_AUDIO_EXTENSION_LIST = [...audioExtensionValues];

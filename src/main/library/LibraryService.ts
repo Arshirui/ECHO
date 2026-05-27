@@ -33,6 +33,7 @@ import {
 } from './LibraryWatcherService';
 import { inflateMetadataResult } from './MetadataService';
 import { getNcmConverter } from './NcmConverter';
+import { getKgmConverter } from './KgmConverter';
 import { getRecommendedScanConcurrency } from './ScanConcurrency';
 import { ScanJobQueue } from './ScanJobQueue';
 import { NetworkMetadataService, type NetworkCandidateList, type NetworkRepairResult } from './network/NetworkMetadataService';
@@ -972,7 +973,8 @@ export class LibraryService {
       coverUrl?: string | null;
     } = {},
   ): Promise<LibraryTrack> {
-    const normalizedPath = await getNcmConverter().convertIfNeeded(resolve(filePath));
+    const afterNcm = await getNcmConverter().convertIfNeeded(resolve(filePath));
+    const normalizedPath = await getKgmConverter().convertIfNeeded(afterNcm);
 
     if (!existsSync(normalizedPath)) {
       throw new Error(`Track file is missing: ${normalizedPath}`);

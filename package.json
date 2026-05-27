@@ -40,6 +40,7 @@
     "repair:electron": "node scripts/install-electron.cjs"
   },
   "dependencies": {
+    "@clamber_l/crypto": "^0.1.12",
     "@fontsource/outfit": "^5.2.8",
     "@neteasecloudmusicapienhanced/api": "^4.31.0",
     "@tanstack/react-virtual": "^3.13.24",
@@ -102,6 +103,7 @@
       "package.json"
     ],
     "asarUnpack": [
+      "node_modules/@clamber_l/crypto/dist/*",
       "node_modules/better-sqlite3/build/Release/*.node",
       "node_modules/@lox-audioserver/node-libraop/**/*",
       "node_modules/kuromoji/dict/**/*",

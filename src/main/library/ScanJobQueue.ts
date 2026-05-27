@@ -24,6 +24,7 @@ import type { CoverExtractor } from './workers/CoverExtractor';
 import type { FileScanner } from './workers/FileScanner';
 import type { MetadataReader } from './workers/MetadataReader';
 import { getNcmConverter } from './NcmConverter';
+import { getKgmConverter } from './KgmConverter';
 import { FileIdentityService, QUICK_HASH_VERSION, type FileIdentityObservation } from './FileIdentityService';
 import { createCueTrackPath, readCueSheet, readEmbeddedCueSheet, resolveCueTrack } from '../audio/CueSheet';
 import { preloadSearchIndexRomanizer } from './SearchIndexTokens';
@@ -1184,7 +1185,8 @@ export class ScanJobQueue {
   }
 
   private async normalizeScannedFile(file: ScannedFile, folderId: string): Promise<ScannedAudioFile> {
-    const decodedPath = await getNcmConverter().convertIfNeeded(file.path);
+    const afterNcm = await getNcmConverter().convertIfNeeded(file.path);
+    const decodedPath = await getKgmConverter().convertIfNeeded(afterNcm);
     if (decodedPath === file.path) {
       return this.withFolderId(file, folderId);
     }
