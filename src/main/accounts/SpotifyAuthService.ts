@@ -20,6 +20,7 @@ const spotifyScopes = [
   'user-read-playback-state',
   'user-modify-playback-state',
   'playlist-read-private',
+  'playlist-read-collaborative',
 ];
 const tokenRefreshSkewMs = 60_000;
 const spotifyConnectPollIntervalMs = 1_000;

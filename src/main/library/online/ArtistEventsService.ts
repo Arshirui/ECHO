@@ -31,11 +31,23 @@ export type TicketmasterEventsRequest = {
   now?: Date;
 };
 
+export type SeatGeekEventsRequest = {
+  artistId?: string | null;
+  artistName: string;
+  clientId: string | null | undefined;
+  region?: string | null;
+  force?: boolean;
+  timeoutMs?: number;
+  fetcher?: FetchLike;
+  now?: Date;
+};
+
 export type ArtistEventsRequest = {
   artistId?: string | null;
   artistName: string;
   bandsintownAppId?: string | null;
   ticketmasterApiKey?: string | null;
+  seatGeekClientId?: string | null;
   region?: string | null;
   force?: boolean;
   timeoutMs?: number;
@@ -69,6 +81,16 @@ type TicketmasterEvent = {
   images?: unknown;
 };
 
+type SeatGeekEvent = {
+  id?: unknown;
+  title?: unknown;
+  url?: unknown;
+  datetime_local?: unknown;
+  time_tbd?: unknown;
+  venue?: unknown;
+  performers?: unknown;
+};
+
 type EventernoteEventsRequest = {
   artistId?: string | null;
   artistName: string;
@@ -82,6 +104,12 @@ type EventernoteEventsRequest = {
 type EplusEventsRequest = EventernoteEventsRequest;
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
+const scalarText = (value: unknown): string | null => {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : null;
+};
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -227,6 +255,17 @@ const buildTicketmasterEventsUrl = (artistName: string, apiKey: string): string 
   return `https://app.ticketmaster.com/discovery/v2/events.json?${params.toString()}`;
 };
 
+const buildSeatGeekEventsUrl = (artistName: string, clientId: string, now: Date): string => {
+  const params = new URLSearchParams({
+    client_id: clientId.trim(),
+    q: artistName.trim(),
+    per_page: '20',
+    sort: 'datetime_local.asc',
+    'datetime_local.gte': now.toISOString().slice(0, 10),
+  });
+  return `https://api.seatgeek.com/2/events?${params.toString()}`;
+};
+
 const firstOfferUrl = (value: unknown): string | null => {
   const offers = Array.isArray(value) ? value.map(asRecord) : [];
   for (const offer of offers) {
@@ -269,6 +308,57 @@ const parseBandsintownEvent = (value: unknown): ArtistConcertEvent | null => {
     url: text(event.url),
     ticketUrl: firstOfferUrl(event.offers),
     venueUrl: null,
+  };
+};
+
+const seatGeekPerformerMatches = (performersValue: unknown, artistName: string): boolean => {
+  const artistNeedle = normalizeCacheText(artistName);
+  if (!artistNeedle) {
+    return true;
+  }
+
+  const performers = Array.isArray(performersValue) ? performersValue.map(asRecord) : [];
+  return performers.some((performer) => {
+    const candidates = [
+      text(performer.name),
+      text(performer.short_name),
+      text(performer.slug)?.replace(/-/gu, ' '),
+    ]
+      .filter((value): value is string => Boolean(value))
+      .map(normalizeCacheText);
+    return candidates.some((candidate) => candidate === artistNeedle || candidate.includes(artistNeedle) || artistNeedle.includes(candidate));
+  });
+};
+
+const parseSeatGeekEvent = (value: unknown, artistName: string): ArtistConcertEvent | null => {
+  const event = asRecord(value) as SeatGeekEvent;
+  const id = scalarText(event.id);
+  const title = text(event.title);
+  const startsAt = text(event.datetime_local);
+  if (!id || !title || !startsAt || !seatGeekPerformerMatches(event.performers, artistName)) {
+    return null;
+  }
+
+  const venue = asRecord(event.venue);
+  const state = text(venue.state) ?? text(venue.state_code);
+  const country = text(venue.country) ?? text(venue.country_code);
+
+  return {
+    id: `seatgeek:${id}`,
+    source: 'seatgeek',
+    sourceLabel: 'SeatGeek',
+    title,
+    startsAt,
+    timezone: text(venue.timezone),
+    timeTbd: Boolean(event.time_tbd),
+    venueName: text(venue.name),
+    city: text(venue.city),
+    region: state,
+    country,
+    url: text(event.url),
+    ticketUrl: text(event.url),
+    venueUrl: text(venue.url),
+    imageUrl: null,
   };
 };
 
@@ -600,6 +690,19 @@ export class ArtistEventsService {
       }));
     }
 
+    if (request.seatGeekClientId?.trim()) {
+      tasks.push(this.getSeatGeekEvents({
+        artistId: request.artistId,
+        artistName,
+        clientId: request.seatGeekClientId,
+        region,
+        force: request.force,
+        timeoutMs: request.timeoutMs,
+        fetcher: request.fetcher,
+        now,
+      }));
+    }
+
     if (!artistName) {
       return {
         status: 'not_configured',
@@ -833,6 +936,70 @@ export class ArtistEventsService {
         status: 'unavailable',
         region,
         sources: ['bandsintown'],
+        events: [],
+        fetchedAt,
+        message: error instanceof Error ? error.message : String(error),
+      };
+      this.writeEventCache(cacheKey, request.artistId ?? null, artistName, region, result, now);
+      return result;
+    }
+  }
+
+  async getSeatGeekEvents(request: SeatGeekEventsRequest): Promise<ArtistConcertInfo> {
+    const artistName = request.artistName.trim();
+    const clientId = request.clientId?.trim() ?? '';
+    const region = request.region?.trim() || null;
+    const now = request.now ?? new Date();
+    const fetchedAt = now.toISOString();
+    const cacheKey = cacheKeyFor('seatgeek', request.artistId, artistName, region);
+
+    if (!artistName || !clientId) {
+      return {
+        status: 'not_configured',
+        region,
+        sources: [],
+        events: [],
+        fetchedAt: null,
+        message: 'Configure SeatGeek client_id in Settings to load upcoming concerts.',
+      };
+    }
+
+    if (request.force !== true) {
+      const cached = this.readEventCache(cacheKey, now);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    try {
+      const payload = await fetchJsonWithTimeout(
+        buildSeatGeekEventsUrl(artistName, clientId, now),
+        request.fetcher ?? this.fetcher,
+        request.timeoutMs ?? 7000,
+        'seatgeek',
+      );
+      const eventsValue = asRecord(payload).events;
+      const events = (Array.isArray(eventsValue) ? eventsValue : [])
+        .map((event) => parseSeatGeekEvent(event, artistName))
+        .filter((event): event is ArtistConcertEvent => Boolean(event))
+        .filter((event) => matchesRegion(event, region))
+        .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
+
+      const result: ArtistConcertInfo = {
+        status: 'ready',
+        region,
+        sources: ['seatgeek'],
+        events,
+        fetchedAt,
+        message: events.length ? undefined : 'No upcoming SeatGeek events matched this artist and region.',
+      };
+      this.writeEventCache(cacheKey, request.artistId ?? null, artistName, region, result, now);
+      return result;
+    } catch (error) {
+      const result: ArtistConcertInfo = {
+        status: 'unavailable',
+        region,
+        sources: ['seatgeek'],
         events: [],
         fetchedAt,
         message: error instanceof Error ? error.message : String(error),

@@ -259,6 +259,22 @@ describe('MiniPlayerApp', () => {
     );
   });
 
+  it('restores the main window when the mini player close button is clicked', async () => {
+    const track = makeTrack();
+    installEchoMock(track);
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track} />
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText('Mini Song')).toBeTruthy();
+    fireEvent.click(document.querySelector('.mini-player-close-button') as HTMLButtonElement);
+
+    expect(window.echo?.miniPlayer?.hide).toHaveBeenCalledWith({ restoreMainWindow: true });
+  });
+
   it('prefers live playback status over stale mini player queue metadata', async () => {
     const queuedTrack = makeTrack({
       id: 'stale-track',

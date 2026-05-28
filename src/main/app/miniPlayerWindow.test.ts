@@ -4,8 +4,27 @@ const mocks = vi.hoisted(() => ({
   settings: {
     miniPlayerEnabled: false,
     miniPlayerLocked: false,
+    miniPlayerAutoHideMainWindow: true,
     miniPlayerBounds: null as { x: number; y: number; width: number; height: number } | null,
   },
+  mainWindow: null as null | {
+    focus: ReturnType<typeof vi.fn>;
+    isDestroyed: ReturnType<typeof vi.fn>;
+    isMinimized: ReturnType<typeof vi.fn>;
+    moveTop: ReturnType<typeof vi.fn>;
+    restore: ReturnType<typeof vi.fn>;
+    show: ReturnType<typeof vi.fn>;
+  },
+  makeMainWindow: (minimized = false) => ({
+    focus: vi.fn(),
+    isDestroyed: vi.fn(() => false),
+    isMinimized: vi.fn(() => minimized),
+    moveTop: vi.fn(),
+    restore: vi.fn(),
+    show: vi.fn(),
+  }),
+  setAppSettings: vi.fn(),
+  createMainWindow: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -31,11 +50,16 @@ vi.mock('electron', () => ({
 
 vi.mock('./appSettings', () => ({
   getAppSettings: () => mocks.settings,
-  setAppSettings: vi.fn(),
+  setAppSettings: mocks.setAppSettings,
 }));
 
 vi.mock('./createMainWindow', () => ({
+  createMainWindow: mocks.createMainWindow,
   createMainWindowWebPreferences: vi.fn(() => ({})),
+}));
+
+vi.mock('./windowManager', () => ({
+  getMainWindow: () => mocks.mainWindow,
 }));
 
 vi.mock('../diagnostics/DevConsoleService', () => ({
@@ -46,6 +70,9 @@ vi.mock('../diagnostics/DevConsoleService', () => ({
 describe('mini player window bounds', () => {
   beforeEach(() => {
     mocks.settings.miniPlayerBounds = null;
+    mocks.mainWindow = null;
+    mocks.setAppSettings.mockClear();
+    mocks.createMainWindow.mockReset();
     vi.resetModules();
   });
 
@@ -109,5 +136,43 @@ describe('mini player window bounds', () => {
       width: 388,
       height: 74,
     });
+  });
+});
+
+describe('mini player window hide behavior', () => {
+  beforeEach(() => {
+    mocks.settings.miniPlayerBounds = null;
+    mocks.mainWindow = null;
+    mocks.setAppSettings.mockClear();
+    mocks.createMainWindow.mockReset();
+    vi.resetModules();
+  });
+
+  it('restores the existing main window when requested', async () => {
+    const mainWindow = mocks.makeMainWindow(true);
+    mocks.mainWindow = mainWindow;
+    const { hideMiniPlayerWindow } = await import('./miniPlayerWindow');
+
+    hideMiniPlayerWindow({ restoreMainWindow: true });
+
+    expect(mocks.setAppSettings).toHaveBeenCalledWith({ miniPlayerEnabled: false });
+    expect(mainWindow.restore).toHaveBeenCalled();
+    expect(mainWindow.show).toHaveBeenCalled();
+    expect(mainWindow.moveTop).toHaveBeenCalled();
+    expect(mainWindow.focus).toHaveBeenCalled();
+    expect(mainWindow.restore.mock.invocationCallOrder[0]).toBeLessThan(mainWindow.show.mock.invocationCallOrder[0]);
+  });
+
+  it('recreates the main window before restoring when no main window is registered', async () => {
+    const mainWindow = mocks.makeMainWindow(false);
+    mocks.createMainWindow.mockReturnValue(mainWindow);
+    const { hideMiniPlayerWindow } = await import('./miniPlayerWindow');
+
+    hideMiniPlayerWindow({ restoreMainWindow: true });
+
+    expect(mocks.createMainWindow).toHaveBeenCalled();
+    expect(mainWindow.show).toHaveBeenCalled();
+    expect(mainWindow.moveTop).toHaveBeenCalled();
+    expect(mainWindow.focus).toHaveBeenCalled();
   });
 });

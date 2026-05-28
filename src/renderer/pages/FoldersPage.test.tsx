@@ -6,6 +6,7 @@ import { I18nProvider } from '../i18n/I18nProvider';
 import { PlaybackQueueProvider } from '../stores/PlaybackQueueProvider';
 import { rememberLibraryScanStatus, resetLibraryScanSessionForTests } from '../stores/libraryScanSession';
 import { FoldersPage } from './FoldersPage';
+import type { RemoteDirectoryItem, RemoteSource } from '../../shared/types/remoteSources';
 
 vi.mock('../components/library/TrackList', () => ({
   TrackList: ({
@@ -122,6 +123,39 @@ const scanStatus = (overrides: Partial<LibraryScanStatus> = {}): LibraryScanStat
   ...overrides,
 });
 
+const remoteSource = (overrides: Partial<RemoteSource> = {}): RemoteSource => ({
+  id: 'remote-1',
+  provider: 'baidu',
+  displayName: 'Baidu Music',
+  status: 'enabled',
+  baseUrl: null,
+  username: null,
+  authType: 'token',
+  config: { rootPath: '/Music', credentialMode: 'oauth-refresh' },
+  syncMode: 'index',
+  lastTestAt: null,
+  lastSyncAt: null,
+  lastError: null,
+  indexedTrackCount: 1,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  ...overrides,
+});
+
+const remoteItem = (overrides: Partial<RemoteDirectoryItem> = {}): RemoteDirectoryItem => ({
+  sourceId: 'remote-1',
+  provider: 'baidu',
+  path: '/Music/song.flac',
+  name: 'song.flac',
+  kind: 'file',
+  sizeBytes: 2048,
+  modifiedAt: '2026-01-01T00:00:00.000Z',
+  etag: 'fsid:1',
+  contentType: 'audio/flac',
+  audio: true,
+  ...overrides,
+});
+
 const renderFoldersPage = () =>
   render(
     <I18nProvider>
@@ -142,6 +176,12 @@ let libraryMock: {
   removeFolder: ReturnType<typeof vi.fn>;
   getScanStatus: ReturnType<typeof vi.fn>;
 };
+let remoteSourcesMock: {
+  list: ReturnType<typeof vi.fn>;
+  browse: ReturnType<typeof vi.fn>;
+  lookupTracks: ReturnType<typeof vi.fn>;
+  sync: ReturnType<typeof vi.fn>;
+};
 
 beforeEach(() => {
   resetLibraryScanSessionForTests();
@@ -157,11 +197,35 @@ beforeEach(() => {
     removeFolder: vi.fn(),
     getScanStatus: vi.fn().mockResolvedValue(scanStatus()),
   };
+  remoteSourcesMock = {
+    list: vi.fn().mockResolvedValue([remoteSource()]),
+    browse: vi.fn().mockResolvedValue([
+      remoteItem({ path: '/Music/Album', name: 'Album', kind: 'directory', audio: false, sizeBytes: null }),
+      remoteItem(),
+    ]),
+    lookupTracks: vi.fn().mockResolvedValue([]),
+    sync: vi.fn().mockResolvedValue({
+      sourceId: 'remote-1',
+      status: 'running',
+      phase: 'scanning',
+      discoveredCount: 0,
+      parsedCount: 0,
+      writtenCount: 0,
+      skippedCount: 0,
+      missingCount: 0,
+      failedCount: 0,
+      currentPath: null,
+      errors: [],
+      startedAt: '2026-01-01T00:00:00.000Z',
+      finishedAt: null,
+    }),
+  };
 
   Object.defineProperty(window, 'echo', {
     configurable: true,
     value: {
       library: libraryMock,
+      remoteSources: remoteSourcesMock,
     },
   });
 });
@@ -312,5 +376,38 @@ describe('FoldersPage', () => {
 
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(libraryMock.getFolderOverviews).toHaveBeenCalledTimes(1);
+  });
+
+  it('separates remote folder browsing from local folder APIs', async () => {
+    renderFoldersPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: '网盘' }));
+
+    await waitFor(() => expect(remoteSourcesMock.list).toHaveBeenCalled());
+    await waitFor(() => expect(remoteSourcesMock.browse).toHaveBeenCalledWith('remote-1', '/Music'));
+    await waitFor(() => expect(screen.getAllByText('Baidu Music').length).toBeGreaterThan(0));
+    expect(await screen.findByText('百度网盘 · 已启用 · OAuth 自动续期')).toBeTruthy();
+    expect(await screen.findByText('song')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Album/ }));
+    await waitFor(() => expect(remoteSourcesMock.browse).toHaveBeenLastCalledWith('remote-1', '/Music/Album'));
+    expect(libraryMock.getFolderChildren).not.toHaveBeenCalled();
+  });
+
+  it('opens settings from the remote empty state', async () => {
+    remoteSourcesMock.list.mockResolvedValue([]);
+    const onNavigateSettings = vi.fn();
+    window.addEventListener('app:navigate:settings', onNavigateSettings);
+
+    try {
+      renderFoldersPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: '网盘' }));
+      fireEvent.click(await screen.findByRole('button', { name: '添加网盘来源' }));
+
+      expect(onNavigateSettings).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener('app:navigate:settings', onNavigateSettings);
+    }
   });
 });

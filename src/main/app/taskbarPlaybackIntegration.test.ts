@@ -85,6 +85,7 @@ const createWindow = () => ({
   sent: [] as Array<[string, unknown]>,
   setProgressBar: vi.fn(),
   setThumbarButtons: vi.fn((_buttons: Array<{ click: () => void }>) => true),
+  setThumbnailToolTip: vi.fn(),
   setTitle: vi.fn(),
   isDestroyed() {
     return this.destroyed;
@@ -122,6 +123,7 @@ describe('TaskbarPlaybackIntegration', () => {
 
     expect(window.setProgressBar).toHaveBeenCalledWith(0.25, { mode: 'normal' });
     expect(window.setTitle).toHaveBeenCalledWith('Song A - Artist A | ECHO Next');
+    expect(window.setThumbnailToolTip).toHaveBeenCalledWith('Song A - Artist A | ECHO Next');
     expect(window.setThumbarButtons).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ tooltip: 'Pause' })]));
     integration.dispose();
   });
@@ -212,6 +214,49 @@ describe('TaskbarPlaybackIntegration', () => {
     expect(window.webContents.send).toHaveBeenCalledWith(IpcChannels.SmtcCommand, 'previous');
     expect(window.webContents.send).toHaveBeenCalledWith(IpcChannels.SmtcCommand, 'playPause');
     expect(window.webContents.send).toHaveBeenCalledWith(IpcChannels.SmtcCommand, 'next');
+    integration.dispose();
+  });
+
+  it('adds a liked button and refreshes the taskbar state after toggling the current track', async () => {
+    const { TaskbarPlaybackIntegration } = await import('./taskbarPlaybackIntegration');
+    const audioSession = createAudioSession();
+    const likeTrack = vi.fn<(trackId: string) => void>();
+    const unlikeTrack = vi.fn<(trackId: string) => void>();
+    let liked = false;
+    const integration = new TaskbarPlaybackIntegration({
+      window,
+      audioSession,
+      platform: 'win32',
+      getSettings: () => ({ taskbarPlaybackControlsEnabled: true }),
+      getLibrary: () => ({
+        getTrack: () => ({ title: 'Song A', artist: 'Artist A' }),
+        isTrackLiked: () => liked,
+        likeTrack: (trackId: string) => {
+          liked = true;
+          likeTrack(trackId);
+        },
+        unlikeTrack: (trackId: string) => {
+          liked = false;
+          unlikeTrack(trackId);
+        },
+      }),
+      createIcon: () => ({ isEmpty: () => false }) as never,
+    });
+
+    integration.initialize();
+    let buttons = window.setThumbarButtons.mock.calls.at(-1)?.[0] ?? [];
+    expect(buttons).toEqual(expect.arrayContaining([expect.objectContaining({ tooltip: 'Like' })]));
+
+    buttons[3].click();
+
+    expect(likeTrack).toHaveBeenCalledWith('track-1');
+    expect(window.webContents.send).toHaveBeenCalledWith(IpcChannels.LibraryLikedTracksChanged);
+    buttons = window.setThumbarButtons.mock.calls.at(-1)?.[0] ?? [];
+    expect(buttons).toEqual(expect.arrayContaining([expect.objectContaining({ tooltip: 'Unlike' })]));
+
+    buttons[3].click();
+
+    expect(unlikeTrack).toHaveBeenCalledWith('track-1');
     integration.dispose();
   });
 });

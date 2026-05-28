@@ -5,10 +5,12 @@ import {
   ChevronLeft,
   Check,
   Database,
+  ExternalLink,
   File,
   FolderOpen,
   Gauge,
   HardDrive,
+  KeyRound,
   ListPlus,
   Music2,
   PauseCircle,
@@ -41,7 +43,7 @@ import type {
 } from '../../../shared/types/remoteSources';
 import type { LibraryTrack } from '../../../shared/types/library';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
-import { getRemoteSourcesBridge } from '../../utils/echoBridge';
+import { getAppBridge, getRemoteSourcesBridge } from '../../utils/echoBridge';
 
 type Tab = {
   provider: RemoteSourceProvider;
@@ -51,12 +53,15 @@ type Tab = {
 
 const tabs: Tab[] = [
   { provider: 'webdav', label: '网盘 / WebDAV', supported: true },
+  { provider: 'baidu', label: '百度网盘', supported: true },
   { provider: 'jellyfin', label: 'Jellyfin', supported: true },
   { provider: 'emby', label: 'Emby', supported: true },
   { provider: 'smb', label: 'NAS / SMB', supported: true },
   { provider: 'sshfs', label: 'SSHFS', supported: true },
   { provider: 'subsonic', label: 'Subsonic / Navidrome', supported: true },
 ];
+
+const baiduLoopbackRedirectUri = 'http://127.0.0.1:53682/baidu/oauth/callback';
 
 const syncModeOptions: Array<{ value: RemoteSourceSyncMode; label: string }> = [
   { value: 'browse', label: '仅浏览' },
@@ -82,6 +87,7 @@ const jobLabels: Record<RemoteBackgroundJobKind, string> = {
 
 const providerLabels: Record<RemoteSourceProvider, string> = {
   webdav: 'WebDAV / AList',
+  baidu: '百度网盘',
   jellyfin: 'Jellyfin',
   emby: 'Emby',
   smb: 'NAS / SMB',
@@ -560,7 +566,62 @@ const shouldShowBrowserItem = (item: RemoteDirectoryItem, indexedTrack: RemoteTr
   return true;
 };
 
+const extractBaiduAccessTokenInput = (value: string): string => {
+  const normalized = value.trim();
+  if (!normalized) {
+    return '';
+  }
+  try {
+    const url = new URL(normalized);
+    const token = url.searchParams.get('access_token')?.trim();
+    if (token) {
+      return token;
+    }
+    const hash = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash;
+    const hashToken = new URLSearchParams(hash).get('access_token')?.trim();
+    if (hashToken) {
+      return hashToken;
+    }
+  } catch {
+    // Fall through to loose text parsing.
+  }
+  const match = normalized.match(/(?:^|[?#&\s])access_token=([^&#\s]+)/iu);
+  return match?.[1] ? decodeURIComponent(match[1].replace(/\+/gu, '%20')).trim() : normalized;
+};
+
+const baiduCredentialModeFromSecret = (secret: string): 'oauth-refresh' | 'access-token' => {
+  try {
+    const parsed = JSON.parse(secret) as Record<string, unknown>;
+    return parsed.type === 'baidu-oauth-token' && typeof parsed.refreshToken === 'string' && parsed.refreshToken.trim()
+      ? 'oauth-refresh'
+      : 'access-token';
+  } catch {
+    return 'access-token';
+  }
+};
+
+const credentialTextForSource = (source: RemoteSource): string => {
+  if (source.provider === 'baidu') {
+    return source.config.credentialMode === 'oauth-refresh'
+      ? 'OAuth 自动续期'
+      : source.config.credentialMode === 'access-token'
+        ? 'Access Token 手动续期'
+        : 'Token';
+  }
+  if (source.authType === 'none') {
+    return '无需认证';
+  }
+  if (source.authType === 'apiKey') {
+    return 'API Key';
+  }
+  if (source.authType === 'token') {
+    return 'Token';
+  }
+  return source.username ? '用户名密码' : '认证';
+};
+
 export const RemoteSourcesPanel = (): JSX.Element => {
+  const appApi = getAppBridge();
   const remoteApi = getRemoteSourcesBridge();
   const { appendToQueue, playTrack } = usePlaybackQueue();
   const [activeProvider, setActiveProvider] = useState<RemoteSourceProvider>('webdav');
@@ -586,9 +647,18 @@ export const RemoteSourcesPanel = (): JSX.Element => {
     coverConcurrency: 2,
     apiVersion: '1.16.1',
     authMode: 'token',
+    baiduClientId: '',
+    baiduClientSecret: '',
+    baiduRedirectUri: 'oob',
+    baiduAuthCode: '',
+    baiduAccessTokenText: '',
+    baiduCredentialMode: '' as '' | 'oauth-refresh' | 'access-token',
   });
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [baiduAuthFeedback, setBaiduAuthFeedback] = useState<string | null>(null);
+  const [baiduAuthUrl, setBaiduAuthUrl] = useState<string | null>(null);
+  const [showBaiduDeveloperFields, setShowBaiduDeveloperFields] = useState(false);
   const [testResult, setTestResult] = useState<TestRemoteSourceResult | null>(null);
   const terminalSyncEventsRef = useRef<Record<string, string>>({});
 
@@ -829,8 +899,11 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         coverConcurrency: form.coverConcurrency,
       };
 
-      if (provider === 'webdav' || provider === 'smb' || provider === 'sshfs') {
+      if (provider === 'webdav' || provider === 'baidu' || provider === 'smb' || provider === 'sshfs') {
         config.rootPath = form.rootPath.trim() || '/';
+      }
+      if (provider === 'baidu') {
+        config.credentialMode = form.baiduCredentialMode || baiduCredentialModeFromSecret(form.secret);
       }
       if (provider === 'smb' || provider === 'sshfs') {
         config.accessMode = 'mounted';
@@ -843,15 +916,17 @@ export const RemoteSourcesPanel = (): JSX.Element => {
       }
 
       const webDavAuthType =
-        provider === 'webdav' && form.authType === 'basic' && !form.username.trim() && !form.secret
-          ? 'none'
-          : form.authType;
+        provider === 'baidu'
+          ? 'token'
+          : provider === 'webdav' && form.authType === 'basic' && !form.username.trim() && !form.secret
+            ? 'none'
+            : form.authType;
 
       return {
         provider,
         displayName: form.displayName.trim() || defaultNameFor(provider),
-        baseUrl: form.baseUrl.trim(),
-        username: webDavAuthType === 'basic' ? form.username.trim() || null : null,
+        baseUrl: provider === 'baidu' ? null : form.baseUrl.trim(),
+        username: provider !== 'baidu' && webDavAuthType === 'basic' ? form.username.trim() || null : null,
         secret: webDavAuthType === 'none' ? null : form.secret,
         authType: webDavAuthType,
         config,
@@ -889,6 +964,168 @@ export const RemoteSourcesPanel = (): JSX.Element => {
     } finally {
       setBusy(null);
     }
+  };
+
+  const openBaiduAuthUrl = async (responseType: 'code' | 'token' = 'code'): Promise<void> => {
+    if (!remoteApi) {
+      setBaiduAuthFeedback('桌面桥接不可用，当前环境不能打开百度授权页。');
+      return;
+    }
+
+    setBusy(responseType === 'token' ? 'baiduTokenAuthUrl' : 'baiduAuthUrl');
+    setMessage(null);
+    setBaiduAuthFeedback(responseType === 'token' ? '正在生成 Token 授权链接...' : '正在生成授权链接...');
+    try {
+      const url = await remoteApi.createBaiduAuthUrl({
+        clientId: form.baiduClientId.trim() || null,
+        redirectUri: form.baiduRedirectUri.trim() || 'oob',
+        qrcode: true,
+        responseType,
+      });
+      setBaiduAuthUrl(url);
+      setBaiduAuthFeedback(responseType === 'token'
+        ? '已生成 Token 授权链接；如果浏览器没有自动打开，可以点下面的链接。'
+        : '已生成授权链接；如果浏览器没有自动打开，可以点下面的链接。');
+      setMessage(responseType === 'token'
+        ? '已打开百度 Token 授权页；登录后复制包含 access_token 的完整地址，再粘贴回来填入。'
+        : '已打开百度授权页；登录后复制授权码或完整回调地址，再粘贴到这里换 Token。');
+    } catch (error) {
+      const text = error instanceof Error ? error.message : '打开百度授权页失败。';
+      setBaiduAuthFeedback(text);
+      setMessage(text);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openBaiduHelpUrl = async (url: string, label: string): Promise<void> => {
+    if (!appApi?.openExternalUrl) {
+      setBaiduAuthFeedback('桌面桥接不可用，不能打开系统浏览器。');
+      return;
+    }
+
+    try {
+      await appApi.openExternalUrl(url);
+      setBaiduAuthFeedback(`${label} 已用系统默认浏览器打开。ECHO 已内置专用 AppKey；这里仅用于查看或覆盖开发配置。`);
+    } catch (error) {
+      setBaiduAuthFeedback(error instanceof Error ? error.message : `${label} 打开失败。`);
+    }
+  };
+
+  const useBaiduLoopbackRedirectUri = (): void => {
+    updateForm({ baiduRedirectUri: baiduLoopbackRedirectUri });
+    setBaiduAuthFeedback(`已填入本机回调地址：${baiduLoopbackRedirectUri}。需要在百度开放平台应用里配置同一个地址。`);
+  };
+
+  const exchangeBaiduAuthCode = async (): Promise<void> => {
+    if (!remoteApi) {
+      setBaiduAuthFeedback('桌面桥接不可用，当前环境不能换取百度 Token。');
+      return;
+    }
+
+    if (!form.baiduAuthCode.trim()) {
+      setBaiduAuthFeedback('请先粘贴授权码，或粘贴包含 code 的完整回调地址。');
+      return;
+    }
+
+    setBusy('baiduExchangeCode');
+    setMessage(null);
+    setBaiduAuthFeedback('正在换取百度 Token...');
+    try {
+      const result = await remoteApi.exchangeBaiduAuthCode({
+        clientId: form.baiduClientId.trim() || null,
+        clientSecret: form.baiduClientSecret.trim() || null,
+        redirectUri: form.baiduRedirectUri.trim() || 'oob',
+        code: form.baiduAuthCode.trim(),
+      });
+      setForm((current) => ({
+        ...current,
+        secret: result.tokenSecret,
+        baiduAuthCode: '',
+        baiduCredentialMode: result.refreshToken ? 'oauth-refresh' : 'access-token',
+      }));
+      setTestResult(null);
+      setBaiduAuthFeedback(result.refreshToken
+        ? '已换取 Token，后续可自动续期。现在可以测试连接或保存。'
+        : '已换取 Access Token。现在可以测试连接或保存。');
+      setMessage(result.refreshToken
+        ? '已换取百度网盘 Token。Access Token 和 Refresh Token 会作为来源密钥加密保存，后续会自动续期。'
+        : '已换取百度网盘 Access Token，可以先测试再保存。');
+    } catch (error) {
+      const text = error instanceof Error ? error.message : '授权码换 Token 失败。';
+      setBaiduAuthFeedback(text);
+      setMessage(text);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const startBaiduAccountLogin = async (): Promise<void> => {
+    if (!remoteApi) {
+      setBaiduAuthFeedback('桌面桥接不可用，当前环境不能打开百度账号登录。');
+      return;
+    }
+
+    const redirectUri = form.baiduRedirectUri.trim() && form.baiduRedirectUri.trim() !== 'oob'
+      ? form.baiduRedirectUri.trim()
+      : baiduLoopbackRedirectUri;
+    setBusy('baiduAccountLogin');
+    setMessage(null);
+    setBaiduAuthUrl(null);
+    setBaiduAuthFeedback('正在打开百度官方登录页，登录完成后会自动回到 ECHO。');
+    setForm((current) => ({ ...current, baiduRedirectUri: redirectUri }));
+    try {
+      if (!remoteApi.startBaiduOAuthLogin) {
+        const url = await remoteApi.createBaiduAuthUrl({
+          clientId: form.baiduClientId.trim() || null,
+          redirectUri,
+          qrcode: true,
+          responseType: 'code',
+        });
+        setBaiduAuthUrl(url);
+        setBaiduAuthFeedback('当前运行中的 ECHO 需要重启后才能自动回调登录；已先打开授权页，请复制回调里的 code 到“开发配置 / 授权码”后换取 Token。');
+        setMessage('当前运行中的 ECHO 需要重启后才能自动回调登录；请重启 ECHO 后再点“登录账号”，或先手动使用授权码。');
+        return;
+      }
+
+      const result = await remoteApi.startBaiduOAuthLogin({
+        clientId: form.baiduClientId.trim() || null,
+        clientSecret: form.baiduClientSecret.trim() || null,
+        redirectUri,
+      });
+      setForm((current) => ({
+        ...current,
+        secret: result.tokenSecret,
+        baiduAuthCode: '',
+        baiduAccessTokenText: '',
+        baiduCredentialMode: result.refreshToken ? 'oauth-refresh' : 'access-token',
+      }));
+      setTestResult(null);
+      setBaiduAuthFeedback(result.refreshToken
+        ? '登录完成，已拿到可自动续期的百度网盘 Token。现在可以测试连接或保存。'
+        : '登录完成，已拿到百度网盘 Access Token。现在可以测试连接或保存。');
+      setMessage(result.refreshToken
+        ? '百度账号授权完成，Token 会作为来源密钥加密保存。'
+        : '百度账号授权完成，可以先测试再保存。');
+    } catch (error) {
+      const text = error instanceof Error ? error.message : '百度账号登录失败。';
+      setBaiduAuthFeedback(text);
+      setMessage(text);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const fillBaiduAccessToken = (): void => {
+    const token = extractBaiduAccessTokenInput(form.baiduAccessTokenText || form.secret);
+    if (!token) {
+      setBaiduAuthFeedback('请先粘贴 access_token 或包含 access_token 的完整地址。');
+      setMessage('请先粘贴 access_token 或包含 access_token 的完整地址。');
+      return;
+    }
+    updateForm({ secret: token, baiduAccessTokenText: '', baiduCredentialMode: 'access-token' });
+    setBaiduAuthFeedback('已填入百度网盘 Access Token，可以测试连接后保存。');
+    setMessage('已填入百度网盘 Access Token，可以测试连接后保存。');
   };
 
   const runSourceAction = useCallback(async (
@@ -1309,30 +1546,131 @@ export const RemoteSourcesPanel = (): JSX.Element => {
         显示名称
         <input value={form.displayName} placeholder={defaultNameFor(activeProvider)} onChange={(event) => updateForm({ displayName: event.target.value })} />
       </label>
+      {activeProvider !== 'baidu' ? (
+        <label>
+          服务器 URL
+          <input value={form.baseUrl} placeholder={activeProvider === 'webdav' ? 'https://example.com/dav' : 'https://music.example.com'} onChange={(event) => updateForm({ baseUrl: event.target.value })} />
+        </label>
+      ) : null}
+      {activeProvider !== 'baidu' ? (
+        <label>
+          用户名
+          <input value={form.username} onChange={(event) => updateForm({ username: event.target.value })} />
+        </label>
+      ) : null}
       <label>
-        服务器 URL
-        <input value={form.baseUrl} placeholder={activeProvider === 'webdav' ? 'https://example.com/dav' : 'https://music.example.com'} onChange={(event) => updateForm({ baseUrl: event.target.value })} />
-      </label>
-      <label>
-        用户名
-        <input value={form.username} onChange={(event) => updateForm({ username: event.target.value })} />
-      </label>
-      <label>
-        {activeProvider === 'webdav' ? '密码' : activeProvider === 'subsonic' ? '密码 / API token' : '密码 / API Key'}
+        {activeProvider === 'baidu' ? 'Access Token / OAuth Token' : activeProvider === 'webdav' ? '密码' : activeProvider === 'subsonic' ? '密码 / API token' : '密码 / API Key'}
         <input type="password" value={form.secret} onChange={(event) => updateForm({ secret: event.target.value })} />
       </label>
-      <label>
-        认证方式
-        <select value={form.authType} onChange={(event) => updateForm({ authType: event.target.value as RemoteSourceInput['authType'] })}>
-          <option value="basic">用户名密码</option>
-          <option value="apiKey">API Key</option>
-          <option value="token">Token</option>
-          <option value="none">无需认证</option>
-        </select>
-      </label>
-      {activeProvider === 'webdav' || activeProvider === 'smb' || activeProvider === 'sshfs' ? (
+      {activeProvider === 'baidu' ? (
+        <div className="baidu-oauth-helper" aria-label="百度网盘 OAuth 授权">
+          <div>
+            <KeyRound size={16} />
+            <strong>账号授权助手</strong>
+            <span>使用 ECHO 专用百度开放平台应用登录；不保存百度账号密码，只保存授权后的 Token。</span>
+          </div>
+          {showBaiduDeveloperFields ? (
+            <>
+              <label>
+                百度 App Key
+                <input value={form.baiduClientId} placeholder="API Key / Client ID" onChange={(event) => updateForm({ baiduClientId: event.target.value })} />
+              </label>
+              <label>
+                百度 Secret Key
+                <input type="password" value={form.baiduClientSecret} placeholder="Secret Key" onChange={(event) => updateForm({ baiduClientSecret: event.target.value })} />
+              </label>
+              <label>
+                Redirect URI
+                <input value={form.baiduRedirectUri} placeholder="oob" onChange={(event) => updateForm({ baiduRedirectUri: event.target.value })} />
+              </label>
+              <label>
+                授权码
+                <input value={form.baiduAuthCode} placeholder="可粘贴 code 或完整回调地址" onChange={(event) => updateForm({ baiduAuthCode: event.target.value })} />
+              </label>
+              <label>
+                Access Token 回调
+                <input value={form.baiduAccessTokenText} placeholder="可粘贴 login_success#access_token=..." onChange={(event) => updateForm({ baiduAccessTokenText: event.target.value })} />
+              </label>
+            </>
+          ) : (
+            <div className="baidu-oauth-guide baidu-oauth-guide-compact">
+              <strong>已内置 ECHO 专用百度应用</strong>
+              <span>普通用户直接点“登录账号”即可。AppID、AppKey、SecretKey、SignKey 已写入软件；百度开放平台后台需要把下面这个地址加入“授权回调地址”。</span>
+              <code>{baiduLoopbackRedirectUri}</code>
+            </div>
+          )}
+          <div className="remote-source-actions">
+            <button type="button" disabled={busy === 'baiduAccountLogin'} onClick={() => void startBaiduAccountLogin()}>
+              <KeyRound size={15} />登录账号
+            </button>
+            <button type="button" onClick={() => setShowBaiduDeveloperFields((current) => !current)}>
+              <KeyRound size={15} />{showBaiduDeveloperFields ? '收起配置' : '开发配置'}
+            </button>
+            {showBaiduDeveloperFields ? (
+              <>
+                <button type="button" disabled={busy === 'baiduAuthUrl'} onClick={() => void openBaiduAuthUrl('code')}>
+                  <ExternalLink size={15} />打开授权页
+                </button>
+                <button type="button" disabled={busy === 'baiduTokenAuthUrl'} onClick={() => void openBaiduAuthUrl('token')}>
+                  <ExternalLink size={15} />打开 Token 页
+                </button>
+                <button type="button" disabled={busy === 'baiduExchangeCode'} onClick={() => void exchangeBaiduAuthCode()}>
+                  <KeyRound size={15} />换取 Token
+                </button>
+                <button type="button" onClick={fillBaiduAccessToken}>
+                  <KeyRound size={15} />填入 Access Token
+                </button>
+              </>
+            ) : null}
+          </div>
+          <p className="settings-inline-note">
+            登录账号会打开百度官方授权页并使用本机回调地址，授权成功后自动填入可续期 Token。
+          </p>
+          {showBaiduDeveloperFields ? (
+            <div className="baidu-oauth-guide">
+              <strong>开发配置覆盖</strong>
+              <span>默认使用 ECHO 内置 AppKey / SecretKey。只有要替换百度开放平台应用时，才需要在这里填新的 API Key 和 Secret Key。SignKey 当前 OAuth 挂载流程不用填。</span>
+              <code>{baiduLoopbackRedirectUri}</code>
+              <div className="remote-source-actions">
+                <button type="button" onClick={() => void openBaiduHelpUrl('https://pan.baidu.com/union', '百度网盘开放平台')}>
+                  <ExternalLink size={15} />开放平台
+                </button>
+                <button type="button" onClick={() => void openBaiduHelpUrl('https://openauth.baidu.com/doc/prepare.html', '创建应用说明')}>
+                  <ExternalLink size={15} />创建应用说明
+                </button>
+                <button type="button" onClick={useBaiduLoopbackRedirectUri}>
+                  <KeyRound size={15} />填入回调地址
+                </button>
+              </div>
+              <span>AppID 只用于百度开放平台后台识别应用，不参与当前授权请求。</span>
+            </div>
+          ) : null}
+          {baiduAuthFeedback ? (
+            <p className="baidu-oauth-feedback" aria-live="polite">{baiduAuthFeedback}</p>
+          ) : null}
+          {baiduAuthUrl ? (
+            <a className="baidu-oauth-link" href={baiduAuthUrl} target="_blank" rel="noreferrer">
+              {baiduAuthUrl}
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+      {activeProvider !== 'baidu' ? (
         <label>
-          {activeProvider === 'webdav' ? '根目录' : '挂载子目录'}
+          认证方式
+          <select value={form.authType} onChange={(event) => updateForm({ authType: event.target.value as RemoteSourceInput['authType'] })}>
+            <option value="basic">用户名密码</option>
+            <option value="apiKey">API Key</option>
+            <option value="token">Token</option>
+            <option value="none">无需认证</option>
+          </select>
+        </label>
+      ) : (
+        <p className="settings-inline-note">百度网盘使用官方开放平台 access token 挂载；下载速度和可用性受账号、会员和百度策略限制。</p>
+      )}
+      {activeProvider === 'webdav' || activeProvider === 'baidu' || activeProvider === 'smb' || activeProvider === 'sshfs' ? (
+        <label>
+          {activeProvider === 'webdav' || activeProvider === 'baidu' ? '根目录' : '挂载子目录'}
           <input value={form.rootPath} onChange={(event) => updateForm({ rootPath: event.target.value })} />
         </label>
       ) : null}
@@ -1483,7 +1821,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
                     <h3>{source.displayName}</h3>
                     <span>{providerLabels[source.provider]}</span>
                   </div>
-                  <p>{source.baseUrl ?? '无服务器地址'}</p>
+                  <p>{source.provider === 'baidu' ? `根目录 ${rootPathForSource(source)}` : source.baseUrl ?? '无服务器地址'}</p>
                 </div>
                 <div className="remote-source-state-stack">
                   <span className={`remote-source-status remote-source-status--${source.status}`}>{sourceStatusLabels[source.status]}</span>
@@ -1522,6 +1860,7 @@ export const RemoteSourcesPanel = (): JSX.Element => {
                 <span><em>专辑 / 艺人</em><strong>{formatCount(sourceOverview.albumCount)} / {formatCount(sourceOverview.artistCount)}</strong></span>
                 <span><em>已知容量</em><strong>{formatBytes(sourceOverview.totalSizeBytes)}</strong></span>
                 <span><em>缺失文件</em><strong>{formatCount(sourceOverview.missingTrackCount)}</strong></span>
+                <span><em>凭据</em><strong>{credentialTextForSource(source)}</strong></span>
                 <span><em>上次测试</em><strong>{formatDate(source.lastTestAt)}</strong></span>
                 <span><em>上次同步</em><strong>{formatDate(source.lastSyncAt)}</strong></span>
                 <span><em>同步模式</em><strong>{syncModeLabels[source.syncMode]}</strong></span>

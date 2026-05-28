@@ -173,7 +173,7 @@ const lyricsSmartReadableVideoSampleEvent = 'lyrics:smart-readable-video-sample'
 const isReceiverTrackId = (value: string | null | undefined): value is string =>
   Boolean(value?.startsWith('dlna-receiver:') || value?.startsWith('airplay-receiver:'));
 const shouldUseSnapshotMvSearch = (track: LibraryTrack | null | undefined, trackId: string | null | undefined): boolean =>
-  Boolean(isReceiverTrackId(trackId) || track?.isTemporary || track?.mediaType === 'remote');
+  Boolean(isReceiverTrackId(trackId) || track?.isTemporary || track?.mediaType === 'remote' || track?.mediaType === 'streaming');
 const rankedMvCandidates = (candidates: MvMatchCandidate[]): MvMatchCandidate[] => [
   ...candidates.filter((entry) => entry.playableInApp),
   ...candidates.filter((entry) => !entry.playableInApp),

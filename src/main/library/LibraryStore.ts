@@ -845,6 +845,10 @@ const normalizeArtistDisplayName = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
 const artistKeyForName = (name: string): string => name.normalize('NFKC').toLocaleLowerCase();
+const numericArtistSlashPlaceholder = '__ECHO_NUMERIC_ARTIST_SLASH__';
+const protectNumericArtistSlashes = (value: string): string =>
+  value.replace(/(\p{Number})\s*\/\s*(?=\p{Number})/gu, `$1${numericArtistSlashPlaceholder}`);
+const restoreNumericArtistSlashes = (value: string): string => value.replaceAll(numericArtistSlashPlaceholder, '/');
 
 const albumArtistCreditForTrack = (albumArtist: string, fallbackArtist: string): string =>
   normalizeArtistDisplayName(albumArtist || fallbackArtist) || 'Unknown Artist';
@@ -858,7 +862,10 @@ const splitArtistNames = (value: unknown): string[] => {
     return [];
   }
 
-  const names = normalized.split(artistNameSeparatorPattern).map(normalizeArtistDisplayName).filter(Boolean);
+  const names = protectNumericArtistSlashes(normalized)
+    .split(artistNameSeparatorPattern)
+    .map((name) => normalizeArtistDisplayName(restoreNumericArtistSlashes(name)))
+    .filter(Boolean);
   const uniqueNames = new Map<string, string>();
 
   for (const name of names.length > 0 ? names : [normalized]) {
@@ -5708,6 +5715,7 @@ export class LibraryStore {
         tracks.field_sources_json AS track_field_sources_json,
         tracks.missing AS track_missing,
         streaming_tracks.cover_url AS streaming_cover_url,
+        streaming_tracks.raw_json AS streaming_raw_json,
         streaming_tracks.id AS streaming_track_id,
         streaming_tracks.stable_key AS streaming_stable_key,
         streaming_tracks.title AS streaming_title,
@@ -6531,6 +6539,7 @@ export class LibraryStore {
         streaming_tracks.album_artist AS streaming_album_artist,
         streaming_tracks.duration AS streaming_duration,
         streaming_tracks.cover_url AS streaming_cover_url,
+        streaming_tracks.raw_json AS streaming_raw_json,
         streaming_tracks.playable AS streaming_playable,
         albums.id AS album_id,
         albums.album_key AS album_key,
@@ -6617,6 +6626,7 @@ export class LibraryStore {
         streaming_tracks.album_artist AS streaming_album_artist,
         streaming_tracks.duration AS streaming_duration,
         streaming_tracks.cover_url AS streaming_cover_url,
+        streaming_tracks.raw_json AS streaming_raw_json,
         streaming_tracks.playable AS streaming_playable,
         albums.id AS album_id,
         albums.album_key AS album_key,
@@ -6694,7 +6704,8 @@ export class LibraryStore {
 
   private mapPlaylistItem(row: DbRow): LibraryPlaylistItem {
     const coverId = textOrNull(row.cover_id) ?? textOrNull(row.track_cover_id) ?? textOrNull(row.album_cover_id);
-    const streamingCoverUrl = textOrNull(row.streaming_cover_url);
+    const streamingRaw = parseJsonObject(row.streaming_raw_json);
+    const streamingCoverUrl = textOrNull(streamingRaw.coverUrl) ?? textOrNull(row.streaming_cover_url);
     const trackMissing = Number(row.track_missing ?? 1) !== 0;
     const hasTrack = textOrNull(row.track_id) !== null && !trackMissing;
     const hasStreamingTrack = row.media_type === 'stream_track' && textOrNull(row.streaming_track_id) !== null;

@@ -1,9 +1,9 @@
 import { join } from 'node:path';
 import { BrowserWindow, screen } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
-import type { MiniPlayerBounds, MiniPlayerState } from '../../shared/types/miniPlayer';
+import type { MiniPlayerBounds, MiniPlayerHideOptions, MiniPlayerState } from '../../shared/types/miniPlayer';
 import { getAppSettings, setAppSettings } from './appSettings';
-import { createMainWindowWebPreferences } from './createMainWindow';
+import { createMainWindow, createMainWindowWebPreferences } from './createMainWindow';
 import { ensureTray } from './tray';
 import { getMainWindow } from './windowManager';
 import { recordMainRuntimeIssue, recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
@@ -182,6 +182,20 @@ const hideMainWindowForMiniPlayer = (): void => {
   mainWindow.hide();
 };
 
+const restoreMainWindowAfterMiniPlayerHide = (): void => {
+  const mainWindow = getMainWindow() ?? createMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.moveTop();
+  mainWindow.focus();
+};
+
 const rememberMiniPlayerBounds = (window: BrowserWindow): void => {
   if (window.isDestroyed()) {
     return;
@@ -313,11 +327,14 @@ export const showMiniPlayerWindow = (): MiniPlayerState => {
   return getMiniPlayerState();
 };
 
-export const hideMiniPlayerWindow = (): MiniPlayerState => {
+export const hideMiniPlayerWindow = (options: MiniPlayerHideOptions = {}): MiniPlayerState => {
   miniPlayerQueueOpen = false;
   setAppSettings({ miniPlayerEnabled: false });
   if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
     miniPlayerWindow.hide();
+  }
+  if (options.restoreMainWindow === true) {
+    restoreMainWindowAfterMiniPlayerHide();
   }
   emitMiniPlayerStateChanged();
   return getMiniPlayerState();

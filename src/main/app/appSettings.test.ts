@@ -158,6 +158,10 @@ describe('app settings normalization', () => {
     expect(settings.homeWaveformVisualizerEnabled).toBe(false);
     expect(settings.homeRandomHeroTitleEnabled).toBe(true);
     expect(settings.gaplessPlaybackEnabled).toBe(false);
+    expect(settings.audioTransportFadeEnabled).toBe(false);
+    expect(settings.audioTransportFadeInMs).toBe(80);
+    expect(settings.audioTransportFadeOutMs).toBe(80);
+    expect(settings.audioTransportFadeCurve).toBe('smooth');
   });
 
   it('normalizes an empty coverCacheDir to null', async () => {
@@ -206,6 +210,31 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ homeRandomHeroTitleEnabled: true }).homeRandomHeroTitleEnabled).toBe(true);
     expect(normalizeSettings({ homeRandomHeroTitleEnabled: false }).homeRandomHeroTitleEnabled).toBe(false);
     expect(normalizeSettings({ homeRandomHeroTitleEnabled: 'false' }).homeRandomHeroTitleEnabled).toBe(true);
+  });
+
+  it('normalizes play/pause fade as a default-off customizable opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).audioTransportFadeEnabled).toBe(false);
+    expect(normalizeSettings({ audioTransportFadeEnabled: true }).audioTransportFadeEnabled).toBe(true);
+    expect(normalizeSettings({
+      audioTransportFadeInMs: 123.4,
+      audioTransportFadeOutMs: 2500,
+      audioTransportFadeCurve: 'equalPower',
+    })).toMatchObject({
+      audioTransportFadeInMs: 123,
+      audioTransportFadeOutMs: 2000,
+      audioTransportFadeCurve: 'equalPower',
+    });
+    expect(normalizeSettings({
+      audioTransportFadeInMs: -10,
+      audioTransportFadeOutMs: 'bad',
+      audioTransportFadeCurve: 'bad',
+    })).toMatchObject({
+      audioTransportFadeInMs: 0,
+      audioTransportFadeOutMs: 80,
+      audioTransportFadeCurve: 'smooth',
+    });
   });
 
   it('normalizes automatic data backup settings safely', async () => {

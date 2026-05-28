@@ -35,6 +35,7 @@ export type CrashSessionInfo = {
   platform: string;
   arch: string;
   startedAt: string;
+  shutdownRequestedAt?: string;
   endedAt?: string;
   status: CrashSessionStatus;
 };

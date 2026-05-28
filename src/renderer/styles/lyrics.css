@@ -2655,7 +2655,7 @@ html[data-theme="dark"] .lyrics-queue-drag-handle {
 }
 
 .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-backdrop::after {
-  inset: 0;
+  inset: var(--lyrics-background-bleed);
   background-image: var(--lyrics-cover);
   background-position: center;
   background-size: cover;

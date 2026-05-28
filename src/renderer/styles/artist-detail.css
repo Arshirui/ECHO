@@ -481,7 +481,7 @@
 }
 
 .artist-overview-copy p a {
-  color: #4859ff;
+  color: #2f6f9f;
   font-weight: 760;
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -489,7 +489,7 @@
 }
 
 .artist-overview-copy p a:hover {
-  color: #2636d9;
+  color: #1f5d87;
 }
 
 .artist-overview-sidebar {
@@ -1301,11 +1301,11 @@ html[data-theme="dark"] .artist-detail-missing p {
 }
 
 html[data-theme="dark"] .artist-overview-copy p a {
-  color: #8ea0ff;
+  color: #9bc8ef;
 }
 
 html[data-theme="dark"] .artist-overview-copy p a:hover {
-  color: #c1ccff;
+  color: #c7def5;
 }
 
 html[data-theme="dark"] .artist-hero-meta span:not(:last-child)::after {

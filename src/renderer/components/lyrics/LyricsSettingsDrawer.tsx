@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import {
   Captions,
   Check,
+  ChevronDown,
   Database,
   EyeOff,
   FolderOpen,
@@ -212,6 +213,76 @@ const dispatchSettingsChanged = (patch?: Partial<AppSettings> | Partial<MvSettin
 
 const dispatchLyricsDisplaySettingsChanged = (patch: Partial<AppSettings>): void => {
   window.dispatchEvent(new CustomEvent('lyrics:display-settings-changed', { detail: patch }));
+};
+
+const desktopLyricsFontPanelOpenStorageKey = 'echo-next.lyrics.desktop-font-panel-open';
+const lyricsStyleControlsOpenStorageKey = 'echo-next.lyrics.style-controls-open';
+const lyricsBackgroundTuningOpenStorageKey = 'echo-next.lyrics.background-tuning-open';
+const lyricsSourcePanelOpenStorageKey = 'echo-next.lyrics.source-panel-open';
+
+const readDesktopLyricsFontPanelOpen = (): boolean => {
+  try {
+    return window.localStorage.getItem(desktopLyricsFontPanelOpenStorageKey) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const writeDesktopLyricsFontPanelOpen = (enabled: boolean): void => {
+  try {
+    window.localStorage.setItem(desktopLyricsFontPanelOpenStorageKey, enabled ? 'true' : 'false');
+  } catch {
+    // UI preference only; desktop lyrics settings remain usable without storage.
+  }
+};
+
+const readLyricsStyleControlsOpen = (): boolean => {
+  try {
+    const stored = window.localStorage.getItem(lyricsStyleControlsOpenStorageKey);
+    return stored === null ? true : stored === 'true';
+  } catch {
+    return true;
+  }
+};
+
+const writeLyricsStyleControlsOpen = (enabled: boolean): void => {
+  try {
+    window.localStorage.setItem(lyricsStyleControlsOpenStorageKey, enabled ? 'true' : 'false');
+  } catch {
+    // UI preference only; lyrics display settings still work without storage.
+  }
+};
+
+const readLyricsBackgroundTuningOpen = (): boolean => {
+  try {
+    return window.localStorage.getItem(lyricsBackgroundTuningOpenStorageKey) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const writeLyricsBackgroundTuningOpen = (enabled: boolean): void => {
+  try {
+    window.localStorage.setItem(lyricsBackgroundTuningOpenStorageKey, enabled ? 'true' : 'false');
+  } catch {
+    // UI preference only; background tuning remains usable without storage.
+  }
+};
+
+const readLyricsSourcePanelOpen = (): boolean => {
+  try {
+    return window.localStorage.getItem(lyricsSourcePanelOpenStorageKey) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const writeLyricsSourcePanelOpen = (enabled: boolean): void => {
+  try {
+    window.localStorage.setItem(lyricsSourcePanelOpenStorageKey, enabled ? 'true' : 'false');
+  } catch {
+    // UI preference only; online lyrics source settings remain usable without storage.
+  }
 };
 
 const pickSavedLyricsPatch = (
@@ -439,12 +510,13 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const [isBusy, setIsBusy] = useState(false);
   const [currentLyricsProviderLabel, setCurrentLyricsProviderLabel] = useState(providerLabelFor(null, t));
   const [draggingSourceId, setDraggingSourceId] = useState<LyricsProviderId | null>(null);
-  const [isLyricsStyleControlsOpen, setIsLyricsStyleControlsOpen] = useState(true);
+  const [isLyricsStyleControlsOpen, setIsLyricsStyleControlsOpen] = useState(readLyricsStyleControlsOpen);
   const [fontFamilies, setFontFamilies] = useState<string[]>(fallbackLyricsFontFamilies);
   const [isFontPickerOpen, setIsFontPickerOpen] = useState(false);
   const [fontPickerTarget, setFontPickerTarget] = useState<LyricsFontPickerTarget>('lyrics');
   const [fontPickerQuery, setFontPickerQuery] = useState('');
   const [isBackgroundControlsOpen, setIsBackgroundControlsOpen] = useState(true);
+  const [isBackgroundTuningOpen, setIsBackgroundTuningOpen] = useState(readLyricsBackgroundTuningOpen);
   const [lyricsReadabilityEnhanced, setLyricsReadabilityEnhanced] = useState(false);
   const [lyricsSearchQuery, setLyricsSearchQuery] = useState('');
   const [lyricsCandidates, setLyricsCandidates] = useState<LyricsSearchCandidate[]>([]);
@@ -453,6 +525,8 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const [isLyricsCandidateLoading, setIsLyricsCandidateLoading] = useState(false);
   const [desktopLyricsState, setDesktopLyricsState] = useState<DesktopLyricsState | null>(null);
   const [isDesktopLyricsBusy, setIsDesktopLyricsBusy] = useState(false);
+  const [isDesktopLyricsFontPanelOpen, setIsDesktopLyricsFontPanelOpen] = useState(readDesktopLyricsFontPanelOpen);
+  const [isLyricsSourcePanelOpen, setIsLyricsSourcePanelOpen] = useState(readLyricsSourcePanelOpen);
   const [applyingLyricsCandidateId, setApplyingLyricsCandidateId] = useState<string | null>(null);
   const [isMarkingInstrumental, setIsMarkingInstrumental] = useState(false);
   const [currentLyricsKind, setCurrentLyricsKind] = useState<TrackLyrics['kind'] | null>(null);
@@ -572,6 +646,38 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         : lyricsCandidates.filter((candidate) => sourceFilterKey(candidate) === activeLyricsCandidateSource),
     [activeLyricsCandidateSource, lyricsCandidates],
   );
+
+  const toggleDesktopLyricsFontPanel = useCallback(() => {
+    setIsDesktopLyricsFontPanelOpen((value) => {
+      const nextValue = !value;
+      writeDesktopLyricsFontPanelOpen(nextValue);
+      return nextValue;
+    });
+  }, []);
+
+  const toggleLyricsStyleControls = useCallback(() => {
+    setIsLyricsStyleControlsOpen((value) => {
+      const nextValue = !value;
+      writeLyricsStyleControlsOpen(nextValue);
+      return nextValue;
+    });
+  }, []);
+
+  const toggleBackgroundTuning = useCallback(() => {
+    setIsBackgroundTuningOpen((value) => {
+      const nextValue = !value;
+      writeLyricsBackgroundTuningOpen(nextValue);
+      return nextValue;
+    });
+  }, []);
+
+  const toggleLyricsSourcePanel = useCallback(() => {
+    setIsLyricsSourcePanelOpen((value) => {
+      const nextValue = !value;
+      writeLyricsSourcePanelOpen(nextValue);
+      return nextValue;
+    });
+  }, []);
 
   useEffect(() => {
     const desktopLyrics = window.echo?.desktopLyrics;
@@ -1494,74 +1600,88 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
               </label>
               <p>{t('lyricsSettings.display.desktopLyricsDescription')}</p>
 
-              <div className="lyrics-font-panel lyrics-desktop-font-panel">
-                <div className="lyrics-color-panel__header">
+              <div className={`lyrics-font-panel lyrics-desktop-font-panel${isDesktopLyricsFontPanelOpen ? ' lyrics-desktop-font-panel--open' : ''}`}>
+                <button
+                  className="lyrics-desktop-font-collapse-button"
+                  type="button"
+                  aria-expanded={isDesktopLyricsFontPanelOpen}
+                  onClick={toggleDesktopLyricsFontPanel}
+                >
                   <span>
                     <Type size={15} />
                     <strong>{t('lyricsSettings.display.desktopFont')}</strong>
+                    <small style={{ fontFamily: `"${desktopLyricsFontFamily}", "Microsoft YaHei", var(--echo-font-family)` }}>
+                      {desktopLyricsFontFamily}
+                    </small>
                   </span>
                   <em title={desktopLyricsFontFilePath ?? undefined}>
                     {desktopLyricsFontFilePath ? t('lyricsSettings.font.custom') : t('lyricsSettings.font.system')}
                   </em>
-                </div>
-                <button
-                  className="lyrics-font-picker-button"
-                  type="button"
-                  disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
-                  onClick={() => openFontPicker('desktopLyrics')}
-                >
-                  <span style={{ fontFamily: `"${desktopLyricsFontFamily}", "Microsoft YaHei", var(--echo-font-family)` }}>
-                    {desktopLyricsFontFamily}
-                  </span>
-                  <em>{t('lyricsSettings.display.defaultMicrosoftYahei')}</em>
+                  <ChevronDown size={16} aria-hidden="true" />
                 </button>
-                <div className="lyrics-font-actions">
-                  <button
-                    className="audio-device-pill"
-                    type="button"
-                    disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
-                    onClick={() => openFontPicker('desktopLyrics')}
-                  >
-                    <Check size={15} />
-                    <span>
-                      <strong>{t('lyricsSettings.font.applySystem')}</strong>
-                      <small>{t('lyricsSettings.font.desktopOnly')}</small>
-                    </span>
-                    <em>{t('lyricsSettings.action.fonts')}</em>
-                  </button>
-                  <button
-                    className="audio-device-pill"
-                    type="button"
-                    disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
-                    onClick={() => void chooseFontFileForTarget('desktopLyrics')}
-                  >
-                    <Upload size={15} />
-                    <span>
-                      <strong>{t('lyricsSettings.font.importDesktop')}</strong>
-                      <small>TTF / OTF / WOFF / WOFF2</small>
-                    </span>
-                    <em>{t('lyricsSettings.action.choose')}</em>
-                  </button>
-                  <button
-                    className="audio-device-pill"
-                    type="button"
-                    disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
-                    onClick={() => {
-                      setIsFontPickerOpen(false);
-                      patchDesktopLyricsStyle({
-                        desktopLyricsFontFamily: fallbackSettings.desktopLyricsFontFamily,
-                        desktopLyricsFontFilePath: fallbackSettings.desktopLyricsFontFilePath,
-                      });
-                    }}
-                  >
-                    <RotateCcw size={15} />
-                    <span>
-                      <strong>{t('lyricsSettings.font.restoreDesktopDefault')}</strong>
-                      <small>{fallbackSettings.desktopLyricsFontFamily}</small>
-                    </span>
-                    <em>{t('lyricsSettings.action.reset')}</em>
-                  </button>
-                </div>
+
+                {isDesktopLyricsFontPanelOpen ? (
+                  <div className="lyrics-desktop-font-panel-body">
+                    <button
+                      className="lyrics-font-picker-button"
+                      type="button"
+                      disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                      onClick={() => openFontPicker('desktopLyrics')}
+                    >
+                      <span style={{ fontFamily: `"${desktopLyricsFontFamily}", "Microsoft YaHei", var(--echo-font-family)` }}>
+                        {desktopLyricsFontFamily}
+                      </span>
+                      <em>{t('lyricsSettings.display.defaultMicrosoftYahei')}</em>
+                    </button>
+                    <div className="lyrics-font-actions">
+                      <button
+                        className="audio-device-pill"
+                        type="button"
+                        disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                        onClick={() => openFontPicker('desktopLyrics')}
+                      >
+                        <Check size={15} />
+                        <span>
+                          <strong>{t('lyricsSettings.font.applySystem')}</strong>
+                          <small>{t('lyricsSettings.font.desktopOnly')}</small>
+                        </span>
+                        <em>{t('lyricsSettings.action.fonts')}</em>
+                      </button>
+                      <button
+                        className="audio-device-pill"
+                        type="button"
+                        disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                        onClick={() => void chooseFontFileForTarget('desktopLyrics')}
+                      >
+                        <Upload size={15} />
+                        <span>
+                          <strong>{t('lyricsSettings.font.importDesktop')}</strong>
+                          <small>TTF / OTF / WOFF / WOFF2</small>
+                        </span>
+                        <em>{t('lyricsSettings.action.choose')}</em>
+                      </button>
+                      <button
+                        className="audio-device-pill"
+                        type="button"
+                        disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                        onClick={() => {
+                          setIsFontPickerOpen(false);
+                          patchDesktopLyricsStyle({
+                            desktopLyricsFontFamily: fallbackSettings.desktopLyricsFontFamily,
+                            desktopLyricsFontFilePath: fallbackSettings.desktopLyricsFontFilePath,
+                          });
+                        }}
+                      >
+                        <RotateCcw size={15} />
+                        <span>
+                          <strong>{t('lyricsSettings.font.restoreDesktopDefault')}</strong>
+                          <small>{fallbackSettings.desktopLyricsFontFamily}</small>
+                        </span>
+                        <em>{t('lyricsSettings.action.reset')}</em>
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <label className="audio-toggle-row">
@@ -1894,14 +2014,19 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
           {showPersistentControls ? (
           <>
-          <label className="audio-toggle-row lyrics-style-toggle">
+          <button
+            className={`lyrics-style-collapse-button${isLyricsStyleControlsOpen ? ' lyrics-style-collapse-button--open' : ''}`}
+            type="button"
+            aria-expanded={isLyricsStyleControlsOpen}
+            onClick={toggleLyricsStyleControls}
+          >
             <span>
               <Type size={17} />
               <strong>{t('lyricsSettings.style.showControls')}</strong>
+              <small>{t('lyricsSettings.style.showControlsDescription')}</small>
             </span>
-            <input type="checkbox" checked={isLyricsStyleControlsOpen} onChange={(event) => setIsLyricsStyleControlsOpen(event.currentTarget.checked)} />
-          </label>
-          <p>{t('lyricsSettings.style.showControlsDescription')}</p>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
           </>
           ) : null}
 
@@ -2195,64 +2320,81 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           <p>{t('lyricsSettings.background.highResolutionCoverDescription')}</p>
 
-          <div className="lyrics-cover-tuning">
-            <p>{t('lyricsSettings.background.tuningDescription')}</p>
-            <label className="lyrics-drawer-range">
+          <div className={`lyrics-cover-tuning${isBackgroundTuningOpen ? ' lyrics-cover-tuning--open' : ''}`}>
+            <button
+              className="lyrics-background-tuning-collapse-button"
+              type="button"
+              aria-expanded={isBackgroundTuningOpen}
+              onClick={toggleBackgroundTuning}
+            >
               <span>
-                <strong>{t('lyricsSettings.background.scale')}</strong>
-                <em>{effectiveSettings.lyricsBackgroundScalePercent}%</em>
+                <ImageIcon size={17} />
+                <strong>{t('lyricsSettings.background.tuning')}</strong>
+                <small>{t('lyricsSettings.background.tuningDescription')}</small>
               </span>
-              <input
-                type="range"
-                min={70}
-                max={180}
-                step={1}
-                value={effectiveSettings.lyricsBackgroundScalePercent}
-                onChange={(event) => patchSettingsDebounced({ lyricsBackgroundScalePercent: Number(event.currentTarget.value) })}
-              />
-            </label>
-            <label className="lyrics-drawer-range">
-              <span>
-                <strong>{t('lyricsSettings.background.opacity')}</strong>
-                <em>{effectiveSettings.lyricsCoverOpacityPercent}%</em>
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={effectiveSettings.lyricsCoverOpacityPercent}
-                onChange={(event) => patchSettingsDebounced({ lyricsCoverOpacityPercent: Number(event.currentTarget.value) })}
-              />
-            </label>
-            <label className="lyrics-drawer-range">
-              <span>
-                <strong>{t('lyricsSettings.background.blur')}</strong>
-                <em>{effectiveSettings.lyricsCoverBlurPx}px</em>
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={60}
-                step={1}
-                value={effectiveSettings.lyricsCoverBlurPx}
-                onChange={(event) => patchSettingsDebounced({ lyricsCoverBlurPx: Number(event.currentTarget.value) })}
-              />
-            </label>
-            <label className="lyrics-drawer-range">
-              <span>
-                <strong>{t('lyricsSettings.background.brightness')}</strong>
-                <em>{effectiveSettings.lyricsCoverBrightnessPercent}%</em>
-              </span>
-              <input
-                type="range"
-                min={40}
-                max={140}
-                step={1}
-                value={effectiveSettings.lyricsCoverBrightnessPercent}
-                onChange={(event) => patchSettingsDebounced({ lyricsCoverBrightnessPercent: Number(event.currentTarget.value) })}
-              />
-            </label>
+              <ChevronDown size={16} aria-hidden="true" />
+            </button>
+
+            {isBackgroundTuningOpen ? (
+              <div className="lyrics-cover-tuning-body">
+                <label className="lyrics-drawer-range">
+                  <span>
+                    <strong>{t('lyricsSettings.background.scale')}</strong>
+                    <em>{effectiveSettings.lyricsBackgroundScalePercent}%</em>
+                  </span>
+                  <input
+                    type="range"
+                    min={70}
+                    max={180}
+                    step={1}
+                    value={effectiveSettings.lyricsBackgroundScalePercent}
+                    onChange={(event) => patchSettingsDebounced({ lyricsBackgroundScalePercent: Number(event.currentTarget.value) })}
+                  />
+                </label>
+                <label className="lyrics-drawer-range">
+                  <span>
+                    <strong>{t('lyricsSettings.background.opacity')}</strong>
+                    <em>{effectiveSettings.lyricsCoverOpacityPercent}%</em>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={effectiveSettings.lyricsCoverOpacityPercent}
+                    onChange={(event) => patchSettingsDebounced({ lyricsCoverOpacityPercent: Number(event.currentTarget.value) })}
+                  />
+                </label>
+                <label className="lyrics-drawer-range">
+                  <span>
+                    <strong>{t('lyricsSettings.background.blur')}</strong>
+                    <em>{effectiveSettings.lyricsCoverBlurPx}px</em>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={60}
+                    step={1}
+                    value={effectiveSettings.lyricsCoverBlurPx}
+                    onChange={(event) => patchSettingsDebounced({ lyricsCoverBlurPx: Number(event.currentTarget.value) })}
+                  />
+                </label>
+                <label className="lyrics-drawer-range">
+                  <span>
+                    <strong>{t('lyricsSettings.background.brightness')}</strong>
+                    <em>{effectiveSettings.lyricsCoverBrightnessPercent}%</em>
+                  </span>
+                  <input
+                    type="range"
+                    min={40}
+                    max={140}
+                    step={1}
+                    value={effectiveSettings.lyricsCoverBrightnessPercent}
+                    onChange={(event) => patchSettingsDebounced({ lyricsCoverBrightnessPercent: Number(event.currentTarget.value) })}
+                  />
+                </label>
+              </div>
+            ) : null}
           </div>
 
           <div className="lyrics-wallpaper-actions">
@@ -2324,68 +2466,82 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           <p>{t('lyricsSettings.online.deepSearchDescription')}</p>
 
           {showPersistentControls ? (
-          <div className="lyrics-source-panel">
-            <span>
-              <Globe2 size={15} />
-              <strong>{t('lyricsSettings.online.sources')}</strong>
-            </span>
-            <div className="lyrics-source-grid" aria-label={t('lyricsSettings.online.sources')}>
-              {orderedLyricsSourceOptions.map((source) => (
-                <label
-                  className="lyrics-source-option"
-                  data-enabled={enabledProviderSet.has(source.id)}
-                  data-dragging={draggingSourceId === source.id}
-                  draggable={!isBusy}
-                  key={source.id}
-                  onDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = 'move';
-                    event.dataTransfer.setData('text/plain', source.id);
-                    setDraggingSourceId(source.id);
-                  }}
-                  onDragOver={(event) => {
-                    if (draggingSourceId && draggingSourceId !== source.id) {
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = 'move';
-                    }
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const draggedId = (event.dataTransfer.getData('text/plain') || draggingSourceId) as LyricsProviderId | null;
-                    if (draggedId) {
-                      moveLyricsSource(draggedId, source.id);
-                    }
-                    setDraggingSourceId(null);
-                  }}
-                  onDragEnd={() => setDraggingSourceId(null)}
-                >
-                  <span className="lyrics-source-drag-handle" aria-hidden="true">
-                    <GripVertical size={15} />
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={enabledProviderSet.has(source.id)}
-                    disabled={isBusy}
-                    onChange={(event) => {
-                      const current = new Set(effectiveSettings.lyricsEnabledProviders ?? defaultLyricsEnabledProviders);
-                      if (event.currentTarget.checked) {
-                        current.add(source.id);
-                      } else {
-                        current.delete(source.id);
-                      }
+          <div className={`lyrics-source-panel${isLyricsSourcePanelOpen ? ' lyrics-source-panel--open' : ''}`}>
+            <button
+              className="lyrics-source-collapse-button"
+              type="button"
+              aria-expanded={isLyricsSourcePanelOpen}
+              onClick={toggleLyricsSourcePanel}
+            >
+              <span>
+                <Globe2 size={15} />
+                <strong>{t('lyricsSettings.online.sources')}</strong>
+                <small>{t('lyricsSettings.online.sourcesDescription')}</small>
+              </span>
+              <ChevronDown size={16} aria-hidden="true" />
+            </button>
 
-                      current.add('local');
-                      const nextProviders: LyricsProviderId[] = ['local', ...orderedOnlineProviderIds.filter((provider) => current.has(provider))];
-                      void patchSettings({ lyricsEnabledProviders: nextProviders });
-                    }}
-                  />
-                  <span>
-                    <strong>{t(source.labelKey)}</strong>
-                    <small>{t(source.descriptionKey)}</small>
-                  </span>
-                </label>
-              ))}
-            </div>
-            <p>{t('lyricsSettings.online.sourcesDescription')}</p>
+            {isLyricsSourcePanelOpen ? (
+              <div className="lyrics-source-panel-body">
+                <div className="lyrics-source-grid" aria-label={t('lyricsSettings.online.sources')}>
+                  {orderedLyricsSourceOptions.map((source) => (
+                    <label
+                      className="lyrics-source-option"
+                      data-enabled={enabledProviderSet.has(source.id)}
+                      data-dragging={draggingSourceId === source.id}
+                      draggable={!isBusy}
+                      key={source.id}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'move';
+                        event.dataTransfer.setData('text/plain', source.id);
+                        setDraggingSourceId(source.id);
+                      }}
+                      onDragOver={(event) => {
+                        if (draggingSourceId && draggingSourceId !== source.id) {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = 'move';
+                        }
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const draggedId = (event.dataTransfer.getData('text/plain') || draggingSourceId) as LyricsProviderId | null;
+                        if (draggedId) {
+                          moveLyricsSource(draggedId, source.id);
+                        }
+                        setDraggingSourceId(null);
+                      }}
+                      onDragEnd={() => setDraggingSourceId(null)}
+                    >
+                      <span className="lyrics-source-drag-handle" aria-hidden="true">
+                        <GripVertical size={15} />
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={enabledProviderSet.has(source.id)}
+                        disabled={isBusy}
+                        onChange={(event) => {
+                          const current = new Set(effectiveSettings.lyricsEnabledProviders ?? defaultLyricsEnabledProviders);
+                          if (event.currentTarget.checked) {
+                            current.add(source.id);
+                          } else {
+                            current.delete(source.id);
+                          }
+
+                          current.add('local');
+                          const nextProviders: LyricsProviderId[] = ['local', ...orderedOnlineProviderIds.filter((provider) => current.has(provider))];
+                          void patchSettings({ lyricsEnabledProviders: nextProviders });
+                        }}
+                      />
+                      <span>
+                        <strong>{t(source.labelKey)}</strong>
+                        <small>{t(source.descriptionKey)}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p>{t('lyricsSettings.online.sourcesDescription')}</p>
+              </div>
+            ) : null}
           </div>
           ) : null}
 

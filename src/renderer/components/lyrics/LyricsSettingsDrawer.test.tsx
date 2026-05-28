@@ -169,6 +169,7 @@ const makeDesktopLyricsState = (overrides: Partial<DesktopLyricsState> = {}): De
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.useRealTimers();
   vi.restoreAllMocks();
   delete (navigator as Navigator & { queryLocalFonts?: unknown }).queryLocalFonts;
@@ -187,7 +188,7 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    fireEvent.click(await screen.findByRole('checkbox', { name: /显示歌词样式设置/ }));
+    await screen.findByRole('button', { name: /显示歌词样式设置/ });
     await waitFor(() => expect(container.querySelectorAll('input[type="range"]').length).toBeGreaterThan(0));
     const fontSizeSlider = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]')).find((input) => {
       const labelText = input.closest('label')?.textContent ?? '';
@@ -221,7 +222,11 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    await waitFor(() => expect(container.querySelectorAll('.lyrics-source-option input').length).toBe(3));
+    await waitFor(() => expect(container.querySelector('.lyrics-source-collapse-button')).toBeTruthy());
+    expect(container.querySelector('.lyrics-source-panel-body')).toBeNull();
+    fireEvent.click(container.querySelector('.lyrics-source-collapse-button') as HTMLButtonElement);
+    expect(window.localStorage.getItem('echo-next.lyrics.source-panel-open')).toBe('true');
+    await waitFor(() => expect(container.querySelectorAll('.lyrics-source-option input').length).toBeGreaterThanOrEqual(3));
     const qqMusicSource = Array.from(container.querySelectorAll<HTMLInputElement>('.lyrics-source-option input')).find((input) =>
       input.closest('label')?.textContent?.includes('QQ 音乐'),
     );
@@ -244,7 +249,9 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsPanel className="settings-lyrics-panel" variant="settings" />);
 
-    await waitFor(() => expect(container.querySelectorAll('.settings-lyrics-panel .lyrics-source-option input').length).toBe(3));
+    await waitFor(() => expect(container.querySelector('.settings-lyrics-panel .lyrics-source-collapse-button')).toBeTruthy());
+    fireEvent.click(container.querySelector('.settings-lyrics-panel .lyrics-source-collapse-button') as HTMLButtonElement);
+    await waitFor(() => expect(container.querySelectorAll('.settings-lyrics-panel .lyrics-source-option input').length).toBeGreaterThanOrEqual(3));
     expect(screen.queryByText('Lyrics Engine')).toBeNull();
     expect(container.querySelector('.settings-lyrics-panel .lyrics-match-threshold-control')).toBeTruthy();
     expect(container.querySelector('.settings-lyrics-panel .lyrics-background-controls')).toBeTruthy();
@@ -293,7 +300,7 @@ describe('LyricsSettingsDrawer', () => {
       },
     } as unknown as Window['echo'];
 
-    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
     const desktopLyricsToggle = (await screen.findByRole('checkbox', { name: '桌面歌词' })) as HTMLInputElement;
     expect(desktopLyricsToggle.checked).toBe(false);
@@ -308,6 +315,8 @@ describe('LyricsSettingsDrawer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /重置桌面歌词位置/ }));
     await waitFor(() => expect(resetBounds).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(container.querySelector('.lyrics-desktop-font-collapse-button') as HTMLButtonElement);
 
     fireEvent.click(screen.getByRole('button', { name: /默认微软雅黑/ }));
     fireEvent.click(await screen.findByRole('button', { name: /Inter/ }));
@@ -327,6 +336,31 @@ describe('LyricsSettingsDrawer', () => {
       desktopLyricsFontFamily: 'Microsoft YaHei',
       desktopLyricsFontFilePath: null,
     }));
+  });
+
+  it('keeps the desktop lyrics font panel collapsed by default and remembers opening it', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const firstRender = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(firstRender.container.querySelector('.lyrics-desktop-font-collapse-button')).toBeTruthy());
+    expect(firstRender.container.querySelector('.lyrics-desktop-font-panel-body')).toBeNull();
+
+    fireEvent.click(firstRender.container.querySelector('.lyrics-desktop-font-collapse-button') as HTMLButtonElement);
+
+    expect(firstRender.container.querySelector('.lyrics-desktop-font-panel-body')).toBeTruthy();
+    expect(window.localStorage.getItem('echo-next.lyrics.desktop-font-panel-open')).toBe('true');
+
+    firstRender.unmount();
+    const secondRender = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(secondRender.container.querySelector('.lyrics-desktop-font-panel-body')).toBeTruthy());
   });
 
   it('updates the lyrics match threshold from 30 to 100 percent with a 50 percent default', async () => {
@@ -434,7 +468,10 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    fireEvent.click(await screen.findByRole('checkbox', { name: /显示歌词样式设置/ }));
+    await waitFor(() => expect(container.querySelector('.lyrics-background-tuning-collapse-button')).toBeTruthy());
+    expect(container.querySelector('.lyrics-cover-tuning-body')).toBeNull();
+    fireEvent.click(container.querySelector('.lyrics-background-tuning-collapse-button') as HTMLButtonElement);
+    expect(window.localStorage.getItem('echo-next.lyrics.background-tuning-open')).toBe('true');
     await waitFor(() => expect(container.querySelectorAll('input[type="range"]').length).toBeGreaterThan(4));
     vi.useFakeTimers();
     const ranges = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]'));
@@ -483,7 +520,7 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    fireEvent.click(await screen.findByRole('checkbox', { name: /显示歌词样式设置/ }));
+    await screen.findByRole('button', { name: /显示歌词样式设置/ });
     await waitFor(() => expect(container.querySelectorAll('input[type="range"]').length).toBeGreaterThan(0));
     vi.useFakeTimers();
     const spacingSlider = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="range"]')).find(
@@ -557,8 +594,7 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    await waitFor(() => expect(container.querySelector('.lyrics-style-toggle input')).toBeTruthy());
-    fireEvent.click(container.querySelector('.lyrics-style-toggle input') as HTMLInputElement);
+    await waitFor(() => expect(container.querySelector('.lyrics-style-collapse-button')).toBeTruthy());
     await waitFor(() => expect(container.querySelector('.lyrics-color-panel')).toBeTruthy());
     const colorPanel = container.querySelector('.lyrics-color-panel') as HTMLElement;
     const colorPreview = colorPanel.querySelector('.lyrics-color-preview') as HTMLElement;
@@ -589,8 +625,7 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    await waitFor(() => expect(container.querySelector('.lyrics-style-toggle input')).toBeTruthy());
-    fireEvent.click(container.querySelector('.lyrics-style-toggle input') as HTMLInputElement);
+    await waitFor(() => expect(container.querySelector('.lyrics-style-collapse-button')).toBeTruthy());
     await waitFor(() => expect(container.querySelector('.lyrics-color-panel')).toBeTruthy());
 
     vi.useFakeTimers();
@@ -967,14 +1002,20 @@ describe('LyricsSettingsDrawer', () => {
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
-    await waitFor(() => expect(container.querySelector('.lyrics-style-toggle input')).toBeTruthy());
-    expect((container.querySelector('.lyrics-style-toggle input') as HTMLInputElement).checked).toBe(true);
+    await waitFor(() => expect(container.querySelector('.lyrics-style-collapse-button')).toBeTruthy());
+    expect(container.querySelector('.lyrics-style-collapse-button')?.getAttribute('aria-expanded')).toBe('true');
     expect(container.querySelector('.lyrics-style-range-grid[hidden]')).toBeNull();
     expect(container.textContent).toContain('包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。');
 
-    fireEvent.click(container.querySelector('.lyrics-style-toggle input') as HTMLInputElement);
+    fireEvent.click(container.querySelector('.lyrics-style-collapse-button') as HTMLButtonElement);
 
     expect(container.querySelector('.lyrics-style-range-grid[hidden]')).toBeTruthy();
+    expect(window.localStorage.getItem('echo-next.lyrics.style-controls-open')).toBe('false');
+
+    cleanup();
+    const reopened = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(reopened.container.querySelector('.lyrics-style-collapse-button')?.getAttribute('aria-expanded')).toBe('false'));
   });
 
   it('lets users pick an installed system font for lyrics', async () => {

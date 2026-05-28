@@ -516,6 +516,19 @@ export class CrashReportService {
     this.logger?.info('main', 'diagnostics session closed', { sessionId: this.session.sessionId });
   }
 
+  markShutdownRequested(): void {
+    if (!this.session || !this.sessionDir || this.session.status !== 'running' || this.session.shutdownRequestedAt) {
+      return;
+    }
+
+    this.session = {
+      ...this.session,
+      shutdownRequestedAt: nowIso(),
+    };
+    writeJson(join(this.sessionDir, 'session.json'), this.session);
+    this.logger?.info('main', 'diagnostics session shutdown requested', { sessionId: this.session.sessionId });
+  }
+
   getLogger(): Logger | null {
     return this.logger;
   }
@@ -1171,6 +1184,10 @@ export class CrashReportService {
       endedAt: detectedAt,
     };
     writeJson(sessionFilePath, abnormalSession);
+    if (previousSession.shutdownRequestedAt && !existsSync(join(previousSessionDir, 'crash.json'))) {
+      return;
+    }
+
     this.lastCrashSummary = {
       sessionId: previousSession.sessionId,
       startedAt: previousSession.startedAt,

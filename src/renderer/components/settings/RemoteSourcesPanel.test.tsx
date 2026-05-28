@@ -35,6 +35,13 @@ const remoteApiMocks = vi.hoisted(() => ({
   setBackgroundPaused: vi.fn(),
   getBackgroundGlobalStatus: vi.fn(),
   updateRuntimeLimits: vi.fn(),
+  createBaiduAuthUrl: vi.fn(),
+  exchangeBaiduAuthCode: vi.fn(),
+  startBaiduOAuthLogin: vi.fn(),
+}));
+
+const appApiMocks = vi.hoisted(() => ({
+  openExternalUrl: vi.fn(),
 }));
 
 const playbackQueueMocks = vi.hoisted(() => ({
@@ -43,6 +50,7 @@ const playbackQueueMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../utils/echoBridge', () => ({
+  getAppBridge: () => appApiMocks,
   getRemoteSourcesBridge: () => remoteApiMocks,
 }));
 
@@ -194,8 +202,9 @@ describe('RemoteSourcesPanel', () => {
 
   beforeEach(() => {
     sources = [];
+    remoteApiMocks.startBaiduOAuthLogin = vi.fn();
     for (const mock of Object.values(remoteApiMocks)) {
-      mock.mockReset();
+      mock?.mockReset();
     }
     for (const mock of Object.values(playbackQueueMocks)) {
       mock.mockReset();
@@ -241,6 +250,24 @@ describe('RemoteSourcesPanel', () => {
     remoteApiMocks.retryFailedJobs.mockImplementation((sourceId) => Promise.resolve(jobStatus(sourceId)));
     remoteApiMocks.setBackgroundPaused.mockResolvedValue(globalStatus());
     remoteApiMocks.getBackgroundGlobalStatus.mockResolvedValue(globalStatus());
+    remoteApiMocks.createBaiduAuthUrl.mockResolvedValue('https://openapi.baidu.com/oauth/2.0/authorize?response_type=code');
+    remoteApiMocks.exchangeBaiduAuthCode.mockResolvedValue({
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      expiresIn: 2592000,
+      expiresAt: '2026-06-27T00:00:00.000Z',
+      scope: 'basic netdisk',
+      tokenSecret: '{"type":"baidu-oauth-token","accessToken":"access-token","refreshToken":"refresh-token"}',
+    });
+    remoteApiMocks.startBaiduOAuthLogin.mockResolvedValue({
+      accessToken: 'login-access-token',
+      refreshToken: 'login-refresh-token',
+      expiresIn: 2592000,
+      expiresAt: '2026-06-27T00:00:00.000Z',
+      scope: 'basic netdisk',
+      tokenSecret: '{"type":"baidu-oauth-token","accessToken":"login-access-token","refreshToken":"login-refresh-token"}',
+    });
+    appApiMocks.openExternalUrl.mockResolvedValue(undefined);
     playbackQueueMocks.playTrack.mockResolvedValue(undefined);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
@@ -296,6 +323,187 @@ describe('RemoteSourcesPanel', () => {
       secret: null,
       authType: 'none',
     }));
+  });
+
+  it('opens Baidu OAuth and stores the exchanged token secret for testing', async () => {
+    render(<RemoteSourcesPanel />);
+    await waitFor(() => expect(remoteApiMocks.list).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /百度网盘/u }));
+    fireEvent.click(screen.getByRole('button', { name: /开发配置/u }));
+    fireEvent.change(screen.getByLabelText('百度 App Key'), { target: { value: 'client-id' } });
+    fireEvent.change(screen.getByLabelText('百度 Secret Key'), { target: { value: 'client-secret' } });
+    fireEvent.change(screen.getByLabelText('Redirect URI'), { target: { value: 'oob' } });
+    fireEvent.change(screen.getByLabelText('授权码'), { target: { value: 'https://example.test/callback?code=auth-code&state=state-1' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /打开授权页/u }));
+    await waitFor(() => expect(remoteApiMocks.createBaiduAuthUrl).toHaveBeenCalledWith({
+      clientId: 'client-id',
+      redirectUri: 'oob',
+      qrcode: true,
+      responseType: 'code',
+    }));
+    expect(await screen.findByText('https://openapi.baidu.com/oauth/2.0/authorize?response_type=code')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /换取 Token/u }));
+    await waitFor(() => expect(remoteApiMocks.exchangeBaiduAuthCode).toHaveBeenCalledWith({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      redirectUri: 'oob',
+      code: 'https://example.test/callback?code=auth-code&state=state-1',
+    }));
+
+    fireEvent.click(screen.getByRole('button', { name: /测试连接/u }));
+    await waitFor(() => expect(remoteApiMocks.test).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'baidu',
+      baseUrl: null,
+      username: null,
+      authType: 'token',
+      secret: '{"type":"baidu-oauth-token","accessToken":"access-token","refreshToken":"refresh-token"}',
+      config: expect.objectContaining({ credentialMode: 'oauth-refresh' }),
+    })));
+  });
+
+  it('uses the built-in ECHO Baidu app when users log in without developer fields', async () => {
+    render(<RemoteSourcesPanel />);
+    await waitFor(() => expect(remoteApiMocks.list).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /百度网盘/u }));
+    fireEvent.click(screen.getByRole('button', { name: /登录账号/u }));
+
+    await waitFor(() => expect(remoteApiMocks.startBaiduOAuthLogin).toHaveBeenCalledWith({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: 'http://127.0.0.1:53682/baidu/oauth/callback',
+    }));
+    expect(await screen.findByText('登录完成，已拿到可自动续期的百度网盘 Token。现在可以测试连接或保存。')).toBeTruthy();
+  });
+
+  it('falls back to an auth URL when the running preload has no auto login bridge', async () => {
+    (remoteApiMocks as { startBaiduOAuthLogin?: unknown }).startBaiduOAuthLogin = undefined;
+    render(<RemoteSourcesPanel />);
+    await waitFor(() => expect(remoteApiMocks.list).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /百度网盘/u }));
+    fireEvent.click(screen.getByRole('button', { name: /登录账号/u }));
+
+    await waitFor(() => expect(remoteApiMocks.createBaiduAuthUrl).toHaveBeenCalledWith({
+      clientId: null,
+      redirectUri: 'http://127.0.0.1:53682/baidu/oauth/callback',
+      qrcode: true,
+      responseType: 'code',
+    }));
+    expect(await screen.findByText('当前运行中的 ECHO 需要重启后才能自动回调登录；已先打开授权页，请复制回调里的 code 到“开发配置 / 授权码”后换取 Token。')).toBeTruthy();
+  });
+
+  it('shows inline Baidu OAuth feedback when manual access token is missing', async () => {
+    render(<RemoteSourcesPanel />);
+    await waitFor(() => expect(remoteApiMocks.list).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /百度网盘/u }));
+    fireEvent.click(screen.getByRole('button', { name: /开发配置/u }));
+    fireEvent.click(screen.getByRole('button', { name: /填入 Access Token/u }));
+    await waitFor(() => expect(screen.getAllByText('请先粘贴 access_token 或包含 access_token 的完整地址。').length).toBeGreaterThan(0));
+  });
+
+  it('logs into Baidu through the loopback OAuth flow and fills the token secret', async () => {
+    render(<RemoteSourcesPanel />);
+    await waitFor(() => expect(remoteApiMocks.list).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /百度网盘/u }));
+    fireEvent.click(screen.getByRole('button', { name: /开发配置/u }));
+    fireEvent.change(screen.getByLabelText('百度 App Key'), { target: { value: 'client-id' } });
+    fireEvent.change(screen.getByLabelText('百度 Secret Key'), { target: { value: 'client-secret' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /登录账号/u }));
+    await waitFor(() => expect(remoteApiMocks.startBaiduOAuthLogin).toHaveBeenCalledWith({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      redirectUri: 'http://127.0.0.1:53682/baidu/oauth/callback',
+    }));
+    expect(await screen.findByText('登录完成，已拿到可自动续期的百度网盘 Token。现在可以测试连接或保存。')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /测试连接/u }));
+    await waitFor(() => expect(remoteApiMocks.test).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'baidu',
+      authType: 'token',
+      secret: '{"type":"baidu-oauth-token","accessToken":"login-access-token","refreshToken":"login-refresh-token"}',
+      config: expect.objectContaining({
+        credentialMode: 'oauth-refresh',
+        rootPath: '/',
+      }),
+    })));
+  });
+
+  it('opens Baidu developer help in the system browser', async () => {
+    render(<RemoteSourcesPanel />);
+    await waitFor(() => expect(remoteApiMocks.list).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /百度网盘/u }));
+    fireEvent.click(screen.getByRole('button', { name: /开发配置/u }));
+    fireEvent.click(screen.getByRole('button', { name: /开放平台/u }));
+
+    await waitFor(() => expect(appApiMocks.openExternalUrl).toHaveBeenCalledWith('https://pan.baidu.com/union'));
+    expect(await screen.findByText('百度网盘开放平台 已用系统默认浏览器打开。ECHO 已内置专用 AppKey；这里仅用于查看或覆盖开发配置。')).toBeTruthy();
+  });
+
+  it('fills Baidu access token from an implicit auth callback', async () => {
+    render(<RemoteSourcesPanel />);
+    await waitFor(() => expect(remoteApiMocks.list).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /百度网盘/u }));
+    fireEvent.click(screen.getByRole('button', { name: /开发配置/u }));
+    fireEvent.change(screen.getByLabelText('百度 App Key'), { target: { value: 'client-id' } });
+    fireEvent.change(screen.getByLabelText('Access Token 回调'), {
+      target: { value: 'https://openapi.baidu.com/oauth/2.0/login_success#expires_in=2592000&access_token=implicit-token' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /打开 Token 页/u }));
+    await waitFor(() => expect(remoteApiMocks.createBaiduAuthUrl).toHaveBeenCalledWith({
+      clientId: 'client-id',
+      redirectUri: 'oob',
+      qrcode: true,
+      responseType: 'token',
+    }));
+
+    fireEvent.click(screen.getByRole('button', { name: /填入 Access Token/u }));
+    fireEvent.click(screen.getByRole('button', { name: /测试连接/u }));
+
+    await waitFor(() => expect(remoteApiMocks.test).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'baidu',
+      authType: 'token',
+      secret: 'implicit-token',
+      config: expect.objectContaining({ credentialMode: 'access-token' }),
+    })));
+  });
+
+  it('shows Baidu credential renewal status on source cards', async () => {
+    sources = [
+      remoteSource({
+        provider: 'baidu',
+        displayName: 'Baidu OAuth',
+        baseUrl: null,
+        username: null,
+        authType: 'token',
+        config: { rootPath: '/Music', credentialMode: 'oauth-refresh' },
+      }),
+      remoteSource({
+        id: 'baidu-token',
+        provider: 'baidu',
+        displayName: 'Baidu Token',
+        baseUrl: null,
+        username: null,
+        authType: 'token',
+        config: { rootPath: '/Music', credentialMode: 'access-token' },
+      }),
+    ];
+
+    render(<RemoteSourcesPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: /百度网盘.*2 个/u }));
+
+    await waitFor(() => expect(screen.getAllByText('Baidu OAuth').length).toBeGreaterThan(0));
+    expect(screen.getByText('OAuth 自动续期')).toBeTruthy();
+    expect(screen.getByText('Access Token 手动续期')).toBeTruthy();
   });
 
   it('keeps Basic WebDAV auth when username has an empty password', async () => {

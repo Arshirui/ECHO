@@ -14,6 +14,7 @@ export type AppVideoWallpaperPauseMode = 'smart' | 'minimized' | 'never';
 export type AppLocale = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
 export type AppThemeMode = 'light' | 'dark' | 'system';
 export type ReplayGainMode = 'off' | 'track' | 'album';
+export type AudioTransportFadeCurve = 'linear' | 'smooth' | 'equalPower';
 export type NetworkProxyMode = 'off' | 'system' | 'manual' | 'pac';
 export type DataBackupIntervalDays = 3 | 7 | 30;
 export type ArtistMergeStrategy = 'conservative' | 'standard';
@@ -192,6 +193,9 @@ export type AppSettings = {
   spotifyAutoLaunchOfficialPlayer?: boolean;
   spotifyClientId?: string | null;
   spotifyRedirectUri?: string | null;
+  tidalClientId?: string | null;
+  tidalRedirectUri?: string | null;
+  tidalCountryCode?: string | null;
   downloadsFeatureUnlocked?: boolean;
   streamingDownloadActionsEnabled?: boolean;
   connectAutoStartReceiversEnabled?: boolean;
@@ -320,6 +324,10 @@ export type AppSettings = {
   playerWaveformProgressEnabled?: boolean;
   fixedVolumeEnabled?: boolean;
   gaplessPlaybackEnabled?: boolean;
+  audioTransportFadeEnabled?: boolean;
+  audioTransportFadeInMs?: number;
+  audioTransportFadeOutMs?: number;
+  audioTransportFadeCurve?: AudioTransportFadeCurve;
   replayGainEnabled?: boolean;
   replayGainMode?: ReplayGainMode;
   replayGainTargetLufs?: number;

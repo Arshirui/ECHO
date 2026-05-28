@@ -194,6 +194,12 @@ const patchNodeLibraopWindowsBuild = (openSslRoot) => {
 
   const addonPath = join(packageRoot, 'native', 'addon.cc');
   let addon = readFileSync(addonPath, 'utf8');
+  if (!addon.includes('#include "alac.h"')) {
+    addon = addon.replace(
+      '#include "raop_client.h"\n',
+      '#include "raop_client.h"\n#include "alac.h"\n',
+    );
+  }
   addon = addon.replace(/\bcase RAOP_PCM:/g, 'case RAOP_RECEIVER_PCM:');
   if (addon.includes('#ifdef RAOP_PCM')) {
     addon = addon.replace(
@@ -217,7 +223,222 @@ const patchNodeLibraopWindowsBuild = (openSslRoot) => {
       ].join('\n'),
     );
   }
+  if (!addon.includes('struct AlacDecoderInstance')) {
+    addon = addon.replace(
+      'static unsigned char HexByte(const std::string& hex, size_t idx) {',
+      [
+        'struct AlacDecoderInstance {',
+        '  std::mutex mutex;',
+        '  alac_file* decoder{nullptr};',
+        '  int sampleRate{44100};',
+        '  int sampleSize{16};',
+        '  int channels{2};',
+        '  int framesPerPacket{352};',
+        '};',
+        '',
+        'static std::mutex g_alac_decoders_mutex;',
+        'static std::map<int, std::shared_ptr<AlacDecoderInstance>> g_alac_decoders;',
+        'static int g_next_alac_decoder_handle = 20000;',
+        'static std::once_flag g_alac_decoder_cleanup_once;',
+        '',
+        'static void CleanupAlacDecoders(void*) {',
+        '  std::lock_guard<std::mutex> guard(g_alac_decoders_mutex);',
+        '  for (auto& kv : g_alac_decoders) {',
+        '    auto inst = kv.second;',
+        '    if (!inst) continue;',
+        '    std::lock_guard<std::mutex> lock(inst->mutex);',
+        '    if (inst->decoder) {',
+        '      delete_alac(inst->decoder);',
+        '      inst->decoder = nullptr;',
+        '    }',
+        '  }',
+        '  g_alac_decoders.clear();',
+        '}',
+        '',
+        'static void ConfigureAlacDecoder(alac_file* decoder, int sampleRate, int sampleSize, int channels, int framesPerPacket) {',
+        '  decoder->setinfo_max_samples_per_frame = static_cast<uint32_t>(framesPerPacket);',
+        '  decoder->setinfo_7a = 0;',
+        '  decoder->setinfo_sample_size = static_cast<uint8_t>(sampleSize);',
+        '  decoder->setinfo_rice_historymult = 40;',
+        '  decoder->setinfo_rice_initialhistory = 10;',
+        '  decoder->setinfo_rice_kmodifier = 14;',
+        '  decoder->setinfo_7f = static_cast<uint8_t>(channels);',
+        '  decoder->setinfo_80 = 255;',
+        '  decoder->setinfo_82 = 0;',
+        '  decoder->setinfo_86 = 0;',
+        '  decoder->setinfo_8a_rate = static_cast<uint32_t>(sampleRate);',
+        '  allocate_buffers(decoder);',
+        '}',
+        '',
+        'static std::shared_ptr<AlacDecoderInstance> GetAlacDecoderInstance(int handle) {',
+        '  std::lock_guard<std::mutex> guard(g_alac_decoders_mutex);',
+        '  auto it = g_alac_decoders.find(handle);',
+        '  return it == g_alac_decoders.end() ? nullptr : it->second;',
+        '}',
+        '',
+        'Napi::Value StartAlacDecoder(const Napi::CallbackInfo& info) {',
+        '  Napi::Env env = info.Env();',
+        '  if (info.Length() < 1 || !info[0].IsObject()) {',
+        '    Napi::TypeError::New(env, "startAlacDecoder(options) expected").ThrowAsJavaScriptException();',
+        '    return env.Null();',
+        '  }',
+        '  Napi::Object opts = info[0].As<Napi::Object>();',
+        '  int sampleRate = opts.Has("sampleRate") ? opts.Get("sampleRate").ToNumber().Int32Value() : 44100;',
+        '  int sampleSize = opts.Has("sampleSize") ? opts.Get("sampleSize").ToNumber().Int32Value() : 16;',
+        '  int channels = opts.Has("channels") ? opts.Get("channels").ToNumber().Int32Value() : 2;',
+        '  int framesPerPacket = opts.Has("framesPerPacket") ? opts.Get("framesPerPacket").ToNumber().Int32Value() : 352;',
+        '  if ((sampleRate != 44100 && sampleRate != 48000) || sampleSize != 16 || channels != 2 || framesPerPacket <= 0 || framesPerPacket > 4096) {',
+        '    Napi::TypeError::New(env, "Only AirPlay2 ALAC 16-bit stereo at 44.1/48 kHz is supported").ThrowAsJavaScriptException();',
+        '    return env.Null();',
+        '  }',
+        '  alac_file* decoder = create_alac(sampleSize, channels);',
+        '  if (!decoder) {',
+        '    Napi::Error::New(env, "create_alac failed").ThrowAsJavaScriptException();',
+        '    return env.Null();',
+        '  }',
+        '  ConfigureAlacDecoder(decoder, sampleRate, sampleSize, channels, framesPerPacket);',
+        '  auto inst = std::make_shared<AlacDecoderInstance>();',
+        '  inst->decoder = decoder;',
+        '  inst->sampleRate = sampleRate;',
+        '  inst->sampleSize = sampleSize;',
+        '  inst->channels = channels;',
+        '  inst->framesPerPacket = framesPerPacket;',
+        '  int handle = 0;',
+        '  {',
+        '    std::lock_guard<std::mutex> guard(g_alac_decoders_mutex);',
+        '    handle = g_next_alac_decoder_handle++;',
+        '    g_alac_decoders[handle] = inst;',
+        '  }',
+        '  std::call_once(g_alac_decoder_cleanup_once, [&]() {',
+        '    env.AddCleanupHook([] { CleanupAlacDecoders(nullptr); });',
+        '  });',
+        '  return Napi::Number::New(env, handle);',
+        '}',
+        '',
+        'Napi::Value DecodeAlacFrame(const Napi::CallbackInfo& info) {',
+        '  Napi::Env env = info.Env();',
+        '  if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsBuffer()) {',
+        '    Napi::TypeError::New(env, "decodeAlacFrame(handle, frame) expected").ThrowAsJavaScriptException();',
+        '    return env.Null();',
+        '  }',
+        '  int handle = info[0].ToNumber().Int32Value();',
+        '  Napi::Buffer<uint8_t> frame = info[1].As<Napi::Buffer<uint8_t>>();',
+        '  auto inst = GetAlacDecoderInstance(handle);',
+        '  if (!inst) {',
+        '    Napi::Error::New(env, "unknown ALAC decoder handle").ThrowAsJavaScriptException();',
+        '    return env.Null();',
+        '  }',
+        '  std::lock_guard<std::mutex> lock(inst->mutex);',
+        '  if (!inst->decoder) {',
+        '    Napi::Error::New(env, "ALAC decoder is closed").ThrowAsJavaScriptException();',
+        '    return env.Null();',
+        '  }',
+        '  size_t outputCapacity = static_cast<size_t>(inst->framesPerPacket) * static_cast<size_t>(inst->channels) * sizeof(int16_t) * 2;',
+        '  if (outputCapacity < 8192) outputCapacity = 8192;',
+        '  std::vector<uint8_t> output(outputCapacity);',
+        '  int outputSize = 0;',
+        '  decode_frame(inst->decoder, frame.Data(), output.data(), &outputSize);',
+        '  if (outputSize <= 0) {',
+        '    return Napi::Buffer<uint8_t>::Copy(env, output.data(), 0);',
+        '  }',
+        '  size_t safeSize = static_cast<size_t>(outputSize);',
+        '  if (safeSize > output.size()) safeSize = output.size();',
+        '  return Napi::Buffer<uint8_t>::Copy(env, output.data(), safeSize);',
+        '}',
+        '',
+        'Napi::Value StopAlacDecoder(const Napi::CallbackInfo& info) {',
+        '  Napi::Env env = info.Env();',
+        '  if (info.Length() < 1 || !info[0].IsNumber()) {',
+        '    Napi::TypeError::New(env, "stopAlacDecoder(handle) expected").ThrowAsJavaScriptException();',
+        '    return env.Null();',
+        '  }',
+        '  int handle = info[0].ToNumber().Int32Value();',
+        '  std::shared_ptr<AlacDecoderInstance> inst;',
+        '  {',
+        '    std::lock_guard<std::mutex> guard(g_alac_decoders_mutex);',
+        '    auto it = g_alac_decoders.find(handle);',
+        '    if (it != g_alac_decoders.end()) {',
+        '      inst = it->second;',
+        '      g_alac_decoders.erase(it);',
+        '    }',
+        '  }',
+        '  if (!inst) return env.Null();',
+        '  std::lock_guard<std::mutex> lock(inst->mutex);',
+        '  if (inst->decoder) {',
+        '    delete_alac(inst->decoder);',
+        '    inst->decoder = nullptr;',
+        '  }',
+        '  return env.Null();',
+        '}',
+        '',
+        'static unsigned char HexByte(const std::string& hex, size_t idx) {',
+      ].join('\n'),
+    );
+  }
+  if (!addon.includes('exports.Set("startAlacDecoder"')) {
+    addon = addon.replace(
+      '  exports.Set("setLogHandler", Napi::Function::New(env, SetLogHandler));',
+      [
+        '  exports.Set("startAlacDecoder", Napi::Function::New(env, StartAlacDecoder));',
+        '  exports.Set("decodeAlacFrame", Napi::Function::New(env, DecodeAlacFrame));',
+        '  exports.Set("stopAlacDecoder", Napi::Function::New(env, StopAlacDecoder));',
+        '  exports.Set("setLogHandler", Napi::Function::New(env, SetLogHandler));',
+      ].join('\n'),
+    );
+  }
   writeFileSync(addonPath, addon, 'utf8');
+
+  const distIndexPath = join(packageRoot, 'dist', 'index.js');
+  let distIndex = readFileSync(distIndexPath, 'utf8');
+  if (!distIndex.includes('exports.startAlacDecoder = startAlacDecoder;')) {
+    distIndex = distIndex
+      .replace(
+        'exports.setLogHandler = setLogHandler;',
+        [
+          'exports.startAlacDecoder = startAlacDecoder;',
+          'exports.decodeAlacFrame = decodeAlacFrame;',
+          'exports.stopAlacDecoder = stopAlacDecoder;',
+          'exports.setLogHandler = setLogHandler;',
+        ].join('\n'),
+      )
+      .replace(
+        'function setLogHandler(handler, level = \'warn\', raopLevel, utilLevel) {',
+        [
+          'function startAlacDecoder(options) {',
+          '    return bindings.startAlacDecoder(options);',
+          '}',
+          'function decodeAlacFrame(handle, frame) {',
+          '    return bindings.decodeAlacFrame(handle, frame);',
+          '}',
+          'function stopAlacDecoder(handle) {',
+          '    bindings.stopAlacDecoder(handle);',
+          '}',
+          'function setLogHandler(handler, level = \'warn\', raopLevel, utilLevel) {',
+        ].join('\n'),
+      );
+    writeFileSync(distIndexPath, distIndex, 'utf8');
+  }
+
+  const distTypesPath = join(packageRoot, 'dist', 'index.d.ts');
+  let distTypes = readFileSync(distTypesPath, 'utf8');
+  if (!distTypes.includes('startAlacDecoder')) {
+    distTypes = distTypes.replace(
+      'export declare function pairWithAppleTvByIp(targetIp: string, port?: number): {',
+      [
+        'export type AlacDecoderOptions = {',
+        '    sampleRate: number;',
+        '    sampleSize: 16;',
+        '    channels: 2;',
+        '    framesPerPacket: number;',
+        '};',
+        'export declare function startAlacDecoder(options: AlacDecoderOptions): number;',
+        'export declare function decodeAlacFrame(handle: number, frame: Buffer): Buffer;',
+        'export declare function stopAlacDecoder(handle: number): void;',
+        'export declare function pairWithAppleTvByIp(targetIp: string, port?: number): {',
+      ].join('\n'),
+    );
+    writeFileSync(distTypesPath, distTypes, 'utf8');
+  }
 
   const serverHeaderPath = join(packageRoot, 'vendor', 'libraop', 'src', 'raop_server.h');
   let serverHeader = readFileSync(serverHeaderPath, 'utf8');

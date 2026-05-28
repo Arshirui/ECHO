@@ -296,7 +296,7 @@ export class StreamingCacheStore {
         track.albumId,
         track.albumArtist,
         track.duration,
-        track.coverThumb ?? track.coverUrl,
+        track.coverUrl ?? track.coverThumb,
         null,
         JSON.stringify(track.qualities),
         track.playable ? 1 : 0,
@@ -371,7 +371,7 @@ export class StreamingCacheStore {
       .get(playlist.provider, playlist.providerPlaylistId);
     const playlistId = existing ? String(existing.id) : randomUUID();
     const playlistKind = options.kind ?? 'synced';
-    const playlistCoverUrl = playlist.coverThumb ?? playlist.coverUrl ?? playlist.tracks.find((track) => track.coverThumb || track.coverUrl)?.coverThumb ?? playlist.tracks.find((track) => track.coverThumb || track.coverUrl)?.coverUrl ?? null;
+    const playlistCoverUrl = playlist.coverUrl ?? playlist.coverThumb ?? playlist.tracks.find((track) => track.coverUrl || track.coverThumb)?.coverUrl ?? playlist.tracks.find((track) => track.coverUrl || track.coverThumb)?.coverThumb ?? null;
 
     this.database
       .prepare(

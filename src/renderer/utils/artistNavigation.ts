@@ -11,11 +11,15 @@ export type ArtistDetailNavigationRequest = {
 let pendingArtistDetail: ArtistDetailNavigationRequest | null = null;
 
 const normalizeArtistName = (value: string): string => value.normalize('NFKC').trim().toLocaleLowerCase();
+const numericArtistSlashPlaceholder = '__ECHO_NUMERIC_ARTIST_SLASH__';
+const protectNumericArtistSlashes = (value: string): string =>
+  value.replace(/(\p{Number})\s*\/\s*(?=\p{Number})/gu, `$1${numericArtistSlashPlaceholder}`);
+const restoreNumericArtistSlashes = (value: string): string => value.replaceAll(numericArtistSlashPlaceholder, '/');
 
 const splitArtistNames = (value: string): string[] =>
-  value
+  protectNumericArtistSlashes(value)
     .split(/\s*(?:\/|、|,|，|;|；|&|＆|\+| feat\.? | ft\.? )\s*/iu)
-    .map((name) => name.trim())
+    .map((name) => restoreNumericArtistSlashes(name).trim())
     .filter(Boolean);
 
 const uniqueNames = (names: string[]): string[] => {

@@ -41,7 +41,7 @@ const parseJsonObject = (value: unknown): Record<string, unknown> => {
 };
 
 const providerOrWebdav = (value: unknown): RemoteSourceProvider =>
-  value === 'jellyfin' || value === 'emby' || value === 'smb' || value === 'sshfs' || value === 'subsonic' ? value : 'webdav';
+  value === 'baidu' || value === 'jellyfin' || value === 'emby' || value === 'smb' || value === 'sshfs' || value === 'subsonic' ? value : 'webdav';
 
 const statusOrEnabled = (value: unknown): RemoteSourceStatus =>
   value === 'disabled' || value === 'error' ? value : 'enabled';

@@ -370,6 +370,95 @@ describe('MvPanel', () => {
     await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/remote-video-1'));
   });
 
+  it('searches non-temporary streaming track MVs from snapshot metadata', async () => {
+    const streamingTrack = makeRemoteTrack({
+      id: 'spotify-row-1',
+      mediaType: 'streaming',
+      isTemporary: false,
+      path: 'streaming:spotify:6A8NfypDHuwlWbo4aIYca',
+      sourceId: null,
+      provider: 'spotify',
+      providerTrackId: '6A8NfypDHuwlWbo4aIYca',
+      remotePath: null,
+      stableKey: 'streaming:spotify:6A8NfypDHuwlWbo4aIYca',
+      title: 'New Genesis',
+      artist: 'Ado',
+      album: "UTA'S SONGS ONE PIECE FILM RED",
+      albumArtist: 'Ado',
+    });
+    const selectedAfterSearch = makeVideo({
+      id: 'spotify-video-1',
+      trackId: streamingTrack.id,
+      provider: 'bilibili',
+      mediaUrl: 'echo-video://mv/spotify-video-1',
+    });
+    window.echo = {
+      playback: {
+        seek: vi.fn(),
+      },
+      mv: {
+        getSelected: vi.fn().mockResolvedValue(null),
+        getSettings: vi.fn().mockResolvedValue(defaultMvSettings),
+        setSettings: vi.fn(),
+        findLocalCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidates: vi.fn().mockResolvedValue([]),
+        searchNetworkCandidatesForSnapshot: vi.fn().mockResolvedValue([
+          {
+            id: 'bilibili:BVspotify',
+            provider: 'bilibili',
+            sourceType: 'search_candidate',
+            title: 'New Genesis MV',
+            artist: 'Ado',
+            filePath: null,
+            url: 'https://www.bilibili.com/video/BVspotify',
+            providerUrl: 'https://www.bilibili.com/video/BVspotify',
+            thumbnailUrl: null,
+            uploader: 'Ado Channel',
+            availableQualities: [],
+            durationSeconds: 240,
+            score: 0.94,
+            playableInApp: true,
+            reasons: ['Bilibili search'],
+          },
+        ]),
+        getCandidates: vi.fn().mockResolvedValue([]),
+        resolveStreams: vi.fn().mockResolvedValue({ video: selectedAfterSearch, variants: [] }),
+        setQuality: vi.fn(),
+        chooseLocalVideo: vi.fn().mockResolvedValue(null),
+        bindLocalVideo: vi.fn(),
+        selectVideo: vi.fn().mockResolvedValue(selectedAfterSearch),
+        clearSelected: vi.fn(),
+        openExternal: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <MvPanel
+        trackId="streaming:spotify:6A8NfypDHuwlWbo4aIYca"
+        currentTrack={streamingTrack}
+        title={streamingTrack.title}
+        artist={streamingTrack.artist}
+        coverUrl={streamingTrack.coverThumb}
+        isAudioPlaying
+        audioClock={makeAudioClock(0)}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(window.echo.mv.searchNetworkCandidatesForSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackId: 'streaming:spotify:6A8NfypDHuwlWbo4aIYca',
+          title: 'New Genesis',
+          artist: 'Ado',
+          mediaType: 'streaming',
+          query: 'New Genesis Ado',
+        }),
+      ),
+    );
+    expect(window.echo.mv.searchNetworkCandidates).not.toHaveBeenCalled();
+    await waitFor(() => expect(container.querySelector('video')?.getAttribute('src')).toBe('echo-video://mv/spotify-video-1'));
+  });
+
   it('auto-loads MV for AirPlay receiver streams', async () => {
     const airPlayTrack = makeRemoteTrack({
       id: 'airplay-receiver:session-1',

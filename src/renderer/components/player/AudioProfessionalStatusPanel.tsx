@@ -31,6 +31,20 @@ const trimTrailingZero = (value: string): string => value.replace(/\.0$/u, '');
 const normalizeReason = (value: string | null | undefined, fallback: string): string =>
   value ? value.replaceAll('_', ' ') : fallback;
 
+const formatIssueReason = (
+  value: string,
+  fallback: string,
+  formatSharedMixRateTooHigh: (decoderRate: number, deviceRate: number) => string,
+): string => {
+  const sharedMixRateMatch = /^shared_output_mix_rate_too_high:(\d+)->(\d+)$/u.exec(value);
+
+  if (sharedMixRateMatch) {
+    return formatSharedMixRateTooHigh(Number(sharedMixRateMatch[1]), Number(sharedMixRateMatch[2]));
+  }
+
+  return normalizeReason(value, fallback);
+};
+
 const formatRate = (value: number | null | undefined, unknown: string): string => {
   if (!value || !Number.isFinite(value)) {
     return unknown;
@@ -88,8 +102,15 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
   const issueReasons = useMemo(() => (
     [status?.error, ...(status?.warnings ?? [])]
       .filter((reason): reason is string => Boolean(reason?.trim()))
-      .map((reason) => normalizeReason(reason, unknown))
-  ), [status, unknown]);
+      .map((reason) => formatIssueReason(
+        reason,
+        unknown,
+        (decoderRate, deviceRate) => t('audioProfessional.issue.sharedMixRateTooHigh', {
+          decoderRate: formatRate(decoderRate, unknown),
+          deviceRate: formatRate(deviceRate, unknown),
+        }),
+      ))
+  ), [status, t, unknown]);
 
   const badges = useMemo<ProfessionalStatusBadge[]>(() => {
     const nextBadges: ProfessionalStatusBadge[] = [];

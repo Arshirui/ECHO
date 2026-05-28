@@ -13,6 +13,8 @@ import type {
   StreamingTrack,
 } from '../../../shared/types/streaming';
 import { streamingStableKey } from '../../../shared/types/streaming';
+import { getAccountService } from '../../accounts/AccountService';
+import { getTidalAuthService } from '../../accounts/TidalAuthService';
 import { fetchWithNetworkProxy } from '../../network/networkFetch';
 import type { StreamingProvider } from '../StreamingProvider';
 import { asRecord, text } from './chinaStreamingUtils';
@@ -35,6 +37,16 @@ type TidalTokenCache = {
 };
 
 type JsonApiResource = Record<string, unknown>;
+
+class TidalHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'TidalHttpError';
+  }
+}
 
 const credentialText = (...values: Array<string | undefined>): string | null => {
   for (const value of values) {
@@ -59,6 +71,16 @@ const tidalCredentials = (): TidalCredentials | null => {
     clientSecret,
     countryCode: countryCode.toUpperCase(),
   };
+};
+
+const hasClientCredentials = (): boolean => Boolean(tidalCredentials());
+
+const tidalAccountStatus = () => {
+  try {
+    return getAccountService().getStatus(provider);
+  } catch {
+    return null;
+  }
 };
 
 const encodeBasicToken = (credentials: TidalCredentials): string =>
@@ -336,12 +358,20 @@ const playlistFrom = (resource: JsonApiResource, index: Map<string, JsonApiResou
 
 const hasNextPage = (value: unknown): boolean => Boolean(text(asRecord(asRecord(value).links).next));
 
+const resourceIds = (value: unknown, type: string, limit: number): string[] =>
+  Array.from(new Set(dataResources(value)
+    .filter((resource) => text(resource.type) === type)
+    .map((resource) => text(resource.id))
+    .filter((id): id is string => Boolean(id))))
+    .slice(0, limit);
+
 export class TidalStreamingProvider implements StreamingProvider {
   readonly name = provider;
   private tokenCache: TidalTokenCache | null = null;
 
   get descriptor(): Omit<StreamingProviderDescriptor, 'name'> {
-    const configured = Boolean(tidalCredentials());
+    const status = tidalAccountStatus();
+    const configured = Boolean(status?.connected) || hasClientCredentials();
     return {
       displayName: 'TIDAL',
       enabled: configured,
@@ -351,14 +381,14 @@ export class TidalStreamingProvider implements StreamingProvider {
       supportsLyrics: false,
       supportsMv: false,
       requiresAccount: true,
-      accountConnected: configured,
-      accountDisplayName: configured ? 'API credentials' : null,
-      accountUsername: null,
-      accountAvatarUrl: null,
-      status: configured ? 'ready' : 'needs_account',
+      accountConnected: Boolean(status?.connected) || hasClientCredentials(),
+      accountDisplayName: status?.displayName ?? (hasClientCredentials() ? 'API credentials' : null),
+      accountUsername: status?.username ?? null,
+      accountAvatarUrl: status?.avatarUrl ?? null,
+      status: configured ? (status?.connected && status.error ? 'error' : 'ready') : 'needs_account',
       statusMessage: configured
         ? 'TIDAL catalog metadata is available. Playback stays on the official TIDAL player.'
-        : 'Set ECHO_TIDAL_CLIENT_ID and ECHO_TIDAL_CLIENT_SECRET to enable TIDAL metadata.',
+        : 'Sign in to TIDAL from Settings > Integrations to enable catalog metadata.',
     };
   }
 
@@ -369,9 +399,17 @@ export class TidalStreamingProvider implements StreamingProvider {
       ? request.mediaTypes.filter((type) => type === 'track' || type === 'album' || type === 'artist' || type === 'playlist')
       : ['track'];
     const includeNames = Array.from(new Set(mediaTypes.map((type) => `${type}s`)));
-    const data = await this.apiJson(
-      `/searchResults/${encodeURIComponent(request.query)}?include=${encodeURIComponent(includeNames.join(','))}`,
-    );
+    let data: unknown;
+    try {
+      data = await this.apiJson(
+        `/searchResults/${encodeURIComponent(request.query)}?include=${encodeURIComponent(includeNames.join(','))}`,
+      );
+    } catch (error) {
+      if (error instanceof TidalHttpError && error.status === 404) {
+        return this.searchRelationships(request.query, mediaTypes, page, pageSize);
+      }
+      throw error;
+    }
     const index = resourceIndex(data);
     const tracks = mediaTypes.includes('track')
       ? relationResourcesFromResponse(data, 'tracks').map((item) => trackFrom(item, index)).filter((item): item is StreamingTrack => Boolean(item)).slice(0, pageSize)
@@ -399,6 +437,112 @@ export class TidalStreamingProvider implements StreamingProvider {
       playlists,
       mvs: [],
     };
+  }
+
+  private async searchRelationships(
+    query: string,
+    mediaTypes: Array<'track' | 'album' | 'artist' | 'playlist'>,
+    page: number,
+    pageSize: number,
+  ): Promise<StreamingSearchResult> {
+    const tracks = mediaTypes.includes('track')
+      ? await this.searchTracksByRelationship(query, pageSize)
+      : [];
+    const albums = mediaTypes.includes('album')
+      ? await this.searchAlbumsByRelationship(query, pageSize)
+      : [];
+    const artists = mediaTypes.includes('artist')
+      ? await this.searchArtistsByRelationship(query, pageSize)
+      : [];
+    const playlists = mediaTypes.includes('playlist')
+      ? await this.searchPlaylistsByRelationship(query, pageSize)
+      : [];
+
+    return {
+      provider,
+      query,
+      page,
+      pageSize,
+      total: null,
+      hasMore: false,
+      tracks,
+      albums,
+      artists,
+      playlists,
+      mvs: [],
+    };
+  }
+
+  private async searchTracksByRelationship(query: string, pageSize: number): Promise<StreamingTrack[]> {
+    const relation = await this.apiJson(
+      `/searchresults/${encodeURIComponent(query)}/relationships/tracks?include=tracks`,
+    );
+    const ids = resourceIds(relation, 'tracks', pageSize);
+    if (!ids.length) {
+      return [];
+    }
+
+    const data = await this.apiJson(
+      `/tracks?filter[id]=${encodeURIComponent(ids.join(','))}&include=artists,albums,coverArt`,
+    );
+    const index = resourceIndex(data);
+    return dataResources(data)
+      .map((item) => trackFrom(item, index))
+      .filter((item): item is StreamingTrack => Boolean(item));
+  }
+
+  private async searchAlbumsByRelationship(query: string, pageSize: number): Promise<StreamingAlbum[]> {
+    const relation = await this.apiJson(
+      `/searchresults/${encodeURIComponent(query)}/relationships/albums?include=albums`,
+    );
+    const ids = resourceIds(relation, 'albums', pageSize);
+    if (!ids.length) {
+      return [];
+    }
+
+    const data = await this.apiJson(
+      `/albums?filter[id]=${encodeURIComponent(ids.join(','))}&include=artists,coverArt`,
+    );
+    const index = resourceIndex(data);
+    return dataResources(data)
+      .map((item) => albumShellFrom(item, index))
+      .filter((item): item is StreamingAlbum => Boolean(item));
+  }
+
+  private async searchArtistsByRelationship(query: string, pageSize: number): Promise<StreamingArtist[]> {
+    const relation = await this.apiJson(
+      `/searchresults/${encodeURIComponent(query)}/relationships/artists?include=artists`,
+    );
+    const ids = resourceIds(relation, 'artists', pageSize);
+    if (!ids.length) {
+      return [];
+    }
+
+    const data = await this.apiJson(
+      `/artists?filter[id]=${encodeURIComponent(ids.join(','))}&include=profileArt`,
+    );
+    const index = resourceIndex(data);
+    return dataResources(data)
+      .map((item) => artistFrom(item, index))
+      .filter((item): item is StreamingArtist => Boolean(item));
+  }
+
+  private async searchPlaylistsByRelationship(query: string, pageSize: number): Promise<StreamingPlaylist[]> {
+    const relation = await this.apiJson(
+      `/searchresults/${encodeURIComponent(query)}/relationships/playlists?include=playlists`,
+    );
+    const ids = resourceIds(relation, 'playlists', pageSize);
+    if (!ids.length) {
+      return [];
+    }
+
+    const data = await this.apiJson(
+      `/playlists?filter[id]=${encodeURIComponent(ids.join(','))}&include=coverArt`,
+    );
+    const index = resourceIndex(data);
+    return dataResources(data)
+      .map((item) => playlistFrom(item, index))
+      .filter((item): item is StreamingPlaylist => Boolean(item));
   }
 
   async getTrack(input: { providerTrackId: string }): Promise<StreamingTrack> {
@@ -464,10 +608,9 @@ export class TidalStreamingProvider implements StreamingProvider {
   }
 
   private async apiJson(path: string): Promise<unknown> {
-    const credentials = this.requireCredentials();
-    const token = await this.getAccessToken(credentials);
+    const { token, countryCode } = await this.getAccessToken();
     const separator = path.includes('?') ? '&' : '?';
-    const url = `${tidalApiBaseUrl}${path}${separator}countryCode=${encodeURIComponent(credentials.countryCode)}`;
+    const url = `${tidalApiBaseUrl}${path}${separator}countryCode=${encodeURIComponent(countryCode)}`;
     const response = await withTimeout(url, {
       method: 'GET',
       headers: {
@@ -480,23 +623,35 @@ export class TidalStreamingProvider implements StreamingProvider {
     if (!response.ok) {
       const detail = await parseResponseDetail(response);
       if (response.status === 401) {
-        throw new Error('TIDAL API credentials are invalid or expired.');
+        throw new TidalHttpError('TIDAL API credentials are invalid or expired.', response.status);
       }
       if (response.status === 403) {
-        throw new Error('TIDAL API access is denied for this app or region.');
+        throw new TidalHttpError('TIDAL API access is denied for this app or region.', response.status);
       }
       if (response.status === 404) {
-        throw new Error('TIDAL content was not found or is unavailable.');
+        throw new TidalHttpError('TIDAL content was not found or is unavailable.', response.status);
       }
-      throw new Error(`TIDAL request failed: ${response.status}${detail ? ` (${detail})` : ''}`);
+      throw new TidalHttpError(`TIDAL request failed: ${response.status}${detail ? ` (${detail})` : ''}`, response.status);
     }
 
     return response.json();
   }
 
-  private async getAccessToken(credentials: TidalCredentials): Promise<string> {
+  private async getAccessToken(): Promise<{ token: string; countryCode: string }> {
+    const accountStatus = tidalAccountStatus();
+    if (accountStatus?.connected) {
+      return {
+        token: await getTidalAuthService().getAccessToken(),
+        countryCode: getTidalAuthService().getCountryCode(),
+      };
+    }
+
+    const credentials = this.requireClientCredentials();
     if (this.tokenCache && this.tokenCache.expiresAtMs - tokenRefreshSkewMs > Date.now()) {
-      return this.tokenCache.accessToken;
+      return {
+        token: this.tokenCache.accessToken,
+        countryCode: credentials.countryCode,
+      };
     }
 
     const response = await withTimeout(tidalAuthUrl, {
@@ -527,13 +682,16 @@ export class TidalStreamingProvider implements StreamingProvider {
       expiresAtMs: Date.now() + expiresInSeconds * 1000,
     };
 
-    return accessToken;
+    return {
+      token: accessToken,
+      countryCode: credentials.countryCode,
+    };
   }
 
-  private requireCredentials(): TidalCredentials {
+  private requireClientCredentials(): TidalCredentials {
     const credentials = tidalCredentials();
     if (!credentials) {
-      throw new Error('TIDAL API credentials are not configured.');
+      throw new Error('TIDAL is not signed in. Open Settings > Integrations and sign in first.');
     }
     return credentials;
   }

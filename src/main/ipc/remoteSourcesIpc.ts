@@ -1,6 +1,9 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type {
+  BaiduOAuthAuthorizeRequest,
+  BaiduOAuthLoginRequest,
+  BaiduOAuthTokenRequest,
   RemoteBackgroundJobKind,
   RemoteSourceIssueKind,
   RemoteRuntimeLimits,
@@ -11,8 +14,14 @@ import type {
   RemoteVisibleHydrationOptions,
 } from '../../shared/types/remoteSources';
 import { getRemoteSourceService } from '../library/remote/RemoteSourceService';
+import {
+  createBaiduOAuthAuthorizeUrl,
+  exchangeBaiduOAuthCode,
+  extractBaiduOAuthAccessToken,
+  startBaiduOAuthLogin,
+} from '../library/remote/BaiduOAuth';
 
-const providers = new Set<RemoteSourceProvider>(['webdav', 'jellyfin', 'emby', 'smb', 'sshfs', 'subsonic']);
+const providers = new Set<RemoteSourceProvider>(['webdav', 'baidu', 'jellyfin', 'emby', 'smb', 'sshfs', 'subsonic']);
 const syncModes = new Set<RemoteSourceSyncMode>(['browse', 'index', 'mirror']);
 const backgroundJobKinds = new Set<RemoteBackgroundJobKind>(['metadata', 'cover', 'lyrics', 'mv', 'duration-backfill']);
 const issueKinds = new Set<RemoteSourceIssueKind>(['metadata', 'cover', 'lyrics', 'mv', 'missing']);
@@ -106,6 +115,49 @@ const normalizeIssueKind = (value: unknown): RemoteSourceIssueKind => {
 const normalizeIssueLimit = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
+const normalizeBaiduOAuthAuthorizeRequest = (value: unknown): BaiduOAuthAuthorizeRequest => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Baidu OAuth authorize request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    clientId: optionalText(input.clientId),
+    redirectUri: optionalText(input.redirectUri),
+    state: optionalText(input.state),
+    qrcode: input.qrcode !== false,
+    responseType: input.responseType === 'token' ? 'token' : 'code',
+  };
+};
+
+const normalizeBaiduOAuthTokenRequest = (value: unknown): BaiduOAuthTokenRequest => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Baidu OAuth token request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    clientId: optionalText(input.clientId),
+    clientSecret: optionalText(input.clientSecret),
+    redirectUri: optionalText(input.redirectUri),
+    code: requireText(input.code, 'code'),
+  };
+};
+
+const normalizeBaiduOAuthLoginRequest = (value: unknown): BaiduOAuthLoginRequest => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Baidu OAuth login input must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    clientId: optionalText(input.clientId),
+    clientSecret: optionalText(input.clientSecret),
+    redirectUri: optionalText(input.redirectUri),
+    timeoutMs: typeof input.timeoutMs === 'number' && Number.isFinite(input.timeoutMs) ? input.timeoutMs : null,
+  };
+};
+
 const normalizeInput = (value: unknown): RemoteSourceInput => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('remote source input must be an object');
@@ -114,7 +166,11 @@ const normalizeInput = (value: unknown): RemoteSourceInput => {
   const input = value as Record<string, unknown>;
   const provider = providers.has(input.provider as RemoteSourceProvider) ? (input.provider as RemoteSourceProvider) : 'webdav';
   const syncMode = syncModes.has(input.syncMode as RemoteSourceSyncMode) ? (input.syncMode as RemoteSourceSyncMode) : 'index';
-  const requestedAuthType = input.authType === 'none' || input.authType === 'token' || input.authType === 'apiKey' ? input.authType : 'basic';
+  const requestedAuthType = provider === 'baidu'
+    ? 'token'
+    : input.authType === 'none' || input.authType === 'token' || input.authType === 'apiKey'
+      ? input.authType
+      : 'basic';
   const username = optionalText(input.username);
   const secret = typeof input.secret === 'string' ? input.secret : null;
   const authType = provider === 'webdav' && requestedAuthType === 'basic' && !username && !secret ? 'none' : requestedAuthType;
@@ -125,13 +181,18 @@ const normalizeInput = (value: unknown): RemoteSourceInput => {
   if (provider === 'webdav' && (authType === 'token' || authType === 'apiKey') && !secret) {
     throw new Error('WebDAV token authentication requires a token or API key.');
   }
+  const normalizedSecret = provider === 'baidu' && secret ? extractBaiduOAuthAccessToken(secret) : secret;
+
+  if (provider === 'baidu' && !normalizedSecret) {
+    throw new Error('Baidu Netdisk access token is required.');
+  }
 
   return {
     provider,
     displayName: requireText(input.displayName, 'displayName'),
-    baseUrl: optionalText(input.baseUrl),
-    username: authType === 'none' || authType === 'token' || authType === 'apiKey' ? null : username,
-    secret: authType === 'none' ? null : secret,
+    baseUrl: provider === 'baidu' ? null : optionalText(input.baseUrl),
+    username: provider === 'baidu' || authType === 'none' || authType === 'token' || authType === 'apiKey' ? null : username,
+    secret: authType === 'none' ? null : normalizedSecret,
     authType,
     config: normalizeConfig(input.config),
     syncMode,
@@ -247,5 +308,18 @@ export const registerRemoteSourcesIpc = (): void => {
   ipcMain.handle(IpcChannels.RemoteSourcesGetBackgroundGlobalStatus, () => getRemoteSourceService().getBackgroundGlobalStatus());
   ipcMain.handle(IpcChannels.RemoteSourcesUpdateRuntimeLimits, (_event, sourceId: unknown, limits: unknown) =>
     getRemoteSourceService().updateRuntimeLimits(requireText(sourceId, 'sourceId'), normalizeRuntimeLimits(limits)),
+  );
+  ipcMain.handle(IpcChannels.RemoteSourcesCreateBaiduAuthUrl, async (_event, input: unknown) => {
+    const url = createBaiduOAuthAuthorizeUrl(normalizeBaiduOAuthAuthorizeRequest(input));
+    await shell.openExternal(url);
+    return url;
+  });
+  ipcMain.handle(IpcChannels.RemoteSourcesExchangeBaiduAuthCode, (_event, input: unknown) =>
+    exchangeBaiduOAuthCode(normalizeBaiduOAuthTokenRequest(input)),
+  );
+  ipcMain.handle(IpcChannels.RemoteSourcesStartBaiduOAuthLogin, (_event, input: unknown) =>
+    startBaiduOAuthLogin(normalizeBaiduOAuthLoginRequest(input), {
+      openUrl: (url) => shell.openExternal(url),
+    }),
   );
 };

@@ -51,6 +51,39 @@
   gap: 14px;
 }
 
+.folders-header-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folder-source-switch {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--theme-button-border);
+  border-radius: 8px;
+  background: var(--theme-button-bg);
+  box-shadow: var(--theme-shadow-panel);
+}
+
+.folder-source-switch button {
+  min-width: 52px;
+  min-height: 32px;
+  padding: 0 11px;
+  color: var(--color-muted);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 840;
+}
+
+.folder-source-switch button.active {
+  color: var(--theme-on-accent);
+  background: var(--theme-accent-solid-bg);
+}
+
 .folders-pane-header h1,
 .folders-panel-heading h2,
 .folder-detail-title h2 {
@@ -171,6 +204,34 @@
 .folder-tree-node em {
   justify-self: end;
   font-style: normal;
+}
+
+.folders-empty-state {
+  display: grid;
+  gap: 10px;
+  padding: 10px 2px;
+}
+
+.folders-empty-action {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  color: var(--theme-text);
+  border: 1px solid var(--theme-button-border);
+  border-radius: 8px;
+  background: var(--theme-button-bg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.folders-empty-action:hover {
+  border-color: var(--theme-accent-border);
+  background: var(--theme-button-hover-bg);
 }
 
 .folder-expand-hit {
@@ -327,6 +388,11 @@
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
+}
+
+button.folder-toggle:disabled {
+  cursor: default;
+  opacity: 0.52;
 }
 
 .folder-toggle input {
@@ -507,6 +573,7 @@ html[data-theme="dark"] .folders-panel-heading h2 {
 
 html[data-theme="dark"] .folder-root-button,
 html[data-theme="dark"] .folder-tree-node,
+html[data-theme="dark"] .folder-source-switch,
 html[data-theme="dark"] .folder-metrics span,
 html[data-theme="dark"] .folder-import-box input,
 html[data-theme="dark"] .folder-import-box,

@@ -489,6 +489,7 @@ export type TranslationKey =
   | 'accountProvider.qqmusic'
   | 'accountProvider.soundcloud'
   | 'accountProvider.spotify'
+  | 'accountProvider.tidal'
   | 'accountProvider.unknown'
   | 'accountProvider.youtube'
   | 'desktopLyrics.aria.stage'
@@ -726,6 +727,7 @@ export type TranslationKey =
   | 'audioProfessional.badge.sampleMismatch'
   | 'audioProfessional.badge.warning'
   | 'audioProfessional.issue.reason'
+  | 'audioProfessional.issue.sharedMixRateTooHigh'
   | 'audioProfessional.group.directDsp'
   | 'audioProfessional.group.playbackChain'
   | 'audioProfessional.group.sampleRate'
@@ -1094,6 +1096,7 @@ export type TranslationKey =
   | 'lyricsSettings.background.smartReadable'
   | 'lyricsSettings.background.smartReadableDescription'
   | 'lyricsSettings.background.title'
+  | 'lyricsSettings.background.tuning'
   | 'lyricsSettings.background.tuningDescription'
   | 'lyricsSettings.background.wallpaperSaved'
   | 'lyricsSettings.candidate.allSources'
@@ -1300,6 +1303,7 @@ export type TranslationKey =
   | 'mvSettings.immersive.positionY'
   | 'mvSettings.immersive.reset'
   | 'mvSettings.immersive.title'
+  | 'mvSettings.immersive.tuning'
   | 'mvSettings.immersive.visualHint'
   | 'mvSettings.immersive.zoom'
   | 'mvSettings.network.autoApply'
@@ -1960,6 +1964,16 @@ export type TranslationKey =
   | 'settings.playback.fixedVolume.title'
   | 'settings.playback.gapless.description'
   | 'settings.playback.gapless.title'
+  | 'settings.playback.transportFade.curve.equalPower'
+  | 'settings.playback.transportFade.curve.linear'
+  | 'settings.playback.transportFade.curve.smooth'
+  | 'settings.playback.transportFade.description'
+  | 'settings.playback.transportFade.field.curve'
+  | 'settings.playback.transportFade.field.fadeIn'
+  | 'settings.playback.transportFade.field.fadeOut'
+  | 'settings.playback.transportFade.status.disabled'
+  | 'settings.playback.transportFade.status.enabled'
+  | 'settings.playback.transportFade.title'
   | 'settings.playback.issueDiagnostics.description'
   | 'settings.playback.issueDiagnostics.title'
   | 'settings.playback.juceOutput.description'
@@ -2401,6 +2415,7 @@ const zhCN: TranslationMap = {
   'accountProvider.qqmusic': 'QQ 音乐',
   'accountProvider.soundcloud': 'SoundCloud',
   'accountProvider.spotify': 'Spotify',
+  'accountProvider.tidal': 'TIDAL',
   'accountProvider.unknown': '未知账号',
   'accountProvider.youtube': 'YouTube',
   'desktopLyrics.aria.stage': '桌面歌词',
@@ -2762,6 +2777,7 @@ const zhCN: TranslationMap = {
   'audioProfessional.badge.sampleMismatch': '采样率不匹配',
   'audioProfessional.badge.warning': '设备异常/警告',
   'audioProfessional.issue.reason': '异常原因',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows 共享采样率过高：设备是 {deviceRate}，ECHO 当前输出 {decoderRate} PCM，可能导致变速。建议把 Windows 默认格式改到 48 kHz 或 96 kHz。',
   'audioProfessional.group.directDsp': '直通与 DSP',
   'audioProfessional.group.playbackChain': '播放链路',
   'audioProfessional.group.sampleRate': '采样率链路',
@@ -3233,6 +3249,7 @@ const zhCN: TranslationMap = {
   'lyricsSettings.background.smartReadable': '智能可读颜色',
   'lyricsSettings.background.smartReadableDescription': '根据封面、壁纸或 MV 画面自动选择高对比文字色，并按需增加轻遮罩、描边和阴影。关闭时继续使用手动歌词颜色。',
   'lyricsSettings.background.title': '歌词背景',
+  'lyricsSettings.background.tuning': '背景调节',
   'lyricsSettings.background.tuningDescription': '跟随封面和自定义壁纸都会使用这里的透明度、模糊度和亮度。',
   'lyricsSettings.background.wallpaperSaved': '已保存到应用壁纸目录',
   'lyricsSettings.candidate.allSources': '全部来源',
@@ -3439,6 +3456,7 @@ const zhCN: TranslationMap = {
   'mvSettings.immersive.positionY': '纵向位置',
   'mvSettings.immersive.reset': '重置沉浸式背景',
   'mvSettings.immersive.title': '沉浸式 MV 背景',
+  'mvSettings.immersive.tuning': '沉浸式背景调节',
   'mvSettings.immersive.visualHint': '用于调节沉浸式背景观感。',
   'mvSettings.immersive.zoom': '背景缩放',
   'mvSettings.network.autoApply': '自动搜索网络MV',
@@ -4081,7 +4099,7 @@ const zhCN: TranslationMap = {
   'settings.nav.plugins.label': '插件',
   'settings.nav.remote.description': 'NAS、WebDAV、Subsonic',
   'settings.nav.remote.label': '网盘 / 远程',
-  'settings.nav.shortcuts.description': '普通快捷键、全局快捷键、播放控制',
+  'settings.nav.shortcuts.description': '快捷键设置',
   'settings.nav.shortcuts.label': '快捷键',
   'settings.playback.audioStatus.description': '采样率字段必须分开显示，避免旧 ECHO 独占模式 48k 锁死回归。',
   'settings.playback.audioStatus.title': '音频状态',
@@ -4099,6 +4117,16 @@ const zhCN: TranslationMap = {
   'settings.playback.fixedVolume.title': '固定音量',
   'settings.playback.gapless.description': '本地同专辑相邻曲目 0 秒间隔，不淡入淡出；标准输出会临时转入原生 shared 链路。Automix 暂停期间保持独立。',
   'settings.playback.gapless.title': '专辑无缝播放',
+  'settings.playback.transportFade.curve.equalPower': '等功率',
+  'settings.playback.transportFade.curve.linear': '线性',
+  'settings.playback.transportFade.curve.smooth': '平滑',
+  'settings.playback.transportFade.description': '默认关闭。开启后只在手动播放 / 暂停时做音量淡入淡出；可分别设置淡入、淡出时长和曲线。',
+  'settings.playback.transportFade.field.curve': '曲线',
+  'settings.playback.transportFade.field.fadeIn': '淡入 ms',
+  'settings.playback.transportFade.field.fadeOut': '淡出 ms',
+  'settings.playback.transportFade.status.disabled': '未开启',
+  'settings.playback.transportFade.status.enabled': '已开启',
+  'settings.playback.transportFade.title': '播放暂停淡入淡出',
   'settings.playback.issueDiagnostics.description': '默认关闭。用户反馈播放异常时开启，会弹出浮窗记录状态、进度、duration、native 缓冲、underrun、backend、警告和 ended 标记。',
   'settings.playback.issueDiagnostics.title': '音频问题诊断窗口',
   'settings.playback.juceOutput.description': '默认关闭。FFmpeg 兼容路径作为默认输出；需要时可手动开启 JUCE 输出，失败时自动回退。',
@@ -5074,6 +5102,7 @@ const zhTW: TranslationMap = {
   'audioProfessional.badge.sampleMismatch': '取樣率不符',
   'audioProfessional.badge.warning': '裝置異常/警告',
   'audioProfessional.issue.reason': '異常原因',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows 共享取樣率過高：裝置是 {deviceRate}，ECHO 目前輸出 {decoderRate} PCM，可能導致變速。建議把 Windows 預設格式改到 48 kHz 或 96 kHz。',
   'audioProfessional.group.directDsp': '直通與 DSP',
   'audioProfessional.group.playbackChain': '播放鏈路',
   'audioProfessional.group.sampleRate': '取樣率鏈路',
@@ -5292,6 +5321,7 @@ const zhTW: TranslationMap = {
   'lyricsSettings.background.smartReadable': '智慧可讀顏色',
   'lyricsSettings.background.smartReadableDescription': '根據封面、桌布或 MV 畫面自動選擇高對比文字色，並視需要增加輕遮罩、描邊和陰影。關閉時繼續使用手動歌詞顏色。',
   'lyricsSettings.background.title': '歌詞背景',
+  'lyricsSettings.background.tuning': '背景調節',
   'lyricsSettings.background.tuningDescription': '跟隨封面和自訂桌布都會使用這裡的透明度、模糊度和亮度。',
   'lyricsSettings.background.wallpaperSaved': '已儲存到應用桌布目錄',
   'lyricsSettings.candidate.allSources': '全部來源',
@@ -5498,6 +5528,7 @@ const zhTW: TranslationMap = {
   'mvSettings.immersive.positionY': '縱向位置',
   'mvSettings.immersive.reset': '重置沉浸式背景',
   'mvSettings.immersive.title': '沉浸式 MV 背景',
+  'mvSettings.immersive.tuning': '沉浸式背景調節',
   'mvSettings.immersive.visualHint': '用於調整沉浸式背景觀感。',
   'mvSettings.immersive.zoom': '背景縮放',
   'mvSettings.network.autoApply': '自動搜尋網路 MV',
@@ -5703,6 +5734,16 @@ const zhTW: TranslationMap = {
   'settings.playback.fixedVolume.title': '固定音量',
   'settings.playback.gapless.description': '本機同專輯相鄰曲目 0 秒間隔，不淡入淡出；標準輸出會暫時轉入原生 shared 鏈路。Automix 暫停期間保持獨立。',
   'settings.playback.gapless.title': '專輯無縫播放',
+  'settings.playback.transportFade.curve.equalPower': '等功率',
+  'settings.playback.transportFade.curve.linear': '線性',
+  'settings.playback.transportFade.curve.smooth': '平滑',
+  'settings.playback.transportFade.description': '預設關閉。開啟後只在手動播放 / 暫停時做音量淡入淡出；可分別設定淡入、淡出時長和曲線。',
+  'settings.playback.transportFade.field.curve': '曲線',
+  'settings.playback.transportFade.field.fadeIn': '淡入 ms',
+  'settings.playback.transportFade.field.fadeOut': '淡出 ms',
+  'settings.playback.transportFade.status.disabled': '未開啟',
+  'settings.playback.transportFade.status.enabled': '已開啟',
+  'settings.playback.transportFade.title': '播放暫停淡入淡出',
   'settings.playback.issueDiagnostics.description': '預設關閉。使用者回報播放異常時開啟，會彈出浮窗記錄狀態、進度、duration、native 緩衝、underrun、backend、警告和 ended 標記。',
   'settings.playback.issueDiagnostics.title': '音訊問題診斷視窗',
   'settings.playback.juceOutput.description': '預設關閉。FFmpeg 相容路徑作為預設輸出；需要時可手動開啟 JUCE 輸出，失敗時自動退回。',
@@ -6913,6 +6954,7 @@ const jaJP: TranslationMap = {
   'audioProfessional.badge.sampleMismatch': 'サンプルレート不一致',
   'audioProfessional.badge.warning': 'デバイス警告',
   'audioProfessional.issue.reason': '理由',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows の共有サンプルレートが高すぎます。デバイスは {deviceRate}、ECHO は現在 {decoderRate} PCM を出力しているため、再生速度が変わる可能性があります。Windows の既定形式を 48 kHz または 96 kHz に下げてください。',
   'audioProfessional.group.directDsp': 'Direct / DSP',
   'audioProfessional.group.playbackChain': '再生チェーン',
   'audioProfessional.group.sampleRate': 'サンプルレート',
@@ -7137,6 +7179,7 @@ const jaJP: TranslationMap = {
   'lyricsSettings.background.smartReadable': 'スマート可読色',
   'lyricsSettings.background.smartReadableDescription': 'カバー、壁紙、MV 画面に合わせて高コントラストの文字色を自動選択し、必要に応じて薄いマスク、縁取り、影を追加します。オフの場合は手動の歌詞色を使います。',
   'lyricsSettings.background.title': '歌詞背景',
+  'lyricsSettings.background.tuning': '背景調整',
   'lyricsSettings.background.tuningDescription': 'カバー連動とカスタム壁紙の両方で、ここにある透明度、ぼかし、明るさを使います。',
   'lyricsSettings.background.wallpaperSaved': 'アプリ壁紙フォルダーに保存済み',
   'lyricsSettings.candidate.allSources': 'すべてのソース',
@@ -7343,6 +7386,7 @@ const jaJP: TranslationMap = {
   'mvSettings.immersive.positionY': '縦位置',
   'mvSettings.immersive.reset': '没入型背景をリセット',
   'mvSettings.immersive.title': '没入型 MV 背景',
+  'mvSettings.immersive.tuning': '没入型背景の調整',
   'mvSettings.immersive.visualHint': '没入型背景の見え方を調整します。',
   'mvSettings.immersive.zoom': '背景ズーム',
   'mvSettings.network.autoApply': 'ネットワーク MV を自動検索',
@@ -7610,6 +7654,16 @@ const jaJP: TranslationMap = {
   'settings.playback.fixedVolume.title': '固定音量',
   'settings.playback.gapless.description': 'ローカルの同一アルバムで隣接する曲だけを 0 秒間隔で再生します。標準出力では一時的にネイティブ shared 経路を使い、Automix 停止中も独立して動作します。',
   'settings.playback.gapless.title': 'アルバム・ギャップレス再生',
+  'settings.playback.transportFade.curve.equalPower': '等パワー',
+  'settings.playback.transportFade.curve.linear': 'リニア',
+  'settings.playback.transportFade.curve.smooth': 'スムーズ',
+  'settings.playback.transportFade.description': '既定ではオフです。有効時は手動の再生 / 一時停止だけ音量をフェードし、フェードイン、フェードアウト時間とカーブを個別に設定できます。',
+  'settings.playback.transportFade.field.curve': 'カーブ',
+  'settings.playback.transportFade.field.fadeIn': 'フェードイン ms',
+  'settings.playback.transportFade.field.fadeOut': 'フェードアウト ms',
+  'settings.playback.transportFade.status.disabled': '無効',
+  'settings.playback.transportFade.status.enabled': '有効',
+  'settings.playback.transportFade.title': '再生 / 一時停止フェード',
   'settings.playback.issueDiagnostics.description': '既定ではオフです。再生異常の報告時に有効にすると、状態、進行、duration、native バッファ、underrun、backend、警告、ended マークを記録する小窓を表示します。',
   'settings.playback.issueDiagnostics.title': '音声問題診断ウィンドウ',
   'settings.playback.juceOutput.description': '既定ではオフです。FFmpeg 互換経路を既定出力にし、必要な時だけ手動で JUCE 出力を有効化できます。失敗時は自動で戻ります。',
@@ -8823,6 +8877,7 @@ const enUS: TranslationMap = {
   'audioProfessional.badge.sampleMismatch': 'Sample-rate mismatch',
   'audioProfessional.badge.warning': 'Device issue/warning',
   'audioProfessional.issue.reason': 'Reason',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows shared rate is too high: the device is at {deviceRate} while ECHO is outputting {decoderRate} PCM, so playback may sound sped up. Set the Windows default format to 48 kHz or 96 kHz.',
   'audioProfessional.group.directDsp': 'Direct And DSP',
   'audioProfessional.group.playbackChain': 'Playback Chain',
   'audioProfessional.group.sampleRate': 'Sample-Rate Chain',
@@ -9047,6 +9102,7 @@ const enUS: TranslationMap = {
   'lyricsSettings.background.smartReadable': 'Smart readable colors',
   'lyricsSettings.background.smartReadableDescription': 'Automatically picks high-contrast text colors from the cover, wallpaper, or MV frame, adding a light mask, outline, and shadow when needed. Manual lyrics color is used when off.',
   'lyricsSettings.background.title': 'Lyrics Background',
+  'lyricsSettings.background.tuning': 'Background tuning',
   'lyricsSettings.background.tuningDescription': 'Follow cover and custom wallpaper both use these opacity, blur, and brightness settings.',
   'lyricsSettings.background.wallpaperSaved': 'Saved to the app wallpaper directory',
   'lyricsSettings.candidate.allSources': 'All sources',
@@ -9253,6 +9309,7 @@ const enUS: TranslationMap = {
   'mvSettings.immersive.positionY': 'Vertical position',
   'mvSettings.immersive.reset': 'Reset immersive background',
   'mvSettings.immersive.title': 'Immersive MV background',
+  'mvSettings.immersive.tuning': 'Immersive background tuning',
   'mvSettings.immersive.visualHint': 'Tune how the immersive background looks.',
   'mvSettings.immersive.zoom': 'Background zoom',
   'mvSettings.network.autoApply': 'Auto search network MV',
@@ -9642,6 +9699,16 @@ const enUS: TranslationMap = {
   'settings.playback.fixedVolume.title': 'Fixed Volume',
   'settings.playback.gapless.description': '0-second gaps for adjacent local tracks from the same album. System output temporarily uses the native shared path; this stays separate while Automix is paused.',
   'settings.playback.gapless.title': 'Album Gapless Playback',
+  'settings.playback.transportFade.curve.equalPower': 'Equal Power',
+  'settings.playback.transportFade.curve.linear': 'Linear',
+  'settings.playback.transportFade.curve.smooth': 'Smooth',
+  'settings.playback.transportFade.description': 'Off by default. When enabled, manual play / pause uses volume fades; fade-in time, fade-out time, and curve can be customized separately.',
+  'settings.playback.transportFade.field.curve': 'Curve',
+  'settings.playback.transportFade.field.fadeIn': 'Fade In ms',
+  'settings.playback.transportFade.field.fadeOut': 'Fade Out ms',
+  'settings.playback.transportFade.status.disabled': 'Disabled',
+  'settings.playback.transportFade.status.enabled': 'Enabled',
+  'settings.playback.transportFade.title': 'Play / Pause Fade',
   'settings.playback.issueDiagnostics.description': 'Off by default. Enable when users report playback issues; a floating window records state, progress, duration, native buffer, underrun, backend, warnings, and ended markers.',
   'settings.playback.issueDiagnostics.title': 'Audio Issue Diagnostics Window',
   'settings.playback.juceOutput.description': 'Off by default. FFmpeg compatibility remains the default output path; enable JUCE output manually when needed, with automatic fallback on failure.',

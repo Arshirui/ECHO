@@ -38,7 +38,7 @@ import type {
 } from '../shared/types/eq';
 import type { GlobalShortcutAction, GlobalShortcutValidationResult } from '../shared/types/globalShortcuts';
 import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../shared/types/desktopLyrics';
-import type { MiniPlayerState } from '../shared/types/miniPlayer';
+import type { MiniPlayerHideOptions, MiniPlayerState } from '../shared/types/miniPlayer';
 import type {
   AddLocalAudioFilesToPlaylistResult,
   AlbumOnlineInfo,
@@ -194,6 +194,10 @@ import type {
 } from '../shared/types/lyrics';
 import type { MvMatchCandidate, MvResolvedStreams, MvSettings, MvTrackSnapshotSearchRequest, TrackVideo } from '../shared/types/mv';
 import type {
+  BaiduOAuthAuthorizeRequest,
+  BaiduOAuthLoginRequest,
+  BaiduOAuthTokenRequest,
+  BaiduOAuthTokenResult,
   RemoteDirectoryItem,
   RemoteBackgroundGlobalStatus,
   RemoteBackgroundJobKind,
@@ -291,7 +295,7 @@ export type EchoApi = {
   };
   miniPlayer: {
     show: () => Promise<MiniPlayerState>;
-    hide: () => Promise<MiniPlayerState>;
+    hide: (options?: MiniPlayerHideOptions) => Promise<MiniPlayerState>;
     getState: () => Promise<MiniPlayerState>;
     setLocked: (locked: boolean) => Promise<MiniPlayerState>;
     setQueueOpen: (open: boolean) => Promise<MiniPlayerState>;
@@ -386,6 +390,7 @@ export type EchoApi = {
     clearArtistImageCache: () => Promise<ArtistImageCacheClearResult>;
     onArtistImagesUpdated: (handler: (payload: { artistId: string | null; artistKey: string; status: string }) => void) => () => void;
     onLibraryChanged?: (handler: () => void) => () => void;
+    onLikedTracksChanged?: (handler: () => void) => () => void;
     getAlbumTracks: (
       albumId: string,
       query?: Pick<LibraryPageQuery, 'page' | 'pageSize'>,
@@ -517,6 +522,9 @@ export type EchoApi = {
     setBackgroundPaused: (paused: boolean) => Promise<RemoteBackgroundGlobalStatus>;
     getBackgroundGlobalStatus: () => Promise<RemoteBackgroundGlobalStatus>;
     updateRuntimeLimits: (sourceId: string, limits: RemoteRuntimeLimits) => Promise<RemoteBackgroundJobStatus>;
+    createBaiduAuthUrl: (input: BaiduOAuthAuthorizeRequest) => Promise<string>;
+    exchangeBaiduAuthCode: (input: BaiduOAuthTokenRequest) => Promise<BaiduOAuthTokenResult>;
+    startBaiduOAuthLogin: (input: BaiduOAuthLoginRequest) => Promise<BaiduOAuthTokenResult>;
   };
   connect: {
     listDevices: () => Promise<ConnectDevice[]>;

@@ -238,6 +238,58 @@ describe('StreamingService playlist imports', () => {
     expect(result.providerPlaylistId).toBe('778899');
   });
 
+  it('imports QQ Music mobile, desktop, hash, and copied-share playlist link variants', async () => {
+    const registry = new StreamingProviderRegistry();
+    const getPlaylist = vi.fn(async (input: { providerPlaylistId: string; page?: number; pageSize?: number }) =>
+      playlistDetail(input.providerPlaylistId),
+    );
+    registry.register({
+      name: 'qqmusic',
+      search: vi.fn(),
+      getTrack: vi.fn(),
+      getPlaylist,
+      resolvePlayback: vi.fn(),
+    });
+    const service = new StreamingService(registry, fakeCacheStore());
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})));
+
+    const inputs = [
+      ['https://i2.y.qq.com/n3/other/pages/details/playlist.html?id=9718644800', '9718644800'],
+      ['https://i.y.qq.com/n2/m/share/details/taoge.html?ADTAG=ryqq.playlist&id=9102222552', '9102222552'],
+      ['https://y.qq.com/n/yqq/playlist/7177076625.html', '7177076625'],
+      ['https://y.qq.com/musicmac/v6/playlist/detail.html?id=7177076626', '7177076626'],
+      ['https://y.qq.com/portal/playlist.html#id=9718644801', '9718644801'],
+      ['分享测试创建的歌单「测试」https://y.qq.com/n/m/detail/taoge/index.html?id=9196185963 (@QQ音乐)', '9196185963'],
+      ['https://example.com/share?redirect=https%3A%2F%2Fy.qq.com%2Fn%2Fryqq%2Fplaylist%2F7373560897', '7373560897'],
+    ] as const;
+
+    expect(fetch).not.toHaveBeenCalled();
+    for (const [input, expectedId] of inputs) {
+      const result = await service.importPlaylistFromUrl(input);
+      expect(result.providerPlaylistId).toBe(expectedId);
+    }
+
+    inputs.forEach(([, expectedId], index) => {
+      expect(getPlaylist).toHaveBeenNthCalledWith(index + 1, { providerPlaylistId: expectedId, page: 1, pageSize: 500 });
+    });
+  });
+
+  it('rejects QQ Music taoge pages when no numeric playlist id is present', async () => {
+    const registry = new StreamingProviderRegistry();
+    registry.register({
+      name: 'qqmusic',
+      search: vi.fn(),
+      getTrack: vi.fn(),
+      getPlaylist: vi.fn(),
+      resolvePlayback: vi.fn(),
+    });
+    const service = new StreamingService(registry, fakeCacheStore());
+
+    await expect(service.importPlaylistFromUrl('https://y.qq.com/n/m/detail/taoge/index.html')).rejects.toThrow(
+      'Only NetEase Cloud Music, QQ Music, and Spotify playlist links are supported.',
+    );
+  });
+
   it('imports Spotify playlist links without resolving playback URLs', async () => {
     const registry = new StreamingProviderRegistry();
     const getPlaylist = vi.fn(async (input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> => ({

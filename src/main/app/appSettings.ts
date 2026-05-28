@@ -15,6 +15,7 @@ import type {
   AppVideoWallpaperPauseMode,
   AppWallpaperMediaType,
   AppSettings,
+  AudioTransportFadeCurve,
   DataBackupIntervalDays,
   LyricsBackgroundMode,
   LyricsMiniPlayerColorMode,
@@ -63,9 +64,13 @@ const lyricsProviders: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmu
 const legacyDefaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic'];
 const defaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo'];
 export const defaultNetworkProxyBypassRules = '<local>;localhost;127.0.0.1;::1;*.local;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*';
+export const defaultTidalClientId = 'vmtQLf79BHl9YgUT';
 const appMemoryVersion = 6;
 const locales: AppLocale[] = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP'];
 const appThemeModes: AppThemeMode[] = ['light', 'dark', 'system'];
+const audioTransportFadeCurves: AudioTransportFadeCurve[] = ['linear', 'smooth', 'equalPower'];
+const defaultAudioTransportFadeDurationMs = 80;
+const defaultAudioTransportFadeCurve: AudioTransportFadeCurve = 'smooth';
 const appThemePresets: AppThemePreset[] = [
   'classic',
   'echoTwilight',
@@ -326,6 +331,9 @@ export const defaultSettings: AppSettings = {
   spotifyAutoLaunchOfficialPlayer: true,
   spotifyClientId: null,
   spotifyRedirectUri: null,
+  tidalClientId: defaultTidalClientId,
+  tidalRedirectUri: null,
+  tidalCountryCode: 'US',
   downloadsFeatureUnlocked: false,
   streamingDownloadActionsEnabled: false,
   connectAutoStartReceiversEnabled: false,
@@ -454,6 +462,10 @@ export const defaultSettings: AppSettings = {
   playerWaveformProgressEnabled: false,
   fixedVolumeEnabled: false,
   gaplessPlaybackEnabled: false,
+  audioTransportFadeEnabled: false,
+  audioTransportFadeInMs: defaultAudioTransportFadeDurationMs,
+  audioTransportFadeOutMs: defaultAudioTransportFadeDurationMs,
+  audioTransportFadeCurve: defaultAudioTransportFadeCurve,
   replayGainEnabled: false,
   replayGainMode: 'track',
   replayGainTargetLufs: DEFAULT_REPLAY_GAIN_TARGET_LUFS,
@@ -551,6 +563,24 @@ const normalizeSpotifyRedirectUri = (value: unknown): string | null => {
   } catch {
     return null;
   }
+};
+
+const normalizeTidalClientId = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return /^[A-Za-z0-9_-]{8,128}$/u.test(normalized) ? normalized : null;
+};
+
+const normalizeTidalCountryCode = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return /^[A-Z]{2}$/u.test(normalized) ? normalized : null;
 };
 
 const normalizeRequiredText = (value: unknown, fallback: string): string => {
@@ -846,6 +876,18 @@ const normalizeSongsSort = (value: unknown): LibrarySort =>
 
 const normalizeReplayGainMode = (value: unknown): ReplayGainMode =>
   value === 'track' || value === 'album' || value === 'off' ? value : 'track';
+
+const normalizeAudioTransportFadeCurve = (value: unknown): AudioTransportFadeCurve =>
+  audioTransportFadeCurves.includes(value as AudioTransportFadeCurve)
+    ? (value as AudioTransportFadeCurve)
+    : defaultAudioTransportFadeCurve;
+
+const normalizeAudioTransportFadeDurationMs = (value: unknown): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric)
+    ? Math.round(clamp(numeric, 0, 2000))
+    : defaultAudioTransportFadeDurationMs;
+};
 
 const normalizeAudioExportFormat = (value: unknown): AudioExportFormat =>
   value === 'wav' || value === 'flac' || value === 'ogg' || value === 'mp3' ? value : defaultSettings.audioExportFormat ?? 'mp3';
@@ -1368,6 +1410,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     spotifyAutoLaunchOfficialPlayer: settings.spotifyAutoLaunchOfficialPlayer !== false,
     spotifyClientId: normalizeSpotifyClientId(settings.spotifyClientId),
     spotifyRedirectUri: normalizeSpotifyRedirectUri(settings.spotifyRedirectUri),
+    tidalClientId: normalizeTidalClientId(settings.tidalClientId) ?? defaultTidalClientId,
+    tidalRedirectUri: normalizeSpotifyRedirectUri(settings.tidalRedirectUri),
+    tidalCountryCode: normalizeTidalCountryCode(settings.tidalCountryCode) ?? defaultSettings.tidalCountryCode,
     downloadsFeatureUnlocked: settings.downloadsFeatureUnlocked === true,
     streamingDownloadActionsEnabled: settings.streamingDownloadActionsEnabled === true,
     connectAutoStartReceiversEnabled: settings.connectAutoStartReceiversEnabled === true,
@@ -1564,6 +1609,10 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     playerWaveformProgressEnabled: settings.playerWaveformProgressEnabled === true,
     fixedVolumeEnabled: settings.fixedVolumeEnabled === true,
     gaplessPlaybackEnabled: settings.gaplessPlaybackEnabled === true,
+    audioTransportFadeEnabled: settings.audioTransportFadeEnabled === true,
+    audioTransportFadeInMs: normalizeAudioTransportFadeDurationMs(settings.audioTransportFadeInMs),
+    audioTransportFadeOutMs: normalizeAudioTransportFadeDurationMs(settings.audioTransportFadeOutMs),
+    audioTransportFadeCurve: normalizeAudioTransportFadeCurve(settings.audioTransportFadeCurve),
     replayGainEnabled: settings.replayGainEnabled === true,
     replayGainMode: normalizeReplayGainMode(settings.replayGainMode),
     replayGainTargetLufs: Number.isFinite(replayGainTargetLufs)

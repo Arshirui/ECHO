@@ -59,6 +59,7 @@ import type {
   AppThemePreset,
   AppThemePresetOverrides,
   AppThemeToneOverride,
+  AudioTransportFadeCurve,
   NetworkProxyMode,
   NetworkProxyTestResult,
 } from '../../shared/types/appSettings';
@@ -201,6 +202,12 @@ const audioExportFormatOptions: Array<{ format: AudioExportFormat; label: string
   { format: 'wav', label: 'WAV' },
   { format: 'flac', label: 'FLAC' },
   { format: 'ogg', label: 'OGG' },
+];
+
+const transportFadeCurveOptions: Array<{ curve: AudioTransportFadeCurve; labelKey: TranslationKey }> = [
+  { curve: 'linear', labelKey: 'settings.playback.transportFade.curve.linear' },
+  { curve: 'smooth', labelKey: 'settings.playback.transportFade.curve.smooth' },
+  { curve: 'equalPower', labelKey: 'settings.playback.transportFade.curve.equalPower' },
 ];
 
 const globalShortcutActionMeta: Array<{
@@ -355,6 +362,8 @@ const normalizeSharedBackend = (value: unknown): AudioSharedBackend =>
   value === 'windows' || value === 'directsound' || value === 'alsa' ? value : 'auto';
 
 const defaultSpotifyRedirectUri = 'http://127.0.0.1:43879/spotify/callback';
+const spotifyDeveloperDashboardUrl = 'https://developer.spotify.com/dashboard';
+const tidalDeveloperDashboardUrl = 'https://developer.tidal.com/dashboard';
 
 const isSpotifyClientIdInputValid = (value: string): boolean => {
   const trimmed = value.trim();
@@ -614,6 +623,7 @@ const accountProviderLabels: Record<AccountProvider, string> = {
   youtube: 'YouTube',
   soundcloud: 'SoundCloud',
   spotify: 'Spotify',
+  tidal: 'TIDAL',
   osu: 'osu!',
 };
 
@@ -638,6 +648,7 @@ const accountLoginUrls: Record<AccountProvider, string> = {
   youtube: 'https://www.youtube.com/',
   soundcloud: 'https://soundcloud.com/',
   spotify: 'https://accounts.spotify.com/',
+  tidal: 'https://login.tidal.com/',
   osu: 'https://osu.ppy.sh/',
 };
 
@@ -876,7 +887,7 @@ const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
     '会员',
   ],
   plugins: ['插件', 'plugin', 'plugins', '扩展', '脚本', 'manifest', '权限', '本地插件', '开发者', 'developer', 'sandbox', 'echo.plugin.json'],
-  remote: ['remote', 'webdav', 'subsonic', 'jellyfin', 'emby', 'navidrome', 'server', '远程', '网盘', '服务器', '媒体库', '云端'],
+  remote: ['remote', 'webdav', 'baidu', 'subsonic', 'jellyfin', 'emby', 'navidrome', 'server', '远程', '网盘', '百度网盘', '服务器', '媒体库', '云端'],
   eq: ['eq', 'equalizer', 'balance', 'preamp', 'channel', '均衡器', '均衡', '声道', '平衡', '预放大'],
   appearance: [
     'appearance',
@@ -3389,6 +3400,7 @@ const SpotifyAccountCard = ({
   message,
   onCheck,
   onClear,
+  onOpenDashboard,
   onOpenLogin,
   status,
 }: {
@@ -3397,6 +3409,7 @@ const SpotifyAccountCard = ({
   message?: string | null;
   onCheck: () => void;
   onClear: () => void;
+  onOpenDashboard: () => void;
   onOpenLogin: () => void;
   status?: AccountStatus;
 }): JSX.Element => {
@@ -3411,6 +3424,10 @@ const SpotifyAccountCard = ({
         </div>
       </div>
       <div className="settings-account-actions">
+        <button className="settings-action-button" type="button" onClick={onOpenDashboard}>
+          <ExternalLink size={15} />
+          打开 Spotify Dashboard
+        </button>
         <button className="settings-action-button" type="button" disabled={busyAction === 'check'} onClick={onCheck}>
           {busyAction === 'check' ? t('settings.integrations.accounts.checkBusy') : t('settings.integrations.accounts.check')}
         </button>
@@ -3426,6 +3443,64 @@ const SpotifyAccountCard = ({
         <span>{status?.displayName ?? status?.username ?? t('settings.integrations.accounts.spotify.savedStatus')}</span>
         <span>{t('settings.integrations.accounts.loginMeta', { loginAt: status?.lastLoginAt ?? 'n/a', checkedAt: status?.lastCheckedAt ?? 'n/a' })}</span>
       </div>
+      {message ? <p className="settings-inline-note settings-account-note">{message}</p> : null}
+      {error ? <p className="settings-inline-error settings-account-note">{error}</p> : null}
+    </article>
+  );
+};
+
+const TidalAccountCard = ({
+  busyAction,
+  error,
+  message,
+  onCheck,
+  onClear,
+  onOpenDashboard,
+  onOpenLogin,
+  status,
+}: {
+  busyAction?: AccountBusyAction;
+  error?: string | null;
+  message?: string | null;
+  onCheck: () => void;
+  onClear: () => void;
+  onOpenDashboard: () => void;
+  onOpenLogin: () => void;
+  status?: AccountStatus;
+}): JSX.Element => {
+  const { t } = useI18n();
+  return (
+    <article className="settings-account-row" aria-label="TIDAL">
+      <div className="settings-account-summary">
+        {renderAccountStatusBadge(t, status, onOpenLogin)}
+        <div>
+          <h3>TIDAL</h3>
+          <p>TIDAL 仅接入官方 catalog 元数据；不会获取音频 URL，也不会进入 ECHO 播放链。</p>
+        </div>
+      </div>
+      <div className="settings-account-actions">
+        <button className="settings-action-button" type="button" onClick={onOpenDashboard}>
+          <ExternalLink size={15} />
+          打开 TIDAL Dashboard
+        </button>
+        <button className="settings-action-button" type="button" disabled={busyAction === 'check'} onClick={onCheck}>
+          {busyAction === 'check' ? t('settings.integrations.accounts.checkBusy') : t('settings.integrations.accounts.check')}
+        </button>
+        <button className="settings-action-button settings-account-login-button" type="button" disabled={busyAction === 'login'} onClick={onOpenLogin}>
+          <ExternalLink size={15} />
+          {busyAction === 'login' ? '等待授权...' : '登录 TIDAL'}
+        </button>
+        <button className="settings-danger-button" type="button" disabled={busyAction === 'clear'} onClick={onClear}>
+          {busyAction === 'clear' ? t('settings.integrations.accounts.logoutBusy') : t('settings.integrations.accounts.logout')}
+        </button>
+      </div>
+      <div className="settings-account-meta">
+        <span>{status?.displayName ?? status?.username ?? '使用 OAuth PKCE 授权，不保存 Client Secret；仅用于 TIDAL 元数据。'}</span>
+        <span>{t('settings.integrations.accounts.loginMeta', { loginAt: status?.lastLoginAt ?? 'n/a', checkedAt: status?.lastCheckedAt ?? 'n/a' })}</span>
+      </div>
+      <p className="settings-inline-note settings-account-note">
+        默认回调地址是 http://127.0.0.1:43880/tidal/callback，需要在 TIDAL Developer Dashboard 的 app 设置里登记。
+      </p>
       {message ? <p className="settings-inline-note settings-account-note">{message}</p> : null}
       {error ? <p className="settings-inline-error settings-account-note">{error}</p> : null}
     </article>
@@ -3565,6 +3640,7 @@ export const SettingsPage = (): JSX.Element => {
     youtube: '',
     soundcloud: '',
     spotify: '',
+    tidal: '',
     osu: '',
   });
   const [accountBusy, setAccountBusy] = useState<Partial<Record<AccountProvider, AccountBusyAction>>>({});
@@ -3974,6 +4050,26 @@ export const SettingsPage = (): JSX.Element => {
         title: t('settings.playback.fixedVolume.title'),
         description: t('settings.playback.fixedVolume.description'),
         terms: [t('settings.playback.fixedVolume.title'), t('settings.playback.fixedVolume.description'), '固定音量', '固定音量', '固定音量', 'fixed volume', 'roon', '音量锁定', 'volume lock', 'ReplayGain'],
+      },
+      {
+        id: 'row-transport-fade',
+        sectionKey: 'playback',
+        targetId: 'settings-row-transport-fade',
+        title: t('settings.playback.transportFade.title'),
+        description: t('settings.playback.transportFade.description'),
+        terms: [
+          t('settings.playback.transportFade.title'),
+          t('settings.playback.transportFade.description'),
+          'fade',
+          'fade in',
+          'fade out',
+          'transport fade',
+          'play pause fade',
+          '淡入淡出',
+          '播放暂停淡入淡出',
+          '淡入',
+          '淡出',
+        ],
       },
       {
         id: 'row-mini-player',
@@ -6413,7 +6509,7 @@ export const SettingsPage = (): JSX.Element => {
       return;
     }
 
-    if (provider !== 'spotify' && !accountStatusByProvider[provider]?.connected && accountCookies[provider].trim().length === 0) {
+    if (provider !== 'spotify' && provider !== 'tidal' && !accountStatusByProvider[provider]?.connected && accountCookies[provider].trim().length === 0) {
       setAccountErrors((current) => ({ ...current, [provider]: '尚未保存 Cookie。请先使用“登录并同步”自动保存，或手动粘贴 Cookie 后保存。' }));
       return;
     }
@@ -9031,6 +9127,60 @@ export const SettingsPage = (): JSX.Element => {
                 </div>
               </SettingRow>
               <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                id="settings-row-transport-fade"
+                highlighted={highlightedSettingId === 'settings-row-transport-fade'}
+                title={t('settings.playback.transportFade.title')}
+                description={t('settings.playback.transportFade.description')}
+              >
+                <div className="settings-cache-panel">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <div className="settings-inline-toggle">
+                      <span>{appSettings?.audioTransportFadeEnabled ? t('settings.playback.transportFade.status.enabled') : t('settings.playback.transportFade.status.disabled')}</span>
+                      <ToggleButton
+                        active={appSettings?.audioTransportFadeEnabled ?? false}
+                        disabled={!appSettings}
+                        onClick={() => patchAppSettings({ audioTransportFadeEnabled: !(appSettings?.audioTransportFadeEnabled ?? false) })}
+                      />
+                    </div>
+                    <label className="settings-number-field">
+                      <span>{t('settings.playback.transportFade.field.fadeIn')}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={2000}
+                        step={10}
+                        value={appSettings?.audioTransportFadeInMs ?? 80}
+                        onChange={(event) => patchAppSettings({ audioTransportFadeInMs: Number(event.currentTarget.value) })}
+                      />
+                    </label>
+                    <label className="settings-number-field">
+                      <span>{t('settings.playback.transportFade.field.fadeOut')}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={2000}
+                        step={10}
+                        value={appSettings?.audioTransportFadeOutMs ?? 80}
+                        onChange={(event) => patchAppSettings({ audioTransportFadeOutMs: Number(event.currentTarget.value) })}
+                      />
+                    </label>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <span className="settings-inline-note">{t('settings.playback.transportFade.field.curve')}</span>
+                    {transportFadeCurveOptions.map((item) => (
+                      <ChipButton
+                        active={(appSettings?.audioTransportFadeCurve ?? 'smooth') === item.curve}
+                        key={item.curve}
+                        onClick={() => patchAppSettings({ audioTransportFadeCurve: item.curve })}
+                      >
+                        {t(item.labelKey)}
+                      </ChipButton>
+                    ))}
+                  </div>
+                </div>
+              </SettingRow>
+              <SettingRow
                 id="settings-row-mini-player"
                 highlighted={highlightedSettingId === 'settings-row-mini-player'}
                 title={t('settings.playback.miniPlayer.title')}
@@ -10011,6 +10161,10 @@ export const SettingsPage = (): JSX.Element => {
                       <Save size={15} />
                       保存 Spotify 配置
                     </button>
+                    <button className="settings-action-button" type="button" onClick={() => void handleOpenExternalUrl(spotifyDeveloperDashboardUrl)}>
+                      <ExternalLink size={15} />
+                      打开 Spotify Dashboard
+                    </button>
                   </div>
                   <p className="settings-inline-note">
                     在 Spotify Developer Dashboard 中添加同一个 Redirect URI；建议使用本机回环地址，例如 {defaultSpotifyRedirectUri}。保存后重新登录 Spotify。
@@ -10062,8 +10216,19 @@ export const SettingsPage = (): JSX.Element => {
                     error={accountErrors.spotify}
                     message={accountMessages.spotify}
                     onCheck={() => void handleAccountCheck('spotify')}
+                    onOpenDashboard={() => void handleOpenExternalUrl(spotifyDeveloperDashboardUrl)}
                     onOpenLogin={() => void handleAccountOpenLogin('spotify')}
                     onClear={() => void handleAccountClear('spotify')}
+                  />
+                  <TidalAccountCard
+                    status={accountStatusByProvider.tidal}
+                    busyAction={accountBusy.tidal}
+                    error={accountErrors.tidal}
+                    message={accountMessages.tidal}
+                    onCheck={() => void handleAccountCheck('tidal')}
+                    onOpenDashboard={() => void handleOpenExternalUrl(tidalDeveloperDashboardUrl)}
+                    onOpenLogin={() => void handleAccountOpenLogin('tidal')}
+                    onClear={() => void handleAccountClear('tidal')}
                   />
                 </div>
               </div>

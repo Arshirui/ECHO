@@ -177,6 +177,8 @@ html[data-theme="dark"] .mini-player-cover {
   place-items: center;
   width: 22px;
   height: 22px;
+  box-sizing: border-box;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: 999px;
   color: var(--theme-button-text);
@@ -188,6 +190,10 @@ html[data-theme="dark"] .mini-player-cover {
     border-color 120ms ease,
     background 120ms ease,
     color 120ms ease;
+}
+
+.mini-player-icon-button svg {
+  display: block;
 }
 
 .mini-player-icon-button:hover:not(:disabled) {

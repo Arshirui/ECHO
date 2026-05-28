@@ -135,6 +135,9 @@ const formatAutomixLabel = (status: AudioStatus | null): string | null => {
   return `Automix${modeLabel}${secondsLabel}`;
 };
 
+const hasSharedMixRateTooHighWarning = (status: AudioStatus | null): boolean =>
+  Boolean(status?.warnings?.some((warning) => warning.startsWith('shared_output_mix_rate_too_high:')));
+
 export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsProps): JSX.Element => {
   const t = useOptionalI18n()?.t ?? translateFallback;
   const codec = normalizeDisplayCodec(track?.codec ?? status?.codec ?? null);
@@ -147,8 +150,13 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const bpm = isDisplayableBpmAnalysis(track?.bpm, track?.analysisStatus) ? (track?.bpm ?? null) : null;
   const displayBpm = bpm ? Math.round(bpm * playbackRate) : null;
   const automixLabel = formatAutomixLabel(status);
+  const sharedMixRateTooHigh = hasSharedMixRateTooHighWarning(status);
   const chips: Chip[] = uniqueChips([
-    status?.sampleRateMismatch ? { label: 'Rate Mismatch', className: 'tag-warning' } : null,
+    sharedMixRateTooHigh
+      ? { label: 'Windows Rate High', className: 'tag-warning' }
+      : status?.sampleRateMismatch
+        ? { label: 'Rate Mismatch', className: 'tag-warning' }
+        : null,
     automixLabel ? { label: automixLabel, className: 'tag-automix' } : null,
     isDlnaReceiverTrack(track) ? { label: 'DLNA', className: 'tag-dlna' } : null,
     isAirPlayReceiverTrack(track) ? { label: 'AIRPLAY', className: 'tag-airplay' } : null,

@@ -1,8 +1,23 @@
 import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createPublicKey,
+  diffieHellman,
+  generateKeyPairSync,
+  hkdfSync,
+  randomBytes,
+  sign,
+  timingSafeEqual,
+  verify,
+  type KeyObject,
+} from 'node:crypto';
+import { createSocket, type RemoteInfo, type Socket as UdpSocket } from 'node:dgram';
 import { existsSync } from 'node:fs';
 import { request as httpRequest, type ClientRequest } from 'node:http';
-import { createServer } from 'node:net';
+import { createServer as createTcpServer, type Server as TcpServer, type Socket } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import readline from 'node:readline';
@@ -11,7 +26,7 @@ import { app } from 'electron';
 import type { AudioOutputSettings, AudioStatus } from '../../shared/types/audio';
 import type { AirPlayReceiverStatus, ConnectMetadata, ConnectReceiverClient, ConnectReceiverDebugEvent } from '../../shared/types/connect';
 import { getAudioSession } from '../audio/AudioSession';
-import { AirPlayMdnsAdvertiser } from './AirPlayMdnsAdvertiser';
+import { AirPlayMdnsAdvertiser, airPlay2FeatureMask } from './AirPlayMdnsAdvertiser';
 
 type RaopEvent = Record<string, unknown> & {
   type?: string;
@@ -43,6 +58,7 @@ type RaopReceiverOptions = {
 };
 
 type RaopModule = {
+  checkAvailable?: () => void | Promise<void>;
   startReceiver: (options: RaopReceiverOptions, handler: (event: RaopEvent) => void) => number | Promise<number>;
   stopReceiver: (handle: number) => void | Promise<void>;
   sendRemoteCommand?: (handle: number, command: 'play' | 'pause' | 'stop' | 'next' | 'prev' | 'previous') => boolean | Promise<boolean>;
@@ -76,9 +92,12 @@ type AirPlayReceiverDependencies = {
   audioSession?: AirPlayAudioSession;
   advertisedName?: string;
   loadRaopModule?: () => Promise<RaopModule>;
+  createAirPlay2AlacDecoder?: AirPlay2AlacDecoderFactory;
   getAdvertiseInterfaces?: () => AirPlayAdvertiseInterface[];
   createMdnsAdvertiser?: () => AirPlayMdnsAdvertiserLike;
   useHttpPcmBridge?: boolean;
+  airPlay2Experimental?: boolean;
+  startupTimeoutMs?: number;
   now?: () => number;
 };
 
@@ -87,6 +106,159 @@ type AirPlayHelperRuntimeOptions = {
   processExecPath: string;
   npmNodeExecPath?: string | null;
   nodeEnvPath?: string | null;
+};
+
+type AirPlay2Identity = {
+  publicKey: Buffer;
+  privateKey: KeyObject;
+};
+
+type AirPlay2PairVerifyState = {
+  clientPublicKey: Buffer;
+  serverPublicKey: Buffer;
+  sessionKey: Buffer;
+  controlReadKey: Buffer;
+  controlWriteKey: Buffer;
+};
+
+type AirPlay2PairSetupState = {
+  salt: Buffer;
+  privateKey: bigint;
+  publicKey: Buffer;
+  verifier: bigint;
+  sessionKey: Buffer | null;
+};
+
+type AirPlay2FairPlayState = {
+  keyMessage: Buffer | null;
+};
+
+type AirPlay2SessionSetupInfo = {
+  encryptionKey: Buffer | null;
+  encryptionIv: Buffer | null;
+  encryptionType: number | null;
+  timingProtocol: string | null;
+  senderName: string | null;
+  senderModel: string | null;
+  sourceVersion: string | null;
+  sessionUuid: string | null;
+};
+
+type AirPlay2ControlCipherState = {
+  readCounter: number;
+  writeCounter: number;
+};
+
+type AirPlay2TlvField = {
+  type: number;
+  value: Buffer;
+};
+
+type AirPlay2ProbeRequest = {
+  method: string;
+  path: string;
+  protocol: string;
+  headers: Record<string, string>;
+  body: Buffer;
+};
+
+type AirPlay2ProbeResponse = {
+  statusCode: number;
+  headers?: Record<string, string | number>;
+  body?: Buffer | string;
+  encryptedAfterWrite?: boolean;
+};
+
+type AirPlay2TcpConnection = {
+  buffer: Buffer;
+  encrypted: boolean;
+  draining: boolean;
+  cipher: AirPlay2ControlCipherState;
+};
+
+type AirPlay2UdpListener = {
+  kind: 'data' | 'control';
+  socket: UdpSocket;
+  port: number;
+};
+
+type AirPlay2RtpPacket = {
+  version: number;
+  payloadType: number;
+  marker: boolean;
+  sequenceNumber: number;
+  timestamp: number;
+  ssrc: number;
+  headerLength: number;
+  aad: Buffer;
+  payload: Buffer;
+};
+
+type AirPlay2SetupStreamInfo = {
+  type: number | null;
+  compressionType: number | null;
+  audioFormat: number | null;
+  framesPerPacket: number | null;
+  sharedKey: Buffer | null;
+};
+
+type AirPlay2PcmFormat = {
+  audioFormat: number;
+  sampleRate: number;
+  bitDepth: 16 | 24;
+  channels: number;
+};
+
+type AirPlay2AlacFormat = {
+  audioFormat: number;
+  sampleRate: number;
+  bitDepth: 16;
+  channels: 2;
+  framesPerPacket: number;
+};
+
+type AirPlay2AlacDecoder = {
+  decodeFrame: (frame: Buffer) => Buffer;
+  close: () => void;
+};
+
+type AirPlay2AlacDecoderFactory = (format: AirPlay2AlacFormat) => Promise<AirPlay2AlacDecoder>;
+
+type AirPlay2StreamState = {
+  dataPort: number;
+  controlPort: number;
+  streamType: number | null;
+  compressionType: number | null;
+  audioFormat: number | null;
+  framesPerPacket: number | null;
+  sharedKey: Buffer | null;
+  pcmFormat: AirPlay2PcmFormat | null;
+  alacFormat: AirPlay2AlacFormat | null;
+  alacDecoder: AirPlay2AlacDecoder | null;
+  packetCount: number;
+  byteCount: number;
+  decryptedPacketCount: number;
+  decodedPacketCount: number;
+  decryptFailureCount: number;
+  firstPacketAt: number | null;
+  lastSequenceNumber: number | null;
+  lastTimestamp: number | null;
+};
+
+type AirPlay2BplistValue =
+  | null
+  | boolean
+  | number
+  | string
+  | Buffer
+  | AirPlay2BplistValue[]
+  | { [key: string]: AirPlay2BplistValue };
+
+type AirPlay2BplistObjectRecord = {
+  value: AirPlay2BplistValue;
+  arrayRefs?: number[];
+  dictKeyRefs?: number[];
+  dictValueRefs?: number[];
 };
 
 const defaultAdvertisedName = (): string =>
@@ -103,7 +275,90 @@ const airPlayOutputBufferFrames = 8192;
 const airPlayHttpPcmFallbackMs = 1_500;
 const airPlayHttpPcmReconnectMs = 120;
 const airPlayRaopLatencies = '1000:1000';
+const airPlayStartupStepTimeoutMs = 10_000;
 const shouldUseAirPlayHttpPcmBridge = (): boolean => process.env.ECHO_AIRPLAY_HTTP_PCM === '1';
+const shouldAdvertiseAirPlay2Experimental = (): boolean => process.env.ECHO_AIRPLAY2_EXPERIMENTAL === '1';
+const airPlay2ProbeSourceVersion = '366.0';
+const airPlay2ProbeBodyLimitBytes = 64 * 1024;
+const airPlay2SupportedPcmAudioFormats = 0x3fffc;
+const airPlay2SupportedAlacAudioFormats = 0x140000;
+const airPlay2SupportedAudioFormats = airPlay2SupportedPcmAudioFormats | airPlay2SupportedAlacAudioFormats;
+const x25519SpkiPrefix = Buffer.from('302a300506032b656e032100', 'hex');
+const ed25519SpkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
+const airPlay2PairVerifySalt = 'Pair-Verify-Encrypt-Salt';
+const airPlay2PairVerifyInfo = 'Pair-Verify-Encrypt-Info';
+const airPlay2PairSetupEncryptSalt = 'Pair-Setup-Encrypt-Salt';
+const airPlay2PairSetupEncryptInfo = 'Pair-Setup-Encrypt-Info';
+const airPlay2PairSetupControllerSignSalt = 'Pair-Setup-Controller-Sign-Salt';
+const airPlay2PairSetupControllerSignInfo = 'Pair-Setup-Controller-Sign-Info';
+const airPlay2PairSetupAccessorySignSalt = 'Pair-Setup-Accessory-Sign-Salt';
+const airPlay2PairSetupAccessorySignInfo = 'Pair-Setup-Accessory-Sign-Info';
+const airPlay2ControlSalt = 'Control-Salt';
+const airPlay2EncryptedFrameLimitBytes = 1024;
+const airPlay2RtpTrailerBytes = 24;
+const airPlay2PairSetupUsername = 'Pair-Setup';
+const airPlay2PairSetupPassword = '3939';
+const airPlay2SrpModulusHex = [
+  'FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD',
+  '3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F',
+  '83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AAAC42DAD33170D04507A33A85521ABDF1CBA64ECFB850458DBEF0A8AEA71575D060C7DB3970F85A6E1E4C7ABF5AE8CDB0933D71E8C94E04A25619DCEE3D2261AD2EE6BF12FFA06D98A0864D87602733EC86A64',
+  '521F2B18177B200CBBE117577A615D6C770988C0BAD946E208E24FA074E5AB3143DB5BFCE0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF',
+].join('');
+const airPlay2SrpModulus = BigInt(`0x${airPlay2SrpModulusHex}`);
+const airPlay2SrpModulusBytes = airPlay2SrpModulusHex.length / 2;
+const airPlay2SrpGenerator = 5n;
+const airPlay2FairPlaySetup1Mode3Response = Buffer.from(
+  [
+    '46504c59030102000000008202039001e1727e0f57f9f5880db104a6257a23f5cfff1abbe1e93045251afb97eb9fc001',
+    '1ebe0f3a81df5b691d76acb2f7a5c708e3d328f56bb39dbde5f29c8a17f481487e3ae863c678325422e6f78e166d18aa',
+    '7fd636258bce28726f661f738893ce44311e4be6c0535193e5ef72e8686233729c227d820c999445d89246c8c359',
+  ].join(''),
+  'hex',
+);
+const airPlay2FairPlaySetup2ResponsePrefix = Buffer.from('46504c590301040000000014', 'hex');
+const airPlay2FairPlaySetup2SuffixBytes = 20;
+
+const airPlay2PcmFormats: AirPlay2PcmFormat[] = [
+  { audioFormat: 0x4, sampleRate: 8_000, bitDepth: 16, channels: 1 },
+  { audioFormat: 0x8, sampleRate: 8_000, bitDepth: 16, channels: 2 },
+  { audioFormat: 0x10, sampleRate: 16_000, bitDepth: 16, channels: 1 },
+  { audioFormat: 0x20, sampleRate: 16_000, bitDepth: 16, channels: 2 },
+  { audioFormat: 0x40, sampleRate: 24_000, bitDepth: 16, channels: 1 },
+  { audioFormat: 0x80, sampleRate: 24_000, bitDepth: 16, channels: 2 },
+  { audioFormat: 0x100, sampleRate: 32_000, bitDepth: 16, channels: 1 },
+  { audioFormat: 0x200, sampleRate: 32_000, bitDepth: 16, channels: 2 },
+  { audioFormat: 0x400, sampleRate: 44_100, bitDepth: 16, channels: 1 },
+  { audioFormat: 0x800, sampleRate: 44_100, bitDepth: 16, channels: 2 },
+  { audioFormat: 0x1000, sampleRate: 44_100, bitDepth: 24, channels: 1 },
+  { audioFormat: 0x2000, sampleRate: 44_100, bitDepth: 24, channels: 2 },
+  { audioFormat: 0x4000, sampleRate: 48_000, bitDepth: 16, channels: 1 },
+  { audioFormat: 0x8000, sampleRate: 48_000, bitDepth: 16, channels: 2 },
+  { audioFormat: 0x10000, sampleRate: 48_000, bitDepth: 24, channels: 1 },
+  { audioFormat: 0x20000, sampleRate: 48_000, bitDepth: 24, channels: 2 },
+];
+
+const airPlay2AlacFormats: Array<Omit<AirPlay2AlacFormat, 'framesPerPacket'>> = [
+  { audioFormat: 0x40000, sampleRate: 44_100, bitDepth: 16, channels: 2 },
+  { audioFormat: 0x100000, sampleRate: 48_000, bitDepth: 16, channels: 2 },
+];
+
+const airPlay2TlvNames: Record<number, string> = {
+  0: 'method',
+  1: 'identifier',
+  2: 'salt',
+  3: 'publicKey',
+  4: 'proof',
+  5: 'encryptedData',
+  6: 'state',
+  7: 'error',
+  8: 'retryDelay',
+  9: 'certificate',
+  10: 'signature',
+  11: 'permissions',
+  12: 'fragmentData',
+  13: 'fragmentLast',
+  19: 'flags',
+};
 
 type AirPlayAdvertiseInterface = {
   name: string;
@@ -115,6 +370,69 @@ type AirPlayMdnsAdvertiserLike = Pick<AirPlayMdnsAdvertiser, 'start' | 'stop'>;
 
 const loadDefaultRaopModule = async (): Promise<RaopModule> => {
   return new AirPlayRaopHelperModule();
+};
+
+type NodeLibraopAlacExports = {
+  default?: NodeLibraopAlacExports;
+  startAlacDecoder?: (options: {
+    sampleRate: number;
+    sampleSize: number;
+    channels: number;
+    framesPerPacket: number;
+  }) => number;
+  decodeAlacFrame?: (handle: number, frame: Buffer) => Buffer;
+  stopAlacDecoder?: (handle: number) => void;
+};
+
+const createDefaultAirPlay2AlacDecoder: AirPlay2AlacDecoderFactory = async (format) => {
+  const imported = (await import('@lox-audioserver/node-libraop')) as unknown as NodeLibraopAlacExports;
+  const raop = imported.default ?? imported;
+  if (
+    typeof raop.startAlacDecoder !== 'function' ||
+    typeof raop.decodeAlacFrame !== 'function' ||
+    typeof raop.stopAlacDecoder !== 'function'
+  ) {
+    throw new Error('AirPlay 2 ALAC decoder is not available in @lox-audioserver/node-libraop.');
+  }
+
+  const handle = raop.startAlacDecoder({
+    sampleRate: format.sampleRate,
+    sampleSize: format.bitDepth,
+    channels: format.channels,
+    framesPerPacket: format.framesPerPacket,
+  });
+  let closed = false;
+  return {
+    decodeFrame: (frame) => {
+      if (closed) {
+        return Buffer.alloc(0);
+      }
+      return Buffer.from(raop.decodeAlacFrame!(handle, frame));
+    },
+    close: () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      raop.stopAlacDecoder!(handle);
+    },
+  };
+};
+
+const withTimeout = async <T>(operation: PromiseLike<T> | T, timeoutMs: number, message: string): Promise<T> => {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 };
 
 export const resolveAirPlayHelperNodePath = (options: AirPlayHelperRuntimeOptions): string => {
@@ -137,6 +455,12 @@ const prependNodePaths = (env: NodeJS.ProcessEnv, nodePaths: string[]): void => 
 const trimText = (value: unknown): string | null => {
   const text = typeof value === 'string' ? value.trim() : '';
   return text ? text : null;
+};
+
+const normalizeAirPlayDeviceId = (mac: string | null | undefined): string => {
+  const cleaned = (mac ?? '').replace(/[^a-fA-F0-9]/gu, '').toUpperCase();
+  const value = cleaned.length === 12 ? cleaned : '024543484F00';
+  return value.match(/.{1,2}/gu)?.join(':') ?? '02:45:43:48:4F:00';
 };
 
 const compactAirPlayText = (value: string | null): string =>
@@ -209,6 +533,850 @@ const normalizeAirPlayMetadataText = (
   };
 };
 
+const summarizeBuffer = (value: Buffer): string => {
+  const digest = createHash('sha256').update(value).digest('hex').slice(0, 12);
+  return `${value.length}b:${digest}`;
+};
+
+const parseAirPlay2RtpPacket = (packet: Buffer): AirPlay2RtpPacket | null => {
+  if (packet.length < 12) {
+    return null;
+  }
+  const version = packet[0] >>> 6;
+  if (version !== 2) {
+    return null;
+  }
+  const csrcCount = packet[0] & 0x0f;
+  const hasExtension = (packet[0] & 0x10) !== 0;
+  const hasPadding = (packet[0] & 0x20) !== 0;
+  let headerLength = 12 + csrcCount * 4;
+  if (packet.length < headerLength) {
+    return null;
+  }
+  if (hasExtension) {
+    if (packet.length < headerLength + 4) {
+      return null;
+    }
+    const extensionLength = packet.readUInt16BE(headerLength + 2) * 4;
+    headerLength += 4 + extensionLength;
+    if (packet.length < headerLength) {
+      return null;
+    }
+  }
+
+  let payloadEnd = packet.length;
+  if (hasPadding) {
+    const paddingLength = packet[packet.length - 1];
+    if (paddingLength <= 0 || paddingLength > packet.length - headerLength) {
+      return null;
+    }
+    payloadEnd -= paddingLength;
+  }
+
+  return {
+    version,
+    payloadType: packet[1] & 0x7f,
+    marker: (packet[1] & 0x80) !== 0,
+    sequenceNumber: packet.readUInt16BE(2),
+    timestamp: packet.readUInt32BE(4),
+    ssrc: packet.readUInt32BE(8),
+    headerLength,
+    aad: packet.subarray(4, 12),
+    payload: packet.subarray(headerLength, payloadEnd),
+  };
+};
+
+const summarizeAirPlay2RtpPacket = (packet: AirPlay2RtpPacket): string => {
+  const marker = packet.marker ? ' marker=1' : '';
+  return `RTP v=${packet.version} pt=${packet.payloadType}${marker} seq=${packet.sequenceNumber} ts=${packet.timestamp} ssrc=${packet.ssrc.toString(16).padStart(8, '0')} header=${packet.headerLength}b payload=${packet.payload.length}b`;
+};
+
+const decryptAirPlay2RtpPayload = (packet: AirPlay2RtpPacket, sharedKey: Buffer): Buffer => {
+  if (sharedKey.length !== 32) {
+    throw new Error(`AirPlay 2 RTP shared key must be 32 bytes; got ${sharedKey.length}.`);
+  }
+  if (packet.payload.length < airPlay2RtpTrailerBytes) {
+    throw new Error(`AirPlay 2 RTP payload missing ${airPlay2RtpTrailerBytes}-byte encryption trailer.`);
+  }
+  const encryptedEnd = packet.payload.length - airPlay2RtpTrailerBytes;
+  const encrypted = packet.payload.subarray(0, encryptedEnd);
+  const nonce = Buffer.concat([Buffer.alloc(4), packet.payload.subarray(encryptedEnd, encryptedEnd + 8)]);
+  const tag = packet.payload.subarray(encryptedEnd + 8);
+  const decipher = createDecipheriv('chacha20-poly1305', sharedKey, nonce, { authTagLength: 16 });
+  decipher.setAAD(packet.aad, { plaintextLength: encrypted.length });
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+};
+
+const resolveAirPlay2PcmFormat = (streamInfo: AirPlay2SetupStreamInfo | null): AirPlay2PcmFormat | null => {
+  if (streamInfo?.compressionType !== 1 || !streamInfo.audioFormat) {
+    return null;
+  }
+  return airPlay2PcmFormats.find((format) => (streamInfo.audioFormat! & format.audioFormat) !== 0) ?? null;
+};
+
+const resolveAirPlay2AlacFormat = (streamInfo: AirPlay2SetupStreamInfo | null): AirPlay2AlacFormat | null => {
+  if (streamInfo?.compressionType !== 2 || !streamInfo.audioFormat) {
+    return null;
+  }
+  const format = airPlay2AlacFormats.find((candidate) => (streamInfo.audioFormat! & candidate.audioFormat) !== 0);
+  if (!format) {
+    return null;
+  }
+  return {
+    ...format,
+    framesPerPacket: streamInfo.framesPerPacket && streamInfo.framesPerPacket > 0 ? streamInfo.framesPerPacket : 352,
+  };
+};
+
+const convertAirPlay2LpcmToF32le = (input: Buffer, format: AirPlay2PcmFormat): Buffer => {
+  const sampleBytes = format.bitDepth / 8;
+  const sampleCount = Math.floor(input.length / sampleBytes);
+  const output = Buffer.allocUnsafe(sampleCount * 4);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const offset = index * sampleBytes;
+    let sample: number;
+    if (format.bitDepth === 16) {
+      sample = input.readInt16BE(offset) / 32768;
+    } else {
+      let value = (input[offset] << 16) | (input[offset + 1] << 8) | input[offset + 2];
+      if ((value & 0x80_0000) !== 0) {
+        value -= 0x100_0000;
+      }
+      sample = value / 8_388_608;
+    }
+    output.writeFloatLE(Math.max(-1, Math.min(1, sample)), index * 4);
+  }
+  return output;
+};
+
+const createAirPlay2Identity = (): AirPlay2Identity => {
+  const keyPair = generateKeyPairSync('ed25519');
+  const publicKeyDer = keyPair.publicKey.export({ format: 'der', type: 'spki' });
+  return {
+    publicKey: Buffer.from(publicKeyDer).subarray(ed25519SpkiPrefix.length),
+    privateKey: keyPair.privateKey,
+  };
+};
+
+const exportX25519PublicKey = (publicKey: KeyObject): Buffer => {
+  const publicKeyDer = publicKey.export({ format: 'der', type: 'spki' });
+  return Buffer.from(publicKeyDer).subarray(x25519SpkiPrefix.length);
+};
+
+const createX25519PublicKey = (rawPublicKey: Buffer): KeyObject => {
+  if (rawPublicKey.length !== 32) {
+    throw new Error(`Invalid X25519 public key length: ${rawPublicKey.length}.`);
+  }
+  return createPublicKey({
+    key: Buffer.concat([x25519SpkiPrefix, rawPublicKey]),
+    format: 'der',
+    type: 'spki',
+  });
+};
+
+const createEd25519PublicKey = (rawPublicKey: Buffer): KeyObject => {
+  if (rawPublicKey.length !== 32) {
+    throw new Error(`Invalid Ed25519 public key length: ${rawPublicKey.length}.`);
+  }
+  return createPublicKey({
+    key: Buffer.concat([ed25519SpkiPrefix, rawPublicKey]),
+    format: 'der',
+    type: 'spki',
+  });
+};
+
+const createAirPlay2Nonce = (label: string): Buffer => {
+  const value = Buffer.from(label, 'utf8');
+  if (value.length !== 8) {
+    throw new Error(`AirPlay 2 nonce labels must be 8 bytes: ${label}`);
+  }
+  return Buffer.concat([Buffer.alloc(4), value]);
+};
+
+const createAirPlay2CounterNonce = (counter: number): Buffer => {
+  const nonce = Buffer.alloc(12);
+  nonce.writeUInt32LE(counter >>> 0, 4);
+  nonce.writeUInt32LE(Math.floor(counter / 0x1_0000_0000), 8);
+  return nonce;
+};
+
+const deriveAirPlay2Key = (inputKey: Buffer, salt: string, info: string): Buffer =>
+  Buffer.from(hkdfSync('sha512', inputKey, Buffer.from(salt, 'utf8'), Buffer.from(info, 'utf8'), 32));
+
+const hashAirPlay2Sha512 = (...buffers: Buffer[]): Buffer => {
+  const hash = createHash('sha512');
+  for (const buffer of buffers) {
+    hash.update(buffer);
+  }
+  return hash.digest();
+};
+
+const airPlay2BigintFromBuffer = (value: Buffer): bigint => BigInt(`0x${value.toString('hex') || '0'}`);
+
+const airPlay2BigintToBuffer = (value: bigint, byteLength = airPlay2SrpModulusBytes): Buffer => {
+  const hex = value.toString(16).padStart(byteLength * 2, '0');
+  return Buffer.from(hex.slice(-byteLength * 2), 'hex');
+};
+
+const airPlay2SrpHashBigint = (...buffers: Buffer[]): bigint => airPlay2BigintFromBuffer(hashAirPlay2Sha512(...buffers));
+
+const airPlay2SrpMultiplier = airPlay2SrpHashBigint(
+  airPlay2BigintToBuffer(airPlay2SrpModulus),
+  airPlay2BigintToBuffer(airPlay2SrpGenerator),
+);
+
+const airPlay2ModPow = (base: bigint, exponent: bigint, modulus: bigint): bigint => {
+  let result = 1n;
+  let nextBase = ((base % modulus) + modulus) % modulus;
+  let nextExponent = exponent;
+  while (nextExponent > 0n) {
+    if (nextExponent & 1n) {
+      result = (result * nextBase) % modulus;
+    }
+    nextBase = (nextBase * nextBase) % modulus;
+    nextExponent >>= 1n;
+  }
+  return result;
+};
+
+const createAirPlay2SrpVerifier = (salt: Buffer): bigint => {
+  const userHash = hashAirPlay2Sha512(Buffer.from(`${airPlay2PairSetupUsername}:${airPlay2PairSetupPassword}`, 'utf8'));
+  const x = airPlay2SrpHashBigint(salt, userHash);
+  return airPlay2ModPow(airPlay2SrpGenerator, x, airPlay2SrpModulus);
+};
+
+const createAirPlay2SrpPrivateKey = (): bigint => {
+  let value = 0n;
+  while (value === 0n) {
+    value = airPlay2BigintFromBuffer(randomBytes(32));
+  }
+  return value;
+};
+
+const createAirPlay2SrpServerPublicKey = (verifier: bigint, privateKey: bigint): Buffer => {
+  const publicKey = (
+    (airPlay2SrpMultiplier * verifier) +
+    airPlay2ModPow(airPlay2SrpGenerator, privateKey, airPlay2SrpModulus)
+  ) % airPlay2SrpModulus;
+  return airPlay2BigintToBuffer(publicKey);
+};
+
+const calculateAirPlay2SrpSession = (
+  salt: Buffer,
+  clientPublicKey: Buffer,
+  serverPublicKey: Buffer,
+  privateKey: bigint,
+  verifier: bigint,
+): { sessionKey: Buffer; clientProof: Buffer; serverProof: Buffer } => {
+  const clientPublic = airPlay2BigintFromBuffer(clientPublicKey);
+  if (clientPublic % airPlay2SrpModulus === 0n) {
+    throw new Error('Pair-Setup M3 client SRP public key is invalid.');
+  }
+  const scramblingParameter = airPlay2SrpHashBigint(clientPublicKey, serverPublicKey);
+  const sessionSecret = airPlay2ModPow(
+    (clientPublic * airPlay2ModPow(verifier, scramblingParameter, airPlay2SrpModulus)) % airPlay2SrpModulus,
+    privateKey,
+    airPlay2SrpModulus,
+  );
+  const sessionKey = hashAirPlay2Sha512(airPlay2BigintToBuffer(sessionSecret));
+  const modulusHash = hashAirPlay2Sha512(airPlay2BigintToBuffer(airPlay2SrpModulus));
+  const generatorHash = hashAirPlay2Sha512(airPlay2BigintToBuffer(airPlay2SrpGenerator));
+  const groupHash = Buffer.from(modulusHash.map((value, index) => value ^ generatorHash[index]));
+  const usernameHash = hashAirPlay2Sha512(Buffer.from(airPlay2PairSetupUsername, 'utf8'));
+  const clientProof = hashAirPlay2Sha512(groupHash, usernameHash, salt, clientPublicKey, serverPublicKey, sessionKey);
+  const serverProof = hashAirPlay2Sha512(clientPublicKey, clientProof, sessionKey);
+  return { sessionKey, clientProof, serverProof };
+};
+
+const encodeAirPlay2Tlv = (fields: AirPlay2TlvField[]): Buffer => {
+  const chunks: Buffer[] = [];
+  for (const field of fields) {
+    if (field.value.length === 0) {
+      chunks.push(Buffer.from([field.type & 0xff, 0]));
+      continue;
+    }
+    let offset = 0;
+    while (offset < field.value.length) {
+      const chunk = field.value.subarray(offset, offset + 255);
+      chunks.push(Buffer.from([field.type & 0xff, chunk.length]));
+      chunks.push(chunk);
+      offset += chunk.length;
+    }
+  }
+  return Buffer.concat(chunks);
+};
+
+const parseAirPlay2Tlv = (body: Buffer): { fields: Map<number, Buffer[]>; error: null } | { fields: null; error: string } => {
+  const fields = new Map<number, Buffer[]>();
+  let offset = 0;
+  while (offset + 2 <= body.length) {
+    const type = body[offset];
+    const length = body[offset + 1];
+    offset += 2;
+    if (offset + length > body.length) {
+      return { fields: null, error: `malformed TLV at ${offset - 2}; body=${summarizeBuffer(body)}` };
+    }
+    const chunk = body.subarray(offset, offset + length);
+    offset += length;
+    const list = fields.get(type) ?? [];
+    list.push(chunk);
+    fields.set(type, list);
+  }
+
+  if (offset !== body.length) {
+    return { fields: null, error: `malformed TLV trailing byte; body=${summarizeBuffer(body)}` };
+  }
+
+  return { fields, error: null };
+};
+
+const getAirPlay2TlvValue = (fields: Map<number, Buffer[]>, type: number): Buffer | null => {
+  const chunks = fields.get(type);
+  return chunks ? Buffer.concat(chunks) : null;
+};
+
+const getAirPlay2TlvByte = (fields: Map<number, Buffer[]>, type: number): number | null => {
+  const value = getAirPlay2TlvValue(fields, type);
+  return value && value.length > 0 ? value.readUInt8(0) : null;
+};
+
+const encryptAirPlay2Payload = (key: Buffer, nonceLabel: string, body: Buffer): Buffer => {
+  const cipher = createCipheriv('chacha20-poly1305', key, createAirPlay2Nonce(nonceLabel), { authTagLength: 16 });
+  const encrypted = Buffer.concat([cipher.update(body), cipher.final()]);
+  return Buffer.concat([encrypted, cipher.getAuthTag()]);
+};
+
+const decryptAirPlay2Payload = (key: Buffer, nonceLabel: string, body: Buffer): Buffer => {
+  if (body.length < 16) {
+    throw new Error('AirPlay 2 encrypted payload is missing its authentication tag.');
+  }
+  const encrypted = body.subarray(0, -16);
+  const tag = body.subarray(-16);
+  const decipher = createDecipheriv('chacha20-poly1305', key, createAirPlay2Nonce(nonceLabel), { authTagLength: 16 });
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+};
+
+const encryptAirPlay2ControlFrame = (key: Buffer, counter: number, payload: Buffer): Buffer => {
+  const cipher = createCipheriv('chacha20-poly1305', key, createAirPlay2CounterNonce(counter), { authTagLength: 16 });
+  const encrypted = Buffer.concat([cipher.update(payload), cipher.final()]);
+  const frame = Buffer.alloc(2 + encrypted.length + 16);
+  frame.writeUInt16LE(payload.length, 0);
+  encrypted.copy(frame, 2);
+  cipher.getAuthTag().copy(frame, 2 + encrypted.length);
+  return frame;
+};
+
+const decryptAirPlay2ControlFrame = (key: Buffer, counter: number, frame: Buffer): Buffer => {
+  if (frame.length < 18) {
+    throw new Error('AirPlay 2 encrypted control frame is too short.');
+  }
+  const length = frame.readUInt16LE(0);
+  if (frame.length !== 2 + length + 16) {
+    throw new Error(`AirPlay 2 encrypted control frame length mismatch: ${frame.length} != ${2 + length + 16}.`);
+  }
+  const decipher = createDecipheriv('chacha20-poly1305', key, createAirPlay2CounterNonce(counter), { authTagLength: 16 });
+  decipher.setAuthTag(frame.subarray(2 + length));
+  return Buffer.concat([decipher.update(frame.subarray(2, 2 + length)), decipher.final()]);
+};
+
+const summarizeAirPlay2Tlv = (body: Buffer): string | null => {
+  if (body.length === 0) {
+    return 'empty body';
+  }
+
+  const parsed = parseAirPlay2Tlv(body);
+  if (!parsed.fields) {
+    return parsed.error;
+  }
+
+  const parts = [...parsed.fields.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([type, chunks]) => {
+      const value = Buffer.concat(chunks);
+      const name = airPlay2TlvNames[type] ?? `type${type}`;
+      if ((type === 0 || type === 6 || type === 7 || type === 11 || type === 13 || type === 19) && value.length > 0) {
+        return `${name}=${value.readUInt8(0)}`;
+      }
+      if (type === 1 && value.length > 0) {
+        const text = value.toString('utf8').replace(/[^\w:.-]/gu, '?').slice(0, 48);
+        return `${name}=${text}`;
+      }
+      return `${name}=${summarizeBuffer(value)}`;
+    });
+
+  return parts.length > 0 ? parts.join(' ') : `unparsed body=${summarizeBuffer(body)}`;
+};
+
+const parseAirPlay2TextRequest = (buffer: Buffer): { request: AirPlay2ProbeRequest; consumed: number } | null => {
+  const headerEnd = buffer.indexOf('\r\n\r\n');
+  if (headerEnd < 0) {
+    return null;
+  }
+
+  const headerText = buffer.subarray(0, headerEnd).toString('utf8');
+  const [requestLine, ...headerLines] = headerText.split('\r\n');
+  const match = /^([A-Z_]+)\s+(\S+)\s+(\S+)$/u.exec(requestLine ?? '');
+  if (!match) {
+    throw new Error(`Invalid AirPlay 2 request line: ${requestLine ?? ''}`);
+  }
+
+  const headers: Record<string, string> = {};
+  for (const line of headerLines) {
+    const separator = line.indexOf(':');
+    if (separator <= 0) {
+      continue;
+    }
+    headers[line.slice(0, separator).trim().toLowerCase()] = line.slice(separator + 1).trim();
+  }
+
+  const contentLength = Number(headers['content-length'] ?? 0);
+  if (!Number.isInteger(contentLength) || contentLength < 0 || contentLength > airPlay2ProbeBodyLimitBytes) {
+    throw new Error(`Invalid AirPlay 2 Content-Length: ${headers['content-length'] ?? 'missing'}.`);
+  }
+
+  const bodyStart = headerEnd + 4;
+  const totalLength = bodyStart + contentLength;
+  if (buffer.length < totalLength) {
+    return null;
+  }
+
+  return {
+    request: {
+      method: match[1],
+      path: match[2].split('?')[0] ?? '/',
+      protocol: match[3],
+      headers,
+      body: buffer.subarray(bodyStart, totalLength),
+    },
+    consumed: totalLength,
+  };
+};
+
+const airPlay2ReasonPhrase = (statusCode: number): string => {
+  if (statusCode === 200) return 'OK';
+  if (statusCode === 400) return 'Bad Request';
+  if (statusCode === 501) return 'Not Implemented';
+  return 'Internal Server Error';
+};
+
+const serializeAirPlay2ProbeResponse = (request: AirPlay2ProbeRequest, response: AirPlay2ProbeResponse): Buffer => {
+  const protocol = request.protocol.startsWith('RTSP/') ? 'RTSP/1.0' : 'HTTP/1.1';
+  const body = typeof response.body === 'string'
+    ? Buffer.from(response.body, 'utf8')
+    : response.body ?? Buffer.alloc(0);
+  const cseq = request.headers.cseq;
+  const headers = {
+    Server: `AirTunes/${airPlay2ProbeSourceVersion}`,
+    ...(cseq ? { CSeq: cseq } : {}),
+    'Content-Length': body.length,
+    ...(response.headers ?? {}),
+  };
+  const headerText = [
+    `${protocol} ${response.statusCode} ${airPlay2ReasonPhrase(response.statusCode)}`,
+    ...Object.entries(headers).map(([key, value]) => `${key}: ${value}`),
+    '',
+    '',
+  ].join('\r\n');
+  return Buffer.concat([Buffer.from(headerText, 'utf8'), body]);
+};
+
+const airPlay2BplistIntByteLength = (value: number): 1 | 2 | 4 | 8 => {
+  if (value >= 0 && value <= 0xff) return 1;
+  if (value >= 0 && value <= 0xffff) return 2;
+  if (value >= 0 && value <= 0xffff_ffff) return 4;
+  return 8;
+};
+
+const writeAirPlay2BplistUint = (value: number | bigint, byteLength: number): Buffer => {
+  const output = Buffer.alloc(byteLength);
+  let next = BigInt(value);
+  for (let index = byteLength - 1; index >= 0; index -= 1) {
+    output[index] = Number(next & 0xffn);
+    next >>= 8n;
+  }
+  return output;
+};
+
+const encodeAirPlay2BplistInt = (value: number): Buffer => {
+  const byteLength = airPlay2BplistIntByteLength(value);
+  const exponent = Math.log2(byteLength);
+  return Buffer.concat([Buffer.from([0x10 | exponent]), writeAirPlay2BplistUint(value, byteLength)]);
+};
+
+const encodeAirPlay2BplistLength = (type: number, length: number): Buffer => {
+  if (length < 15) {
+    return Buffer.from([type | length]);
+  }
+  return Buffer.concat([Buffer.from([type | 0x0f]), encodeAirPlay2BplistInt(length)]);
+};
+
+const collectAirPlay2BplistObjects = (value: AirPlay2BplistValue, objects: AirPlay2BplistObjectRecord[]): number => {
+  const index = objects.length;
+  const record: AirPlay2BplistObjectRecord = { value };
+  objects.push(record);
+  if (Array.isArray(value)) {
+    record.arrayRefs = value.map((item) => collectAirPlay2BplistObjects(item, objects));
+  } else if (value && typeof value === 'object' && !Buffer.isBuffer(value)) {
+    const entries = Object.entries(value);
+    record.dictKeyRefs = entries.map(([key]) => collectAirPlay2BplistObjects(key, objects));
+    record.dictValueRefs = entries.map(([, item]) => collectAirPlay2BplistObjects(item, objects));
+  }
+  return index;
+};
+
+const encodeAirPlay2BplistRef = (index: number, refSize: number): Buffer => writeAirPlay2BplistUint(index, refSize);
+
+const encodeAirPlay2BplistObject = (
+  record: AirPlay2BplistObjectRecord,
+  refSize: number,
+): Buffer => {
+  const { value } = record;
+  if (value === null) return Buffer.from([0x00]);
+  if (typeof value === 'boolean') return Buffer.from([value ? 0x09 : 0x08]);
+  if (typeof value === 'number') return encodeAirPlay2BplistInt(value);
+  if (typeof value === 'string') {
+    const ascii = [...value].every((char) => char.charCodeAt(0) <= 0x7f);
+    if (ascii) {
+      const content = Buffer.from(value, 'ascii');
+      return Buffer.concat([encodeAirPlay2BplistLength(0x50, content.length), content]);
+    }
+    const content = Buffer.from(value, 'utf16le');
+    for (let index = 0; index < content.length; index += 2) {
+      const next = content[index];
+      content[index] = content[index + 1];
+      content[index + 1] = next;
+    }
+    return Buffer.concat([encodeAirPlay2BplistLength(0x60, value.length), content]);
+  }
+  if (Buffer.isBuffer(value)) {
+    return Buffer.concat([encodeAirPlay2BplistLength(0x40, value.length), value]);
+  }
+  if (Array.isArray(value)) {
+    return Buffer.concat([
+      encodeAirPlay2BplistLength(0xa0, value.length),
+      ...(record.arrayRefs ?? []).map((childRef) => encodeAirPlay2BplistRef(childRef, refSize)),
+    ]);
+  }
+
+  const entries = Object.entries(value);
+  return Buffer.concat([
+    encodeAirPlay2BplistLength(0xd0, entries.length),
+    ...(record.dictKeyRefs ?? []).map((childRef) => encodeAirPlay2BplistRef(childRef, refSize)),
+    ...(record.dictValueRefs ?? []).map((childRef) => encodeAirPlay2BplistRef(childRef, refSize)),
+  ]);
+};
+
+const encodeAirPlay2Bplist = (value: AirPlay2BplistValue): Buffer => {
+  const objects: AirPlay2BplistObjectRecord[] = [];
+  collectAirPlay2BplistObjects(value, objects);
+  const refSize = objects.length <= 0xff ? 1 : objects.length <= 0xffff ? 2 : 4;
+  const encodedObjects = objects.map((object) => encodeAirPlay2BplistObject(object, refSize));
+  const offsets: number[] = [];
+  let offset = 8;
+  for (const object of encodedObjects) {
+    offsets.push(offset);
+    offset += object.length;
+  }
+  const offsetTableOffset = offset;
+  const offsetSize = offset <= 0xff ? 1 : offset <= 0xffff ? 2 : offset <= 0xffff_ffff ? 4 : 8;
+  const offsetTable = Buffer.concat(offsets.map((item) => writeAirPlay2BplistUint(item, offsetSize)));
+  const trailer = Buffer.concat([
+    Buffer.alloc(6),
+    Buffer.from([offsetSize, refSize]),
+    writeAirPlay2BplistUint(objects.length, 8),
+    writeAirPlay2BplistUint(0, 8),
+    writeAirPlay2BplistUint(offsetTableOffset, 8),
+  ]);
+  return Buffer.concat([Buffer.from('bplist00', 'ascii'), ...encodedObjects, offsetTable, trailer]);
+};
+
+const readAirPlay2BplistBigUint = (body: Buffer, offset: number, byteLength: number): bigint | null => {
+  if (offset < 0 || byteLength <= 0 || offset + byteLength > body.length) {
+    return null;
+  }
+  let value = 0n;
+  for (let index = offset; index < offset + byteLength; index += 1) {
+    value = (value << 8n) | BigInt(body[index]);
+  }
+  return value;
+};
+
+const readAirPlay2BplistUintNumber = (body: Buffer, offset: number, byteLength: number): number | null => {
+  const value = readAirPlay2BplistBigUint(body, offset, byteLength);
+  if (value === null || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    return null;
+  }
+  return Number(value);
+};
+
+const readAirPlay2BplistIntNumber = (body: Buffer, offset: number, byteLength: number): number | null => {
+  const unsigned = readAirPlay2BplistBigUint(body, offset, byteLength);
+  if (unsigned === null) {
+    return null;
+  }
+  const bits = BigInt(byteLength * 8);
+  const signBit = 1n << (bits - 1n);
+  const signed = (unsigned & signBit) !== 0n ? unsigned - (1n << bits) : unsigned;
+  if (signed > BigInt(Number.MAX_SAFE_INTEGER) || signed < BigInt(Number.MIN_SAFE_INTEGER)) {
+    return null;
+  }
+  return Number(signed);
+};
+
+const readAirPlay2BplistLength = (
+  body: Buffer,
+  objectOffset: number,
+  info: number,
+): { length: number; cursor: number } | null => {
+  if (info < 0x0f) {
+    return { length: info, cursor: objectOffset + 1 };
+  }
+  const markerOffset = objectOffset + 1;
+  const marker = body[markerOffset];
+  if ((marker & 0xf0) !== 0x10) {
+    return null;
+  }
+  const byteLength = 1 << (marker & 0x0f);
+  const length = readAirPlay2BplistUintNumber(body, markerOffset + 1, byteLength);
+  if (length === null) {
+    return null;
+  }
+  return { length, cursor: markerOffset + 1 + byteLength };
+};
+
+const decodeAirPlay2Bplist = (body: Buffer): { value: AirPlay2BplistValue; error: null } | { value: null; error: string } => {
+  if (body.length < 40 || body.subarray(0, 8).toString('ascii') !== 'bplist00') {
+    return { value: null, error: 'not a binary plist' };
+  }
+  const trailerOffset = body.length - 32;
+  const offsetSize = body[trailerOffset + 6];
+  const refSize = body[trailerOffset + 7];
+  const objectCount = readAirPlay2BplistUintNumber(body, trailerOffset + 8, 8);
+  const topObject = readAirPlay2BplistUintNumber(body, trailerOffset + 16, 8);
+  const offsetTableOffset = readAirPlay2BplistUintNumber(body, trailerOffset + 24, 8);
+  if (
+    !offsetSize ||
+    !refSize ||
+    objectCount === null ||
+    topObject === null ||
+    offsetTableOffset === null ||
+    objectCount <= 0 ||
+    topObject >= objectCount ||
+    offsetTableOffset >= trailerOffset
+  ) {
+    return { value: null, error: 'invalid binary plist trailer' };
+  }
+
+  const offsets: number[] = [];
+  for (let index = 0; index < objectCount; index += 1) {
+    const offset = readAirPlay2BplistUintNumber(body, offsetTableOffset + index * offsetSize, offsetSize);
+    if (offset === null || offset < 8 || offset >= trailerOffset) {
+      return { value: null, error: `invalid binary plist object offset ${index}` };
+    }
+    offsets.push(offset);
+  }
+
+  const cache = new Map<number, AirPlay2BplistValue>();
+  const parseRef = (ref: number, depth = 0): AirPlay2BplistValue | undefined => {
+    if (ref < 0 || ref >= offsets.length || depth > 64) {
+      return undefined;
+    }
+    const cached = cache.get(ref);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const objectOffset = offsets[ref];
+    const marker = body[objectOffset];
+    const type = marker & 0xf0;
+    const info = marker & 0x0f;
+    let value: AirPlay2BplistValue | undefined;
+
+    if (type === 0x00) {
+      if (info === 0x00) value = null;
+      else if (info === 0x08) value = false;
+      else if (info === 0x09) value = true;
+    } else if (type === 0x10) {
+      const byteLength = 1 << info;
+      value = readAirPlay2BplistIntNumber(body, objectOffset + 1, byteLength) ?? undefined;
+    } else if (type === 0x20) {
+      const byteLength = 1 << info;
+      if (byteLength === 4 && objectOffset + 5 <= body.length) value = body.readFloatBE(objectOffset + 1);
+      if (byteLength === 8 && objectOffset + 9 <= body.length) value = body.readDoubleBE(objectOffset + 1);
+    } else if (type === 0x30) {
+      if (info === 0x03 && objectOffset + 9 <= body.length) value = body.readDoubleBE(objectOffset + 1);
+    } else if (type === 0x40) {
+      const lengthInfo = readAirPlay2BplistLength(body, objectOffset, info);
+      if (lengthInfo && lengthInfo.cursor + lengthInfo.length <= trailerOffset) {
+        value = body.subarray(lengthInfo.cursor, lengthInfo.cursor + lengthInfo.length);
+      }
+    } else if (type === 0x50) {
+      const lengthInfo = readAirPlay2BplistLength(body, objectOffset, info);
+      if (lengthInfo && lengthInfo.cursor + lengthInfo.length <= trailerOffset) {
+        value = body.toString('ascii', lengthInfo.cursor, lengthInfo.cursor + lengthInfo.length);
+      }
+    } else if (type === 0x60) {
+      const lengthInfo = readAirPlay2BplistLength(body, objectOffset, info);
+      const byteLength = lengthInfo ? lengthInfo.length * 2 : 0;
+      if (lengthInfo && lengthInfo.cursor + byteLength <= trailerOffset) {
+        const chars: string[] = [];
+        for (let cursor = lengthInfo.cursor; cursor < lengthInfo.cursor + byteLength; cursor += 2) {
+          chars.push(String.fromCharCode(body.readUInt16BE(cursor)));
+        }
+        value = chars.join('');
+      }
+    } else if (type === 0x80) {
+      value = readAirPlay2BplistUintNumber(body, objectOffset + 1, info + 1) ?? undefined;
+    } else if (type === 0xa0) {
+      const lengthInfo = readAirPlay2BplistLength(body, objectOffset, info);
+      if (lengthInfo && lengthInfo.cursor + lengthInfo.length * refSize <= trailerOffset) {
+        const array: AirPlay2BplistValue[] = [];
+        cache.set(ref, array);
+        for (let index = 0; index < lengthInfo.length; index += 1) {
+          const childRef = readAirPlay2BplistUintNumber(body, lengthInfo.cursor + index * refSize, refSize);
+          const child = childRef === null ? undefined : parseRef(childRef, depth + 1);
+          if (child === undefined) {
+            return undefined;
+          }
+          array.push(child);
+        }
+        value = array;
+      }
+    } else if (type === 0xd0) {
+      const lengthInfo = readAirPlay2BplistLength(body, objectOffset, info);
+      if (lengthInfo && lengthInfo.cursor + lengthInfo.length * refSize * 2 <= trailerOffset) {
+        const record: { [key: string]: AirPlay2BplistValue } = {};
+        cache.set(ref, record);
+        const valueRefsOffset = lengthInfo.cursor + lengthInfo.length * refSize;
+        for (let index = 0; index < lengthInfo.length; index += 1) {
+          const keyRef = readAirPlay2BplistUintNumber(body, lengthInfo.cursor + index * refSize, refSize);
+          const valueRef = readAirPlay2BplistUintNumber(body, valueRefsOffset + index * refSize, refSize);
+          const key = keyRef === null ? undefined : parseRef(keyRef, depth + 1);
+          const item = valueRef === null ? undefined : parseRef(valueRef, depth + 1);
+          if (typeof key !== 'string' || item === undefined) {
+            return undefined;
+          }
+          record[key] = item;
+        }
+        value = record;
+      }
+    }
+
+    if (value === undefined) {
+      return undefined;
+    }
+    cache.set(ref, value);
+    return value;
+  };
+
+  const value = parseRef(topObject);
+  if (value === undefined) {
+    return { value: null, error: 'unsupported binary plist object' };
+  }
+  return { value, error: null };
+};
+
+const isAirPlay2BplistRecord = (value: AirPlay2BplistValue): value is { [key: string]: AirPlay2BplistValue } =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value) && !Buffer.isBuffer(value));
+
+const getAirPlay2BplistNumber = (value: AirPlay2BplistValue | undefined): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+const getAirPlay2BplistString = (value: AirPlay2BplistValue | undefined): string | null =>
+  typeof value === 'string' ? value : null;
+
+const getAirPlay2BplistBuffer = (value: AirPlay2BplistValue | undefined): Buffer | null =>
+  Buffer.isBuffer(value) ? value : null;
+
+const parseAirPlay2SetupSessionInfo = (body: Buffer): { info: AirPlay2SessionSetupInfo | null; error: string | null } => {
+  if (body.length === 0) {
+    return { info: null, error: null };
+  }
+  const decoded = decodeAirPlay2Bplist(body);
+  if (!decoded.value) {
+    return { info: null, error: decoded.error };
+  }
+  const root = isAirPlay2BplistRecord(decoded.value) ? decoded.value : null;
+  if (!root) {
+    return { info: null, error: null };
+  }
+  return {
+    info: {
+      encryptionKey: getAirPlay2BplistBuffer(root.ekey),
+      encryptionIv: getAirPlay2BplistBuffer(root.eiv),
+      encryptionType: getAirPlay2BplistNumber(root.et),
+      timingProtocol: getAirPlay2BplistString(root.timingProtocol),
+      senderName: getAirPlay2BplistString(root.name),
+      senderModel: getAirPlay2BplistString(root.model),
+      sourceVersion: getAirPlay2BplistString(root.sourceVersion),
+      sessionUuid: getAirPlay2BplistString(root.sessionUUID),
+    },
+    error: null,
+  };
+};
+
+const parseAirPlay2SetupStreams = (body: Buffer): { streams: AirPlay2SetupStreamInfo[]; error: string | null } => {
+  const decoded = decodeAirPlay2Bplist(body);
+  if (!decoded.value) {
+    return { streams: [], error: decoded.error };
+  }
+  const root = isAirPlay2BplistRecord(decoded.value) ? decoded.value : null;
+  const streamsValue = root?.streams;
+  if (!Array.isArray(streamsValue)) {
+    return { streams: [], error: null };
+  }
+  const streams = streamsValue
+    .map((stream): AirPlay2SetupStreamInfo | null => {
+      if (!isAirPlay2BplistRecord(stream)) {
+        return null;
+      }
+      return {
+        type: getAirPlay2BplistNumber(stream.type),
+        compressionType: getAirPlay2BplistNumber(stream.ct),
+        audioFormat: getAirPlay2BplistNumber(stream.audioFormat),
+        framesPerPacket: getAirPlay2BplistNumber(stream.spf),
+        sharedKey: getAirPlay2BplistBuffer(stream.shk),
+      };
+    })
+    .filter((stream): stream is AirPlay2SetupStreamInfo => Boolean(stream));
+  return { streams, error: null };
+};
+
+const summarizeAirPlay2SetupStream = (stream: AirPlay2SetupStreamInfo | null): string => {
+  if (!stream) {
+    return 'stream metadata unavailable';
+  }
+  const pcmFormat = resolveAirPlay2PcmFormat(stream);
+  const alacFormat = resolveAirPlay2AlacFormat(stream);
+  return [
+    `type=${stream.type ?? 'unknown'}`,
+    `ct=${stream.compressionType ?? 'unknown'}`,
+    `audioFormat=${stream.audioFormat ?? 'unknown'}`,
+    `spf=${stream.framesPerPacket ?? 'unknown'}`,
+    `shk=${stream.sharedKey ? `${stream.sharedKey.length}b` : 'missing'}`,
+    `pcm=${pcmFormat ? `${pcmFormat.sampleRate}/${pcmFormat.bitDepth}/${pcmFormat.channels}` : 'unsupported'}`,
+    `alac=${alacFormat ? `${alacFormat.sampleRate}/${alacFormat.bitDepth}/${alacFormat.channels}` : 'unsupported'}`,
+  ].join(' ');
+};
+
+const summarizeAirPlay2SessionSetupInfo = (info: AirPlay2SessionSetupInfo | null): string => {
+  if (!info) {
+    return 'session metadata unavailable';
+  }
+  return [
+    `ekey=${info.encryptionKey ? `${info.encryptionKey.length}b` : 'missing'}`,
+    `eiv=${info.encryptionIv ? `${info.encryptionIv.length}b` : 'missing'}`,
+    `et=${info.encryptionType ?? 'unknown'}`,
+    `timing=${info.timingProtocol ?? 'unknown'}`,
+    `sender=${info.senderName ?? 'unknown'}`,
+    `model=${info.senderModel ?? 'unknown'}`,
+    `source=${info.sourceVersion ?? 'unknown'}`,
+    `session=${info.sessionUuid ?? 'unknown'}`,
+  ].join(' ');
+};
+
 const normalizeVolume = (value: unknown): number => {
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) {
@@ -229,6 +1397,58 @@ const normalizeVolume = (value: unknown): number => {
   }
 
   return Math.max(0, Math.min(100, Math.round(numberValue)));
+};
+
+const volumePercentToAirPlayDb = (volumePercent: number): number => {
+  const clamped = Math.max(0, Math.min(100, Number.isFinite(volumePercent) ? volumePercent : 100));
+  if (clamped <= 0) {
+    return -144;
+  }
+  return Math.max(-144, Math.min(0, Math.round(20 * Math.log10(clamped / 100))));
+};
+
+const parseAirPlayTextParameters = (body: Buffer): Record<string, string> => {
+  const parameters: Record<string, string> = {};
+  for (const line of body.toString('utf8').split(/\r?\n/u)) {
+    const separator = line.indexOf(':');
+    if (separator <= 0) {
+      continue;
+    }
+    const key = line.slice(0, separator).trim().toLowerCase();
+    const value = line.slice(separator + 1).trim();
+    if (key) {
+      parameters[key] = value;
+    }
+  }
+  return parameters;
+};
+
+const parseAirPlayRequestedParameters = (body: Buffer): string[] =>
+  body
+    .toString('utf8')
+    .split(/\r?\n/u)
+    .map((line) => line.trim().toLowerCase())
+    .filter(Boolean);
+
+const parseAirPlayProgressParameter = (
+  value: string | undefined,
+  sampleRate: number,
+): { positionSeconds: number; durationSeconds: number } | null => {
+  if (!value) {
+    return null;
+  }
+  const [startText, currentText, endText] = value.split('/').map((part) => part.trim());
+  const start = Number(startText);
+  const current = Number(currentText);
+  const end = Number(endText);
+  if (!Number.isFinite(start) || !Number.isFinite(current) || !Number.isFinite(end) || end <= start) {
+    return null;
+  }
+  const safeSampleRate = sampleRate > 0 ? sampleRate : defaultSampleRate;
+  return {
+    positionSeconds: Math.max(0, (current - start) / safeSampleRate),
+    durationSeconds: Math.max(0, (end - start) / safeSampleRate),
+  };
 };
 
 const eventAddress = (event: RaopEvent): string | null =>
@@ -290,7 +1510,7 @@ const findAvailableTcpPort = async (host: string | null, basePort: number, portR
   for (let offset = 0; offset < portRange; offset += 1) {
     const port = basePort + offset;
     const available = await new Promise<boolean>((resolve) => {
-      const server = createServer();
+      const server = createTcpServer();
       server.unref();
       server.once('error', () => resolve(false));
       server.listen(port, host ?? undefined, () => {
@@ -355,6 +1575,11 @@ export class AirPlayRaopHelperModule implements RaopModule {
     }
     const response = await this.sendRequest('pcm-forwarding', { enabled }).catch(() => ({ ok: false }));
     return Boolean((response as { ok?: unknown }).ok);
+  }
+
+  async checkAvailable(): Promise<void> {
+    await this.ensureHelper();
+    await this.shutdownHelper();
   }
 
   private async ensureHelper(): Promise<void> {
@@ -677,14 +1902,28 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private readonly audioSession: AirPlayAudioSession;
   private readonly advertisedName: string;
   private readonly loadRaopModule: () => Promise<RaopModule>;
+  private readonly createAirPlay2AlacDecoder: AirPlay2AlacDecoderFactory;
   private readonly getAdvertiseInterfaces: () => AirPlayAdvertiseInterface[];
   private readonly createMdnsAdvertiser: () => AirPlayMdnsAdvertiserLike;
   private readonly useHttpPcmBridge: boolean;
+  private readonly airPlay2Experimental: boolean;
+  private readonly startupTimeoutMs: number;
   private readonly now: () => number;
+  private readonly airPlay2Identity: AirPlay2Identity;
   private raopModule: RaopModule | null = null;
   private receiverHandle: number | null = null;
   private advertisedInterface: AirPlayAdvertiseInterface | null = null;
   private mdnsAdvertisers: AirPlayMdnsAdvertiserLike[] = [];
+  private airPlay2ProbeServer: TcpServer | null = null;
+  private airPlay2ProbePort: number | null = null;
+  private airPlay2EventServer: TcpServer | null = null;
+  private airPlay2EventPort: number | null = null;
+  private airPlay2UdpListeners: AirPlay2UdpListener[] = [];
+  private airPlay2StreamState: AirPlay2StreamState | null = null;
+  private airPlay2PairSetupState: AirPlay2PairSetupState | null = null;
+  private airPlay2PairVerifyState: AirPlay2PairVerifyState | null = null;
+  private airPlay2FairPlayState: AirPlay2FairPlayState | null = null;
+  private airPlay2SessionSetupInfo: AirPlay2SessionSetupInfo | null = null;
   private pcmStream: PassThrough | null = null;
   private httpPcmRequest: ClientRequest | null = null;
   private readonly intentionalHttpPcmRequestCloses = new WeakSet<ClientRequest>();
@@ -708,10 +1947,14 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.audioSession = dependencies.audioSession ?? getAudioSession();
     this.advertisedName = dependencies.advertisedName ?? defaultAdvertisedName();
     this.loadRaopModule = dependencies.loadRaopModule ?? loadDefaultRaopModule;
+    this.createAirPlay2AlacDecoder = dependencies.createAirPlay2AlacDecoder ?? createDefaultAirPlay2AlacDecoder;
     this.getAdvertiseInterfaces = dependencies.getAdvertiseInterfaces ?? getAdvertiseInterfaces;
     this.createMdnsAdvertiser = dependencies.createMdnsAdvertiser ?? (() => new AirPlayMdnsAdvertiser());
     this.useHttpPcmBridge = dependencies.useHttpPcmBridge ?? shouldUseAirPlayHttpPcmBridge();
+    this.airPlay2Experimental = dependencies.airPlay2Experimental ?? shouldAdvertiseAirPlay2Experimental();
+    this.startupTimeoutMs = dependencies.startupTimeoutMs ?? airPlayStartupStepTimeoutMs;
     this.now = dependencies.now ?? Date.now;
+    this.airPlay2Identity = createAirPlay2Identity();
     this.status = this.createDisabledStatus();
     this.audioSession.on('status', this.handleAudioStatus);
     if (!dependencies.loadRaopModule) {
@@ -773,6 +2016,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   }
 
   async seekPlayback(_positionSeconds?: number): Promise<AirPlayReceiverStatus> {
+    void _positionSeconds;
     this.addDebugEvent('seek', 'AirPlay receiver seek is not supported by the native backend');
     return this.getStatus();
   }
@@ -817,32 +2061,51 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       const advertisedMac = advertiseInterface?.mac ?? '02:45:43:48:4F:00';
       this.advertisedInterface = advertiseInterface;
       const portBase = await findAvailableTcpPort(null, 6000, 100);
-      this.receiverHandle = await this.raopModule.startReceiver(
-        {
-          name: this.advertisedName,
-          model: airPlayModel,
-          mac: advertisedMac,
-          latencies: airPlayRaopLatencies,
-          metadata: true,
-          portBase,
-          portRange: 100,
-        },
-        (event) => this.handleRaopEvent(event),
+      const airPlay2ProbePort = this.airPlay2Experimental ? await this.startAirPlay2ProbeServer() : null;
+      this.receiverHandle = await withTimeout(
+        this.raopModule.startReceiver(
+          {
+            name: this.advertisedName,
+            model: airPlayModel,
+            mac: advertisedMac,
+            latencies: airPlayRaopLatencies,
+            metadata: true,
+            portBase,
+            portRange: 100,
+          },
+          (event) => this.handleRaopEvent(event),
+        ),
+        this.startupTimeoutMs,
+        'AirPlay RAOP receiver startup timed out.',
       );
       const advertisedAddresses: string[] = [];
       for (const item of advertiseInterfaces) {
+        const mdnsAdvertiser = this.createMdnsAdvertiser();
         try {
-          const mdnsAdvertiser = this.createMdnsAdvertiser();
-          await mdnsAdvertiser.start({
-            name: this.advertisedName,
-            model: airPlayModel,
-            address: item.address,
-            mac: advertisedMac,
-            port: portBase,
-          });
+          await withTimeout(
+            mdnsAdvertiser.start({
+              name: this.advertisedName,
+              model: airPlayModel,
+              address: item.address,
+              mac: advertisedMac,
+              port: portBase,
+              airPlayPort: airPlay2ProbePort,
+              airPlayPublicKey: this.airPlay2Identity.publicKey.toString('hex'),
+              airPlay2Experimental: this.airPlay2Experimental,
+            }),
+            this.startupTimeoutMs,
+            `AirPlay mDNS advertiser startup timed out on ${item.address}.`,
+          );
           this.mdnsAdvertisers.push(mdnsAdvertiser);
           advertisedAddresses.push(`${item.address} (${item.name})`);
         } catch (error) {
+          await withTimeout(
+            Promise.resolve().then(() => mdnsAdvertiser.stop(false)),
+            Math.min(this.startupTimeoutMs, 1000),
+            `AirPlay mDNS advertiser cleanup timed out on ${item.address}.`,
+          ).catch((stopError) => {
+            this.addDebugEvent('mdns', stopError instanceof Error ? stopError.message : String(stopError));
+          });
           this.addDebugEvent('mdns', `${item.address}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
@@ -858,6 +2121,14 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
           ? `RAOP receiver started on 0.0.0.0:${portBase}; primary advertisement ${advertiseInterface.address} (${advertiseInterface.mac})`
           : `RAOP receiver started on 0.0.0.0:${portBase}; no LAN IPv4 interface found`,
       );
+      if (this.airPlay2Experimental) {
+        this.addDebugEvent(
+          'airplay2',
+          airPlay2ProbePort
+            ? `experimental _airplay._tcp advertisement enabled on ${airPlay2ProbePort}; AirPlay 2 pairing/audio is still under investigation`
+            : 'experimental _airplay._tcp advertisement skipped because probe server did not start',
+        );
+      }
       this.setStatus({
         enabled: true,
         state: 'idle',
@@ -868,6 +2139,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       const message = error instanceof Error ? error.message : String(error);
       this.receiverHandle = null;
       this.raopModule = null;
+      await this.stopAirPlay2ProbeServer().catch(() => undefined);
       this.clearCurrentSession('native module unavailable');
       this.setStatus({
         enabled: false,
@@ -886,6 +2158,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
 
     try {
       this.raopModule ??= await this.loadRaopModule();
+      await this.raopModule.checkAvailable?.();
       if (!this.status.enabled) {
         this.setStatus({
           nativeAvailable: true,
@@ -921,6 +2194,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         ),
       );
     }
+    await this.stopAirPlay2ProbeServer();
     if (this.receiverHandle !== null && this.raopModule) {
       try {
         await this.raopModule.stopReceiver(this.receiverHandle);
@@ -943,6 +2217,1206 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       durationSeconds: 0,
       error: null,
     });
+  }
+
+  private async startAirPlay2ProbeServer(): Promise<number | null> {
+    if (this.airPlay2ProbeServer && this.airPlay2ProbePort) {
+      return this.airPlay2ProbePort;
+    }
+
+    try {
+      const port = await findAvailableTcpPort(null, 7000, 100);
+      const server = createTcpServer((socket) => this.handleAirPlay2TcpConnection(socket));
+      await withTimeout(
+        new Promise<void>((resolve, reject) => {
+          server.once('error', reject);
+          server.listen(port, () => {
+            server.off('error', reject);
+            resolve();
+          });
+        }),
+        this.startupTimeoutMs,
+        'AirPlay 2 probe server startup timed out.',
+      );
+      this.airPlay2ProbeServer = server;
+      this.airPlay2ProbePort = port;
+      this.addDebugEvent('airplay2', `probe server listening on ${port}`);
+      return port;
+    } catch (error) {
+      this.addDebugEvent('airplay2', error instanceof Error ? error.message : String(error));
+      return null;
+    }
+  }
+
+  private async stopAirPlay2ProbeServer(): Promise<void> {
+    const server = this.airPlay2ProbeServer;
+    this.airPlay2ProbeServer = null;
+    this.airPlay2ProbePort = null;
+    this.airPlay2PairSetupState = null;
+    this.airPlay2PairVerifyState = null;
+    this.airPlay2FairPlayState = null;
+    this.airPlay2SessionSetupInfo = null;
+    await this.stopAirPlay2SessionResources();
+    if (!server) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    });
+  }
+
+  private async stopAirPlay2SessionResources(): Promise<void> {
+    const eventServer = this.airPlay2EventServer;
+    this.airPlay2EventServer = null;
+    this.airPlay2EventPort = null;
+    this.closeAirPlay2StreamState();
+    const udpListeners = this.airPlay2UdpListeners.splice(0);
+    await Promise.all([
+      eventServer
+        ? new Promise<void>((resolve) => eventServer.close(() => resolve()))
+        : Promise.resolve(),
+      ...udpListeners.map((listener) => new Promise<void>((resolve) => listener.socket.close(() => resolve()))),
+    ]);
+  }
+
+  private closeAirPlay2StreamState(): void {
+    const state = this.airPlay2StreamState;
+    this.airPlay2StreamState = null;
+    if (!state?.alacDecoder) {
+      return;
+    }
+    try {
+      state.alacDecoder.close();
+    } catch (error) {
+      this.addDebugEvent('setup', `AirPlay 2 ALAC decoder close failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private handleAirPlay2TcpConnection(socket: Socket): void {
+    const connection: AirPlay2TcpConnection = {
+      buffer: Buffer.alloc(0),
+      encrypted: false,
+      draining: false,
+      cipher: { readCounter: 0, writeCounter: 0 },
+    };
+
+    socket.on('data', (chunk) => {
+      connection.buffer = Buffer.concat([connection.buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+      if (!connection.draining) {
+        void this.drainAirPlay2TcpConnection(socket, connection);
+      }
+    });
+    socket.on('error', (error) => {
+      this.addDebugEvent('probe-error', error.message, { method: 'TCP', path: '/airplay2', statusCode: null });
+    });
+  }
+
+  private async drainAirPlay2TcpConnection(socket: Socket, connection: AirPlay2TcpConnection): Promise<void> {
+    connection.draining = true;
+    try {
+      while (connection.buffer.length > 0) {
+        if (connection.encrypted) {
+          const state = this.airPlay2PairVerifyState;
+          if (!state) {
+            throw new Error('Encrypted AirPlay 2 control frame arrived before Pair-Verify completed.');
+          }
+          if (connection.buffer.length < 2) {
+            return;
+          }
+          const payloadLength = connection.buffer.readUInt16LE(0);
+          if (payloadLength > airPlay2EncryptedFrameLimitBytes) {
+            throw new Error(`AirPlay 2 encrypted control frame is too large: ${payloadLength}.`);
+          }
+          const frameLength = 2 + payloadLength + 16;
+          if (connection.buffer.length < frameLength) {
+            return;
+          }
+          const frame = connection.buffer.subarray(0, frameLength);
+          connection.buffer = connection.buffer.subarray(frameLength);
+          const plaintext = decryptAirPlay2ControlFrame(state.controlWriteKey, connection.cipher.readCounter, frame);
+          connection.cipher.readCounter += 1;
+          const parsed = parseAirPlay2TextRequest(plaintext);
+          if (!parsed || parsed.consumed !== plaintext.length) {
+            throw new Error(`Invalid encrypted AirPlay 2 control payload: ${summarizeBuffer(plaintext)}.`);
+          }
+          const response = await this.handleAirPlay2ProbeRequest(parsed.request);
+          const serialized = serializeAirPlay2ProbeResponse(parsed.request, response);
+          socket.write(encryptAirPlay2ControlFrame(state.controlReadKey, connection.cipher.writeCounter, serialized));
+          connection.cipher.writeCounter += 1;
+          continue;
+        }
+
+        const parsed = parseAirPlay2TextRequest(connection.buffer);
+        if (!parsed) {
+          return;
+        }
+        connection.buffer = connection.buffer.subarray(parsed.consumed);
+        const response = await this.handleAirPlay2ProbeRequest(parsed.request);
+        socket.write(serializeAirPlay2ProbeResponse(parsed.request, response));
+        if (response.encryptedAfterWrite) {
+          connection.encrypted = true;
+          connection.cipher = { readCounter: 0, writeCounter: 0 };
+        }
+      }
+    } catch (error) {
+      this.addDebugEvent('probe-error', error instanceof Error ? error.message : String(error), {
+        method: connection.encrypted ? 'ENC' : 'TCP',
+        path: '/airplay2',
+        statusCode: 400,
+      });
+      socket.end();
+    } finally {
+      connection.draining = false;
+      if (connection.buffer.length > 0 && !socket.destroyed) {
+        void this.drainAirPlay2TcpConnection(socket, connection);
+      }
+    }
+  }
+
+  private async handleAirPlay2ProbeRequest(request: AirPlay2ProbeRequest): Promise<AirPlay2ProbeResponse> {
+    const { method, path, body } = request;
+    const contentTypeText = request.headers['content-type'] ?? null;
+
+    if (method === 'GET' && path === '/info') {
+      if (request.protocol.startsWith('RTSP/') && body.length === 0 && !contentTypeText) {
+        const responseBody = this.createAirPlay2InitialInfoPlist();
+        this.addDebugEvent('info', 'AirPlay 2 initial info response sent', { method, path, statusCode: 200 });
+        return {
+          statusCode: 200,
+          headers: { 'Content-Type': 'application/x-apple-binary-plist' },
+          body: responseBody,
+        };
+      }
+      if (contentTypeText?.includes('application/x-apple-binary-plist') || body.subarray(0, 8).toString('ascii') === 'bplist00') {
+        const responseBody = this.createAirPlay2InfoBplist();
+        this.addDebugEvent('info', 'AirPlay 2 /info binary plist response sent', { method, path, statusCode: 200 });
+        return {
+          statusCode: 200,
+          headers: { 'Content-Type': 'application/x-apple-binary-plist' },
+          body: responseBody,
+        };
+      }
+      const responseBody = this.createAirPlay2InfoPlist();
+      this.addDebugEvent('info', 'AirPlay 2 /info probe response sent', { method, path, statusCode: 200 });
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'text/x-apple-plist+xml' },
+        body: responseBody,
+      };
+    }
+
+    if (method === 'OPTIONS') {
+      this.addDebugEvent('options', 'AirPlay 2 OPTIONS probe response sent', { method, path, statusCode: 200 });
+      return {
+        statusCode: 200,
+        headers: {
+          Public: 'ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER, SETPEERS, GET, POST',
+        },
+      };
+    }
+
+    if (method === 'POST' && path === '/pair-setup') {
+      return this.handleAirPlay2PairSetupRequest(method, path, contentTypeText, body);
+    }
+
+    if (method === 'POST' && path === '/pair-verify') {
+      return this.handleAirPlay2PairVerifyRequest(method, path, contentTypeText, body);
+    }
+
+    if (method === 'POST' && path === '/fp-setup') {
+      return this.handleAirPlay2FairPlaySetupRequest(method, path, body);
+    }
+
+    if (method === 'SETUP') {
+      return this.handleAirPlay2SetupRequest(request);
+    }
+
+    if (method === 'RECORD') {
+      this.addDebugEvent('record', 'AirPlay 2 RECORD acknowledged; RTP audio packets may follow', { method, path, statusCode: 200 });
+      return { statusCode: 200, headers: { 'Audio-Latency': 0 } };
+    }
+
+    if (method === 'FLUSH' || method === 'FLUSHBUFFERED') {
+      this.addDebugEvent('flush', request.headers['rtp-info'] ?? 'AirPlay 2 flush acknowledged', { method, path, statusCode: 200 });
+      return { statusCode: 200 };
+    }
+
+    if (method === 'SET_PARAMETER') {
+      return this.handleAirPlay2SetParameterRequest(request, contentTypeText);
+    }
+
+    if (method === 'GET_PARAMETER') {
+      return this.handleAirPlay2GetParameterRequest(request, contentTypeText);
+    }
+
+    if (method === 'TEARDOWN') {
+      void this.stopAirPlay2SessionResources();
+      this.addDebugEvent('teardown', body.length > 0 ? this.summarizeAirPlay2ProbeBody(path, contentTypeText, body) : 'AirPlay 2 teardown acknowledged', { method, path, statusCode: 200 });
+      return { statusCode: 200 };
+    }
+
+    if (method === 'POST' && path === '/pair-setup-pin') {
+      const summary = this.summarizeAirPlay2ProbeBody(path, contentTypeText, body);
+      this.addDebugEvent('pairing', summary, { method, path, statusCode: 501 });
+      return { statusCode: 501 };
+    }
+
+    if (
+      (method === 'POST' && (path === '/feedback' || path === '/command' || path === '/audioMode')) ||
+      method === 'SETPEERS'
+    ) {
+      const message = body.length > 0
+        ? `AirPlay 2 probe request acknowledged; ${this.summarizeAirPlay2ProbeBody(path, contentTypeText, body)}`
+        : 'AirPlay 2 probe request acknowledged';
+      this.addDebugEvent('probe', message, { method, path, statusCode: 200 });
+      return { statusCode: 200 };
+    }
+
+    this.addDebugEvent('probe', 'AirPlay 2 probe request is not implemented yet', { method, path, statusCode: 501 });
+    return { statusCode: 501 };
+  }
+
+  private handleAirPlay2PairSetupRequest(
+    method: string,
+    path: string,
+    contentType: string | null,
+    body: Buffer,
+  ): AirPlay2ProbeResponse {
+    const parsed = parseAirPlay2Tlv(body);
+    if (!parsed.fields) {
+      this.addDebugEvent('pair-setup', `${contentType ? `content-type=${contentType}; ` : ''}${parsed.error}`, { method, path, statusCode: 400 });
+      return { statusCode: 400 };
+    }
+
+    const state = getAirPlay2TlvByte(parsed.fields, 6);
+    if (state === 1) {
+      return this.handleAirPlay2PairSetupM1(method, path);
+    }
+    if (state === 3) {
+      return this.handleAirPlay2PairSetupM3(method, path, parsed.fields);
+    }
+    if (state === 5) {
+      return this.handleAirPlay2PairSetupM5(method, path, parsed.fields);
+    }
+
+    const summary = this.summarizeAirPlay2ProbeBody(path, contentType, body);
+    this.addDebugEvent('pair-setup', `unsupported state=${state ?? 'missing'}; ${summary}`, { method, path, statusCode: 501 });
+    return { statusCode: 501 };
+  }
+
+  private handleAirPlay2PairVerifyRequest(
+    method: string,
+    path: string,
+    contentType: string | null,
+    body: Buffer,
+  ): AirPlay2ProbeResponse {
+    const parsed = parseAirPlay2Tlv(body);
+    if (!parsed.fields) {
+      this.addDebugEvent('pair-verify', `${contentType ? `content-type=${contentType}; ` : ''}${parsed.error}`, { method, path, statusCode: 400 });
+      return { statusCode: 400 };
+    }
+
+    const state = getAirPlay2TlvByte(parsed.fields, 6);
+    if (state === 1) {
+      return this.handleAirPlay2PairVerifyM1(method, path, parsed.fields);
+    }
+    if (state === 3) {
+      return this.handleAirPlay2PairVerifyM3(method, path, parsed.fields);
+    }
+
+    this.addDebugEvent('pair-verify', `unsupported state=${state ?? 'missing'}`, { method, path, statusCode: 400 });
+    return { statusCode: 400 };
+  }
+
+  private async handleAirPlay2SetupRequest(request: AirPlay2ProbeRequest): Promise<AirPlay2ProbeResponse> {
+    const setupStreams = parseAirPlay2SetupStreams(request.body);
+    const isStreamSetup = setupStreams.streams.length > 0 || request.body.includes(Buffer.from('streams', 'ascii'));
+    if (setupStreams.error && request.body.subarray(0, 8).toString('ascii') === 'bplist00') {
+      this.addDebugEvent('setup', `AirPlay 2 setup plist parse failed: ${setupStreams.error}`, {
+        method: request.method,
+        path: request.path,
+        statusCode: null,
+      });
+    }
+    if (isStreamSetup) {
+      return this.handleAirPlay2StreamSetup(request, setupStreams.streams[0] ?? null);
+    }
+    return this.handleAirPlay2SessionSetup(request);
+  }
+
+  private handleAirPlay2SetParameterRequest(
+    request: AirPlay2ProbeRequest,
+    contentType: string | null,
+  ): AirPlay2ProbeResponse {
+    const contentTypeLower = contentType?.toLowerCase() ?? '';
+    const details: string[] = [];
+    if (contentTypeLower.includes('text/parameters')) {
+      const parameters = parseAirPlayTextParameters(request.body);
+      if (parameters.volume !== undefined) {
+        const volume = normalizeVolume(parameters.volume);
+        void Promise.resolve(this.audioSession.setOutput({ volume: volume / 100 })).catch(() => undefined);
+        this.setStatus({ volume });
+        details.push(`volume=${volume}`);
+      }
+      const progress = parseAirPlayProgressParameter(
+        parameters.progress,
+        this.airPlay2StreamState?.pcmFormat?.sampleRate ?? this.airPlay2StreamState?.alacFormat?.sampleRate ?? defaultSampleRate,
+      );
+      if (progress) {
+        this.setPositionAnchor(progress.positionSeconds, progress.durationSeconds);
+        this.setStatus({
+          positionSeconds: progress.positionSeconds,
+          durationSeconds: progress.durationSeconds,
+        });
+        details.push(`progress=${progress.positionSeconds.toFixed(3)}/${progress.durationSeconds.toFixed(3)}`);
+      }
+    } else if (contentTypeLower.startsWith('image/')) {
+      this.applyArtworkEvent({
+        type: 'artwork',
+        data: request.body,
+        mimeType: contentTypeLower,
+      });
+      details.push(`artwork=${request.body.length}b`);
+    }
+
+    const message = details.length > 0
+      ? `AirPlay 2 SET_PARAMETER applied; ${details.join(' ')}`
+      : request.body.length > 0
+        ? `AirPlay 2 SET_PARAMETER acknowledged; ${this.summarizeAirPlay2ProbeBody(request.path, contentType, request.body)}`
+        : 'AirPlay 2 SET_PARAMETER acknowledged';
+    this.addDebugEvent('set-parameter', message, {
+      method: request.method,
+      path: request.path,
+      statusCode: 200,
+    });
+    return { statusCode: 200 };
+  }
+
+  private handleAirPlay2GetParameterRequest(
+    request: AirPlay2ProbeRequest,
+    contentType: string | null,
+  ): AirPlay2ProbeResponse {
+    const contentTypeLower = contentType?.toLowerCase() ?? '';
+    if (!contentTypeLower.includes('text/parameters')) {
+      this.addDebugEvent('get-parameter', 'AirPlay 2 GET_PARAMETER acknowledged', {
+        method: request.method,
+        path: request.path,
+        statusCode: 200,
+      });
+      return { statusCode: 200 };
+    }
+
+    const requested = new Set(parseAirPlayRequestedParameters(request.body));
+    const responseLines: string[] = [];
+    if (requested.has('volume')) {
+      responseLines.push(`volume: ${volumePercentToAirPlayDb(this.status.volume)}`);
+    }
+    if (requested.has('progress')) {
+      const sampleRate = this.airPlay2StreamState?.pcmFormat?.sampleRate ?? this.airPlay2StreamState?.alacFormat?.sampleRate ?? defaultSampleRate;
+      const currentFrame = Math.max(0, Math.round(this.estimatePosition(this.status) * sampleRate));
+      const endFrame = this.status.durationSeconds > 0
+        ? Math.max(currentFrame, Math.round(this.status.durationSeconds * sampleRate))
+        : currentFrame;
+      responseLines.push(`progress: 0/${currentFrame}/${endFrame}`);
+    }
+    const body = responseLines.length > 0 ? `${responseLines.join('\r\n')}\r\n` : '';
+    this.addDebugEvent(
+      'get-parameter',
+      responseLines.length > 0
+        ? `AirPlay 2 GET_PARAMETER response; ${responseLines.join(' ')}`
+        : 'AirPlay 2 GET_PARAMETER response empty',
+      { method: request.method, path: request.path, statusCode: 200 },
+    );
+    return {
+      statusCode: 200,
+      headers: body ? { 'Content-Type': 'text/parameters' } : undefined,
+      body,
+    };
+  }
+
+  private async handleAirPlay2SessionSetup(request: AirPlay2ProbeRequest): Promise<AirPlay2ProbeResponse> {
+    const setupInfo = parseAirPlay2SetupSessionInfo(request.body);
+    if (setupInfo.error && request.body.subarray(0, 8).toString('ascii') === 'bplist00') {
+      this.addDebugEvent('setup', `AirPlay 2 session setup plist parse failed: ${setupInfo.error}`, {
+        method: request.method,
+        path: request.path,
+        statusCode: 400,
+      });
+      return { statusCode: 400 };
+    }
+    this.airPlay2SessionSetupInfo = setupInfo.info;
+    const eventPort = await this.ensureAirPlay2EventServer();
+    const body = encodeAirPlay2Bplist({
+      eventPort,
+      timingPort: 0,
+      timingPeerInfo: {
+        Addresses: [this.advertisedInterface?.address ?? '127.0.0.1'],
+        ID: this.airPlay2DeviceIdentifier(),
+      },
+    });
+    this.addDebugEvent('setup', `AirPlay 2 session setup acknowledged; eventPort=${eventPort} timingPort=0; ${summarizeAirPlay2SessionSetupInfo(setupInfo.info)}`, {
+      method: request.method,
+      path: request.path,
+      statusCode: 200,
+    });
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/x-apple-binary-plist' },
+      body,
+    };
+  }
+
+  private async handleAirPlay2StreamSetup(
+    request: AirPlay2ProbeRequest,
+    streamInfo: AirPlay2SetupStreamInfo | null,
+  ): Promise<AirPlay2ProbeResponse> {
+    const pcmFormat = resolveAirPlay2PcmFormat(streamInfo);
+    const alacFormat = resolveAirPlay2AlacFormat(streamInfo);
+    if (!pcmFormat && !alacFormat) {
+      this.addDebugEvent(
+        'setup',
+        `AirPlay 2 stream setup rejected; ${summarizeAirPlay2SetupStream(streamInfo)}; supported path requires realtime LPCM or ALAC`,
+        { method: request.method, path: request.path, statusCode: 501 },
+      );
+      return { statusCode: 501 };
+    }
+    if (!streamInfo?.sharedKey || streamInfo.sharedKey.length !== 32) {
+      this.addDebugEvent(
+        'setup',
+        `AirPlay 2 stream setup rejected; ${summarizeAirPlay2SetupStream(streamInfo)}; supported RTP path requires a 32-byte shared key`,
+        { method: request.method, path: request.path, statusCode: 501 },
+      );
+      return { statusCode: 501 };
+    }
+
+    let alacDecoder: AirPlay2AlacDecoder | null = null;
+    if (alacFormat) {
+      try {
+        alacDecoder = await this.createAirPlay2AlacDecoder(alacFormat);
+      } catch (error) {
+        this.addDebugEvent(
+          'setup',
+          `AirPlay 2 stream setup rejected; ${summarizeAirPlay2SetupStream(streamInfo)}; ALAC decoder unavailable: ${error instanceof Error ? error.message : String(error)}`,
+          { method: request.method, path: request.path, statusCode: 501 },
+        );
+        return { statusCode: 501 };
+      }
+    }
+
+    const controlPort = await this.ensureAirPlay2UdpListener('control');
+    const dataPort = await this.ensureAirPlay2UdpListener('data');
+    this.closeAirPlay2StreamState();
+    this.airPlay2StreamState = {
+      dataPort,
+      controlPort,
+      streamType: streamInfo?.type ?? null,
+      compressionType: streamInfo?.compressionType ?? null,
+      audioFormat: streamInfo?.audioFormat ?? null,
+      framesPerPacket: streamInfo?.framesPerPacket ?? null,
+      sharedKey: streamInfo?.sharedKey ?? null,
+      pcmFormat,
+      alacFormat,
+      alacDecoder,
+      packetCount: 0,
+      byteCount: 0,
+      decryptedPacketCount: 0,
+      decodedPacketCount: 0,
+      decryptFailureCount: 0,
+      firstPacketAt: null,
+      lastSequenceNumber: null,
+      lastTimestamp: null,
+    };
+    const body = encodeAirPlay2Bplist({
+      streams: [
+        {
+          type: 96,
+          controlPort,
+          dataPort,
+        },
+      ],
+    });
+    const codec = alacFormat ? 'ALAC' : 'LPCM';
+    this.addDebugEvent('setup', `AirPlay 2 stream setup acknowledged; dataPort=${dataPort} controlPort=${controlPort}; ${summarizeAirPlay2SetupStream(streamInfo)}; encrypted ${codec} RTP ready`, {
+      method: request.method,
+      path: request.path,
+      statusCode: 200,
+    });
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/x-apple-binary-plist' },
+      body,
+    };
+  }
+
+  private async ensureAirPlay2EventServer(): Promise<number> {
+    if (this.airPlay2EventServer && this.airPlay2EventPort) {
+      return this.airPlay2EventPort;
+    }
+    const server = createTcpServer((socket) => {
+      socket.on('data', (chunk) => {
+        this.addDebugEvent('event', `AirPlay 2 event channel data ${summarizeBuffer(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))}`);
+      });
+      socket.on('error', (error) => {
+        this.addDebugEvent('event', error.message);
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, () => {
+        server.off('error', reject);
+        resolve();
+      });
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      server.close();
+      throw new Error('AirPlay 2 event server did not bind to a TCP port.');
+    }
+    this.airPlay2EventServer = server;
+    this.airPlay2EventPort = address.port;
+    return address.port;
+  }
+
+  private async ensureAirPlay2UdpListener(kind: 'data' | 'control'): Promise<number> {
+    const existing = this.airPlay2UdpListeners.find((listener) => listener.kind === kind);
+    if (existing) {
+      return existing.port;
+    }
+    const socket = createSocket({ type: 'udp4', reuseAddr: true });
+    socket.on('message', (message, remote) => {
+      this.handleAirPlay2UdpPacket(kind, message, remote);
+    });
+    socket.on('error', (error) => {
+      this.addDebugEvent(kind === 'data' ? 'rtp' : 'rtcp', error.message, {
+        method: 'UDP',
+        path: `/airplay2/${kind}`,
+        statusCode: null,
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      socket.once('error', reject);
+      socket.bind(0, () => {
+        socket.off('error', reject);
+        resolve();
+      });
+    });
+    const address = socket.address();
+    if (!address || typeof address === 'string') {
+      socket.close();
+      throw new Error(`AirPlay 2 ${kind} UDP listener did not bind to a port.`);
+    }
+    this.airPlay2UdpListeners.push({ kind, socket, port: address.port });
+    return address.port;
+  }
+
+  private handleAirPlay2UdpPacket(kind: 'data' | 'control', message: Buffer, remote: RemoteInfo): void {
+    if (kind === 'control') {
+      this.addDebugEvent('rtcp', `${remote.address}:${remote.port} ${summarizeBuffer(message)}`, {
+        method: 'UDP',
+        path: '/airplay2/control',
+        statusCode: null,
+      });
+      return;
+    }
+
+    const packet = parseAirPlay2RtpPacket(message);
+    if (!packet) {
+      this.addDebugEvent('rtp', `${remote.address}:${remote.port} invalid RTP ${summarizeBuffer(message)}`, {
+        method: 'UDP',
+        path: '/airplay2/data',
+        statusCode: null,
+      });
+      return;
+    }
+
+    const state = this.airPlay2StreamState;
+    if (state) {
+      const previousSequence = state.lastSequenceNumber;
+      state.packetCount += 1;
+      state.byteCount += message.length;
+      state.firstPacketAt ??= this.now();
+      state.lastSequenceNumber = packet.sequenceNumber;
+      state.lastTimestamp = packet.timestamp;
+      const expectedSequence = previousSequence === null ? null : (previousSequence + 1) & 0xffff;
+      const hasGap = expectedSequence !== null && packet.sequenceNumber !== expectedSequence;
+      const gap = hasGap ? ` gap=${previousSequence}->${packet.sequenceNumber}` : '';
+      let decryptSummary = state.sharedKey ? 'decrypted=pending' : 'shk=missing';
+      let decryptFailedNow = false;
+      if (state.sharedKey) {
+        try {
+          const decrypted = decryptAirPlay2RtpPayload(packet, state.sharedKey);
+          state.decryptedPacketCount += 1;
+          decryptSummary = `decrypted=${decrypted.length}b`;
+          if (state.pcmFormat) {
+            this.writeAirPlay2LpcmPayload(decrypted, state, remote);
+            decryptSummary += '; pcm=f32le';
+          } else if (state.alacDecoder && state.alacFormat) {
+            const pcm = state.alacDecoder.decodeFrame(decrypted);
+            if (pcm.length > 0) {
+              state.decodedPacketCount += 1;
+              this.writeAirPlay2S16lePayload(pcm, state, remote, 'ALAC');
+              decryptSummary += `; alacPcm=${pcm.length}b; pcm=f32le`;
+            } else {
+              decryptSummary += '; alacPcm=0b';
+            }
+          }
+        } catch (error) {
+          state.decryptFailureCount += 1;
+          decryptFailedNow = true;
+          decryptSummary = `decryptFailed=${state.decryptFailureCount}:${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+      if (state.packetCount === 1 || state.packetCount % 64 === 0 || hasGap || (decryptFailedNow && state.decryptFailureCount <= 3)) {
+        this.addDebugEvent(
+          'rtp',
+          `${remote.address}:${remote.port} packets=${state.packetCount} bytes=${state.byteCount} decryptedPackets=${state.decryptedPacketCount} decodedPackets=${state.decodedPacketCount}${gap}; ${summarizeAirPlay2RtpPacket(packet)}; ${decryptSummary}`,
+          { method: 'UDP', path: '/airplay2/data', statusCode: null },
+        );
+      }
+      return;
+    }
+
+    this.addDebugEvent('rtp', `${remote.address}:${remote.port} no stream state; ${summarizeAirPlay2RtpPacket(packet)}`, {
+      method: 'UDP',
+      path: '/airplay2/data',
+      statusCode: null,
+    });
+  }
+
+  private writeAirPlay2LpcmPayload(decrypted: Buffer, state: AirPlay2StreamState, remote: RemoteInfo): void {
+    if (!state.pcmFormat || decrypted.length === 0) {
+      return;
+    }
+
+    if (!this.currentSourceId || !this.pcmStream) {
+      this.prepareIncomingStream({ type: 'stream', remoteAddress: remote.address });
+      this.addDebugEvent(
+        'pcm',
+        `AirPlay 2 LPCM started ${state.pcmFormat.sampleRate}/${state.pcmFormat.bitDepth}/${state.pcmFormat.channels}`,
+      );
+    }
+
+    if (!this.currentSourceId || !this.pcmStream) {
+      return;
+    }
+
+    if (!this.pcmPlaybackStarted) {
+      this.pcmPlaybackStarted = true;
+      const stream = this.pcmStream;
+      const sourceId = this.currentSourceId;
+      const { sampleRate, channels } = state.pcmFormat;
+      void this.audioSession
+        .playPcmStream({
+          stream,
+          sourceId,
+          trackId: sourceId,
+          sampleRate,
+          channels,
+          durationSeconds: this.status.durationSeconds,
+          output: createAirPlayOutputSettings(),
+        })
+        .then(() => {
+          if (this.currentSourceId === sourceId) {
+            this.setStatus({ state: 'playing', error: null });
+          }
+        })
+        .catch((error) => {
+          if (this.currentSourceId === sourceId) {
+            this.setStatus({
+              state: 'error',
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        });
+    }
+
+    const converted = convertAirPlay2LpcmToF32le(decrypted, state.pcmFormat);
+    if (converted.length > 0 && !this.pcmStream.write(converted)) {
+      this.addDebugEvent('pcm', 'backpressure');
+    }
+  }
+
+  private writeAirPlay2S16lePayload(
+    pcm: Buffer,
+    state: AirPlay2StreamState,
+    remote: RemoteInfo,
+    codec: string,
+  ): void {
+    const format = state.alacFormat;
+    if (!format || pcm.length === 0) {
+      return;
+    }
+
+    if (!this.currentSourceId || !this.pcmStream) {
+      this.prepareIncomingStream({ type: 'stream', remoteAddress: remote.address });
+      this.addDebugEvent(
+        'pcm',
+        `AirPlay 2 ${codec} started ${format.sampleRate}/${format.bitDepth}/${format.channels}`,
+      );
+    }
+
+    if (!this.currentSourceId || !this.pcmStream) {
+      return;
+    }
+
+    if (!this.pcmPlaybackStarted) {
+      this.pcmPlaybackStarted = true;
+      const stream = this.pcmStream;
+      const sourceId = this.currentSourceId;
+      const { sampleRate, channels } = format;
+      void this.audioSession
+        .playPcmStream({
+          stream,
+          sourceId,
+          trackId: sourceId,
+          sampleRate,
+          channels,
+          durationSeconds: this.status.durationSeconds,
+          output: createAirPlayOutputSettings(),
+        })
+        .then(() => {
+          if (this.currentSourceId === sourceId) {
+            this.setStatus({ state: 'playing', error: null });
+          }
+        })
+        .catch((error) => {
+          if (this.currentSourceId === sourceId) {
+            this.setStatus({
+              state: 'error',
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        });
+    }
+
+    const evenLength = pcm.length - (pcm.length % 2);
+    const converted = convertS16leToF32le(evenLength === pcm.length ? pcm : pcm.subarray(0, evenLength));
+    if (converted.length > 0 && !this.pcmStream.write(converted)) {
+      this.addDebugEvent('pcm', 'backpressure');
+    }
+  }
+
+  private handleAirPlay2PairSetupM1(method: string, path: string): AirPlay2ProbeResponse {
+    try {
+      const salt = randomBytes(16);
+      const verifier = createAirPlay2SrpVerifier(salt);
+      const privateKey = createAirPlay2SrpPrivateKey();
+      const publicKey = createAirPlay2SrpServerPublicKey(verifier, privateKey);
+      this.airPlay2PairSetupState = {
+        salt,
+        privateKey,
+        publicKey,
+        verifier,
+        sessionKey: null,
+      };
+
+      const responseBody = encodeAirPlay2Tlv([
+        { type: 6, value: Buffer.from([2]) },
+        { type: 2, value: salt },
+        { type: 3, value: publicKey },
+      ]);
+      this.addDebugEvent('pair-setup', 'M1 accepted; M2 SRP salt/public key sent', { method, path, statusCode: 200 });
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: responseBody,
+      };
+    } catch (error) {
+      this.addDebugEvent('pair-setup', error instanceof Error ? error.message : String(error), { method, path, statusCode: 400 });
+      return { statusCode: 400 };
+    }
+  }
+
+  private handleAirPlay2PairSetupM3(
+    method: string,
+    path: string,
+    fields: Map<number, Buffer[]>,
+  ): AirPlay2ProbeResponse {
+    try {
+      const state = this.airPlay2PairSetupState;
+      if (!state) {
+        throw new Error('Pair-Setup M3 arrived before a valid M1/M2 exchange.');
+      }
+      const clientPublicKey = getAirPlay2TlvValue(fields, 3);
+      if (!clientPublicKey || clientPublicKey.length !== airPlay2SrpModulusBytes) {
+        throw new Error(`Pair-Setup M3 missing ${airPlay2SrpModulusBytes}-byte SRP public key; got ${clientPublicKey?.length ?? 0}.`);
+      }
+      const clientProof = getAirPlay2TlvValue(fields, 4);
+      if (!clientProof || clientProof.length !== 64) {
+        throw new Error(`Pair-Setup M3 missing 64-byte SRP proof; got ${clientProof?.length ?? 0}.`);
+      }
+
+      const session = calculateAirPlay2SrpSession(
+        state.salt,
+        clientPublicKey,
+        state.publicKey,
+        state.privateKey,
+        state.verifier,
+      );
+      if (!timingSafeEqual(clientProof, session.clientProof)) {
+        throw new Error('Pair-Setup M3 SRP proof did not verify.');
+      }
+
+      state.sessionKey = session.sessionKey;
+      const responseBody = encodeAirPlay2Tlv([
+        { type: 6, value: Buffer.from([4]) },
+        { type: 4, value: session.serverProof },
+      ]);
+      this.addDebugEvent('pair-setup', 'M3 SRP proof verified; M4 accessory proof sent', { method, path, statusCode: 200 });
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: responseBody,
+      };
+    } catch (error) {
+      this.addDebugEvent('pair-setup', error instanceof Error ? error.message : String(error), { method, path, statusCode: 400 });
+      return { statusCode: 400 };
+    }
+  }
+
+  private handleAirPlay2PairSetupM5(
+    method: string,
+    path: string,
+    fields: Map<number, Buffer[]>,
+  ): AirPlay2ProbeResponse {
+    try {
+      const state = this.airPlay2PairSetupState;
+      if (!state?.sessionKey) {
+        throw new Error('Pair-Setup M5 arrived before a verified SRP session.');
+      }
+      const encryptedData = getAirPlay2TlvValue(fields, 5);
+      if (!encryptedData) {
+        throw new Error('Pair-Setup M5 missing encrypted data.');
+      }
+
+      const encryptionKey = deriveAirPlay2Key(state.sessionKey, airPlay2PairSetupEncryptSalt, airPlay2PairSetupEncryptInfo);
+      const decrypted = decryptAirPlay2Payload(encryptionKey, 'PS-Msg05', encryptedData);
+      const clientFields = parseAirPlay2Tlv(decrypted);
+      if (!clientFields.fields) {
+        throw new Error(clientFields.error);
+      }
+      const clientIdentifier = getAirPlay2TlvValue(clientFields.fields, 1);
+      const clientPublicKey = getAirPlay2TlvValue(clientFields.fields, 3);
+      const clientSignature = getAirPlay2TlvValue(clientFields.fields, 10);
+      if (!clientIdentifier) {
+        throw new Error('Pair-Setup M5 missing client identifier.');
+      }
+      if (!clientPublicKey || clientPublicKey.length !== 32) {
+        throw new Error(`Pair-Setup M5 missing 32-byte client public key; got ${clientPublicKey?.length ?? 0}.`);
+      }
+      if (!clientSignature || clientSignature.length !== 64) {
+        throw new Error(`Pair-Setup M5 missing 64-byte client signature; got ${clientSignature?.length ?? 0}.`);
+      }
+
+      const controllerSigningKey = deriveAirPlay2Key(
+        state.sessionKey,
+        airPlay2PairSetupControllerSignSalt,
+        airPlay2PairSetupControllerSignInfo,
+      );
+      const signedClientInfo = Buffer.concat([controllerSigningKey, clientIdentifier, clientPublicKey]);
+      if (!verify(null, signedClientInfo, createEd25519PublicKey(clientPublicKey), clientSignature)) {
+        throw new Error('Pair-Setup M5 client signature did not verify.');
+      }
+
+      const accessoryIdentifier = Buffer.from(this.airPlay2DeviceIdentifier(), 'utf8');
+      const accessorySigningKey = deriveAirPlay2Key(
+        state.sessionKey,
+        airPlay2PairSetupAccessorySignSalt,
+        airPlay2PairSetupAccessorySignInfo,
+      );
+      const accessorySignature = sign(
+        null,
+        Buffer.concat([accessorySigningKey, accessoryIdentifier, this.airPlay2Identity.publicKey]),
+        this.airPlay2Identity.privateKey,
+      );
+      const accessoryData = encodeAirPlay2Tlv([
+        { type: 1, value: accessoryIdentifier },
+        { type: 3, value: this.airPlay2Identity.publicKey },
+        { type: 10, value: accessorySignature },
+      ]);
+      const responseBody = encodeAirPlay2Tlv([
+        { type: 6, value: Buffer.from([6]) },
+        { type: 5, value: encryptAirPlay2Payload(encryptionKey, 'PS-Msg06', accessoryData) },
+      ]);
+      this.addDebugEvent(
+        'pair-setup',
+        `M5 controller signature verified for ${clientIdentifier.toString('utf8')}; M6 accessory identity sent`,
+        { method, path, statusCode: 200 },
+      );
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: responseBody,
+      };
+    } catch (error) {
+      this.addDebugEvent('pair-setup', error instanceof Error ? error.message : String(error), { method, path, statusCode: 400 });
+      return { statusCode: 400 };
+    }
+  }
+
+  private handleAirPlay2FairPlaySetupRequest(
+    method: string,
+    path: string,
+    body: Buffer,
+  ): AirPlay2ProbeResponse {
+    try {
+      if (body.length < 16 || body.subarray(0, 4).toString('ascii') !== 'FPLY') {
+        throw new Error(`FairPlay setup body is not an FPLY message: ${summarizeBuffer(body)}.`);
+      }
+      const majorVersion = body[4];
+      const messageType = body[5];
+      const sequence = body[6];
+      if (majorVersion !== 3 || messageType !== 1) {
+        throw new Error(`Unsupported FairPlay setup message version=${majorVersion} type=${messageType}.`);
+      }
+
+      if (sequence === 1) {
+        const mode = body[14];
+        if (mode !== 3) {
+          throw new Error(`Unsupported FairPlay setup mode=${mode}; only mode 3 is wired so far.`);
+        }
+        this.airPlay2FairPlayState = { keyMessage: null };
+        this.addDebugEvent('fp-setup', 'FairPlay setup seq=1 mode=3 response sent', { method, path, statusCode: 200 });
+        return {
+          statusCode: 200,
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: airPlay2FairPlaySetup1Mode3Response,
+        };
+      }
+
+      if (sequence === 3) {
+        if (body.length < airPlay2FairPlaySetup2SuffixBytes) {
+          throw new Error(`FairPlay setup seq=3 body too short: ${body.length}.`);
+        }
+        this.airPlay2FairPlayState = { keyMessage: Buffer.from(body) };
+        const suffix = body.subarray(body.length - airPlay2FairPlaySetup2SuffixBytes);
+        const responseBody = Buffer.concat([airPlay2FairPlaySetup2ResponsePrefix, suffix]);
+        this.addDebugEvent('fp-setup', `FairPlay setup seq=3 key message captured (${body.length}b); response sent`, {
+          method,
+          path,
+          statusCode: 200,
+        });
+        return {
+          statusCode: 200,
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: responseBody,
+        };
+      }
+
+      throw new Error(`Unsupported FairPlay setup sequence=${sequence}.`);
+    } catch (error) {
+      this.addDebugEvent('fp-setup', error instanceof Error ? error.message : String(error), { method, path, statusCode: 501 });
+      return { statusCode: 501 };
+    }
+  }
+
+  private handleAirPlay2PairVerifyM1(
+    method: string,
+    path: string,
+    fields: Map<number, Buffer[]>,
+  ): AirPlay2ProbeResponse {
+    try {
+      const clientPublicKey = getAirPlay2TlvValue(fields, 3);
+      if (!clientPublicKey || clientPublicKey.length !== 32) {
+        throw new Error(`Pair-Verify M1 missing 32-byte client public key; got ${clientPublicKey?.length ?? 0}.`);
+      }
+
+      const serverKeys = generateKeyPairSync('x25519');
+      const serverPublicKey = exportX25519PublicKey(serverKeys.publicKey);
+      const sharedSecret = diffieHellman({
+        privateKey: serverKeys.privateKey,
+        publicKey: createX25519PublicKey(clientPublicKey),
+      });
+      const sessionKey = deriveAirPlay2Key(sharedSecret, airPlay2PairVerifySalt, airPlay2PairVerifyInfo);
+      const deviceIdentifier = this.airPlay2DeviceIdentifier();
+      const signature = sign(
+        null,
+        Buffer.concat([serverPublicKey, Buffer.from(deviceIdentifier, 'utf8'), clientPublicKey]),
+        this.airPlay2Identity.privateKey,
+      );
+      const encryptedData = encryptAirPlay2Payload(
+        sessionKey,
+        'PV-Msg02',
+        encodeAirPlay2Tlv([
+          { type: 1, value: Buffer.from(deviceIdentifier, 'utf8') },
+          { type: 10, value: signature },
+        ]),
+      );
+
+      this.airPlay2PairVerifyState = {
+        clientPublicKey,
+        serverPublicKey,
+        sessionKey,
+        controlReadKey: deriveAirPlay2Key(sharedSecret, airPlay2ControlSalt, 'Control-Read-Encryption-Key'),
+        controlWriteKey: deriveAirPlay2Key(sharedSecret, airPlay2ControlSalt, 'Control-Write-Encryption-Key'),
+      };
+
+      const responseBody = encodeAirPlay2Tlv([
+        { type: 6, value: Buffer.from([2]) },
+        { type: 3, value: serverPublicKey },
+        { type: 5, value: encryptedData },
+      ]);
+      this.addDebugEvent('pair-verify', 'M1 accepted; M2 response sent with signed accessory identity', { method, path, statusCode: 200 });
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: responseBody,
+      };
+    } catch (error) {
+      this.addDebugEvent('pair-verify', error instanceof Error ? error.message : String(error), { method, path, statusCode: 400 });
+      return { statusCode: 400 };
+    }
+  }
+
+  private handleAirPlay2PairVerifyM3(
+    method: string,
+    path: string,
+    fields: Map<number, Buffer[]>,
+  ): AirPlay2ProbeResponse {
+    try {
+      const state = this.airPlay2PairVerifyState;
+      if (!state) {
+        throw new Error('Pair-Verify M3 arrived before a valid M1/M2 exchange.');
+      }
+      const encryptedData = getAirPlay2TlvValue(fields, 5);
+      if (!encryptedData) {
+        throw new Error('Pair-Verify M3 missing encrypted data.');
+      }
+
+      const decrypted = decryptAirPlay2Payload(state.sessionKey, 'PV-Msg03', encryptedData);
+      const clientFields = parseAirPlay2Tlv(decrypted);
+      if (!clientFields.fields) {
+        throw new Error(clientFields.error);
+      }
+      const clientIdentifier = getAirPlay2TlvValue(clientFields.fields, 1)?.toString('utf8') ?? 'unknown client';
+      const clientSignature = getAirPlay2TlvValue(clientFields.fields, 10);
+      if (!clientSignature) {
+        throw new Error('Pair-Verify M3 missing client signature.');
+      }
+
+      const responseBody = encodeAirPlay2Tlv([{ type: 6, value: Buffer.from([4]) }]);
+      this.addDebugEvent(
+        'pair-verify',
+        `M3 decrypted for ${clientIdentifier}; M4 response sent; encrypted control channel ready`,
+        { method, path, statusCode: 200 },
+      );
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: responseBody,
+        encryptedAfterWrite: true,
+      };
+    } catch (error) {
+      this.addDebugEvent('pair-verify', error instanceof Error ? error.message : String(error), { method, path, statusCode: 400 });
+      return { statusCode: 400 };
+    }
+  }
+
+  private summarizeAirPlay2ProbeBody(path: string, contentType: string | null, body: Buffer): string {
+    const type = contentType ? `content-type=${contentType}; ` : '';
+    if (contentType?.includes('application/octet-stream') || path === '/pair-setup' || path === '/pair-verify') {
+      return `${type}${summarizeAirPlay2Tlv(body) ?? `body=${summarizeBuffer(body)}`}`;
+    }
+    return `${type}body=${summarizeBuffer(body)}`;
+  }
+
+  private createAirPlay2InfoPlist(): string {
+    return [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+      '<plist version="1.0">',
+      '<dict>',
+      '<key>deviceID</key>',
+      `<string>${this.airPlay2DeviceIdentifier()}</string>`,
+      '<key>features</key>',
+      `<integer>${airPlay2FeatureMask}</integer>`,
+      '<key>manufacturer</key>',
+      '<string>Moekotori</string>',
+      '<key>model</key>',
+      '<string>ECHO-Next-AirPlay-Spike</string>',
+      '<key>name</key>',
+      `<string>${this.escapePlistString(this.advertisedName)}</string>`,
+      '<key>protovers</key>',
+      '<string>1.1</string>',
+      '<key>sourceVersion</key>',
+      `<string>${airPlay2ProbeSourceVersion}</string>`,
+      '<key>statusFlags</key>',
+      '<integer>4</integer>',
+      '<key>vv</key>',
+      '<integer>2</integer>',
+      '<key>audioFormats</key>',
+      '<array>',
+      `<dict><key>type</key><integer>100</integer><key>audioInputFormats</key><integer>${airPlay2SupportedAudioFormats}</integer><key>audioOutputFormats</key><integer>${airPlay2SupportedAudioFormats}</integer></dict>`,
+      '</array>',
+      '<key>audioLatencies</key>',
+      '<array>',
+      '<dict><key>type</key><integer>100</integer><key>audioType</key><string>default</string><key>inputLatencyMicros</key><integer>0</integer><key>outputLatencyMicros</key><integer>0</integer></dict>',
+      '</array>',
+      '</dict>',
+      '</plist>',
+      '',
+    ].join('\n');
+  }
+
+  private createAirPlay2InfoBplist(): Buffer {
+    return encodeAirPlay2Bplist({
+      audioFormats: [
+        {
+          type: 100,
+          audioInputFormats: airPlay2SupportedAudioFormats,
+          audioOutputFormats: airPlay2SupportedAudioFormats,
+        },
+      ],
+      audioLatencies: [
+        {
+          type: 100,
+          audioType: 'default',
+          inputLatencyMicros: 0,
+          outputLatencyMicros: 0,
+        },
+      ],
+      deviceID: this.airPlay2DeviceIdentifier(),
+      features: airPlay2FeatureMask,
+      keepAliveLowPower: true,
+      keepAliveSendStatsAsBody: true,
+      manufacturer: 'Moekotori',
+      model: airPlayModel,
+      name: this.advertisedName,
+      nameIsFactoryDefault: false,
+      pi: this.airPlay2PairingUuid('airplay'),
+      protocolVersion: '1.1',
+      psi: this.airPlay2PairingUuid('system'),
+      pk: this.airPlay2Identity.publicKey,
+      sourceVersion: airPlay2ProbeSourceVersion,
+      statusFlags: 4,
+      vv: 2,
+    });
+  }
+
+  private createAirPlay2InitialInfoPlist(): Buffer {
+    return encodeAirPlay2Bplist({
+      initialVolume: volumePercentToAirPlayDb(this.status.volume),
+    });
+  }
+
+  private escapePlistString(value: string): string {
+    return value
+      .replace(/&/gu, '&amp;')
+      .replace(/</gu, '&lt;')
+      .replace(/>/gu, '&gt;')
+      .replace(/"/gu, '&quot;')
+      .replace(/'/gu, '&apos;');
+  }
+
+  private airPlay2DeviceIdentifier(): string {
+    return normalizeAirPlayDeviceId(this.advertisedInterface?.mac);
+  }
+
+  private airPlay2PairingUuid(suffix: string): string {
+    const suffixHex = Buffer.from(suffix, 'utf8').toString('hex').toUpperCase();
+    const cleaned = `${this.airPlay2DeviceIdentifier().replace(/:/gu, '')}${suffixHex}`.padEnd(32, '0').slice(0, 32);
+    return `${cleaned.slice(0, 8)}-${cleaned.slice(8, 12)}-4${cleaned.slice(13, 16)}-8${cleaned.slice(17, 20)}-${cleaned.slice(20, 32)}`.toLowerCase();
   }
 
   private handleRaopEvent(event: RaopEvent): void {
@@ -1451,15 +3925,19 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.emit('status', this.getStatus());
   }
 
-  private addDebugEvent(action: string, message: string | null): void {
+  private addDebugEvent(
+    action: string,
+    message: string | null,
+    details: Partial<Pick<ConnectReceiverDebugEvent, 'method' | 'path' | 'statusCode'>> = {},
+  ): void {
     const event: ConnectReceiverDebugEvent = {
       id: `${this.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
       at: new Date(this.now()).toISOString(),
       remoteAddress: this.status.currentClient?.address ?? null,
-      method: 'RAOP',
-      path: '/airplay/receiver',
+      method: details.method ?? 'RAOP',
+      path: details.path ?? '/airplay/receiver',
       action,
-      statusCode: null,
+      statusCode: details.statusCode ?? null,
       message,
     };
     this.status = {

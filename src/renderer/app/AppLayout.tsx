@@ -21,6 +21,7 @@ import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadJob } from '../../shared/types/downloads';
 import type { UpdateStatus } from '../../shared/types/updates';
 import { useI18n } from '../i18n/I18nProvider';
+import { likedChangedEvent, likedTracksChangedEvent } from '../hooks/useLikedMedia';
 import type { TranslationKey } from '../i18n/locales';
 import { rememberLibraryScanStatus } from '../stores/libraryScanSession';
 import { clearSongsFirstPageSnapshot } from '../stores/songsFirstPageSnapshot';
@@ -117,6 +118,7 @@ const accountProviderLabelKeys: Record<AccountProvider, TranslationKey> = {
   youtube: 'accountProvider.youtube',
   soundcloud: 'accountProvider.soundcloud',
   spotify: 'accountProvider.spotify',
+  tidal: 'accountProvider.tidal',
   osu: 'accountProvider.osu',
 };
 
@@ -1190,6 +1192,19 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       void notifyLibraryChanged({ preserveScroll: true });
     });
   }, [notifyLibraryChanged]);
+
+  useEffect(() => {
+    const library = window.echo?.library;
+
+    if (!library?.onLikedTracksChanged) {
+      return undefined;
+    }
+
+    return library.onLikedTracksChanged(() => {
+      window.dispatchEvent(new Event(likedTracksChangedEvent));
+      window.dispatchEvent(new Event(likedChangedEvent));
+    });
+  }, []);
 
   useEffect(() => {
     const downloads = window.echo?.downloads;

@@ -1,7 +1,7 @@
 import type { StreamingAudioQuality, StreamingProviderName } from './streaming';
 import type { ReplayGainTrackData } from '../utils/replayGain';
 
-export type RemoteSourceProvider = 'webdav' | 'jellyfin' | 'emby' | 'smb' | 'sshfs' | 'subsonic';
+export type RemoteSourceProvider = 'webdav' | 'baidu' | 'jellyfin' | 'emby' | 'smb' | 'sshfs' | 'subsonic';
 
 export type RemoteSourceStatus = 'enabled' | 'disabled' | 'error';
 export type RemoteSourceAuthType = 'none' | 'basic' | 'token' | 'apiKey';
@@ -52,6 +52,37 @@ export type RemoteSourceInput = {
   config?: Record<string, unknown>;
   syncMode?: RemoteSourceSyncMode;
   status?: RemoteSourceStatus;
+};
+
+export type BaiduOAuthAuthorizeRequest = {
+  clientId?: string | null;
+  redirectUri?: string | null;
+  state?: string | null;
+  qrcode?: boolean;
+  responseType?: 'code' | 'token';
+};
+
+export type BaiduOAuthTokenRequest = {
+  clientId?: string | null;
+  clientSecret?: string | null;
+  redirectUri?: string | null;
+  code: string;
+};
+
+export type BaiduOAuthLoginRequest = {
+  clientId?: string | null;
+  clientSecret?: string | null;
+  redirectUri?: string | null;
+  timeoutMs?: number | null;
+};
+
+export type BaiduOAuthTokenResult = {
+  accessToken: string;
+  refreshToken: string | null;
+  expiresIn: number | null;
+  expiresAt: string | null;
+  scope: string | null;
+  tokenSecret: string;
 };
 
 export type RemoteSourceUpdate = Partial<RemoteSourceInput> & {

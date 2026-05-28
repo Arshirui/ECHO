@@ -194,6 +194,74 @@ describe('ArtistEventsService', () => {
     expect(String(fetcher.mock.calls[0]?.[0])).toContain('classificationName=music');
   });
 
+  it('maps SeatGeek event payloads when a SeatGeek client id is configured', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        events: [
+          {
+            id: 2002,
+            title: 'Other Artist',
+            url: 'https://seatgeek.example/events/other',
+            datetime_local: '2026-06-01T20:00:00',
+            venue: { name: 'Wrong Hall', city: 'Hong Kong', state: 'HK', country: 'HK' },
+            performers: [{ name: 'Other Artist', slug: 'other-artist' }],
+          },
+          {
+            id: 1001,
+            title: 'Echo Unit Live',
+            url: 'https://seatgeek.example/events/1001',
+            datetime_local: '2026-06-02T20:00:00',
+            time_tbd: true,
+            venue: {
+              name: 'Echo Arena',
+              city: 'Hong Kong',
+              state: 'HK',
+              country: 'HK',
+              timezone: 'Asia/Hong_Kong',
+              url: 'https://seatgeek.example/venues/echo-arena',
+            },
+            performers: [{ name: 'Echo Unit', short_name: 'Echo Unit', slug: 'echo-unit' }],
+          },
+        ],
+      }),
+    });
+
+    const result = await new ArtistEventsService(fetcher).getSeatGeekEvents({
+      artistName: 'Echo Unit',
+      clientId: 'seatgeek-id',
+      region: 'HK',
+      now: new Date('2026-05-20T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('ready');
+    expect(result.sources).toEqual(['seatgeek']);
+    expect(result.events).toEqual([
+      {
+        id: 'seatgeek:1001',
+        source: 'seatgeek',
+        sourceLabel: 'SeatGeek',
+        title: 'Echo Unit Live',
+        startsAt: '2026-06-02T20:00:00',
+        timezone: 'Asia/Hong_Kong',
+        timeTbd: true,
+        venueName: 'Echo Arena',
+        city: 'Hong Kong',
+        region: 'HK',
+        country: 'HK',
+        url: 'https://seatgeek.example/events/1001',
+        ticketUrl: 'https://seatgeek.example/events/1001',
+        venueUrl: 'https://seatgeek.example/venues/echo-arena',
+        imageUrl: null,
+      },
+    ]);
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('https://api.seatgeek.com/2/events?');
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('client_id=seatgeek-id');
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('q=Echo+Unit');
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('datetime_local.gte=2026-05-20');
+  });
+
   it('uses Ticketmaster without requiring Bandsintown in the combined artist events request', async () => {
     const fetcher = vi.fn().mockResolvedValue({
       ok: true,
@@ -223,6 +291,39 @@ describe('ArtistEventsService', () => {
     expect(result.status).toBe('ready');
     expect(result.sources).toEqual(['ticketmaster']);
     expect(result.events.map((event) => event.id)).toEqual(['ticketmaster:tm-1']);
+    expect(result.message).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses SeatGeek from the combined artist events request', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        events: [
+          {
+            id: 1001,
+            title: 'Echo Unit Live',
+            datetime_local: '2026-06-01T20:00:00',
+            venue: { name: 'Echo Arena', city: 'Hong Kong', country: 'HK' },
+            performers: [{ name: 'Echo Unit' }],
+          },
+        ],
+      }),
+    });
+
+    const result = await new ArtistEventsService(fetcher).getArtistEvents({
+      artistName: 'Echo Unit',
+      bandsintownAppId: null,
+      ticketmasterApiKey: null,
+      seatGeekClientId: 'seatgeek-id',
+      region: 'Hong Kong',
+      now: new Date('2026-05-20T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('ready');
+    expect(result.sources).toEqual(['seatgeek']);
+    expect(result.events.map((event) => event.id)).toEqual(['seatgeek:1001']);
     expect(result.message).toBeUndefined();
     expect(fetcher).toHaveBeenCalledTimes(1);
   });

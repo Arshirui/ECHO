@@ -4,6 +4,7 @@ import type { AccountLoginStartResult, AccountProvider, AccountStatus } from '..
 import { getAccountService, isAccountProvider, isYouTubeBrowser } from '../accounts/AccountService';
 import { startAccountLoginWindow } from '../accounts/AccountLoginWindow';
 import { getSpotifyAuthService } from '../accounts/SpotifyAuthService';
+import { getTidalAuthService } from '../accounts/TidalAuthService';
 
 const requireProvider = (value: unknown): AccountProvider => {
   if (!isAccountProvider(value)) {
@@ -34,6 +35,9 @@ export const registerAccountIpc = (): void => {
     if (accountProvider === 'spotify') {
       return getSpotifyAuthService().startLoginWindow();
     }
+    if (accountProvider === 'tidal') {
+      return getTidalAuthService().startLoginWindow();
+    }
 
     return startAccountLoginWindow(accountProvider, getAccountService());
   });
@@ -45,6 +49,9 @@ export const registerAccountIpc = (): void => {
     if (accountProvider === 'spotify') {
       return getSpotifyAuthService().checkAccount();
     }
+    if (accountProvider === 'tidal') {
+      return getTidalAuthService().checkAccount();
+    }
 
     return getAccountService().checkAccount(accountProvider);
   });
@@ -52,6 +59,9 @@ export const registerAccountIpc = (): void => {
     await getAccountService().checkAllAccounts();
     if (getAccountService().getStatus('spotify').connected) {
       await getSpotifyAuthService().checkAccount();
+    }
+    if (getAccountService().getStatus('tidal').connected) {
+      await getTidalAuthService().checkAccount();
     }
     return getAccountService().getStatuses();
   });

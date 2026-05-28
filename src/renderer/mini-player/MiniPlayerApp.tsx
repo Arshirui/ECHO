@@ -681,7 +681,7 @@ export const MiniPlayerApp = (): JSX.Element => {
               type="button"
               onClick={() => {
                 setIsQueueOpen(false);
-                void window.echo?.miniPlayer?.hide?.();
+                void window.echo?.miniPlayer?.hide?.({ restoreMainWindow: true });
               }}
             >
               <X size={12} />

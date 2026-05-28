@@ -594,6 +594,7 @@ export class LibraryService {
             artistName: localInsights.artist.name,
             bandsintownAppId: settings.onlineArtistInfoBandsintownAppId,
             ticketmasterApiKey: settings.onlineArtistInfoTicketmasterApiKey,
+            seatGeekClientId: settings.onlineArtistInfoSeatGeekClientId,
             region,
             force: options.forceOnline,
           })

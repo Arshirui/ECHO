@@ -22,7 +22,7 @@ import { calculateReplayGain, dbToLinearGain, type ReplayGainCalculation, type R
 import { normalizeAudioSharedBackendForPlatform } from '../../shared/utils/audioPlatformCapabilities';
 import { detectAsioCompatibilityProfile } from '../../shared/utils/asioCompatibility';
 import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
-import type { ReplayGainMode } from '../../shared/types/appSettings';
+import type { AudioTransportFadeCurve, ReplayGainMode } from '../../shared/types/appSettings';
 import {
   createEstimatedAutomixAnalysis,
   planAutomixTransition,
@@ -221,6 +221,9 @@ export type AudioSessionDependencies = {
   watchdogStallChecks?: number;
   watchdogMaxRecoveriesPerTrack?: number;
   watchdogRecoveryWindowMs?: number;
+  transportFadeDurationMs?: number;
+  transportFadeStepMs?: number;
+  transportFadeWait?: (durationMs: number) => Promise<void>;
   disableWatchdogTimer?: boolean;
 };
 
@@ -243,6 +246,10 @@ const nativeStartupPositionDriftMaxRebaseSeconds = 6;
 const juceExclusiveStartupRunawayDriftSeconds = 8;
 const playbackDiagnosticEventLimit = 180;
 const nativeUnderrunWindowMs = 15_000;
+const defaultTransportFadeDurationMs = 80;
+const defaultTransportFadeStepMs = 10;
+const defaultTransportFadeCurve: AudioTransportFadeCurve = 'smooth';
+const transportFadeCurves = new Set<AudioTransportFadeCurve>(['linear', 'smooth', 'equalPower']);
 const nativeUnderrunCallbackThreshold = 3;
 const nativeUnderrunFramesThresholdMs = 100;
 const exclusiveNativeUnderrunStartupGraceMs = 8_000;
@@ -296,6 +303,15 @@ type ReplayGainAudioSettings = {
   replayGainPreventClipping: boolean;
 };
 
+type TransportFadeDirection = 'in' | 'out';
+
+type TransportFadeSettings = {
+  enabled: boolean;
+  durationMs: number;
+  stepMs: number;
+  curve: AudioTransportFadeCurve;
+};
+
 const defaultReplayGainAudioSettings: ReplayGainAudioSettings = {
   replayGainEnabled: false,
   replayGainMode: 'track',
@@ -317,6 +333,30 @@ const getReplayGainAudioSettings = (): ReplayGainAudioSettings => {
   } catch {
     return defaultReplayGainAudioSettings;
   }
+};
+
+const normalizeTransportFadeDurationMs = (value: unknown, fallback = defaultTransportFadeDurationMs): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric)
+    ? Math.round(Math.max(0, Math.min(2000, numeric)))
+    : fallback;
+};
+
+const normalizeTransportFadeCurve = (value: unknown): AudioTransportFadeCurve =>
+  transportFadeCurves.has(value as AudioTransportFadeCurve)
+    ? (value as AudioTransportFadeCurve)
+    : defaultTransportFadeCurve;
+
+const applyTransportFadeCurve = (progress: number, curve: AudioTransportFadeCurve): number => {
+  const clamped = Math.max(0, Math.min(1, progress));
+  if (curve === 'equalPower') {
+    return Math.sin((clamped * Math.PI) / 2);
+  }
+  if (curve === 'smooth') {
+    return clamped * clamped * (3 - (2 * clamped));
+  }
+
+  return clamped;
 };
 
 const isNativeHostNotificationEvent = (event: unknown): event is NativeHostNotificationEvent => {
@@ -1325,6 +1365,10 @@ export class AudioSession extends EventEmitter {
   private readonly watchdogStallChecks: number;
   private readonly watchdogMaxRecoveriesPerTrack: number;
   private readonly watchdogRecoveryWindowMs: number;
+  private readonly transportFadeDurationOverrideMs: number | null;
+  private readonly transportFadeStepMs: number;
+  private readonly transportFadeWait: (durationMs: number) => Promise<void>;
+  private transportFadeGeneration = 0;
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
   private watchdogLastPositionSeconds: number | null = null;
   private watchdogStalledChecks = 0;
@@ -1402,6 +1446,14 @@ export class AudioSession extends EventEmitter {
       dependencies.watchdogMaxRecoveriesPerTrack ?? defaultWatchdogMaxRecoveriesPerTrack,
     );
     this.watchdogRecoveryWindowMs = Math.max(1000, dependencies.watchdogRecoveryWindowMs ?? defaultWatchdogRecoveryWindowMs);
+    this.transportFadeDurationOverrideMs = Number.isFinite(dependencies.transportFadeDurationMs)
+      ? Math.max(0, Number(dependencies.transportFadeDurationMs))
+      : null;
+    this.transportFadeStepMs = Math.max(1, dependencies.transportFadeStepMs ?? defaultTransportFadeStepMs);
+    this.transportFadeWait = dependencies.transportFadeWait ?? ((durationMs) => new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, Math.max(0, durationMs));
+      timer.unref?.();
+    }));
     this.diagnosticLogger = dependencies.diagnosticLogger ?? defaultDiagnosticLogger;
     this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
     this.on('error', () => undefined);
@@ -1540,6 +1592,7 @@ export class AudioSession extends EventEmitter {
   }
 
   async setOutput(settings: AudioOutputSettings): Promise<AudioStatus> {
+    this.cancelTransportFade();
     const previousOutputSettings = this.currentOutputSettings ? { ...this.currentOutputSettings } : null;
     const previousGlobalOutputSettings = { ...this.outputSettings };
     this.updatePositionFromOutput();
@@ -2442,6 +2495,9 @@ export class AudioSession extends EventEmitter {
         this.runToken += 1;
         const token = this.runToken;
         const startSeconds = this.pausedPositionSeconds ?? this.clock.getPositionSeconds();
+        const fadeInTargetVolume = this.getTransportFadeTargetVolume();
+        const fadeInSettings = this.getTransportFadeSettings('in');
+        const shouldFadeIn = this.prepareNativeTransportFadeIn(bridge, fadeInTargetVolume, fadeInSettings);
         this.pausedPositionSeconds = null;
         this.attachBridgeEvents(bridge, token);
         await this.syncEqStateForPlayback();
@@ -2487,6 +2543,9 @@ export class AudioSession extends EventEmitter {
         this.resetWatchdogProgress();
         this.markNativeStartupStatusGuard();
         this.emitStatus();
+        if (shouldFadeIn) {
+          await this.fadeNativeTransportVolume(bridge, 0, fadeInTargetVolume, token, fadeInSettings);
+        }
         return this.getStatus();
       }
 
@@ -2540,6 +2599,94 @@ export class AudioSession extends EventEmitter {
       this.addOutputWarning('exclusive_release_on_pause_still_finishing');
       this.logger(`[AudioSession] continuing ${reason} while exclusive pause release finishes in background`);
     }
+  }
+
+  private getTransportFadeTargetVolume(): number {
+    const volume = this.currentOutputSettings?.volume ?? this.outputSettings.volume;
+    return Math.max(0, Math.min(1, Number(volume) || 0));
+  }
+
+  private cancelTransportFade(): void {
+    this.transportFadeGeneration += 1;
+  }
+
+  private getTransportFadeSettings(direction: TransportFadeDirection): TransportFadeSettings {
+    try {
+      const settings = getAppSettings();
+      const configuredDurationMs = direction === 'in'
+        ? settings.audioTransportFadeInMs
+        : settings.audioTransportFadeOutMs;
+      const durationMs = this.transportFadeDurationOverrideMs
+        ?? normalizeTransportFadeDurationMs(configuredDurationMs);
+
+      return {
+        enabled: settings.audioTransportFadeEnabled === true && durationMs > 0,
+        durationMs,
+        stepMs: this.transportFadeStepMs,
+        curve: normalizeTransportFadeCurve(settings.audioTransportFadeCurve),
+      };
+    } catch {
+      const durationMs = this.transportFadeDurationOverrideMs ?? defaultTransportFadeDurationMs;
+      return {
+        enabled: false,
+        durationMs,
+        stepMs: this.transportFadeStepMs,
+        curve: defaultTransportFadeCurve,
+      };
+    }
+  }
+
+  private async fadeNativeTransportVolume(
+    bridge: OutputBridgeLike | null,
+    fromVolume: number,
+    toVolume: number,
+    runToken: number,
+    settings: TransportFadeSettings,
+  ): Promise<boolean> {
+    if (!bridge?.setVolume || !settings.enabled || settings.durationMs <= 0) {
+      return true;
+    }
+
+    const generation = this.transportFadeGeneration + 1;
+    this.transportFadeGeneration = generation;
+    const startVolume = Math.max(0, Math.min(1, Number(fromVolume) || 0));
+    const endVolume = Math.max(0, Math.min(1, Number(toVolume) || 0));
+    const stepMs = Math.max(1, settings.stepMs);
+    const steps = Math.max(1, Math.ceil(settings.durationMs / stepMs));
+
+    for (let step = 0; step <= steps; step += 1) {
+      if (generation !== this.transportFadeGeneration || this.runToken !== runToken || this.bridge !== bridge) {
+        return false;
+      }
+
+      const progress = applyTransportFadeCurve(step / steps, settings.curve);
+      bridge.setVolume(startVolume + ((endVolume - startVolume) * progress));
+
+      if (step < steps) {
+        await this.transportFadeWait(stepMs);
+      }
+    }
+
+    return true;
+  }
+
+  private prepareNativeTransportFadeIn(
+    bridge: OutputBridgeLike | null,
+    targetVolume: number,
+    settings: TransportFadeSettings,
+  ): boolean {
+    if (!bridge?.setVolume) {
+      return false;
+    }
+
+    if (!settings.enabled || settings.durationMs <= 0 || targetVolume <= 0) {
+      bridge.setVolume(targetVolume);
+      return false;
+    }
+
+    this.cancelTransportFade();
+    bridge.setVolume(0);
+    return true;
   }
 
   private async releaseExclusiveOutputOnPause(
@@ -2630,7 +2777,7 @@ export class AudioSession extends EventEmitter {
       if (this.state === 'playing') {
         this.updatePositionFromOutput();
       }
-      const positionSeconds = this.state === 'playing' ? this.clock.getPositionSeconds() : this.pausedPositionSeconds ?? 0;
+      let positionSeconds = this.state === 'playing' ? this.clock.getPositionSeconds() : this.pausedPositionSeconds ?? 0;
       const sampleRate = this.currentPlan?.actualDeviceSampleRate ?? this.currentPlan?.requestedOutputSampleRate ?? null;
       const shouldReleaseExclusiveOnPause = this.shouldReleaseExclusiveOnPause();
       this.recordPlaybackDiagnosticEvent('pause_request', 'info', 'pause', {
@@ -2640,6 +2787,18 @@ export class AudioSession extends EventEmitter {
         },
       });
       try {
+        const fadeOutSettings = this.getTransportFadeSettings('out');
+        if (this.state === 'playing' && this.bridge?.setVolume && fadeOutSettings.enabled) {
+          const fadeBridge = this.bridge;
+          const fadeToken = this.runToken;
+          await this.fadeNativeTransportVolume(fadeBridge, this.getTransportFadeTargetVolume(), 0, fadeToken, fadeOutSettings);
+          if (this.runToken !== fadeToken || this.bridge !== fadeBridge || this.state !== 'playing') {
+            return this.getStatus();
+          }
+          this.updatePositionFromOutput();
+          positionSeconds = this.clock.getPositionSeconds();
+        }
+
         const keepResidentBridge = Boolean(
           this.state === 'playing' &&
           !shouldReleaseExclusiveOnPause &&
@@ -2708,6 +2867,7 @@ export class AudioSession extends EventEmitter {
     this.recordPlaybackDiagnosticEvent('stop_request', 'info', 'stop', {
       positionSeconds: this.clock.getPositionSeconds(),
     });
+    this.cancelTransportFade();
     this.runToken += 1;
     this.exclusiveReleaseOnPausePromise = null;
     this.exclusiveReleasedOnPause = false;
@@ -4524,6 +4684,14 @@ export class AudioSession extends EventEmitter {
       warnings.push(
         `actual_device_sample_rate_mismatch:${requestedOutputSampleRate}->${actualDeviceSampleRate}`,
       );
+    }
+    if (
+      outputMode === 'shared' &&
+      actualDeviceSampleRate !== null &&
+      actualDeviceSampleRate > maxReliableSharedOutputSampleRate &&
+      actualDeviceSampleRate !== requestedOutputSampleRate
+    ) {
+      warnings.push(`shared_output_mix_rate_too_high:${requestedOutputSampleRate}->${actualDeviceSampleRate}`);
     }
 
     const fileToDecoderResampling = dsdOutputMode !== 'pcm'
@@ -6724,6 +6892,7 @@ export class AudioSession extends EventEmitter {
   }
 
   private stopResources(): void {
+    this.cancelTransportFade();
     void this.stopDecoderRun();
 
     if (this.bridge) {

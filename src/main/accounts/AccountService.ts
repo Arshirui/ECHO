@@ -17,6 +17,7 @@ import { OsuAccountProvider } from './providers/OsuAccountProvider';
 import { QQMusicAccountProvider } from './providers/QQMusicAccountProvider';
 import { SoundCloudAccountProvider } from './providers/SoundCloudAccountProvider';
 import { SpotifyAccountProvider } from './providers/SpotifyAccountProvider';
+import { TidalAccountProvider } from './providers/TidalAccountProvider';
 import { YouTubeAccountProvider } from './providers/YouTubeAccountProvider';
 
 type StoredAccounts = Partial<Record<AccountProvider, StoredAccountRecord>>;
@@ -65,7 +66,7 @@ const normalizeStoredRecord = (value: unknown): StoredAccountRecord => {
 const hasRefreshableLoginRecord = (record: StoredAccountRecord | null | undefined): boolean =>
   typeof record?.cookie === 'string' && record.cookie.trim().length > 0
     ? true
-    : Boolean(record?.browser && record.browser !== 'none');
+    : Boolean(record?.browser && record.browser !== 'none') || Boolean(record?.refreshToken || record?.accessToken);
 
 export class AccountService {
   private records: StoredAccounts | null = null;
@@ -80,6 +81,7 @@ export class AccountService {
       youtube,
       soundcloud: new SoundCloudAccountProvider(),
       spotify: new SpotifyAccountProvider(),
+      tidal: new TidalAccountProvider(),
       osu: new OsuAccountProvider(),
     };
   }
@@ -194,6 +196,51 @@ export class AccountService {
 
   getSpotifyTokenRecord(): StoredAccountRecord | null {
     return this.readRecords().spotify ?? null;
+  }
+
+  saveTidalTokens(input: {
+    accessToken: string;
+    refreshToken?: string | null;
+    tokenType?: string | null;
+    scope?: string | null;
+    expiresAt?: string | null;
+    username?: string | null;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  }): AccountStatus {
+    const records = this.readRecords();
+    const current = records.tidal;
+    records.tidal = {
+      ...current,
+      accessToken: input.accessToken,
+      refreshToken: input.refreshToken ?? current?.refreshToken,
+      tokenType: input.tokenType ?? current?.tokenType ?? 'Bearer',
+      scope: input.scope ?? current?.scope,
+      expiresAt: input.expiresAt ?? current?.expiresAt ?? null,
+      username: input.username ?? current?.username ?? null,
+      displayName: input.displayName ?? current?.displayName ?? input.username ?? null,
+      avatarUrl: input.avatarUrl ?? current?.avatarUrl ?? null,
+      lastLoginAt: current?.lastLoginAt ?? nowIso(),
+      lastCheckedAt: nowIso(),
+      error: null,
+    };
+    this.writeRecords(records);
+    return this.getStatus('tidal');
+  }
+
+  updateTidalCheckStatus(patch: Pick<StoredAccountRecord, 'displayName' | 'username' | 'avatarUrl' | 'error'>): AccountStatus {
+    const records = this.readRecords();
+    records.tidal = {
+      ...records.tidal,
+      ...patch,
+      lastCheckedAt: nowIso(),
+    };
+    this.writeRecords(records);
+    return this.getStatus('tidal');
+  }
+
+  getTidalTokenRecord(): StoredAccountRecord | null {
+    return this.readRecords().tidal ?? null;
   }
 
   async checkPreviouslyLoggedInAccounts(): Promise<AccountStatus[]> {

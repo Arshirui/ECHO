@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { CalendarDays, Check, ChevronDown, Download, FilePlus2, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Download, ExternalLink, FilePlus2, ImagePlus, Link, ListPlus, Loader2, MoreHorizontal, Music2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, SlidersHorizontal, Trash2, Upload, WifiOff, X } from 'lucide-react';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { DownloadJob, DownloadJobStatus } from '../../shared/types/downloads';
 import type { LibraryPage, LibraryPlaylist, LibraryPlaylistItem, LibraryTrack, PlaylistExportFormat, PlaylistSortMode } from '../../shared/types/library';
@@ -37,6 +37,8 @@ const playlistItemDragMime = 'application/x-echo-playlist-item-id';
 const runningDownloadStatuses = new Set<DownloadJobStatus>(['queued', 'probing', 'downloading', 'extracting_audio', 'importing', 'binding_mv']);
 const failedDownloadStatuses = new Set<DownloadJobStatus>(['failed', 'cancelled']);
 const qualitySwitchPlaybackStates = new Set(['loading', 'playing']);
+const spotifyPlaylistOwnerImportMessage =
+  'Spotify 限制了非创建者/协作者歌单的曲目读取。请在系统浏览器打开这个歌单，在 Spotify 里复制到你的账号后，再粘贴新歌单链接导入。';
 
 type PlaylistDownloadSession = {
   runId: number;
@@ -120,6 +122,20 @@ const writePlaylistDownloadMemory = (memory: PlaylistDownloadMemory): void => {
 
 const isLikedStreamingProvider = (provider: string | null | undefined): provider is Extract<StreamingProviderName, 'netease' | 'qqmusic'> =>
   provider === 'netease' || provider === 'qqmusic';
+
+const isSpotifyPlaylistUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'https:' && url.hostname === 'open.spotify.com' && /^\/playlist\/[A-Za-z0-9]+/u.test(url.pathname);
+  } catch {
+    return /^spotify:playlist:[A-Za-z0-9]+$/iu.test(value.trim());
+  }
+};
+
+const isSpotifyPlaylistOwnerImportError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Spotify only allows this playlist's owner or collaborators to read its track list/iu.test(message);
+};
 
 const streamingPlaylistUrl = (playlist: LibraryPlaylist): string | null => {
   if (!playlist.sourcePlaylistId) {
@@ -274,6 +290,7 @@ export const PlaylistsPage = (): JSX.Element => {
   const [playlistMenuOpen, setPlaylistMenuOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [spotifyPlaylistHelpUrl, setSpotifyPlaylistHelpUrl] = useState<string | null>(null);
   const [trackMenu, setTrackMenu] = useState<{ track: LibraryTrack; position: { x: number; y: number } } | null>(null);
   const [draggedPlaylistItemId, setDraggedPlaylistItemId] = useState<string | null>(null);
   const [dropTargetPlaylistItemId, setDropTargetPlaylistItemId] = useState<string | null>(null);
@@ -1067,6 +1084,7 @@ export const PlaylistsPage = (): JSX.Element => {
 
     setIsImportingPlaylist(true);
     setError(null);
+    setSpotifyPlaylistHelpUrl(null);
     setStatusMessage('正在添加流媒体歌单...');
     try {
       const result = await streaming.importPlaylistFromUrl(url);
@@ -1079,11 +1097,31 @@ export const PlaylistsPage = (): JSX.Element => {
       setStatusMessage(`已添加歌单：${result.playlistName}，共 ${result.importedCount} 首`);
       window.dispatchEvent(new Event('library:playlists-changed'));
     } catch (importError) {
-      setError(importError instanceof Error ? importError.message : String(importError));
+      if (isSpotifyPlaylistUrl(url) && isSpotifyPlaylistOwnerImportError(importError)) {
+        setError(spotifyPlaylistOwnerImportMessage);
+        setSpotifyPlaylistHelpUrl(url);
+      } else {
+        setError(importError instanceof Error ? importError.message : String(importError));
+      }
       setStatusMessage(null);
     } finally {
       setIsImportingPlaylist(false);
     }
+  };
+
+  const handleOpenSpotifyPlaylistForCopy = async (): Promise<void> => {
+    const url = spotifyPlaylistHelpUrl ?? playlistUrl.trim();
+    if (!url) {
+      return;
+    }
+
+    const app = window.echo?.app;
+    if (app?.openExternalUrl) {
+      await app.openExternalUrl(url);
+      return;
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleImportPlaylistFile = async (): Promise<void> => {
@@ -1602,7 +1640,10 @@ export const PlaylistsPage = (): JSX.Element => {
             <Link size={14} />
             <input
               value={playlistUrl}
-              onChange={(event) => setPlaylistUrl(event.target.value)}
+              onChange={(event) => {
+                setPlaylistUrl(event.target.value);
+                setSpotifyPlaylistHelpUrl(null);
+              }}
               placeholder="粘贴网易云 / QQ 音乐 / Spotify 歌单链接"
               disabled={isImportingPlaylist}
             />
@@ -1898,6 +1939,12 @@ export const PlaylistsPage = (): JSX.Element => {
         {error || statusMessage || isLoading ? (
           <div className="list-footer">
             <span>{error ?? statusMessage ?? '正在读取歌单...'}</span>
+            {spotifyPlaylistHelpUrl ? (
+              <button className="text-action" type="button" onClick={() => void handleOpenSpotifyPlaylistForCopy()}>
+                <ExternalLink size={13} />
+                打开 Spotify 复制歌单
+              </button>
+            ) : null}
             {selectedPlaylist && !isLoading ? (
               <button
                 className="text-action"

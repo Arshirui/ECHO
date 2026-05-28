@@ -261,6 +261,7 @@ describe('SpotifyAuthService login', () => {
       expect(authUrl.searchParams.get('client_id')).toBe('customSpotifyClient123');
       expect(authUrl.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:43991/spotify/custom-callback');
       expect(authUrl.searchParams.get('code_challenge_method')).toBe('S256');
+      expect(authUrl.searchParams.get('scope')).toContain('playlist-read-collaborative');
       await requestLocalCallback(
         `${authUrl.searchParams.get('redirect_uri')}?code=authorization-code&state=${authUrl.searchParams.get('state')}`,
       );

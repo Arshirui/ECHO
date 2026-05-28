@@ -701,6 +701,41 @@ describe('PlaylistsPage actions menu', () => {
     expect(await screen.findByRole('button', { name: 'Spotify Song' })).toBeTruthy();
   });
 
+  it('guides Spotify owner-restricted playlist imports through the system browser', async () => {
+    const spotifyUrl = 'https://open.spotify.com/playlist/5MFN2Ep3ZU2FIQWIXNSLrT?si=866d26088e4a4a47';
+    const importPlaylistFromUrl = vi.fn().mockRejectedValue(
+      new Error("Spotify only allows this playlist's owner or collaborators to read its track list through the Web API. (Forbidden)"),
+    );
+    const openExternalUrl = vi.fn().mockResolvedValue(undefined);
+    window.echo = {
+      app: {
+        openExternalUrl,
+      },
+      library: {
+        getPlaylists: vi.fn().mockResolvedValue([playlist({ itemCount: 0 })]),
+        getPlaylistItems: vi.fn().mockResolvedValue(page([])),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ state: 'idle', currentTrackId: null, positionMs: 0, durationMs: 0, filePath: null }),
+      },
+      streaming: {
+        importPlaylistFromUrl,
+      },
+    } as unknown as Window['echo'];
+
+    renderPlaylistsPage();
+
+    const input = await screen.findByPlaceholderText('粘贴网易云 / QQ 音乐 / Spotify 歌单链接');
+    fireEvent.change(input, { target: { value: spotifyUrl } });
+    fireEvent.submit(input.closest('form') as HTMLFormElement);
+
+    expect(await screen.findByText(/Spotify 限制了非创建者\/协作者歌单的曲目读取/u)).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: '打开 Spotify 复制歌单' }));
+
+    await waitFor(() => expect(openExternalUrl).toHaveBeenCalledWith(spotifyUrl));
+  });
+
   it('queues a remote playlist download in playlist order and uses the playlist folder', async () => {
     const remotePlaylist = playlist({
       sourceProvider: 'netease',

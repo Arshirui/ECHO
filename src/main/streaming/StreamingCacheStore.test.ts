@@ -103,16 +103,16 @@ describe('StreamingCacheStore', () => {
       startPosition: 0,
     });
 
-    expect(imported.playlist.coverThumb).toBe('echo-image://remote/playlist-thumb');
-    expect(library.getPlaylist(imported.playlist.id)?.coverThumb).toBe('echo-image://remote/playlist-thumb');
+    expect(imported.playlist.coverThumb).toBe('echo-image://remote/playlist-large');
+    expect(library.getPlaylist(imported.playlist.id)?.coverThumb).toBe('echo-image://remote/playlist-large');
 
     database.prepare('UPDATE playlists SET cover_url = NULL WHERE id = ?').run(imported.playlist.id);
-    expect(library.getPlaylist(imported.playlist.id)?.coverThumb).toBe('echo-image://remote/album-thumb');
+    expect(library.getPlaylist(imported.playlist.id)?.coverThumb).toBe('echo-image://remote/album-large');
 
     const [item] = library.getPlaylistItems(imported.playlist.id, { pageSize: 10 }).items;
     expect(item).toMatchObject({
       mediaType: 'stream_track',
-      coverThumb: 'echo-image://remote/album-thumb',
+      coverThumb: 'echo-image://remote/album-large',
       unavailable: false,
     });
   });

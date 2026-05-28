@@ -14,6 +14,7 @@ const defaultWindowTitle = 'ECHO NEXT';
 const activeTitleSuffix = 'ECHO Next';
 
 type TaskbarWindow = Pick<BrowserWindow, 'isDestroyed' | 'setProgressBar' | 'setThumbarButtons' | 'setTitle'> & {
+  setThumbnailToolTip?: (toolTip: string) => void;
   webContents: Pick<BrowserWindow['webContents'], 'send'>;
 };
 type AudioStatusSource = {
@@ -23,6 +24,9 @@ type AudioStatusSource = {
 };
 type LibraryLike = {
   getTrack: (trackId: string) => { title?: string | null; artist?: string | null; albumArtist?: string | null } | null;
+  isTrackLiked?: (trackId: string) => boolean;
+  likeTrack?: (trackId: string) => unknown;
+  unlikeTrack?: (trackId: string) => unknown;
 };
 
 type TaskbarPlaybackIntegrationOptions = {
@@ -34,7 +38,12 @@ type TaskbarPlaybackIntegrationOptions = {
   createIcon?: (name: TaskbarIconName) => NativeImage | null;
 };
 
-type TaskbarIconName = 'previous' | 'play' | 'pause' | 'next';
+type TaskbarIconName = 'previous' | 'play' | 'pause' | 'next' | 'heart' | 'heartFilled';
+
+type CurrentTrackLikeState = {
+  canLike: boolean;
+  liked: boolean;
+};
 
 const taskbarIconMasks: Record<TaskbarIconName, readonly string[]> = {
   previous: [
@@ -109,6 +118,42 @@ const taskbarIconMasks: Record<TaskbarIconName, readonly string[]> = {
     '0000000000000000',
     '0000000000000000',
   ],
+  heart: [
+    '0000000000000000',
+    '0000000000000000',
+    '0001100001100000',
+    '0011110011110000',
+    '0110011110011000',
+    '0100001100001000',
+    '0100000000001000',
+    '0010000000010000',
+    '0001000000100000',
+    '0000100001000000',
+    '0000010010000000',
+    '0000001100000000',
+    '0000000000000000',
+    '0000000000000000',
+    '0000000000000000',
+    '0000000000000000',
+  ],
+  heartFilled: [
+    '0000000000000000',
+    '0000000000000000',
+    '0001100001100000',
+    '0011110011110000',
+    '0111111111111000',
+    '0111111111111000',
+    '0111111111111000',
+    '0011111111110000',
+    '0001111111100000',
+    '0000111111000000',
+    '0000011110000000',
+    '0000001100000000',
+    '0000000000000000',
+    '0000000000000000',
+    '0000000000000000',
+    '0000000000000000',
+  ],
 };
 
 const createPngBufferFromMask = (mask: readonly string[], color: readonly [number, number, number] = [32, 41, 67]): Buffer => {
@@ -132,7 +177,8 @@ const createPngBufferFromMask = (mask: readonly string[], color: readonly [numbe
 
 const createTaskbarIcon = (name: TaskbarIconName): NativeImage | null => {
   try {
-    return nativeImage.createFromBuffer(createPngBufferFromMask(taskbarIconMasks[name]));
+    const color: readonly [number, number, number] = name === 'heartFilled' ? [220, 38, 72] : [32, 41, 67];
+    return nativeImage.createFromBuffer(createPngBufferFromMask(taskbarIconMasks[name], color));
   } catch {
     return null;
   }
@@ -287,6 +333,7 @@ export class TaskbarPlaybackIntegration {
     this.window.setProgressBar(-1);
     this.window.setThumbarButtons([]);
     this.window.setTitle(defaultWindowTitle);
+    this.window.setThumbnailToolTip?.(defaultWindowTitle);
     this.lastThumbarKey = null;
     this.status = {
       ...this.status,
@@ -337,11 +384,16 @@ export class TaskbarPlaybackIntegration {
 
   private updateTitle(title: string): void {
     this.window.setTitle(title);
+    this.window.setThumbnailToolTip?.(title);
   }
 
   private updateThumbarButtons(status: AudioStatus): void {
     const isPlaying = status.state === 'playing' || status.state === 'loading';
-    const key = isPlaying ? 'playing' : 'paused';
+    const likeState = this.resolveCurrentTrackLikeState(status);
+    const key = [
+      isPlaying ? 'playing' : 'paused',
+      likeState.canLike ? (likeState.liked ? 'liked' : 'unliked') : 'no-like',
+    ].join(':');
 
     if (this.lastThumbarKey === key) {
       return;
@@ -350,8 +402,18 @@ export class TaskbarPlaybackIntegration {
     const previousIcon = this.createIcon('previous');
     const playPauseIcon = this.createIcon(isPlaying ? 'pause' : 'play');
     const nextIcon = this.createIcon('next');
+    const likeIcon = this.createIcon(likeState.liked ? 'heartFilled' : 'heart');
 
-    if (!previousIcon || !playPauseIcon || !nextIcon || previousIcon.isEmpty() || playPauseIcon.isEmpty() || nextIcon.isEmpty()) {
+    if (
+      !previousIcon ||
+      !playPauseIcon ||
+      !nextIcon ||
+      !likeIcon ||
+      previousIcon.isEmpty() ||
+      playPauseIcon.isEmpty() ||
+      nextIcon.isEmpty() ||
+      likeIcon.isEmpty()
+    ) {
       this.window.setThumbarButtons([]);
       this.lastThumbarKey = null;
       this.status = {
@@ -378,6 +440,12 @@ export class TaskbarPlaybackIntegration {
         icon: nextIcon,
         click: () => this.sendCommand('next'),
       },
+      {
+        tooltip: likeState.liked ? 'Unlike' : 'Like',
+        icon: likeIcon,
+        ...(likeState.canLike ? {} : { flags: ['disabled'] }),
+        click: () => this.toggleCurrentTrackLiked(status),
+      },
     ]);
     if (applied === false) {
       this.status = {
@@ -389,7 +457,7 @@ export class TaskbarPlaybackIntegration {
     this.lastThumbarKey = key;
     this.status = {
       ...this.status,
-      thumbarButtons: key,
+      thumbarButtons: isPlaying ? 'playing' : 'paused',
     };
   }
 
@@ -399,6 +467,55 @@ export class TaskbarPlaybackIntegration {
     }
 
     this.window.webContents.send(IpcChannels.SmtcCommand, command);
+  }
+
+  private resolveCurrentTrackLikeState(status: AudioStatus): CurrentTrackLikeState {
+    const trackId = status.currentTrackId;
+    if (!trackId) {
+      return { canLike: false, liked: false };
+    }
+
+    try {
+      const library = this.getLibrary();
+      const track = library.getTrack(trackId);
+      const canLike = Boolean(track && library.isTrackLiked && library.likeTrack && library.unlikeTrack);
+      return {
+        canLike,
+        liked: canLike ? library.isTrackLiked?.(trackId) === true : false,
+      };
+    } catch {
+      return { canLike: false, liked: false };
+    }
+  }
+
+  private toggleCurrentTrackLiked(status: AudioStatus): void {
+    const trackId = status.currentTrackId;
+    if (!trackId) {
+      return;
+    }
+
+    try {
+      const library = this.getLibrary();
+      const likeState = this.resolveCurrentTrackLikeState(status);
+      if (!likeState.canLike) {
+        return;
+      }
+
+      if (likeState.liked) {
+        library.unlikeTrack?.(trackId);
+      } else {
+        library.likeTrack?.(trackId);
+      }
+
+      this.lastThumbarKey = null;
+      this.window.webContents.send(IpcChannels.LibraryLikedTracksChanged);
+      this.sync(this.audioSession.getStatus());
+    } catch (error) {
+      this.status = {
+        ...this.status,
+        lastError: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   private resolveTitle(status: AudioStatus): string {

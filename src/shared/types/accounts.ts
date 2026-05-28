@@ -1,4 +1,4 @@
-export type AccountProvider = 'netease' | 'qqmusic' | 'bilibili' | 'youtube' | 'soundcloud' | 'spotify' | 'osu';
+export type AccountProvider = 'netease' | 'qqmusic' | 'bilibili' | 'youtube' | 'soundcloud' | 'spotify' | 'tidal' | 'osu';
 
 export type AccountStatus = {
   provider: AccountProvider;
@@ -26,6 +26,6 @@ export type AccountLoginStartResult = {
   message: string;
 };
 
-export const accountProviders: AccountProvider[] = ['netease', 'qqmusic', 'bilibili', 'youtube', 'soundcloud', 'spotify', 'osu'];
+export const accountProviders: AccountProvider[] = ['netease', 'qqmusic', 'bilibili', 'youtube', 'soundcloud', 'spotify', 'tidal', 'osu'];
 
 export const youtubeBrowsers: YouTubeBrowser[] = ['edge', 'chrome', 'firefox', 'none'];

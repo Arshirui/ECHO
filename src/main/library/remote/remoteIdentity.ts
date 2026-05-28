@@ -42,6 +42,22 @@ export const stableKeyForWebDav = (input: {
     ].join('|'),
   );
 
+export const stableKeyForBaidu = (input: {
+  sourceId: string;
+  fsId: string;
+  remotePath: string;
+  sizeBytes?: number | null;
+  modifiedAt?: string | null;
+}): string =>
+  [
+    'baidu',
+    input.sourceId,
+    input.fsId,
+    normalizeRemotePath(input.remotePath).toLocaleLowerCase(),
+    String(input.sizeBytes ?? ''),
+    input.modifiedAt ?? '',
+  ].join('|');
+
 export const stableKeyForFileSystem = (input: {
   provider: 'smb' | 'sshfs';
   sourceId: string;

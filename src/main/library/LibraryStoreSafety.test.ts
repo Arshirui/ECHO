@@ -142,6 +142,40 @@ describe('LibraryStore track metadata safety', () => {
     });
   });
 
+  it('keeps numeric slash artists intact while still splitting collaborations', () => {
+    const store = makeStore();
+    const folder = store.addFolder('D:\\Music');
+
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\numeric.flac', {
+      id: 'track-numeric',
+      title: 'Numeric Slash Song',
+      artist: '22/7',
+      album: 'Numeric Slash Album',
+      albumArtist: '22/7',
+    }));
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\collab.flac', {
+      id: 'track-collab',
+      title: 'Collab Song',
+      artist: 'The Weeknd/Daft Punk',
+      album: 'Collab Album',
+      albumArtist: 'The Weeknd/Daft Punk',
+    }));
+    store.refreshAlbums(new AlbumService(), '2026-01-01T00:00:00.000Z');
+    store.refreshArtists();
+
+    const artists = store.getArtists({ pageSize: 20 }).items;
+    const artistNames = artists.map((artist) => artist.name);
+    const numericArtist = artists.find((artist) => artist.name === '22/7')!;
+
+    expect(artistNames).toContain('22/7');
+    expect(artistNames).not.toContain('22');
+    expect(artistNames).not.toContain('7');
+    expect(artistNames).toContain('The Weeknd');
+    expect(artistNames).toContain('Daft Punk');
+    expect(artistNames).not.toContain('The Weeknd/Daft Punk');
+    expect(store.getArtistTracks(numericArtist.id, { pageSize: 10 }).items.map((track) => track.title)).toEqual(['Numeric Slash Song']);
+  });
+
   it('counts only available tracks when paging album detail tracks', () => {
     const store = makeStore();
     const folder = store.addFolder('D:\\Music');

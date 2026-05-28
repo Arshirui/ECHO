@@ -31,6 +31,8 @@ const audioCoreAppSettingsMock = vi.hoisted(() => {
     homeWaveformVisualizerEnabled: true,
     audioVisualSpectrumEnabled: true,
     lowLoadPlaybackModeEnabled: false,
+    audioTransportFadeEnabled: false,
+    audioTransportFadeCurve: 'smooth' as 'linear' | 'smooth' | 'equalPower',
   };
   return {
     defaultValue,
@@ -695,6 +697,7 @@ class ConfigurableStartupFailingBridge extends EventEmitter {
 const createAudioSessionForTest = (dependencies: AudioSessionDependencies): AudioSession => {
   const session = new AudioSession({
     persistJuceDecodePreference: () => undefined,
+    transportFadeDurationMs: 0,
     ...dependencies,
   });
 
@@ -1485,19 +1488,23 @@ describe('Audio Core sample-rate regression guard', () => {
       sharedDeviceSampleRate: 384000,
       isDefault: true,
     };
-    const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 44100)], [], [sharedDevice]);
+    const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 44100)], [384000], [sharedDevice]);
 
     const status = await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
 
     expect(bridges).toHaveLength(1);
+    expect(bridges[0].stop).not.toHaveBeenCalled();
     expect(bridges[0].startOptions).toMatchObject({
       requestedOutputSampleRate: 96000,
       sharedMixSampleRate: 96000,
     });
     expect(status.requestedOutputSampleRate).toBe(96000);
     expect(status.decoderOutputSampleRate).toBe(96000);
+    expect(status.actualDeviceSampleRate).toBe(384000);
     expect(status.sharedDeviceSampleRate).toBe(384000);
+    expect(status.sampleRateMismatch).toBe(true);
     expect(status.warnings).toContain('shared_output_sample_rate_capped:384000->96000');
+    expect(status.warnings).toContain('shared_output_mix_rate_too_high:96000->384000');
     expect(decoder.decodeRequests.at(-1)).toMatchObject({
       filePath: 'song.flac',
       decoderOutputSampleRate: 96000,
@@ -4646,6 +4653,52 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges[1].startOptions).toMatchObject({ startSeconds: 12.5 });
   });
 
+  it('fades native output volume down before pausing without changing the user volume', async () => {
+    const fadeWait = vi.fn(async () => undefined);
+    audioCoreAppSettingsMock.current = {
+      ...audioCoreAppSettingsMock.current,
+      audioTransportFadeEnabled: true,
+      audioTransportFadeCurve: 'linear',
+    };
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)], [], [], {
+      transportFadeDurationMs: 30,
+      transportFadeStepMs: 10,
+      transportFadeWait: fadeWait,
+    });
+
+    await session.setOutput({ volume: 0.8 });
+    await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+    bridges[0].positionSeconds = 12.5;
+    const status = await session.pause();
+
+    const fadeCalls = bridges[0].setVolume.mock.calls.map(([volume]) => volume);
+    expect(fadeCalls[0]).toBeCloseTo(0.8);
+    expect(fadeCalls.at(-1)).toBe(0);
+    expect(fadeCalls).toHaveLength(4);
+    expect(fadeWait).toHaveBeenCalledTimes(3);
+    expect(status.state).toBe('paused');
+    expect(status.volume).toBe(0.8);
+    expect(bridges[0].setVolume.mock.invocationCallOrder.at(-1)).toBeLessThan(bridges[0].stop.mock.invocationCallOrder[0]);
+  });
+
+  it('keeps native play/pause fade disabled by default', async () => {
+    const fadeWait = vi.fn(async () => undefined);
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)], [], [], {
+      transportFadeDurationMs: 30,
+      transportFadeStepMs: 10,
+      transportFadeWait: fadeWait,
+    });
+
+    await session.setOutput({ volume: 0.8 });
+    await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+    bridges[0].positionSeconds = 12.5;
+    const status = await session.pause();
+
+    expect(fadeWait).not.toHaveBeenCalled();
+    expect(bridges[0].setVolume).not.toHaveBeenCalled();
+    expect(status.volume).toBe(0.8);
+  });
+
   it('ignores native ended events while playback is paused', async () => {
     const { bridges, session } = createSessionHarness([probe('song.flac', 44100)]);
 
@@ -4680,6 +4733,38 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges[1].positionSeconds).toBe(18.25);
     expect(decoder.probeRequests).toEqual(['song.flac']);
     expect(decoder.decodeRequests.at(-1)).toMatchObject({ startSeconds: 18.25 });
+  });
+
+  it('fades native output back in when resuming from a prewarmed pause', async () => {
+    const fadeWait = vi.fn(async () => undefined);
+    audioCoreAppSettingsMock.current = {
+      ...audioCoreAppSettingsMock.current,
+      audioTransportFadeEnabled: true,
+      audioTransportFadeCurve: 'linear',
+    };
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)], [], [], {
+      transportFadeDurationMs: 20,
+      transportFadeStepMs: 10,
+      transportFadeWait: fadeWait,
+    });
+
+    await session.setOutput({ volume: 0.7 });
+    await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+    bridges[0].positionSeconds = 18.25;
+    await session.pause();
+    await Promise.resolve();
+    await Promise.resolve();
+    fadeWait.mockClear();
+
+    const status = await session.play();
+
+    const resumeFadeCalls = bridges[1].setVolume.mock.calls.map(([volume]) => volume);
+    expect(status.state).toBe('playing');
+    expect(status.volume).toBe(0.7);
+    expect(resumeFadeCalls[0]).toBe(0);
+    expect(resumeFadeCalls.at(-1)).toBeCloseTo(0.7);
+    expect(resumeFadeCalls).toHaveLength(4);
+    expect(fadeWait).toHaveBeenCalledTimes(2);
   });
 
   it('pause keeps resident exclusive output open and play resumes through the same host', async () => {

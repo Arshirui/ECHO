@@ -8,3 +8,7 @@ export type MiniPlayerState = {
   bounds: MiniPlayerBounds | null;
   settings: Pick<AppSettings, 'miniPlayerEnabled' | 'miniPlayerLocked' | 'miniPlayerAutoHideMainWindow' | 'miniPlayerBounds'>;
 };
+
+export type MiniPlayerHideOptions = {
+  restoreMainWindow?: boolean;
+};

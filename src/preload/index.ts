@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IpcChannels } from '../shared/constants/ipcChannels';
 import type { EchoApi } from './apiTypes';
 import type { AudioOutputSettings, AudioStatus, ChannelBalanceMonoMode, ChannelBalanceState, PlaybackSpeedMode } from '../shared/types/audio';
-import type { AppSettings, ReplayGainMode } from '../shared/types/appSettings';
+import type { AppSettings, AudioTransportFadeCurve, ReplayGainMode } from '../shared/types/appSettings';
 import type { GlobalShortcutAction } from '../shared/types/globalShortcuts';
 import type {
   PlaybackMediaStartRequest,
@@ -125,6 +125,12 @@ let systemAudioSource: SystemPlaybackSource | null = null;
 let systemAudioObjectUrl: string | null = null;
 let systemAudioError: string | null = null;
 let systemAudioStatusTimer: number | null = null;
+let systemAudioTransportGain = 1;
+let systemAudioFadeGeneration = 0;
+let systemAudioTransportFadeEnabled = false;
+let systemAudioTransportFadeInMs = 80;
+let systemAudioTransportFadeOutMs = 80;
+let systemAudioTransportFadeCurve: AudioTransportFadeCurve = 'smooth';
 let lastNativeAudioStatus: AudioStatus | null = null;
 let systemPlaybackGeneration = 0;
 let systemMediaPlaybackContext: SystemMediaPlaybackContext | null = null;
@@ -146,6 +152,8 @@ let systemOutputSettings: Pick<AudioStatus, 'volume' | 'playbackRate' | 'playbac
 };
 
 const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
+const systemAudioTransportFadeStepMs = 10;
+const audioTransportFadeCurves = new Set<AudioTransportFadeCurve>(['linear', 'smooth', 'equalPower']);
 const isRendererReadyUrl = (value: string): boolean => /^(?:blob|data):/iu.test(value.trim());
 const isLocalSystemSource = (source: SystemPlaybackSource | null): boolean => {
   const rawUrl = source?.filePath?.trim() ?? '';
@@ -619,11 +627,115 @@ const applySystemElementOutput = (): void => {
   pitchElement.webkitPreservesPitch = preservesPitch;
   if (systemAudioGainNode) {
     systemAudioElement.volume = systemOutputSettings.volume;
-    systemAudioGainNode.gain.value = replayGainLinearGain();
+    systemAudioGainNode.gain.value = replayGainLinearGain() * systemAudioTransportGain;
     return;
   }
 
-  systemAudioElement.volume = Math.max(0, Math.min(1, systemOutputSettings.volume * replayGainLinearGain()));
+  systemAudioElement.volume = Math.max(0, Math.min(1, systemOutputSettings.volume * replayGainLinearGain() * systemAudioTransportGain));
+};
+
+const setSystemAudioTransportGain = (gain: number): void => {
+  systemAudioTransportGain = Math.max(0, Math.min(1, Number.isFinite(gain) ? gain : 1));
+  applySystemElementOutput();
+};
+
+const cancelSystemAudioTransportFade = (restoreGain = true): void => {
+  systemAudioFadeGeneration += 1;
+  if (restoreGain) {
+    setSystemAudioTransportGain(1);
+  }
+};
+
+const waitForSystemAudioFadeStep = (durationMs: number): Promise<void> =>
+  new Promise((resolve) => {
+    globalThis.setTimeout(resolve, Math.max(0, durationMs));
+  });
+
+type SystemAudioTransportFadeSettings = {
+  enabled: boolean;
+  durationMs: number;
+  curve: AudioTransportFadeCurve;
+};
+
+const normalizeSystemAudioTransportFadeDurationMs = (value: unknown, fallback = 80): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric)
+    ? Math.round(Math.max(0, Math.min(2000, numeric)))
+    : fallback;
+};
+
+const normalizeSystemAudioTransportFadeCurve = (value: unknown): AudioTransportFadeCurve =>
+  audioTransportFadeCurves.has(value as AudioTransportFadeCurve)
+    ? (value as AudioTransportFadeCurve)
+    : 'smooth';
+
+const applySystemAudioTransportFadeCurve = (progress: number, curve: AudioTransportFadeCurve): number => {
+  const clamped = Math.max(0, Math.min(1, progress));
+  if (curve === 'equalPower') {
+    return Math.sin((clamped * Math.PI) / 2);
+  }
+  if (curve === 'smooth') {
+    return clamped * clamped * (3 - (2 * clamped));
+  }
+
+  return clamped;
+};
+
+const applySystemAudioTransportFadeSettings = (settings: Partial<AppSettings> | null | undefined): void => {
+  systemAudioTransportFadeEnabled = settings?.audioTransportFadeEnabled === true;
+  systemAudioTransportFadeInMs = normalizeSystemAudioTransportFadeDurationMs(settings?.audioTransportFadeInMs);
+  systemAudioTransportFadeOutMs = normalizeSystemAudioTransportFadeDurationMs(settings?.audioTransportFadeOutMs);
+  systemAudioTransportFadeCurve = normalizeSystemAudioTransportFadeCurve(settings?.audioTransportFadeCurve);
+};
+
+const getSystemAudioTransportFadeSettings = (direction: 'in' | 'out'): SystemAudioTransportFadeSettings => {
+  const durationMs = direction === 'in' ? systemAudioTransportFadeInMs : systemAudioTransportFadeOutMs;
+  return {
+    enabled: systemAudioTransportFadeEnabled && durationMs > 0,
+    durationMs,
+    curve: systemAudioTransportFadeCurve,
+  };
+};
+
+const refreshSystemTransportFadeSettings = async (): Promise<void> => {
+  try {
+    applySystemAudioTransportFadeSettings(await ipcRenderer.invoke(IpcChannels.AppGetSettings) as AppSettings);
+  } catch {
+    applySystemAudioTransportFadeSettings(null);
+  }
+};
+
+const fadeSystemAudioTransportGain = async (
+  fromGain: number,
+  toGain: number,
+  playbackGeneration: number,
+  settings: SystemAudioTransportFadeSettings,
+): Promise<boolean> => {
+  if (!settings.enabled || settings.durationMs <= 0) {
+    setSystemAudioTransportGain(toGain);
+    return true;
+  }
+
+  const generation = systemAudioFadeGeneration + 1;
+  systemAudioFadeGeneration = generation;
+  const startGain = Math.max(0, Math.min(1, Number.isFinite(fromGain) ? fromGain : 1));
+  const endGain = Math.max(0, Math.min(1, Number.isFinite(toGain) ? toGain : 1));
+  const steps = Math.max(1, Math.ceil(settings.durationMs / systemAudioTransportFadeStepMs));
+
+  for (let step = 0; step <= steps; step += 1) {
+    if (generation !== systemAudioFadeGeneration || playbackGeneration !== systemPlaybackGeneration) {
+      return false;
+    }
+
+    const progress = applySystemAudioTransportFadeCurve(step / steps, settings.curve);
+    setSystemAudioTransportGain(startGain + ((endGain - startGain) * progress));
+
+    if (step < steps) {
+      await waitForSystemAudioFadeStep(systemAudioTransportFadeStepMs);
+    }
+  }
+
+  return true;
 };
 
 const refreshSystemReplayGain = async (source: SystemPlaybackSource): Promise<void> => {
@@ -634,6 +746,7 @@ const refreshSystemReplayGain = async (source: SystemPlaybackSource): Promise<vo
     settings = null;
   }
 
+  applySystemAudioTransportFadeSettings(settings);
   systemReplayGainEnabled = settings?.replayGainEnabled === true;
   systemReplayGainMode = settings?.replayGainMode ?? 'track';
   systemReplayGainTargetLufs = settings?.replayGainTargetLufs ?? DEFAULT_REPLAY_GAIN_TARGET_LUFS;
@@ -816,6 +929,7 @@ const playSystemSource = async (
   }
 
   const element = ensureSystemAudioElement();
+  cancelSystemAudioTransportFade();
   await refreshSystemReplayGain(source);
   ensureSystemAudioGraph(element);
   await systemAudioContext?.resume?.().catch(() => undefined);
@@ -963,6 +1077,7 @@ const stopSystemPlayback = (
   emitStatus = true,
 ): PlaybackStatus => {
   nextSystemPlaybackGeneration();
+  cancelSystemAudioTransportFade();
   systemMediaPlaybackContext = null;
   stopSystemStatusTimer();
   if (systemAudioElement) {
@@ -1204,7 +1319,10 @@ const echoApi: EchoApi = {
   },
   miniPlayer: {
     show: () => ipcRenderer.invoke(IpcChannels.MiniPlayerShow),
-    hide: () => ipcRenderer.invoke(IpcChannels.MiniPlayerHide),
+    hide: (options) =>
+      options === undefined
+        ? ipcRenderer.invoke(IpcChannels.MiniPlayerHide)
+        : ipcRenderer.invoke(IpcChannels.MiniPlayerHide, options),
     getState: () => ipcRenderer.invoke(IpcChannels.MiniPlayerGetState),
     setLocked: (locked) => ipcRenderer.invoke(IpcChannels.MiniPlayerSetLocked, locked),
     setQueueOpen: (open) => ipcRenderer.invoke(IpcChannels.MiniPlayerSetQueueOpen, open),
@@ -1330,6 +1448,13 @@ const echoApi: EchoApi = {
       ipcRenderer.on(IpcChannels.LibraryChanged, listener);
       return () => ipcRenderer.off(IpcChannels.LibraryChanged, listener);
     },
+    onLikedTracksChanged: (handler) => {
+      const listener = (): void => {
+        handler();
+      };
+      ipcRenderer.on(IpcChannels.LibraryLikedTracksChanged, listener);
+      return () => ipcRenderer.off(IpcChannels.LibraryLikedTracksChanged, listener);
+    },
     getAlbumTracks: (albumId, query) => ipcRenderer.invoke(IpcChannels.LibraryGetAlbumTracks, albumId, query),
     getSummary: () => ipcRenderer.invoke(IpcChannels.LibraryGetSummary),
     refreshAlbumGrouping: () => ipcRenderer.invoke(IpcChannels.LibraryRefreshAlbumGrouping),
@@ -1452,7 +1577,27 @@ const echoApi: EchoApi = {
       if (!element.src) {
         return toSystemPlaybackStatus();
       }
-      await element.play();
+      await refreshSystemTransportFadeSettings();
+      const fadeInSettings = getSystemAudioTransportFadeSettings('in');
+      if (element.paused) {
+        const generation = systemPlaybackGeneration;
+        setSystemAudioTransportGain(fadeInSettings.enabled ? 0 : 1);
+        try {
+          await element.play();
+        } catch (error) {
+          cancelSystemAudioTransportFade();
+          throw error;
+        }
+        if (generation !== systemPlaybackGeneration) {
+          return toSystemPlaybackStatus();
+        }
+        systemAudioState = 'playing';
+        startSystemStatusTimer();
+        emitSystemAudioStatus();
+        await fadeSystemAudioTransportGain(systemAudioTransportGain, 1, generation, fadeInSettings);
+        return toSystemPlaybackStatus();
+      }
+      setSystemAudioTransportGain(1);
       systemAudioState = 'playing';
       startSystemStatusTimer();
       emitSystemAudioStatus();
@@ -1466,7 +1611,19 @@ const echoApi: EchoApi = {
         return invokeMainPlaybackRenderer<PlaybackStatus>('pause');
       }
 
-      ensureSystemAudioElement().pause();
+      const element = ensureSystemAudioElement();
+      await refreshSystemTransportFadeSettings();
+      const fadeOutSettings = getSystemAudioTransportFadeSettings('out');
+      if (!element.paused && systemAudioState === 'playing') {
+        const generation = systemPlaybackGeneration;
+        if (fadeOutSettings.enabled) {
+          await fadeSystemAudioTransportGain(systemAudioTransportGain, 0, generation, fadeOutSettings);
+        }
+        if (generation !== systemPlaybackGeneration) {
+          return toSystemPlaybackStatus();
+        }
+      }
+      element.pause();
       systemAudioState = 'paused';
       stopSystemStatusTimer();
       emitSystemAudioStatus();
@@ -1562,6 +1719,9 @@ const echoApi: EchoApi = {
     setBackgroundPaused: (paused) => ipcRenderer.invoke(IpcChannels.RemoteSourcesSetBackgroundPaused, paused),
     getBackgroundGlobalStatus: () => ipcRenderer.invoke(IpcChannels.RemoteSourcesGetBackgroundGlobalStatus),
     updateRuntimeLimits: (sourceId, limits) => ipcRenderer.invoke(IpcChannels.RemoteSourcesUpdateRuntimeLimits, sourceId, limits),
+    createBaiduAuthUrl: (input) => ipcRenderer.invoke(IpcChannels.RemoteSourcesCreateBaiduAuthUrl, input),
+    exchangeBaiduAuthCode: (input) => ipcRenderer.invoke(IpcChannels.RemoteSourcesExchangeBaiduAuthCode, input),
+    startBaiduOAuthLogin: (input) => ipcRenderer.invoke(IpcChannels.RemoteSourcesStartBaiduOAuthLogin, input),
   },
   connect: {
     listDevices: () => ipcRenderer.invoke(IpcChannels.ConnectListDevices),

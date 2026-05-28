@@ -92,7 +92,17 @@ const spotifyApiFetchJson = async <T>(path: string): Promise<T> => {
       throw new Error('Spotify login expired. Please reconnect Spotify.');
     }
     if (response.status === 403) {
-      throw new Error('Spotify Premium or regional permission is required for this content.');
+      const suffix = detail ? ` (${detail})` : '';
+      if (/insufficient client scope|scope/iu.test(detail)) {
+        throw new Error(`Spotify playlist permission is missing. Reconnect Spotify from Settings after saving your OAuth config.${suffix}`);
+      }
+      if (/not registered for this application|not registered/iu.test(detail)) {
+        throw new Error(`This Spotify account is not added to the Spotify Developer App allowlist. Add it in Spotify Dashboard > Users Management, or use your own Client ID.${suffix}`);
+      }
+      if (/not owner|not.*collaborator|collaborator|owner/iu.test(detail) || /^\/playlists\/[^/]+\/(?:items|tracks)(?:\?|$)/u.test(path)) {
+        throw new Error(`Spotify only allows this playlist's owner or collaborators to read its track list through the Web API.${suffix}`);
+      }
+      throw new Error(`Spotify refused access to this content. This is usually a playlist permission, OAuth scope, account allowlist, or regional restriction issue.${suffix}`);
     }
     if (response.status === 404) {
       throw new Error('Spotify content was not found or is unavailable.');
@@ -279,7 +289,7 @@ const playlistFrom = (value: unknown): StreamingPlaylist | null => {
   }
 
   const owner = asRecord(playlist.owner);
-  const tracks = asRecord(playlist.tracks);
+  const tracks = asRecord(playlist.tracks ?? playlist.items);
   const total = Number(tracks.total);
   return {
     id: streamingStableKey(provider, `playlist:${providerPlaylistId}`),
@@ -297,6 +307,11 @@ const playlistFrom = (value: unknown): StreamingPlaylist | null => {
 const itemsFromPage = (page: unknown): unknown[] => {
   const record = asRecord(page);
   return Array.isArray(record.items) ? record.items : [];
+};
+
+const trackFromPlaylistItem = (item: unknown): StreamingTrack | null => {
+  const record = asRecord(item);
+  return trackFrom(record.track ?? record.item);
 };
 
 type SpotifySearchPage = {
@@ -439,12 +454,12 @@ export class SpotifyStreamingProvider implements StreamingProvider {
       offset: String(offset),
     });
     const tracksPage = await spotifyApiFetchJson<unknown>(
-      `/playlists/${encodeURIComponent(input.providerPlaylistId)}/tracks?${trackParams.toString()}`,
+      `/playlists/${encodeURIComponent(input.providerPlaylistId)}/items?${trackParams.toString()}`,
     );
     const tracksRecord = asRecord(tracksPage);
     const total = Number(tracksRecord.total);
     const tracks = itemsFromPage(tracksPage)
-      .map((item) => trackFrom(asRecord(item).track))
+      .map(trackFromPlaylistItem)
       .filter((track): track is StreamingTrack => Boolean(track));
 
     return {

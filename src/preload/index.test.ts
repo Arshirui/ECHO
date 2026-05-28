@@ -350,6 +350,90 @@ describe('preload SMTC API', () => {
     });
   });
 
+  it('fades remembered system audio out on pause and back in on play', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.resetModules();
+      exposedApi = null;
+      fakeAudioInstances = [];
+      window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+      vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+        if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+          return Promise.resolve('echo-audio://system/fade-token');
+        }
+        if (channel === IpcChannels.AppGetSettings) {
+          return Promise.resolve({
+            audioTransportFadeEnabled: true,
+            audioTransportFadeInMs: 80,
+            audioTransportFadeOutMs: 80,
+            audioTransportFadeCurve: 'linear',
+          });
+        }
+        return Promise.resolve(null);
+      });
+      await import('./index');
+
+      await exposedApi!.playback.playLocalFile({
+        filePath: 'D:\\Music\\fade.flac',
+        trackId: 'track-fade',
+        probe: { durationSeconds: 10 },
+      });
+      const element = fakeAudioInstances[0];
+
+      const pausePromise = exposedApi!.playback.pause();
+      await vi.advanceTimersByTimeAsync(40);
+      expect(element.volume).toBeGreaterThan(0);
+      expect(element.volume).toBeLessThan(1);
+      await vi.advanceTimersByTimeAsync(40);
+      await expect(pausePromise).resolves.toMatchObject({ state: 'paused' });
+      expect(element.pause).toHaveBeenCalled();
+      expect(element.volume).toBe(0);
+
+      const playPromise = exposedApi!.playback.play();
+      await Promise.resolve();
+      expect(element.volume).toBe(0);
+      await vi.advanceTimersByTimeAsync(40);
+      expect(element.volume).toBeGreaterThan(0);
+      expect(element.volume).toBeLessThan(1);
+      await vi.advanceTimersByTimeAsync(40);
+      await expect(playPromise).resolves.toMatchObject({ state: 'playing' });
+      expect(element.volume).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps remembered system audio play/pause fade disabled by default', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/no-fade-token');
+      }
+      if (channel === IpcChannels.AppGetSettings) {
+        return Promise.resolve({});
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\no-fade.flac',
+      trackId: 'track-no-fade',
+      probe: { durationSeconds: 10 },
+    });
+    const element = fakeAudioInstances[0];
+
+    await expect(exposedApi!.playback.pause()).resolves.toMatchObject({ state: 'paused' });
+    expect(element.pause).toHaveBeenCalled();
+    expect(element.volume).toBe(1);
+
+    await expect(exposedApi!.playback.play()).resolves.toMatchObject({ state: 'playing' });
+    expect(element.volume).toBe(1);
+  });
+
   it('proxies mini-player system audio playback to the main renderer', async () => {
     vi.resetModules();
     exposedApi = null;
@@ -1151,6 +1235,7 @@ describe('preload SMTC API', () => {
     const handler = vi.fn();
     await exposedApi!.miniPlayer.show();
     await exposedApi!.miniPlayer.hide();
+    await exposedApi!.miniPlayer.hide({ restoreMainWindow: true });
     await exposedApi!.miniPlayer.getState();
     await exposedApi!.miniPlayer.setLocked(true);
     await exposedApi!.miniPlayer.setQueueOpen(true);
@@ -1174,6 +1259,7 @@ describe('preload SMTC API', () => {
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerShow);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerHide);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerHide, { restoreMainWindow: true });
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerGetState);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerSetLocked, true);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.MiniPlayerSetQueueOpen, true);

@@ -5,20 +5,35 @@ export type AirPlayMdnsAdvertisement = {
   address: string;
   mac: string;
   port: number;
+  airPlayPort?: number | null;
+  airPlayPublicKey?: string | null;
   model: string;
+  airPlay2Experimental?: boolean;
 };
 
 const mdnsAddress = '224.0.0.251';
 const mdnsPort = 5353;
 const raopServiceName = '_raop._tcp.local';
+const airPlayServiceName = '_airplay._tcp.local';
 const serviceEnumerator = '_services._dns-sd._udp.local';
 const recordClassInternet = 1;
 const recordClassCacheFlush = 0x8001;
 const classicAirPlayVersion = '130.14';
+const airPlay2SourceVersion = '366.0';
+export const airPlay2FeatureMask = 0x8030040000a00;
+export const airPlay2FeatureBits = '0x40000a00,0x80300';
 
 const cleanMac = (mac: string): string => {
   const cleaned = mac.replace(/[^a-fA-F0-9]/gu, '').toUpperCase();
   return cleaned.length === 12 ? cleaned : '024543484F00';
+};
+
+const colonMac = (mac: string): string => cleanMac(mac).match(/.{1,2}/gu)?.join(':') ?? '02:45:43:48:4F:00';
+
+const pairingUuid = (mac: string, suffix: string): string => {
+  const suffixHex = Buffer.from(suffix, 'utf8').toString('hex').toUpperCase();
+  const cleaned = `${cleanMac(mac)}${suffixHex}`.padEnd(32, '0').slice(0, 32);
+  return `${cleaned.slice(0, 8)}-${cleaned.slice(8, 12)}-4${cleaned.slice(13, 16)}-8${cleaned.slice(17, 20)}-${cleaned.slice(20, 32)}`.toLowerCase();
 };
 
 const encodeName = (name: string): Buffer => {
@@ -179,11 +194,14 @@ export class AirPlayMdnsAdvertiser {
 
     const names = parseQuestionNames(message);
     const raopInstance = this.raopInstanceName(advertisement).toLowerCase();
+    const airPlayInstance = this.airPlayInstanceName(advertisement).toLowerCase();
     const hostName = this.hostName(advertisement).toLowerCase();
     if (
       names.has(raopServiceName) ||
+      names.has(airPlayServiceName) ||
       names.has(serviceEnumerator) ||
       names.has(raopInstance) ||
+      names.has(airPlayInstance) ||
       names.has(hostName)
     ) {
       this.announce(false);
@@ -205,17 +223,22 @@ export class AirPlayMdnsAdvertiser {
   private createPacket(advertisement: AirPlayMdnsAdvertisement, ttl: number): Buffer {
     const mac = cleanMac(advertisement.mac);
     const raopInstance = this.raopInstanceName(advertisement);
+    const airPlayInstance = this.airPlayInstanceName(advertisement);
     const hostName = this.hostName(advertisement);
     const header = Buffer.alloc(12);
     header.writeUInt16BE(0, 0);
     header.writeUInt16BE(0x8400, 2);
     header.writeUInt16BE(0, 4);
-    header.writeUInt16BE(5, 6);
     header.writeUInt16BE(0, 8);
     header.writeUInt16BE(0, 10);
 
     const srvData = Buffer.concat([
       Buffer.from([0, 0, 0, 0, (advertisement.port >> 8) & 0xff, advertisement.port & 0xff]),
+      encodeName(hostName),
+    ]);
+    const airPlayPort = advertisement.airPlayPort ?? advertisement.port;
+    const airPlaySrvData = Buffer.concat([
+      Buffer.from([0, 0, 0, 0, (airPlayPort >> 8) & 0xff, airPlayPort & 0xff]),
       encodeName(hostName),
     ]);
     const addressData = Buffer.from(advertisement.address.split('.').map((part) => Number(part) & 0xff));
@@ -237,19 +260,51 @@ export class AirPlayMdnsAdvertiser {
       `vs=${classicAirPlayVersion}`,
       'txtvers=1',
     ]);
+    const airPlayTxtData = encodeTxt([
+      `deviceid=${colonMac(mac)}`,
+      `features=${airPlay2FeatureBits}`,
+      'flags=0x4',
+      `model=${advertisement.model}`,
+      'manufacturer=Moekotori',
+      'pw=false',
+      `srcvers=${airPlay2SourceVersion}`,
+      'protovers=1.1',
+      'vv=2',
+      `pi=${pairingUuid(mac, 'airplay')}`,
+      `psi=${pairingUuid(mac, 'system')}`,
+      `pk=${advertisement.airPlayPublicKey ?? '0000000000000000000000000000000000000000000000000000000000000000'}`,
+      'txtvers=1',
+    ]);
 
-    return Buffer.concat([
-      header,
+    const records = [
       encodeRecord(serviceEnumerator, 12, recordClassInternet, ttl, encodeName(raopServiceName)),
       encodeRecord(raopServiceName, 12, recordClassInternet, ttl, encodeName(raopInstance)),
       encodeRecord(raopInstance, 33, recordClassCacheFlush, ttl, srvData),
       encodeRecord(raopInstance, 16, recordClassCacheFlush, ttl, raopTxtData),
       encodeRecord(hostName, 1, recordClassCacheFlush, ttl, addressData),
-    ]);
+    ];
+
+    if (advertisement.airPlay2Experimental) {
+      records.splice(1, 0, encodeRecord(serviceEnumerator, 12, recordClassInternet, ttl, encodeName(airPlayServiceName)));
+      records.splice(
+        5,
+        0,
+        encodeRecord(airPlayServiceName, 12, recordClassInternet, ttl, encodeName(airPlayInstance)),
+        encodeRecord(airPlayInstance, 33, recordClassCacheFlush, ttl, airPlaySrvData),
+        encodeRecord(airPlayInstance, 16, recordClassCacheFlush, ttl, airPlayTxtData),
+      );
+    }
+
+    header.writeUInt16BE(records.length, 6);
+    return Buffer.concat([header, ...records]);
   }
 
   private raopInstanceName(advertisement: AirPlayMdnsAdvertisement): string {
     return `${cleanMac(advertisement.mac)}@${advertisement.name}.${raopServiceName}`;
+  }
+
+  private airPlayInstanceName(advertisement: AirPlayMdnsAdvertisement): string {
+    return `${advertisement.name}.${airPlayServiceName}`;
   }
 
   private hostName(advertisement: AirPlayMdnsAdvertisement): string {

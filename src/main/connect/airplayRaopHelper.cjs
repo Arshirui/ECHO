@@ -32,6 +32,13 @@ process.on('unhandledRejection', (reason) => {
 
 try {
   raop = require('@lox-audioserver/node-libraop');
+  if (
+    typeof raop.startAlacDecoder !== 'function' ||
+    typeof raop.decodeAlacFrame !== 'function' ||
+    typeof raop.stopAlacDecoder !== 'function'
+  ) {
+    throw new Error('@lox-audioserver/node-libraop is missing AirPlay 2 ALAC decoder exports');
+  }
   raop.setLogHandler?.((event) => {
     const message = event && typeof event === 'object'
       ? [event.source, event.level, event.line].filter(Boolean).join(' ')

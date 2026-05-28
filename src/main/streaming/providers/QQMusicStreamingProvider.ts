@@ -975,6 +975,9 @@ export class QQMusicStreamingProvider implements StreamingProvider {
     }
     const songlist = Array.isArray(cd.songlist) ? cd.songlist : [];
     const total = integer(cd.total_song_num ?? cd.songnum) ?? songlist.length;
+    if (page === 1 && total > 0 && songlist.length === 0) {
+      throw new Error('QQ Music playlist detail returned an empty song list.');
+    }
     const logo = text(cd.logo) ?? text(cd.picurl);
     const coverUrl = logo ? streamingImageProxyUrl(logo, qqReferer) : null;
 

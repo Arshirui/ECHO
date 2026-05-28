@@ -16,6 +16,7 @@ const setMiniPlayerLockedMock = vi.fn((locked: boolean) => ({
     miniPlayerBounds: null,
   },
 }));
+const hideMiniPlayerWindowMock = vi.fn();
 const setMiniPlayerQueueOpenMock = vi.fn();
 
 vi.mock('electron', () => ({
@@ -26,7 +27,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../app/miniPlayerWindow', () => ({
   getMiniPlayerState: vi.fn(),
-  hideMiniPlayerWindow: vi.fn(),
+  hideMiniPlayerWindow: hideMiniPlayerWindowMock,
   resetMiniPlayerBounds: vi.fn(),
   setMiniPlayerLocked: setMiniPlayerLockedMock,
   setMiniPlayerQueueOpen: setMiniPlayerQueueOpenMock,
@@ -43,6 +44,7 @@ describe('mini player IPC', () => {
   beforeEach(async () => {
     resetHandlers();
     handleMock.mockClear();
+    hideMiniPlayerWindowMock.mockClear();
     setMiniPlayerLockedMock.mockClear();
     setMiniPlayerQueueOpenMock.mockClear();
     vi.resetModules();
@@ -65,6 +67,14 @@ describe('mini player IPC', () => {
 
     expect(setMiniPlayerLockedMock).toHaveBeenNthCalledWith(1, false);
     expect(setMiniPlayerLockedMock).toHaveBeenNthCalledWith(2, true);
+  });
+
+  it('normalizes mini player hide options to explicit true only', () => {
+    handlers[IpcChannels.MiniPlayerHide]!(null, { restoreMainWindow: 'true' });
+    handlers[IpcChannels.MiniPlayerHide]!(null, { restoreMainWindow: true });
+
+    expect(hideMiniPlayerWindowMock).toHaveBeenNthCalledWith(1, { restoreMainWindow: false });
+    expect(hideMiniPlayerWindowMock).toHaveBeenNthCalledWith(2, { restoreMainWindow: true });
   });
 
   it('normalizes queue panel state to explicit true only', () => {

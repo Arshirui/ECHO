@@ -972,6 +972,31 @@ describe('China streaming providers', () => {
     await expect(new QQMusicStreamingProvider().getPlaylist({ providerPlaylistId: '9648223902' })).rejects.toThrow('invalid referer');
   });
 
+  it('does not silently import an empty QQ Music playlist when the first page has a nonzero total', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          code: 0,
+          subcode: 0,
+          cdlist: [
+            {
+              disstid: '9718644800',
+              dissname: 'QQ Empty Shell',
+              songnum: 1018,
+              total_song_num: 1018,
+              songlist: [],
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(new QQMusicStreamingProvider().getPlaylist({ providerPlaylistId: '9718644800' })).rejects.toThrow(
+      'QQ Music playlist detail returned an empty song list.',
+    );
+  });
+
   it('loads QQ Music album details for clickable streaming albums', async () => {
     vi.stubGlobal(
       'fetch',

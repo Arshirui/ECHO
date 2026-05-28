@@ -132,22 +132,44 @@ const mvCacheKey = (provider: StreamingProviderName, providerTrackId: string): s
 
 const parsePlaylistUrl = (rawUrl: string): URL => {
   const trimmed = rawUrl.trim();
-  const spotifyUri = trimmed.match(/^spotify:playlist:([A-Za-z0-9]+)$/iu);
+  const spotifyUri = trimmed.match(/spotify:playlist:([A-Za-z0-9]+)/iu);
   if (spotifyUri) {
     return new URL(`https://open.spotify.com/playlist/${spotifyUri[1]}`);
   }
 
+  const embeddedUrl = trimmed.match(/https?:\/\/[^\s"'<>]+/iu)?.[0]?.replace(/[),，。；;!！?？\]}）】]+$/u, '');
   try {
-    return new URL(trimmed);
+    return new URL(embeddedUrl ?? trimmed);
   } catch {
     throw new Error('Please enter a valid streaming playlist URL.');
   }
 };
 
-const playlistIdFromParsedUrl = (url: URL): StreamingPlaylistUrlTarget | null => {
+const qqPlaylistIdFromCandidate = (value: string | null): string | null => {
+  const trimmed = value?.trim() ?? '';
+  const match = trimmed.match(/^\d{5,}$/u);
+  return match ? match[0] : null;
+};
+
+const playlistIdFromParsedUrl = (url: URL, depth = 0): StreamingPlaylistUrlTarget | null => {
   const host = url.hostname.toLocaleLowerCase();
   const hashUrl = url.hash.startsWith('#') ? url.hash.slice(1) : '';
   const combinedPath = `${url.pathname}${hashUrl}`;
+  const hashParamSources = (() => {
+    if (!hashUrl) {
+      return [] as URLSearchParams[];
+    }
+
+    const sources: URLSearchParams[] = [];
+    const queryIndex = hashUrl.indexOf('?');
+    if (queryIndex >= 0) {
+      sources.push(new URLSearchParams(hashUrl.slice(queryIndex + 1)));
+    }
+    if (/^[^/?#]+=/u.test(hashUrl)) {
+      sources.push(new URLSearchParams(hashUrl));
+    }
+    return sources;
+  })();
   const findParam = (...names: string[]): string | null => {
     for (const name of names) {
       const value = url.searchParams.get(name);
@@ -155,12 +177,31 @@ const playlistIdFromParsedUrl = (url: URL): StreamingPlaylistUrlTarget | null =>
         return value.trim();
       }
 
-      if (hashUrl.includes('?')) {
-        const hashSearch = new URLSearchParams(hashUrl.slice(hashUrl.indexOf('?') + 1));
+      for (const hashSearch of hashParamSources) {
         const hashValue = hashSearch.get(name);
         if (hashValue?.trim()) {
           return hashValue.trim();
         }
+      }
+    }
+
+    return null;
+  };
+  const findNestedUrl = (): URL | null => {
+    if (depth >= 2) {
+      return null;
+    }
+
+    for (const name of ['url', 'u', 'target', 'redirect', 'redirect_url', 'jump', 'jumpurl', 'link', 'shareUrl']) {
+      const value = findParam(name);
+      if (!value || !/^https?:\/\//iu.test(value)) {
+        continue;
+      }
+
+      try {
+        return new URL(value);
+      } catch {
+        continue;
       }
     }
 
@@ -175,7 +216,11 @@ const playlistIdFromParsedUrl = (url: URL): StreamingPlaylistUrlTarget | null =>
   }
 
   if (host.includes('y.qq.com') || host.includes('qq.com')) {
-    const id = findParam('id', 'disstid', 'playlistId') ?? combinedPath.match(/playlist\/([A-Za-z0-9]+)/iu)?.[1] ?? null;
+    const id = qqPlaylistIdFromCandidate(
+      findParam('id', 'disstid', 'dissid', 'dirid', 'dirId', 'tid', 'playlistId', 'playlistid') ??
+        combinedPath.match(/(?:playlist|taoge|songlist)\/(\d{5,})(?:\.html)?(?:[/?#]|$)/iu)?.[1] ??
+        null,
+    );
     if (id) {
       return { provider: 'qqmusic', providerPlaylistId: id };
     }
@@ -186,6 +231,11 @@ const playlistIdFromParsedUrl = (url: URL): StreamingPlaylistUrlTarget | null =>
     if (id) {
       return { provider: 'spotify', providerPlaylistId: id };
     }
+  }
+
+  const nestedUrl = findNestedUrl();
+  if (nestedUrl) {
+    return playlistIdFromParsedUrl(nestedUrl, depth + 1);
   }
 
   return null;

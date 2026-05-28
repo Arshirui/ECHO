@@ -397,6 +397,7 @@ export const registerAppLifecycle = (): void => {
     }
 
     event.preventDefault();
+    getCrashReportService().markShutdownRequested();
     if (gracefulQuitInProgress) {
       return;
     }

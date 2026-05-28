@@ -219,6 +219,7 @@ const renderDrawer = (
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -389,6 +390,9 @@ describe('MvSettingsDrawer', () => {
     renderDrawer();
 
     expect(await screen.findByRole('button', { name: /Immersive MV background/ })).toBeTruthy();
+    expect(screen.queryByRole('slider', { name: /Background zoom/ })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: /Immersive background tuning/ }));
+    expect(window.localStorage.getItem('echo-next.mv.immersive-controls-open')).toBe('true');
     const slider = screen.getByRole('slider', { name: /Background zoom/ });
     expect((slider as HTMLInputElement).value).toBe('115');
 
@@ -400,6 +404,7 @@ describe('MvSettingsDrawer', () => {
   it('updates immersive MV visual tuning controls', async () => {
     renderDrawer();
 
+    fireEvent.click(await screen.findByRole('button', { name: /Immersive background tuning/ }));
     const blur = await screen.findByRole('slider', { name: /Glass blur/ });
     const brightness = screen.getByRole('slider', { name: /Background brightness/ });
     const overlay = screen.getByRole('slider', { name: /Dark overlay/ });
@@ -447,6 +452,7 @@ describe('MvSettingsDrawer', () => {
       immersiveBackgroundOverlayOpacityPercent: 80,
     });
 
+    fireEvent.click(await screen.findByRole('button', { name: /Immersive background tuning/ }));
     fireEvent.click(await screen.findByRole('button', { name: /Reset immersive background/ }));
 
     await waitFor(() =>
@@ -626,6 +632,58 @@ describe('MvSettingsDrawer', () => {
     );
     expect(window.echo.mv.searchNetworkCandidates).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getAllByText('新時代 MV').length).toBeGreaterThan(0));
+  });
+
+  it('matches Spotify playback IDs to the queued streaming track before MV search', async () => {
+    const spotifyTrack = makeTrack({
+      id: 'spotify-row-1',
+      mediaType: 'streaming',
+      isTemporary: false,
+      path: 'streaming:spotify:6A8NfypDHuwlWbo4aIYca',
+      provider: 'spotify',
+      providerTrackId: '6A8NfypDHuwlWbo4aIYca',
+      stableKey: 'streaming:spotify:6A8NfypDHuwlWbo4aIYca',
+      title: 'New Genesis',
+      artist: 'Ado',
+      album: "UTA'S SONGS ONE PIECE FILM RED",
+      albumArtist: 'Ado',
+    });
+    const spotifyCandidate: MvMatchCandidate = {
+      ...makeCandidate(),
+      id: 'bilibili:BVspotify',
+      provider: 'bilibili',
+      sourceType: 'search_candidate',
+      title: 'New Genesis MV',
+      artist: 'Ado',
+      url: 'https://www.bilibili.com/video/BVspotify',
+      providerUrl: 'https://www.bilibili.com/video/BVspotify',
+      playableInApp: true,
+    };
+    const spotifyTrackId = 'streaming:spotify:6A8NfypDHuwlWbo4aIYca';
+    renderDrawer(defaultMvSettings, null, spotifyTrack, {
+      audioTrackId: spotifyTrackId,
+      playbackTrackId: spotifyTrackId,
+      queueCurrentTrackId: spotifyTrack.id,
+    });
+    vi.mocked(window.echo.mv.searchNetworkCandidatesForSnapshot).mockResolvedValue([spotifyCandidate]);
+
+    const input = await screen.findByRole('textbox', { name: /MV search keywords/ });
+    expect((input as HTMLInputElement).value).toBe('New Genesis Ado');
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Search network MV/ })[1]);
+
+    await waitFor(() =>
+      expect(window.echo.mv.searchNetworkCandidatesForSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackId: spotifyTrackId,
+          title: 'New Genesis',
+          artist: 'Ado',
+          mediaType: 'streaming',
+          query: 'New Genesis Ado',
+        }),
+      ),
+    );
+    expect(window.echo.mv.searchNetworkCandidates).not.toHaveBeenCalled();
   });
 
   it('selects streaming MV candidates with the streaming track key', async () => {

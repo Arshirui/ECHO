@@ -216,6 +216,17 @@ describe('CrashReportService', () => {
     expect(session.endedAt).toBeTruthy();
   });
 
+  it('records when app shutdown has started', () => {
+    const service = new CrashReportService(tempDir);
+
+    service.initialize();
+    service.markShutdownRequested();
+
+    const session = readJson<{ status: string; shutdownRequestedAt?: string }>(join(service.getSessionDir()!, 'session.json'));
+    expect(session.status).toBe('running');
+    expect(session.shutdownRequestedAt).toBeTruthy();
+  });
+
   it('detects a previous running session as an abnormal exit', () => {
     const sessionsDir = join(tempDir, 'crash-reports', 'sessions');
     const previousDir = join(sessionsDir, '0001');
@@ -240,6 +251,35 @@ describe('CrashReportService', () => {
 
     expect(service.getLastCrashSummary()).toEqual(expect.objectContaining({ sessionId: '0001', reason: 'abnormalExit' }));
     expect(readJson<{ status: string }>(join(previousDir, 'session.json')).status).toBe('abnormalExit');
+  });
+
+  it('keeps user-requested shutdown timeouts out of the startup crash notice', () => {
+    const sessionsDir = join(tempDir, 'crash-reports', 'sessions');
+    const previousDir = join(sessionsDir, '0001');
+    mkdirSync(previousDir, { recursive: true });
+    writeFileSync(
+      join(previousDir, 'session.json'),
+      JSON.stringify({
+        sessionId: '0001',
+        appVersion: '1.0.1-test',
+        electronVersion: 'test',
+        chromeVersion: 'test',
+        nodeVersion: 'test',
+        platform: 'win32',
+        arch: 'x64',
+        startedAt: '2026-05-13T00:00:00.000Z',
+        shutdownRequestedAt: '2026-05-13T00:01:00.000Z',
+        status: 'running',
+      }),
+    );
+
+    const service = new CrashReportService(tempDir);
+    service.initialize();
+
+    const session = readJson<{ status: string; endedAt?: string }>(join(previousDir, 'session.json'));
+    expect(service.getLastCrashSummary()).toBeNull();
+    expect(session.status).toBe('abnormalExit');
+    expect(session.endedAt).toBeTruthy();
   });
 
   it('opens a markdown report for the previous abnormal session', async () => {
