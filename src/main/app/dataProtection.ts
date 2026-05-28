@@ -1,4 +1,14 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  copyFile as copyFileAsync,
+  cp as cpAsync,
+  mkdir as mkdirAsync,
+  readFile as readFileAsync,
+  readdir as readdirAsync,
+  rm as rmAsync,
+  stat as statAsync,
+  writeFile as writeFileAsync,
+} from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { app } from 'electron';
 import Database from 'better-sqlite3';
@@ -7,6 +17,8 @@ import {
   checkpointWal,
   type DatabaseHealthResult,
 } from '../database/health';
+import { markStartupStage } from '../diagnostics/StartupDiagnostics';
+import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import type {
   LibraryDatabaseArchiveInfo,
   LibraryDatabaseDeleteResult,
@@ -118,6 +130,13 @@ type LegacyMigrationResult = {
   skipped: string[];
 };
 
+type DataProtectionPhaseScope = 'startup' | 'background';
+
+type DataProtectionPhaseContext = {
+  scope: DataProtectionPhaseScope;
+  beforePhase?: (phase: string) => Promise<void>;
+};
+
 export type LibraryDatabaseScanGuardSnapshot = {
   id: string;
   path: string;
@@ -199,6 +218,11 @@ const libraryFileName = 'echo-library.sqlite';
 const libraryWalFileName = `${libraryFileName}-wal`;
 const libraryShmFileName = `${libraryFileName}-shm`;
 const libraryEntryNames = new Set([libraryFileName, libraryWalFileName, libraryShmFileName]);
+const dataProtectionPhaseLogThresholdMs = 100;
+const dataProtectionPhaseSlowThresholdMs = 750;
+const startupBackgroundProtectionPlaybackGraceMs = 45_000;
+const backgroundProtectionPlaybackStopGraceMs = 60_000;
+const startupBackgroundProtectionPausePollMs = 2_500;
 
 export const protectedDataEntries: ProtectedEntry[] = [
   { name: 'echo-settings.json', kind: 'file' },
@@ -215,9 +239,173 @@ export const protectedDataEntries: ProtectedEntry[] = [
 
 const timestampForPath = (date = new Date()): string => date.toISOString().replace(/[:.]/g, '-');
 
+const delay = (ms: number): Promise<void> => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
+
+const yieldToMainLoop = (): Promise<void> => new Promise((resolve) => {
+  setImmediate(resolve);
+});
+
+const normalizeDataProtectionPhaseName = (phase: string): string =>
+  phase
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/gu, '-')
+    .replace(/^-+|-+$/gu, '') || 'step';
+
+const logDataProtectionPhaseDuration = (
+  context: DataProtectionPhaseContext | undefined,
+  phase: string,
+  startedAtMs: number,
+): void => {
+  if (!context) {
+    return;
+  }
+
+  const durationMs = Math.max(0, Math.round(Date.now() - startedAtMs));
+  if (durationMs < dataProtectionPhaseLogThresholdMs) {
+    return;
+  }
+
+  const slow = durationMs >= dataProtectionPhaseSlowThresholdMs;
+  const stage = `data-protection:${context.scope}:phase:${normalizeDataProtectionPhaseName(phase)}${slow ? ':slow' : ''}`;
+  const details = { phase, durationMs, slow };
+  markStartupStage(stage, details);
+
+  const message = `[data-protection] ${context.scope} ${phase} ${durationMs}ms${slow ? ' SLOW' : ''}`;
+  if (slow) {
+    console.warn(message);
+  } else {
+    console.info(message);
+  }
+};
+
+const runDataProtectionPhase = async <T>(
+  context: DataProtectionPhaseContext | undefined,
+  phase: string,
+  run: () => Promise<T>,
+): Promise<T> => {
+  await context?.beforePhase?.(phase);
+  const clearBackgroundTask = context?.scope === 'background' ? beginMainBackgroundTask(`data-protection:${phase}`) : null;
+  const startedAtMs = Date.now();
+  try {
+    return await run();
+  } finally {
+    logDataProtectionPhaseDuration(context, phase, startedAtMs);
+    clearBackgroundTask?.();
+  }
+};
+
+const runDataProtectionPhaseSync = <T>(
+  context: DataProtectionPhaseContext | undefined,
+  phase: string,
+  run: () => T,
+): T => {
+  const startedAtMs = Date.now();
+  try {
+    return run();
+  } finally {
+    logDataProtectionPhaseDuration(context, phase, startedAtMs);
+  }
+};
+
+const runDataProtectionBlockingPhase = async <T>(
+  context: DataProtectionPhaseContext | undefined,
+  phase: string,
+  run: () => T,
+): Promise<T> => {
+  await context?.beforePhase?.(phase);
+  const clearBackgroundTask = context?.scope === 'background' ? beginMainBackgroundTask(`data-protection:${phase}`) : null;
+  try {
+    return runDataProtectionPhaseSync(context, phase, run);
+  } finally {
+    clearBackgroundTask?.();
+  }
+};
+
+let backgroundProtectionPlaybackQuietUntilMs = 0;
+let backgroundProtectionPlaybackPauseLogged = false;
+let backgroundProtectionPlaybackActive = false;
+let backgroundProtectionPlaybackStateProvider: (() => boolean) | null = null;
+
+export const setDataProtectionPlaybackStateProvider = (provider: (() => boolean) | null): void => {
+  backgroundProtectionPlaybackStateProvider = provider;
+  if (!provider) {
+    backgroundProtectionPlaybackActive = false;
+    backgroundProtectionPlaybackQuietUntilMs = 0;
+    backgroundProtectionPlaybackPauseLogged = false;
+  }
+};
+
+export const noteDataProtectionPlaybackActivity = (active: boolean, nowMs = Date.now()): void => {
+  if (active) {
+    backgroundProtectionPlaybackActive = true;
+    backgroundProtectionPlaybackQuietUntilMs = Math.max(
+      backgroundProtectionPlaybackQuietUntilMs,
+      nowMs + startupBackgroundProtectionPlaybackGraceMs,
+    );
+    backgroundProtectionPlaybackPauseLogged = false;
+    return;
+  }
+
+  backgroundProtectionPlaybackActive = false;
+  backgroundProtectionPlaybackQuietUntilMs = nowMs + backgroundProtectionPlaybackStopGraceMs;
+};
+
+const isBackgroundProtectionPlaybackBlocked = (nowMs = Date.now()): boolean => {
+  const realtimePlaybackActive = backgroundProtectionPlaybackStateProvider?.() === true;
+  if (realtimePlaybackActive) {
+    backgroundProtectionPlaybackActive = true;
+    backgroundProtectionPlaybackQuietUntilMs = Math.max(
+      backgroundProtectionPlaybackQuietUntilMs,
+      nowMs + backgroundProtectionPlaybackStopGraceMs,
+    );
+    return true;
+  }
+
+  if (backgroundProtectionPlaybackStateProvider) {
+    backgroundProtectionPlaybackActive = false;
+    backgroundProtectionPlaybackQuietUntilMs = Math.min(
+      backgroundProtectionPlaybackQuietUntilMs,
+      nowMs + backgroundProtectionPlaybackStopGraceMs,
+    );
+  }
+
+  return backgroundProtectionPlaybackActive || nowMs < backgroundProtectionPlaybackQuietUntilMs;
+};
+
+const waitForBackgroundProtectionSlot = async (phase: string): Promise<void> => {
+  await yieldToMainLoop();
+
+  while (isBackgroundProtectionPlaybackBlocked()) {
+    const remainingMs = Math.max(0, Math.round(backgroundProtectionPlaybackQuietUntilMs - Date.now()));
+    if (!backgroundProtectionPlaybackPauseLogged) {
+      backgroundProtectionPlaybackPauseLogged = true;
+      markStartupStage('data-protection:background:paused-for-playback', {
+        phase,
+        playbackActive: backgroundProtectionPlaybackActive,
+        remainingMs,
+      });
+    }
+    await delay(Math.min(startupBackgroundProtectionPausePollMs, Math.max(250, remainingMs || startupBackgroundProtectionPausePollMs)));
+  }
+};
+
+export const waitForDataProtectionBackgroundSlotForTest = waitForBackgroundProtectionSlot;
+export const isDataProtectionBackgroundPlaybackBlockedForTest = isBackgroundProtectionPlaybackBlocked;
+
 const safeReadJson = <T>(path: string): T | null => {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as T;
+  } catch {
+    return null;
+  }
+};
+
+const safeReadJsonAsync = async <T>(path: string): Promise<T | null> => {
+  try {
+    return JSON.parse(await readFileAsync(path, 'utf8')) as T;
   } catch {
     return null;
   }
@@ -291,6 +479,16 @@ const copyProtectedEntry = (sourcePath: string, targetPath: string, kind: Protec
   }
 };
 
+const copyProtectedEntryAsync = async (sourcePath: string, targetPath: string, kind: ProtectedEntryKind): Promise<void> => {
+  await mkdirAsync(dirname(targetPath), { recursive: true });
+  if (kind === 'directory') {
+    await cpAsync(sourcePath, targetPath, { recursive: true, force: true, errorOnExist: false });
+    return;
+  }
+
+  await copyFileAsync(sourcePath, targetPath);
+};
+
 const listSnapshotPaths = (userDataPath: string): string[] => {
   const snapshotsPath = getSnapshotsPath(userDataPath);
   if (!existsSync(snapshotsPath)) {
@@ -310,17 +508,39 @@ const listSnapshotPaths = (userDataPath: string): string[] => {
     .reverse();
 };
 
+const listSnapshotPathsAsync = async (userDataPath: string): Promise<string[]> => {
+  const snapshotsPath = getSnapshotsPath(userDataPath);
+  if (!existsSync(snapshotsPath)) {
+    return [];
+  }
+
+  const entries = await readdirAsync(snapshotsPath);
+  const paths: string[] = [];
+  for (const entry of entries) {
+    const entryPath = join(snapshotsPath, entry);
+    try {
+      if ((await statAsync(entryPath)).isDirectory()) {
+        paths.push(entryPath);
+      }
+    } catch {
+      // Ignore entries that disappear while pruning snapshots.
+    }
+  }
+
+  return paths.sort().reverse();
+};
+
 const checkLibraryFastStartupHealth = (userDataPath: string): DatabaseHealthResult => {
   const databasePath = libraryPathFor(userDataPath);
   const checkedAt = new Date().toISOString();
 
   if (!existsSync(databasePath)) {
-    if (listSnapshotPaths(userDataPath).length > 0) {
+    if (existsSync(getSnapshotsPath(userDataPath))) {
       return {
         status: 'unreadable',
         databasePath,
         checkedAt,
-        message: 'library database is missing while protected snapshots are available',
+        message: 'library database is missing while protected snapshots may be available',
       };
     }
 
@@ -378,6 +598,12 @@ const pruneOldSnapshots = (userDataPath: string): void => {
   }
 };
 
+const pruneOldSnapshotsAsync = async (userDataPath: string): Promise<void> => {
+  for (const snapshotPath of (await listSnapshotPathsAsync(userDataPath)).slice(maxSnapshots)) {
+    await rmAsync(snapshotPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+};
+
 const listScanGuardPaths = (userDataPath: string): string[] => {
   const scanGuardsPath = getScanGuardsPath(userDataPath);
   if (!existsSync(scanGuardsPath)) {
@@ -424,6 +650,23 @@ const copyLibraryTriplet = (sourceRoot: string, targetRoot: string): string[] =>
     }
     try {
       copyProtectedEntry(sourcePath, join(targetRoot, name), 'file');
+      copied.push(name);
+    } catch {
+      // A failed archive/snapshot copy should not block the rest of startup.
+    }
+  }
+  return copied;
+};
+
+const copyLibraryTripletAsync = async (sourceRoot: string, targetRoot: string): Promise<string[]> => {
+  const copied: string[] = [];
+  for (const name of [libraryFileName, libraryWalFileName, libraryShmFileName]) {
+    const sourcePath = join(sourceRoot, name);
+    if (!existsSync(sourcePath)) {
+      continue;
+    }
+    try {
+      await copyProtectedEntryAsync(sourcePath, join(targetRoot, name), 'file');
       copied.push(name);
     } catch {
       // A failed archive/snapshot copy should not block the rest of startup.
@@ -1178,16 +1421,22 @@ const sameSnapshotSignature = (left: LibraryDatabaseSnapshotSignature, right: Li
 const readSnapshotManifest = (snapshotPath: string): SnapshotManifest | null =>
   safeReadJson<SnapshotManifest>(join(snapshotPath, 'snapshot.json'));
 
-export const getLibraryDatabaseStartupMetrics = (userDataPath = app.getPath('userData')): {
+const readSnapshotManifestAsync = (snapshotPath: string): Promise<SnapshotManifest | null> =>
+  safeReadJsonAsync<SnapshotManifest>(join(snapshotPath, 'snapshot.json'));
+
+export const getLibraryDatabaseStartupMetrics = (
+  userDataPath = app.getPath('userData'),
+  options: { includeSnapshotCount?: boolean } = {},
+): {
   databaseSizeBytes: number | null;
   walSizeBytes: number | null;
-  snapshotCount: number;
+  snapshotCount: number | null;
 } => {
   const signature = getLibraryDatabaseSnapshotSignature(userDataPath);
   return {
     databaseSizeBytes: signature.databaseSizeBytes,
     walSizeBytes: signature.walSizeBytes,
-    snapshotCount: listSnapshotPaths(userDataPath).length,
+    snapshotCount: options.includeSnapshotCount === false ? null : listSnapshotPaths(userDataPath).length,
   };
 };
 
@@ -1872,8 +2121,11 @@ const findBestLegacyUserDataPath = (targetUserDataPath: string, legacyUserDataPa
 export const migrateLegacyProtectedData = async (
   targetUserDataPath = app.getPath('userData'),
   legacyUserDataPaths = getLegacyUserDataPaths(),
+  phaseContext?: DataProtectionPhaseContext,
 ): Promise<LegacyMigrationResult> => {
-  const sourcePath = findBestLegacyUserDataPath(targetUserDataPath, legacyUserDataPaths);
+  const sourcePath = await runDataProtectionBlockingPhase(phaseContext, 'migration check', () =>
+    findBestLegacyUserDataPath(targetUserDataPath, legacyUserDataPaths),
+  );
   const migrated: string[] = [];
   const skipped: string[] = [];
 
@@ -1881,7 +2133,7 @@ export const migrateLegacyProtectedData = async (
     return { sourcePath: null, migrated, skipped: protectedDataEntries.map((entry) => entry.name) };
   }
 
-  await createDataProtectionSnapshot('startup', targetUserDataPath);
+  await createDataProtectionSnapshot('startup', targetUserDataPath, new Date(), phaseContext);
 
   for (const entry of protectedDataEntries) {
     const sourceEntryPath = join(sourcePath, entry.name);
@@ -1890,12 +2142,14 @@ export const migrateLegacyProtectedData = async (
       continue;
     }
 
-    try {
-      copyProtectedEntry(sourceEntryPath, join(targetUserDataPath, entry.name), entry.kind);
-      migrated.push(entry.name);
-    } catch {
-      skipped.push(entry.name);
-    }
+    await runDataProtectionPhase(phaseContext, `file copy/hash ${entry.name}`, async () => {
+      try {
+        await copyProtectedEntryAsync(sourceEntryPath, join(targetUserDataPath, entry.name), entry.kind);
+        migrated.push(entry.name);
+      } catch {
+        skipped.push(entry.name);
+      }
+    });
   }
 
   return { sourcePath, migrated, skipped };
@@ -1905,23 +2159,34 @@ export const createDataProtectionSnapshot = async (
   reason: DataProtectionReason,
   userDataPath = app.getPath('userData'),
   date = new Date(),
+  phaseContext?: DataProtectionPhaseContext,
 ): Promise<SnapshotResult> => {
   const snapshotsPath = getSnapshotsPath(userDataPath);
   const snapshotPath = join(snapshotsPath, `${timestampForPath(date)}-${reason}`);
   const copied: string[] = [];
   const skipped: string[] = [];
   let libraryBackupMethod: SnapshotResult['libraryBackupMethod'] = 'none';
-  let libraryHealth = checkDatabaseHealth(libraryPathFor(userDataPath));
-  const librarySignature = getLibraryDatabaseSnapshotSignature(userDataPath);
+  let libraryHealth = await runDataProtectionBlockingPhase(phaseContext, 'database integrity check', () =>
+    checkDatabaseHealth(libraryPathFor(userDataPath)),
+  );
+  const librarySignature = await runDataProtectionBlockingPhase(phaseContext, 'database signature read', () =>
+    getLibraryDatabaseSnapshotSignature(userDataPath),
+  );
 
-  mkdirSync(snapshotPath, { recursive: true });
+  await runDataProtectionPhase(phaseContext, 'file copy/hash create snapshot directory', () =>
+    mkdirAsync(snapshotPath, { recursive: true }),
+  );
 
   if (existsSync(libraryPathFor(userDataPath))) {
     const snapshotLibraryPath = libraryPathFor(snapshotPath);
     if (libraryHealth.status === 'ok') {
       try {
-        await sqliteBackup(libraryPathFor(userDataPath), snapshotLibraryPath);
-        const snapshotHealth = checkDatabaseHealth(snapshotLibraryPath);
+        await runDataProtectionPhase(phaseContext, 'file copy/hash', () =>
+          sqliteBackup(libraryPathFor(userDataPath), snapshotLibraryPath),
+        );
+        const snapshotHealth = await runDataProtectionBlockingPhase(phaseContext, 'database integrity check', () =>
+          checkDatabaseHealth(snapshotLibraryPath),
+        );
         if (snapshotHealth.status === 'ok') {
           copied.push(libraryFileName);
           skipped.push(libraryWalFileName, libraryShmFileName);
@@ -1936,7 +2201,9 @@ export const createDataProtectionSnapshot = async (
       }
 
       if (libraryBackupMethod !== 'sqlite-backup') {
-        const copiedLibraryEntries = copyLibraryTriplet(userDataPath, snapshotPath);
+        const copiedLibraryEntries = await runDataProtectionPhase(phaseContext, 'file copy/hash library triplet', () =>
+          copyLibraryTripletAsync(userDataPath, snapshotPath),
+        );
         copied.push(...copiedLibraryEntries);
         for (const name of [libraryFileName, libraryWalFileName, libraryShmFileName]) {
           if (!copiedLibraryEntries.includes(name)) {
@@ -1944,7 +2211,9 @@ export const createDataProtectionSnapshot = async (
           }
         }
         libraryBackupMethod = copiedLibraryEntries.length > 0 ? 'file-copy' : 'none';
-        libraryHealth = checkDatabaseHealth(libraryPathFor(snapshotPath));
+        libraryHealth = await runDataProtectionBlockingPhase(phaseContext, 'database integrity check', () =>
+          checkDatabaseHealth(libraryPathFor(snapshotPath)),
+        );
       }
     } else {
       skipped.push(libraryFileName, libraryWalFileName, libraryShmFileName);
@@ -1964,33 +2233,37 @@ export const createDataProtectionSnapshot = async (
       continue;
     }
 
-    try {
-      copyProtectedEntry(sourcePath, join(snapshotPath, entry.name), entry.kind);
-      copied.push(entry.name);
-    } catch {
-      skipped.push(entry.name);
-    }
+    await runDataProtectionPhase(phaseContext, `file copy/hash ${entry.name}`, async () => {
+      try {
+        await copyProtectedEntryAsync(sourcePath, join(snapshotPath, entry.name), entry.kind);
+        copied.push(entry.name);
+      } catch {
+        skipped.push(entry.name);
+      }
+    });
   }
 
-  writeFileSync(
-    join(snapshotPath, 'snapshot.json'),
-    `${JSON.stringify(
-      {
-        formatVersion: 1,
-        reason,
-        createdAt: date.toISOString(),
-        copied,
-        skipped,
-        libraryHealth,
-        libraryBackupMethod,
-        ...librarySignature,
-      },
-      null,
-      2,
-    )}\n`,
-    'utf8',
+  await runDataProtectionPhase(phaseContext, 'backup manifest read/write', () =>
+    writeFileAsync(
+      join(snapshotPath, 'snapshot.json'),
+      `${JSON.stringify(
+        {
+          formatVersion: 1,
+          reason,
+          createdAt: date.toISOString(),
+          copied,
+          skipped,
+          libraryHealth,
+          libraryBackupMethod,
+          ...librarySignature,
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    ),
   );
-  pruneOldSnapshots(userDataPath);
+  await runDataProtectionPhase(phaseContext, 'backup cleanup', () => pruneOldSnapshotsAsync(userDataPath));
 
   return { snapshotPath, copied, skipped, libraryHealth, libraryBackupMethod };
 };
@@ -2138,6 +2411,60 @@ export const restoreMissingProtectedData = (userDataPath = app.getPath('userData
     } catch {
       skipped.push(entry.name);
     }
+  }
+
+  return { restored, skipped };
+};
+
+export const restoreMissingProtectedDataAsync = async (
+  userDataPath = app.getPath('userData'),
+  phaseContext?: DataProtectionPhaseContext,
+): Promise<RestoreResult> => {
+  const restored: string[] = [];
+  const skipped: string[] = [];
+  const snapshotPaths = await runDataProtectionPhase(phaseContext, 'restore check list snapshots', () =>
+    listSnapshotPathsAsync(userDataPath),
+  );
+  let healthyLibrarySnapshotPath: string | null = null;
+
+  for (const snapshotPath of snapshotPaths) {
+    const manifest = await runDataProtectionPhase(phaseContext, 'restore check backup manifest read', () =>
+      readSnapshotManifestAsync(snapshotPath),
+    );
+    if (
+      manifest?.libraryHealth?.status === 'ok' &&
+      Array.isArray(manifest.copied) &&
+      manifest.copied.includes(libraryFileName) &&
+      existsSync(libraryPathFor(snapshotPath))
+    ) {
+      healthyLibrarySnapshotPath = snapshotPath;
+      break;
+    }
+  }
+
+  for (const entry of protectedDataEntries) {
+    const targetPath = join(userDataPath, entry.name);
+    if (existsSync(targetPath)) {
+      skipped.push(entry.name);
+      continue;
+    }
+
+    const snapshotPath = libraryEntryNames.has(entry.name)
+      ? healthyLibrarySnapshotPath
+      : snapshotPaths.find((candidate) => existsSync(join(candidate, entry.name)));
+    if (!snapshotPath) {
+      skipped.push(entry.name);
+      continue;
+    }
+
+    await runDataProtectionPhase(phaseContext, `restore check file copy/hash ${entry.name}`, async () => {
+      try {
+        await copyProtectedEntryAsync(join(snapshotPath, entry.name), targetPath, entry.kind);
+        restored.push(entry.name);
+      } catch {
+        skipped.push(entry.name);
+      }
+    });
   }
 
   return { restored, skipped };
@@ -2371,6 +2698,22 @@ let lastDataProtectionResult: DataProtectionResult | null = null;
 
 export const getLastDataProtectionResult = (): DataProtectionResult | null => lastDataProtectionResult;
 
+export const createDataProtectionDisabledResult = (userDataPath = app.getPath('userData')): DataProtectionResult => {
+  const libraryHealth = checkLibraryFastStartupHealth(userDataPath);
+  const recovery: LibraryRecoveryResult = { action: 'none', health: libraryHealth };
+
+  lastDataProtectionResult = {
+    userDataPath,
+    migration: { sourcePath: null, migrated: [], skipped: protectedDataEntries.map((entry) => entry.name) },
+    restore: { restored: [], skipped: protectedDataEntries.map((entry) => entry.name) },
+    snapshot: skippedSnapshot(libraryHealth),
+    libraryHealth,
+    recovery,
+  };
+
+  return lastDataProtectionResult;
+};
+
 export const isProtectedLibraryAvailable = (): boolean =>
   !lastDataProtectionResult ||
   (
@@ -2415,20 +2758,96 @@ export const ensureDataProtectionFastStartup = async (
   }
 };
 
-export const ensureDataProtection = async (
+export const ensureDataProtectionStartup = async (
   reason: DataProtectionReason = 'startup',
   explicitUserDataPath?: string,
 ): Promise<DataProtectionResult> => {
-  const userDataPath = explicitUserDataPath ?? initializeProtectedUserDataPath();
+  const phaseContext: DataProtectionPhaseContext = { scope: 'startup' };
+  const userDataPath = await runDataProtectionBlockingPhase(phaseContext, 'locate userData', () =>
+    explicitUserDataPath ?? initializeProtectedUserDataPath(),
+  );
+
   try {
-    const migration = await migrateLegacyProtectedData(userDataPath);
-    const restore = restoreMissingProtectedData(userDataPath);
-    writeDataProtectionManifest(userDataPath);
-    let initialHealth = checkDatabaseHealth(libraryPathFor(userDataPath));
+    await runDataProtectionBlockingPhase(phaseContext, 'backup manifest read/write', () => {
+      writeDataProtectionManifest(userDataPath);
+    });
+
+    const libraryHealth = await runDataProtectionBlockingPhase(phaseContext, 'database fast health check', () =>
+      checkLibraryFastStartupHealth(userDataPath),
+    );
+    const recovery: LibraryRecoveryResult = libraryHealth.status === 'ok'
+      ? { action: 'none', health: libraryHealth }
+      : { action: 'failed', health: libraryHealth };
+
+    lastDataProtectionResult = {
+      userDataPath,
+      migration: { sourcePath: null, migrated: [], skipped: protectedDataEntries.map((entry) => entry.name) },
+      restore: { restored: [], skipped: protectedDataEntries.map((entry) => entry.name) },
+      snapshot: skippedSnapshot(libraryHealth),
+      libraryHealth,
+      recovery,
+    };
+
+    if (recovery.action === 'failed') {
+      console.warn(`[data-protection] startup full protection deferred after fast health failed: ${libraryHealth.message ?? libraryHealth.status}`);
+    }
+
+    return lastDataProtectionResult;
+  } catch (error) {
+    const health: DatabaseHealthResult = {
+      status: 'unreadable',
+      databasePath: libraryPathFor(userDataPath),
+      checkedAt: new Date().toISOString(),
+      message: error instanceof Error ? error.message : String(error),
+    };
+    const recovery: LibraryRecoveryResult = { action: 'failed', health };
+    lastDataProtectionResult = {
+      userDataPath,
+      migration: { sourcePath: null, migrated: [], skipped: protectedDataEntries.map((entry) => entry.name) },
+      restore: { restored: [], skipped: protectedDataEntries.map((entry) => entry.name) },
+      snapshot: skippedSnapshot(health),
+      libraryHealth: health,
+      recovery,
+    };
+    console.warn(`[data-protection] startup fast protection failed: ${health.message ?? health.status}`);
+    return lastDataProtectionResult;
+  }
+};
+
+export const runDeferredStartupDataProtection = async (
+  reason: DataProtectionReason = 'startup',
+  userDataPath = app.getPath('userData'),
+): Promise<DataProtectionResult> =>
+  ensureDataProtection(reason, userDataPath, {
+    scope: 'background',
+    beforePhase: waitForBackgroundProtectionSlot,
+  });
+
+export const ensureDataProtection = async (
+  reason: DataProtectionReason = 'startup',
+  explicitUserDataPath?: string,
+  phaseContext: DataProtectionPhaseContext | undefined = reason === 'startup' ? { scope: 'startup' } : undefined,
+): Promise<DataProtectionResult> => {
+  const userDataPath = await runDataProtectionBlockingPhase(phaseContext, 'locate userData', () =>
+    explicitUserDataPath ?? initializeProtectedUserDataPath(),
+  );
+  try {
+    const migration = await migrateLegacyProtectedData(userDataPath, getLegacyUserDataPaths(), phaseContext);
+    const restore = await runDataProtectionPhase(phaseContext, 'restore check', () => restoreMissingProtectedDataAsync(userDataPath, phaseContext));
+    await runDataProtectionBlockingPhase(phaseContext, 'backup manifest read/write', () => {
+      writeDataProtectionManifest(userDataPath);
+    });
+    let initialHealth = await runDataProtectionBlockingPhase(phaseContext, 'database integrity check', () =>
+      checkDatabaseHealth(libraryPathFor(userDataPath)),
+    );
     if (initialHealth.status === 'ok') {
-      const diagnosticRows = scrubDiagnosticLibraryText(libraryPathFor(userDataPath));
+      const diagnosticRows = await runDataProtectionBlockingPhase(phaseContext, 'migration check', () =>
+        scrubDiagnosticLibraryText(libraryPathFor(userDataPath)),
+      );
       if (diagnosticRows > 0) {
-        initialHealth = checkDatabaseHealth(libraryPathFor(userDataPath));
+        initialHealth = await runDataProtectionBlockingPhase(phaseContext, 'database integrity check', () =>
+          checkDatabaseHealth(libraryPathFor(userDataPath)),
+        );
         recordLibraryDatabaseMaintenanceEvent(
           {
             action: 'startup-auto-repair',
@@ -2440,13 +2859,35 @@ export const ensureDataProtection = async (
         );
       }
     }
-    const corruptRecovery = protectCorruptLibraryDatabase(userDataPath, initialHealth);
+    const corruptRecovery = await runDataProtectionBlockingPhase(phaseContext, 'restore check', () =>
+      protectCorruptLibraryDatabase(userDataPath, initialHealth),
+    );
     const recovery = corruptRecovery.action === 'none'
-      ? protectPoisonedLibraryDatabase(userDataPath, initialHealth)
+      ? await runDataProtectionBlockingPhase(phaseContext, 'database poison check', () =>
+          protectPoisonedLibraryDatabase(userDataPath, initialHealth),
+        )
       : corruptRecovery;
-    const libraryHealth = recovery.health.status === 'corrupt' ? recovery.health : checkDatabaseHealth(libraryPathFor(userDataPath));
-    const snapshot = libraryHealth.status === 'ok'
-      ? await createDataProtectionSnapshot(reason, userDataPath)
+    const libraryHealth = recovery.health.status === 'corrupt'
+      ? recovery.health
+      : await runDataProtectionBlockingPhase(phaseContext, 'database integrity check', () =>
+          checkDatabaseHealth(libraryPathFor(userDataPath)),
+        );
+    const startupSnapshotDecision = libraryHealth.status === 'ok' && reason === 'startup' && phaseContext?.scope === 'background'
+      ? await runDataProtectionBlockingPhase(phaseContext, 'backup manifest read', () =>
+          shouldCreateDeferredStartupSnapshot(userDataPath),
+        )
+      : null;
+    if (startupSnapshotDecision?.shouldCreate === false) {
+      markStartupStage('data-protection:background:snapshot:skipped', {
+        reason: startupSnapshotDecision.reason,
+        snapshotCount: startupSnapshotDecision.snapshotCount,
+        snapshotId: startupSnapshotDecision.snapshotId,
+        databaseSizeBytes: startupSnapshotDecision.currentSignature.databaseSizeBytes,
+        walSizeBytes: startupSnapshotDecision.currentSignature.walSizeBytes,
+      });
+    }
+    const snapshot = libraryHealth.status === 'ok' && startupSnapshotDecision?.shouldCreate !== false
+      ? await createDataProtectionSnapshot(reason, userDataPath, new Date(), phaseContext)
       : skippedSnapshot(libraryHealth);
 
     if (migration.migrated.length > 0) {

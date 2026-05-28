@@ -2128,6 +2128,9 @@ export const registerLibraryIpc = (): void => {
   );
   ipcMain.handle(IpcChannels.LibraryCreateDatabaseSnapshot, async () => {
     assertNoRunningLibraryScan();
+    if (getAppSettings().dataProtectionDisabled === true) {
+      throw new Error('data-protection is disabled in Settings');
+    }
     const manager = getLibraryDatabaseManager();
     const status = await manager.runExclusiveMaintenance('manual-library-database-snapshot', async () => {
       closeLibraryDatabaseUsers();

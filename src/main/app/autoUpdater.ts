@@ -3,6 +3,7 @@ import electronUpdater from 'electron-updater';
 import type { UpdateInfo } from 'electron-updater';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { UpdateStatus } from '../../shared/types/updates';
+import { getAppSettings } from './appSettings';
 import { createDataProtectionSnapshot, writeDataProtectionManifest } from './dataProtection';
 
 const { autoUpdater } = electronUpdater;
@@ -219,8 +220,10 @@ export const initializeAutoUpdater = (enabled: boolean): void => {
     applyUpdateInfo(updateInfo);
     void (async () => {
       try {
-        writeDataProtectionManifest();
-        await createDataProtectionSnapshot('update-install');
+        if (getAppSettings().dataProtectionDisabled !== true) {
+          writeDataProtectionManifest();
+          await createDataProtectionSnapshot('update-install');
+        }
       } catch (error) {
         console.warn('[data-protection] failed to snapshot protected data before update install', error);
       }

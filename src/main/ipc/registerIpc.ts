@@ -35,6 +35,7 @@ import { getLibraryService } from '../library/LibraryService';
 import { setDiscordPresenceEnabled } from '../integrations/discord/getDiscordPresenceService';
 import { getLastFmService } from '../integrations/lastfm/getLastFmService';
 import { applyNetworkProxySettings, testNetworkProxyConnection } from '../network/proxySettings';
+import { markStartupStage } from '../diagnostics/StartupDiagnostics';
 import { registerAudioIpc } from './audioIpc';
 import { registerAccountIpc } from './accountIpc';
 import { registerConnectIpc } from './connectIpc';
@@ -69,6 +70,13 @@ const settingsBackupVersion = 1;
 const settingsBackupFilters = [{ name: 'ECHO Next Settings', extensions: ['json'] }];
 const dataPackageFilters = [{ name: 'ECHO Next Data Package', extensions: ['zip'] }];
 const dataBackupFilters = [{ name: 'ECHO Next Data Backup', extensions: ['zip'] }];
+
+const registerIpcStartupStep = (name: string, register: () => void): void => {
+  const startedAt = Date.now();
+  markStartupStage(`ipc:${name}:start`);
+  register();
+  markStartupStage(`ipc:${name}:complete`, { durationMs: Date.now() - startedAt });
+};
 
 const requireFontPath = (value: unknown): string => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -296,81 +304,85 @@ const preserveCurrentDataBackupTarget = (settings: AppSettings, currentSettings:
 });
 
 export const registerIpc = (): void => {
-  ipcMain.handle(IpcChannels.AppGetVersion, () => `v${app.getVersion()}`);
-  ipcMain.handle(IpcChannels.AppWindowMinimize, (event: IpcMainInvokeEvent): void => {
-    BrowserWindow.fromWebContents(event.sender)?.minimize();
-  });
-  ipcMain.handle(IpcChannels.AppWindowToggleMaximize, (event: IpcMainInvokeEvent): void => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-
-    if (!window) {
-      return;
-    }
-
-    if (window.isFullScreen()) {
-      window.setFullScreen(false);
-      return;
-    }
-
-    if (window.isMaximized()) {
-      window.unmaximize();
-      return;
-    }
-
-    window.maximize();
-  });
-  ipcMain.handle(IpcChannels.AppWindowClose, (event: IpcMainInvokeEvent): void => {
-    BrowserWindow.fromWebContents(event.sender)?.close();
-  });
-  ipcMain.handle(IpcChannels.AppGetSettings, (): AppSettings => getAppSettings());
-  ipcMain.handle(IpcChannels.AppSetSettings, (_event: IpcMainInvokeEvent, patch: Partial<AppSettings>): Promise<AppSettings> =>
-    applyAppSettingsPatch(patch),
-  );
-  ipcMain.handle(IpcChannels.AppGetTaskbarPlaybackStatus, (): TaskbarPlaybackStatus => {
-    refreshTaskbarPlaybackIntegration();
-    return getTaskbarPlaybackStatus();
-  });
-  ipcMain.handle(IpcChannels.AppExportSettings, async (): Promise<string | null> => {
-    const result = await dialog.showSaveDialog({
-      title: 'Export ECHO Next settings',
-      defaultPath: join(app.getPath('downloads'), `echo-next-settings-${formatBackupTimestamp()}.json`),
-      filters: settingsBackupFilters,
+  registerIpcStartupStep('app-core', () => {
+    ipcMain.handle(IpcChannels.AppGetVersion, () => `v${app.getVersion()}`);
+    ipcMain.handle(IpcChannels.AppWindowMinimize, (event: IpcMainInvokeEvent): void => {
+      BrowserWindow.fromWebContents(event.sender)?.minimize();
     });
+    ipcMain.handle(IpcChannels.AppWindowToggleMaximize, (event: IpcMainInvokeEvent): void => {
+      const window = BrowserWindow.fromWebContents(event.sender);
 
-    if (result.canceled || !result.filePath) {
-      return null;
-    }
+      if (!window) {
+        return;
+      }
 
-    writeSettingsBackupFile(result.filePath, getAppSettings());
-    return result.filePath;
-  });
-  ipcMain.handle(IpcChannels.AppImportSettings, async (): Promise<SettingsImportResult | null> => {
-    const result = await dialog.showOpenDialog({
-      title: 'Import ECHO Next settings',
-      properties: ['openFile'],
-      filters: settingsBackupFilters,
+      if (window.isFullScreen()) {
+        window.setFullScreen(false);
+        return;
+      }
+
+      if (window.isMaximized()) {
+        window.unmaximize();
+        return;
+      }
+
+      window.maximize();
     });
+    ipcMain.handle(IpcChannels.AppWindowClose, (event: IpcMainInvokeEvent): void => {
+      BrowserWindow.fromWebContents(event.sender)?.close();
+    });
+    ipcMain.handle(IpcChannels.AppGetSettings, (): AppSettings => getAppSettings());
+    ipcMain.handle(IpcChannels.AppSetSettings, (_event: IpcMainInvokeEvent, patch: Partial<AppSettings>): Promise<AppSettings> =>
+      applyAppSettingsPatch(patch),
+    );
+    ipcMain.handle(IpcChannels.AppGetTaskbarPlaybackStatus, (): TaskbarPlaybackStatus => {
+      refreshTaskbarPlaybackIntegration();
+      return getTaskbarPlaybackStatus();
+    });
+    ipcMain.handle(IpcChannels.AppExportSettings, async (): Promise<string | null> => {
+      const result = await dialog.showSaveDialog({
+        title: 'Export ECHO Next settings',
+        defaultPath: join(app.getPath('downloads'), `echo-next-settings-${formatBackupTimestamp()}.json`),
+        filters: settingsBackupFilters,
+      });
 
-    if (result.canceled || !result.filePaths[0]) {
-      return null;
-    }
+      if (result.canceled || !result.filePath) {
+        return null;
+      }
 
-    const importedPath = result.filePaths[0];
-    const importedSettings = readSettingsBackupFile(importedPath);
-    const backupDirectory = getSettingsBackupDirectory();
-    const backupPath = join(backupDirectory, `before-import-${formatBackupTimestamp()}.json`);
+      writeSettingsBackupFile(result.filePath, getAppSettings());
+      return result.filePath;
+    });
+    ipcMain.handle(IpcChannels.AppImportSettings, async (): Promise<SettingsImportResult | null> => {
+      const result = await dialog.showOpenDialog({
+        title: 'Import ECHO Next settings',
+        properties: ['openFile'],
+        filters: settingsBackupFilters,
+      });
 
-    mkdirSync(backupDirectory, { recursive: true });
-    writeSettingsBackupFile(backupPath, getAppSettings());
+      if (result.canceled || !result.filePaths[0]) {
+        return null;
+      }
 
-    const settings = await applyAppSettingsPatch(importedSettings, { allowCoverCacheDir: true });
-    return {
-      settings,
-      backupPath,
-      importedPath,
-      warnings: [],
-    };
+      const importedPath = result.filePaths[0];
+      const importedSettings = readSettingsBackupFile(importedPath);
+      const backupDirectory = getSettingsBackupDirectory();
+      const backupPath = join(backupDirectory, `before-import-${formatBackupTimestamp()}.json`);
+
+      mkdirSync(backupDirectory, { recursive: true });
+      writeSettingsBackupFile(backupPath, getAppSettings());
+
+      const settings = await applyAppSettingsPatch(importedSettings, { allowCoverCacheDir: true });
+      return {
+        settings,
+        backupPath,
+        importedPath,
+        warnings: [],
+      };
+    });
   });
+
+  registerIpcStartupStep('app-data', () => {
   ipcMain.handle(IpcChannels.AppExportDataPackage, async (): Promise<DataPackageExportResult | null> => {
     const result = await dialog.showSaveDialog({
       title: 'Export ECHO Next data package',
@@ -527,23 +539,24 @@ export const registerIpc = (): void => {
       return null;
     },
   );
+  });
 
-  registerDiagnosticsIpc();
-  registerAccountIpc();
-  registerConnectIpc();
-  registerDiscordPresenceIpc();
-  registerDesktopLyricsIpc();
-  registerMiniPlayerIpc();
-  registerDownloadsIpc();
-  registerPluginIpc();
-  registerLastFmIpc();
-  registerLibraryIpc();
-  registerLyricsIpc();
-  registerMvIpc();
-  registerHqPlayerIpc();
-  registerRemoteSourcesIpc();
-  registerSmtcIpc();
-  registerStreamingIpc();
-  registerPlaybackIpc();
-  registerAudioIpc();
+  registerIpcStartupStep('diagnostics', registerDiagnosticsIpc);
+  registerIpcStartupStep('account', registerAccountIpc);
+  registerIpcStartupStep('connect', registerConnectIpc);
+  registerIpcStartupStep('discord-presence', registerDiscordPresenceIpc);
+  registerIpcStartupStep('desktop-lyrics', registerDesktopLyricsIpc);
+  registerIpcStartupStep('mini-player', registerMiniPlayerIpc);
+  registerIpcStartupStep('downloads', registerDownloadsIpc);
+  registerIpcStartupStep('plugin', registerPluginIpc);
+  registerIpcStartupStep('lastfm', registerLastFmIpc);
+  registerIpcStartupStep('library', registerLibraryIpc);
+  registerIpcStartupStep('lyrics', registerLyricsIpc);
+  registerIpcStartupStep('mv', registerMvIpc);
+  registerIpcStartupStep('hq-player', registerHqPlayerIpc);
+  registerIpcStartupStep('remote-sources', registerRemoteSourcesIpc);
+  registerIpcStartupStep('smtc', registerSmtcIpc);
+  registerIpcStartupStep('streaming', registerStreamingIpc);
+  registerIpcStartupStep('playback', registerPlaybackIpc);
+  registerIpcStartupStep('audio', registerAudioIpc);
 };

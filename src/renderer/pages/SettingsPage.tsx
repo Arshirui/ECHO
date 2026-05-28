@@ -3707,6 +3707,14 @@ export const SettingsPage = (): JSX.Element => {
         terms: [t('settings.general.fastStartup.title'), t('settings.general.fastStartup.description'), '快速启动', '快速啟動', '高速起動', '启动加速', '慢启动', 'data protection', 'startup', 'fast startup', 'quick startup', 'database snapshot', '曲库检查'],
       },
       {
+        id: 'row-data-protection-disabled',
+        sectionKey: 'general',
+        targetId: 'settings-row-data-protection-disabled',
+        title: '关闭 data-protection',
+        description: '打开后不再执行启动、后台、扫描完成和更新前的数据保护快照。默认关闭。',
+        terms: ['关闭 data-protection', '关闭数据保护', 'data protection', 'database snapshot', '数据保护', '快照', '播放卡顿'],
+      },
+      {
         id: 'row-player-waveform-progress',
         sectionKey: 'general',
         targetId: 'settings-row-player-waveform-progress',
@@ -8486,6 +8494,18 @@ export const SettingsPage = (): JSX.Element => {
                 />
               </SettingRow>
               <SettingRow
+                id="settings-row-data-protection-disabled"
+                highlighted={highlightedSettingId === 'settings-row-data-protection-disabled'}
+                title="关闭 data-protection"
+                description="打开后不再执行启动、后台、扫描完成和更新前的数据保护快照。默认关闭。"
+              >
+                <ToggleButton
+                  active={appSettings?.dataProtectionDisabled === true}
+                  disabled={!appSettings}
+                  onClick={() => patchAppSettings({ dataProtectionDisabled: !(appSettings?.dataProtectionDisabled ?? false) })}
+                />
+              </SettingRow>
+              <SettingRow
                 id="settings-row-player-waveform-progress"
                 highlighted={highlightedSettingId === 'settings-row-player-waveform-progress'}
                 title={t('settings.general.playerWaveformProgress.title')}
@@ -11575,7 +11595,7 @@ export const SettingsPage = (): JSX.Element => {
                     <RotateCw size={15} />
                     {databaseProtectionBusyAction === 'refresh' ? '检查中...' : '检查健康'}
                   </button>
-                  <button className="settings-action-button" type="button" disabled={databaseProtectionBusy} onClick={() => void handleCreateDatabaseSnapshot()}>
+                  <button className="settings-action-button" type="button" disabled={databaseProtectionBusy || appSettings?.dataProtectionDisabled === true} onClick={() => void handleCreateDatabaseSnapshot()}>
                     <Save size={15} />
                     {databaseProtectionBusyAction === 'snapshot' ? '创建中...' : '创建健康快照'}
                   </button>

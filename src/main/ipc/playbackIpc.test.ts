@@ -6,6 +6,8 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { normalizePlaybackFilePath } from './playbackPath';
 
+const deferredPlaybackTaskWaitMs = 2_500;
+
 describe('normalizePlaybackFilePath', () => {
   const tempRoots: string[] = [];
 
@@ -407,7 +409,7 @@ describe('playback media prepare IPC', () => {
       },
     });
 
-    await expect.poll(() => startReplayGainAnalysis.mock.calls.length).toBe(1);
+    await expect.poll(() => startReplayGainAnalysis.mock.calls.length, { timeout: deferredPlaybackTaskWaitMs }).toBe(1);
     expect(startReplayGainAnalysis).toHaveBeenCalledWith({ trackIds: ['local-track'], limit: 1, force: false });
   });
 
@@ -994,6 +996,7 @@ describe('playback media prepare IPC', () => {
       trackId: 'remote-track',
       probe: { durationSeconds: 188.5 },
     }));
+    await expect.poll(() => backfillDuration.mock.calls.length, { timeout: deferredPlaybackTaskWaitMs }).toBe(1);
     expect(backfillDuration).toHaveBeenCalledWith('remote-track', 188.5);
     await expect.poll(() => createPlaybackHandoff.mock.calls.length).toBe(1);
     expect(createPlaybackHandoff).toHaveBeenCalledWith(expect.objectContaining({

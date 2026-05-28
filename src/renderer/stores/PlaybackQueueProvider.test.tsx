@@ -60,6 +60,12 @@ const makePersistedQueueSession = (
   };
 };
 
+const deferredPlaybackTaskWaitMs = 2_500;
+
+const waitForDeferredPlaybackTask = async (assertion: () => void): Promise<void> => {
+  await waitFor(assertion, { timeout: deferredPlaybackTaskWaitMs });
+};
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -336,12 +342,14 @@ describe('PlaybackQueueProvider playback history session', () => {
       </PlaybackQueueProvider>,
     );
 
-    await waitFor(() => expect(startPlaybackHistory).toHaveBeenCalledTimes(1));
+    await waitForDeferredPlaybackTask(() => expect(startPlaybackHistory).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'next' }));
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: second.id })));
-    expect(finishPlaybackHistory).toHaveBeenCalledWith(expect.objectContaining({ historyId: 'history-1' }));
-    await waitFor(() => expect(startPlaybackHistory).toHaveBeenCalledTimes(2));
+    await waitForDeferredPlaybackTask(() =>
+      expect(finishPlaybackHistory).toHaveBeenCalledWith(expect.objectContaining({ historyId: 'history-1' })),
+    );
+    await waitForDeferredPlaybackTask(() => expect(startPlaybackHistory).toHaveBeenCalledTimes(2));
     const finish = resolveFinish ?? (() => undefined);
     finish();
   });
@@ -461,12 +469,12 @@ describe('PlaybackQueueProvider playback history session', () => {
     expect(screen.getByLabelText('queue-size').textContent).toBe('2');
     expect(resolveLocalAudioFiles).toHaveBeenCalledWith(['D:\\Loose\\one.flac', 'D:\\Loose\\two.flac']);
     expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ filePath: first.path, trackId: first.id }));
-    expect(startPlaybackHistory).toHaveBeenCalledWith(expect.objectContaining({
+    await waitForDeferredPlaybackTask(() => expect(startPlaybackHistory).toHaveBeenCalledWith(expect.objectContaining({
       trackId: null,
       trackPath: first.path,
       title: first.title,
       sourceType: 'local-file',
-    }));
+    })));
   });
 
   it('prepares only the next local queue item after playback starts', async () => {
@@ -517,7 +525,7 @@ describe('PlaybackQueueProvider playback history session', () => {
     );
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: first.id })));
-    await waitFor(() => expect(prepareLocalFile).toHaveBeenCalledTimes(1), { timeout: 1000 });
+    await waitForDeferredPlaybackTask(() => expect(prepareLocalFile).toHaveBeenCalledTimes(1));
     expect(prepareLocalFile).toHaveBeenCalledWith({
       filePath: second.path,
       trackId: second.id,
@@ -883,7 +891,7 @@ describe('PlaybackQueueProvider playback history session', () => {
       </PlaybackQueueProvider>,
     );
 
-    await waitFor(() => expect(prepareLocalFile).toHaveBeenCalledTimes(1));
+    await waitForDeferredPlaybackTask(() => expect(prepareLocalFile).toHaveBeenCalledTimes(1));
     expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({
       trackId: first.id,
       automixAnalyze: true,
@@ -969,12 +977,12 @@ describe('PlaybackQueueProvider playback history session', () => {
       </PlaybackQueueProvider>,
     );
 
-    await waitFor(() => expect(startBpmAnalysis).toHaveBeenCalledWith({ trackIds: [second.id] }));
+    await waitForDeferredPlaybackTask(() => expect(startBpmAnalysis).toHaveBeenCalledWith({ trackIds: [second.id] }));
     await waitFor(() => expect(screen.getByLabelText('next-bpm').textContent).toBe('128'));
-    expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+    await waitForDeferredPlaybackTask(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
       trackId: second.id,
       automixAnalyze: true,
-    }));
+    })));
   });
 
   it('does not prewarm BPM analysis for Automix when audio analysis is disabled', async () => {
@@ -1035,10 +1043,10 @@ describe('PlaybackQueueProvider playback history session', () => {
     await waitFor(() => expect(getSettings).toHaveBeenCalled());
     await new Promise((resolve) => window.setTimeout(resolve, 220));
     expect(startBpmAnalysis).not.toHaveBeenCalled();
-    expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+    await waitForDeferredPlaybackTask(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
       trackId: second.id,
       automixAnalyze: true,
-    }));
+    })));
   });
 
   it('arms Automix near the end of a long local track', async () => {
@@ -1277,7 +1285,7 @@ describe('PlaybackQueueProvider playback history session', () => {
     );
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+    await waitForDeferredPlaybackTask(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
       trackId: third.id,
       automixAnalyze: true,
     })));
@@ -1371,7 +1379,7 @@ describe('PlaybackQueueProvider playback history session', () => {
     );
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(prepareMediaItem).toHaveBeenCalledWith(expect.objectContaining({
+    await waitForDeferredPlaybackTask(() => expect(prepareMediaItem).toHaveBeenCalledWith(expect.objectContaining({
       automixAnalyze: true,
       item: expect.objectContaining({
         mediaType: 'streaming',
@@ -1449,7 +1457,7 @@ describe('PlaybackQueueProvider playback history session', () => {
     );
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+    await waitForDeferredPlaybackTask(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
       trackId: first.id,
       automixAnalyze: true,
     })));
@@ -1885,7 +1893,7 @@ describe('PlaybackQueueProvider playback history session', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'enable' }).getAttribute('aria-pressed')).toBe('true'));
     expect(playLocalFile).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
+    await waitForDeferredPlaybackTask(() => expect(prepareLocalFile).toHaveBeenCalledWith(expect.objectContaining({
       trackId: second.id,
       automixAnalyze: true,
     })));
@@ -1956,7 +1964,7 @@ describe('PlaybackQueueProvider playback history session', () => {
     );
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: first.id })));
-    await waitFor(() => expect(prepareMediaItem).toHaveBeenCalledTimes(1));
+    await waitForDeferredPlaybackTask(() => expect(prepareMediaItem).toHaveBeenCalledTimes(1));
     expect(prepareMediaItem).toHaveBeenCalledWith(expect.objectContaining({
       automixAnalyze: true,
       item: expect.objectContaining({
@@ -2016,7 +2024,7 @@ describe('PlaybackQueueProvider playback history session', () => {
 
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: track.id })));
     expect(searchNetworkCandidates).not.toHaveBeenCalled();
-    await waitFor(() => expect(searchNetworkCandidates).toHaveBeenCalledWith(track.id));
+    await waitForDeferredPlaybackTask(() => expect(searchNetworkCandidates).toHaveBeenCalledWith(track.id));
     await waitFor(() => expect(getSelected).toHaveBeenCalledWith(track.id));
     await waitFor(() =>
       expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'mv:candidatesChanged' })),
@@ -2075,7 +2083,7 @@ describe('PlaybackQueueProvider playback history session', () => {
     );
 
     await waitFor(() => expect(playMediaItem).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(startPlaybackHistory).toHaveBeenCalledTimes(1));
+    await waitForDeferredPlaybackTask(() => expect(startPlaybackHistory).toHaveBeenCalledTimes(1));
 
     expect(playMediaItem).toHaveBeenCalledWith(expect.objectContaining({
       item: expect.objectContaining({
@@ -3080,7 +3088,7 @@ describe('PlaybackQueueProvider playback modes', () => {
     );
 
     await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-1'));
-    await waitFor(() => expect(saveQueueSession).toHaveBeenCalled());
+    await waitForDeferredPlaybackTask(() => expect(saveQueueSession).toHaveBeenCalled());
     saveQueueSession.mockClear();
 
     fireEvent.click(screen.getByRole('button', { name: 'play playlist' }));
@@ -3089,7 +3097,7 @@ describe('PlaybackQueueProvider playback modes', () => {
     expect(screen.getByLabelText('queue-track-ids').textContent).toBe('track-3,track-4');
     expect(screen.getByLabelText('repeat-mode').textContent).toBe('off');
     expect(screen.getByLabelText('shuffle-mode').textContent).toBe('off');
-    await waitFor(() => expect(saveQueueSession).toHaveBeenCalled());
+    await waitForDeferredPlaybackTask(() => expect(saveQueueSession).toHaveBeenCalled());
 
     const savedSession = saveQueueSession.mock.calls.at(-1)?.[0] as PersistedPlaybackSessionV1 | undefined;
     expect(savedSession?.items.map((item) => item.track.id)).toEqual(['track-1', 'track-2']);
@@ -3949,7 +3957,7 @@ describe('PlaybackQueueProvider persisted queue session', () => {
     renderSessionProbe();
 
     await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-2'));
-    await waitFor(() => expect(saveQueueSession).toHaveBeenCalled());
+    await waitForDeferredPlaybackTask(() => expect(saveQueueSession).toHaveBeenCalled());
     expect(saveQueueSession.mock.calls[0]?.[0]).toMatchObject({
       currentQueueId: 'queue-2',
       currentTrackId: 'track-2',

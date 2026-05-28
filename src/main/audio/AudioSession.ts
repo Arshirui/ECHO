@@ -16,6 +16,8 @@ import { isDsdCodec, isDsdFilePath, isDsfFilePath, resolveDsdDopTransportSampleR
 import { createDsfDopStream, createDsfNativeDsdStream, readDsfDopInfo } from './DsdDopPipeline';
 import { AutomixAnalyzer } from './AutomixAnalyzer';
 import { getAppSettings, setAppSettings } from '../app/appSettings';
+import { noteDataProtectionPlaybackActivity } from '../app/dataProtection';
+import { markPlaybackBreadcrumb, runPlaybackPerformanceStep, runPlaybackPerformanceStepSync } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import { calculateReplayGain, dbToLinearGain, type ReplayGainCalculation, type ReplayGainTrackData } from '../../shared/utils/replayGain';
 import { normalizeAudioSharedBackendForPlatform } from '../../shared/utils/audioPlatformCapabilities';
 import { detectAsioCompatibilityProfile } from '../../shared/utils/asioCompatibility';
@@ -1746,6 +1748,7 @@ export class AudioSession extends EventEmitter {
   }
 
   async playLocalFile(request: AudioSessionPlayRequest): Promise<AudioStatus> {
+    noteDataProtectionPlaybackActivity(true);
     const token = this.runToken + 1;
     const previousOutputSettings = this.currentOutputSettings ? { ...this.currentOutputSettings } : null;
     const previousDevice = this.currentDevice ? { ...this.currentDevice } : null;
@@ -1803,6 +1806,10 @@ export class AudioSession extends EventEmitter {
     this.nativePositionReportedBeforePlaying = false;
     this.nativePositionBeforePlayingBaselineSeconds = null;
     this.currentOutputSettings = this.createOutputSettingsForRequest(request.output);
+    const playbackPerfDetails = (): { trackId: string | null; outputMode: string | null } => ({
+      trackId: this.currentTrackId,
+      outputMode: normalizeOutputMode(this.currentOutputSettings?.outputMode ?? this.outputSettings.outputMode),
+    });
     this.recordPlaybackDiagnosticEvent('play_request', 'info', 'playLocalFile', {
       trackId: request.trackId ?? null,
       filePath: request.filePath,
@@ -1863,16 +1870,23 @@ export class AudioSession extends EventEmitter {
             trackId: request.trackId ?? null,
           }));
         } else {
-          const probed = await this.decoder.probeLocalFile(request.filePath);
+          const probed = await runPlaybackPerformanceStep('AudioSession.playLocalFile', 'probeLocalFile', playbackPerfDetails(), () =>
+            this.decoder.probeLocalFile(request.filePath),
+          );
           probe = createProbeFromHint(request.filePath, mergeProbeHints(createProbeHint(probed), playbackProbeHint)) ?? probed;
         }
       }
       this.assertCurrentRun(token);
       this.currentProbe = probe;
-      let { bridge, plan, ready, hostReused, hostRestartReason } = await this.startOutputBridgeForProbe(
-        probe,
-        token,
-        request.startSeconds ?? 0,
+      let { bridge, plan, ready, hostReused, hostRestartReason } = await runPlaybackPerformanceStep(
+        'AudioSession.playLocalFile',
+        'startOutputBridgeForProbe',
+        playbackPerfDetails(),
+        () => this.startOutputBridgeForProbe(
+          probe,
+          token,
+          request.startSeconds ?? 0,
+        ),
       );
       this.assertCurrentRun(token);
       this.applyReadyResult(ready);
@@ -1894,11 +1908,16 @@ export class AudioSession extends EventEmitter {
           throw error;
         }
 
-        const fallback = await this.startSharedFallbackForProbe(
-          probe,
-          token,
-          request.startSeconds ?? 0,
-          error instanceof Error ? error : new Error(String(error)),
+        const fallback = await runPlaybackPerformanceStep(
+          'AudioSession.playLocalFile',
+          'startOutputBridgeForProbe',
+          playbackPerfDetails(),
+          () => this.startSharedFallbackForProbe(
+            probe,
+            token,
+            request.startSeconds ?? 0,
+            error instanceof Error ? error : new Error(String(error)),
+          ),
         );
         bridge = fallback.bridge;
         plan = fallback.plan;
@@ -1974,10 +1993,15 @@ export class AudioSession extends EventEmitter {
           this.currentActiveDsdOutputMode = null;
           this.currentDsdNativeSampleRate = null;
           this.currentDsdTransportSampleRate = null;
-          ({ bridge, plan, ready, hostReused, hostRestartReason } = await this.startOutputBridgeForProbe(
-            probe,
-            token,
-            request.startSeconds ?? 0,
+          ({ bridge, plan, ready, hostReused, hostRestartReason } = await runPlaybackPerformanceStep(
+            'AudioSession.playLocalFile',
+            'startOutputBridgeForProbe',
+            playbackPerfDetails(),
+            () => this.startOutputBridgeForProbe(
+              probe,
+              token,
+              request.startSeconds ?? 0,
+            ),
           ));
           this.assertCurrentRun(token);
           this.applyReadyResult(ready);
@@ -2029,54 +2053,84 @@ export class AudioSession extends EventEmitter {
           this.currentActiveDsdOutputMode = null;
           this.currentDsdNativeSampleRate = null;
           this.currentDsdTransportSampleRate = null;
-          ({ bridge, plan, ready, hostReused, hostRestartReason } = await this.startOutputBridgeForProbe(
-            probe,
-            token,
-            request.startSeconds ?? 0,
+          ({ bridge, plan, ready, hostReused, hostRestartReason } = await runPlaybackPerformanceStep(
+            'AudioSession.playLocalFile',
+            'startOutputBridgeForProbe',
+            playbackPerfDetails(),
+            () => this.startOutputBridgeForProbe(
+              probe,
+              token,
+              request.startSeconds ?? 0,
+            ),
           ));
           this.assertCurrentRun(token);
           this.applyReadyResult(ready);
         }
       }
       const pcmPlan = this.currentPlan ?? plan;
-      const nativeAutomix = await this.createNativeAutomixPlayback(
-        request,
-        probe,
-        pcmPlan,
-        this.currentOutputSettings,
-        bridge,
+      const nativeAutomix = await runPlaybackPerformanceStep(
+        'AudioSession.playLocalFile',
+        'createDecoderRunForPlayback',
+        playbackPerfDetails(),
+        () => this.createNativeAutomixPlayback(
+          request,
+          probe,
+          pcmPlan,
+          this.currentOutputSettings!,
+          bridge,
+        ),
       );
       // Prefer the single FFmpeg concat path; native dual-deck gapless stays as a decoder-compat fallback.
       const shouldUseNativeGaplessFallback = !nativeAutomix && !this.decoder.decodeGaplessSequence;
       const nativeGapless = shouldUseNativeGaplessFallback
-        ? await this.createNativeGaplessPlayback(
-            request,
-            probe,
-            pcmPlan,
-            this.currentOutputSettings,
-            bridge,
+        ? await runPlaybackPerformanceStep(
+            'AudioSession.playLocalFile',
+            'createDecoderRunForPlayback',
+            playbackPerfDetails(),
+            () => this.createNativeGaplessPlayback(
+              request,
+              probe,
+              pcmPlan,
+              this.currentOutputSettings!,
+              bridge,
+            ),
           )
         : null;
       const automixRun = nativeAutomix
         ? null
         : nativeGapless
           ? null
-          : await this.createAutomixDecoderRunForPlayback(request, probe, pcmPlan, this.currentOutputSettings);
+          : await runPlaybackPerformanceStep(
+              'AudioSession.playLocalFile',
+              'createDecoderRunForPlayback',
+              playbackPerfDetails(),
+              () => this.createAutomixDecoderRunForPlayback(request, probe, pcmPlan, this.currentOutputSettings!),
+            );
       const gaplessRun = nativeAutomix || nativeGapless || automixRun
         ? null
-        : await this.createGaplessDecoderRunForPlayback(request, probe, pcmPlan, this.currentOutputSettings);
+        : await runPlaybackPerformanceStep(
+            'AudioSession.playLocalFile',
+            'createDecoderRunForPlayback',
+            playbackPerfDetails(),
+            () => this.createGaplessDecoderRunForPlayback(request, probe, pcmPlan, this.currentOutputSettings!),
+          );
       const activeChainedState = nativeAutomix?.state ?? nativeGapless?.state ?? automixRun?.state ?? gaplessRun?.state ?? null;
       const playbackRun = automixRun
         ? automixRun.run
         : gaplessRun
           ? gaplessRun.run
-          : await this.createDecoderRunForPlayback(
-              request.filePath,
-              request.inputHeaders,
-              request.startSeconds ?? 0,
-              probe,
-              pcmPlan,
-              this.currentOutputSettings,
+          : await runPlaybackPerformanceStep(
+              'AudioSession.playLocalFile',
+              'createDecoderRunForPlayback',
+              playbackPerfDetails(),
+              () => this.createDecoderRunForPlayback(
+                request.filePath,
+                request.inputHeaders,
+                request.startSeconds ?? 0,
+                probe,
+                pcmPlan,
+                this.currentOutputSettings!,
+              ),
             );
       this.activeAutomix = activeChainedState;
 
@@ -2086,12 +2140,16 @@ export class AudioSession extends EventEmitter {
       const bridgeDurationSeconds = activeChainedState
         ? activeChainedState.compositeStartSeconds + activeChainedState.compositeDurationSeconds
         : probe.durationSeconds;
+      markPlaybackBreadcrumb('AudioSession.playLocalFile:bridge.beginSession:start', playbackPerfDetails());
       const sessionId = bridge.beginSession?.({
         startSeconds: bridgeStartSeconds,
-        playbackRate: this.currentOutputSettings.playbackRate,
+        playbackRate: this.currentOutputSettings!.playbackRate,
         durationSeconds: bridgeDurationSeconds,
       });
+      markPlaybackBreadcrumb('AudioSession.playLocalFile:bridge.beginSession:complete', playbackPerfDetails());
+      markPlaybackBreadcrumb('AudioSession.playLocalFile:bridge.createSessionWritable:start', playbackPerfDetails());
       const writable = bridge.createSessionWritable?.(sessionId) ?? bridge.writable;
+      markPlaybackBreadcrumb('AudioSession.playLocalFile:bridge.createSessionWritable:complete', playbackPerfDetails());
       if (!writable) {
         throw new Error('native output bridge did not expose a writable PCM stream');
       }
@@ -2117,7 +2175,9 @@ export class AudioSession extends EventEmitter {
           nativeGapless ? 'native-gapless-dual-deck' : 'native-automix-dual-deck',
         );
       } else if (playbackRun) {
-        this.startDecoderRun(playbackRun, writable, token);
+        runPlaybackPerformanceStepSync('AudioSession.playLocalFile', 'startDecoderRun', playbackPerfDetails(), () => {
+          this.startDecoderRun(playbackRun, writable, token);
+        });
         if (isHttpPlaybackUrl(request.filePath)) {
           await this.waitForDecoderReadyBeforePlaying(playbackRun, token, {
             positionSeconds: activeChainedState?.compositeStartSeconds ?? request.startSeconds ?? 0,
@@ -5677,6 +5737,7 @@ export class AudioSession extends EventEmitter {
           this.handleError(createPossibleCorruptAudioFileError(endedPositionSeconds, expectedEndSeconds));
           return;
         }
+        noteDataProtectionPlaybackActivity(false);
         this.resetWatchdogProgress();
         this.emit('ended', this.getStatus());
         this.emitStatus();
@@ -5794,11 +5855,13 @@ export class AudioSession extends EventEmitter {
   }
 
   private startDecoderRun(run: DecoderRun, writable: Writable, token: number): void {
+    markPlaybackBreadcrumb('AudioSession.startDecoderRun:enter');
     this.decoderPipelineCleanup?.();
     run.ready?.catch(() => undefined);
     const volume = this.currentOutputSettings?.volume ?? this.outputSettings.volume;
     const nativeVolumeControl = typeof this.bridge?.setVolume === 'function';
     const replayGainCalculation = this.calculateCurrentReplayGain();
+    markPlaybackBreadcrumb('AudioSession.startDecoderRun:createTransforms:start');
     const replayGainTransform = new PcmVolumeTransform(run.replayGainAppliedInStream === true ? 1 : this.replayGainLinearGain(replayGainCalculation), 16);
     const livePcmResampler = this.createLivePcmResamplerTransform();
     const gainTransform = new PcmVolumeTransform(nativeVolumeControl ? 1 : volume);
@@ -5815,6 +5878,7 @@ export class AudioSession extends EventEmitter {
       isAudioVisualSpectrumEnabled(),
     );
     levelMeterTransform.setGain(nativeVolumeControl ? volume : 1);
+    markPlaybackBreadcrumb('AudioSession.startDecoderRun:createTransforms:complete');
     let inputEnded = false;
     const signalNativeInputEnded = (): void => {
       if (inputEnded || this.runToken !== token || this.decoderRun !== run) {
@@ -5850,6 +5914,7 @@ export class AudioSession extends EventEmitter {
     const levelErrorHandler = handlePipelineError('pcm_level_meter_error');
     const writableErrorHandler = handlePipelineError('native_writable_error');
 
+    markPlaybackBreadcrumb('AudioSession.startDecoderRun:attachHandlers:start');
     run.stream.on('error', streamErrorHandler);
     livePcmResampler?.on('error', resamplerErrorHandler);
     gainTransform.on('error', gainErrorHandler);
@@ -5868,8 +5933,11 @@ export class AudioSession extends EventEmitter {
       levelMeterTransform.off('error', levelErrorHandler);
       writable.off('error', writableErrorHandler);
     };
+    markPlaybackBreadcrumb('AudioSession.startDecoderRun:attachHandlers:complete');
     const pcmSource = livePcmResampler ? run.stream.pipe(livePcmResampler) : run.stream;
+    markPlaybackBreadcrumb('AudioSession.startDecoderRun:pipelinePipe:start');
     pcmSource.pipe(gainTransform).pipe(replayGainTransform).pipe(speedTransform).pipe(levelMeterTransform).pipe(writable, { end: false });
+    markPlaybackBreadcrumb('AudioSession.startDecoderRun:pipelinePipe:complete');
     levelMeterTransform.once('end', signalNativeInputEnded);
     run.done.catch((error: unknown) => {
       if (this.runToken === token) {

@@ -5,20 +5,26 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createManualLibraryDatabaseSnapshot,
+  createDataProtectionDisabledResult,
   createScanGuardLibraryDatabaseSnapshot,
   createDataProtectionSnapshot,
   discardQuarantinedProblemTracks,
   ensureDataProtection,
   ensureDataProtectionFastStartup,
+  ensureDataProtectionStartup,
   getLibraryDatabaseProtectionStatus,
   getProtectedUserDataPath,
   inspectLibraryDatabaseForPoison,
   initializeProtectedUserDataPath,
+  isDataProtectionBackgroundPlaybackBlockedForTest,
   isProtectedLibraryAvailable,
   migrateLegacyProtectedData,
+  noteDataProtectionPlaybackActivity,
   recordLibraryDatabaseMaintenanceEvent,
   restoreProtectedLibraryDatabaseSnapshot,
   restoreProtectedLibraryDatabaseFromScanGuard,
+  runDeferredStartupDataProtection,
+  setDataProtectionPlaybackStateProvider,
   restoreMissingProtectedData,
   scrubQuarantinedLibraryDatabase,
   shouldCreateDeferredStartupSnapshot,
@@ -32,6 +38,9 @@ vi.mock('electron', () => ({
     getPath: (name: string) => (name === 'appData' ? tmpdir() : tmpdir()),
     getVersion: () => '26.5.16-test',
     setPath: vi.fn(),
+  },
+  BrowserWindow: {
+    getAllWindows: () => [],
   },
 }));
 
@@ -115,6 +124,8 @@ describe('dataProtection', () => {
   });
 
   afterEach(() => {
+    setDataProtectionPlaybackStateProvider(null);
+    vi.useRealTimers();
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -193,6 +204,34 @@ describe('dataProtection', () => {
     expect(result.libraryHealth.status).toBe('ok');
     expect(result.restore.restored).toContain('echo-library.sqlite');
     expect(existsSync(libraryPath)).toBe(true);
+  });
+
+  it('keeps startup protection lightweight when a restore needs background work', async () => {
+    const libraryPath = join(tempDir, 'echo-library.sqlite');
+    createHealthyLibrary(libraryPath);
+    await createDataProtectionSnapshot('startup', tempDir, new Date('2026-05-18T00:00:00.000Z'));
+    rmSync(libraryPath);
+
+    const result = await ensureDataProtectionStartup('startup', tempDir);
+
+    expect(result.libraryHealth.status).toBe('unreadable');
+    expect(result.recovery.action).toBe('failed');
+    expect(result.restore.restored).toEqual([]);
+    expect(result.snapshot.snapshotPath).toBe('');
+    expect(existsSync(libraryPath)).toBe(false);
+  });
+
+  it('creates a disabled protection result without restoring or snapshotting data', () => {
+    const libraryPath = join(tempDir, 'echo-library.sqlite');
+    createHealthyLibrary(libraryPath);
+
+    const result = createDataProtectionDisabledResult(tempDir);
+
+    expect(result.libraryHealth.status).toBe('ok');
+    expect(result.recovery.action).toBe('none');
+    expect(result.restore.restored).toEqual([]);
+    expect(result.snapshot.snapshotPath).toBe('');
+    expect(existsSync(join(tempDir, 'data-protection', 'snapshots'))).toBe(false);
   });
 
   it('migrates stronger legacy echo-next data over a fresh protected directory', async () => {
@@ -345,6 +384,28 @@ describe('dataProtection', () => {
 
     expect(decision.shouldCreate).toBe(true);
     expect(decision.reason).toBe('database-changed');
+  });
+
+  it('skips background startup snapshot when an existing snapshot still matches the library', async () => {
+    createHealthyLibrary(join(tempDir, 'echo-library.sqlite'));
+    await createDataProtectionSnapshot('scan-completed-library-snapshot', tempDir, new Date('2026-05-17T00:00:00.000Z'));
+
+    const result = await runDeferredStartupDataProtection('startup', tempDir);
+
+    expect(result.libraryHealth.status).toBe('ok');
+    expect(result.snapshot.snapshotPath).toBe('');
+    expect(readdirSync(join(tempDir, 'data-protection', 'snapshots'))).toHaveLength(1);
+  });
+
+  it('keeps deferred startup protection blocked while playback or the player is still active', () => {
+    const now = Date.now();
+
+    noteDataProtectionPlaybackActivity(true, now);
+    expect(isDataProtectionBackgroundPlaybackBlockedForTest(now + 1_000)).toBe(true);
+
+    noteDataProtectionPlaybackActivity(false, now + 1_000);
+    expect(isDataProtectionBackgroundPlaybackBlockedForTest(now + 60_500)).toBe(true);
+    expect(isDataProtectionBackgroundPlaybackBlockedForTest(now + 61_500)).toBe(false);
   });
 
   it('creates deferred startup snapshot for legacy snapshots without signature fields', async () => {

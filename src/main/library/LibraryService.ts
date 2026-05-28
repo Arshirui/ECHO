@@ -2387,7 +2387,10 @@ export const createLibraryService = (
       }
     },
     onDeferredGroupingRefresh: broadcastLibraryChanged,
-    createDatabaseScanGuard: (scanStatus) => createScanGuardLibraryDatabaseSnapshot(scanStatus, dirname(databasePath)),
+    createDatabaseScanGuard: (scanStatus) =>
+      getAppSettings().dataProtectionDisabled === true
+        ? null
+        : createScanGuardLibraryDatabaseSnapshot(scanStatus, dirname(databasePath)),
     createCompletedScanSnapshot: async (scanStatus) => {
       if (
         scanStatus.addedTracks === 0 &&
@@ -2395,6 +2398,10 @@ export const createLibraryService = (
         scanStatus.removedTracks === 0 &&
         (scanStatus.coverCount ?? 0) === 0
       ) {
+        return;
+      }
+
+      if (getAppSettings().dataProtectionDisabled === true) {
         return;
       }
 

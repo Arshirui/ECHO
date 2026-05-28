@@ -47,6 +47,7 @@ describe('app settings normalization', () => {
     expect(settings.artistImageFetchPaused).toBe(false);
     expect(settings.safeModeEnabled).toBe(false);
     expect(settings.fastStartupEnabled).toBe(false);
+    expect(settings.dataProtectionDisabled).toBe(false);
     expect(settings.autoAccountCheckOnStartup).toBe(true);
     expect(settings.spotifyAutoLaunchOfficialPlayer).toBe(true);
     expect(settings.connectAutoStartReceiversEnabled).toBe(false);
@@ -179,6 +180,14 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({}).fastStartupEnabled).toBe(false);
     expect(normalizeSettings({ fastStartupEnabled: true }).fastStartupEnabled).toBe(true);
     expect(normalizeSettings({ fastStartupEnabled: 'true' }).fastStartupEnabled).toBe(false);
+  });
+
+  it('normalizes data protection disable as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).dataProtectionDisabled).toBe(false);
+    expect(normalizeSettings({ dataProtectionDisabled: true }).dataProtectionDisabled).toBe(true);
+    expect(normalizeSettings({ dataProtectionDisabled: 'true' }).dataProtectionDisabled).toBe(false);
   });
 
   it('keeps the home waveform visualizer disabled unless explicitly enabled', async () => {

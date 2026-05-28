@@ -12,6 +12,7 @@ import type {
   RendererErrorPayload,
 } from '../../shared/types/diagnostics';
 import { recordDiagnosticConsoleProblem } from './ExceptionRecorder';
+import { getPlaybackPerformanceSnapshot } from './PlaybackPerformanceDiagnostics';
 
 const mainOutputDir = import.meta.dirname;
 const appIconPath = join(mainOutputDir, '../../software.ico');
@@ -302,6 +303,26 @@ const appendOptionalValueLine = (lines: string[], label: string, value: unknown)
   }
 };
 
+const appendPlaybackBreadcrumbs = (
+  lines: string[],
+  breadcrumbs: ReturnType<typeof getPlaybackPerformanceSnapshot>['breadcrumbs'],
+): void => {
+  if (breadcrumbs.length === 0) {
+    return;
+  }
+
+  lines.push('playbackBreadcrumbs:');
+  for (const breadcrumb of breadcrumbs.slice(-12)) {
+    const parts = [
+      `-${Math.round(breadcrumb.ageMs)}ms`,
+      breadcrumb.label,
+      breadcrumb.trackId ? `track=${breadcrumb.trackId}` : null,
+      breadcrumb.outputMode ? `mode=${breadcrumb.outputMode}` : null,
+    ].filter(Boolean);
+    lines.push(`  ${parts.join(' ')}`);
+  }
+};
+
 export const recordPerformanceStall = (
   payload: DiagnosticPerformanceStallPayload,
   audioSnapshot?: Record<string, unknown> | null,
@@ -327,11 +348,24 @@ export const recordPerformanceStall = (
   if (audioSnapshot) {
     appendOptionalLine(lines, 'audioState', audioSnapshot.state);
     appendOptionalLine(lines, 'audioMode', audioSnapshot.outputMode);
+    appendOptionalLine(lines, 'audioTrackId', audioSnapshot.currentTrackId);
     appendOptionalLine(lines, 'audioBackend', audioSnapshot.activeOutputBackendImpl ?? audioSnapshot.outputBackend);
     appendOptionalValueLine(lines, 'audioPositionSeconds', audioSnapshot.positionSeconds);
     appendOptionalValueLine(lines, 'audioBufferedMs', audioSnapshot.nativeBufferedMs);
     appendOptionalValueLine(lines, 'audioUnderrunCallbacks', audioSnapshot.nativeUnderrunCallbacks);
   }
+
+  const playbackSnapshot = getPlaybackPerformanceSnapshot();
+  appendOptionalLine(lines, 'playbackOperation', playbackSnapshot.operation);
+  appendOptionalLine(lines, 'playbackPhase', playbackSnapshot.phase);
+  appendOptionalValueLine(lines, 'playbackPhaseElapsedMs', playbackSnapshot.elapsedMs);
+  appendOptionalLine(lines, 'playbackTrackId', playbackSnapshot.trackId);
+  appendOptionalLine(lines, 'playbackOutputMode', playbackSnapshot.outputMode);
+  appendOptionalLine(lines, 'pendingBackgroundTask', playbackSnapshot.pendingBackgroundTask);
+  appendOptionalLine(lines, 'lastPlaybackOperation', playbackSnapshot.lastCompletedOperation);
+  appendOptionalLine(lines, 'lastPlaybackPhase', playbackSnapshot.lastCompletedPhase);
+  appendOptionalValueLine(lines, 'lastPlaybackPhaseMs', playbackSnapshot.lastCompletedDurationMs);
+  appendPlaybackBreadcrumbs(lines, playbackSnapshot.breadcrumbs);
 
   return pushEntry(payload.source === 'renderer' ? 'renderer' : 'system', 'warn', lines.join('\n'), {
     sourceId: payload.kind,

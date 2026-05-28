@@ -185,6 +185,7 @@ export type AppSettings = {
   liveLibraryAutoHideDeletedEnabled?: boolean;
   safeModeEnabled?: boolean;
   fastStartupEnabled?: boolean;
+  dataProtectionDisabled?: boolean;
   autoUpdateEnabled?: boolean;
   autoAccountCheckOnStartup?: boolean;
   suppressAccountExpiryNotices?: boolean;

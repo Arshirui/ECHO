@@ -73,6 +73,8 @@ const sortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
   { value: 'createdDesc', labelKey: 'library.sort.createdDesc' },
   { value: 'artist', labelKey: 'folders.sort.artist' },
   { value: 'album', labelKey: 'folders.sort.album' },
+  { value: 'fileModifiedAsc', labelKey: 'library.sort.fileModifiedAsc' },
+  { value: 'fileModifiedDesc', labelKey: 'library.sort.fileModifiedDesc' },
   { value: 'recent', labelKey: 'folders.sort.recent' },
   { value: 'durationDesc', labelKey: 'folders.sort.duration' },
   { value: 'qualityDesc', labelKey: 'folders.sort.quality' },
