@@ -2104,6 +2104,51 @@
   font-variant-numeric: tabular-nums;
 }
 
+.settings-cache-panel--transport-fade {
+  max-width: min(460px, 100%);
+  gap: 8px;
+}
+
+.settings-transport-fade-slider {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.settings-transport-fade-copy {
+  color: var(--echo-heading-text);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.settings-transport-fade-value {
+  display: inline-flex;
+  min-width: 74px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  color: var(--echo-heading-text);
+  border: 1px solid var(--theme-panel-border);
+  border-radius: 8px;
+  background: var(--theme-chip-bg);
+  font-size: 12px;
+  font-weight: 820;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-transport-fade-slider input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--theme-accent-text-strong);
+}
+
+.settings-transport-fade-slider[data-disabled="true"] {
+  opacity: 0.64;
+}
+
 .settings-modal-backdrop {
   position: fixed;
   z-index: 100;
@@ -8623,17 +8668,16 @@
 
 .settings-cache-panel--replay-gain {
   max-width: none;
-  gap: 10px;
+  gap: 8px;
 }
 
-.settings-replay-gain-toolbar {
+.settings-replay-gain-simple {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px 14px;
-  align-items: start;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
 }
 
-.settings-replay-gain-primary,
 .settings-replay-gain-presets,
 .settings-replay-gain-mode,
 .settings-replay-gain-toggles {
@@ -8641,32 +8685,51 @@
 }
 
 .settings-replay-gain-presets {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
-.settings-status-grid.settings-status-grid--replay-gain {
+.settings-replay-gain-summary {
+  display: grid;
   width: 100%;
-  max-width: none;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  grid-template-columns: repeat(4, minmax(104px, 1fr));
   gap: 6px;
 }
 
-.settings-status-grid--replay-gain span {
-  min-height: 42px;
-  padding: 7px 9px;
+.settings-replay-gain-summary span {
+  display: grid;
+  min-width: 0;
+  min-height: 36px;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--theme-page-text) 7%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-panel-bg) 54%, transparent);
 }
 
-.settings-status-grid--replay-gain em {
+.settings-replay-gain-summary em {
+  overflow: hidden;
+  color: var(--theme-muted-text);
   font-size: 9px;
+  font-style: normal;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.settings-status-grid--replay-gain strong {
+.settings-replay-gain-summary strong {
+  overflow: hidden;
+  color: var(--echo-heading-text);
   font-size: 11px;
+  font-weight: 840;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-replay-gain-advanced {
   display: grid;
   gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--theme-page-text) 8%, transparent);
 }
 
 .settings-data-backup-panel {
@@ -15369,7 +15432,7 @@ html[data-theme="dark"] .history-play-count {
     justify-content: flex-start;
   }
 
-  .settings-replay-gain-toolbar {
+  .settings-replay-gain-simple {
     grid-template-columns: 1fr;
   }
 

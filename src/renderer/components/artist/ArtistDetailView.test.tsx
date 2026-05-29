@@ -362,6 +362,24 @@ describe('ArtistDetailView', () => {
     });
   });
 
+  it('reveals more local overview tracks from the load more button', async () => {
+    mockTracks = Array.from({ length: 8 }, (_, index) => track(String(index + 1)));
+    mockTotal = 8;
+    installLibrary();
+
+    renderDetail(artist({ trackCount: 8 }));
+
+    expect(await screen.findByText('Track 6')).toBeTruthy();
+    expect(screen.queryByText('Track 7')).toBeNull();
+    expect(screen.getByText('6 of 8 tracks')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+
+    expect(await screen.findByText('Track 7')).toBeTruthy();
+    expect(screen.getByText('8 of 8 tracks')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  });
+
   it('returns from the artist detail after Escape plays the back animation', async () => {
     installLibrary();
     const onBack = vi.fn();

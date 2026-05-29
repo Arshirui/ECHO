@@ -59,7 +59,6 @@ import type {
   AppThemePreset,
   AppThemePresetOverrides,
   AppThemeToneOverride,
-  AudioTransportFadeCurve,
   NetworkProxyMode,
   NetworkProxyTestResult,
 } from '../../shared/types/appSettings';
@@ -211,12 +210,6 @@ const audioExportFormatOptions: Array<{ format: AudioExportFormat; label: string
   { format: 'wav', label: 'WAV' },
   { format: 'flac', label: 'FLAC' },
   { format: 'ogg', label: 'OGG' },
-];
-
-const transportFadeCurveOptions: Array<{ curve: AudioTransportFadeCurve; labelKey: TranslationKey }> = [
-  { curve: 'linear', labelKey: 'settings.playback.transportFade.curve.linear' },
-  { curve: 'smooth', labelKey: 'settings.playback.transportFade.curve.smooth' },
-  { curve: 'equalPower', labelKey: 'settings.playback.transportFade.curve.equalPower' },
 ];
 
 const globalShortcutActionMeta: Array<{
@@ -4180,7 +4173,7 @@ export const SettingsPage = (): JSX.Element => {
         targetId: 'settings-row-volume-balance',
         title: t('settings.playback.replayGain.title'),
         description: t('settings.playback.replayGain.description'),
-        terms: [t('settings.playback.replayGain.title'), t('settings.playback.replayGain.description'), '音量标准化', '音量標準化', '音量ノーマライズ', '音量自动平衡', '音量平衡', '响度', 'Spotify', 'ReplayGain', 'replay gain', 'loudness', 'lufs'],
+        terms: [t('settings.playback.replayGain.title'), t('settings.playback.replayGain.description'), '音量标准化', '音量標準化', '音量ノーマライズ', '音量自动平衡', '音量平衡', '响度', 'ReplayGain', 'replay gain', 'loudness', 'lufs'],
       },
       {
         id: 'row-mono-audio',
@@ -8771,6 +8764,24 @@ export const SettingsPage = (): JSX.Element => {
   const themeScheduleStatus = themeScheduleEnabled
     ? `已启用：${themeScheduleDarkAt} 切到深色，${themeScheduleLightAt} 自动切回浅色。当前按本机时间使用${scheduledThemeMode === 'dark' ? '深色' : '浅色'}。`
     : '关闭后仍使用上面的手动主题模式。';
+  const transportFadeInMs = appSettings?.audioTransportFadeInMs ?? 80;
+  const transportFadeOutMs = appSettings?.audioTransportFadeOutMs ?? transportFadeInMs;
+  const transportFadeDurationMs = appSettings?.audioTransportFadeEnabled
+    ? Math.max(0, Math.round((transportFadeInMs + transportFadeOutMs) / 2))
+    : 0;
+  const transportFadeDurationLabel = transportFadeDurationMs > 0
+    ? `${transportFadeDurationMs} ms`
+    : t('settings.playback.transportFade.status.disabled');
+  const replayGainMode = appSettings?.replayGainMode ?? 'track';
+  const replayGainTargetLufs = appSettings?.replayGainTargetLufs ?? SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS;
+  const replayGainModeLabel = replayGainMode === 'album'
+    ? t('settings.playback.replayGain.mode.album')
+    : replayGainMode === 'off'
+      ? t('settings.playback.replayGain.mode.off')
+      : t('settings.playback.replayGain.mode.track');
+  const replayGainAppliedLabel = Number.isFinite(status?.replayGainAppliedDb) ? `${status?.replayGainAppliedDb?.toFixed(2)} dB` : '0 dB';
+  const replayGainProgressLabel = replayGainAnalysisJob ? `${replayGainAnalysisJob.processedTracks}/${replayGainAnalysisJob.totalTracks}` : t('settings.playback.replayGain.notRun');
+
   return (
     <div className="settings-page no-drag">
       <header className="settings-header">
@@ -9462,51 +9473,29 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('settings.playback.transportFade.title')}
                 description={t('settings.playback.transportFade.description')}
               >
-                <div className="settings-cache-panel">
-                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
-                    <div className="settings-inline-toggle">
-                      <span>{appSettings?.audioTransportFadeEnabled ? t('settings.playback.transportFade.status.enabled') : t('settings.playback.transportFade.status.disabled')}</span>
-                      <ToggleButton
-                        active={appSettings?.audioTransportFadeEnabled ?? false}
-                        disabled={!appSettings}
-                        onClick={() => patchAppSettings({ audioTransportFadeEnabled: !(appSettings?.audioTransportFadeEnabled ?? false) })}
-                      />
-                    </div>
-                    <label className="settings-number-field">
-                      <span>{t('settings.playback.transportFade.field.fadeIn')}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={2000}
-                        step={10}
-                        value={appSettings?.audioTransportFadeInMs ?? 80}
-                        onChange={(event) => patchAppSettings({ audioTransportFadeInMs: Number(event.currentTarget.value) })}
-                      />
-                    </label>
-                    <label className="settings-number-field">
-                      <span>{t('settings.playback.transportFade.field.fadeOut')}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={2000}
-                        step={10}
-                        value={appSettings?.audioTransportFadeOutMs ?? 80}
-                        onChange={(event) => patchAppSettings({ audioTransportFadeOutMs: Number(event.currentTarget.value) })}
-                      />
-                    </label>
-                  </div>
-                  <div className="settings-chip-row settings-chip-row--left">
-                    <span className="settings-inline-note">{t('settings.playback.transportFade.field.curve')}</span>
-                    {transportFadeCurveOptions.map((item) => (
-                      <ChipButton
-                        active={(appSettings?.audioTransportFadeCurve ?? 'smooth') === item.curve}
-                        key={item.curve}
-                        onClick={() => patchAppSettings({ audioTransportFadeCurve: item.curve })}
-                      >
-                        {t(item.labelKey)}
-                      </ChipButton>
-                    ))}
-                  </div>
+                <div className="settings-cache-panel settings-cache-panel--transport-fade">
+                  <label className="settings-transport-fade-slider" data-disabled={!appSettings ? 'true' : undefined}>
+                    <span className="settings-transport-fade-copy">{t('settings.playback.transportFade.field.duration')}</span>
+                    <strong className="settings-transport-fade-value">{transportFadeDurationLabel}</strong>
+                    <input
+                      type="range"
+                      min={0}
+                      max={2000}
+                      step={10}
+                      value={transportFadeDurationMs}
+                      disabled={!appSettings}
+                      aria-valuetext={transportFadeDurationLabel}
+                      onChange={(event) => {
+                        const durationMs = Math.max(0, Math.min(2000, Number(event.currentTarget.value) || 0));
+                        patchAppSettings({
+                          audioTransportFadeEnabled: durationMs > 0,
+                          audioTransportFadeInMs: durationMs,
+                          audioTransportFadeOutMs: durationMs,
+                          audioTransportFadeCurve: 'smooth',
+                        });
+                      }}
+                    />
+                  </label>
                 </div>
               </SettingRow>
               <SettingRow
@@ -9610,37 +9599,18 @@ export const SettingsPage = (): JSX.Element => {
                 description={t('settings.playback.replayGain.description')}
               >
                 <div className="settings-cache-panel settings-cache-panel--replay-gain">
-                  <div className="settings-replay-gain-toolbar">
-                    <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions settings-replay-gain-primary">
-                      <div className="settings-inline-toggle">
-                        <span>{appSettings?.replayGainEnabled ? t('settings.playback.replayGain.status.enabled') : t('settings.playback.replayGain.status.disabled')}</span>
-                        <ToggleButton
-                          active={appSettings?.replayGainEnabled ?? false}
-                          disabled={!appSettings}
-                          onClick={() => patchAppSettings({ replayGainEnabled: !(appSettings?.replayGainEnabled ?? false) })}
-                        />
-                      </div>
-                      <button
-                        className="settings-action-button"
-                        type="button"
-                        disabled={replayGainAnalysisBusy}
-                        onClick={() => void handleStartReplayGainAnalysis()}
-                      >
-                        <RotateCw className={replayGainAnalysisBusy ? 'spinning-icon' : undefined} size={15} />
-                        {replayGainAnalysisBusy ? t('settings.playback.replayGain.action.analyzing') : t('settings.playback.replayGain.action.analyzeMissing')}
-                      </button>
-                      <button
-                        className="settings-action-button"
-                        type="button"
-                        onClick={() => setReplayGainAdvancedOpen((open) => !open)}
-                      >
-                        <SlidersHorizontal size={15} />
-                        {t('settings.playback.replayGain.action.advanced')}
-                      </button>
+                  <div className="settings-replay-gain-simple">
+                    <div className="settings-inline-toggle settings-replay-gain-toggle">
+                      <span>{appSettings?.replayGainEnabled ? t('settings.playback.replayGain.status.enabled') : t('settings.playback.replayGain.status.disabled')}</span>
+                      <ToggleButton
+                        active={appSettings?.replayGainEnabled ?? false}
+                        disabled={!appSettings}
+                        onClick={() => patchAppSettings({ replayGainEnabled: !(appSettings?.replayGainEnabled ?? false) })}
+                      />
                     </div>
                     <div className="settings-chip-row settings-chip-row--left settings-replay-gain-presets">
                       <ChipButton
-                        active={(appSettings?.replayGainTargetLufs ?? SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS) === SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS}
+                        active={replayGainTargetLufs === SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS}
                         onClick={() =>
                           patchAppSettings({
                             replayGainEnabled: true,
@@ -9651,10 +9621,10 @@ export const SettingsPage = (): JSX.Element => {
                           })
                         }
                       >
-                        Spotify Normal (-14 LUFS)
+                        {t('settings.playback.replayGain.preset.standard')}
                       </ChipButton>
                       <ChipButton
-                        active={(appSettings?.replayGainTargetLufs ?? SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS) === QUIET_REPLAY_GAIN_TARGET_LUFS}
+                        active={replayGainTargetLufs === QUIET_REPLAY_GAIN_TARGET_LUFS}
                         onClick={() =>
                           patchAppSettings({
                             replayGainEnabled: true,
@@ -9665,30 +9635,34 @@ export const SettingsPage = (): JSX.Element => {
                           })
                         }
                       >
-                        Quiet (-18 LUFS)
+                        {t('settings.playback.replayGain.preset.quiet')}
                       </ChipButton>
                     </div>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      onClick={() => setReplayGainAdvancedOpen((open) => !open)}
+                    >
+                      <SlidersHorizontal size={15} />
+                      {t('settings.playback.replayGain.action.advanced')}
+                    </button>
                   </div>
-                  <div className="settings-status-grid settings-status-grid--replay-gain">
+                  <div className="settings-replay-gain-summary">
                     <span>
                       <em>{t('settings.playback.replayGain.field.mode')}</em>
-                      <strong>{(appSettings?.replayGainMode ?? 'track') === 'album' ? t('settings.playback.replayGain.mode.album') : (appSettings?.replayGainMode ?? 'track') === 'off' ? t('settings.playback.replayGain.mode.off') : t('settings.playback.replayGain.mode.track')}</strong>
+                      <strong>{replayGainModeLabel}</strong>
                     </span>
                     <span>
                       <em>{t('settings.playback.replayGain.field.target')}</em>
-                      <strong>{appSettings?.replayGainTargetLufs ?? SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS} LUFS</strong>
+                      <strong>{replayGainTargetLufs} LUFS</strong>
                     </span>
                     <span>
                       <em>{t('settings.playback.replayGain.field.applied')}</em>
-                      <strong>{Number.isFinite(status?.replayGainAppliedDb) ? `${status?.replayGainAppliedDb?.toFixed(2)} dB` : '0 dB'}</strong>
-                    </span>
-                    <span>
-                      <em>{t('settings.playback.replayGain.field.preventClipping')}</em>
-                      <strong>{appSettings?.replayGainPreventClipping ?? true ? t('settings.playback.status.on') : t('settings.playback.status.off')}</strong>
+                      <strong>{replayGainAppliedLabel}</strong>
                     </span>
                     <span>
                       <em>{t('settings.playback.replayGain.field.progress')}</em>
-                      <strong>{replayGainAnalysisJob ? `${replayGainAnalysisJob.processedTracks}/${replayGainAnalysisJob.totalTracks}` : t('settings.playback.replayGain.notRun')}</strong>
+                      <strong>{replayGainProgressLabel}</strong>
                     </span>
                   </div>
                   {replayGainAdvancedOpen ? (
@@ -9747,7 +9721,7 @@ export const SettingsPage = (): JSX.Element => {
                           />
                         </label>
                         <label className="settings-number-field">
-                          <span>Preamp dB</span>
+                          <span>{t('settings.playback.replayGain.field.preamp')} dB</span>
                           <input
                             type="number"
                             min={-12}
@@ -9757,6 +9731,15 @@ export const SettingsPage = (): JSX.Element => {
                             onChange={(event) => patchAppSettings({ replayGainPreampDb: Number(event.currentTarget.value) })}
                           />
                         </label>
+                        <button
+                          className="settings-action-button"
+                          type="button"
+                          disabled={replayGainAnalysisBusy}
+                          onClick={() => void handleStartReplayGainAnalysis()}
+                        >
+                          <RotateCw className={replayGainAnalysisBusy ? 'spinning-icon' : undefined} size={15} />
+                          {replayGainAnalysisBusy ? t('settings.playback.replayGain.action.analyzing') : t('settings.playback.replayGain.action.analyzeMissing')}
+                        </button>
                       </div>
                     </div>
                   ) : null}

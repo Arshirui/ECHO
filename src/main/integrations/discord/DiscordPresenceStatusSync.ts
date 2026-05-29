@@ -42,7 +42,10 @@ export const initializeDiscordPresenceIntegration = async (): Promise<void> => {
   };
   getAudioSession().on('status', state.statusListener);
   state.initialized = true;
-  await syncDiscordPresenceStatus();
+  const initialStatus = getAudioSession().getStatus();
+  if (initialStatus.state === 'playing' || initialStatus.state === 'loading') {
+    await syncDiscordPresenceStatus(initialStatus);
+  }
 };
 
 export const disposeDiscordPresenceIntegration = (): void => {

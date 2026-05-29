@@ -30,6 +30,10 @@ export type PlaybackPerformanceSnapshot = {
   trackId: string | null;
   outputMode: string | null;
   pendingBackgroundTask: string | null;
+  pendingBackgroundTaskElapsedMs: number | null;
+  lastBackgroundTask: string | null;
+  lastBackgroundTaskDurationMs: number | null;
+  lastBackgroundTaskAgeMs: number | null;
   lastCompletedPhase: string | null;
   lastCompletedOperation: string | null;
   lastCompletedDurationMs: number | null;
@@ -40,9 +44,12 @@ const recentStepTtlMs = 15_000;
 const maxBreadcrumbs = 20;
 const breadcrumbTtlMs = 30_000;
 const slowPlaybackStepWarnThresholdMs = 750;
+const recentBackgroundTaskTtlMs = 30_000;
 let activeContext: PlaybackPerformanceContext | null = null;
 let lastCompletedStep: PlaybackPerformanceCompletedStep | null = null;
 let pendingBackgroundTask: string | null = null;
+let pendingBackgroundTaskStartedAtMs: number | null = null;
+let lastCompletedBackgroundTask: { name: string; durationMs: number; endedAtMs: number } | null = null;
 let breadcrumbs: Omit<PlaybackPerformanceBreadcrumb, 'ageMs'>[] = [];
 
 const formatDetails = (details: Record<string, unknown>): string => {
@@ -153,14 +160,28 @@ export const runPlaybackPerformanceStepSync = <T>(
 
 export const beginMainBackgroundTask = (name: string): (() => void) => {
   const previous = pendingBackgroundTask;
+  const previousStartedAtMs = pendingBackgroundTaskStartedAtMs;
+  const startedAtMs = Date.now();
   pendingBackgroundTask = name;
+  pendingBackgroundTaskStartedAtMs = startedAtMs;
   return () => {
+    const endedAtMs = Date.now();
+    lastCompletedBackgroundTask = {
+      name,
+      durationMs: Math.max(0, endedAtMs - startedAtMs),
+      endedAtMs,
+    };
     pendingBackgroundTask = previous;
+    pendingBackgroundTaskStartedAtMs = previousStartedAtMs;
   };
 };
 
 export const getPlaybackPerformanceSnapshot = (nowMs = Date.now()): PlaybackPerformanceSnapshot => {
   const recent = lastCompletedStep && nowMs - lastCompletedStep.endedAtMs <= recentStepTtlMs ? lastCompletedStep : null;
+  const recentBackgroundTask =
+    lastCompletedBackgroundTask && nowMs - lastCompletedBackgroundTask.endedAtMs <= recentBackgroundTaskTtlMs
+      ? lastCompletedBackgroundTask
+      : null;
   const recentBreadcrumbs = breadcrumbs
     .filter((entry) => nowMs - entry.timestampMs <= breadcrumbTtlMs)
     .map((entry) => ({
@@ -174,6 +195,11 @@ export const getPlaybackPerformanceSnapshot = (nowMs = Date.now()): PlaybackPerf
     trackId: activeContext?.trackId ?? recent?.trackId ?? null,
     outputMode: activeContext?.outputMode ?? recent?.outputMode ?? null,
     pendingBackgroundTask,
+    pendingBackgroundTaskElapsedMs:
+      pendingBackgroundTaskStartedAtMs !== null ? Math.max(0, nowMs - pendingBackgroundTaskStartedAtMs) : null,
+    lastBackgroundTask: recentBackgroundTask?.name ?? null,
+    lastBackgroundTaskDurationMs: recentBackgroundTask?.durationMs ?? null,
+    lastBackgroundTaskAgeMs: recentBackgroundTask ? Math.max(0, nowMs - recentBackgroundTask.endedAtMs) : null,
     lastCompletedPhase: recent?.phase ?? null,
     lastCompletedOperation: recent?.operation ?? null,
     lastCompletedDurationMs: recent?.durationMs ?? null,

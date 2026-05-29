@@ -27,6 +27,8 @@ const streamingAlbumDetailFetchDelayMs = 220;
 const streamingAlbumInitialTrackRenderCount = 24;
 const streamingAlbumTrackRenderStep = 48;
 const streamingAlbumTrackRenderDelayMs = 80;
+const overviewTrackInitialCount = 6;
+const overviewTrackLoadStep = 6;
 
 type StreamingAlbumProviderPageState = {
   nextPage: number;
@@ -558,6 +560,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [loadedTracks, setLoadedTracks] = useState<LibraryTrack[]>([]);
   const [loadedTrackTotal, setLoadedTrackTotal] = useState(artist.trackCount);
+  const [overviewTrackVisibleCount, setOverviewTrackVisibleCount] = useState(overviewTrackInitialCount);
   const [areTracksLoading, setAreTracksLoading] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
   const [artistInsights, setArtistInsights] = useState<ArtistInsights | null>(null);
@@ -675,6 +678,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
     setResolvingStreamingTrackKey(null);
     setQueuedStreamingTrackKey(null);
     setAreConcertsExpanded(true);
+    setOverviewTrackVisibleCount(overviewTrackInitialCount);
     setActiveTab('overview');
   }, [artist.id]);
 
@@ -1037,6 +1041,10 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
     loadedTracks.forEach((track) => appendToQueue(track, source));
   }, [appendToQueue, loadedTracks, source]);
 
+  const handleLoadMoreOverviewTracks = useCallback((): void => {
+    setOverviewTrackVisibleCount((current) => Math.min(current + overviewTrackLoadStep, loadedTracks.length));
+  }, [loadedTracks.length]);
+
   const handleSelectAlbum = useCallback((album: LibraryAlbum): void => {
     detailScrollTopRef.current = readPageScrollTop(detailRootRef.current);
     shouldRestoreDetailScrollRef.current = true;
@@ -1222,7 +1230,9 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
     .filter((link) => isAroundWebLink(link.label, link.url))
     .map((link) => ({ ...link, label: aroundWebLabel(link.label, link.url), host: aroundWebHost(link.url) }))
     .slice(0, 8);
-  const overviewPreviewTracks = loadedTracks.slice(0, 6);
+  const visibleOverviewTrackCount = Math.min(overviewTrackVisibleCount, loadedTracks.length);
+  const overviewPreviewTracks = loadedTracks.slice(0, visibleOverviewTrackCount);
+  const hasMoreOverviewTracks = visibleOverviewTrackCount < loadedTracks.length;
 
   if (selectedStreamingAlbum) {
     const album = selectedStreamingAlbumDetail ?? selectedStreamingAlbum;
@@ -1468,32 +1478,39 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
               </div>
               <small>
                 {loadedTracks.length > 0
-                  ? t('artistDetail.tracks.loadedCount', { loaded: Math.min(overviewPreviewTracks.length, loadedTracks.length), total: loadedTrackTotal })
+                  ? t('artistDetail.tracks.loadedCount', { loaded: visibleOverviewTrackCount, total: loadedTrackTotal })
                   : t('artistDetail.tracks.loading')}
               </small>
             </header>
             {overviewPreviewTracks.length > 0 ? (
-              <div className="artist-overview-track-grid">
-                {overviewPreviewTracks.map((track) => {
-                  const shouldShowCover = Boolean(track.coverThumb);
+              <>
+                <div className="artist-overview-track-grid">
+                  {overviewPreviewTracks.map((track) => {
+                    const shouldShowCover = Boolean(track.coverThumb);
 
-                  return (
-                    <article className="artist-overview-track-card" key={track.id}>
-                      <span className="artist-overview-track-cover" data-empty={!shouldShowCover} aria-hidden="true">
-                        {shouldShowCover ? <img alt="" decoding="async" draggable={false} loading="lazy" src={track.coverThumb!} /> : <Disc3 size={20} />}
-                      </span>
-                      <span className="artist-overview-track-copy">
-                        <strong>{track.title}</strong>
-                        <small>{track.album || t('artistDetail.tracks.unknownAlbum')}</small>
-                      </span>
-                      <time>{formatTrackDuration(track.duration)}</time>
-                      <button type="button" aria-label={`${t('artistDetail.action.playArtist')}: ${track.title}`} onClick={() => void handlePlayPreviewTrack(track)}>
-                        <Play size={14} fill="currentColor" />
-                      </button>
-                    </article>
-                  );
-                })}
-              </div>
+                    return (
+                      <article className="artist-overview-track-card" key={track.id}>
+                        <span className="artist-overview-track-cover" data-empty={!shouldShowCover} aria-hidden="true">
+                          {shouldShowCover ? <img alt="" decoding="async" draggable={false} loading="lazy" src={track.coverThumb!} /> : <Disc3 size={20} />}
+                        </span>
+                        <span className="artist-overview-track-copy">
+                          <strong>{track.title}</strong>
+                          <small>{track.album || t('artistDetail.tracks.unknownAlbum')}</small>
+                        </span>
+                        <time>{formatTrackDuration(track.duration)}</time>
+                        <button type="button" aria-label={t('queue.action.play', { title: track.title })} onClick={() => void handlePlayPreviewTrack(track)}>
+                          <Play size={14} fill="currentColor" />
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+                {hasMoreOverviewTracks ? (
+                  <button className="artist-load-more artist-overview-track-load-more" type="button" onClick={handleLoadMoreOverviewTracks}>
+                    {t('albumDetail.tracks.loadMore')}
+                  </button>
+                ) : null}
+              </>
             ) : (
               <p className="artist-detail-empty">{areTracksLoading ? t('artistDetail.tracks.loading') : t('artistDetail.tracks.empty')}</p>
             )}

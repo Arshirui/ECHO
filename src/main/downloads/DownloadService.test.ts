@@ -372,6 +372,18 @@ describe('DownloadService', () => {
     expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ outputDirectory, importToLibrary: true }));
   });
 
+  it('does not register the saved download directory while constructing the service', () => {
+    const outputDirectory = makeTempRoot();
+    const addLibraryFolder = vi.fn();
+    const service = new DownloadService(undefined, undefined, {
+      addLibraryFolder,
+      loadSettings: () => ({ outputDirectory, importToLibrary: false, bindMvAfterImport: false }),
+    });
+
+    expect(service.getSettings().outputDirectory).toBe(outputDirectory);
+    expect(addLibraryFolder).not.toHaveBeenCalled();
+  });
+
   it('registers the selected download directory as a library folder', () => {
     const outputDirectory = makeTempRoot();
     const addLibraryFolder = vi.fn();

@@ -4,16 +4,24 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from './createDatabase';
-import { checkDatabaseHealth, isSqliteCorruptionMessage } from './health';
+import {
+  checkDatabaseHealth,
+  checkDatabaseHealthCached,
+  clearDatabaseHealthCacheForTests,
+  isSqliteCorruptionMessage,
+  rememberDatabaseHealthOk,
+} from './health';
 
 describe('database health', () => {
   let root: string;
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'echo-db-health-'));
+    clearDatabaseHealthCacheForTests();
   });
 
   afterEach(() => {
+    clearDatabaseHealthCacheForTests();
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -58,5 +66,35 @@ describe('database health', () => {
 
   it('treats malformed database schema errors as corruption', () => {
     expect(isSqliteCorruptionMessage('malformed database schema (6301a741-3d56-407f-a3d6-77e5a19a8416)')).toBe(true);
+  });
+
+  it('reuses a healthy quick check when the database triplet signature is unchanged', () => {
+    const databasePath = join(root, 'library.sqlite');
+    const database = new Database(databasePath);
+    database.exec('CREATE TABLE sample (id TEXT PRIMARY KEY)');
+    database.close();
+
+    expect(checkDatabaseHealthCached(databasePath).message).toBeUndefined();
+    expect(checkDatabaseHealthCached(databasePath)).toMatchObject({
+      status: 'ok',
+      message: 'reused cached healthy database check',
+    });
+  });
+
+  it('remembers the post-open database signature when WAL side files appear', () => {
+    const databasePath = join(root, 'library.sqlite');
+    const database = new Database(databasePath);
+    database.exec('CREATE TABLE sample (id TEXT PRIMARY KEY)');
+    database.close();
+
+    expect(checkDatabaseHealthCached(databasePath).message).toBeUndefined();
+    writeFileSync(`${databasePath}-wal`, 'created after open', 'utf8');
+    writeFileSync(`${databasePath}-shm`, 'created after open', 'utf8');
+    rememberDatabaseHealthOk(databasePath);
+
+    expect(checkDatabaseHealthCached(databasePath)).toMatchObject({
+      status: 'ok',
+      message: 'database health verified in active connection',
+    });
   });
 });

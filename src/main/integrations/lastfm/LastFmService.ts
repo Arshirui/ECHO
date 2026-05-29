@@ -238,6 +238,10 @@ export class LastFmService {
     try {
       this.updateElapsed(status);
 
+      if (!this.activeSession && status.state !== 'playing') {
+        return;
+      }
+
       const identity = this.identityFromStatus(status);
       const shouldFinish = this.activeSession && (!identity || identity !== this.activeSession.identity || terminalStates.has(status.state));
       if (shouldFinish) {
@@ -245,10 +249,6 @@ export class LastFmService {
       }
 
       if (terminalStates.has(status.state) || !identity) {
-        return;
-      }
-
-      if (!this.activeSession && status.state !== 'playing') {
         return;
       }
 

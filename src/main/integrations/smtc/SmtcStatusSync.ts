@@ -341,7 +341,10 @@ export const initializeSmtcIntegration = async (): Promise<void> => {
   };
   getAudioSession().on('status', state.statusListener);
   state.initialized = true;
-  await syncSmtcStatus();
+  const initialStatus = getAudioSession().getStatus();
+  if (initialStatus.state === 'playing' || initialStatus.state === 'loading') {
+    await syncSmtcStatus(initialStatus);
+  }
 };
 
 export const disposeSmtcIntegration = async (): Promise<void> => {

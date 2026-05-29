@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runPlaybackPerformanceStepSync } from './PlaybackPerformanceDiagnostics';
+import { beginMainBackgroundTask, getPlaybackPerformanceSnapshot, runPlaybackPerformanceStepSync } from './PlaybackPerformanceDiagnostics';
 
 describe('PlaybackPerformanceDiagnostics', () => {
   afterEach(() => {
@@ -22,5 +22,22 @@ describe('PlaybackPerformanceDiagnostics', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('[playback-perf] PlaybackPlayLocalFile:playback.playLocalFile IPC 800ms'));
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('probableCause=slow_playback_phase'));
     expect(info).not.toHaveBeenCalled();
+  });
+
+  it('keeps a recent completed main background task in the performance snapshot', () => {
+    let now = 2000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+    const clear = beginMainBackgroundTask('startup:ipc:downloads');
+    now = 6800;
+    clear();
+    now = 7000;
+
+    expect(getPlaybackPerformanceSnapshot()).toMatchObject({
+      pendingBackgroundTask: null,
+      lastBackgroundTask: 'startup:ipc:downloads',
+      lastBackgroundTaskDurationMs: 4800,
+      lastBackgroundTaskAgeMs: 200,
+    });
   });
 });

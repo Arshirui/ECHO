@@ -1974,6 +1974,7 @@ export type TranslationKey =
   | 'settings.playback.transportFade.curve.smooth'
   | 'settings.playback.transportFade.description'
   | 'settings.playback.transportFade.field.curve'
+  | 'settings.playback.transportFade.field.duration'
   | 'settings.playback.transportFade.field.fadeIn'
   | 'settings.playback.transportFade.field.fadeOut'
   | 'settings.playback.transportFade.status.disabled'
@@ -2053,12 +2054,15 @@ export type TranslationKey =
   | 'settings.playback.replayGain.field.applied'
   | 'settings.playback.replayGain.field.mode'
   | 'settings.playback.replayGain.field.preventClipping'
+  | 'settings.playback.replayGain.field.preamp'
   | 'settings.playback.replayGain.field.progress'
   | 'settings.playback.replayGain.field.target'
   | 'settings.playback.replayGain.mode.album'
   | 'settings.playback.replayGain.mode.off'
   | 'settings.playback.replayGain.mode.track'
   | 'settings.playback.replayGain.notRun'
+  | 'settings.playback.replayGain.preset.quiet'
+  | 'settings.playback.replayGain.preset.standard'
   | 'settings.playback.replayGain.status.disabled'
   | 'settings.playback.replayGain.status.enabled'
   | 'settings.playback.replayGain.title'
@@ -4130,8 +4134,9 @@ const zhCN: TranslationMap = {
   'settings.playback.transportFade.curve.equalPower': '等功率',
   'settings.playback.transportFade.curve.linear': '线性',
   'settings.playback.transportFade.curve.smooth': '平滑',
-  'settings.playback.transportFade.description': '默认关闭。开启后只在手动播放 / 暂停时做音量淡入淡出；可分别设置淡入、淡出时长和曲线。',
+  'settings.playback.transportFade.description': '拖到 0 ms 关闭；开启后手动播放 / 暂停使用同一段淡入淡出时长。',
   'settings.playback.transportFade.field.curve': '曲线',
+  'settings.playback.transportFade.field.duration': '时长',
   'settings.playback.transportFade.field.fadeIn': '淡入 ms',
   'settings.playback.transportFade.field.fadeOut': '淡出 ms',
   'settings.playback.transportFade.status.disabled': '未开启',
@@ -4206,17 +4211,20 @@ const zhCN: TranslationMap = {
   'settings.playback.replayGain.action.advanced': '高级',
   'settings.playback.replayGain.action.analyzeMissing': '分析缺失音量',
   'settings.playback.replayGain.action.analyzing': '分析中...',
-  'settings.playback.replayGain.description': 'Spotify Normal 风格的响度拉齐；只读取标签或写入 ECHO 数据库，不修改你的音乐文件。',
+  'settings.playback.replayGain.description': '把不同歌曲的听感音量拉齐；只读取标签或写入 ECHO 数据库，不修改你的音乐文件。',
   'settings.playback.replayGain.error': '音量分析错误 {count} 个，已跳过问题文件。',
   'settings.playback.replayGain.field.applied': '当前应用',
   'settings.playback.replayGain.field.mode': '模式',
   'settings.playback.replayGain.field.preventClipping': '防削波',
+  'settings.playback.replayGain.field.preamp': '前级增益',
   'settings.playback.replayGain.field.progress': '进度',
   'settings.playback.replayGain.field.target': '目标响度',
   'settings.playback.replayGain.mode.album': '专辑',
   'settings.playback.replayGain.mode.off': '关闭',
   'settings.playback.replayGain.mode.track': '单曲',
   'settings.playback.replayGain.notRun': '尚未运行',
+  'settings.playback.replayGain.preset.quiet': '安静 (-18 LUFS)',
+  'settings.playback.replayGain.preset.standard': '标准 (-14 LUFS)',
   'settings.playback.replayGain.status.disabled': '未开启',
   'settings.playback.replayGain.status.enabled': '已开启',
   'settings.playback.replayGain.title': '音量标准化',
@@ -5752,8 +5760,9 @@ const zhTW: TranslationMap = {
   'settings.playback.transportFade.curve.equalPower': '等功率',
   'settings.playback.transportFade.curve.linear': '線性',
   'settings.playback.transportFade.curve.smooth': '平滑',
-  'settings.playback.transportFade.description': '預設關閉。開啟後只在手動播放 / 暫停時做音量淡入淡出；可分別設定淡入、淡出時長和曲線。',
+  'settings.playback.transportFade.description': '拖到 0 ms 關閉；開啟後手動播放 / 暫停使用同一段淡入淡出時長。',
   'settings.playback.transportFade.field.curve': '曲線',
+  'settings.playback.transportFade.field.duration': '時長',
   'settings.playback.transportFade.field.fadeIn': '淡入 ms',
   'settings.playback.transportFade.field.fadeOut': '淡出 ms',
   'settings.playback.transportFade.status.disabled': '未開啟',
@@ -5823,17 +5832,20 @@ const zhTW: TranslationMap = {
   'settings.playback.replayGain.action.advanced': '進階',
   'settings.playback.replayGain.action.analyzeMissing': '分析缺失音量',
   'settings.playback.replayGain.action.analyzing': '分析中...',
-  'settings.playback.replayGain.description': 'Spotify Normal 風格的響度拉齊；只讀取標籤或寫入 ECHO 資料庫，不修改你的音樂檔案。',
+  'settings.playback.replayGain.description': '把不同歌曲的聽感音量拉齊；只讀取標籤或寫入 ECHO 資料庫，不修改你的音樂檔案。',
   'settings.playback.replayGain.error': '音量分析錯誤 {count} 個，已略過問題檔案。',
   'settings.playback.replayGain.field.applied': '目前套用',
   'settings.playback.replayGain.field.mode': '模式',
   'settings.playback.replayGain.field.preventClipping': '防削波',
+  'settings.playback.replayGain.field.preamp': '前級增益',
   'settings.playback.replayGain.field.progress': '進度',
   'settings.playback.replayGain.field.target': '目標響度',
   'settings.playback.replayGain.mode.album': '專輯',
   'settings.playback.replayGain.mode.off': '關閉',
   'settings.playback.replayGain.mode.track': '單曲',
   'settings.playback.replayGain.notRun': '尚未執行',
+  'settings.playback.replayGain.preset.quiet': '安靜 (-18 LUFS)',
+  'settings.playback.replayGain.preset.standard': '標準 (-14 LUFS)',
   'settings.playback.replayGain.status.disabled': '未開啟',
   'settings.playback.replayGain.status.enabled': '已開啟',
   'settings.playback.replayGain.title': '音量標準化',
@@ -7677,8 +7689,9 @@ const jaJP: TranslationMap = {
   'settings.playback.transportFade.curve.equalPower': '等パワー',
   'settings.playback.transportFade.curve.linear': 'リニア',
   'settings.playback.transportFade.curve.smooth': 'スムーズ',
-  'settings.playback.transportFade.description': '既定ではオフです。有効時は手動の再生 / 一時停止だけ音量をフェードし、フェードイン、フェードアウト時間とカーブを個別に設定できます。',
+  'settings.playback.transportFade.description': '0 ms でオフ。オンにすると、手動の再生 / 一時停止に同じフェード時間を使います。',
   'settings.playback.transportFade.field.curve': 'カーブ',
+  'settings.playback.transportFade.field.duration': '長さ',
   'settings.playback.transportFade.field.fadeIn': 'フェードイン ms',
   'settings.playback.transportFade.field.fadeOut': 'フェードアウト ms',
   'settings.playback.transportFade.status.disabled': '無効',
@@ -7753,17 +7766,20 @@ const jaJP: TranslationMap = {
   'settings.playback.replayGain.action.advanced': '詳細',
   'settings.playback.replayGain.action.analyzeMissing': '未解析の音量を分析',
   'settings.playback.replayGain.action.analyzing': '分析中...',
-  'settings.playback.replayGain.description': 'Spotify Normal 風のラウドネス揃えです。タグを読むか ECHO データベースに書き込むだけで、音楽ファイルは変更しません。',
+  'settings.playback.replayGain.description': '曲ごとの聴感音量をそろえます。タグを読むか ECHO データベースに書き込むだけで、音楽ファイルは変更しません。',
   'settings.playback.replayGain.error': '音量分析エラー {count} 件。問題のあるファイルはスキップしました。',
   'settings.playback.replayGain.field.applied': '現在の適用',
   'settings.playback.replayGain.field.mode': 'モード',
   'settings.playback.replayGain.field.preventClipping': 'クリップ防止',
+  'settings.playback.replayGain.field.preamp': 'プリアンプ',
   'settings.playback.replayGain.field.progress': '進行',
   'settings.playback.replayGain.field.target': '目標ラウドネス',
   'settings.playback.replayGain.mode.album': 'アルバム',
   'settings.playback.replayGain.mode.off': 'オフ',
   'settings.playback.replayGain.mode.track': 'トラック',
   'settings.playback.replayGain.notRun': '未実行',
+  'settings.playback.replayGain.preset.quiet': '静かめ (-18 LUFS)',
+  'settings.playback.replayGain.preset.standard': '標準 (-14 LUFS)',
   'settings.playback.replayGain.status.disabled': '無効',
   'settings.playback.replayGain.status.enabled': '有効',
   'settings.playback.replayGain.title': '音量ノーマライズ',
@@ -9727,8 +9743,9 @@ const enUS: TranslationMap = {
   'settings.playback.transportFade.curve.equalPower': 'Equal Power',
   'settings.playback.transportFade.curve.linear': 'Linear',
   'settings.playback.transportFade.curve.smooth': 'Smooth',
-  'settings.playback.transportFade.description': 'Off by default. When enabled, manual play / pause uses volume fades; fade-in time, fade-out time, and curve can be customized separately.',
+  'settings.playback.transportFade.description': 'Drag to 0 ms to turn off. When enabled, manual play / pause uses one shared fade duration.',
   'settings.playback.transportFade.field.curve': 'Curve',
+  'settings.playback.transportFade.field.duration': 'Duration',
   'settings.playback.transportFade.field.fadeIn': 'Fade In ms',
   'settings.playback.transportFade.field.fadeOut': 'Fade Out ms',
   'settings.playback.transportFade.status.disabled': 'Disabled',
@@ -9803,17 +9820,20 @@ const enUS: TranslationMap = {
   'settings.playback.replayGain.action.advanced': 'Advanced',
   'settings.playback.replayGain.action.analyzeMissing': 'Analyze Missing Loudness',
   'settings.playback.replayGain.action.analyzing': 'Analyzing...',
-  'settings.playback.replayGain.description': 'Spotify Normal-style loudness matching. ECHO only reads tags or writes to its database; your music files are not modified.',
+  'settings.playback.replayGain.description': 'Matches perceived loudness across songs. ECHO only reads tags or writes to its database; your music files are not modified.',
   'settings.playback.replayGain.error': '{count} loudness analysis errors; problem files were skipped.',
   'settings.playback.replayGain.field.applied': 'Current Applied',
   'settings.playback.replayGain.field.mode': 'Mode',
   'settings.playback.replayGain.field.preventClipping': 'Prevent Clipping',
+  'settings.playback.replayGain.field.preamp': 'Preamp',
   'settings.playback.replayGain.field.progress': 'Progress',
   'settings.playback.replayGain.field.target': 'Target Loudness',
   'settings.playback.replayGain.mode.album': 'Album',
   'settings.playback.replayGain.mode.off': 'Off',
   'settings.playback.replayGain.mode.track': 'Track',
   'settings.playback.replayGain.notRun': 'Not Run',
+  'settings.playback.replayGain.preset.quiet': 'Quiet (-18 LUFS)',
+  'settings.playback.replayGain.preset.standard': 'Standard (-14 LUFS)',
   'settings.playback.replayGain.status.disabled': 'Disabled',
   'settings.playback.replayGain.status.enabled': 'Enabled',
   'settings.playback.replayGain.title': 'Volume Normalization',

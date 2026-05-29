@@ -368,6 +368,9 @@ const inferPerformanceStallCause = (
   const bufferedMs = finiteNumber(audioSnapshot?.nativeBufferedMs);
   const audioState = trimmedString(audioSnapshot?.state);
   const pendingBackgroundTask = trimmedString(playbackSnapshot.pendingBackgroundTask);
+  const lastBackgroundTask = trimmedString(playbackSnapshot.lastBackgroundTask);
+  const lastBackgroundTaskDurationMs = finiteNumber(playbackSnapshot.lastBackgroundTaskDurationMs);
+  const lastBackgroundTaskAgeMs = finiteNumber(playbackSnapshot.lastBackgroundTaskAgeMs);
   const activePlaybackElapsedMs = finiteNumber(playbackSnapshot.elapsedMs);
   const lastPlaybackPhaseMs = finiteNumber(playbackSnapshot.lastCompletedDurationMs);
   const lastInputType = trimmedString(payload.details?.lastInputType);
@@ -398,6 +401,21 @@ const inferPerformanceStallCause = (
       confidence: 'high',
       why: `main event loop stalled while ${pendingBackgroundTask} was active`,
       actionHint: 'Move or slice this background task if it appears next to playback glitches.',
+    };
+  }
+
+  if (
+    payload.source === 'main' &&
+    lastBackgroundTask &&
+    lastBackgroundTaskDurationMs !== null &&
+    lastBackgroundTaskDurationMs >= Math.max(500, payload.thresholdMs) &&
+    (lastBackgroundTaskAgeMs === null || lastBackgroundTaskAgeMs <= Math.max(2_000, payload.durationMs + mainStallCheckIntervalMs))
+  ) {
+    return {
+      probableCause: 'recent_main_background_task',
+      confidence: 'medium',
+      why: `${lastBackgroundTask} recently took ${lastBackgroundTaskDurationMs.toFixed(0)}ms`,
+      actionHint: 'Inspect this startup or IPC step first; defer it or move heavy work off the main thread.',
     };
   }
 
@@ -508,6 +526,10 @@ export const recordPerformanceStall = (
   appendOptionalLine(lines, 'playbackTrackId', playbackSnapshot.trackId);
   appendOptionalLine(lines, 'playbackOutputMode', playbackSnapshot.outputMode);
   appendOptionalLine(lines, 'pendingBackgroundTask', playbackSnapshot.pendingBackgroundTask);
+  appendOptionalValueLine(lines, 'pendingBackgroundTaskElapsedMs', playbackSnapshot.pendingBackgroundTaskElapsedMs);
+  appendOptionalLine(lines, 'lastBackgroundTask', playbackSnapshot.lastBackgroundTask);
+  appendOptionalValueLine(lines, 'lastBackgroundTaskMs', playbackSnapshot.lastBackgroundTaskDurationMs);
+  appendOptionalValueLine(lines, 'lastBackgroundTaskAgeMs', playbackSnapshot.lastBackgroundTaskAgeMs);
   appendOptionalLine(lines, 'lastPlaybackOperation', playbackSnapshot.lastCompletedOperation);
   appendOptionalLine(lines, 'lastPlaybackPhase', playbackSnapshot.lastCompletedPhase);
   appendOptionalValueLine(lines, 'lastPlaybackPhaseMs', playbackSnapshot.lastCompletedDurationMs);
@@ -652,6 +674,21 @@ const createDevConsoleHtml = (): string => {
     .problem-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #f4f7fb; }
     .problem-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9aa8bb; }
     .problem-empty { color: var(--accent); }
+    .performance-board { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.07); background: #0a1317; color: var(--soft); font: 12px system-ui, sans-serif; }
+    .performance-board[data-empty="true"] { display: none; }
+    .performance-head { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .performance-head strong { color: #f4f7fb; font-size: 13px; }
+    .performance-head span { color: var(--muted); line-height: 1.35; }
+    .performance-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 6px; min-width: 0; max-height: 168px; overflow: auto; }
+    .performance-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; min-width: 0; border: 1px solid rgba(110, 231, 183, 0.28); border-radius: 6px; padding: 7px 8px; background: #0d1820; text-align: left; height: auto; color: var(--text); }
+    .performance-item:hover { background: #132330; border-color: rgba(110, 231, 183, 0.55); }
+    .performance-item[data-source="main"] { border-color: rgba(250, 204, 21, 0.42); }
+    .performance-copy { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+    .performance-copy strong, .performance-copy span, .performance-copy em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .performance-copy strong { color: #f4f7fb; font-size: 12px; }
+    .performance-copy span { color: #9aa8bb; }
+    .performance-copy em { color: #728096; font-style: normal; }
+    .performance-duration { color: var(--warn); font-weight: 700; white-space: nowrap; }
     .console { flex: 1; overflow: auto; padding: 8px 12px 22px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; background: linear-gradient(#080c11, #090d13); }
     .console[data-wrap="false"] { white-space: pre; overflow-wrap: normal; }
     .line { display: grid; grid-template-columns: 58px 96px 72px 74px minmax(0, 1fr); gap: 8px; align-items: start; min-height: 20px; padding: 1px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.025); }
@@ -684,6 +721,7 @@ const createDevConsoleHtml = (): string => {
       .controls { justify-content: flex-start; }
       input { width: 100%; }
       .problem-board { grid-template-columns: 1fr; }
+      .performance-board { grid-template-columns: 1fr; }
       .line { grid-template-columns: 48px 84px 64px minmax(0, 1fr); }
       .source { display: none; }
     }
@@ -713,6 +751,7 @@ const createDevConsoleHtml = (): string => {
         <option value="log">log</option>
       </select>
       <button id="problems" type="button">错误/警告</button>
+      <button id="performance" type="button">Performance</button>
       <button id="autoscroll" type="button" data-active="true">自动滚动</button>
       <button id="wrap" type="button" data-active="true">换行</button>
       <button id="bottom" type="button">到底部</button>
@@ -728,11 +767,13 @@ const createDevConsoleHtml = (): string => {
     <span class="chip">总数 <strong id="totalCount">0</strong></span>
     <span class="chip" data-tone="error">error <strong id="errorCount">0</strong></span>
     <span class="chip" data-tone="warn">warn <strong id="warnCount">0</strong></span>
+    <span class="chip" data-tone="warn">perf <strong id="performanceCount">0</strong></span>
     <span class="chip" data-tone="error">stderr <strong id="stderrCount">0</strong></span>
     <span class="chip" data-tone="ok">renderer <strong id="rendererCount">0</strong></span>
     <span class="chip">未读 <strong id="unreadCount">0</strong></span>
   </section>
   <section id="problemBoard" class="problem-board" data-empty="true" aria-live="polite"></section>
+  <section id="performanceBoard" class="performance-board" data-empty="true" aria-live="polite"></section>
   <main id="console" class="console" data-wrap="true" aria-live="polite"></main>
   <footer class="footer">
     <span id="status">等待日志...</span>
@@ -745,6 +786,7 @@ const createDevConsoleHtml = (): string => {
     const sourceEl = document.getElementById('source');
     const levelEl = document.getElementById('level');
     const problemsButton = document.getElementById('problems');
+    const performanceButton = document.getElementById('performance');
     const autoScrollButton = document.getElementById('autoscroll');
     const wrapButton = document.getElementById('wrap');
     const bottomButton = document.getElementById('bottom');
@@ -754,17 +796,20 @@ const createDevConsoleHtml = (): string => {
     const saveButton = document.getElementById('save');
     const devtoolsButton = document.getElementById('devtools');
     const problemBoardEl = document.getElementById('problemBoard');
+    const performanceBoardEl = document.getElementById('performanceBoard');
     const statusEl = document.getElementById('status');
     const visibleCountEl = document.getElementById('visibleCount');
     const totalCountEl = document.getElementById('totalCount');
     const errorCountEl = document.getElementById('errorCount');
     const warnCountEl = document.getElementById('warnCount');
+    const performanceCountEl = document.getElementById('performanceCount');
     const stderrCountEl = document.getElementById('stderrCount');
     const rendererCountEl = document.getElementById('rendererCount');
     const unreadCountEl = document.getElementById('unreadCount');
     let entries = [];
     let paused = false;
     let onlyProblems = false;
+    let onlyPerformance = false;
     let autoScroll = true;
     let wrapLines = true;
     let unread = 0;
@@ -786,7 +831,53 @@ const createDevConsoleHtml = (): string => {
 
     const isNearBottom = () => consoleEl.scrollTop + consoleEl.clientHeight >= consoleEl.scrollHeight - 48;
     const isProblemEntry = (entry) => entry.source === 'stderr' || entry.level === 'error' || entry.level === 'warn';
+    const isPerformanceEntry = (entry) => /^\\[performance:(main|renderer)\\]/.test(entry.message);
     const problemSeverity = (entry) => entry.level === 'error' || entry.source === 'stderr' ? 'error' : 'warn';
+    const fieldFromLines = (message, name) => {
+      const prefix = name + ':';
+      const line = String(message || '').split('\\n').find((item) => item.startsWith(prefix));
+      return line ? line.slice(prefix.length).trim() : '';
+    };
+    const parsePerformanceEntry = (entry) => {
+      if (!isPerformanceEntry(entry)) {
+        return null;
+      }
+
+      const header = entry.message.match(/^\\[performance:([^\\]]+)\\]\\s+([^\\s]+)\\s+stalled for\\s+([0-9.]+)ms/);
+      const durationMs = header ? Number(header[3]) : Number.NaN;
+      const source = header?.[1] || entry.source;
+      const kind = header?.[2] || entry.details?.sourceId || 'stall';
+      const cause = fieldFromLines(entry.message, 'probableCause') || 'unknown';
+      const confidence = fieldFromLines(entry.message, 'confidence');
+      const route = fieldFromLines(entry.message, 'route');
+      const audioState = fieldFromLines(entry.message, 'audioState');
+      const audioMode = fieldFromLines(entry.message, 'audioMode');
+      const audioBufferedMs = fieldFromLines(entry.message, 'audioBufferedMs');
+      const underruns = fieldFromLines(entry.message, 'audioUnderrunCallbacks');
+      const pendingTask = fieldFromLines(entry.message, 'pendingBackgroundTask');
+      const lastTask = fieldFromLines(entry.message, 'lastBackgroundTask');
+      const lastTaskMs = fieldFromLines(entry.message, 'lastBackgroundTaskMs');
+      const playbackPhase = fieldFromLines(entry.message, 'playbackPhase') || fieldFromLines(entry.message, 'lastPlaybackPhase');
+      const inputTarget = fieldFromLines(entry.message, 'lastInputTarget');
+      return {
+        entry,
+        source,
+        kind,
+        durationMs: Number.isFinite(durationMs) ? durationMs : null,
+        cause,
+        confidence,
+        route,
+        audioState,
+        audioMode,
+        audioBufferedMs,
+        underruns,
+        pendingTask,
+        lastTask,
+        lastTaskMs,
+        playbackPhase,
+        inputTarget,
+      };
+    };
     const passesFilters = (entry) => {
       const query = filterEl.value.trim().toLowerCase();
       const source = sourceEl.value;
@@ -798,6 +889,9 @@ const createDevConsoleHtml = (): string => {
         return false;
       }
       if (onlyProblems && !isProblemEntry(entry)) {
+        return false;
+      }
+      if (onlyPerformance && !isPerformanceEntry(entry)) {
         return false;
       }
       if (!query) {
@@ -912,6 +1006,7 @@ const createDevConsoleHtml = (): string => {
         item.title = formatEntryLine(entry);
         item.addEventListener('click', () => {
           onlyProblems = true;
+          onlyPerformance = false;
           sourceEl.value = entry.source;
           levelEl.value = entry.level;
           render();
@@ -931,6 +1026,73 @@ const createDevConsoleHtml = (): string => {
       }
       problemBoardEl.append(list);
     };
+    const renderPerformanceBoard = () => {
+      const stalls = entries.map(parsePerformanceEntry).filter(Boolean).slice(-10).reverse();
+      performanceBoardEl.replaceChildren();
+      performanceBoardEl.dataset.empty = String(stalls.length === 0);
+      if (stalls.length === 0) {
+        return;
+      }
+
+      const head = document.createElement('div');
+      head.className = 'performance-head';
+      const title = document.createElement('strong');
+      title.textContent = 'Performance timeline';
+      const hint = document.createElement('span');
+      const latest = stalls[0];
+      hint.textContent = latest
+        ? 'Latest: ' + latest.cause + ' · ' + (latest.durationMs === null ? '?' : Math.round(latest.durationMs) + 'ms')
+        : 'No stalls captured.';
+      head.append(title, hint);
+      performanceBoardEl.append(head);
+
+      const list = document.createElement('div');
+      list.className = 'performance-list';
+      for (const stall of stalls) {
+        const item = document.createElement('button');
+        item.className = 'performance-item';
+        item.type = 'button';
+        item.dataset.source = stall.source;
+        item.title = formatEntryLine(stall.entry);
+        item.addEventListener('click', () => {
+          onlyPerformance = true;
+          onlyProblems = false;
+          sourceEl.value = '';
+          levelEl.value = '';
+          filterEl.value = stall.cause && stall.cause !== 'unknown' ? stall.cause : '';
+          render();
+        });
+
+        const copy = document.createElement('span');
+        copy.className = 'performance-copy';
+        const main = document.createElement('strong');
+        main.textContent = stall.source + '/' + stall.kind + ' · ' + stall.cause + (stall.confidence ? ' · ' + stall.confidence : '');
+        const routeParts = [
+          stall.route ? 'route=' + stall.route : null,
+          stall.audioMode ? 'audio=' + stall.audioMode : null,
+          stall.audioState ? 'state=' + stall.audioState : null,
+          stall.underruns ? 'underruns=' + stall.underruns : null,
+        ].filter(Boolean);
+        const route = document.createElement('span');
+        route.textContent = routeParts.length ? routeParts.join(' · ') : 'no route/audio fields';
+        const taskParts = [
+          stall.pendingTask ? 'pending=' + stall.pendingTask : null,
+          stall.lastTask ? 'last=' + stall.lastTask + (stall.lastTaskMs ? ' ' + stall.lastTaskMs + 'ms' : '') : null,
+          stall.playbackPhase ? 'playback=' + stall.playbackPhase : null,
+          stall.inputTarget ? 'input=' + stall.inputTarget : null,
+        ].filter(Boolean);
+        const task = document.createElement('em');
+        task.textContent = taskParts.length ? taskParts.join(' · ') : '#' + stall.entry.id + ' · ' + timePart(stall.entry.timestamp);
+        copy.append(main, route, task);
+
+        const duration = document.createElement('span');
+        duration.className = 'performance-duration';
+        duration.textContent = stall.durationMs === null ? '?' : Math.round(stall.durationMs) + 'ms';
+        item.append(copy, duration);
+        list.append(item);
+      }
+      performanceBoardEl.append(list);
+    };
     const setTemporaryButtonText = (button, text) => {
       const original = button.textContent;
       button.textContent = text;
@@ -942,16 +1104,19 @@ const createDevConsoleHtml = (): string => {
       const total = entries.length;
       const errors = entries.filter((entry) => entry.level === 'error').length;
       const warns = entries.filter((entry) => entry.level === 'warn').length;
+      const performance = entries.filter(isPerformanceEntry).length;
       const stderrs = entries.filter((entry) => entry.source === 'stderr').length;
       const renderers = entries.filter((entry) => entry.source === 'renderer').length;
       visibleCountEl.textContent = String(visible.length);
       totalCountEl.textContent = String(total);
       errorCountEl.textContent = String(errors);
       warnCountEl.textContent = String(warns);
+      performanceCountEl.textContent = String(performance);
       stderrCountEl.textContent = String(stderrs);
       rendererCountEl.textContent = String(renderers);
       unreadCountEl.textContent = String(unread);
       problemsButton.dataset.active = String(onlyProblems);
+      performanceButton.dataset.active = String(onlyPerformance);
       autoScrollButton.dataset.active = String(autoScroll);
       wrapButton.dataset.active = String(wrapLines);
       autoScrollButton.textContent = autoScroll ? '自动滚动' : '手动滚动';
@@ -1012,6 +1177,7 @@ const createDevConsoleHtml = (): string => {
       }
       renderStats(visible);
       renderProblemBoard();
+      renderPerformanceBoard();
       consoleEl.dataset.wrap = String(wrapLines);
       if (stick && !paused) {
         scrollToBottom();
@@ -1089,6 +1255,19 @@ const createDevConsoleHtml = (): string => {
     problemsButton.addEventListener('click', () => {
       flushPendingEntriesNow();
       onlyProblems = !onlyProblems;
+      if (onlyProblems) {
+        onlyPerformance = false;
+      }
+      render();
+    });
+    performanceButton.addEventListener('click', () => {
+      flushPendingEntriesNow();
+      onlyPerformance = !onlyPerformance;
+      if (onlyPerformance) {
+        onlyProblems = false;
+        sourceEl.value = '';
+        levelEl.value = '';
+      }
       render();
     });
     autoScrollButton.addEventListener('click', () => {

@@ -36,6 +36,7 @@ import { setDiscordPresenceEnabled } from '../integrations/discord/getDiscordPre
 import { getLastFmService } from '../integrations/lastfm/getLastFmService';
 import { applyNetworkProxySettings, testNetworkProxyConnection } from '../network/proxySettings';
 import { markStartupStage } from '../diagnostics/StartupDiagnostics';
+import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import { registerAudioIpc } from './audioIpc';
 import { registerAccountIpc } from './accountIpc';
 import { registerConnectIpc } from './connectIpc';
@@ -73,9 +74,14 @@ const dataBackupFilters = [{ name: 'ECHO Next Data Backup', extensions: ['zip'] 
 
 const registerIpcStartupStep = (name: string, register: () => void): void => {
   const startedAt = Date.now();
+  const clearBackgroundTask = beginMainBackgroundTask(`startup:ipc:${name}`);
   markStartupStage(`ipc:${name}:start`);
-  register();
-  markStartupStage(`ipc:${name}:complete`, { durationMs: Date.now() - startedAt });
+  try {
+    register();
+  } finally {
+    clearBackgroundTask();
+    markStartupStage(`ipc:${name}:complete`, { durationMs: Date.now() - startedAt });
+  }
 };
 
 const requireFontPath = (value: unknown): string => {

@@ -305,6 +305,8 @@ html[data-theme="dark"] .sidebar-folder:hover {
 }
 
 .settings-library-lab-panel,
+.settings-cache-panel--replay-gain,
+.settings-cache-panel--transport-fade,
 .settings-cache-panel--bpm-analysis {
   border: 0;
   background: transparent;

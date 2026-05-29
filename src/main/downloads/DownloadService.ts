@@ -620,7 +620,6 @@ export class DownloadService extends EventEmitter {
   ) {
     super();
     this.settings = sanitizeSettings(this.dependencies.loadSettings?.() ?? loadDownloadSettings(), defaultSettings);
-    this.ensureOutputDirectoryInLibrary(this.settings.outputDirectory);
     this.restorePersistedJobs();
   }
 
@@ -673,6 +672,7 @@ export class DownloadService extends EventEmitter {
     if (!outputStat?.isDirectory()) {
       throw new Error(`涓嬭浇鏂囦欢澶逛笉鍙敤: ${baseOutputDirectory}`);
     }
+    this.ensureOutputDirectoryInLibrary(baseOutputDirectory);
     const outputDirectory = this.prepareJobOutputDirectory(baseOutputDirectory, options.outputSubdirectory);
 
     const provider = inferProvider(sourceUrl);

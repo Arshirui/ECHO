@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, renameSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import Database from 'better-sqlite3';
 import { runMigrations } from './migrations';
-import { assertDatabaseHealthy, DatabaseHealthError } from './health';
+import { assertDatabaseHealthy, DatabaseHealthError, rememberDatabaseHealthOk } from './health';
+import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 
 export type EchoDatabase = Database.Database;
 export type DatabaseCorruptionPolicy = 'throw' | 'quarantine-for-test-or-manual';
@@ -76,38 +77,46 @@ export const quarantineCorruptDatabase = (databasePath: string): string => {
 };
 
 export const createDatabase = (databasePath: string, options: CreateDatabaseOptions = {}): EchoDatabase => {
+  const clearBackgroundTask = databasePath === ':memory:' ? null : beginMainBackgroundTask(`database:open:${basename(databasePath)}`);
   const corruptionPolicy = options.corruptionPolicy ?? 'throw';
 
-  if (databasePath !== ':memory:') {
-    mkdirSync(dirname(databasePath), { recursive: true });
-    try {
-      assertDatabaseHealthy(databasePath);
-    } catch (error) {
-      if (
-        error instanceof DatabaseHealthError &&
-        error.health.status === 'corrupt' &&
-        corruptionPolicy === 'quarantine-for-test-or-manual'
-      ) {
-        const quarantinedPath = quarantineCorruptDatabase(databasePath);
-        console.warn(
-          `[database] Corrupt SQLite database was quarantined at ${quarantinedPath}; creating a clean database.`,
-          error,
-        );
-      } else {
-        throw error;
+  try {
+    if (databasePath !== ':memory:') {
+      mkdirSync(dirname(databasePath), { recursive: true });
+      try {
+        assertDatabaseHealthy(databasePath, { cache: true });
+      } catch (error) {
+        if (
+          error instanceof DatabaseHealthError &&
+          error.health.status === 'corrupt' &&
+          corruptionPolicy === 'quarantine-for-test-or-manual'
+        ) {
+          const quarantinedPath = quarantineCorruptDatabase(databasePath);
+          console.warn(
+            `[database] Corrupt SQLite database was quarantined at ${quarantinedPath}; creating a clean database.`,
+            error,
+          );
+        } else {
+          throw error;
+        }
       }
     }
-  }
 
-  const database = new Database(databasePath);
-  applyRuntimePragmas(database);
-  try {
-    runMigrations(database);
-    assertOpenedDatabaseHealthy(database, databasePath);
-  } catch (error) {
-    database.close();
-    throw error;
-  }
+    const database = new Database(databasePath);
+    applyRuntimePragmas(database);
+    try {
+      const migrationResult = runMigrations(database);
+      if (migrationResult.appliedCount > 0) {
+        assertOpenedDatabaseHealthy(database, databasePath);
+      }
+      rememberDatabaseHealthOk(databasePath);
+    } catch (error) {
+      database.close();
+      throw error;
+    }
 
-  return database;
+    return database;
+  } finally {
+    clearBackgroundTask?.();
+  }
 };

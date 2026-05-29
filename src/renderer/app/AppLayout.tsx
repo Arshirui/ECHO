@@ -41,7 +41,40 @@ type LyricsNavigationDetail = {
 
 type LyricsViewMode = 'lyrics' | 'mv';
 
+type RouteSwitchTrace = {
+  sequence: number;
+  from: AppRouteId;
+  to: AppRouteId;
+  trigger: string;
+  startedAtMs: number;
+};
+
 const lyricsViewModeMemoryKey = 'echo:lyrics:view-mode';
+
+const routeSwitchValue = (value: unknown): string | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(Math.round(value));
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+
+  return null;
+};
+
+const logRouteSwitchDiagnostic = (
+  phase: 'start' | 'end',
+  details: Record<string, unknown>,
+): void => {
+  const fields = Object.entries(details)
+    .map(([key, value]) => {
+      const text = routeSwitchValue(value);
+      return text === null ? null : `${key}=${text}`;
+    })
+    .filter((item): item is string => Boolean(item));
+  console.info(`[routeSwitch:${phase}]${fields.length ? ` ${fields.join(' ')}` : ''}`);
+};
 
 const isLyricsViewMode = (value: unknown): value is LyricsViewMode =>
   value === 'lyrics' || value === 'mv';
@@ -242,6 +275,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastAudioErrorRef = useRef<string | null>(null);
   const previousRouteIdRef = useRef<AppRouteId>('songs');
+  const routeSwitchSequenceRef = useRef(0);
+  const routeSwitchTraceRef = useRef<RouteSwitchTrace | null>(null);
+  const routeSwitchCommittedRouteIdRef = useRef<AppRouteId>(activeRouteId);
   const downloadImportedTrackIdsRef = useRef<Map<string, string | null>>(new Map());
   const notifiedUpdateKeysRef = useRef<Set<string>>(new Set());
   const visibleRoutes = useMemo(
@@ -481,12 +517,6 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, []);
 
   useEffect(() => {
-    if (!downloadsFeatureUnlocked && activeRouteId === 'downloads') {
-      setActiveRouteId('songs');
-    }
-  }, [activeRouteId, downloadsFeatureUnlocked]);
-
-  useEffect(() => {
     let cancelled = false;
 
     const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
@@ -606,8 +636,66 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     shouldShowAppWallpaperVisual,
   ]);
 
+  const getRouteSwitchPlaybackDetails = useCallback((): Record<string, unknown> => {
+    const audioStatus = playbackStatusSnapshot.audioStatus;
+    const playbackStatus = playbackStatusSnapshot.playbackStatus;
+
+    return {
+      playbackState: audioStatus?.state ?? playbackStatus?.state,
+      outputMode: audioStatus?.outputMode,
+      trackId: audioStatus?.currentTrackId ?? playbackStatus?.currentTrackId,
+      audioBackend: audioStatus?.activeOutputBackendImpl ?? audioStatus?.outputBackend,
+      error: playbackStatusSnapshot.error ?? audioStatus?.error,
+    };
+  }, [
+    playbackStatusSnapshot.audioStatus?.activeOutputBackendImpl,
+    playbackStatusSnapshot.audioStatus?.currentTrackId,
+    playbackStatusSnapshot.audioStatus?.error,
+    playbackStatusSnapshot.audioStatus?.outputBackend,
+    playbackStatusSnapshot.audioStatus?.outputMode,
+    playbackStatusSnapshot.audioStatus?.state,
+    playbackStatusSnapshot.error,
+    playbackStatusSnapshot.playbackStatus?.currentTrackId,
+    playbackStatusSnapshot.playbackStatus?.state,
+  ]);
+
+  const beginRouteSwitchTrace = useCallback(
+    (routeId: AppRouteId, trigger: string): void => {
+      const sequence = routeSwitchSequenceRef.current + 1;
+      routeSwitchSequenceRef.current = sequence;
+      const trace: RouteSwitchTrace = {
+        sequence,
+        from: activeRouteId,
+        to: routeId,
+        trigger,
+        startedAtMs: performance.now(),
+      };
+      routeSwitchTraceRef.current = trace;
+
+      logRouteSwitchDiagnostic('start', {
+        sequence,
+        from: trace.from,
+        to: trace.to,
+        trigger,
+        ...getRouteSwitchPlaybackDetails(),
+      });
+    },
+    [activeRouteId, getRouteSwitchPlaybackDetails],
+  );
+
   const navigateRoute = useCallback(
-    (routeId: AppRouteId): void => {
+    (routeId: AppRouteId, trigger = 'navigateRoute'): void => {
+      if (routeId === activeRouteId) {
+        logRouteSwitchDiagnostic('start', {
+          from: activeRouteId,
+          to: routeId,
+          trigger,
+          result: 'same-route',
+          ...getRouteSwitchPlaybackDetails(),
+        });
+        return;
+      }
+
       if (routeId === 'lyrics' && activeRouteId !== 'lyrics') {
         previousRouteIdRef.current = activeRouteId;
       }
@@ -616,10 +704,49 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         setIsLyricsQueueDrawerOpen(false);
       }
 
+      beginRouteSwitchTrace(routeId, trigger);
       setActiveRouteId(routeId);
     },
-    [activeRouteId],
+    [activeRouteId, beginRouteSwitchTrace, getRouteSwitchPlaybackDetails],
   );
+
+  useEffect(() => {
+    const previousCommittedRouteId = routeSwitchCommittedRouteIdRef.current;
+    if (previousCommittedRouteId === activeRouteId) {
+      return;
+    }
+
+    const trace = routeSwitchTraceRef.current;
+    const playbackDetails = getRouteSwitchPlaybackDetails();
+
+    if (trace && trace.to === activeRouteId) {
+      logRouteSwitchDiagnostic('end', {
+        sequence: trace.sequence,
+        from: trace.from,
+        to: trace.to,
+        trigger: trace.trigger,
+        durationMs: performance.now() - trace.startedAtMs,
+        ...playbackDetails,
+      });
+      routeSwitchTraceRef.current = null;
+    } else {
+      logRouteSwitchDiagnostic('end', {
+        from: previousCommittedRouteId,
+        to: activeRouteId,
+        trigger: 'external-setActiveRouteId',
+        durationMs: 0,
+        ...playbackDetails,
+      });
+    }
+
+    routeSwitchCommittedRouteIdRef.current = activeRouteId;
+  }, [activeRouteId, getRouteSwitchPlaybackDetails]);
+
+  useEffect(() => {
+    if (!downloadsFeatureUnlocked && activeRouteId === 'downloads') {
+      navigateRoute('songs', 'downloads-locked');
+    }
+  }, [activeRouteId, downloadsFeatureUnlocked, navigateRoute]);
 
   const setLyricsViewMode = useCallback((mode: LyricsViewMode): void => {
     rememberLyricsViewMode(mode);
@@ -1059,7 +1186,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       if (isLyricsViewMode(detail?.mode)) {
         if (activeRouteId === 'lyrics') {
           if (activeLyricsViewMode === detail.mode) {
-            setActiveRouteId(previousRouteIdRef.current);
+            navigateRoute(previousRouteIdRef.current, 'lyrics-toggle-back');
             return;
           }
 
@@ -1073,14 +1200,14 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       }
 
       if (activeRouteId === 'lyrics') {
-        setActiveRouteId(previousRouteIdRef.current);
+        navigateRoute(previousRouteIdRef.current, 'lyrics-toggle-back');
         return;
       }
 
       navigateRoute('lyrics');
     };
     const handleNavigateLyricsBack = (): void => {
-      setActiveRouteId(previousRouteIdRef.current);
+      navigateRoute(previousRouteIdRef.current, 'lyrics-back');
     };
     const handleNavigateAlbumDetail = (): void => {
       navigateRoute('albums');

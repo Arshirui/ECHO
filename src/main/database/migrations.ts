@@ -6,6 +6,11 @@ type Migration = {
   apply: (database: EchoDatabase) => void;
 };
 
+export type MigrationRunResult = {
+  appliedCount: number;
+  appliedIds: number[];
+};
+
 type ColumnInfoRow = {
   name: string;
 };
@@ -1260,11 +1265,12 @@ export const migrations: Migration[] = [
   },
 ];
 
-export const runMigrations = (database: EchoDatabase): void => {
+export const runMigrations = (database: EchoDatabase): MigrationRunResult => {
   database.exec(schemaMigrationTableSql);
 
   const appliedRows = database.prepare<unknown[], { id: number }>('SELECT id FROM schema_migrations').all();
   const appliedIds = new Set(appliedRows.map((row) => Number(row.id)));
+  const newlyAppliedIds: number[] = [];
 
   for (const migration of migrations) {
     if (appliedIds.has(migration.id)) {
@@ -1279,9 +1285,15 @@ export const runMigrations = (database: EchoDatabase): void => {
         .prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)')
         .run(migration.id, new Date().toISOString());
       database.exec('COMMIT');
+      newlyAppliedIds.push(migration.id);
     } catch (error) {
       database.exec('ROLLBACK');
       throw error;
     }
   }
+
+  return {
+    appliedCount: newlyAppliedIds.length,
+    appliedIds: newlyAppliedIds,
+  };
 };

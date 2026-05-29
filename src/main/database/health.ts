@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 
 export type DatabaseHealthStatus = 'ok' | 'corrupt' | 'unreadable';
@@ -22,6 +23,7 @@ const SQLITE_CORRUPTION_PATTERN =
   /database disk image is malformed|database disk image malformed|malformed database schema|SQLITE_CORRUPT|file is not a database/i;
 
 const nowIso = (): string => new Date().toISOString();
+const databaseHealthCache = new Map<string, DatabaseHealthResult>();
 
 export const isSqliteCorruptionMessage = (message: string): boolean => SQLITE_CORRUPTION_PATTERN.test(message);
 
@@ -31,6 +33,24 @@ const ok = (databasePath: string, message?: string): DatabaseHealthResult => ({
   checkedAt: nowIso(),
   ...(message ? { message } : {}),
 });
+
+const fileSignature = (filePath: string): string => {
+  try {
+    const stat = statSync(filePath);
+    return `${filePath}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : 'missing';
+    return `${filePath}:missing:${code}`;
+  }
+};
+
+const databaseTripletSignature = (databasePath: string): string => {
+  const normalizedPath = resolve(databasePath);
+  return [normalizedPath, `${normalizedPath}-wal`, `${normalizedPath}-shm`].map(fileSignature).join('|');
+};
+
+const databaseHealthCacheKey = (databasePath: string, mode: 'quick' | 'integrity'): string =>
+  `${mode}:${databaseTripletSignature(databasePath)}`;
 
 const failed = (databasePath: string, error: unknown): DatabaseHealthResult => {
   const message = error instanceof Error ? error.message : String(error);
@@ -104,8 +124,49 @@ export const checkDatabaseHealth = (
   }
 };
 
-export const assertDatabaseHealthy = (databasePath: string): void => {
-  const health = checkDatabaseHealth(databasePath, 'quick');
+export const checkDatabaseHealthCached = (
+  databasePath: string,
+  mode: 'quick' | 'integrity' = 'quick',
+): DatabaseHealthResult => {
+  if (databasePath === ':memory:' || mode === 'integrity') {
+    return checkDatabaseHealth(databasePath, mode);
+  }
+
+  const cacheKey = databaseHealthCacheKey(databasePath, mode);
+  const cached = databaseHealthCache.get(cacheKey);
+  if (cached && isDatabaseHealthy(cached)) {
+    return {
+      ...cached,
+      checkedAt: nowIso(),
+      message: cached.message ?? 'reused cached healthy database check',
+    };
+  }
+
+  const health = checkDatabaseHealth(databasePath, mode);
+  if (isDatabaseHealthy(health)) {
+    databaseHealthCache.set(cacheKey, health);
+  }
+  return health;
+};
+
+export const rememberDatabaseHealthOk = (
+  databasePath: string,
+  mode: 'quick' | 'integrity' = 'quick',
+): DatabaseHealthResult => {
+  const health = ok(databasePath, 'database health verified in active connection');
+  if (databasePath !== ':memory:' && mode === 'quick') {
+    databaseHealthCache.set(databaseHealthCacheKey(databasePath, mode), health);
+  }
+  return health;
+};
+
+export const clearDatabaseHealthCacheForTests = (): void => {
+  databaseHealthCache.clear();
+};
+
+export const assertDatabaseHealthy = (databasePath: string, options: { cache?: boolean } = {}): void => {
+  const health =
+    options.cache === true ? checkDatabaseHealthCached(databasePath, 'quick') : checkDatabaseHealth(databasePath, 'quick');
   if (!isDatabaseHealthy(health)) {
     throw new DatabaseHealthError(health);
   }
