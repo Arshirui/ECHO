@@ -663,7 +663,7 @@ export type LibraryPageQuery = {
 };
 
 export type PlaylistKind = 'manual' | 'smart' | 'synced' | 'system';
-export type PlaylistSourceProvider = 'local' | 'netease' | 'qqmusic' | 'spotify' | 'remote' | 'm3u8';
+export type PlaylistSourceProvider = 'local' | 'netease' | 'qqmusic' | 'kugou' | 'spotify' | 'remote' | 'm3u8';
 export type PlaylistSortMode = 'manual' | 'titleAsc' | 'titleDesc' | 'artistAsc' | 'addedDesc';
 export type PlaylistMediaType = 'track' | 'album' | 'stream_track' | 'remote_file';
 export type PlaylistExportFormat = 'json' | 'txt' | 'm3u8' | 'csv';
@@ -712,7 +712,7 @@ export type CreatePlaylistRequest = {
 export type ImportStreamingPlaylistResult = {
   playlist: LibraryPlaylist;
   importedCount: number;
-  provider: 'netease' | 'qqmusic';
+  provider: 'netease' | 'qqmusic' | 'kugou';
   providerPlaylistId: string;
 };
 
@@ -1138,7 +1138,7 @@ export type LibraryAlbumTagUpdateRequest = {
   coverMimeType?: string | null;
 };
 
-export type NetworkTagProvider = 'netease-cloud-music' | 'qq-music' | 'musicbrainz' | 'cover-art-archive' | 'mock';
+export type NetworkTagProvider = 'netease-cloud-music' | 'qq-music' | 'kugou-music' | 'musicbrainz' | 'cover-art-archive' | 'mock';
 
 export type NetworkTagCandidate = {
   id: string;

@@ -12,6 +12,7 @@ import {
 import { sanitizeAccountData } from '../../shared/utils/sanitizeAccountData';
 import type { AccountProviderBase, StoredAccountRecord } from './providers/AccountProviderBase';
 import { BilibiliAccountProvider } from './providers/BilibiliAccountProvider';
+import { KugouAccountProvider } from './providers/KugouAccountProvider';
 import { NeteaseAccountProvider } from './providers/NeteaseAccountProvider';
 import { OsuAccountProvider } from './providers/OsuAccountProvider';
 import { QQMusicAccountProvider } from './providers/QQMusicAccountProvider';
@@ -77,6 +78,7 @@ export class AccountService {
     this.providers = {
       netease: new NeteaseAccountProvider(),
       qqmusic: new QQMusicAccountProvider(),
+      kugou: new KugouAccountProvider(),
       bilibili: new BilibiliAccountProvider(),
       youtube,
       soundcloud: new SoundCloudAccountProvider(),

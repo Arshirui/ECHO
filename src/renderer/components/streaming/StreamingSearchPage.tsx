@@ -57,7 +57,7 @@ const defaultCover = `data:image/svg+xml;utf8,${encodeURIComponent(
 )}`;
 
 const hiddenProviderTabs = new Set<StreamingProviderName>(['mock', 'm3u8']);
-const providerPriority: StreamingProviderName[] = ['netease', 'qqmusic', 'plugin', 'soundcloud', 'youtube', 'tidal', 'spotify', 'bilibili'];
+const providerPriority: StreamingProviderName[] = ['netease', 'qqmusic', 'kugou', 'plugin', 'soundcloud', 'youtube', 'tidal', 'spotify', 'bilibili'];
 const unsupportedDownloadProviders = new Set<StreamingProviderName>(['spotify', 'tidal', 'bilibili', 'youtube', 'plugin']);
 const favoriteProviders = new Set<StreamingProviderName>(['bilibili', 'youtube', 'soundcloud']);
 const qualitySwitchPlaybackStates = new Set(['loading', 'playing']);
@@ -154,6 +154,8 @@ const streamingTrackWebUrl = (track: StreamingTrack): string | null => {
       return `https://music.163.com/#/song?id=${encodeURIComponent(track.providerTrackId)}`;
     case 'qqmusic':
       return `https://y.qq.com/n/ryqq/songDetail/${encodeURIComponent(track.providerTrackId)}`;
+    case 'kugou':
+      return `https://www.kugou.com/song/#hash=${encodeURIComponent(track.providerTrackId.split('.')[0] ?? track.providerTrackId)}`;
     case 'spotify':
       return `https://open.spotify.com/track/${encodeURIComponent(track.providerTrackId)}`;
     case 'tidal':
@@ -177,6 +179,8 @@ const streamingPlaylistWebUrl = (playlist: StreamingPlaylist): string | null => 
       return `https://music.163.com/#/playlist?id=${encodeURIComponent(playlist.providerPlaylistId)}`;
     case 'qqmusic':
       return `https://y.qq.com/n/ryqq/playlist/${encodeURIComponent(playlist.providerPlaylistId)}`;
+    case 'kugou':
+      return `https://www.kugou.com/yy/special/single/${encodeURIComponent(playlist.providerPlaylistId)}.html`;
     case 'spotify':
       return `https://open.spotify.com/playlist/${encodeURIComponent(playlist.providerPlaylistId)}`;
     case 'tidal':
@@ -1688,7 +1692,7 @@ export const StreamingSearchPage = (): JSX.Element => {
                   <Link size={18} />
                   添加流媒体歌单
                 </span>
-                <p>粘贴网易云音乐或 QQ 音乐歌单链接，导入后会保存到本地播放列表，重开软件也不会消失。</p>
+                <p>粘贴网易云音乐、QQ 音乐或酷狗音乐歌单链接，导入后会保存到本地播放列表，重开软件也不会消失。</p>
               </div>
               <label>
                 <Link size={18} />

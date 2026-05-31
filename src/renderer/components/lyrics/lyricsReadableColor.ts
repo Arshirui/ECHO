@@ -6,6 +6,7 @@ export type Rgb = {
 
 export type ReadableColorSample = {
   averageRgb: Rgb;
+  dominantRgb?: Rgb;
   luminance: number;
   luminanceP10?: number;
   luminanceP90?: number;
@@ -494,6 +495,10 @@ export const analyzePixelBuffer = (
   let gSum = 0;
   let bSum = 0;
   let weightSum = 0;
+  let dominantRedSum = 0;
+  let dominantGreenSum = 0;
+  let dominantBlueSum = 0;
+  let dominantWeightSum = 0;
   let edgeSum = 0;
   let edgeCount = 0;
   const luminanceSamples: number[] = [];
@@ -521,6 +526,19 @@ export const analyzePixelBuffer = (
     gSum += rgb.g * alpha;
     bSum += rgb.b * alpha;
     weightSum += alpha;
+
+    const maxChannel = Math.max(rgb.r, rgb.g, rgb.b);
+    const minChannel = Math.min(rgb.r, rgb.g, rgb.b);
+    const visibleSaturation = maxChannel === 0 ? 0 : (maxChannel - minChannel) / maxChannel;
+    const visibleLightness = (maxChannel + minChannel) / 510;
+    if (visibleSaturation >= 0.12 && visibleLightness >= 0.1 && visibleLightness <= 0.92) {
+      const midToneWeight = 1 - Math.min(0.82, Math.abs(visibleLightness - 0.55) * 1.4);
+      const dominantWeight = alpha * (0.35 + visibleSaturation * 1.9) * midToneWeight;
+      dominantRedSum += rgb.r * dominantWeight;
+      dominantGreenSum += rgb.g * dominantWeight;
+      dominantBlueSum += rgb.b * dominantWeight;
+      dominantWeightSum += dominantWeight;
+    }
 
     if (width > 0) {
       const x = pixelIndex % width;
@@ -564,6 +582,15 @@ export const analyzePixelBuffer = (
       g: gSum / Math.max(weightSum, 1),
       b: bSum / Math.max(weightSum, 1),
     },
+    ...(dominantWeightSum > 0
+      ? {
+          dominantRgb: {
+            r: dominantRedSum / dominantWeightSum,
+            g: dominantGreenSum / dominantWeightSum,
+            b: dominantBlueSum / dominantWeightSum,
+          },
+        }
+      : {}),
     luminance: meanLuminance,
     luminanceP10,
     luminanceP90,

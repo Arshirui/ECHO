@@ -698,6 +698,7 @@ export type EchoApi = {
     openDiagnosticsFolder: () => Promise<string>;
     openCrashReport: () => Promise<string>;
     openAudioCrashReport: () => Promise<string>;
+    relaunchApp: () => Promise<void>;
     openDevConsole: () => Promise<void>;
     getDevConsoleSnapshot?: () => Promise<DiagnosticConsoleSnapshot>;
     onDevConsoleEntry?: (handler: (entry: DiagnosticConsoleEntry) => void) => () => void;

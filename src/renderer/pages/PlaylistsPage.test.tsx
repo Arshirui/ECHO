@@ -1017,7 +1017,7 @@ describe('PlaylistsPage actions menu', () => {
 
     renderPlaylistsPage();
 
-    const input = await screen.findByPlaceholderText('粘贴网易云 / QQ 音乐 / Spotify 歌单链接');
+    const input = await screen.findByPlaceholderText('粘贴网易云 / QQ 音乐 / 酷狗 / Spotify 歌单链接');
     fireEvent.change(input, { target: { value: spotifyUrl } });
     fireEvent.submit(input.closest('form') as HTMLFormElement);
 
@@ -1162,7 +1162,7 @@ describe('PlaylistsPage actions menu', () => {
 
     renderPlaylistsPage();
 
-    const input = await screen.findByPlaceholderText('粘贴网易云 / QQ 音乐 / Spotify 歌单链接');
+    const input = await screen.findByPlaceholderText('粘贴网易云 / QQ 音乐 / 酷狗 / Spotify 歌单链接');
     fireEvent.change(input, { target: { value: spotifyUrl } });
     fireEvent.submit(input.closest('form') as HTMLFormElement);
 

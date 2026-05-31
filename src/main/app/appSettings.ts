@@ -412,6 +412,7 @@ export const defaultSettings: AppSettings = {
   appWallpaperUiOpacityPercent: 100,
   appWallpaperVisualProtectionEnabled: true,
   appWallpaperUnifiedOpacityEnabled: false,
+  nowPlayingCoverColorEnabled: false,
   appVideoWallpaperPauseMode: 'smart',
   networkProxyMode: 'off',
   networkProxyUrl: null,
@@ -1180,7 +1181,9 @@ const normalizeHexColor = (value: unknown, fallback: string): string => {
 const normalizeLyricsColor = (value: unknown): string => normalizeHexColor(value, defaultLyricsColor);
 
 const normalizeLyricsBackgroundMode = (value: unknown): LyricsBackgroundMode =>
-  value === 'cover' || value === 'customWallpaper' || value === 'theme' ? value : defaultSettings.lyricsBackgroundMode;
+  value === 'cover' || value === 'coverColor' || value === 'customWallpaper' || value === 'theme'
+    ? value
+    : defaultSettings.lyricsBackgroundMode;
 
 const normalizeLyricsMiniPlayerColorMode = (value: unknown): LyricsMiniPlayerColorMode =>
   value === 'custom' || value === 'cover' || value === 'default' ? value : defaultSettings.lyricsPlayerBarDrawerColorMode ?? 'default';
@@ -1444,7 +1447,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
           provider === 'musicbrainz' ||
           provider === 'cover-art-archive' ||
           provider === 'netease-cloud-music' ||
-          provider === 'qq-music',
+          provider === 'qq-music' ||
+          provider === 'kugou-music',
       )
     : defaultSettings.networkMetadataProviders;
   const lyricsAutoAcceptScore = Number(settings.lyricsAutoAcceptScore);
@@ -1578,6 +1582,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.appWallpaperUiOpacityPercent,
     appWallpaperVisualProtectionEnabled: settings.appWallpaperVisualProtectionEnabled !== false,
     appWallpaperUnifiedOpacityEnabled: settings.appWallpaperUnifiedOpacityEnabled === true,
+    nowPlayingCoverColorEnabled: settings.nowPlayingCoverColorEnabled === true,
     appVideoWallpaperPauseMode: normalizeAppVideoWallpaperPauseMode(settings.appVideoWallpaperPauseMode),
     networkProxyMode,
     networkProxyUrl,

@@ -20,6 +20,10 @@ const loginConfigs: Partial<Record<AccountProvider, LoginConfig>> = {
     domains: ['y.qq.com', '.y.qq.com', 'qq.com', '.qq.com'],
     requiredCookieNames: ['uin', 'qqmusic_key', 'qm_keyst'],
   },
+  kugou: {
+    url: 'https://www.kugou.com/',
+    domains: ['www.kugou.com', '.kugou.com', 'kugou.com'],
+  },
   bilibili: {
     url: 'https://www.bilibili.com/',
     domains: ['www.bilibili.com', '.bilibili.com', 'bilibili.com'],

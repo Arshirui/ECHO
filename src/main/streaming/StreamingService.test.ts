@@ -190,6 +190,12 @@ describe('StreamingService playlist imports', () => {
       supportsSearch: true,
       supportsPlayback: true,
     });
+    expect(descriptors.find((provider) => provider.name === 'kugou')).toMatchObject({
+      enabled: true,
+      supportsSearch: true,
+      supportsPlayback: true,
+      supportsDownload: true,
+    });
   });
 
   it('resolves QQ Music c6 share links before importing playlists', async () => {
@@ -360,6 +366,55 @@ describe('StreamingService playlist imports', () => {
     });
   });
 
+  it('imports KuGou special playlist link variants without resolving redirects', async () => {
+    const registry = new StreamingProviderRegistry();
+    const getPlaylist = vi.fn(
+      async (input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> => ({
+        id: `streaming:kugou:playlist:${input.providerPlaylistId}`,
+        provider: 'kugou',
+        providerPlaylistId: input.providerPlaylistId,
+        title: 'KuGou Playlist',
+        description: null,
+        creator: null,
+        coverUrl: null,
+        coverThumb: null,
+        trackCount: 0,
+        tracks: [],
+        page: 1,
+        pageSize: 500,
+        total: 0,
+        hasMore: false,
+      }),
+    );
+    registry.register({
+      name: 'kugou',
+      search: vi.fn(),
+      getTrack: vi.fn(),
+      getPlaylist,
+      resolvePlayback: vi.fn(),
+    });
+    const service = new StreamingService(registry, fakeCacheStore());
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})));
+
+    const inputs = [
+      ['https://www.kugou.com/yy/special/single/889900.html', '889900'],
+      ['https://www.kugou.com/songlist/gcid_778899.html', '778899'],
+      ['https://m.kugou.com/plist/list/667788?specialid=667788', '667788'],
+      ['https://example.com/share?url=https%3A%2F%2Fwww.kugou.com%2Fyy%2Fspecial%2Fsingle%2F556677.html', '556677'],
+    ] as const;
+
+    expect(fetch).not.toHaveBeenCalled();
+    for (const [input, expectedId] of inputs) {
+      const result = await service.importPlaylistFromUrl(input);
+      expect(result).toMatchObject({
+        provider: 'kugou',
+        providerPlaylistId: expectedId,
+        playlistName: 'KuGou Playlist',
+      });
+    }
+    expect(getPlaylist).toHaveBeenCalledTimes(inputs.length);
+  });
+
   it('rejects QQ Music taoge pages when no numeric playlist id is present', async () => {
     const registry = new StreamingProviderRegistry();
     registry.register({
@@ -372,7 +427,7 @@ describe('StreamingService playlist imports', () => {
     const service = new StreamingService(registry, fakeCacheStore());
 
     await expect(service.importPlaylistFromUrl('https://y.qq.com/n/m/detail/taoge/index.html')).rejects.toThrow(
-      'Only NetEase Cloud Music playlists or podcasts, QQ Music, and Spotify playlist links are supported.',
+      'Only NetEase Cloud Music playlists or podcasts, QQ Music, KuGou Music, and Spotify playlist links are supported.',
     );
   });
 
@@ -687,6 +742,46 @@ describe('StreamingService playlist imports', () => {
         provider: 'qqmusic',
         providerTrackId: 'song-mid',
         url: 'https://isure.stream.qqmusic.qq.com/song.flac',
+      }),
+    ).toBe(true);
+  });
+
+  it('attaches protected download authorization to KuGou playback sources', async () => {
+    const registry = new StreamingProviderRegistry();
+    registry.register({
+      name: 'kugou',
+      search: vi.fn(),
+      getTrack: vi.fn(),
+      resolvePlayback: vi.fn(async (): Promise<StreamingPlaybackSource> => ({
+        provider: 'kugou',
+        providerTrackId: 'abcdef1234567890abcdef1234567890.1.2',
+        url: 'https://fs.open.kugou.com/song.mp3',
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+        mimeType: 'audio/mpeg',
+        bitrate: 320000,
+        sampleRate: null,
+        bitDepth: null,
+        codec: 'mp3',
+        headers: {},
+        requiresProxy: false,
+        supportsRange: true,
+      })),
+    });
+    accountState.cookie = 'dfid=DFID123; kg_mid=123';
+    const service = new StreamingService(registry, fakeCacheStore());
+
+    const source = await service.resolvePlayback({
+      provider: 'kugou',
+      providerTrackId: 'abcdef1234567890abcdef1234567890.1.2',
+      quality: 'high',
+    });
+
+    expect(source.downloadAuthorizationToken).toEqual(expect.any(String));
+    expect(
+      verifyDownloadAuthorizationToken(source.downloadAuthorizationToken, {
+        provider: 'kugou',
+        providerTrackId: 'abcdef1234567890abcdef1234567890.1.2',
+        url: 'https://fs.open.kugou.com/song.mp3',
       }),
     ).toBe(true);
   });

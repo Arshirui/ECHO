@@ -2119,6 +2119,7 @@ const echoApi: EchoApi = {
     openDiagnosticsFolder: () => ipcRenderer.invoke(IpcChannels.DiagnosticsOpenFolder),
     openCrashReport: () => ipcRenderer.invoke(IpcChannels.DiagnosticsOpenCrashReport),
     openAudioCrashReport: () => ipcRenderer.invoke(IpcChannels.DiagnosticsOpenAudioCrashReport),
+    relaunchApp: () => ipcRenderer.invoke(IpcChannels.DiagnosticsRelaunchApp),
     openDevConsole: () => ipcRenderer.invoke(IpcChannels.DiagnosticsOpenDevConsole),
     getDevConsoleSnapshot: () => ipcRenderer.invoke(IpcChannels.DiagnosticsDevConsoleSnapshot),
     onDevConsoleEntry: (handler) => {

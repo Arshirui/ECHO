@@ -915,7 +915,7 @@ const optionalLimit = (value: unknown, fallback: number): number => {
   return Number.isFinite(parsed) ? Math.max(1, Math.min(500, Math.floor(parsed))) : fallback;
 };
 
-const networkTagProviders = new Set<NetworkTagProvider>(['mock', 'musicbrainz', 'cover-art-archive', 'netease-cloud-music', 'qq-music']);
+const networkTagProviders = new Set<NetworkTagProvider>(['mock', 'musicbrainz', 'cover-art-archive', 'netease-cloud-music', 'qq-music', 'kugou-music']);
 const missingMetadataFields = new Set<MissingMetadataField>([
   'cover',
   'title',

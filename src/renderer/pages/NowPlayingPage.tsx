@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Disc3, Mic2, Music2 } from 'lucide-react';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { AppSettings } from '../../shared/types/appSettings';
@@ -10,8 +11,111 @@ import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 
 const idlePollingStates = new Set(['paused', 'stopped', 'idle', 'error']);
 const nowPlayingMarqueeOverflowPx = 4;
+const coverColorSampleSize = 32;
+const maxCachedCoverPalettes = 48;
 const readLowLoadPlaybackModeEnabled = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.lowLoadPlaybackModeEnabled === true;
+const readNowPlayingCoverColorEnabled = (settings: Partial<AppSettings> | null | undefined): boolean =>
+  settings?.nowPlayingCoverColorEnabled === true;
+
+type NowPlayingCoverPalette = {
+  rgb: string;
+};
+
+const coverPaletteCache = new Map<string, NowPlayingCoverPalette | null>();
+
+const cacheCoverPalette = (coverUrl: string, palette: NowPlayingCoverPalette | null): void => {
+  if (coverPaletteCache.size >= maxCachedCoverPalettes) {
+    const firstKey = coverPaletteCache.keys().next().value as string | undefined;
+    if (firstKey) {
+      coverPaletteCache.delete(firstKey);
+    }
+  }
+
+  coverPaletteCache.set(coverUrl, palette);
+};
+
+const scheduleCoverColorRead = (callback: () => void): (() => void) => {
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
+
+  if (typeof idleWindow.requestIdleCallback === 'function') {
+    const handle = idleWindow.requestIdleCallback(callback, { timeout: 700 });
+    return () => idleWindow.cancelIdleCallback?.(handle);
+  }
+
+  const handle = window.setTimeout(callback, 120);
+  return () => window.clearTimeout(handle);
+};
+
+const extractCoverPalette = (image: HTMLImageElement): NowPlayingCoverPalette | null => {
+  const canvas = document.createElement('canvas');
+  canvas.width = coverColorSampleSize;
+  canvas.height = coverColorSampleSize;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+
+  if (!context || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+    return null;
+  }
+
+  context.drawImage(image, 0, 0, coverColorSampleSize, coverColorSampleSize);
+
+  const data = context.getImageData(0, 0, coverColorSampleSize, coverColorSampleSize).data;
+  let weightedRed = 0;
+  let weightedGreen = 0;
+  let weightedBlue = 0;
+  let weightTotal = 0;
+  let fallbackRed = 0;
+  let fallbackGreen = 0;
+  let fallbackBlue = 0;
+  let fallbackWeightTotal = 0;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const alpha = data[index + 3] / 255;
+    if (alpha < 0.55) {
+      continue;
+    }
+
+    const red = data[index];
+    const green = data[index + 1];
+    const blue = data[index + 2];
+    const max = Math.max(red, green, blue);
+    const min = Math.min(red, green, blue);
+    const saturation = max === 0 ? 0 : (max - min) / max;
+    const lightness = (max + min) / 510;
+
+    fallbackRed += red * alpha;
+    fallbackGreen += green * alpha;
+    fallbackBlue += blue * alpha;
+    fallbackWeightTotal += alpha;
+
+    if (saturation < 0.12 || lightness < 0.12 || lightness > 0.9) {
+      continue;
+    }
+
+    const midToneWeight = 1 - Math.min(0.82, Math.abs(lightness - 0.55) * 1.4);
+    const weight = alpha * (0.35 + saturation * 1.9) * midToneWeight;
+    weightedRed += red * weight;
+    weightedGreen += green * weight;
+    weightedBlue += blue * weight;
+    weightTotal += weight;
+  }
+
+  const total = weightTotal > 0 ? weightTotal : fallbackWeightTotal;
+  if (total <= 0) {
+    return null;
+  }
+
+  const red = Math.round((weightTotal > 0 ? weightedRed : fallbackRed) / total);
+  const green = Math.round((weightTotal > 0 ? weightedGreen : fallbackGreen) / total);
+  const blue = Math.round((weightTotal > 0 ? weightedBlue : fallbackBlue) / total);
+
+  return {
+    rgb: `${red} ${green} ${blue}`,
+  };
+};
 
 const NowPlayingMarqueeText = ({
   as,
@@ -92,6 +196,8 @@ export const NowPlayingPage = (): JSX.Element => {
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus | null>(null);
   const [lowLoadPlaybackModeEnabled, setLowLoadPlaybackModeEnabled] = useState(false);
+  const [nowPlayingCoverColorEnabled, setNowPlayingCoverColorEnabled] = useState(false);
+  const [coverPalette, setCoverPalette] = useState<NowPlayingCoverPalette | null>(null);
   const [error, setError] = useState<string | null>(null);
   const state = audioStatus?.state ?? playbackStatus?.state ?? 'idle';
   const pollIntervalMs = lowLoadPlaybackModeEnabled || idlePollingStates.has(state) ? 1800 : 500;
@@ -104,6 +210,16 @@ export const NowPlayingPage = (): JSX.Element => {
   const title = currentTrack?.title ?? titleFromPath(filePath);
   const artist = currentTrack?.artist || currentTrack?.albumArtist || (filePath ? t('nowPlaying.localFile') : t('nowPlaying.ready'));
   const coverUrl = currentTrack?.coverThumb ?? null;
+  const shouldUseCoverColor = nowPlayingCoverColorEnabled && !lowLoadPlaybackModeEnabled;
+  const coverColorStyle = useMemo(
+    () =>
+      shouldUseCoverColor && coverPalette
+        ? ({
+            '--now-playing-cover-rgb': coverPalette.rgb,
+          } as CSSProperties)
+        : undefined,
+    [coverPalette, shouldUseCoverColor],
+  );
 
   const refreshStatus = useCallback(async (): Promise<void> => {
     const echo = window.echo;
@@ -142,20 +258,26 @@ export const NowPlayingPage = (): JSX.Element => {
 
   useEffect(() => {
     let cancelled = false;
-    const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
+    const applyInitialSettings = (settings: Partial<AppSettings> | null | undefined): void => {
       if (!cancelled) {
         setLowLoadPlaybackModeEnabled(readLowLoadPlaybackModeEnabled(settings));
+        setNowPlayingCoverColorEnabled(readNowPlayingCoverColorEnabled(settings));
       }
     };
 
-    void window.echo?.app?.getSettings?.().then(applySettings).catch(() => undefined);
+    void window.echo?.app?.getSettings?.().then(applyInitialSettings).catch(() => undefined);
 
     const handleSettingsChanged = (event: Event): void => {
       const patch = (event as CustomEvent<Partial<AppSettings> | null | undefined>).detail;
-      if (!patch || !Object.prototype.hasOwnProperty.call(patch, 'lowLoadPlaybackModeEnabled')) {
+      if (!patch) {
         return;
       }
-      applySettings(patch);
+      if (Object.prototype.hasOwnProperty.call(patch, 'lowLoadPlaybackModeEnabled')) {
+        setLowLoadPlaybackModeEnabled(readLowLoadPlaybackModeEnabled(patch));
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'nowPlayingCoverColorEnabled')) {
+        setNowPlayingCoverColorEnabled(readNowPlayingCoverColorEnabled(patch));
+      }
     };
 
     window.addEventListener('settings:changed', handleSettingsChanged);
@@ -165,8 +287,61 @@ export const NowPlayingPage = (): JSX.Element => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!shouldUseCoverColor || !coverUrl) {
+      setCoverPalette(null);
+      return undefined;
+    }
+
+    if (coverPaletteCache.has(coverUrl)) {
+      setCoverPalette(coverPaletteCache.get(coverUrl) ?? null);
+      return undefined;
+    }
+
+    let disposed = false;
+    let image: HTMLImageElement | null = null;
+
+    const cancelIdle = scheduleCoverColorRead(() => {
+      image = new Image();
+      image.decoding = 'async';
+      image.onload = () => {
+        if (disposed || !image) {
+          return;
+        }
+
+        let palette: NowPlayingCoverPalette | null = null;
+        try {
+          palette = extractCoverPalette(image);
+        } catch {
+          palette = null;
+        }
+
+        cacheCoverPalette(coverUrl, palette);
+        if (!disposed) {
+          setCoverPalette(palette);
+        }
+      };
+      image.onerror = () => {
+        cacheCoverPalette(coverUrl, null);
+        if (!disposed) {
+          setCoverPalette(null);
+        }
+      };
+      image.src = coverUrl;
+    });
+
+    return () => {
+      disposed = true;
+      cancelIdle();
+      if (image) {
+        image.onload = null;
+        image.onerror = null;
+      }
+    };
+  }, [coverUrl, shouldUseCoverColor]);
+
   return (
-    <div className="page-stack now-playing-page">
+    <div className="page-stack now-playing-page" data-cover-color={coverColorStyle ? 'true' : undefined} style={coverColorStyle}>
       <section className="page-header">
         <div>
           <p className="section-kicker">{t('nowPlaying.kicker')}</p>

@@ -3698,6 +3698,28 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toBe("");
   });
 
+  it("keeps cover color backgrounds active in low-load mode without using the cover image as backdrop", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, {
+      lowLoadPlaybackModeEnabled: true,
+      lyricsBackgroundMode: "coverColor",
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+
+    expect(page.dataset.background).toBe("coverColor");
+    expect(page.style.getPropertyValue("--lyrics-cover")).toBe("none");
+  });
+
   it("applies lyrics readability enhancement in pure lyrics mode", async () => {
     const track = makeTrack();
     mockEcho(track);

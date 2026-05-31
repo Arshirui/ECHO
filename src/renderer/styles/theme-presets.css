@@ -461,6 +461,27 @@ html[data-theme="light"][data-theme-preset="nyanCat"] {
   --preset-on-accent: #ffffff;
 }
 
+html[data-theme="light"][data-theme-preset="childrenDoodle"] {
+  --preset-app-bg: #fff4dc;
+  --preset-app-bg-2: #ffd9ec;
+  --preset-app-bg-3: #d6f7ff;
+  --preset-panel-rgb: 255 250 240;
+  --preset-soft-rgb: 249 231 208;
+  --preset-border-rgb: 95 130 198;
+  --preset-shadow-rgb: 76 60 95;
+  --preset-text: #42537a;
+  --preset-heading: #203f83;
+  --preset-muted: #6f7897;
+  --preset-subtle: #9a8eb0;
+  --preset-accent: #566fda;
+  --preset-accent-strong: #244caa;
+  --preset-accent-rgb: 86 111 218;
+  --preset-secondary: #ff6fa8;
+  --preset-secondary-rgb: 255 111 168;
+  --preset-success-text: #287265;
+  --preset-on-accent: #ffffff;
+}
+
 html[data-theme="light"][data-theme-preset="wisteriaBubble"] {
   --preset-app-bg: #fbf7ff;
   --preset-app-bg-2: #e8d9ff;
@@ -1059,6 +1080,27 @@ html[data-theme="dark"][data-theme-preset="nyanCat"] {
   --preset-secondary-rgb: 89 217 255;
   --preset-success-text: #a4f5e5;
   --preset-on-accent: #2b0f24;
+}
+
+html[data-theme="dark"][data-theme-preset="childrenDoodle"] {
+  --preset-app-bg: #17142a;
+  --preset-app-bg-2: #241f42;
+  --preset-app-bg-3: #12313a;
+  --preset-panel-rgb: 41 37 64;
+  --preset-soft-rgb: 31 27 52;
+  --preset-border-rgb: 166 140 241;
+  --preset-shadow-rgb: 0 0 0;
+  --preset-text: #eee5ff;
+  --preset-heading: #fff4fb;
+  --preset-muted: #cbbfe6;
+  --preset-subtle: #a99ac8;
+  --preset-accent: #ff8dbc;
+  --preset-accent-strong: #ffd2e4;
+  --preset-accent-rgb: 255 141 188;
+  --preset-secondary: #7be5d1;
+  --preset-secondary-rgb: 123 229 209;
+  --preset-success-text: #c2fbf0;
+  --preset-on-accent: #321020;
 }
 
 html[data-theme="dark"][data-theme-preset="wisteriaBubble"] {
@@ -1748,7 +1790,7 @@ html:is([data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="
   background: var(--theme-list-row-bg-hover);
 }
 
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .page-surface:has(.connect-page),
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .page-surface:has(.connect-page),
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .page-surface:has(.plugins-page) {
   background: var(--echo-polish-page-bg, var(--theme-page-bg)), var(--theme-app-bg);
 }
@@ -1791,12 +1833,12 @@ html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not
   color: var(--theme-muted-text);
 }
 
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-now--stage,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-section--stage,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-hqplayer-panel,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-radio-panel,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-receiver-panel,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-outgoing-debug,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-now--stage,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-section--stage,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-hqplayer-panel,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-radio-panel,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-receiver-panel,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-outgoing-debug,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugins-list,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-detail,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-example-card {
@@ -1805,11 +1847,11 @@ html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not
   box-shadow: var(--theme-shadow-panel);
 }
 
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-empty,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-row,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-radio-empty,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-radio-row,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-meta span,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-empty,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-row,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-radio-empty,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-radio-row,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-meta span,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-list-item,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-command-row,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-setting-row,
@@ -1823,32 +1865,32 @@ html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not
   background: var(--theme-list-row-bg);
 }
 
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-row:hover,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-radio-row[data-active="true"],
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-row:hover,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-radio-row[data-active="true"],
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-list-item:hover,
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-list-item[data-active="true"] {
   border-color: var(--theme-panel-border-strong);
   background: var(--theme-list-row-bg-hover);
 }
 
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-icon,
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-icon[data-tone],
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-artwork {
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-icon,
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-icon[data-tone],
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-artwork {
   color: var(--theme-accent-text);
   border-color: var(--theme-accent-border);
   background: var(--theme-accent-bg);
 }
 
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-meta span[data-state="available"],
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-meta span[data-state="connected"],
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-meta span[data-state="available"],
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-meta span[data-state="connected"],
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-status-pill[data-status="running"] {
   color: var(--theme-success-text);
   border-color: var(--theme-success-border);
   background: var(--theme-success-bg);
 }
 
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-meta span[data-state="unsupported"],
-html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .connect-device-meta span[data-state="unavailable"],
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-meta span[data-state="unsupported"],
+html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell:not(.app-shell--wallpaper) .connect-device-meta span[data-state="unavailable"],
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-status-pill[data-status="error"],
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-permissions span[data-risk="high"],
 html:is([data-theme="dark"], [data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .plugin-security-grid span[data-risk="high"],

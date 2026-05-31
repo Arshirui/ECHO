@@ -503,6 +503,7 @@ const pageFromQuery = (
     query?.sourceProvider === 'local' ||
     query?.sourceProvider === 'netease' ||
     query?.sourceProvider === 'qqmusic' ||
+    query?.sourceProvider === 'kugou' ||
     query?.sourceProvider === 'spotify' ||
     query?.sourceProvider === 'remote'
       ? query.sourceProvider
@@ -7261,7 +7262,7 @@ export class LibraryStore {
   }
 
   private mapPlaylistSourceProvider(value: unknown): LibraryPlaylist['sourceProvider'] {
-    return value === 'netease' || value === 'qqmusic' || value === 'spotify' || value === 'remote' ? value : 'local';
+    return value === 'netease' || value === 'qqmusic' || value === 'kugou' || value === 'spotify' || value === 'remote' ? value : 'local';
   }
 
   private mapPlaylistSortMode(value: unknown): LibraryPlaylist['sortMode'] {

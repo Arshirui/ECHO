@@ -96,6 +96,7 @@ describe('app settings normalization', () => {
     expect(settings.appWallpaperUiOpacityPercent).toBe(100);
     expect(settings.appWallpaperVisualProtectionEnabled).toBe(true);
     expect(settings.appWallpaperUnifiedOpacityEnabled).toBe(false);
+    expect(settings.nowPlayingCoverColorEnabled).toBe(false);
     expect(settings.appVideoWallpaperPauseMode).toBe('smart');
     expect(settings.networkProxyMode).toBe('off');
     expect(settings.networkProxyUrl).toBeNull();
@@ -235,6 +236,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ homeRandomHeroTitleEnabled: true }).homeRandomHeroTitleEnabled).toBe(true);
     expect(normalizeSettings({ homeRandomHeroTitleEnabled: false }).homeRandomHeroTitleEnabled).toBe(false);
     expect(normalizeSettings({ homeRandomHeroTitleEnabled: 'false' }).homeRandomHeroTitleEnabled).toBe(false);
+  });
+
+  it('keeps Now Playing cover color disabled unless explicitly enabled', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).nowPlayingCoverColorEnabled).toBe(false);
+    expect(normalizeSettings({ nowPlayingCoverColorEnabled: true }).nowPlayingCoverColorEnabled).toBe(true);
+    expect(normalizeSettings({ nowPlayingCoverColorEnabled: false }).nowPlayingCoverColorEnabled).toBe(false);
+    expect(normalizeSettings({ nowPlayingCoverColorEnabled: 'true' as never }).nowPlayingCoverColorEnabled).toBe(false);
   });
 
   it('normalizes play/pause fade as a default-off customizable opt-in', async () => {
@@ -1473,6 +1483,10 @@ describe('app settings normalization', () => {
       lyricsWordHighlightEnabled: true,
       desktopLyricsRomanizationEnabled: true,
       desktopLyricsTranslationEnabled: true,
+    });
+
+    expect(normalizeSettings({ lyricsBackgroundMode: 'coverColor' })).toMatchObject({
+      lyricsBackgroundMode: 'coverColor',
     });
   });
 

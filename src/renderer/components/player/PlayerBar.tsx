@@ -302,6 +302,8 @@ const streamingTrackWebUrl = (provider: StreamingProviderName, providerTrackId: 
       return `https://music.163.com/#/song?id=${encodeURIComponent(providerTrackId)}`;
     case 'qqmusic':
       return `https://y.qq.com/n/ryqq/songDetail/${encodeURIComponent(providerTrackId)}`;
+    case 'kugou':
+      return `https://www.kugou.com/song/#hash=${encodeURIComponent(providerTrackId.split('.')[0] ?? providerTrackId)}`;
     case 'spotify':
       return `https://open.spotify.com/track/${encodeURIComponent(providerTrackId)}`;
     case 'tidal':

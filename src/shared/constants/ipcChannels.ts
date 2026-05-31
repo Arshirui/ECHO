@@ -62,6 +62,7 @@ export const IpcChannels = {
   DiagnosticsOpenFolder: 'diagnostics:open-folder',
   DiagnosticsOpenCrashReport: 'diagnostics:open-crash-report',
   DiagnosticsOpenAudioCrashReport: 'diagnostics:open-audio-crash-report',
+  DiagnosticsRelaunchApp: 'diagnostics:relaunch-app',
   DiagnosticsOpenDevConsole: 'diagnostics:open-dev-console',
   DiagnosticsDevConsoleSnapshot: 'diagnostics:dev-console-snapshot',
   DiagnosticsDevConsoleClear: 'diagnostics:dev-console-clear',

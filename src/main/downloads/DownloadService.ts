@@ -408,6 +408,16 @@ const protectedMusicProviderFromUrl = (value: string | null | undefined): Protec
     return 'qqmusic';
   }
 
+  if (
+    normalized.includes('kugou.com') ||
+    normalized.includes('kugoucdn.com') ||
+    normalized.includes('kgimg.com') ||
+    normalized.includes('webfs.') ||
+    normalized.includes('fs.open.kugou.com')
+  ) {
+    return 'kugou';
+  }
+
   return null;
 };
 
@@ -1863,14 +1873,16 @@ export class DownloadService extends EventEmitter {
   private directAudioRequestHeaders(job: DownloadJob, options: DownloadJobOptions): Record<string, string> {
     const headers = { ...options.requestHeaders };
     const url = `${job.webpageUrl ?? ''} ${job.sourceUrl}`.toLocaleLowerCase();
-    const provider: Extract<AccountProvider, 'netease' | 'qqmusic' | 'soundcloud'> | null =
+    const provider: Extract<AccountProvider, 'netease' | 'qqmusic' | 'kugou' | 'soundcloud'> | null =
       url.includes('music.163.com') || url.includes('music.126.net')
         ? 'netease'
         : url.includes('y.qq.com') || url.includes('qqmusic.qq.com') || url.includes('gtimg.cn')
           ? 'qqmusic'
-          : url.includes('soundcloud.com') || url.includes('sndcdn.com') || url.includes('soundcloud.cloud')
-            ? 'soundcloud'
-            : null;
+          : url.includes('kugou.com') || url.includes('kugoucdn.com') || url.includes('kgimg.com')
+            ? 'kugou'
+            : url.includes('soundcloud.com') || url.includes('sndcdn.com') || url.includes('soundcloud.cloud')
+              ? 'soundcloud'
+              : null;
 
     if (!hasHeader(headers, 'User-Agent')) {
       headers['User-Agent'] =
@@ -1890,6 +1902,13 @@ export class DownloadService extends EventEmitter {
       }
       if (!hasHeader(headers, 'Origin')) {
         headers.Origin = 'https://y.qq.com';
+      }
+    } else if (provider === 'kugou') {
+      if (!hasHeader(headers, 'Referer')) {
+        headers.Referer = 'https://www.kugou.com/';
+      }
+      if (!hasHeader(headers, 'Origin')) {
+        headers.Origin = 'https://www.kugou.com';
       }
     } else if (provider === 'soundcloud') {
       if (!hasHeader(headers, 'Referer')) {

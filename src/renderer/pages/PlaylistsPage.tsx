@@ -60,6 +60,7 @@ const qualitySwitchPlaybackStates = new Set(['loading', 'playing']);
 const playlistSourceProviderLabels: Record<Exclude<LibraryPlaylist['sourceProvider'], 'local'>, string> = {
   netease: '网易云',
   qqmusic: 'QQ',
+  kugou: '酷狗',
   spotify: 'Spotify',
   remote: '远程',
   m3u8: 'M3U8',
@@ -343,6 +344,10 @@ const streamingPlaylistUrl = (playlist: LibraryPlaylist): string | null => {
     return `https://y.qq.com/n/ryqq/playlist/${encodeURIComponent(playlist.sourcePlaylistId)}`;
   }
 
+  if (playlist.sourceProvider === 'kugou') {
+    return `https://www.kugou.com/yy/special/single/${encodeURIComponent(playlist.sourcePlaylistId)}.html`;
+  }
+
   if (playlist.sourceProvider === 'spotify') {
     return `https://open.spotify.com/playlist/${encodeURIComponent(playlist.sourcePlaylistId)}`;
   }
@@ -384,6 +389,10 @@ const streamingTrackWebUrl = (track: LibraryTrack): string | null => {
     return `https://y.qq.com/n/ryqq/songDetail/${encodeURIComponent(track.providerTrackId)}`;
   }
 
+  if (track.provider === 'kugou') {
+    return `https://www.kugou.com/song/#hash=${encodeURIComponent(track.providerTrackId.split('.')[0] ?? track.providerTrackId)}`;
+  }
+
   if (track.provider === 'spotify') {
     return `https://open.spotify.com/track/${encodeURIComponent(track.providerTrackId)}`;
   }
@@ -394,6 +403,7 @@ const streamingTrackWebUrl = (track: LibraryTrack): string | null => {
 const streamingProviderFromTrack = (track: LibraryTrack): StreamingProviderName | null =>
   track.provider === 'netease' ||
   track.provider === 'qqmusic' ||
+  track.provider === 'kugou' ||
   track.provider === 'mock' ||
   track.provider === 'bilibili' ||
   track.provider === 'spotify'
@@ -614,7 +624,8 @@ export const PlaylistsPage = (): JSX.Element => {
   const selectedStreamingPlaylistUrl = selectedPlaylist ? streamingPlaylistUrl(selectedPlaylist) : null;
   const currentStreamingQuality = streamingQualityOptions.find((option) => option.value === streamingQuality) ?? streamingQualityOptions[0];
   const canDownloadSelectedPlaylist =
-    downloadsFeatureUnlocked && (selectedPlaylist?.sourceProvider === 'netease' || selectedPlaylist?.sourceProvider === 'qqmusic');
+    downloadsFeatureUnlocked &&
+    (selectedPlaylist?.sourceProvider === 'netease' || selectedPlaylist?.sourceProvider === 'qqmusic' || selectedPlaylist?.sourceProvider === 'kugou');
   const isSelectedPlaylistPlaybackActive =
     playlistPlayback.active && Boolean(selectedPlaylist) && playlistPlayback.playlistId === selectedPlaylist?.id;
   const displayTracks = useMemo(

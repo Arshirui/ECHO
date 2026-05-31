@@ -31,6 +31,7 @@ describe('AccountService', () => {
       expect.arrayContaining([
         expect.objectContaining({ provider: 'netease', connected: false }),
         expect.objectContaining({ provider: 'qqmusic', connected: false }),
+        expect.objectContaining({ provider: 'kugou', connected: false }),
         expect.objectContaining({ provider: 'bilibili', connected: false }),
         expect.objectContaining({ provider: 'youtube', connected: false }),
         expect.objectContaining({ provider: 'soundcloud', connected: false }),
@@ -59,6 +60,21 @@ describe('AccountService', () => {
     expect(status.connected).toBe(false);
     expect(readFileSync(storagePath, 'utf8')).not.toContain('uin=secret');
     expect(readFileSync(`${storagePath}.bak`, 'utf8')).not.toContain('uin=secret');
+  });
+
+  it('keeps KuGou cookie accounts connected and derives display identity from cookies', async () => {
+    const { service } = createService();
+    service.saveCookie('kugou', 'KugooID=42; UserName=Moe; dfid=DFID123');
+
+    const status = await service.checkAccount('kugou');
+
+    expect(status).toMatchObject({
+      provider: 'kugou',
+      connected: true,
+      username: '42',
+      displayName: 'Moe',
+      error: null,
+    });
   });
 
   it('keeps account state after service restart', () => {

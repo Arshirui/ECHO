@@ -168,6 +168,7 @@ const sensitiveKeyPattern = /cookie|token|secret|authorization|headers|password|
 const providerReferers: Partial<Record<StreamingProviderName, string>> = {
   netease: 'https://music.163.com/',
   qqmusic: 'https://y.qq.com/',
+  kugou: 'https://www.kugou.com/',
   bilibili: 'https://www.bilibili.com/',
   soundcloud: 'https://soundcloud.com/',
 };
@@ -180,6 +181,10 @@ const proxyableImageHosts = new Set([
   'p4.music.126.net',
   'y.gtimg.cn',
   'qpic.y.qq.com',
+  'imge.kugou.com',
+  'imgessl.kugou.com',
+  'singerimg.kugou.com',
+  'imge.kugoucdn.com',
   'i0.hdslb.com',
   'i1.hdslb.com',
   'i2.hdslb.com',
@@ -739,7 +744,7 @@ export class StreamingCacheStore {
       description: textOrNull(row.description),
       kind: row.kind === 'smart' || row.kind === 'synced' || row.kind === 'system' ? row.kind : 'manual',
       sourceProvider:
-        row.source_provider === 'netease' || row.source_provider === 'qqmusic' || row.source_provider === 'spotify'
+        row.source_provider === 'netease' || row.source_provider === 'qqmusic' || row.source_provider === 'kugou' || row.source_provider === 'spotify'
           ? row.source_provider
           : 'local',
       sourcePlaylistId: textOrNull(row.source_playlist_id),

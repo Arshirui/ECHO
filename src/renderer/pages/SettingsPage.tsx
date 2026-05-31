@@ -505,11 +505,12 @@ const getCompatiblePlaybackDevices = (devices: AudioDeviceInfo[], outputMode: Au
 const networkProviderLabels: Record<AppSettings['networkMetadataProviders'][number], string> = {
   'netease-cloud-music': '网易云音乐',
   'qq-music': 'QQ 音乐',
+  'kugou-music': '酷狗音乐',
   musicbrainz: 'MusicBrainz',
   'cover-art-archive': 'Cover Art Archive',
   mock: 'Mock',
 };
-const visibleNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music', 'musicbrainz'];
+const visibleNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music', 'kugou-music', 'musicbrainz'];
 const defaultNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music'];
 const artistOnlineInfoSourceOptions: Array<{ source: ArtistOnlineInfoSource; label: string; description: string }> = [
   { source: 'baidu-baike', label: '百度百科', description: '中文艺人和大众歌手优先' },
@@ -680,6 +681,7 @@ const fallbackFontFamilies = [
 ];
 
 const accountProviderLabels: Record<AccountProvider, string> = {
+  kugou: '酷狗音乐',
   netease: '网易云音乐',
   qqmusic: 'QQ 音乐',
   bilibili: 'Bilibili',
@@ -745,6 +747,7 @@ const emptyArtistImageSummary: ArtistImageCacheSummary = {
 const accountLoginUrls: Record<AccountProvider, string> = {
   netease: 'https://music.163.com/',
   qqmusic: 'https://y.qq.com/',
+  kugou: 'https://www.kugou.com/',
   bilibili: 'https://www.bilibili.com/',
   youtube: 'https://www.youtube.com/',
   soundcloud: 'https://soundcloud.com/',
@@ -753,7 +756,7 @@ const accountLoginUrls: Record<AccountProvider, string> = {
   osu: 'https://osu.ppy.sh/',
 };
 
-const cookieAccountProviders: AccountProvider[] = ['netease', 'qqmusic', 'bilibili', 'soundcloud', 'osu'];
+const cookieAccountProviders: AccountProvider[] = ['netease', 'qqmusic', 'kugou', 'bilibili', 'soundcloud', 'osu'];
 const buildYouTubeBrowserOptions = (t: (key: TranslationKey, params?: Record<string, string | number>) => string): Array<{ value: YouTubeBrowser; label: string }> => [
   { value: 'edge', label: 'Edge' },
   { value: 'chrome', label: 'Chrome' },
@@ -1609,6 +1612,13 @@ const themePresetOptions: Array<{
     swatches: ['#fff7fb', '#ff5f93', '#ffd84f', '#44c765', '#28b8f0'],
   },
   {
+    preset: 'childrenDoodle',
+    labelKey: 'settings.appearance.themePreset.childrenDoodle',
+    descriptionKey: 'settings.appearance.themePreset.childrenDoodle.description',
+    preview: 'linear-gradient(135deg, #fff4dc 0%, #ffd9ec 26%, #d6f7ff 50%, #ede0ff 73%, #fff1a8 100%)',
+    swatches: ['#fff4dc', '#ff6fa8', '#566fda', '#66cdb7', '#f4c746'],
+  },
+  {
     preset: 'wisteriaBubble',
     labelKey: 'settings.appearance.themePreset.wisteriaBubble',
     descriptionKey: 'settings.appearance.themePreset.wisteriaBubble.description',
@@ -2395,6 +2405,56 @@ const themeEditorDefaults: Record<AppThemePreset, Record<ThemeTone, Partial<Them
       panelOpacityPercent: 88,
       glassPercent: 28,
       shadowPercent: 100,
+    },
+  },
+  childrenDoodle: {
+    light: {
+      appBg: '#fff4dc',
+      appBg2: '#ffd9ec',
+      appBg3: '#d6f7ff',
+      panel: '#fffaf0',
+      panelSoft: '#f9e7d0',
+      accent: '#566fda',
+      accentStrong: '#244caa',
+      secondary: '#ff6fa8',
+      heading: '#203f83',
+      text: '#42537a',
+      muted: '#6f7897',
+      border: '#5f82c6',
+      onAccent: '#ffffff',
+      buttonText: '#42537a',
+      panelOpacityPercent: 82,
+      glassPercent: 10,
+      shadowPercent: 56,
+      cornerRadiusPx: 8,
+      panelBlurPx: 4,
+      saturationPercent: 112,
+      motionSpeedSeconds: 0.18,
+      motionIntensityPercent: 78,
+    },
+    dark: {
+      appBg: '#17142a',
+      appBg2: '#241f42',
+      appBg3: '#12313a',
+      panel: '#292540',
+      panelSoft: '#1f1b34',
+      accent: '#ff8dbc',
+      accentStrong: '#ffd2e4',
+      secondary: '#7be5d1',
+      heading: '#fff4fb',
+      text: '#eee5ff',
+      muted: '#cbbfe6',
+      border: '#a68cf1',
+      onAccent: '#321020',
+      buttonText: '#eee5ff',
+      panelOpacityPercent: 88,
+      glassPercent: 14,
+      shadowPercent: 72,
+      cornerRadiusPx: 8,
+      panelBlurPx: 6,
+      saturationPercent: 118,
+      motionSpeedSeconds: 0.18,
+      motionIntensityPercent: 78,
     },
   },
   wisteriaBubble: {
@@ -3828,6 +3888,7 @@ export const SettingsPage = (): JSX.Element => {
   const [accountCookies, setAccountCookies] = useState<Record<AccountProvider, string>>({
     netease: '',
     qqmusic: '',
+    kugou: '',
     bilibili: '',
     youtube: '',
     soundcloud: '',
@@ -4429,6 +4490,25 @@ export const SettingsPage = (): JSX.Element => {
         title: '自定义背景',
         description: '支持图片和本地视频；视频静音循环，不进入音频链路。',
         terms: ['自定义背景', '视频壁纸', '动态背景', 'wallpaper', 'video wallpaper', 'background', 'opacity', 'blur', '壁纸', '背景', '透明度'],
+      },
+      {
+        id: 'row-now-playing-cover-color',
+        sectionKey: 'appearance',
+        targetId: 'settings-row-now-playing-cover-color',
+        title: t('settings.appearance.nowPlayingCoverColor.title'),
+        description: t('settings.appearance.nowPlayingCoverColor.description'),
+        terms: [
+          t('settings.appearance.nowPlayingCoverColor.title'),
+          t('settings.appearance.nowPlayingCoverColor.description'),
+          'now playing cover color',
+          'album cover color',
+          'dominant color',
+          'cover palette',
+          '取色',
+          '封面取色',
+          '播放界面',
+          '正在播放',
+        ],
       },
       {
         id: 'row-library-folders',
@@ -11886,6 +11966,22 @@ export const SettingsPage = (): JSX.Element => {
                   <ChipButton active>{t('settings.appearance.density.compact')}</ChipButton>
                   <ChipButton>{t('settings.appearance.density.standard')}</ChipButton>
                 </div>
+              </SettingRow>
+              <SettingRow
+                id="settings-row-now-playing-cover-color"
+                highlighted={highlightedSettingId === 'settings-row-now-playing-cover-color'}
+                title={t('settings.appearance.nowPlayingCoverColor.title')}
+                description={t('settings.appearance.nowPlayingCoverColor.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.nowPlayingCoverColorEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      nowPlayingCoverColorEnabled: !(appSettings?.nowPlayingCoverColorEnabled ?? false),
+                    })
+                  }
+                />
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"

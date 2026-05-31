@@ -6,6 +6,7 @@ const providerDisplayNames: Record<StreamingProviderName, string> = {
   mock: 'Mock',
   netease: 'NetEase Cloud Music',
   qqmusic: 'QQ Music',
+  kugou: 'KuGou Music',
   bilibili: 'Bilibili',
   youtube: 'YouTube',
   soundcloud: 'SoundCloud',

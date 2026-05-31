@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { StreamingProviderName } from '../../shared/types/streaming';
 
-export type ProtectedMusicDownloadProvider = Extract<StreamingProviderName, 'netease' | 'qqmusic'>;
+export type ProtectedMusicDownloadProvider = Extract<StreamingProviderName, 'netease' | 'qqmusic' | 'kugou'>;
 
 type DownloadAuthorizationPayload = {
   v: 1;
@@ -19,7 +19,7 @@ type DownloadAuthorizationInput = {
   expiresAt?: string | null;
 };
 
-const protectedMusicDownloadProviders = new Set<StreamingProviderName>(['netease', 'qqmusic']);
+const protectedMusicDownloadProviders = new Set<StreamingProviderName>(['netease', 'qqmusic', 'kugou']);
 const authorizationSecret = randomBytes(32);
 const maxAuthorizationTtlMs = 5 * 60 * 1000;
 const authorizationClockSkewMs = 30 * 1000;

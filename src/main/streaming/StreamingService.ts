@@ -43,6 +43,7 @@ import { createDownloadAuthorizationToken, isProtectedMusicDownloadProvider, typ
 import { MockStreamingProvider } from './providers/MockStreamingProvider';
 import { NeteaseStreamingProvider } from './providers/NeteaseStreamingProvider';
 import { QQMusicStreamingProvider } from './providers/QQMusicStreamingProvider';
+import { KugouStreamingProvider } from './providers/KugouStreamingProvider';
 import { BilibiliStreamingProvider } from './providers/BilibiliStreamingProvider';
 import { YouTubeStreamingProvider } from './providers/YouTubeStreamingProvider';
 import { SoundCloudStreamingProvider } from './providers/SoundCloudStreamingProvider';
@@ -84,7 +85,7 @@ type StreamingTrackRequest = {
 type StreamingPlaybackActivityProvider = () => boolean | Promise<boolean>;
 
 type StreamingPlaylistUrlTarget = {
-  provider: Extract<StreamingProviderName, 'netease' | 'qqmusic' | 'spotify'>;
+  provider: Extract<StreamingProviderName, 'netease' | 'qqmusic' | 'kugou' | 'spotify'>;
   providerPlaylistId: string;
 };
 
@@ -168,6 +169,12 @@ const qqPlaylistIdFromCandidate = (value: string | null): string | null => {
   return match ? match[0] : null;
 };
 
+const kugouPlaylistIdFromCandidate = (value: string | null): string | null => {
+  const trimmed = value?.trim() ?? '';
+  const match = trimmed.match(/^\d{3,}$/u);
+  return match ? match[0] : null;
+};
+
 const playlistIdFromParsedUrl = (url: URL, depth = 0): StreamingPlaylistUrlTarget | null => {
   const host = url.hostname.toLocaleLowerCase();
   const hashUrl = url.hash.startsWith('#') ? url.hash.slice(1) : '';
@@ -245,6 +252,19 @@ const playlistIdFromParsedUrl = (url: URL, depth = 0): StreamingPlaylistUrlTarge
     );
     if (id) {
       return { provider: 'qqmusic', providerPlaylistId: id };
+    }
+  }
+
+  if (host.includes('kugou.com')) {
+    const id = kugouPlaylistIdFromCandidate(
+      findParam('specialid', 'specialId', 'global_collection_id', 'gcid', 'id', 'playlistId', 'playlistid') ??
+        combinedPath.match(/(?:special\/single|special|plist\/list)\/(\d{3,})(?:\.html)?(?:[/?#]|$)/iu)?.[1] ??
+        combinedPath.match(/songlist\/(?:gcid_)?(\d{3,})(?:\.html)?(?:[/?#]|$)/iu)?.[1] ??
+        combinedPath.match(/gcid_(\d{3,})/iu)?.[1] ??
+        null,
+    );
+    if (id) {
+      return { provider: 'kugou', providerPlaylistId: id };
     }
   }
 
@@ -397,7 +417,7 @@ const resolvePlaylistIdFromUrl = async (rawUrl: string): Promise<StreamingPlayli
     return resolvedTarget;
   }
 
-  throw new Error('Only NetEase Cloud Music playlists or podcasts, QQ Music, and Spotify playlist links are supported.');
+  throw new Error('Only NetEase Cloud Music playlists or podcasts, QQ Music, KuGou Music, and Spotify playlist links are supported.');
 };
 
 const resolveFavoritePlaylistIdFromUrl = (rawUrl: string): StreamingFavoritePlaylistUrlTarget => {
@@ -1135,6 +1155,7 @@ export const createStreamingProviderRegistry = (): StreamingProviderRegistry => 
   registry.register(new MockStreamingProvider());
   registry.register(new NeteaseStreamingProvider());
   registry.register(new QQMusicStreamingProvider());
+  registry.register(new KugouStreamingProvider());
   registry.register(new BilibiliStreamingProvider());
   registry.register(new YouTubeStreamingProvider());
   registry.register(new SoundCloudStreamingProvider());

@@ -9,7 +9,7 @@ import type { SidebarRouteId } from './sidebar';
 
 export type ScanPerformanceMode = 'low' | 'balanced' | 'performance';
 export type RemoteCoverLoadPerformanceMode = 'low' | 'balanced' | 'aggressive' | 'lan';
-export type LyricsBackgroundMode = 'theme' | 'cover' | 'customWallpaper';
+export type LyricsBackgroundMode = 'theme' | 'cover' | 'coverColor' | 'customWallpaper';
 export type LyricsMiniPlayerColorMode = 'default' | 'custom' | 'cover';
 export type DesktopLyricsColorMode = 'theme' | 'custom';
 export type AppWallpaperMediaType = 'image' | 'video';
@@ -58,6 +58,7 @@ export type AppThemePreset =
   | 'caramelPudding'
   | 'neonCandy'
   | 'nyanCat'
+  | 'childrenDoodle'
   | 'wisteriaBubble'
   | 'strawberryCookie'
   | 'graphiteAurora'
@@ -243,13 +244,14 @@ export type AppSettings = {
   appWallpaperUiOpacityPercent: number;
   appWallpaperVisualProtectionEnabled?: boolean;
   appWallpaperUnifiedOpacityEnabled: boolean;
+  nowPlayingCoverColorEnabled?: boolean;
   appVideoWallpaperPauseMode?: AppVideoWallpaperPauseMode;
   networkProxyMode?: NetworkProxyMode;
   networkProxyUrl?: string | null;
   networkProxyBypassRules?: string | null;
   networkProxyPacUrl?: string | null;
   networkMetadataEnabled: boolean;
-  networkMetadataProviders: Array<'mock' | 'musicbrainz' | 'cover-art-archive' | 'netease-cloud-music' | 'qq-music'>;
+  networkMetadataProviders: Array<'mock' | 'musicbrainz' | 'cover-art-archive' | 'netease-cloud-music' | 'qq-music' | 'kugou-music'>;
   onlineArtistInfoBandsintownAppId?: string | null;
   onlineArtistInfoTicketmasterApiKey?: string | null;
   onlineArtistInfoSeatGeekClientId?: string | null;

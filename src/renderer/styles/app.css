@@ -3829,6 +3829,16 @@
   box-shadow: 0 22px 44px rgba(59, 78, 104, 0.08);
 }
 
+.now-playing-page[data-cover-color="true"] .now-playing-card {
+  border-color: rgb(var(--now-playing-cover-rgb) / 0.26); /* theme-color-allow: sampled cover color */
+  background:
+    radial-gradient(circle at 16% 18%, rgb(var(--now-playing-cover-rgb) / 0.26), transparent 46%),
+    linear-gradient(135deg, rgb(var(--now-playing-cover-rgb) / 0.11), rgba(255, 255, 255, 0.76) 54%, rgba(255, 255, 255, 0.66));
+  box-shadow:
+    0 24px 54px rgb(var(--now-playing-cover-rgb) / 0.14),
+    0 16px 38px rgba(59, 78, 104, 0.08);
+}
+
 .now-playing-cover {
   display: grid;
   place-items: center;
@@ -3839,6 +3849,11 @@
   border-radius: 8px;
   background: linear-gradient(145deg, #f6f8fb, #dde4ee);
   color: #5d6d82;
+}
+
+.now-playing-page[data-cover-color="true"] .now-playing-cover {
+  border-color: rgb(var(--now-playing-cover-rgb) / 0.32); /* theme-color-allow: sampled cover color */
+  box-shadow: 0 18px 36px rgb(var(--now-playing-cover-rgb) / 0.18); /* theme-color-allow: sampled cover color */
 }
 
 .now-playing-cover img {
@@ -3858,6 +3873,11 @@
   font-size: 12px;
   font-weight: 820;
   text-transform: uppercase;
+}
+
+.now-playing-page[data-cover-color="true"] .section-kicker,
+.now-playing-page[data-cover-color="true"] .now-playing-copy span {
+  color: color-mix(in srgb, rgb(var(--now-playing-cover-rgb)) 58%, #4f6177); /* theme-color-allow: sampled cover color */
 }
 
 .now-playing-copy h2 {
@@ -15982,6 +16002,137 @@ html[data-theme="dark"] .history-play-count {
 .connect-receiver-body .connect-artwork {
   width: 76px;
   height: 76px;
+}
+
+.app-shell--wallpaper-ready {
+  --connect-wallpaper-page-bg:
+    linear-gradient(
+      180deg,
+      rgb(255 255 255 / var(--app-wallpaper-ui-page-top-alpha)),
+      rgb(245 245 247 / var(--app-wallpaper-ui-page-bottom-alpha)) 46%
+    ),
+    rgb(247 249 252 / var(--app-wallpaper-ui-page-base-alpha));
+  --connect-wallpaper-page-shadow: 0 18px 46px rgb(34 47 62 / var(--app-wallpaper-ui-soft-shadow-alpha));
+  --connect-wallpaper-panel-border: rgb(40 62 88 / var(--app-wallpaper-ui-border-alpha));
+  --connect-wallpaper-panel-bg: rgb(255 255 255 / var(--app-wallpaper-ui-page-base-alpha));
+  --connect-wallpaper-panel-shadow:
+    0 10px 28px rgb(33 37 44 / var(--app-wallpaper-ui-soft-shadow-alpha)),
+    inset 0 1px 0 rgb(255 255 255 / var(--app-wallpaper-ui-inset-alpha));
+  --connect-wallpaper-row-border: rgb(40 62 88 / var(--app-wallpaper-ui-border-alpha));
+  --connect-wallpaper-row-bg: rgb(255 255 255 / var(--app-wallpaper-ui-page-top-alpha));
+  --connect-wallpaper-row-active-border: rgb(88 118 150 / var(--app-wallpaper-ui-border-alpha));
+  --connect-wallpaper-row-active-bg: rgb(255 255 255 / var(--app-wallpaper-ui-page-base-alpha));
+}
+
+html[data-theme="dark"] .app-shell--wallpaper-ready {
+  --connect-wallpaper-page-bg:
+    linear-gradient(
+      180deg,
+      rgb(31 37 47 / var(--app-wallpaper-ui-page-top-alpha)),
+      rgb(16 20 27 / var(--app-wallpaper-ui-page-bottom-alpha)) 46%
+    ),
+    rgb(16 19 24 / var(--app-wallpaper-ui-page-base-alpha));
+  --connect-wallpaper-page-shadow: 0 18px 46px rgb(0 0 0 / var(--app-wallpaper-ui-soft-shadow-alpha));
+  --connect-wallpaper-panel-border: rgb(232 238 247 / var(--app-wallpaper-ui-border-alpha));
+  --connect-wallpaper-panel-bg: rgb(16 20 27 / var(--app-wallpaper-ui-page-base-alpha));
+  --connect-wallpaper-panel-shadow:
+    0 10px 28px rgb(0 0 0 / var(--app-wallpaper-ui-soft-shadow-alpha)),
+    inset 0 1px 0 rgb(255 255 255 / calc(var(--app-wallpaper-ui-inset-alpha) * 0.08));
+  --connect-wallpaper-row-border: var(--connect-wallpaper-panel-border);
+  --connect-wallpaper-row-bg: var(--connect-wallpaper-panel-bg);
+  --connect-wallpaper-row-active-border: var(--connect-wallpaper-panel-border);
+  --connect-wallpaper-row-active-bg: var(--connect-wallpaper-panel-bg);
+}
+
+.app-shell--wallpaper-ready .page-surface:has(.connect-page) {
+  background: var(--connect-wallpaper-page-bg);
+  backdrop-filter: blur(var(--app-wallpaper-ui-surface-blur)) saturate(1.08);
+  -webkit-backdrop-filter: blur(var(--app-wallpaper-ui-surface-blur)) saturate(1.08);
+  box-shadow: var(--connect-wallpaper-page-shadow);
+}
+
+.app-shell--wallpaper-ready .connect-now--stage,
+.app-shell--wallpaper-ready .connect-device-section--stage,
+.app-shell--wallpaper-ready .connect-hqplayer-panel,
+.app-shell--wallpaper-ready .connect-radio-panel,
+.app-shell--wallpaper-ready .connect-receiver-panel,
+.app-shell--wallpaper-ready .connect-outgoing-debug {
+  border-color: var(--connect-wallpaper-panel-border);
+  background: var(--connect-wallpaper-panel-bg);
+  backdrop-filter: blur(var(--app-wallpaper-ui-surface-blur)) saturate(1.08);
+  -webkit-backdrop-filter: blur(var(--app-wallpaper-ui-surface-blur)) saturate(1.08);
+  box-shadow: var(--connect-wallpaper-panel-shadow);
+}
+
+.app-shell--wallpaper-ready .connect-device-row,
+.app-shell--wallpaper-ready .connect-device-empty,
+.app-shell--wallpaper-ready .connect-hidden-devices,
+.app-shell--wallpaper-ready .connect-radio-row,
+.app-shell--wallpaper-ready .connect-radio-empty,
+.app-shell--wallpaper-ready .connect-receiver-debug,
+.app-shell--wallpaper-ready .connect-hqplayer-local-card,
+.app-shell--wallpaper-ready .connect-hqplayer-status-grid,
+.app-shell--wallpaper-ready .connect-hqplayer-plan {
+  border-color: var(--connect-wallpaper-row-border);
+  background: var(--connect-wallpaper-row-bg);
+  box-shadow: none;
+}
+
+.app-shell--wallpaper-ready .connect-device-row:hover,
+.app-shell--wallpaper-ready .connect-radio-row[data-active="true"] {
+  border-color: var(--connect-wallpaper-row-active-border);
+  background: var(--connect-wallpaper-row-active-bg);
+}
+
+.app-shell--wallpaper-ready .connect-artwork,
+.app-shell--wallpaper-ready .connect-device-icon,
+.app-shell--wallpaper-ready .connect-radio-icon,
+.app-shell--wallpaper-ready .connect-hqplayer-icon,
+.app-shell--wallpaper-ready .connect-hqplayer-state,
+.app-shell--wallpaper-ready .connect-hqplayer-chip,
+.app-shell--wallpaper-ready .connect-hqplayer-field input,
+.app-shell--wallpaper-ready .connect-radio-field input,
+.app-shell--wallpaper-ready .connect-device-facts small,
+.app-shell--wallpaper-ready .connect-now-facts small,
+.app-shell--wallpaper-ready .connect-device-meta span {
+  border-color: var(--connect-wallpaper-row-border);
+  background: var(--connect-wallpaper-row-bg);
+  box-shadow: none;
+}
+
+.app-shell--wallpaper-ready[data-wallpaper-unified-opacity="true"] .page-surface:has(.connect-page),
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .page-surface:has(.connect-page),
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-now--stage,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-section--stage,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-panel,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-radio-panel,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-receiver-panel,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-outgoing-debug,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-row,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-empty,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hidden-devices,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-radio-row,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-radio-empty,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-receiver-debug,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-local-card,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-status-grid,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-plan,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-artwork,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-icon,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-radio-icon,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-icon,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-state,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-chip,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-hqplayer-field input,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-radio-field input,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-facts small,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-now-facts small,
+.app-shell--wallpaper-ready[data-wallpaper-ui-transparent="true"] .connect-device-meta span {
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
 }
 
 @media (max-width: 980px) {

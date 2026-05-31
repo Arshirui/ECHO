@@ -1,7 +1,7 @@
 import type { EmbeddedReadinessStatus, FieldSources, NetworkMetadataStatus } from '../libraryTypes';
 import type { LibraryTrack, MissingMetadataReason } from '../../../shared/types/library';
 
-export type NetworkProviderName = 'mock' | 'musicbrainz' | 'cover-art-archive' | 'netease-cloud-music' | 'qq-music';
+export type NetworkProviderName = 'mock' | 'musicbrainz' | 'cover-art-archive' | 'netease-cloud-music' | 'qq-music' | 'kugou-music';
 
 export type NetworkCompletionSource = NetworkProviderName;
 

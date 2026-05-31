@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type {
   DiagnosticPerformanceStallPayload,
@@ -87,6 +87,10 @@ export const registerDiagnosticsIpc = (): void => {
   ipcMain.handle(IpcChannels.DiagnosticsOpenAudioCrashReport, (): Promise<string> =>
     getCrashReportService().openAudioCrashReportFile(),
   );
+  ipcMain.handle(IpcChannels.DiagnosticsRelaunchApp, (): void => {
+    app.relaunch();
+    app.exit(0);
+  });
   ipcMain.handle(IpcChannels.DiagnosticsOpenDevConsole, (): void => {
     openDevConsoleWindow();
   });

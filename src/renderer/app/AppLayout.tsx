@@ -162,6 +162,7 @@ const readSongsNavigationRemoteSourceId = (event: Event): string | null => {
 const accountProviderLabelKeys: Record<AccountProvider, TranslationKey> = {
   netease: 'accountProvider.netease',
   qqmusic: 'accountProvider.qqmusic',
+  kugou: 'accountProvider.kugou',
   bilibili: 'accountProvider.bilibili',
   youtube: 'accountProvider.youtube',
   soundcloud: 'accountProvider.soundcloud',

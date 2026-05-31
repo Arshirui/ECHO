@@ -23,6 +23,7 @@ import { MockMetadataProvider } from './providers/MockMetadataProvider';
 import { MusicBrainzProvider } from './providers/MusicBrainzProvider';
 import { NeteaseCloudMusicProvider } from './providers/NeteaseCloudMusicProvider';
 import { QQMusicProvider } from './providers/QQMusicProvider';
+import { KugouMusicProvider } from './providers/KugouMusicProvider';
 
 export type NetworkCandidateList = {
   metadata: StoredNetworkMetadataCandidate[];
@@ -102,6 +103,7 @@ export class NetworkMetadataService {
       new MockMetadataProvider(),
       new NeteaseCloudMusicProvider(),
       new QQMusicProvider(),
+      new KugouMusicProvider(),
       new MusicBrainzProvider(),
       new CoverArtArchiveProvider(),
     ],

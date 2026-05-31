@@ -268,6 +268,28 @@ describe('desktop lyrics text fitting', () => {
     const { container, setMousePassthrough } = renderDesktopLyricsApp(false);
     const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
     const lines = container.querySelector<HTMLElement>('.desktop-lyrics-lines');
+    const primaryText = lines?.querySelector<HTMLElement>('strong');
+
+    expect(app).toBeTruthy();
+    expect(lines).toBeTruthy();
+    expect(primaryText).toBeTruthy();
+    await waitFor(() => expect(setMousePassthrough).toHaveBeenCalledWith(true));
+    setMousePassthrough.mockClear();
+
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => primaryText),
+    });
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 120, clientY: 40 }));
+
+    await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('true'));
+    expect(setMousePassthrough).toHaveBeenCalledWith(false);
+  });
+
+  it('does not reveal the desktop lyrics menu over lyrics container empty space', async () => {
+    const { container, setMousePassthrough } = renderDesktopLyricsApp(false);
+    const app = container.querySelector<HTMLElement>('.desktop-lyrics-app');
+    const lines = container.querySelector<HTMLElement>('.desktop-lyrics-lines');
 
     expect(app).toBeTruthy();
     expect(lines).toBeTruthy();
@@ -280,7 +302,7 @@ describe('desktop lyrics text fitting', () => {
     });
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 120, clientY: 40 }));
 
-    await waitFor(() => expect(app?.getAttribute('data-menu-visible')).toBe('true'));
+    expect(app?.getAttribute('data-menu-visible')).toBe('false');
     expect(setMousePassthrough).toHaveBeenCalledWith(false);
   });
 

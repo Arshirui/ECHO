@@ -1210,6 +1210,41 @@ describe('LyricsSettingsDrawer', () => {
     window.removeEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
   });
 
+  it('switches lyrics background to cover color from the background section', async () => {
+    const setSettings = vi.fn(async (patch: Partial<AppSettings>) => makeSettings(patch));
+    const settingsChangedListener = vi.fn();
+    const displaySettingsChangedListener = vi.fn();
+    window.addEventListener('settings:changed', settingsChangedListener);
+    window.addEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings,
+        chooseLyricsWallpaper: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(container.querySelector('.lyrics-background-segmented button')).toBeTruthy());
+    const coverColorButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.lyrics-background-segmented button'))
+      .find((button) => button.textContent?.includes('封面取色') || button.textContent?.includes('Cover color'));
+    expect(coverColorButton).toBeTruthy();
+
+    fireEvent.click(coverColorButton as HTMLButtonElement);
+
+    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ lyricsBackgroundMode: 'coverColor' }));
+    expect(settingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsBackgroundMode: 'coverColor' } }),
+    );
+    expect(displaySettingsChangedListener).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: { lyricsBackgroundMode: 'coverColor' } }),
+    );
+
+    window.removeEventListener('settings:changed', settingsChangedListener);
+    window.removeEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
+  });
+
   it('shows the current track lyrics provider instead of enabled sources', async () => {
     window.echo = {
       app: {

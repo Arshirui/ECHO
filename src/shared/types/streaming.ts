@@ -1,4 +1,15 @@
-export type StreamingProviderName = 'mock' | 'netease' | 'qqmusic' | 'bilibili' | 'youtube' | 'soundcloud' | 'spotify' | 'tidal' | 'm3u8' | 'plugin';
+export type StreamingProviderName =
+  | 'mock'
+  | 'netease'
+  | 'qqmusic'
+  | 'kugou'
+  | 'bilibili'
+  | 'youtube'
+  | 'soundcloud'
+  | 'spotify'
+  | 'tidal'
+  | 'm3u8'
+  | 'plugin';
 export type StreamingFavoriteProviderName = Extract<StreamingProviderName, 'bilibili' | 'youtube' | 'soundcloud'>;
 
 export type StreamingMediaType = 'track' | 'album' | 'artist' | 'playlist' | 'mv';
@@ -12,6 +23,7 @@ export const streamingProviderNames: StreamingProviderName[] = [
   'mock',
   'netease',
   'qqmusic',
+  'kugou',
   'bilibili',
   'youtube',
   'soundcloud',
@@ -223,7 +235,7 @@ export type StreamingPlaylistImportResult = {
   playlistId: string;
   playlistName: string;
   importedCount: number;
-  provider: Extract<StreamingProviderName, 'netease' | 'qqmusic' | 'spotify' | 'm3u8'>;
+  provider: Extract<StreamingProviderName, 'netease' | 'qqmusic' | 'kugou' | 'spotify' | 'm3u8'>;
   providerPlaylistId: string;
 };
 

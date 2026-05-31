@@ -575,6 +575,7 @@ export type TranslationKey =
   | 'downloads.url.placeholder'
   | 'downloads.url.title'
   | 'accountProvider.bilibili'
+  | 'accountProvider.kugou'
   | 'accountProvider.netease'
   | 'accountProvider.osu'
   | 'accountProvider.qqmusic'
@@ -1346,6 +1347,7 @@ export type TranslationKey =
   | 'route.lyricsSettings.description'
   | 'route.lyricsSettings.label'
   | 'lyricsSettings.background.mode.cover'
+  | 'lyricsSettings.background.mode.coverColor'
   | 'lyricsSettings.action.choose'
   | 'lyricsSettings.action.fonts'
   | 'lyricsSettings.action.match'
@@ -1816,6 +1818,8 @@ export type TranslationKey =
   | 'settings.appearance.fontSize.title'
   | 'settings.appearance.lineHeight.description'
   | 'settings.appearance.lineHeight.title'
+  | 'settings.appearance.nowPlayingCoverColor.description'
+  | 'settings.appearance.nowPlayingCoverColor.title'
   | 'settings.appearance.reset.action'
   | 'settings.appearance.reset.description'
   | 'settings.appearance.reset.title'
@@ -1895,6 +1899,8 @@ export type TranslationKey =
   | 'settings.appearance.themePreset.neonCandy.description'
   | 'settings.appearance.themePreset.nyanCat'
   | 'settings.appearance.themePreset.nyanCat.description'
+  | 'settings.appearance.themePreset.childrenDoodle'
+  | 'settings.appearance.themePreset.childrenDoodle.description'
   | 'settings.appearance.themePreset.oceanStudio'
   | 'settings.appearance.themePreset.oceanStudio.description'
   | 'settings.appearance.themePreset.peachSoda'
@@ -3053,6 +3059,7 @@ const zhCN: TranslationMap = {
   'downloads.url.placeholder': '粘贴 YouTube / Bilibili / SoundCloud / osu! 链接',
   'downloads.url.title': '粘贴链接下载',
   'accountProvider.bilibili': 'Bilibili',
+  'accountProvider.kugou': '酷狗音乐',
   'accountProvider.netease': '网易云音乐',
   'accountProvider.osu': 'osu!',
   'accountProvider.qqmusic': 'QQ 音乐',
@@ -4151,10 +4158,11 @@ const zhCN: TranslationMap = {
   'lyricsSettings.background.highResolutionCover': '请求网络元数据的高清封面',
   'lyricsSettings.background.highResolutionCoverDescription': '仅在跟随封面时临时请求高清封面作为歌词背景；关闭时只使用本地封面兜底。',
   'lyricsSettings.background.mode.cover': '跟随封面',
+  'lyricsSettings.background.mode.coverColor': '封面取色',
   'lyricsSettings.background.mode.customWallpaper': '自定义壁纸',
   'lyricsSettings.background.mode.theme': '跟随主题',
   'lyricsSettings.background.modeAria': '歌词背景模式',
-  'lyricsSettings.background.modeDescription': '封面模式会使用当前歌曲封面；自定义壁纸会保存到应用数据目录。',
+  'lyricsSettings.background.modeDescription': '封面模式会使用当前歌曲封面；封面取色只提取当前封面主色；自定义壁纸会保存到应用数据目录。',
   'lyricsSettings.background.opacity': '背景透明度',
   'lyricsSettings.background.readability': '歌词可读性增强',
   'lyricsSettings.background.readabilityDescription': '为沉浸式 MV 背景上的歌词增加描边和投影；不用展开沉浸式 MV 背景设置也可以常驻开关。',
@@ -4448,7 +4456,7 @@ const zhCN: TranslationMap = {
   'playlistsPage.form.placeholder': '新建本地歌单',
   'playlistsPage.importStreaming.add': '添加歌单',
   'playlistsPage.importStreaming.adding': '添加中',
-  'playlistsPage.importStreaming.placeholder': '粘贴网易云 / QQ 音乐 / Spotify 歌单链接',
+  'playlistsPage.importStreaming.placeholder': '粘贴网易云 / QQ 音乐 / 酷狗 / Spotify 歌单链接',
   'playlistsPage.importStreaming.title': '添加流媒体歌单',
   'playlistsPage.prompt.newLocalName': '新建本地歌单名称',
   'playlistsPage.status.createdLocal': '本地歌单已创建',
@@ -4608,6 +4616,8 @@ const zhCN: TranslationMap = {
   'settings.appearance.fontSize.title': '基础字号',
   'settings.appearance.lineHeight.description': '调整界面文字的默认行距，让列表和说明文本更疏朗或更紧凑。',
   'settings.appearance.lineHeight.title': '界面行距',
+  'settings.appearance.nowPlayingCoverColor.title': '播放界面封面取色',
+  'settings.appearance.nowPlayingCoverColor.description': '开启后，正在播放页会在空闲时从小封面抽样生成轻量背景；低负载模式会自动跳过。默认关闭。',
   'settings.appearance.reset.action': '恢复默认',
   'settings.appearance.reset.description': '恢复 Outfit、默认中文字体、备用字体、字号、行距与文字深浅。',
   'settings.appearance.reset.title': '外观默认值',
@@ -4688,6 +4698,8 @@ const zhCN: TranslationMap = {
   'settings.appearance.themePreset.neonCandy.description': '紫色霓虹、粉色高光和薄荷泡泡。',
   'settings.appearance.themePreset.nyanCat': 'Nyan Cat',
   'settings.appearance.themePreset.nyanCat.description': '慢速流动的可爱彩虹渐变，进度条会带着彩虹猫一起跑。',
+  'settings.appearance.themePreset.childrenDoodle': '六一涂鸦',
+  'settings.appearance.themePreset.childrenDoodle.description': '纸纹、蜡笔边框和乱涂贴纸，像儿童节手账一样热闹。',
   'settings.appearance.themePreset.wisteriaBubble': '紫藤泡泡',
   'settings.appearance.themePreset.wisteriaBubble.description': '紫藤花雾配薄荷泡泡，梦幻但清爽。',
   'settings.appearance.themePreset.strawberryCookie': '草莓饼干',
@@ -5837,6 +5849,7 @@ const zhTW: TranslationMap = {
   'albumMenu.playlistSubmenu.empty': '沒有本機播放清單',
   'albumMenu.playlistSubmenu.itemCount': '{count} 首',
   'albumMenu.playlistSubmenu.loading': '正在讀取播放清單...',
+  'accountProvider.kugou': '酷狗音樂',
   'accountProvider.netease': '網易雲音樂',
   'accountProvider.unknown': '未知帳號',
   'desktopLyrics.aria.stage': '桌面歌詞',
@@ -6861,10 +6874,11 @@ const zhTW: TranslationMap = {
   'lyricsSettings.background.highResolutionCover': '請求網路中繼資料的高清封面',
   'lyricsSettings.background.highResolutionCoverDescription': '僅在跟隨封面時暫時請求高清封面作為歌詞背景；關閉時只使用本機封面備援。',
   'lyricsSettings.background.mode.cover': '跟隨封面',
+  'lyricsSettings.background.mode.coverColor': '封面取色',
   'lyricsSettings.background.mode.customWallpaper': '自訂桌布',
   'lyricsSettings.background.mode.theme': '跟隨主題',
   'lyricsSettings.background.modeAria': '歌詞背景模式',
-  'lyricsSettings.background.modeDescription': '封面模式會使用目前歌曲封面；自訂桌布會儲存到應用程式資料目錄。',
+  'lyricsSettings.background.modeDescription': '封面模式會使用目前歌曲封面；封面取色只提取目前封面主色；自訂桌布會儲存到應用程式資料目錄。',
   'lyricsSettings.background.opacity': '背景透明度',
   'lyricsSettings.background.readability': '歌詞可讀性增強',
   'lyricsSettings.background.readabilityDescription': '為沉浸式 MV 背景上的歌詞增加描邊和陰影；不用展開沉浸式 MV 背景設定也可以常駐開關。',
@@ -7157,7 +7171,7 @@ const zhTW: TranslationMap = {
   'playlistsPage.form.placeholder': '新建本地歌單',
   'playlistsPage.importStreaming.add': '添加歌單',
   'playlistsPage.importStreaming.adding': '添加中',
-  'playlistsPage.importStreaming.placeholder': '貼上網易雲 / QQ 音樂 / Spotify 歌單連結',
+  'playlistsPage.importStreaming.placeholder': '貼上網易雲 / QQ 音樂 / 酷狗 / Spotify 歌單連結',
   'playlistsPage.importStreaming.title': '添加串流歌單',
   'playlistsPage.prompt.newLocalName': '新建本地歌單名稱',
   'playlistsPage.status.createdLocal': '本地歌單已建立',
@@ -7855,6 +7869,8 @@ const zhTW: TranslationMap = {
   'settings.appearance.sidebar.moveDownAria': '下移 {label}',
   'settings.appearance.sidebar.hideAria': '隱藏 {label}',
   'settings.appearance.sidebar.showAria': '顯示 {label}',
+  'settings.appearance.nowPlayingCoverColor.title': '播放介面封面取色',
+  'settings.appearance.nowPlayingCoverColor.description': '開啟後，正在播放頁會在閒置時從小封面取樣生成輕量背景；低負載模式會自動略過。預設關閉。',
   'settings.appearance.wallpaper.title': '自訂背景',
   'settings.appearance.wallpaper.description': '支援圖片與本地影片；影片會靜音循環，不會進入音訊鏈路。',
   'settings.appearance.wallpaper.choose': '選擇背景',
@@ -7899,6 +7915,8 @@ const zhTW: TranslationMap = {
   'settings.appearance.themePreset.neonCandy.description': '紫色霓虹、粉色高光和薄荷泡泡。',
   'settings.appearance.themePreset.nyanCat': 'Nyan Cat',
   'settings.appearance.themePreset.nyanCat.description': '慢速流動的可愛彩虹漸層，進度條會帶著彩虹貓一起跑。',
+  'settings.appearance.themePreset.childrenDoodle': '六一塗鴉',
+  'settings.appearance.themePreset.childrenDoodle.description': '紙紋、蠟筆邊框和亂塗貼紙，像兒童節手帳一樣熱鬧。',
   'settings.appearance.themePreset.wisteriaBubble': '紫藤泡泡',
   'settings.appearance.themePreset.wisteriaBubble.description': '紫藤花霧配薄荷泡泡，夢幻但清爽。',
   'settings.appearance.themePreset.strawberryCookie': '草莓餅乾',
@@ -8372,6 +8390,7 @@ const jaJP: TranslationMap = {
   'albumMenu.playlistSubmenu.empty': 'ローカルプレイリストなし',
   'albumMenu.playlistSubmenu.itemCount': '{count} 曲',
   'albumMenu.playlistSubmenu.loading': 'プレイリストを読み込み中...',
+  'accountProvider.kugou': 'KuGou Music',
   'accountProvider.netease': 'NetEase Cloud Music',
   'accountProvider.qqmusic': 'QQ Music',
   'accountProvider.unknown': '不明なアカウント',
@@ -9412,10 +9431,11 @@ const jaJP: TranslationMap = {
   'lyricsSettings.background.highResolutionCover': 'ネットワークメタデータから高解像度カバーを取得',
   'lyricsSettings.background.highResolutionCoverDescription': 'カバー連動時だけ一時的に高解像度カバーを歌詞背景として取得します。オフの場合はローカルカバーのみを使います。',
   'lyricsSettings.background.mode.cover': 'カバーに合わせる',
+  'lyricsSettings.background.mode.coverColor': 'カバー色',
   'lyricsSettings.background.mode.customWallpaper': 'カスタム壁紙',
   'lyricsSettings.background.mode.theme': 'テーマに合わせる',
   'lyricsSettings.background.modeAria': '歌詞背景モード',
-  'lyricsSettings.background.modeDescription': 'カバーモードは現在の曲のカバーを使います。カスタム壁紙はアプリデータフォルダーに保存されます。',
+  'lyricsSettings.background.modeDescription': 'カバーモードは現在の曲のカバーを使います。カバー色は主色だけを抽出します。カスタム壁紙はアプリデータフォルダーに保存されます。',
   'lyricsSettings.background.opacity': '背景の透明度',
   'lyricsSettings.background.readability': '歌詞の読みやすさを強化',
   'lyricsSettings.background.readabilityDescription': '没入 MV 背景上の歌詞に縁取りと影を追加します。没入 MV 背景設定を展開しなくても常時切り替えできます。',
@@ -9727,7 +9747,7 @@ const jaJP: TranslationMap = {
   'playlistsPage.form.placeholder': '新しいローカルプレイリスト',
   'playlistsPage.importStreaming.add': 'プレイリストを追加',
   'playlistsPage.importStreaming.adding': '追加中',
-  'playlistsPage.importStreaming.placeholder': 'NetEase / QQ Music / Spotify のプレイリストリンクを貼り付け',
+  'playlistsPage.importStreaming.placeholder': 'NetEase / QQ Music / KuGou / Spotify のプレイリストリンクを貼り付け',
   'playlistsPage.importStreaming.title': 'ストリーミングプレイリストを追加',
   'playlistsPage.prompt.newLocalName': 'ローカルプレイリスト名',
   'playlistsPage.status.createdLocal': 'ローカルプレイリストを作成しました',
@@ -10439,6 +10459,8 @@ const jaJP: TranslationMap = {
   'settings.appearance.sidebar.moveDownAria': '{label} を下へ移動',
   'settings.appearance.sidebar.hideAria': '{label} を隠す',
   'settings.appearance.sidebar.showAria': '{label} を表示',
+  'settings.appearance.nowPlayingCoverColor.title': '再生画面のカバー色',
+  'settings.appearance.nowPlayingCoverColor.description': '有効にすると、再生中ページがアイドル時に小さなカバー画像から軽量な背景色を抽出します。低負荷モードでは自動的にスキップします。既定はオフです。',
   'settings.appearance.wallpaper.title': 'カスタム背景',
   'settings.appearance.wallpaper.description': '画像とローカル動画に対応します。動画はミュートでループし、音声経路には入りません。',
   'settings.appearance.wallpaper.choose': '背景を選択',
@@ -10483,6 +10505,8 @@ const jaJP: TranslationMap = {
   'settings.appearance.themePreset.neonCandy.description': 'Violet neon, pink highlights, and mint bubbles.',
   'settings.appearance.themePreset.nyanCat': 'Nyan Cat',
   'settings.appearance.themePreset.nyanCat.description': 'ゆっくり流れるかわいい虹色グラデーション。進捗バーには虹色の猫が走ります。',
+  'settings.appearance.themePreset.childrenDoodle': 'こどもの日ドゥードル',
+  'settings.appearance.themePreset.childrenDoodle.description': '紙の質感、クレヨンの線、にぎやかなステッカーで手帳風に。',
   'settings.appearance.themePreset.wisteriaBubble': 'Wisteria Bubble',
   'settings.appearance.themePreset.wisteriaBubble.description': 'Wisteria mist with mint bubbles, dreamy but fresh.',
   'settings.appearance.themePreset.strawberryCookie': 'Strawberry Cookie',
@@ -10988,6 +11012,7 @@ const enUS: TranslationMap = {
   'albumMenu.playlistSubmenu.empty': 'No local playlists',
   'albumMenu.playlistSubmenu.itemCount': '{count} tracks',
   'albumMenu.playlistSubmenu.loading': 'Loading playlists...',
+  'accountProvider.kugou': 'KuGou Music',
   'accountProvider.netease': 'NetEase Cloud Music',
   'accountProvider.qqmusic': 'QQ Music',
   'accountProvider.unknown': 'Unknown account',
@@ -12028,10 +12053,11 @@ const enUS: TranslationMap = {
   'lyricsSettings.background.highResolutionCover': 'Request high-res covers from network metadata',
   'lyricsSettings.background.highResolutionCoverDescription': 'Only request a high-res cover temporarily when following the cover; when off, local cover art is used as fallback.',
   'lyricsSettings.background.mode.cover': 'Follow cover',
+  'lyricsSettings.background.mode.coverColor': 'Cover color',
   'lyricsSettings.background.mode.customWallpaper': 'Custom wallpaper',
   'lyricsSettings.background.mode.theme': 'Follow theme',
   'lyricsSettings.background.modeAria': 'Lyrics background mode',
-  'lyricsSettings.background.modeDescription': 'Cover mode uses the current track cover; custom wallpapers are saved to the app data directory.',
+  'lyricsSettings.background.modeDescription': 'Cover mode uses the current track cover; cover color extracts only the main cover color; custom wallpapers are saved to the app data directory.',
   'lyricsSettings.background.opacity': 'Background opacity',
   'lyricsSettings.background.readability': 'Lyrics readability boost',
   'lyricsSettings.background.readabilityDescription': 'Adds outline and shadow to lyrics over immersive MV backgrounds; this can stay on without expanding immersive MV background settings.',
@@ -12343,7 +12369,7 @@ const enUS: TranslationMap = {
   'playlistsPage.form.placeholder': 'New local playlist',
   'playlistsPage.importStreaming.add': 'Add playlist',
   'playlistsPage.importStreaming.adding': 'Adding',
-  'playlistsPage.importStreaming.placeholder': 'Paste a NetEase / QQ Music / Spotify playlist link',
+  'playlistsPage.importStreaming.placeholder': 'Paste a NetEase / QQ Music / KuGou / Spotify playlist link',
   'playlistsPage.importStreaming.title': 'Add streaming playlist',
   'playlistsPage.prompt.newLocalName': 'New local playlist name',
   'playlistsPage.status.createdLocal': 'Local playlist created',
@@ -13207,6 +13233,8 @@ const enUS: TranslationMap = {
   'settings.appearance.sidebar.moveDownAria': 'Move down {label}',
   'settings.appearance.sidebar.hideAria': 'Hide {label}',
   'settings.appearance.sidebar.showAria': 'Show {label}',
+  'settings.appearance.nowPlayingCoverColor.title': 'Now Playing Cover Color',
+  'settings.appearance.nowPlayingCoverColor.description': 'Sample the small cover art while idle to tint the Now Playing page. Low-load playback mode skips it automatically. Off by default.',
   'settings.appearance.wallpaper.title': 'Custom Background',
   'settings.appearance.wallpaper.description': 'Supports images and local videos. Videos loop silently and never enter the audio pipeline.',
   'settings.appearance.wallpaper.choose': 'Choose Background',
@@ -13251,6 +13279,8 @@ const enUS: TranslationMap = {
   'settings.appearance.themePreset.neonCandy.description': 'Violet neon, pink highlights, and mint bubbles.',
   'settings.appearance.themePreset.nyanCat': 'Nyan Cat',
   'settings.appearance.themePreset.nyanCat.description': 'A slow, cute rainbow gradient with a Nyan Cat progress handle.',
+  'settings.appearance.themePreset.childrenDoodle': 'Kids Doodle',
+  'settings.appearance.themePreset.childrenDoodle.description': 'Paper grain, crayon borders, and messy sticker doodles for Children\'s Day.',
   'settings.appearance.themePreset.wisteriaBubble': 'Wisteria Bubble',
   'settings.appearance.themePreset.wisteriaBubble.description': 'Wisteria mist with mint bubbles, dreamy but fresh.',
   'settings.appearance.themePreset.strawberryCookie': 'Strawberry Cookie',

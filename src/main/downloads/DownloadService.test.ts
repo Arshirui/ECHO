@@ -23,7 +23,7 @@ const makeToolPath = (): string => {
 };
 
 const makeDownloadAuthorizationToken = (
-  provider: 'netease' | 'qqmusic',
+  provider: 'netease' | 'qqmusic' | 'kugou',
   providerTrackId: string,
   url: string,
 ): string =>
@@ -1323,6 +1323,68 @@ describe('DownloadService', () => {
     expect(fetchRunner).toHaveBeenCalledWith(sourceUrl, expect.any(Object));
     expect(completedJob.status).toBe('completed');
     expect(completedJob.outputPath).toMatch(/VIP QQ Song\.flac$/u);
+  });
+
+  it('requires KuGou playback authorization and passes KuGou account headers to direct audio downloads', async () => {
+    const ytDlpPath = makeToolPath();
+    const outputDirectory = makeTempRoot();
+    const sourceUrl = 'https://fs.open.kugou.com/song.mp3';
+    const fetchRunner = vi.fn(async () => {
+      return new Response(new Uint8Array([1, 2, 3, 4]), {
+        status: 200,
+        headers: {
+          'content-length': '4',
+          'content-type': 'audio/mpeg',
+        },
+      });
+    });
+    const service = new DownloadService(
+      vi.fn(() => ({
+        promise: Promise.resolve({ stdout: '', stderr: 'should not run', exitCode: 1 }),
+        kill: vi.fn(),
+      })),
+      () => ytDlpPath,
+      {
+        fetch: fetchRunner,
+        getAccountCredentials: (provider) => (provider === 'kugou' ? { provider, cookie: 'dfid=DFID123; kg_mid=123' } : { provider }),
+        writeEmbeddedTrackTags: vi.fn(async () => undefined),
+      },
+    );
+    service.setSettings({ outputDirectory, importToLibrary: false });
+
+    expect(() =>
+      service.createUrlJob(sourceUrl, {
+        directAudio: true,
+        directAudioMimeType: 'audio/mpeg',
+        streamingProvider: 'kugou',
+        streamingProviderTrackId: 'abcdef1234567890abcdef1234567890.1.2',
+      }),
+    ).toThrow(protectedMusicDownloadBlockedMessage);
+
+    const job = service.createUrlJob(sourceUrl, {
+      importToLibrary: false,
+      title: 'KuGou Song',
+      directAudio: true,
+      directAudioMimeType: 'audio/mpeg',
+      directAudioExtension: 'mp3',
+      streamingProvider: 'kugou',
+      streamingProviderTrackId: 'abcdef1234567890abcdef1234567890.1.2',
+      streamingStableKey: 'streaming:kugou:abcdef1234567890abcdef1234567890.1.2',
+      downloadAuthorizationToken: makeDownloadAuthorizationToken('kugou', 'abcdef1234567890abcdef1234567890.1.2', sourceUrl),
+    });
+    const completedJob = await waitForJob(service, job.id);
+
+    expect(fetchRunner).toHaveBeenCalledWith(
+      sourceUrl,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Cookie: 'dfid=DFID123; kg_mid=123',
+          Origin: 'https://www.kugou.com',
+          Referer: 'https://www.kugou.com/',
+        }),
+      }),
+    );
+    expect(completedJob.status).toBe('completed');
   });
 
   it('does not bind MV links for imported direct streaming audio', async () => {

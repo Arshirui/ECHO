@@ -87,7 +87,7 @@ const desktopLyricsClockStaleTelemetryThresholdMs = 750;
 const desktopLyricsClockUnderrunBufferThresholdMs = 40;
 const desktopLyricsStageHorizontalPaddingPx = 36;
 const desktopLyricsOverflowTolerancePx = 4;
-const desktopLyricsMenuRevealSelector = '.desktop-lyrics-lines, .desktop-lyrics-menu';
+const desktopLyricsMenuRevealSelector = '.desktop-lyrics-lines strong, .desktop-lyrics-lines span, .desktop-lyrics-menu';
 const desktopLyricsMouseInteractiveSelector = '.desktop-lyrics-lines, .desktop-lyrics-menu';
 const desktopLyricsMenuHideDelayMs = 420;
 

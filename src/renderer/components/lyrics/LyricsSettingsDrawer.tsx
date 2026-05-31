@@ -2478,6 +2478,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             {[
               ['theme', t('lyricsSettings.background.mode.theme')],
               ['cover', t('lyricsSettings.background.mode.cover')],
+              ['coverColor', t('lyricsSettings.background.mode.coverColor')],
               ['customWallpaper', t('lyricsSettings.background.mode.customWallpaper')],
             ].map(([mode, label]) => (
               <button

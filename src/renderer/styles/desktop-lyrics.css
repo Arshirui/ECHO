@@ -14,12 +14,19 @@ body:has(.desktop-lyrics-app),
   --desktop-lyrics-stroke-color: #111827;
   --desktop-lyrics-opacity: 0.96;
   --desktop-lyrics-font-family: "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif;
-  --desktop-lyrics-theme-color: var(--theme-heading-text, #1e2025);
-  --desktop-lyrics-theme-gradient: linear-gradient(
-    90deg,
-    var(--theme-heading-text, #1e2025),
-    var(--theme-accent-text-strong, #3239c7),
-    var(--preset-secondary, var(--theme-accent-solid-bg, #4b55e8))
+  --desktop-lyrics-theme-color: var(--echo-lyrics-gradient-start, var(--theme-heading-text));
+  --desktop-lyrics-theme-gradient: var(
+    --echo-lyrics-active-gradient,
+    linear-gradient(
+      92deg,
+      var(--theme-heading-text),
+      var(--theme-accent-text-strong) 48%,
+      var(--preset-secondary, var(--theme-accent-solid-bg))
+    )
+  );
+  --desktop-lyrics-theme-shadow: var(
+    --echo-lyrics-active-shadow,
+    0 8px 24px rgb(36 39 48 / 0.16)
   );
   --desktop-lyrics-theme-stroke-color: rgb(var(--preset-shadow-rgb, 36 39 48) / 0.7);
   display: grid;
@@ -37,8 +44,11 @@ html[data-theme="dark"] .desktop-lyrics-app {
 }
 
 html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="theme"] {
-  --desktop-lyrics-theme-color: #fff8df;
-  --desktop-lyrics-theme-gradient: linear-gradient(90deg, #fff8df, #93dcff 52%, #fff06f);
+  --desktop-lyrics-theme-color: var(--echo-lyrics-gradient-start, var(--preset-heading));
+  --desktop-lyrics-theme-gradient: var(
+    --echo-lyrics-active-gradient,
+    linear-gradient(92deg, var(--preset-heading), var(--preset-accent-strong) 52%, var(--preset-secondary))
+  );
 }
 
 .desktop-lyrics-stage {
@@ -54,7 +64,11 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
 
 .desktop-lyrics-lines {
   display: grid;
+  width: fit-content;
+  max-width: calc(100vw - 36px);
+  box-sizing: border-box;
   min-width: 0;
+  justify-self: center;
   justify-items: center;
   gap: 3px;
   pointer-events: auto;
@@ -95,6 +109,7 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
   color: var(--desktop-lyrics-theme-color);
   background-image: var(--desktop-lyrics-theme-gradient);
   background-clip: text;
+  text-shadow: var(--desktop-lyrics-theme-shadow);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -206,9 +221,7 @@ html[data-theme-preset="darkSideMoon"] .desktop-lyrics-app[data-color-mode="them
 }
 
 .desktop-lyrics-swatches .desktop-lyrics-theme-swatch {
-  background:
-    linear-gradient(135deg, var(--theme-heading-text, #1e2025) 0 36%, transparent 36% 48%, var(--theme-accent-solid-bg, #4b55e8) 48% 100%),
-    var(--theme-panel-bg-strong, #ffffff);
+  background: var(--desktop-lyrics-theme-gradient);
 }
 
 .desktop-lyrics-swatches button[aria-pressed="true"] {

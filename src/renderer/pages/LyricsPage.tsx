@@ -907,6 +907,54 @@ const selectLyricsDisplaySettings = (
 
 const cssUrl = (value: string): string =>
   `url("${value.replace(/["\\]/g, "\\$&")}")`;
+
+type CoverColorCssVarName =
+  | "--lyrics-cover-color-rgb"
+  | "--lyrics-cover-color-soft-rgb"
+  | "--lyrics-cover-color-deep-rgb"
+  | "--lyrics-cover-color-glow-rgb";
+
+type CoverColorCssVars = Partial<Record<CoverColorCssVarName, string>>;
+
+const clampColorChannel = (value: number): number => Math.round(Math.max(0, Math.min(255, value)));
+
+const mixCoverRgb = (
+  from: ReadableColorSample["averageRgb"],
+  to: ReadableColorSample["averageRgb"],
+  amount: number,
+): ReadableColorSample["averageRgb"] => {
+  const weight = Math.max(0, Math.min(1, amount));
+  return {
+    r: from.r + (to.r - from.r) * weight,
+    g: from.g + (to.g - from.g) * weight,
+    b: from.b + (to.b - from.b) * weight,
+  };
+};
+
+const rgbToCssChannels = (rgb: ReadableColorSample["averageRgb"]): string =>
+  `${clampColorChannel(rgb.r)} ${clampColorChannel(rgb.g)} ${clampColorChannel(rgb.b)}`;
+
+const createCoverColorCssVars = (
+  sample: ReadableColorSample | null,
+  themeMode: "light" | "dark",
+): CoverColorCssVars | null => {
+  if (!sample) {
+    return null;
+  }
+
+  const primary = sample.dominantRgb ?? sample.averageRgb;
+  const lightAnchor = themeMode === "dark" ? { r: 42, g: 49, b: 64 } : { r: 246, g: 248, b: 251 };
+  const darkAnchor = themeMode === "dark" ? { r: 8, g: 12, b: 18 } : { r: 52, g: 58, b: 68 };
+  const averageMix = mixCoverRgb(primary, sample.averageRgb, 0.28);
+
+  return {
+    "--lyrics-cover-color-rgb": rgbToCssChannels(primary),
+    "--lyrics-cover-color-soft-rgb": rgbToCssChannels(mixCoverRgb(averageMix, lightAnchor, themeMode === "dark" ? 0.24 : 0.42)),
+    "--lyrics-cover-color-deep-rgb": rgbToCssChannels(mixCoverRgb(primary, darkAnchor, themeMode === "dark" ? 0.56 : 0.24)),
+    "--lyrics-cover-color-glow-rgb": rgbToCssChannels(mixCoverRgb(primary, lightAnchor, themeMode === "dark" ? 0.12 : 0.1)),
+  };
+};
+
 const lyricsSmartReadableVideoSampleEvent = "lyrics:smart-readable-video-sample";
 
 type LyricsSmartReadableVideoSampleDetail = {
@@ -1691,7 +1739,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       ? "theme"
       : lyricsDisplaySettings.lyricsBackgroundMode === "cover" && !backgroundCoverUrl && !shouldRequestNetworkBackgroundCover
         ? "theme"
-        : lyricsDisplaySettings.lyricsBackgroundMode;
+        : lyricsDisplaySettings.lyricsBackgroundMode === "coverColor" && !backgroundCoverUrl
+          ? "theme"
+          : lyricsDisplaySettings.lyricsBackgroundMode;
   const effectiveLyricsBackgroundScalePercent =
     effectiveLyricsBackgroundMode === "cover"
       ? Math.max(100, lyricsDisplaySettings.lyricsBackgroundScalePercent)
@@ -1705,12 +1755,21 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     lyricsDisplaySettings.lyricsColor.toUpperCase() !== fallbackLyricsDisplaySettings.lyricsColor.toUpperCase();
   const shouldEnhanceLyricsReadability = lyricsReadabilityEnhanced || lyricsSmartReadableEnabled;
   const lyricsSmartReadableImageUrl = lyricsSmartReadableEnabled
-    ? effectiveLyricsBackgroundMode === "cover"
+    ? effectiveLyricsBackgroundMode === "cover" || effectiveLyricsBackgroundMode === "coverColor"
       ? lyricsBackgroundCoverUrl
       : effectiveLyricsBackgroundMode === "customWallpaper"
         ? lyricsWallpaperUrl
         : null
     : null;
+  const lyricsCoverColorImageUrl = effectiveLyricsBackgroundMode === "coverColor" ? lyricsBackgroundCoverUrl : null;
+  const lyricsSampleImageUrl = lyricsSmartReadableImageUrl ?? lyricsCoverColorImageUrl;
+  const coverColorCssVars = useMemo<CoverColorCssVars | null>(
+    () =>
+      effectiveLyricsBackgroundMode === "coverColor"
+        ? createCoverColorCssVars(imageReadableSample, documentThemeMode)
+        : null,
+    [documentThemeMode, effectiveLyricsBackgroundMode, imageReadableSample],
+  );
   const smartReadableColors = useMemo<ReadableLyricsCssVars | null>(
     () => {
       if (!lyricsSmartReadableEnabled) {
@@ -1739,7 +1798,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
   const lyricsPageStyle = useMemo(
     () =>
       ({
-        "--lyrics-cover": lyricsBackgroundCoverUrl ? cssUrl(lyricsBackgroundCoverUrl) : "none",
+        "--lyrics-cover": effectiveLyricsBackgroundMode === "cover" && lyricsBackgroundCoverUrl
+          ? cssUrl(lyricsBackgroundCoverUrl)
+          : "none",
         "--lyrics-wallpaper": lyricsWallpaperUrl
           ? cssUrl(lyricsWallpaperUrl)
           : "none",
@@ -1770,9 +1831,12 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         "--lyrics-cover-brightness": `${lyricsDisplaySettings.lyricsCoverBrightnessPercent}%`,
         "--lyrics-background-scale": (effectiveLyricsBackgroundScalePercent / 100).toFixed(2),
         "--lyrics-background-bleed": `-${lyricsDisplaySettings.lyricsCoverBlurPx * 2}px`,
+        ...(coverColorCssVars ?? {}),
         ...(smartReadableColors ?? {}),
       }) as CSSProperties,
     [
+      coverColorCssVars,
+      effectiveLyricsBackgroundMode,
       lyricsBackgroundCoverUrl,
       effectiveLyricsBackgroundScalePercent,
       lyricsDisplaySettings.lyricsColor,
@@ -1859,14 +1923,14 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
   ]);
 
   useEffect(() => {
-    if (!lyricsSmartReadableEnabled || !lyricsSmartReadableImageUrl) {
+    if (!lyricsSampleImageUrl) {
       setImageReadableSample(null);
       return undefined;
     }
 
     let disposed = false;
     setImageReadableSample(null);
-    void sampleImageUrl(lyricsSmartReadableImageUrl).then((sample) => {
+    void sampleImageUrl(lyricsSampleImageUrl).then((sample) => {
       if (!disposed) {
         setImageReadableSample(sample);
       }
@@ -1875,7 +1939,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     return () => {
       disposed = true;
     };
-  }, [lyricsSmartReadableEnabled, lyricsSmartReadableImageUrl]);
+  }, [lyricsSampleImageUrl]);
 
   useEffect(() => {
     setMvReadableSample(null);
