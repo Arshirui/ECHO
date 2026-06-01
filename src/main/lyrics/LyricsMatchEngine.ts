@@ -41,8 +41,6 @@ const defaultOptions: LyricsMatchEngineOptions = {
   preferredSecondaryFields: [],
 };
 
-const quickAutoAcceptScore = 0.85;
-
 const providerPriorityBonus = (priority: number): number => Math.min(0.01, Math.max(0, priority / 100000));
 const providerOrderPriority = (order: LyricsProviderId[], provider: LyricsProvider): number => {
   const index = order.indexOf(provider.id);
@@ -57,21 +55,6 @@ const sortProvidersByOrder = (providers: LyricsProvider[], order: LyricsProvider
   [...providers].sort((left, right) => providerOrderPriority(order, right) - providerOrderPriority(order, left));
 
 const hasText = (value: string | null | undefined): boolean => typeof value === 'string' && value.trim().length > 0;
-
-const providerCanSupplyPreferredSecondary = (
-  provider: LyricsProvider,
-  settings: LyricsMatchEngineOptions,
-): boolean =>
-  settings.preferredSecondaryFields.some((field) => provider.capabilities[field]);
-
-const candidateHasPreferredSecondary = (
-  candidate: MatchedLyricsCandidate,
-  settings: LyricsMatchEngineOptions,
-): boolean =>
-  settings.preferredSecondaryFields.some((field) => (field === 'translation' ? candidate.hasTranslation : candidate.hasRomanization));
-
-const isQuickAutoAcceptCandidate = (candidate: MatchedLyricsCandidate | null): boolean =>
-  Boolean(candidate?.decision.autoAccept && candidate.decision.risk === 'low' && candidate.score >= quickAutoAcceptScore);
 
 const isAutoAcceptCandidate = (candidate: MatchedLyricsCandidate | null): boolean =>
   Boolean(candidate?.decision.autoAccept && candidate.decision.risk === 'low');
@@ -182,8 +165,6 @@ export class LyricsMatchEngine {
     const totalController = new AbortController();
     const totalTimer = setTimeout(() => totalController.abort(), settings.totalMatchTimeoutMs);
     const pending = new Map<LyricsProviderId, Promise<MatchedLyricsCandidate[]>>();
-    const providerPriorityById = new Map(networkProviders.map((provider) => [provider.id, providerOrderPriority(settings.enabledProviders, provider)]));
-    const networkProviderById = new Map(networkProviders.map((provider) => [provider.id, provider]));
     const collected: MatchedLyricsCandidate[] = [...localCollected];
     let accepted: MatchedLyricsCandidate | null = null;
 
@@ -203,20 +184,7 @@ export class LyricsMatchEngine {
         collected.push(...next.candidates);
         const sorted = sortLyricsCandidates(normalized.durationSeconds, dedupeLyricsCandidates(collected));
         accepted = sorted.find((candidate) => candidate.decision.autoAccept && candidate.decision.risk === 'low') ?? null;
-        const strongestPendingPriority = Math.max(0, ...Array.from(pending.keys()).map((id) => providerPriorityById.get(id) ?? 0));
-        const shouldWaitForPreferredSecondary =
-          accepted &&
-          !candidateHasPreferredSecondary(accepted, settings) &&
-          Array.from(pending.keys()).some((id) => {
-            const provider = networkProviderById.get(id);
-            return provider ? providerCanSupplyPreferredSecondary(provider, settings) : false;
-          });
-        if (
-          accepted &&
-          !settings.collectAllCandidates &&
-          !shouldWaitForPreferredSecondary &&
-          (isQuickAutoAcceptCandidate(accepted) || (accepted.providerPriority ?? 0) >= strongestPendingPriority)
-        ) {
+        if (accepted && !settings.collectAllCandidates) {
           totalController.abort();
           break;
         }
@@ -252,6 +220,7 @@ export class LyricsMatchEngine {
         normalized,
         timeoutMs: settings.providerTimeoutMs,
         signal: controller.signal,
+        collectAllCandidates: settings.collectAllCandidates,
       }).catch(() => [] as LyricsProviderResult[]);
       const timeoutSearch = new Promise<LyricsProviderResult[]>((resolve) => {
         const resolveEmpty = (): void => {
@@ -317,6 +286,12 @@ export class LyricsMatchEngine {
 
     if (decision.autoAccept) {
       decision.reasons.push('auto_accept');
+    }
+
+    for (const reason of result.matchReasons ?? []) {
+      if (!decision.reasons.includes(reason)) {
+        decision.reasons.push(reason);
+      }
     }
 
     const hasTranslation = hasText(result.translationLyrics);

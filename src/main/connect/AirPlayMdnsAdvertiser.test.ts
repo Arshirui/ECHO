@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AirPlayMdnsAdvertiser, airPlay2FeatureMask } from './AirPlayMdnsAdvertiser';
+import { AirPlayMdnsAdvertiser, airPlay2FeatureMask, createAirPlay2PairingUuid } from './AirPlayMdnsAdvertiser';
 
 type PacketFactory = {
   createPacket: (advertisement: {
@@ -102,9 +102,13 @@ describe('AirPlayMdnsAdvertiser', () => {
     expect(payload).toContain('_raop');
     expect(payload).toContain('_airplay');
     expect(payload).toContain('deviceid=60:CF:84:CB:1E:D1');
-    expect(payload).toContain('features=0x400dca00,0x10300');
+    expect(payload).toContain('features=0x405f4200,0x1c300');
     expect(payload).toContain('srcvers=366.0');
-    expect(payload).toContain('pi=60cf84cb-1ed1-4169-8270-6c6179000000');
+    expect(payload).toContain(`pi=${createAirPlay2PairingUuid(
+      '60:CF:84:CB:1E:D1',
+      '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+      'airplay',
+    )}`);
     expect(payload).toContain('pk=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef');
   });
 
@@ -131,13 +135,11 @@ describe('AirPlayMdnsAdvertiser', () => {
   });
 
   it('keeps experimental AirPlay 2 feature bits aligned with implemented receiver paths', () => {
-    expect([9, 11, 14, 15, 16, 18, 19, 30, 40, 41, 48].every(hasAirPlay2FeatureBit)).toBe(true);
+    expect([9, 14, 16, 17, 18, 19, 20, 22, 30, 40, 41, 46, 47, 48].every(hasAirPlay2FeatureBit)).toBe(true);
 
-    expect(hasAirPlay2FeatureBit(17)).toBe(false);
-    expect(hasAirPlay2FeatureBit(20)).toBe(false);
+    expect(hasAirPlay2FeatureBit(11)).toBe(false);
+    expect(hasAirPlay2FeatureBit(15)).toBe(false);
     expect(hasAirPlay2FeatureBit(21)).toBe(false);
-    expect(hasAirPlay2FeatureBit(22)).toBe(false);
-    expect(hasAirPlay2FeatureBit(47)).toBe(false);
     expect(hasAirPlay2FeatureBit(51)).toBe(false);
     expect(hasAirPlay2FeatureBit(59)).toBe(false);
     expect(hasAirPlay2FeatureBit(60)).toBe(false);

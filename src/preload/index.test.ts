@@ -7,6 +7,7 @@ const listeners = new Map<string, (...args: unknown[]) => void>();
 let exposedApi: EchoApi | null = null;
 let fakeAudioInstances: FakeAudio[] = [];
 let queuedAudioPlayFailures: Error[] = [];
+let queuedAudioPlayPromises: Promise<void>[] = [];
 let ignoreAudioCurrentTimeWrites = false;
 let emitAudioPlayingOnPlay = true;
 
@@ -40,6 +41,10 @@ class FakeAudio {
   error: MediaError | null = null;
   private currentTimeValue = 0;
   readonly play = vi.fn(async () => {
+    const pending = queuedAudioPlayPromises.shift();
+    if (pending) {
+      return pending;
+    }
     const failure = queuedAudioPlayFailures.shift();
     if (failure) {
       throw failure;
@@ -135,6 +140,7 @@ describe('preload SMTC API', () => {
     listeners.clear();
     fakeAudioInstances = [];
     queuedAudioPlayFailures = [];
+    queuedAudioPlayPromises = [];
     ignoreAudioCurrentTimeWrites = false;
     emitAudioPlayingOnPlay = true;
     exposedApi = null;
@@ -347,6 +353,60 @@ describe('preload SMTC API', () => {
       currentTrackId: 'track-1',
       durationMs: 12_000,
       filePath: 'D:\\Music\\song.mp3',
+    });
+  });
+
+  it('does not report a stopped system play request as a fatal HTMLAudio error', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    let rejectPlay: (error: Error) => void = () => undefined;
+    queuedAudioPlayPromises = [
+      new Promise<void>((_resolve, reject) => {
+        rejectPlay = reject;
+      }),
+    ];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.AudioCreateSystemStreamUrl) {
+        return Promise.resolve('echo-audio://system/interrupted-token');
+      }
+      if (channel === IpcChannels.AudioReportSystemPlaybackError) {
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    const playPromise = exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\interrupted.mp3',
+      trackId: 'track-interrupted',
+      probe: { durationSeconds: 10 },
+    });
+    await flushPromises();
+    expect(fakeAudioInstances[0].play).toHaveBeenCalledTimes(1);
+
+    await expect(exposedApi!.playback.stop()).resolves.toMatchObject({
+      state: 'stopped',
+      currentTrackId: null,
+      filePath: null,
+    });
+    rejectPlay(new Error('The play() request was interrupted by a call to pause(). https://goo.gl/LdLk22'));
+
+    await expect(playPromise).resolves.toMatchObject({
+      state: 'stopped',
+      currentTrackId: null,
+      filePath: null,
+    });
+    expect(ipcRenderer.invoke).not.toHaveBeenCalledWith(
+      IpcChannels.AudioReportSystemPlaybackError,
+      expect.anything(),
+    );
+    await expect(exposedApi!.audio.getStatus()).resolves.toMatchObject({
+      outputMode: 'system',
+      state: 'stopped',
+      currentTrackId: null,
+      error: null,
     });
   });
 

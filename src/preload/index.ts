@@ -108,6 +108,7 @@ const systemSeekConfirmEvents: Array<keyof HTMLMediaElementEventMap> = [
   'loadedmetadata',
 ];
 const systemPlaybackSupersededMessage = 'audio_session_run_cancelled';
+const systemPlayInterruptedByTransportPattern = /\bplay\(\) request was interrupted by a call to (?:pause|load)\(\)/iu;
 const audioStatusHandlers = new Set<(status: AudioStatus) => void>();
 const playbackProxyCommands = new Set(['playLocalFile', 'playMediaItem', 'play', 'pause', 'stop', 'seek']);
 const rendererSearchParams = new URLSearchParams(typeof window.location?.search === 'string' ? window.location.search : '');
@@ -230,6 +231,34 @@ const sourceTechnicalDiagnostics = (
       : null,
   };
 };
+
+const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
+const errorName = (error: unknown): string | null => {
+  if (error instanceof Error) {
+    return error.name;
+  }
+
+  if (error && typeof error === 'object' && typeof (error as { name?: unknown }).name === 'string') {
+    return (error as { name: string }).name;
+  }
+
+  return null;
+};
+
+const isExpectedSystemPlaybackInterruption = (error: unknown): boolean => {
+  const message = errorMessage(error);
+  if (message.includes(systemPlaybackSupersededMessage)) {
+    return true;
+  }
+
+  if (systemPlayInterruptedByTransportPattern.test(message)) {
+    return true;
+  }
+
+  return errorName(error) === 'AbortError' && /\bplay\(\)|HTMLMediaElement/iu.test(message);
+};
+
 const htmlAudioSrcType = (value: string | null | undefined): string => {
   const raw = value?.trim() ?? '';
   if (!raw) {
@@ -918,6 +947,22 @@ const toSystemPlaybackStatus = (): PlaybackStatus => ({
   filePath: systemAudioSource?.filePath ?? null,
 });
 
+const finishInterruptedSystemPlayback = (generation: number, element: HTMLAudioElement): PlaybackStatus => {
+  if (generation === systemPlaybackGeneration) {
+    cancelSystemAudioTransportFade();
+    systemAudioError = null;
+    if (element.paused && systemAudioState !== 'stopped' && systemAudioState !== 'idle' && systemAudioState !== 'ended') {
+      systemAudioState = 'paused';
+    }
+    if (systemAudioState !== 'playing' && systemAudioState !== 'loading') {
+      stopSystemStatusTimer();
+    }
+    emitSystemAudioStatus();
+  }
+
+  return toSystemPlaybackStatus();
+};
+
 const ensureSystemAudioElement = (): HTMLAudioElement => {
   if (systemAudioElement) {
     return systemAudioElement;
@@ -1016,6 +1061,9 @@ const ensureSystemAudioElement = (): HTMLAudioElement => {
     emitSystemAudioStatus();
   });
   element.addEventListener('error', () => {
+    if (!systemAudioSource && (systemAudioState === 'stopped' || systemAudioState === 'idle')) {
+      return;
+    }
     systemAudioState = 'error';
     systemAudioError = createSystemAudioMediaErrorMessage(element);
     stopSystemStatusTimer();
@@ -1107,6 +1155,9 @@ const playSystemSource = async (
     startSystemStatusTimer();
     emitSystemAudioStatus();
   } catch (error) {
+    if (generation !== systemPlaybackGeneration || isExpectedSystemPlaybackInterruption(error)) {
+      return finishInterruptedSystemPlayback(generation, element);
+    }
     if (allowRecovery) {
       const recovered = await handleSystemPlaybackFailure('system-audio-htmlaudio-error', error, generation);
       if (recovered) {
@@ -1127,7 +1178,11 @@ const handleSystemPlaybackFailure = async (
   error: unknown,
   generation: number,
 ): Promise<PlaybackStatus | null> => {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
+  if (generation !== systemPlaybackGeneration || isExpectedSystemPlaybackInterruption(error)) {
+    return null;
+  }
+
   const context = systemMediaPlaybackContext;
   const canRefreshMedia =
     context &&

@@ -8,6 +8,7 @@ describe('audio error formatting', () => {
       'eq_control_closed',
       'eq_control_sync_skipped',
       'audio_session_run_cancelled',
+      'The play() request was interrupted by a call to pause(). https://goo.gl/LdLk22',
     ];
 
     for (const message of messages) {

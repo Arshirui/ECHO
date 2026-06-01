@@ -237,9 +237,9 @@ describe('LyricsMatchEngine', () => {
     expect(second.search).toHaveBeenCalled();
   });
 
-  it('quickly accepts a high-confidence deep search result without waiting for slower providers', async () => {
+  it('quickly accepts any low-risk deep search result without waiting for slower providers', async () => {
     const slow = provider('netease', [result({ provider: 'netease', providerLyricsId: 'slow-priority-hit' })], 120);
-    const fast = provider('lrclib', [result({ providerLyricsId: 'fast-high-confidence-hit', durationSeconds: 128 })], 0);
+    const fast = provider('lrclib', [result({ providerLyricsId: 'fast-accepted-hit', durationSeconds: 112 })], 0);
     const engine = new LyricsMatchEngine([fast, slow]);
     const startedAt = Date.now();
 
@@ -251,14 +251,14 @@ describe('LyricsMatchEngine', () => {
     });
 
     expect(Date.now() - startedAt).toBeLessThan(100);
-    expect(matched.accepted?.providerLyricsId).toBe('fast-high-confidence-hit');
-    expect(matched.accepted?.score).toBeGreaterThanOrEqual(0.85);
+    expect(matched.accepted?.providerLyricsId).toBe('fast-accepted-hit');
+    expect(matched.accepted?.score).toBeGreaterThan(0.7);
     expect(matched.accepted?.score).toBeLessThan(0.92);
     expect(fast.search).toHaveBeenCalled();
     expect(slow.search).toHaveBeenCalled();
   });
 
-  it('waits for translation-capable providers when translations are preferred', async () => {
+  it('does not wait for translation-capable providers after an accepted fast match', async () => {
     const lrclib = provider('lrclib', [result({ providerLyricsId: 'plain-hit' })], 0);
     const netease = provider(
       'netease',
@@ -283,8 +283,8 @@ describe('LyricsMatchEngine', () => {
       totalMatchTimeoutMs: 200,
     });
 
-    expect(matched.accepted?.provider).toBe('netease');
-    expect(matched.accepted?.providerLyricsId).toBe('translated-hit');
+    expect(matched.accepted?.provider).toBe('lrclib');
+    expect(matched.accepted?.providerLyricsId).toBe('plain-hit');
     expect(lrclib.search).toHaveBeenCalled();
     expect(netease.search).toHaveBeenCalled();
   });

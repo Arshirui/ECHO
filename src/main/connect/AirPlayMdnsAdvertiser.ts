@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createSocket, type RemoteInfo, type Socket } from 'node:dgram';
 
 export type AirPlayMdnsAdvertisement = {
@@ -20,9 +21,9 @@ const recordClassInternet = 1;
 const recordClassCacheFlush = 0x8001;
 const classicAirPlayVersion = '130.14';
 const airPlay2SourceVersion = '366.0';
-// AirPlay2 experimental receiver: audio + artwork/progress + PCM/ALAC + transient pairing.
-export const airPlay2FeatureMask = 0x10300400dca00;
-export const airPlay2FeatureBits = '0x400dca00,0x10300';
+// AirPlay2 experimental receiver: HomeKit/transient pairing + FairPlay + iOS-compatible audio capability flags.
+export const airPlay2FeatureMask = 0x1c300405f4200;
+export const airPlay2FeatureBits = '0x405f4200,0x1c300';
 
 const cleanMac = (mac: string): string => {
   const cleaned = mac.replace(/[^a-fA-F0-9]/gu, '').toUpperCase();
@@ -31,9 +32,12 @@ const cleanMac = (mac: string): string => {
 
 const colonMac = (mac: string): string => cleanMac(mac).match(/.{1,2}/gu)?.join(':') ?? '02:45:43:48:4F:00';
 
-const pairingUuid = (mac: string, suffix: string): string => {
-  const suffixHex = Buffer.from(suffix, 'utf8').toString('hex').toUpperCase();
-  const cleaned = `${cleanMac(mac)}${suffixHex}`.padEnd(32, '0').slice(0, 32);
+export const createAirPlay2PairingUuid = (mac: string, publicKeyHex: string | null | undefined, suffix: string): string => {
+  const hash = createHash('sha256');
+  hash.update(cleanMac(mac));
+  hash.update(publicKeyHex?.replace(/[^a-fA-F0-9]/gu, '').toUpperCase() ?? '');
+  hash.update(suffix);
+  const cleaned = hash.digest('hex').toUpperCase();
   return `${cleaned.slice(0, 8)}-${cleaned.slice(8, 12)}-4${cleaned.slice(13, 16)}-8${cleaned.slice(17, 20)}-${cleaned.slice(20, 32)}`.toLowerCase();
 };
 
@@ -274,8 +278,8 @@ export class AirPlayMdnsAdvertiser {
       `srcvers=${airPlay2SourceVersion}`,
       'protovers=1.1',
       'vv=2',
-      `pi=${pairingUuid(mac, 'airplay')}`,
-      `psi=${pairingUuid(mac, 'system')}`,
+      `pi=${createAirPlay2PairingUuid(mac, advertisement.airPlayPublicKey, 'airplay')}`,
+      `psi=${createAirPlay2PairingUuid(mac, advertisement.airPlayPublicKey, 'system')}`,
       `pk=${advertisement.airPlayPublicKey ?? '0000000000000000000000000000000000000000000000000000000000000000'}`,
       'txtvers=1',
     ]);

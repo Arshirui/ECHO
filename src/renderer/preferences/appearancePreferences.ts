@@ -25,6 +25,12 @@ export const defaultAppearancePreferences: AppearancePreferences = {
   textDepth: 62,
 };
 
+const childrenDoodleDefaultFontPreferences = {
+  mainFontFamily: 'Monocraft',
+  chineseFontFamily: 'ZCOOL Happy',
+  fallbackFontFamily: defaultAppearancePreferences.fallbackFontFamily,
+} as const;
+
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
 const normalizeFontName = (value: unknown, fallback: string): string => {
@@ -45,31 +51,25 @@ const normalizeFontPath = (value: unknown): string | null => {
   return normalized || null;
 };
 
-const normalizeDefaultFontName = (value: unknown, fallback: string): string => {
-  const normalized = normalizeFontName(value, fallback);
-  if (normalized === 'Monocraft' && fallback === defaultAppearancePreferences.mainFontFamily) {
-    return defaultAppearancePreferences.mainFontFamily;
-  }
-  if (normalized === 'ZCOOL Happy' && fallback === defaultAppearancePreferences.chineseFontFamily) {
-    return defaultAppearancePreferences.chineseFontFamily;
-  }
-  if (normalized === 'ZCOOL Happy' && fallback === defaultAppearancePreferences.fallbackFontFamily) {
-    return defaultAppearancePreferences.fallbackFontFamily;
-  }
-  return normalized;
-};
-
 const normalizePreferences = (value: Partial<AppearancePreferences>): AppearancePreferences => ({
-  mainFontFamily: normalizeDefaultFontName(value.mainFontFamily, defaultAppearancePreferences.mainFontFamily),
+  mainFontFamily: normalizeFontName(value.mainFontFamily, defaultAppearancePreferences.mainFontFamily),
   mainFontFilePath: normalizeFontPath(value.mainFontFilePath),
-  chineseFontFamily: normalizeDefaultFontName(value.chineseFontFamily, defaultAppearancePreferences.chineseFontFamily),
+  chineseFontFamily: normalizeFontName(value.chineseFontFamily, defaultAppearancePreferences.chineseFontFamily),
   chineseFontFilePath: normalizeFontPath(value.chineseFontFilePath),
-  fallbackFontFamily: normalizeDefaultFontName(value.fallbackFontFamily, defaultAppearancePreferences.fallbackFontFamily),
+  fallbackFontFamily: normalizeFontName(value.fallbackFontFamily, defaultAppearancePreferences.fallbackFontFamily),
   fallbackFontFilePath: normalizeFontPath(value.fallbackFontFilePath),
   baseFontSize: clamp(Number(value.baseFontSize) || defaultAppearancePreferences.baseFontSize, 12, 18),
   lineHeight: clamp(Number(value.lineHeight) || defaultAppearancePreferences.lineHeight, 1.1, 1.8),
   textDepth: clamp(Number(value.textDepth) || defaultAppearancePreferences.textDepth, 35, 100),
 });
+
+const hasDefaultFontPreferences = (preferences: AppearancePreferences): boolean =>
+  preferences.mainFontFamily === defaultAppearancePreferences.mainFontFamily &&
+  preferences.mainFontFilePath === defaultAppearancePreferences.mainFontFilePath &&
+  preferences.chineseFontFamily === defaultAppearancePreferences.chineseFontFamily &&
+  preferences.chineseFontFilePath === defaultAppearancePreferences.chineseFontFilePath &&
+  preferences.fallbackFontFamily === defaultAppearancePreferences.fallbackFontFamily &&
+  preferences.fallbackFontFilePath === defaultAppearancePreferences.fallbackFontFilePath;
 
 export const serializeFontList = (value: string): string => {
   const families = value
@@ -127,15 +127,25 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences): 
   const normalized = normalizePreferences(preferences);
   const root = document.documentElement;
   const isDarkTheme = root.dataset.theme === 'dark';
+  const shouldUseChildrenDoodleDefaultFonts = root.dataset.themePreset === 'childrenDoodle' && hasDefaultFontPreferences(normalized);
+  const effectiveMainFontFamily = shouldUseChildrenDoodleDefaultFonts
+    ? childrenDoodleDefaultFontPreferences.mainFontFamily
+    : normalized.mainFontFamily;
+  const effectiveChineseFontFamily = shouldUseChildrenDoodleDefaultFonts
+    ? childrenDoodleDefaultFontPreferences.chineseFontFamily
+    : normalized.chineseFontFamily;
+  const effectiveFallbackFontFamily = shouldUseChildrenDoodleDefaultFonts
+    ? childrenDoodleDefaultFontPreferences.fallbackFontFamily
+    : normalized.fallbackFontFamily;
   const textLightness = isDarkTheme
     ? clamp(66 + normalized.textDepth * 0.28, 78, 94)
     : clamp(54 - normalized.textDepth * 0.42, 12, 40);
   const mutedLightness = isDarkTheme ? clamp(textLightness - 18, 58, 76) : clamp(textLightness + 20, 38, 62);
   const subtleLightness = isDarkTheme ? clamp(textLightness - 34, 42, 58) : clamp(textLightness + 34, 52, 74);
   const fontStack = [
-    serializeFontList(normalized.mainFontFamily),
-    serializeFontList(normalized.chineseFontFamily),
-    serializeFontList(normalized.fallbackFontFamily),
+    serializeFontList(effectiveMainFontFamily),
+    serializeFontList(effectiveChineseFontFamily),
+    serializeFontList(effectiveFallbackFontFamily),
     'ui-sans-serif',
     'system-ui',
     '-apple-system',

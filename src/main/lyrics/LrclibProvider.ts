@@ -19,6 +19,8 @@ export type LrclibRecord = {
 const apiRoot = 'https://lrclib.net/api';
 const defaultTimeoutMs = 8000;
 const userAgent = 'ECHO-Next/1.0.1 (https://github.com/Moekotori/ECHO-Next; contact email)';
+const minFallbackBudgetMs = 250;
+const cachedSignatureTimeoutMs = 2000;
 
 const textOrEmpty = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 const textOrNull = (value: unknown): string | null => {
@@ -72,6 +74,9 @@ const buildSearchUrl = (query: LyricsQuery): string => {
   return url.toString();
 };
 
+const hasExactSignature = (query: LyricsQuery): boolean =>
+  Boolean(query.title.trim() && query.artist.trim() && query.album?.trim() && query.durationSeconds && query.durationSeconds > 0);
+
 const fetchJson = async (url: string, timeoutMs = defaultTimeoutMs, signal?: AbortSignal): Promise<unknown | null> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -105,17 +110,42 @@ const fetchSearchJson = async (
   timeoutMs?: number,
   signal?: AbortSignal,
 ): Promise<unknown | null> => {
-  const querySearchJson = await fetchJson(buildSearchUrl(query), timeoutMs, signal);
+  const budgetMs = timeoutMs ?? defaultTimeoutMs;
+  const startedAt = Date.now();
+  const remainingBudget = (): number => Math.max(0, budgetMs - (Date.now() - startedAt));
+  const fetchWithinBudget = async (url: string): Promise<unknown | null> => {
+    const remaining = remainingBudget();
+    if (remaining <= minFallbackBudgetMs || signal?.aborted) {
+      return null;
+    }
+
+    return fetchJson(url, remaining, signal);
+  };
+
+  const querySearchJson = await fetchWithinBudget(buildSearchUrl(query));
   if (Array.isArray(querySearchJson) && querySearchJson.length > 0) {
     return querySearchJson;
   }
 
-  if (signal?.aborted) {
+  if (signal?.aborted || remainingBudget() <= minFallbackBudgetMs) {
     return querySearchJson;
   }
 
-  const structuredSearchJson = await fetchJson(buildStructuredUrl('/search', query, false), timeoutMs, signal);
+  const structuredSearchJson = await fetchWithinBudget(buildStructuredUrl('/search', query, false));
   return Array.isArray(structuredSearchJson) && structuredSearchJson.length > 0 ? structuredSearchJson : querySearchJson;
+};
+
+const fetchExactCachedRecord = async (
+  query: LyricsQuery,
+  timeoutMs?: number,
+  signal?: AbortSignal,
+): Promise<LrclibRecord | null> => {
+  if (!hasExactSignature(query)) {
+    return null;
+  }
+
+  const json = await fetchJson(buildStructuredUrl('/get-cached', query, true), timeoutMs, signal);
+  return mapRecord(json);
 };
 
 export const mapLrclibRecordToTrackLyrics = (
@@ -192,6 +222,37 @@ export class LrclibProvider implements LyricsProvider {
   async search(request: LyricsProviderSearchRequest): Promise<LyricsProviderResult[]> {
     const results: LyricsProviderResult[] = [];
     const seen = new Set<string>();
+    const pushRecord = (record: LrclibRecord, source: 'cached' | 'search'): void => {
+      const result = recordToResult(record);
+      if (!result.title) {
+        result.title = request.query.title;
+      }
+
+      if (!result.artist) {
+        result.artist = request.query.artist;
+      }
+
+      result.sourceLabel = source === 'cached' ? 'LRCLIB cached' : 'LRCLIB';
+      result.matchReasons = source === 'cached' ? ['lrclib_cached_signature'] : ['lrclib_keyword_search'];
+
+      const key = result.providerLyricsId ?? `${result.title}|${result.artist}|${result.album}|${result.durationSeconds}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(result);
+      }
+    };
+
+    const cachedRecord = await fetchExactCachedRecord(
+      request.query,
+      Math.min(request.timeoutMs, cachedSignatureTimeoutMs),
+      request.signal,
+    );
+    if (cachedRecord) {
+      pushRecord(cachedRecord, 'cached');
+      if (!request.collectAllCandidates) {
+        return results;
+      }
+    }
 
     for (const variant of request.normalized.searchVariants) {
       if (request.signal?.aborted) {
@@ -211,20 +272,7 @@ export class LrclibProvider implements LyricsProvider {
       }
 
       for (const record of json.map(mapRecord).filter((item): item is LrclibRecord => Boolean(item))) {
-        const result = recordToResult(record);
-        if (!result.title) {
-          result.title = request.query.title;
-        }
-
-        if (!result.artist) {
-          result.artist = request.query.artist;
-        }
-
-        const key = result.providerLyricsId ?? `${result.title}|${result.artist}|${result.album}|${result.durationSeconds}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          results.push(result);
-        }
+        pushRecord(record, 'search');
       }
     }
 
@@ -232,8 +280,7 @@ export class LrclibProvider implements LyricsProvider {
   }
 
   async getLyrics(query: LyricsQuery): Promise<TrackLyrics | null> {
-    const json = await fetchJson(buildStructuredUrl('/get', query, true));
-    const record = mapRecord(json);
+    const record = await fetchExactCachedRecord(query) ?? mapRecord(await fetchJson(buildStructuredUrl('/get', query, true)));
     if (!record) {
       return null;
     }

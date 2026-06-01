@@ -1049,7 +1049,7 @@ export const MvPanel = ({
   const selectedMvOffsetMs = clampOffset(Number(selectedVideo?.offsetMs ?? 0));
   const videoMediaUrl = isMvEnabled && selectedVideo?.playableInApp && selectedVideo.mediaUrl && !videoError ? selectedVideo.mediaUrl : null;
   const showVideo = Boolean(videoMediaUrl);
-  const youtubeEmbedUrl = youtubeEmbedUrlFromVideo(selectedVideo, { autoplay: isAudioPlaying, controls: true });
+  const youtubeEmbedUrl = youtubeEmbedUrlFromVideo(selectedVideo, { autoplay: isAudioPlaying, controls: false });
   const showYouTubeEmbed = Boolean(isMvEnabled && youtubeEmbedUrl && !showVideo);
   const youtubeBackgroundEmbedUrl = youtubeEmbedUrlFromVideo(selectedVideo, {
     autoplay: isAudioPlaying,

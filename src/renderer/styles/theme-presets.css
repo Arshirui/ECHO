@@ -1779,11 +1779,10 @@ html[data-theme="dark"][data-theme-preset="childrenDoodle"] .settings-theme-pres
 }
 
 html[data-theme-preset="childrenDoodle"]:not([data-theme-preset="classic"]) {
-  --children-doodle-font-family: "Monocraft", "ZCOOL Happy", var(--echo-font-family);
-  --children-doodle-mono-font-family: "Monocraft", ui-monospace, "Cascadia Code", Consolas, monospace;
-  --font-main: var(--children-doodle-font-family);
-  --font-mono: var(--children-doodle-mono-font-family);
-  --lyrics-font-family: var(--children-doodle-font-family);
+  --children-doodle-font-family: var(--echo-font-family);
+  --children-doodle-mono-font-family: var(--echo-font-family);
+  --font-main: var(--echo-font-family);
+  --font-mono: var(--echo-font-family);
   --children-doodle-paper:
     radial-gradient(circle at 7px 9px, rgb(255 111 168 / 0.14) 0 0.8px, transparent 1.4px),
     radial-gradient(circle at 31px 27px, rgb(86 111 218 / 0.11) 0 0.9px, transparent 1.6px),
@@ -1842,13 +1841,13 @@ html[data-theme-preset="childrenDoodle"]:not([data-theme-preset="classic"]) {
   --echo-polish-shadow-row:
     1px 2px 0 rgb(244 199 70 / 0.12),
     0 5px 12px rgb(var(--preset-shadow-rgb) / 0.07);
-  font-family: var(--children-doodle-font-family);
+  font-family: var(--echo-font-family);
 }
 
 html[data-theme-preset="childrenDoodle"] body,
 html[data-theme-preset="childrenDoodle"] .app-shell,
 html[data-theme-preset="childrenDoodle"] .mini-player-shell {
-  font-family: var(--children-doodle-font-family);
+  font-family: var(--echo-font-family);
 }
 
 html[data-theme="dark"][data-theme-preset="childrenDoodle"] {
@@ -5967,7 +5966,6 @@ html[data-theme-preset="childrenDoodle"] .page-surface:has(.lyrics-page) {
 }
 
 html[data-theme-preset="childrenDoodle"] .lyrics-page {
-  --lyrics-font-family: var(--children-doodle-font-family);
   --lyrics-color: #244caa;
   --lyrics-readable-color: #244caa;
   --lyrics-context-opacity: 0.34;
@@ -5990,7 +5988,7 @@ html[data-theme-preset="childrenDoodle"] .lyrics-page {
     -2px 2px 0 rgb(102 205 183 / 0.14);
   color: #244caa;
   background: var(--children-doodle-page-bg);
-  font-family: var(--children-doodle-font-family);
+  font-family: var(--lyrics-font-family);
 }
 
 html[data-theme-preset="childrenDoodle"] .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) {
@@ -6147,7 +6145,7 @@ html[data-theme-preset="childrenDoodle"] .lyrics-track-album,
 html[data-theme-preset="childrenDoodle"] .lyrics-track-artist,
 html[data-theme-preset="childrenDoodle"] .lyrics-track-copy p {
   color: #244caa !important;
-  font-family: var(--children-doodle-font-family);
+  font-family: var(--echo-font-family);
   text-shadow:
     1px 1px 0 rgb(255 255 255 / 0.65),
     2px 2px 0 rgb(255 111 168 / 0.11);
@@ -6225,7 +6223,7 @@ html[data-theme-preset="childrenDoodle"] .lyrics-line small,
 html[data-theme-preset="childrenDoodle"] .lyrics-line em {
   position: relative;
   z-index: 1;
-  font-family: var(--children-doodle-font-family);
+  font-family: var(--lyrics-font-family);
 }
 
 html[data-theme-preset="childrenDoodle"] .lyrics-line[data-active="true"] span {

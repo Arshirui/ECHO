@@ -4,6 +4,7 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createPrivateKey,
   createPublicKey,
   diffieHellman,
   generateKeyPairSync,
@@ -15,7 +16,7 @@ import {
   type KeyObject,
 } from 'node:crypto';
 import { createSocket, type RemoteInfo, type Socket as UdpSocket } from 'node:dgram';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { request as httpRequest, type ClientRequest } from 'node:http';
 import { createServer as createTcpServer, type Server as TcpServer, type Socket } from 'node:net';
 import { networkInterfaces } from 'node:os';
@@ -26,7 +27,7 @@ import { app } from 'electron';
 import type { AudioOutputSettings, AudioStatus } from '../../shared/types/audio';
 import type { AirPlayReceiverStatus, ConnectMetadata, ConnectReceiverClient, ConnectReceiverDebugEvent } from '../../shared/types/connect';
 import { getAudioSession } from '../audio/AudioSession';
-import { AirPlayMdnsAdvertiser, airPlay2FeatureMask } from './AirPlayMdnsAdvertiser';
+import { AirPlayMdnsAdvertiser, airPlay2FeatureMask, createAirPlay2PairingUuid } from './AirPlayMdnsAdvertiser';
 
 type RaopEvent = Record<string, unknown> & {
   type?: string;
@@ -121,12 +122,15 @@ type AirPlay2PairVerifyState = {
   controlWriteKey: Buffer;
 };
 
+type AirPlay2EncryptedControlState = Pick<AirPlay2PairVerifyState, 'controlReadKey' | 'controlWriteKey'>;
+
 type AirPlay2PairSetupState = {
   salt: Buffer;
   privateKey: bigint;
   publicKey: Buffer;
   verifier: bigint;
   sessionKey: Buffer | null;
+  transient: boolean;
 };
 
 type AirPlay2FairPlayState = {
@@ -297,6 +301,7 @@ const airPlay2PairSetupAccessorySignInfo = 'Pair-Setup-Accessory-Sign-Info';
 const airPlay2ControlSalt = 'Control-Salt';
 const airPlay2EncryptedFrameLimitBytes = 1024;
 const airPlay2RtpTrailerBytes = 24;
+const airPlay2PairingFlagTransient = 0x10;
 const airPlay2PairSetupUsername = 'Pair-Setup';
 const airPlay2PairSetupPassword = '3939';
 const airPlay2SrpModulusHex = [
@@ -651,13 +656,86 @@ const convertAirPlay2LpcmToF32le = (input: Buffer, format: AirPlay2PcmFormat): B
   return output;
 };
 
+const airPlay2IdentityFileName = 'airplay2-identity.json';
+
+type StoredAirPlay2Identity = {
+  version?: number;
+  publicKey?: string;
+  privateKey?: string;
+};
+
+const exportAirPlay2Ed25519PublicKey = (publicKey: KeyObject): Buffer => {
+  const publicKeyDer = publicKey.export({ format: 'der', type: 'spki' });
+  return Buffer.from(publicKeyDer).subarray(ed25519SpkiPrefix.length);
+};
+
 const createAirPlay2Identity = (): AirPlay2Identity => {
   const keyPair = generateKeyPairSync('ed25519');
-  const publicKeyDer = keyPair.publicKey.export({ format: 'der', type: 'spki' });
   return {
-    publicKey: Buffer.from(publicKeyDer).subarray(ed25519SpkiPrefix.length),
+    publicKey: exportAirPlay2Ed25519PublicKey(keyPair.publicKey),
     privateKey: keyPair.privateKey,
   };
+};
+
+const loadStoredAirPlay2Identity = (filePath: string): AirPlay2Identity | null => {
+  if (!existsSync(filePath)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as StoredAirPlay2Identity;
+    if (!parsed.privateKey) {
+      return null;
+    }
+    const privateKey = createPrivateKey({
+      key: Buffer.from(parsed.privateKey, 'base64'),
+      format: 'der',
+      type: 'pkcs8',
+    });
+    const publicKey = exportAirPlay2Ed25519PublicKey(createPublicKey(privateKey));
+    if (parsed.publicKey && parsed.publicKey !== publicKey.toString('hex')) {
+      return null;
+    }
+    return { publicKey, privateKey };
+  } catch {
+    return null;
+  }
+};
+
+const saveAirPlay2Identity = (filePath: string, identity: AirPlay2Identity): void => {
+  try {
+    mkdirSync(dirname(filePath), { recursive: true });
+    const privateKey = identity.privateKey.export({ format: 'der', type: 'pkcs8' });
+    const payload: StoredAirPlay2Identity = {
+      version: 1,
+      publicKey: identity.publicKey.toString('hex'),
+      privateKey: Buffer.from(privateKey).toString('base64'),
+    };
+    writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  } catch {
+    // A stable AirPlay identity is best-effort; pairing can still run with an in-memory key.
+  }
+};
+
+const resolveAirPlay2IdentityPath = (): string | null => {
+  try {
+    const userDataPath = app?.getPath?.('userData');
+    return userDataPath ? join(userDataPath, airPlay2IdentityFileName) : null;
+  } catch {
+    return null;
+  }
+};
+
+const loadOrCreateAirPlay2Identity = (): AirPlay2Identity => {
+  const filePath = resolveAirPlay2IdentityPath();
+  const stored = filePath ? loadStoredAirPlay2Identity(filePath) : null;
+  if (stored) {
+    return stored;
+  }
+  const identity = createAirPlay2Identity();
+  if (filePath) {
+    saveAirPlay2Identity(filePath, identity);
+  }
+  return identity;
 };
 
 const exportX25519PublicKey = (publicKey: KeyObject): Buffer => {
@@ -705,6 +783,11 @@ const createAirPlay2CounterNonce = (counter: number): Buffer => {
 const deriveAirPlay2Key = (inputKey: Buffer, salt: string, info: string): Buffer =>
   Buffer.from(hkdfSync('sha512', inputKey, Buffer.from(salt, 'utf8'), Buffer.from(info, 'utf8'), 32));
 
+const createAirPlay2EncryptedControlState = (encryptionKey: Buffer): AirPlay2EncryptedControlState => ({
+  controlReadKey: deriveAirPlay2Key(encryptionKey, airPlay2ControlSalt, 'Control-Read-Encryption-Key'),
+  controlWriteKey: deriveAirPlay2Key(encryptionKey, airPlay2ControlSalt, 'Control-Write-Encryption-Key'),
+});
+
 const hashAirPlay2Sha512 = (...buffers: Buffer[]): Buffer => {
   const hash = createHash('sha512');
   for (const buffer of buffers) {
@@ -718,6 +801,11 @@ const airPlay2BigintFromBuffer = (value: Buffer): bigint => BigInt(`0x${value.to
 const airPlay2BigintToBuffer = (value: bigint, byteLength = airPlay2SrpModulusBytes): Buffer => {
   const hex = value.toString(16).padStart(byteLength * 2, '0');
   return Buffer.from(hex.slice(-byteLength * 2), 'hex');
+};
+
+const airPlay2BigintToMinimalBuffer = (value: bigint): Buffer => {
+  const hex = value.toString(16);
+  return Buffer.from(hex.length % 2 === 0 ? hex : `0${hex}`, 'hex');
 };
 
 const airPlay2SrpHashBigint = (...buffers: Buffer[]): bigint => airPlay2BigintFromBuffer(hashAirPlay2Sha512(...buffers));
@@ -782,7 +870,7 @@ const calculateAirPlay2SrpSession = (
   );
   const sessionKey = hashAirPlay2Sha512(airPlay2BigintToBuffer(sessionSecret));
   const modulusHash = hashAirPlay2Sha512(airPlay2BigintToBuffer(airPlay2SrpModulus));
-  const generatorHash = hashAirPlay2Sha512(airPlay2BigintToBuffer(airPlay2SrpGenerator));
+  const generatorHash = hashAirPlay2Sha512(airPlay2BigintToMinimalBuffer(airPlay2SrpGenerator));
   const groupHash = Buffer.from(modulusHash.map((value, index) => value ^ generatorHash[index]));
   const usernameHash = hashAirPlay2Sha512(Buffer.from(airPlay2PairSetupUsername, 'utf8'));
   const clientProof = hashAirPlay2Sha512(groupHash, usernameHash, salt, clientPublicKey, serverPublicKey, sessionKey);
@@ -841,6 +929,9 @@ const getAirPlay2TlvByte = (fields: Map<number, Buffer[]>, type: number): number
   const value = getAirPlay2TlvValue(fields, type);
   return value && value.length > 0 ? value.readUInt8(0) : null;
 };
+
+const airPlay2TlvNumber = (value: Buffer | null): number =>
+  value ? value.reduce((next, byte) => (next * 256) + byte, 0) : 0;
 
 const encryptAirPlay2Payload = (key: Buffer, nonceLabel: string, body: Buffer): Buffer => {
   const cipher = createCipheriv('chacha20-poly1305', key, createAirPlay2Nonce(nonceLabel), { authTagLength: 16 });
@@ -1923,6 +2014,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   private airPlay2StreamState: AirPlay2StreamState | null = null;
   private airPlay2PairSetupState: AirPlay2PairSetupState | null = null;
   private airPlay2PairVerifyState: AirPlay2PairVerifyState | null = null;
+  private airPlay2EncryptedControlState: AirPlay2EncryptedControlState | null = null;
   private airPlay2FairPlayState: AirPlay2FairPlayState | null = null;
   private airPlay2SessionSetupInfo: AirPlay2SessionSetupInfo | null = null;
   private pcmStream: PassThrough | null = null;
@@ -1955,7 +2047,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.airPlay2Experimental = dependencies.airPlay2Experimental ?? shouldAdvertiseAirPlay2Experimental();
     this.startupTimeoutMs = dependencies.startupTimeoutMs ?? airPlayStartupStepTimeoutMs;
     this.now = dependencies.now ?? Date.now;
-    this.airPlay2Identity = createAirPlay2Identity();
+    this.airPlay2Identity = loadOrCreateAirPlay2Identity();
     this.status = this.createDisabledStatus();
     this.audioSession.on('status', this.handleAudioStatus);
     if (!dependencies.loadRaopModule) {
@@ -2255,6 +2347,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     this.airPlay2ProbePort = null;
     this.airPlay2PairSetupState = null;
     this.airPlay2PairVerifyState = null;
+    this.airPlay2EncryptedControlState = null;
     this.airPlay2FairPlayState = null;
     this.airPlay2SessionSetupInfo = null;
     await this.stopAirPlay2SessionResources();
@@ -2318,9 +2411,9 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     try {
       while (connection.buffer.length > 0) {
         if (connection.encrypted) {
-          const state = this.airPlay2PairVerifyState;
+          const state = this.airPlay2EncryptedControlState;
           if (!state) {
-            throw new Error('Encrypted AirPlay 2 control frame arrived before Pair-Verify completed.');
+            throw new Error('Encrypted AirPlay 2 control frame arrived before control encryption was ready.');
           }
           if (connection.buffer.length < 2) {
             return;
@@ -2496,7 +2589,7 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
 
     const state = getAirPlay2TlvByte(parsed.fields, 6);
     if (state === 1) {
-      return this.handleAirPlay2PairSetupM1(method, path);
+      return this.handleAirPlay2PairSetupM1(method, path, parsed.fields);
     }
     if (state === 3) {
       return this.handleAirPlay2PairSetupM3(method, path, parsed.fields);
@@ -3061,8 +3154,16 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
     }
   }
 
-  private handleAirPlay2PairSetupM1(method: string, path: string): AirPlay2ProbeResponse {
+  private handleAirPlay2PairSetupM1(
+    method: string,
+    path: string,
+    fields: Map<number, Buffer[]>,
+  ): AirPlay2ProbeResponse {
     try {
+      const requestMethod = getAirPlay2TlvByte(fields, 0);
+      const flags = getAirPlay2TlvValue(fields, 19);
+      const flagsValue = airPlay2TlvNumber(flags);
+      const transient = (flagsValue & airPlay2PairingFlagTransient) !== 0;
       const salt = randomBytes(16);
       const verifier = createAirPlay2SrpVerifier(salt);
       const privateKey = createAirPlay2SrpPrivateKey();
@@ -3073,14 +3174,24 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         publicKey,
         verifier,
         sessionKey: null,
+        transient,
       };
 
-      const responseBody = encodeAirPlay2Tlv([
+      const responseFields: AirPlay2TlvField[] = [
         { type: 6, value: Buffer.from([2]) },
         { type: 2, value: salt },
         { type: 3, value: publicKey },
-      ]);
-      this.addDebugEvent('pair-setup', 'M1 accepted; M2 SRP salt/public key sent', { method, path, statusCode: 200 });
+      ];
+      if (flags) {
+        responseFields.push({ type: 19, value: flags });
+      }
+      const flagSummary = flags ? ` flags=0x${flagsValue.toString(16)}` : '';
+      const responseBody = encodeAirPlay2Tlv(responseFields);
+      this.addDebugEvent(
+        'pair-setup',
+        `M1 accepted; M2 SRP salt/public key sent; pairMethod=${requestMethod ?? 'missing'}${flagSummary}`,
+        { method, path, statusCode: 200 },
+      );
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/octet-stream' },
@@ -3123,15 +3234,25 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
       }
 
       state.sessionKey = session.sessionKey;
+      if (state.transient) {
+        this.airPlay2EncryptedControlState = createAirPlay2EncryptedControlState(session.sessionKey);
+      }
       const responseBody = encodeAirPlay2Tlv([
         { type: 6, value: Buffer.from([4]) },
         { type: 4, value: session.serverProof },
       ]);
-      this.addDebugEvent('pair-setup', 'M3 SRP proof verified; M4 accessory proof sent', { method, path, statusCode: 200 });
+      this.addDebugEvent(
+        'pair-setup',
+        state.transient
+          ? 'M3 SRP proof verified; M4 accessory proof sent; transient control channel ready'
+          : 'M3 SRP proof verified; M4 accessory proof sent',
+        { method, path, statusCode: 200 },
+      );
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/octet-stream' },
         body: responseBody,
+        encryptedAfterWrite: state.transient,
       };
     } catch (error) {
       this.addDebugEvent('pair-setup', error instanceof Error ? error.message : String(error), { method, path, statusCode: 400 });
@@ -3365,6 +3486,10 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
         `M3 decrypted for ${clientIdentifier}; M4 response sent; encrypted control channel ready`,
         { method, path, statusCode: 200 },
       );
+      this.airPlay2EncryptedControlState = {
+        controlReadKey: state.controlReadKey,
+        controlWriteKey: state.controlWriteKey,
+      };
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/octet-stream' },
@@ -3478,9 +3603,11 @@ export class AirPlayReceiverSpikeService extends EventEmitter<AirPlayReceiverEve
   }
 
   private airPlay2PairingUuid(suffix: string): string {
-    const suffixHex = Buffer.from(suffix, 'utf8').toString('hex').toUpperCase();
-    const cleaned = `${this.airPlay2DeviceIdentifier().replace(/:/gu, '')}${suffixHex}`.padEnd(32, '0').slice(0, 32);
-    return `${cleaned.slice(0, 8)}-${cleaned.slice(8, 12)}-4${cleaned.slice(13, 16)}-8${cleaned.slice(17, 20)}-${cleaned.slice(20, 32)}`.toLowerCase();
+    return createAirPlay2PairingUuid(
+      this.airPlay2DeviceIdentifier(),
+      this.airPlay2Identity.publicKey.toString('hex'),
+      suffix,
+    );
   }
 
   private handleRaopEvent(event: RaopEvent): void {

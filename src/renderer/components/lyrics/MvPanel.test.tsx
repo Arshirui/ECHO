@@ -943,7 +943,9 @@ describe('MvPanel', () => {
     });
     expect(frame.getAttribute('src')).toContain('mute=1');
     expect(frame.getAttribute('src')).toContain('autoplay=1');
-    expect(frame.getAttribute('src')).toContain('controls=1');
+    expect(frame.getAttribute('src')).toContain('controls=0');
+    expect(frame.getAttribute('src')).toContain('disablekb=1');
+    expect(frame.getAttribute('src')).toContain('fs=0');
     expect(container.querySelector('.lyrics-mv-panel')?.getAttribute('data-immersive-active')).toBe('true');
 
     const backgroundFrame = container.querySelector('iframe.lyrics-mv-background-video--youtube') as HTMLIFrameElement | null;

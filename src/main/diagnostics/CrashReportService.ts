@@ -256,6 +256,10 @@ const classifyAudioFailure = (message: string): string => {
     return 'superseded_playback_run';
   }
 
+  if (/\bplay\(\) request was interrupted by a call to (?:pause|load)\(\)/iu.test(message)) {
+    return 'superseded_playback_run';
+  }
+
   if (message.includes('ffmpeg_missing')) {
     return 'decoder_missing';
   }

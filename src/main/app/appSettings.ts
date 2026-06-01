@@ -999,17 +999,7 @@ const normalizeAudioExportFormat = (value: unknown): AudioExportFormat =>
   value === 'wav' || value === 'flac' || value === 'ogg' || value === 'mp3' ? value : defaultSettings.audioExportFormat ?? 'mp3';
 
 const normalizeAppearanceFontFamily = (value: unknown, fallback: string): string => {
-  const normalized = normalizeRequiredText(value, fallback);
-  if (normalized === 'Monocraft' && fallback === defaultAppearancePreferences.mainFontFamily) {
-    return defaultAppearancePreferences.mainFontFamily;
-  }
-  if (normalized === 'ZCOOL Happy' && fallback === defaultAppearancePreferences.chineseFontFamily) {
-    return defaultAppearancePreferences.chineseFontFamily;
-  }
-  if (normalized === 'ZCOOL Happy' && fallback === defaultAppearancePreferences.fallbackFontFamily) {
-    return defaultAppearancePreferences.fallbackFontFamily;
-  }
-  return normalized;
+  return normalizeRequiredText(value, fallback);
 };
 
 const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {

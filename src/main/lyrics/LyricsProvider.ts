@@ -21,6 +21,7 @@ export type LyricsProviderSearchRequest = {
   normalized: NormalizedLyricsQuery;
   timeoutMs: number;
   signal?: AbortSignal;
+  collectAllCandidates?: boolean;
 };
 
 export type LyricsProviderResult = {

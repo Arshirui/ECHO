@@ -215,6 +215,11 @@ const bigintFromBuffer = (value: Buffer): bigint => BigInt(`0x${value.toString('
 const bigintToBuffer = (value: bigint, byteLength = testSrpModulusBytes): Buffer =>
   Buffer.from(value.toString(16).padStart(byteLength * 2, '0').slice(-byteLength * 2), 'hex');
 
+const bigintToMinimalBuffer = (value: bigint): Buffer => {
+  const hex = value.toString(16);
+  return Buffer.from(hex.length % 2 === 0 ? hex : `0${hex}`, 'hex');
+};
+
 const hashBigint = (...buffers: Buffer[]): bigint => bigintFromBuffer(sha512(...buffers));
 
 const testSrpMultiplier = hashBigint(bigintToBuffer(testSrpModulus), bigintToBuffer(testSrpGenerator));
@@ -248,7 +253,7 @@ const createSrpClientProof = (
   const sessionSecret = modPow(base, clientPrivateKey + (scramblingParameter * x), testSrpModulus);
   const sessionKey = sha512(bigintToBuffer(sessionSecret));
   const modulusHash = sha512(bigintToBuffer(testSrpModulus));
-  const generatorHash = sha512(bigintToBuffer(testSrpGenerator));
+  const generatorHash = sha512(bigintToMinimalBuffer(testSrpGenerator));
   const groupHash = Buffer.from(modulusHash.map((value, index) => value ^ generatorHash[index]));
   const usernameHash = sha512(Buffer.from(testSrpUsername, 'utf8'));
   const clientProof = sha512(groupHash, usernameHash, salt, clientPublicKey, serverPublicKey, sessionKey);
@@ -710,7 +715,7 @@ describe('AirPlayReceiverSpikeService', () => {
     expect(response.headers.get('content-type')).toContain('text/x-apple-plist+xml');
     expect(body).toContain('<key>sourceVersion</key>');
     expect(body).toContain('366.0');
-    expect(body).toContain('<integer>284774586239488</integer>');
+    expect(body).toContain('<integer>495880824111616</integer>');
     expect(body).toContain('<key>audioFormats</key>');
     expect(body).toContain('<integer>1572860</integer>');
     expect(body).not.toContain('<integer>67108860</integer>');
@@ -772,7 +777,6 @@ describe('AirPlayReceiverSpikeService', () => {
     const m1Body = encodeTlv([
       { type: 6, value: Buffer.from([1]) },
       { type: 0, value: Buffer.from([1]) },
-      { type: 19, value: Buffer.from([0x10]) },
     ]);
     const m1Response = await fetch(`http://127.0.0.1:${airPlayPort}/pair-setup`, {
       method: 'POST',
@@ -873,6 +877,88 @@ describe('AirPlayReceiverSpikeService', () => {
     }));
 
     await service.setEnabled(false);
+  });
+
+  it('enables encrypted control frames after transient AirPlay 2 Pair-Setup M1-M4', async () => {
+    const mdnsStarts: Array<{ airPlayPort?: number | null }> = [];
+    const service = new AirPlayReceiverSpikeService({
+      audioSession: new FakeAudioSession() as never,
+      airPlay2Experimental: true,
+      getAdvertiseInterfaces: () => [
+        { name: 'Wi-Fi', address: '192.168.31.214', mac: '60:CF:84:CB:1E:D1' },
+      ],
+      createMdnsAdvertiser: () => ({
+        start: vi.fn(async (advertisement) => {
+          mdnsStarts.push({ airPlayPort: advertisement.airPlayPort });
+        }),
+        stop: vi.fn(async () => undefined),
+      }),
+      loadRaopModule: async () => ({
+        startReceiver: vi.fn(() => 23),
+        stopReceiver: vi.fn(),
+        sendRemoteCommand: vi.fn(() => true),
+      }),
+    });
+
+    await service.setEnabled(true);
+    const airPlayPort = mdnsStarts[0]!.airPlayPort;
+    expect(airPlayPort).toEqual(expect.any(Number));
+
+    const socket = connect({ host: '127.0.0.1', port: airPlayPort! });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('error', reject);
+      });
+
+      const transientFlags = Buffer.from([0, 0, 0, 0x10]);
+      socket.write(rawRequest('POST', '/pair-setup', encodeTlv([
+        { type: 6, value: Buffer.from([1]) },
+        { type: 0, value: Buffer.from([0]) },
+        { type: 19, value: transientFlags },
+      ]), ['CSeq: 31']));
+      const m2Response = await readUntil(socket, hasCompleteTextResponse);
+      expect(m2Response.toString('utf8')).toContain('RTSP/1.0 200 OK');
+      expect(m2Response.toString('utf8')).toContain('CSeq: 31');
+      const m2Fields = parseTlv(textResponseBody(m2Response));
+      expect(tlvValue(m2Fields, 6).readUInt8(0)).toBe(2);
+      expect(tlvValue(m2Fields, 19)).toEqual(transientFlags);
+      const salt = tlvValue(m2Fields, 2);
+      const serverPublicKey = tlvValue(m2Fields, 3);
+
+      const srpClient = createSrpClientProof(salt, serverPublicKey, 987_654_321n);
+      socket.write(rawRequest('POST', '/pair-setup', encodeTlv([
+        { type: 6, value: Buffer.from([3]) },
+        { type: 3, value: srpClient.clientPublicKey },
+        { type: 4, value: srpClient.clientProof },
+      ]), ['CSeq: 32']));
+      const m4Response = await readUntil(socket, hasCompleteTextResponse);
+      expect(m4Response.toString('utf8')).toContain('RTSP/1.0 200 OK');
+      expect(m4Response.toString('utf8')).toContain('CSeq: 32');
+      const m4Fields = parseTlv(textResponseBody(m4Response));
+      expect(tlvValue(m4Fields, 6).readUInt8(0)).toBe(4);
+      expect(tlvValue(m4Fields, 4)).toEqual(srpClient.serverProof);
+
+      const controlWriteKey = deriveControlKey(srpClient.sessionKey, 'Control-Write-Encryption-Key');
+      const controlReadKey = deriveControlKey(srpClient.sessionKey, 'Control-Read-Encryption-Key');
+      socket.write(encryptControlFrame(controlWriteKey, 0, rawRequest(
+        'OPTIONS',
+        '*',
+        Buffer.alloc(0),
+        ['CSeq: 33'],
+      )));
+      const encryptedResponse = await readUntil(socket, hasCompleteControlFrame);
+      const plaintextResponse = decryptControlFrame(controlReadKey, 0, encryptedResponse);
+      expect(plaintextResponse.toString('utf8')).toContain('RTSP/1.0 200 OK');
+      expect(plaintextResponse.toString('utf8')).toContain('CSeq: 33');
+      expect(plaintextResponse.toString('utf8')).toContain('Public: ANNOUNCE, SETUP');
+      expect(service.getStatus().debugEvents.some((event) =>
+        event.action === 'pair-setup' && event.message?.includes('transient control channel ready'),
+      )).toBe(true);
+    } finally {
+      socket.destroy();
+      await service.setEnabled(false);
+    }
   });
 
   it('answers AirPlay 2 FairPlay setup seq1/seq3 probes', async () => {

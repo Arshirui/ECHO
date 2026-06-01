@@ -3,6 +3,7 @@ const nonActionableAudioErrorPatterns = [
   /\beq_control_(?:closed|disconnected)\b/u,
   /\beq_control_sync_skipped\b/u,
   /\baudio_session_run_cancelled\b/u,
+  /\bplay\(\) request was interrupted by a call to (?:pause|load)\(\)/iu,
 ];
 
 const nativeAccessViolationPattern =
