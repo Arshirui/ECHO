@@ -1,12 +1,12 @@
 {
   "name": "ffmpeg",
-  "version": "",
-  "source": "Linux x64 release ffmpeg prepared locally or in CI",
-  "sourceUrl": "",
-  "downloadPage": "https://ffmpeg.org/download.html",
+  "version": "ffmpeg version 8.1 Copyright (c) 2000-2026 the FFmpeg developers",
+  "source": "nixpkgs",
+  "sourceUrl": "https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/development/libraries/ffmpeg/",
+  "downloadPage": "",
   "artifact": "electron-app/tools-linux/ffmpeg",
-  "sha256": "",
+  "sha256": "1916dbbef531c2181e1ca1f3b0feec3a83eef566bac5f451f38285ecb2d65809",
   "requiresSoxr": true,
   "requiredFilters": ["aresample"],
-  "licenseFamily": "GPLv3"
+  "licenseFamily": "LGPL-2.1-or-later, GPL-2.0-or-later, LGPL-3.0-or-later, GPL-3.0-or-later"
 }

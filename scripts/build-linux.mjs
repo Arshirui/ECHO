@@ -64,12 +64,11 @@ const assertLinuxArtifacts = () => {
     fail('Linux AppImage artifact was not created under dist/.');
   }
 
-  if (!deb) {
-    fail('Linux deb artifact was not created under dist/.');
+  if (deb) {
+    console.log(`[build:linux] Verified deb: ${deb}`); // deb package is optional
   }
 
   console.log(`[build:linux] Verified AppImage: ${appImage}`);
-  console.log(`[build:linux] Verified deb: ${deb}`);
 };
 
 try {

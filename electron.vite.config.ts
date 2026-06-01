@@ -7,6 +7,12 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
+        /*
+        node-libraop 只在 AirPlay 2 的 ALAC 解码场景中通过动态 import() 加载，
+        而 AirPlay 接收器本身在 Linux 上不会激活。即便 import() 抛错，也会被外
+        层 try/catch 兜住，不影响主流程。
+        */
+        external: ['@lox-audioserver/node-libraop'], 
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
         },

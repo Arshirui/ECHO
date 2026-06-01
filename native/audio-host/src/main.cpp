@@ -5578,10 +5578,12 @@ int main(int argc, char* argv[])
             return runJuceDecodeServer();
         }
 
+#if ECHO_ENABLE_ASIO
         if (options.asioControlPanel)
         {
             return openAsioControlPanel(options);
         }
+#endif
 
         return runHost(options);
     }
