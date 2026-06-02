@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { BrowserWindow, dialog, ipcMain } from 'electron';
+import type { OpenDialogOptions } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import { normalizeAudioOutputModeForPlatform, normalizeAudioSharedBackendForPlatform } from '../../shared/utils/audioPlatformCapabilities';
 import type {
@@ -27,6 +28,7 @@ import type {
   EqSetBandGainRequest,
   EqSetBandQRequest,
   EqState,
+  RoomCorrectionState,
 } from '../../shared/types/eq';
 import { getAudioSession } from '../audio/AudioSession';
 import { exportAudioFile } from '../audio/AudioExportService';
@@ -132,6 +134,21 @@ const importEqPreset = async (): Promise<EqPreset | null> => {
     preampDb: Number(candidate.preampDb ?? 0),
     bands: candidate.bands as EqSavePresetRequest['bands'],
   });
+};
+
+const importRoomCorrectionIr = async (window: BrowserWindow | null): Promise<RoomCorrectionState | null> => {
+  const options: OpenDialogOptions = {
+    title: 'Import Room Correction IR',
+    filters: [{ name: 'WAV impulse response', extensions: ['wav'] }],
+    properties: ['openFile'],
+  };
+  const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+
+  if (result.canceled || !result.filePaths[0]) {
+    return null;
+  }
+
+  return getEqBridge().importRoomCorrectionIr(result.filePaths[0]);
 };
 
 const normalizeOutputSettings = (value: unknown): AudioOutputSettings => {
@@ -544,4 +561,15 @@ export const registerAudioIpc = (): void => {
     getEqBridge().setChannelBalanceState(patch),
   );
   ipcMain.handle(IpcChannels.ChannelBalanceReset, async (): Promise<ChannelBalanceState> => getEqBridge().resetChannelBalance());
+  ipcMain.handle(IpcChannels.RoomCorrectionGetState, (): RoomCorrectionState => getEqBridge().getRoomCorrectionState());
+  ipcMain.handle(IpcChannels.RoomCorrectionImportIr, (event): Promise<RoomCorrectionState | null> =>
+    importRoomCorrectionIr(BrowserWindow.fromWebContents(event.sender)),
+  );
+  ipcMain.handle(IpcChannels.RoomCorrectionSetEnabled, async (_event, enabled: unknown): Promise<RoomCorrectionState> =>
+    getEqBridge().setRoomCorrectionEnabled(Boolean(enabled)),
+  );
+  ipcMain.handle(IpcChannels.RoomCorrectionSetTrim, async (_event, trimDb: unknown): Promise<RoomCorrectionState> =>
+    getEqBridge().setRoomCorrectionTrim(Number(trimDb)),
+  );
+  ipcMain.handle(IpcChannels.RoomCorrectionClear, async (): Promise<RoomCorrectionState> => getEqBridge().clearRoomCorrection());
 };

@@ -21,6 +21,7 @@ import type {
   EqSetBandGainRequest,
   EqSetBandQRequest,
   EqState,
+  RoomCorrectionState,
 } from '../../shared/types/eq';
 import {
   eqBandCount,
@@ -64,6 +65,7 @@ const browserEqStorageKey = 'echo-next.browser-eq';
 type BrowserEqStorage = {
   state: EqState;
   channelBalance: ChannelBalanceState;
+  roomCorrection: RoomCorrectionState;
   userPresets: EqPreset[];
   profiles: EqProfile[];
 };
@@ -133,6 +135,20 @@ const defaultBrowserChannelBalance = (): ChannelBalanceState => ({
   invertRight: false,
   constantPower: true,
   clippingRisk: false,
+});
+
+const defaultBrowserRoomCorrection = (): RoomCorrectionState => ({
+  enabled: false,
+  status: 'empty',
+  irId: null,
+  irName: null,
+  channelMode: 'none',
+  sampleRate: null,
+  tapCount: 0,
+  trimDb: 0,
+  latencySamples: 0,
+  clippingRisk: false,
+  error: null,
 });
 
 const cloneBands = (bands: EqBand[]): EqBand[] => bands.map((band) => ({ ...band }));
@@ -336,6 +352,7 @@ class BrowserEqBridge implements EqBridgeApi {
   private storage: BrowserEqStorage = {
     state: defaultBrowserEqState(),
     channelBalance: defaultBrowserChannelBalance(),
+    roomCorrection: defaultBrowserRoomCorrection(),
     userPresets: [],
     profiles: [],
   };
@@ -702,6 +719,51 @@ class BrowserEqBridge implements EqBridgeApi {
     return this.getChannelBalanceState();
   }
 
+  async getRoomCorrectionState(): Promise<RoomCorrectionState> {
+    return { ...this.storage.roomCorrection };
+  }
+
+  async importRoomCorrectionIr(): Promise<RoomCorrectionState | null> {
+    this.storage.roomCorrection = {
+      ...this.storage.roomCorrection,
+      enabled: this.storage.roomCorrection.enabled,
+      status: this.storage.roomCorrection.enabled ? 'active' : 'loaded',
+      irId: `browser-ir-${Date.now()}`,
+      irName: 'Browser IR',
+      channelMode: 'mono',
+      sampleRate: 44100,
+      tapCount: 1,
+      error: null,
+    };
+    this.writeStorage();
+    return this.getRoomCorrectionState();
+  }
+
+  async setRoomCorrectionEnabled(enabled: boolean): Promise<RoomCorrectionState> {
+    const hasIr = Boolean(this.storage.roomCorrection.irId);
+    this.storage.roomCorrection = {
+      ...this.storage.roomCorrection,
+      enabled: enabled === true && hasIr,
+      status: !hasIr ? 'empty' : enabled === true ? 'active' : 'loaded',
+      error: !hasIr && enabled === true ? 'missing_ir' : null,
+    };
+    this.writeStorage();
+    return this.getRoomCorrectionState();
+  }
+
+  async setRoomCorrectionTrim(trimDb: number): Promise<RoomCorrectionState> {
+    const safeTrimDb = Number.isFinite(trimDb) ? clamp(trimDb, -24, 6) : 0;
+    this.storage.roomCorrection = { ...this.storage.roomCorrection, trimDb: safeTrimDb };
+    this.writeStorage();
+    return this.getRoomCorrectionState();
+  }
+
+  async clearRoomCorrection(): Promise<RoomCorrectionState> {
+    this.storage.roomCorrection = defaultBrowserRoomCorrection();
+    this.writeStorage();
+    return this.getRoomCorrectionState();
+  }
+
   private allPresets(): EqPreset[] {
     return [...browserBuiltInPresets, ...this.storage.userPresets];
   }
@@ -722,6 +784,7 @@ class BrowserEqBridge implements EqBridgeApi {
       return {
         state: normalizeState(parsed.state),
         channelBalance: normalizeChannelBalance(parsed.channelBalance ?? {}, defaultBrowserChannelBalance()),
+        roomCorrection: { ...defaultBrowserRoomCorrection(), ...(parsed.roomCorrection ?? {}) },
         userPresets: Array.isArray(parsed.userPresets)
           ? parsed.userPresets.map(normalizePreset).filter((preset): preset is EqPreset => Boolean(preset && !preset.readonly))
           : [],

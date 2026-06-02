@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AlbumOnlineInfo, LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
+import type { AlbumOnlineInfo, LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
 import { AlbumDetailView } from './AlbumDetailView';
 
 const queueMock = {
@@ -23,6 +23,8 @@ vi.mock('../../i18n/I18nProvider', () => {
     'albumDetail.action.addToQueue': 'Add to queue',
     'albumDetail.action.more': 'More album actions',
     'albumDetail.action.showInFolder': 'Show in folder',
+    'albumDetail.tracks.status.addedToPlaylist': 'Added to {playlist}.',
+    'albumMenu.action.addToPlaylist': 'Add to playlist...',
     'albumDetail.action.openSource': 'Open source',
     'albumDetail.aria.openArtist': 'Open artist {artist}',
     'albumDetail.online.match': 'MusicBrainz match',
@@ -127,6 +129,22 @@ const artist = (): LibraryArtist => ({
   avatarUrl: null,
   avatarThumbUrl: null,
   avatarStatus: null,
+});
+
+const playlist = (overrides: Partial<LibraryPlaylist> = {}): LibraryPlaylist => ({
+  id: 'playlist-1',
+  name: 'Road Mix',
+  description: null,
+  kind: 'manual',
+  sourceProvider: 'local',
+  sourcePlaylistId: null,
+  coverId: null,
+  coverThumb: null,
+  sortMode: 'manual',
+  itemCount: 0,
+  createdAt: '2026-06-02T00:00:00.000Z',
+  updatedAt: '2026-06-02T00:00:00.000Z',
+  ...overrides,
 });
 
 const onlineInfo = (): AlbumOnlineInfo => ({
@@ -304,6 +322,7 @@ const installLibrary = (): {
   getAlbumOnlineInfo: ReturnType<typeof vi.fn>;
   getArtists: ReturnType<typeof vi.fn>;
   getArtistAlbums: ReturnType<typeof vi.fn>;
+  addTracksToPlaylist: ReturnType<typeof vi.fn>;
 } => {
   const getAlbumOnlineInfo = vi.fn((_albumId: string, options?: { provider?: 'all' | 'musicbrainz' | 'wikipedia' }) =>
     Promise.resolve(onlineInfoForProvider(options?.provider)),
@@ -322,6 +341,7 @@ const installLibrary = (): {
     total: 2,
     hasMore: false,
   });
+  const addTracksToPlaylist = vi.fn().mockResolvedValue([]);
   window.echo = {
     app: {
       openExternalUrl: vi.fn().mockResolvedValue(undefined),
@@ -338,11 +358,15 @@ const installLibrary = (): {
       getAlbumOnlineInfo,
       getArtists,
       getArtistAlbums,
+      getPlaylists: vi.fn().mockResolvedValue([playlist()]),
+      createPlaylist: vi.fn().mockResolvedValue(playlist()),
+      addTrackToPlaylist: vi.fn().mockResolvedValue({ id: 'playlist-item-1' }),
+      addTracksToPlaylist,
       getLikedAlbumIds: vi.fn().mockResolvedValue({}),
       openTrackInFolder: vi.fn().mockResolvedValue(undefined),
     },
   } as unknown as Window['echo'];
-  return { getAlbumOnlineInfo, getArtists, getArtistAlbums };
+  return { getAlbumOnlineInfo, getArtists, getArtistAlbums, addTracksToPlaylist };
 };
 
 afterEach(() => {
@@ -525,6 +549,20 @@ describe('AlbumDetailView', () => {
 
     await waitFor(() => expect(queueMock.appendTracksToQueue).toHaveBeenCalledWith(mockAlbumTracks, { type: 'album', label: 'Mock Album', albumId: 'album-1' }));
     expect(screen.getByText('Added 2 tracks to queue.')).toBeTruthy();
+  });
+
+  it('adds the album tracks to a playlist from the hero more menu', async () => {
+    mockAlbumTracks = [track({ id: 'track-1', title: 'First Track' }), track({ id: 'track-2', title: 'Second Track' })];
+    const { addTracksToPlaylist } = installLibrary();
+
+    render(<AlbumDetailView album={album()} onBack={vi.fn()} />);
+
+    await screen.findByText('Mock album tracks');
+    fireEvent.click(screen.getByRole('button', { name: 'More album actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add to playlist...' }));
+
+    await waitFor(() => expect(addTracksToPlaylist).toHaveBeenCalledWith('playlist-1', ['track-1', 'track-2']));
+    expect(screen.getByText('Added to Road Mix.')).toBeTruthy();
   });
 
   it('shows the first album track in its folder from the hero more menu', async () => {

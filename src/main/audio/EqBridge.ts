@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
-import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { basename, dirname, extname, join } from 'node:path';
 import electron from 'electron';
 import type { ChannelBalanceMonoMode, ChannelBalanceState } from '../../shared/types/audio';
 import {
@@ -27,6 +28,9 @@ import type {
   EqSetBandGainRequest,
   EqSetBandQRequest,
   EqState,
+  RoomCorrectionChannelMode,
+  RoomCorrectionState,
+  RoomCorrectionStatus,
 } from '../../shared/types/eq';
 import {
   eqBandCount,
@@ -40,12 +44,18 @@ import {
   eqMinGainDb,
   eqMinPreampDb,
   eqMinQ,
+  roomCorrectionMaxTrimDb,
+  roomCorrectionMinTrimDb,
 } from '../../shared/types/eq';
 import { defaultChannelBalanceSettings, getAppSettings, setAppSettings } from '../app/appSettings';
 
 type PendingRequest = {
-  resolve: (state: EqState | ChannelBalanceState) => void;
+  resolve: (state: EqState | ChannelBalanceState | RoomCorrectionState) => void;
   reject: (error: Error) => void;
+};
+
+type PersistedRoomCorrectionState = RoomCorrectionState & {
+  irPath?: string | null;
 };
 
 const controlPortBase = 45210;
@@ -58,6 +68,55 @@ const nowIso = (): string => new Date().toISOString();
 const filterTypes = new Set<EqFilterType>(eqFilterTypes);
 
 const normalizeFilterType = (value: unknown): EqFilterType => (filterTypes.has(value as EqFilterType) ? value as EqFilterType : 'peaking');
+
+const roomCorrectionStatuses = new Set<RoomCorrectionStatus>(['empty', 'loaded', 'active', 'error']);
+const roomCorrectionChannelModes = new Set<RoomCorrectionChannelMode>(['none', 'mono', 'stereo']);
+
+const defaultRoomCorrectionState = (): RoomCorrectionState => ({
+  enabled: false,
+  status: 'empty',
+  irId: null,
+  irName: null,
+  channelMode: 'none',
+  sampleRate: null,
+  tapCount: 0,
+  trimDb: 0,
+  latencySamples: 0,
+  clippingRisk: false,
+  error: null,
+});
+
+const normalizeRoomCorrectionState = (value: unknown, fallback: RoomCorrectionState = defaultRoomCorrectionState()): RoomCorrectionState => {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const rawStatus = typeof input.status === 'string' && roomCorrectionStatuses.has(input.status as RoomCorrectionStatus)
+    ? input.status as RoomCorrectionStatus
+    : fallback.status;
+  const rawChannelMode =
+    typeof input.channelMode === 'string' && roomCorrectionChannelModes.has(input.channelMode as RoomCorrectionChannelMode)
+      ? input.channelMode as RoomCorrectionChannelMode
+      : fallback.channelMode;
+  const tapCount = Number(input.tapCount ?? fallback.tapCount);
+  const sampleRate = Number(input.sampleRate ?? fallback.sampleRate);
+  const latencySamples = Number(input.latencySamples ?? fallback.latencySamples);
+  const trimDb = Number(input.trimDb ?? fallback.trimDb);
+  const irId = typeof input.irId === 'string' && input.irId.trim() ? input.irId.trim() : fallback.irId;
+  const irName = typeof input.irName === 'string' && input.irName.trim() ? input.irName.trim().slice(0, 160) : fallback.irName;
+  const error = typeof input.error === 'string' && input.error.trim() ? input.error.trim().slice(0, 240) : null;
+
+  return {
+    enabled: input.enabled === true,
+    status: error ? 'error' : rawStatus,
+    irId,
+    irName,
+    channelMode: rawChannelMode,
+    sampleRate: Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : null,
+    tapCount: Number.isFinite(tapCount) ? Math.max(0, Math.round(tapCount)) : 0,
+    trimDb: Number.isFinite(trimDb) ? clamp(trimDb, roomCorrectionMinTrimDb, roomCorrectionMaxTrimDb) : fallback.trimDb,
+    latencySamples: Number.isFinite(latencySamples) ? Math.max(0, Math.round(latencySamples)) : 0,
+    clippingRisk: input.clippingRisk === true,
+    error,
+  };
+};
 
 const createBands = (gains: number[] = []): EqBand[] =>
   eqFrequenciesHz.map((frequencyHz, index) => ({
@@ -244,6 +303,19 @@ const normalizeChannelBalancePatch = (
   };
 };
 
+const isDefaultChannelBalanceState = (state: ChannelBalanceState): boolean => {
+  const fallback = defaultChannelBalanceState();
+  return state.enabled === fallback.enabled &&
+    state.balance === fallback.balance &&
+    state.leftGainDb === fallback.leftGainDb &&
+    state.rightGainDb === fallback.rightGainDb &&
+    state.swapLeftRight === fallback.swapLeftRight &&
+    state.monoMode === fallback.monoMode &&
+    state.invertLeft === fallback.invertLeft &&
+    state.invertRight === fallback.invertRight &&
+    state.constantPower === fallback.constantPower;
+};
+
 const getUserDataPath = (): string => {
   const app = (electron as unknown as { app?: { getPath: (name: string) => string } }).app;
 
@@ -418,6 +490,8 @@ const buildProfileBinding = (target: EqProfileBindingTarget): EqProfileBinding =
 export class EqBridge extends EventEmitter {
   private state: EqState = defaultState();
   private channelBalanceState: ChannelBalanceState = defaultChannelBalanceState();
+  private roomCorrectionState: RoomCorrectionState = defaultRoomCorrectionState();
+  private roomCorrectionIrPath: string | null = null;
   private socket: net.Socket | null = null;
   private activeControlPort: number | null = null;
   private nativeSyncTargetEqState: EqState | null = null;
@@ -429,6 +503,8 @@ export class EqBridge extends EventEmitter {
   private readonly presetPath: string;
   private readonly statePath: string;
   private readonly profilePath: string;
+  private readonly roomCorrectionStatePath: string;
+  private readonly roomCorrectionIrDirectory: string;
   private readonly backupDirectory: string;
   private readonly backupMarkerPath: string;
 
@@ -437,6 +513,8 @@ export class EqBridge extends EventEmitter {
     this.presetPath = join(userDataPath, 'eq-presets.json');
     this.statePath = join(userDataPath, 'eq-state.json');
     this.profilePath = join(userDataPath, 'eq-profiles.json');
+    this.roomCorrectionStatePath = join(userDataPath, 'room-correction-state.json');
+    this.roomCorrectionIrDirectory = join(userDataPath, 'room-correction', 'irs');
     this.backupDirectory = join(userDataPath, 'eq-backups');
     this.backupMarkerPath = join(this.backupDirectory, 'phase2-backup.done');
     this.state = this.readPersistedState();
@@ -445,6 +523,7 @@ export class EqBridge extends EventEmitter {
     } catch {
       this.channelBalanceState = defaultChannelBalanceState();
     }
+    this.readPersistedRoomCorrectionState();
     this.on('error', () => undefined);
   }
 
@@ -526,6 +605,10 @@ export class EqBridge extends EventEmitter {
 
   getChannelBalanceState(): ChannelBalanceState {
     return { ...this.channelBalanceState };
+  }
+
+  getRoomCorrectionState(): RoomCorrectionState {
+    return { ...this.roomCorrectionState };
   }
 
   private markStateChanged(): void {
@@ -699,6 +782,83 @@ export class EqBridge extends EventEmitter {
     this.persistChannelBalanceState();
     await this.sendNativeChannelBalance({ type: 'channelBalance.reset' });
     return this.emitChannelBalanceState();
+  }
+
+  async importRoomCorrectionIr(sourcePath: string): Promise<RoomCorrectionState> {
+    if (typeof sourcePath !== 'string' || !sourcePath.trim()) {
+      throw new Error('invalid_room_correction_ir_path');
+    }
+
+    const extension = extname(sourcePath).toLowerCase();
+    if (extension !== '.wav') {
+      throw new Error('unsupported_room_correction_ir_format');
+    }
+
+    if (!existsSync(sourcePath)) {
+      throw new Error('room_correction_ir_not_found');
+    }
+
+    mkdirSync(this.roomCorrectionIrDirectory, { recursive: true });
+    const irId = `ir-${randomUUID()}`;
+    const irName = basename(sourcePath).replace(/\.[^.]+$/u, '').trim().slice(0, 160) || 'Room Correction IR';
+    const targetPath = join(this.roomCorrectionIrDirectory, `${irId}.wav`);
+    copyFileSync(sourcePath, targetPath);
+
+    this.roomCorrectionIrPath = targetPath;
+    this.roomCorrectionState = {
+      ...defaultRoomCorrectionState(),
+      enabled: this.roomCorrectionState.enabled,
+      status: this.roomCorrectionState.enabled ? 'active' : 'loaded',
+      irId,
+      irName,
+      trimDb: this.roomCorrectionState.trimDb,
+    };
+    this.persistRoomCorrectionState();
+
+    const loaded = await this.sendNativeRoomCorrection({
+      type: 'roomCorrection.loadIr',
+      path: targetPath,
+      irId,
+      irName,
+    });
+    if (this.roomCorrectionState.enabled) {
+      await this.sendNativeRoomCorrection({ type: 'roomCorrection.setEnabled', enabled: true });
+    }
+    await this.sendNativeRoomCorrection({ type: 'roomCorrection.setTrim', trimDb: this.roomCorrectionState.trimDb });
+    return loaded.error ? this.emitRoomCorrectionState() : this.getRoomCorrectionState();
+  }
+
+  async setRoomCorrectionEnabled(enabled: boolean): Promise<RoomCorrectionState> {
+    const hasIr = Boolean(this.roomCorrectionState.irId && this.roomCorrectionIrPath);
+    this.roomCorrectionState = {
+      ...this.roomCorrectionState,
+      enabled: enabled === true && hasIr,
+      status: !hasIr ? 'empty' : enabled === true ? 'active' : 'loaded',
+      error: !hasIr && enabled === true ? 'missing_ir' : null,
+    };
+    this.persistRoomCorrectionState();
+    await this.sendNativeRoomCorrection({ type: 'roomCorrection.setEnabled', enabled: this.roomCorrectionState.enabled });
+    return this.emitRoomCorrectionState();
+  }
+
+  async setRoomCorrectionTrim(trimDb: number): Promise<RoomCorrectionState> {
+    const safeTrimDb = clamp(Number(trimDb), roomCorrectionMinTrimDb, roomCorrectionMaxTrimDb);
+    if (!Number.isFinite(safeTrimDb)) {
+      throw new Error('invalid_room_correction_trim');
+    }
+
+    this.roomCorrectionState = { ...this.roomCorrectionState, trimDb: safeTrimDb };
+    this.persistRoomCorrectionState();
+    await this.sendNativeRoomCorrection({ type: 'roomCorrection.setTrim', trimDb: safeTrimDb });
+    return this.emitRoomCorrectionState();
+  }
+
+  async clearRoomCorrection(): Promise<RoomCorrectionState> {
+    this.roomCorrectionIrPath = null;
+    this.roomCorrectionState = defaultRoomCorrectionState();
+    this.persistRoomCorrectionState();
+    await this.sendNativeRoomCorrection({ type: 'roomCorrection.clear' });
+    return this.emitRoomCorrectionState();
   }
 
   savePreset(request: EqSavePresetRequest): EqPreset {
@@ -881,6 +1041,7 @@ export class EqBridge extends EventEmitter {
   async syncStateToNative(): Promise<void> {
     const eqState = this.getState();
     const channelBalanceState = this.getChannelBalanceState();
+    const roomCorrectionState = this.getRoomCorrectionState();
 
     this.nativeSyncTargetEqState = eqState;
     this.nativeSyncTargetRevision = this.stateRevision;
@@ -899,7 +1060,30 @@ export class EqBridge extends EventEmitter {
       }
     }
 
-    await this.sendNativeChannelBalance({ type: 'channelBalance.setState', state: channelBalanceState });
+    if (!isDefaultChannelBalanceState(channelBalanceState)) {
+      await this.sendNativeChannelBalance({ type: 'channelBalance.setState', state: channelBalanceState });
+    }
+
+    if (this.roomCorrectionIrPath && existsSync(this.roomCorrectionIrPath) && roomCorrectionState.irId && roomCorrectionState.irName) {
+      await this.sendNativeRoomCorrection({
+        type: 'roomCorrection.loadIr',
+        path: this.roomCorrectionIrPath,
+        irId: roomCorrectionState.irId,
+        irName: roomCorrectionState.irName,
+      });
+      await this.sendNativeRoomCorrection({ type: 'roomCorrection.setTrim', trimDb: roomCorrectionState.trimDb });
+      await this.sendNativeRoomCorrection({ type: 'roomCorrection.setEnabled', enabled: roomCorrectionState.enabled });
+    } else if (roomCorrectionState.irId || roomCorrectionState.enabled || this.roomCorrectionIrPath) {
+      this.roomCorrectionState = {
+        ...defaultRoomCorrectionState(),
+        trimDb: roomCorrectionState.trimDb,
+        error: roomCorrectionState.irId ? 'missing_file' : null,
+        status: roomCorrectionState.irId ? 'error' : 'empty',
+      };
+      this.roomCorrectionIrPath = null;
+      this.persistRoomCorrectionState();
+      this.emitRoomCorrectionState();
+    }
   }
 
   private async sendNative(message: Record<string, unknown>): Promise<EqState> {
@@ -944,6 +1128,27 @@ export class EqBridge extends EventEmitter {
     });
   }
 
+  private async sendNativeRoomCorrection(message: Record<string, unknown>): Promise<RoomCorrectionState> {
+    return this.enqueueNative(() => this.sendNativeRoomCorrectionNow(message));
+  }
+
+  private async sendNativeRoomCorrectionNow(message: Record<string, unknown>): Promise<RoomCorrectionState> {
+    const socket = this.socket;
+
+    if (!socket || socket.destroyed || !socket.writable) {
+      return this.getRoomCorrectionState();
+    }
+
+    return new Promise<RoomCorrectionState>((resolve, reject) => {
+      this.pending.push({ resolve: (state) => resolve(state as RoomCorrectionState), reject });
+      socket.write(`${JSON.stringify(message)}\n`, (error) => {
+        if (error) {
+          this.rejectPending(error);
+        }
+      });
+    });
+  }
+
   private enqueueNative<T>(operation: () => Promise<T>): Promise<T> {
     const queued = this.nativeCommandQueue.then(operation, operation);
     this.nativeCommandQueue = queued.then(
@@ -974,7 +1179,7 @@ export class EqBridge extends EventEmitter {
     }
 
     try {
-      const message = JSON.parse(line) as Partial<EqState & ChannelBalanceState> & { type?: string; message?: string };
+      const message = JSON.parse(line) as Partial<EqState & ChannelBalanceState & RoomCorrectionState> & { type?: string; message?: string };
 
       if (message.type === 'eq:error') {
         pending?.reject(new Error(message.message ?? 'eq_native_error'));
@@ -1008,7 +1213,19 @@ export class EqBridge extends EventEmitter {
         this.emitChannelBalanceState();
       }
 
-      pending?.resolve(message.type === 'channelBalance:state' ? this.getChannelBalanceState() : this.getState());
+      if (message.type === 'roomCorrection:state') {
+        this.roomCorrectionState = normalizeRoomCorrectionState(message, this.roomCorrectionState);
+        this.persistRoomCorrectionState();
+        this.emitRoomCorrectionState();
+      }
+
+      pending?.resolve(
+        message.type === 'channelBalance:state'
+          ? this.getChannelBalanceState()
+          : message.type === 'roomCorrection:state'
+            ? this.getRoomCorrectionState()
+            : this.getState(),
+      );
     } catch (error) {
       pending?.reject(error instanceof Error ? error : new Error(String(error)));
     }
@@ -1026,11 +1243,55 @@ export class EqBridge extends EventEmitter {
     return state;
   }
 
+  private emitRoomCorrectionState(): RoomCorrectionState {
+    const state = this.getRoomCorrectionState();
+    this.emit('roomCorrectionState', state);
+    return state;
+  }
+
   private persistChannelBalanceState(): void {
     try {
       setAppSettings({ channelBalance: this.channelBalanceState });
     } catch {
       // Tests and early startup can run without a ready Electron app path.
+    }
+  }
+
+  private persistRoomCorrectionState(): void {
+    try {
+      mkdirSync(dirname(this.roomCorrectionStatePath), { recursive: true });
+      const persisted: PersistedRoomCorrectionState = {
+        ...this.roomCorrectionState,
+        irPath: this.roomCorrectionIrPath,
+      };
+      writeFileSync(this.roomCorrectionStatePath, `${JSON.stringify(persisted, null, 2)}\n`, 'utf8');
+    } catch {
+      // Tests and early startup can run without a ready Electron app path.
+    }
+  }
+
+  private readPersistedRoomCorrectionState(): void {
+    if (!existsSync(this.roomCorrectionStatePath)) {
+      this.roomCorrectionState = defaultRoomCorrectionState();
+      this.roomCorrectionIrPath = null;
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(readFileSync(this.roomCorrectionStatePath, 'utf8')) as PersistedRoomCorrectionState;
+      this.roomCorrectionState = normalizeRoomCorrectionState(parsed);
+      this.roomCorrectionIrPath = typeof parsed.irPath === 'string' && parsed.irPath.trim() ? parsed.irPath : null;
+      if (this.roomCorrectionIrPath && !existsSync(this.roomCorrectionIrPath)) {
+        this.roomCorrectionState = {
+          ...this.roomCorrectionState,
+          enabled: false,
+          status: 'error',
+          error: 'missing_file',
+        };
+      }
+    } catch {
+      this.roomCorrectionState = defaultRoomCorrectionState();
+      this.roomCorrectionIrPath = null;
     }
   }
 

@@ -26,6 +26,7 @@ FetchContent_MakeAvailable(JUCE)
 
 set(ECHO_AUDIO_ENGINE_SOURCES
   ../audio-engine/ChannelBalanceProcessor.cpp
+  ../audio-engine/ConvolutionProcessor.cpp
   ../audio-engine/EqMessageProtocol.cpp
   ../audio-engine/EqPresetStore.cpp
   ../audio-engine/EqProcessor.cpp

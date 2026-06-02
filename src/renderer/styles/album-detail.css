@@ -1576,14 +1576,16 @@ html[data-theme="dark"] .album-detail-error {
   }
 
   .album-detail-hero {
-    grid-template-columns: minmax(300px, 0.42fr) minmax(0, 1fr);
+    --album-detail-portrait-cover-size: clamp(300px, 32vw, 420px);
+    grid-template-columns: minmax(0, var(--album-detail-portrait-cover-size)) minmax(0, 1fr);
     align-items: center;
     gap: clamp(26px, 4vw, 48px);
     padding: 42px 0 14px;
   }
 
   .album-detail-cover {
-    width: clamp(300px, 32vw, 420px);
+    width: 100%;
+    max-width: var(--album-detail-portrait-cover-size);
     min-width: 0;
   }
 

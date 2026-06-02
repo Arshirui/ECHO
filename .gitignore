@@ -9,6 +9,9 @@ dist/
 # Local Codex workspace state
 /.codex/
 /.codex-pet-runs/
+/.codex-run/
+/.codex-screenshots/
+/.codex-temp/
 /.codex-tmp/
 /.codex-backups/
 
@@ -37,3 +40,6 @@ dist-packaged*/
 
 # Local media/lyrics scratch files
 *.lrc
+
+# Local runtime state
+/room-correction-state.json

@@ -423,6 +423,51 @@ describe('AppLayout standalone routes', () => {
     );
   });
 
+  it('shows an upper-left notice for Windows audio default format warnings', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ lyricsPlayerBarDrawerEnabled: false, smtcEnabled: true }),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'idle',
+          currentTrackId: null,
+          positionMs: 0,
+          durationMs: 0,
+          filePath: null,
+        }),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: null,
+          currentFilePath: null,
+          positionSeconds: 0,
+          durationSeconds: 0,
+          warnings: ['windows_audio_default_format_unusual:96000'],
+          error: null,
+        } as Partial<AudioStatus>),
+        onStatus: vi.fn(() => vi.fn()),
+      },
+      diagnostics: {
+        getLastCrashSummary: vi.fn().mockResolvedValue(null),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(null),
+        getLikedTrackIds: vi.fn().mockResolvedValue({}),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routes} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('96 kHz'));
+    expect(screen.getByRole('status').textContent).toContain('ECHO');
+  });
+
   it('toggles desktop lyrics from the lower-right icon', async () => {
     const show = vi.fn().mockResolvedValue({ visible: true });
     const hide = vi.fn().mockResolvedValue({ visible: false });

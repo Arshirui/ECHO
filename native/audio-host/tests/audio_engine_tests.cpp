@@ -85,6 +85,75 @@ void requireFinite(const juce::AudioBuffer<float>& buffer, const std::string& me
     }
 }
 
+void testConvolutionIdentityIsTransparent()
+{
+    echo::ConvolutionProcessor processor;
+    processor.prepare(48000.0, 64, 2);
+    require(processor.loadImpulseResponseForTests({ { 1.0f } }, 48000.0, "identity", "Identity"), "identity IR loads");
+    processor.setEnabled(true);
+
+    auto buffer = makeBuffer(2, 64);
+    auto dry = buffer;
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    require(processor.isEnabled(), "convolution reports enabled");
+    requireBuffersClose(buffer, dry, nearTolerance, "identity convolution must be transparent");
+}
+
+void testConvolutionDelayImpulse()
+{
+    echo::ConvolutionProcessor processor;
+    processor.prepare(48000.0, 8, 1);
+    require(processor.loadImpulseResponseForTests({ { 0.0f, 1.0f } }, 48000.0, "delay", "Delay"), "delay IR loads");
+    processor.setEnabled(true);
+
+    juce::AudioBuffer<float> buffer(1, 4);
+    buffer.clear();
+    buffer.setSample(0, 0, 0.5f);
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    require(std::abs(buffer.getSample(0, 0)) <= nearTolerance, "delay sample 0");
+    require(std::abs(buffer.getSample(0, 1) - 0.5f) <= nearTolerance, "delay sample 1");
+    requireFinite(buffer, "delay convolution finite");
+}
+
+void testConvolutionStereoMapping()
+{
+    echo::ConvolutionProcessor processor;
+    processor.prepare(44100.0, 8, 2);
+    require(processor.loadImpulseResponseForTests({ { 1.0f }, { 0.5f } }, 44100.0, "stereo", "Stereo"), "stereo IR loads");
+    processor.setEnabled(true);
+
+    juce::AudioBuffer<float> buffer(2, 4);
+    for (int sample = 0; sample < 4; ++sample)
+    {
+        buffer.setSample(0, sample, 0.25f);
+        buffer.setSample(1, sample, 0.25f);
+    }
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    require(std::abs(buffer.getSample(0, 0) - 0.25f) <= nearTolerance, "left stereo FIR");
+    require(std::abs(buffer.getSample(1, 0) - 0.125f) <= nearTolerance, "right stereo FIR");
+}
+
+void testConvolutionRejectsLongImpulseAndClipsSafely()
+{
+    echo::ConvolutionProcessor processor;
+    processor.prepare(48000.0, 16, 1);
+    require(! processor.loadImpulseResponseForTests({ std::vector<float>(static_cast<size_t>(echo::roomCorrectionMaxTaps + 1), 1.0f) }, 48000.0, "long", "Long"), "long IR rejected");
+    require(processor.loadImpulseResponseForTests({ { 8.0f } }, 48000.0, "hot", "Hot"), "hot IR loads");
+    processor.setEnabled(true);
+
+    juce::AudioBuffer<float> buffer(1, 4);
+    buffer.clear();
+    buffer.setSample(0, 0, 0.5f);
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    requireFinite(buffer, "hot convolution finite");
+    require(processor.hasClippingRisk(), "hot convolution reports clipping risk");
+    require(std::abs(buffer.getSample(0, 0)) <= 1.0f, "hot convolution limited");
+}
+
 void testDisabledEqIsDry()
 {
     echo::EqProcessor processor;
@@ -997,6 +1066,25 @@ void testProtocolMessages()
         channelBalanceProcessor);
     requireContains(invalidFilterResponse, R"("type":"eq:error")", "invalid filter response");
     requireContains(invalidFilterResponse, "invalid_filter_type", "invalid filter response");
+
+    echo::ConvolutionProcessor convolutionProcessor;
+    convolutionProcessor.prepare(48000.0, 512, 2);
+    require(convolutionProcessor.loadImpulseResponseForTests({ { 1.0f } }, 48000.0, "proto", "Protocol IR"), "protocol IR loads");
+    const auto roomTrimResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"roomCorrection:set-trim","trimDb":-3.5})",
+        eqProcessor,
+        channelBalanceProcessor,
+        convolutionProcessor);
+    requireContains(roomTrimResponse, R"("type":"roomCorrection:state")", "room correction trim response");
+    requireContains(roomTrimResponse, R"("trimDb":-3.5)", "room correction trim response");
+
+    const auto roomEnableResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"roomCorrection:set-enabled","enabled":true})",
+        eqProcessor,
+        channelBalanceProcessor,
+        convolutionProcessor);
+    requireContains(roomEnableResponse, R"("enabled":true)", "room correction enabled response");
+    requireContains(roomEnableResponse, R"("status":"active")", "room correction active response");
 }
 
 } // namespace
@@ -1012,6 +1100,10 @@ int main()
         { "coefficient updates stop in steady state", testCoefficientUpdatesStopInSteadyState },
         { "PEQ band controls clamp and bypass", testPeqBandControlsClampAndBypass },
         { "PEQ additional filter types stay finite", testPeqAdditionalFilterTypesStayFinite },
+        { "FIR convolution identity is transparent", testConvolutionIdentityIsTransparent },
+        { "FIR convolution delay impulse", testConvolutionDelayImpulse },
+        { "FIR convolution stereo mapping", testConvolutionStereoMapping },
+        { "FIR convolution rejects long IR and clips safely", testConvolutionRejectsLongImpulseAndClipsSafely },
         { "host buffer fallback attempts", testHostBufferFallbackAttempts },
         { "host shared backend options", testHostSharedBackendOptions },
         { "host backend names", testHostBackendNames },

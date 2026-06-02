@@ -27,6 +27,7 @@ import {
   importEchoUserDataBackup,
   refreshDataBackupScheduler,
   runDataBackupNow,
+  subscribeDataBackupProgress,
 } from '../app/dataBackup';
 import { exportEchoDataPackage } from '../app/dataPackage';
 import { getTaskbarPlaybackStatus, refreshTaskbarPlaybackIntegration } from '../app/taskbarPlaybackIntegration';
@@ -462,6 +463,13 @@ export const registerIpc = (): void => {
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   ipcMain.handle(IpcChannels.AppGetDataBackupStatus, (): DataBackupStatus => getDataBackupStatus());
+  subscribeDataBackupProgress((progress) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(IpcChannels.AppDataBackupProgress, progress);
+      }
+    }
+  });
   ipcMain.handle(IpcChannels.AppRunDataBackupNow, (): Promise<DataBackupExportResult> => runDataBackupNow('manual'));
   ipcMain.handle(IpcChannels.AppImportDataBackup, async (): Promise<DataBackupImportResult | null> => {
     const result = await dialog.showOpenDialog({

@@ -20,6 +20,7 @@ export const IpcChannels = {
   AppChooseDataBackupDirectory: 'app:choose-data-backup-directory',
   AppGetDataBackupStatus: 'app:get-data-backup-status',
   AppRunDataBackupNow: 'app:run-data-backup-now',
+  AppDataBackupProgress: 'app:data-backup-progress',
   AppImportDataBackup: 'app:import-data-backup',
   AppOpenDataBackupDirectory: 'app:open-data-backup-directory',
   AppChooseFontFile: 'app:choose-font-file',
@@ -461,6 +462,11 @@ export const IpcChannels = {
   ChannelBalanceGetState: 'channel-balance:get-state',
   ChannelBalanceSetState: 'channel-balance:set-state',
   ChannelBalanceReset: 'channel-balance:reset',
+  RoomCorrectionGetState: 'room-correction:get-state',
+  RoomCorrectionImportIr: 'room-correction:import-ir',
+  RoomCorrectionSetEnabled: 'room-correction:set-enabled',
+  RoomCorrectionSetTrim: 'room-correction:set-trim',
+  RoomCorrectionClear: 'room-correction:clear',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];

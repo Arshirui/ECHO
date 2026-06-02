@@ -90,7 +90,7 @@ import type { AppCacheInventory, CoverCacheMigrationResult } from '../../shared/
 import type { LastCrashSummary } from '../../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
 import type { DownloadSettings } from '../../shared/types/downloads';
-import type { DataBackupStatus } from '../../shared/types/settingsBackup';
+import type { DataBackupProgress, DataBackupStatus } from '../../shared/types/settingsBackup';
 import type { LastFmStatus } from '../../shared/types/lastfm';
 import type { PlaybackStatus } from '../../shared/types/playback';
 import type { SmtcDiagnostics } from '../../shared/types/smtc';
@@ -772,6 +772,16 @@ const buildNetworkProxyModeOptions = (t: (key: TranslationKey, params?: Record<s
   { value: 'manual', label: t('settings.integrations.networkProxy.mode.manual') },
   { value: 'pac', label: 'PAC' },
 ];
+
+const dataBackupProgressPhaseLabels: Record<DataBackupProgress['phase'], TranslationKey> = {
+  preparing: 'settings.general.dataBackup.progress.preparing',
+  snapshot: 'settings.general.dataBackup.progress.snapshot',
+  scanning: 'settings.general.dataBackup.progress.scanning',
+  writing: 'settings.general.dataBackup.progress.writing',
+  finalizing: 'settings.general.dataBackup.progress.finalizing',
+  completed: 'settings.general.dataBackup.progress.completed',
+  failed: 'settings.general.dataBackup.progress.failed',
+};
 
 type SettingSectionProps = {
   id: SettingsNavKey;
@@ -4016,6 +4026,7 @@ export const SettingsPage = (): JSX.Element => {
   const [settingsBackupBusy, setSettingsBackupBusy] = useState<'export' | 'import' | 'dataPackage' | null>(null);
   const [settingsBackupMessage, setSettingsBackupMessage] = useState<string | null>(null);
   const [dataBackupStatus, setDataBackupStatus] = useState<DataBackupStatus | null>(null);
+  const [dataBackupProgress, setDataBackupProgress] = useState<DataBackupProgress | null>(null);
   const [dataBackupBusy, setDataBackupBusy] = useState<'choose' | 'run' | 'import' | 'open' | null>(null);
   const [dataBackupMessage, setDataBackupMessage] = useState<string | null>(null);
   const [draggingSidebarRouteId, setDraggingSidebarRouteId] = useState<SidebarRouteId | null>(null);
@@ -5087,13 +5098,17 @@ export const SettingsPage = (): JSX.Element => {
     const app = getAppBridge();
     if (!app?.getDataBackupStatus) {
       setDataBackupStatus(null);
+      setDataBackupProgress(null);
       return;
     }
 
     try {
-      setDataBackupStatus(await app.getDataBackupStatus());
+      const status = await app.getDataBackupStatus();
+      setDataBackupStatus(status);
+      setDataBackupProgress(status.progress);
     } catch {
       setDataBackupStatus(null);
+      setDataBackupProgress(null);
     }
   }, []);
 
@@ -5123,7 +5138,20 @@ export const SettingsPage = (): JSX.Element => {
     }).catch(() => undefined);
     void app?.getVersion().then(setAppVersion).catch(() => undefined);
     void app?.getUpdateStatus?.().then(setUpdateStatus).catch(() => undefined);
-    void app?.getDataBackupStatus?.().then(setDataBackupStatus).catch(() => undefined);
+    void app?.getDataBackupStatus?.().then((status) => {
+      setDataBackupStatus(status);
+      setDataBackupProgress(status.progress);
+    }).catch(() => undefined);
+    const unsubscribeDataBackupProgress = app?.onDataBackupProgress?.((progress) => {
+      setDataBackupProgress(progress);
+      setDataBackupStatus((currentStatus) => currentStatus ? { ...currentStatus, running: progress.running, progress } : currentStatus);
+      if (!progress.running) {
+        void app?.getDataBackupStatus?.().then((status) => {
+          setDataBackupStatus(status);
+          setDataBackupProgress(status.progress);
+        }).catch(() => undefined);
+      }
+    });
     const unsubscribeUpdateStatus = app?.onUpdateStatus?.((status) => {
       setUpdateStatus(status);
       if (status.state === 'downloading' || status.state === 'downloaded') {
@@ -5132,6 +5160,7 @@ export const SettingsPage = (): JSX.Element => {
     });
 
     return () => {
+      unsubscribeDataBackupProgress?.();
       unsubscribeUpdateStatus?.();
     };
   }, []);
@@ -9243,7 +9272,27 @@ export const SettingsPage = (): JSX.Element => {
   const dataBackupDirectory = dataBackupStatus?.directory ?? appSettings?.autoDataBackupDirectory ?? null;
   const dataBackupEnabled = appSettings?.autoDataBackupEnabled === true;
   const dataBackupIntervalDays = appSettings?.autoDataBackupIntervalDays ?? dataBackupStatus?.intervalDays ?? 7;
-  const dataBackupRunning = dataBackupBusy !== null || dataBackupStatus?.running === true;
+  const activeDataBackupProgress = dataBackupProgress?.running === true ? dataBackupProgress : dataBackupStatus?.progress?.running === true ? dataBackupStatus.progress : null;
+  const dataBackupRunning = dataBackupBusy !== null || dataBackupStatus?.running === true || activeDataBackupProgress?.running === true;
+  const dataBackupProgressPercent = typeof activeDataBackupProgress?.percent === 'number'
+    ? Math.max(0, Math.min(100, Math.round(activeDataBackupProgress.percent)))
+    : null;
+  const dataBackupProgressPhaseLabel = activeDataBackupProgress
+    ? t(dataBackupProgressPhaseLabels[activeDataBackupProgress.phase])
+    : null;
+  const dataBackupProgressEntryLabel = activeDataBackupProgress?.currentEntry
+    ? activeDataBackupProgress.currentEntry
+    : t('settings.general.dataBackup.progress.waiting');
+  const dataBackupProgressCountLabel = activeDataBackupProgress
+    ? activeDataBackupProgress.totalEntries
+      ? `${activeDataBackupProgress.processedEntries}/${activeDataBackupProgress.totalEntries}`
+      : `${activeDataBackupProgress.processedEntries}`
+    : '';
+  const dataBackupProgressBytesLabel = activeDataBackupProgress
+    ? activeDataBackupProgress.totalBytes && activeDataBackupProgress.totalBytes > 0
+      ? `${formatUpdateBytes(activeDataBackupProgress.processedBytes)} / ${formatUpdateBytes(activeDataBackupProgress.totalBytes)}`
+      : formatUpdateBytes(activeDataBackupProgress.processedBytes)
+    : '';
   const dataBackupLastLabel = dataBackupStatus?.lastBackupAt
     ? dataBackupStatus.lastBackupPath
       ? t('settings.general.dataBackup.meta.atPath', {
@@ -9865,6 +9914,32 @@ export const SettingsPage = (): JSX.Element => {
                       <strong>{dataBackupNextLabel}</strong>
                     </span>
                   </div>
+                  {activeDataBackupProgress ? (
+                    <div className="settings-data-backup-progress" role="status" aria-live="polite">
+                      <div className="settings-data-backup-progress-head">
+                        <strong>{dataBackupProgressPhaseLabel}</strong>
+                        <span>{dataBackupProgressPercent !== null ? `${dataBackupProgressPercent}%` : t('settings.general.dataBackup.progress.measuring')}</span>
+                      </div>
+                      <div
+                        className="settings-data-backup-progress-track"
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={dataBackupProgressPercent ?? undefined}
+                        aria-label={dataBackupProgressPhaseLabel ?? t('settings.general.dataBackup.title')}
+                        data-indeterminate={dataBackupProgressPercent === null ? 'true' : undefined}
+                      >
+                        <span style={{ width: `${dataBackupProgressPercent ?? 36}%` }} />
+                      </div>
+                      <div className="settings-data-backup-progress-detail">
+                        <span title={dataBackupProgressEntryLabel}>{dataBackupProgressEntryLabel}</span>
+                        <em>
+                          {dataBackupProgressCountLabel}
+                          {dataBackupProgressBytesLabel ? ` - ${dataBackupProgressBytesLabel}` : ''}
+                        </em>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="settings-data-backup-actions">
                     <button className="settings-action-button" type="button" disabled={dataBackupRunning} onClick={() => void handleChooseDataBackupDirectory()}>
                       <FolderOpen size={15} />

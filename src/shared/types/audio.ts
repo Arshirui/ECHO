@@ -182,6 +182,7 @@ export type AudioStatus = {
   sampleRateMismatch: boolean;
   latencyProfile?: AudioLatencyProfile;
   eqEnabled: boolean;
+  roomCorrectionEnabled?: boolean;
   channelBalanceEnabled: boolean;
   dspActive: boolean;
   preampDb: number;

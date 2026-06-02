@@ -18,6 +18,7 @@ import { openArtistDetailByName } from '../utils/artistNavigation';
 import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 
 const pageSize = 10;
+const recentPlaybackPageSize = 8;
 const historyPageCacheStorageKey = 'echo-next.history-page-cache.v1';
 const historyPageCacheVersion = 1;
 const isHistoryPageTestRuntime = typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
@@ -31,6 +32,7 @@ type HistoryPageData = {
   hasMore: boolean;
   items: PlaybackHistoryEntry[];
   page: number;
+  recentItems: PlaybackHistoryEntry[];
   search: string;
   stats: PlaybackStatsDashboard | null;
   summary: PlaybackHistorySummary | null;
@@ -96,6 +98,7 @@ const emptyHistoryPageData: HistoryPageData = {
   hasMore: false,
   items: [],
   page: 1,
+  recentItems: [],
   search: '',
   stats: null,
   summary: null,
@@ -111,11 +114,15 @@ const isHistoryFilter = (value: unknown): value is HistoryFilter =>
 const isDefaultHistoryQuery = (filter: HistoryFilter, search: string): boolean => filter === 'all' && search.trim().length === 0;
 
 const hasHistoryPageData = (data: HistoryPageData | null): boolean =>
-  Boolean(data && (data.items.length > 0 || data.total > 0 || data.summary || data.stats));
+  Boolean(data && (data.items.length > 0 || data.recentItems.length > 0 || data.total > 0 || data.summary || data.stats));
 
 const sortHistoryItems = (items: PlaybackHistoryEntry[]): PlaybackHistoryEntry[] =>
   [...items]
     .sort((left, right) => right.playCount - left.playCount || Date.parse(right.startedAt) - Date.parse(left.startedAt));
+
+const sortRecentHistoryItems = (items: PlaybackHistoryEntry[]): PlaybackHistoryEntry[] =>
+  [...items]
+    .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt) || right.playCount - left.playCount);
 
 const mergeHistoryItems = (
   currentItems: PlaybackHistoryEntry[],
@@ -155,6 +162,7 @@ const normalizeStoredHistoryPageData = (value: unknown): HistoryPageData | null 
     hasMore: value.hasMore === true,
     items: Array.isArray(value.items) ? sortHistoryItems(value.items as PlaybackHistoryEntry[]) : [],
     page: Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1,
+    recentItems: Array.isArray(value.recentItems) ? sortRecentHistoryItems(value.recentItems as PlaybackHistoryEntry[]) : [],
     search,
     stats: isRecord(value.stats) ? (value.stats as PlaybackStatsDashboard) : null,
     summary: isRecord(value.summary) ? (value.summary as PlaybackHistorySummary) : null,
@@ -419,6 +427,7 @@ export const HistoryPage = (): JSX.Element => {
   }
   const initialHistoryData = initialHistoryDataRef.current;
   const [items, setItems] = useState<PlaybackHistoryEntry[]>(initialHistoryData.items);
+  const [recentItems, setRecentItems] = useState<PlaybackHistoryEntry[]>(initialHistoryData.recentItems);
   const [summary, setSummary] = useState<PlaybackHistorySummary | null>(initialHistoryData.summary);
   const [stats, setStats] = useState<PlaybackStatsDashboard | null>(initialHistoryData.stats);
   const [page, setPage] = useState(initialHistoryData.page);
@@ -513,6 +522,7 @@ export const HistoryPage = (): JSX.Element => {
 
       if (!library) {
         setItems([]);
+        setRecentItems([]);
         setSummary(null);
         setStats(null);
         setPage(1);
@@ -531,9 +541,16 @@ export const HistoryPage = (): JSX.Element => {
           search,
           ...rangeQuery,
         };
-        const [historyResult, nextSummary] = await Promise.all([
+        const recentHistoryQuery = {
+          ...historyQuery,
+          page: 1,
+          pageSize: recentPlaybackPageSize,
+          sort: 'recent' as const,
+        };
+        const [historyResult, nextSummary, recentHistoryResult] = await Promise.all([
           library.getPlaybackHistory(historyQuery),
           mode === 'replace' ? library.getPlaybackHistorySummary(historyQuery) : Promise.resolve(null),
+          mode === 'replace' ? library.getPlaybackHistory(recentHistoryQuery) : Promise.resolve(null),
         ]);
 
         if (requestIdRef.current !== requestId) {
@@ -546,6 +563,7 @@ export const HistoryPage = (): JSX.Element => {
         setHasMore(historyResult.hasMore);
         if (mode === 'replace') {
           setSummary(nextSummary);
+          setRecentItems(sortRecentHistoryItems(recentHistoryResult?.items ?? []));
         }
         if (shouldCacheSnapshot) {
           setCachedHistoryPageData({
@@ -553,6 +571,7 @@ export const HistoryPage = (): JSX.Element => {
             hasMore: historyResult.hasMore,
             items: sortHistoryItems(historyResult.items),
             page: historyResult.page,
+            recentItems: sortRecentHistoryItems(recentHistoryResult?.items ?? []),
             search,
             stats: cachedHistoryPageData?.stats ?? null,
             summary: nextSummary,
@@ -580,7 +599,7 @@ export const HistoryPage = (): JSX.Element => {
       isDefaultHistoryQuery(filter, search) && hasHistoryPageData(cachedHistoryPageData) ? historyCachedRefreshDelayMs : 0;
 
     return scheduleHistoryWork(() => void loadHistory(1, 'replace'), delayMs);
-  }, [loadHistory]);
+  }, [filter, loadHistory, search]);
 
   const summaryLabels = useMemo(() => {
     const keys = filterSummaryLabelKeys[filter];
@@ -623,6 +642,13 @@ export const HistoryPage = (): JSX.Element => {
           }
           return nextItems;
         });
+        setRecentItems((currentItems) => {
+          const nextItems = currentItems.filter((item) => item.id !== entry.id);
+          if (shouldCacheSnapshot) {
+            mergeCachedHistoryPageData({ recentItems: nextItems });
+          }
+          return nextItems;
+        });
         setTotal(nextTotal);
         const historyQuery = { search, ...historyFilterRange(filter) };
         const nextSummary = await (library.getPlaybackHistorySummary?.(historyQuery) ?? Promise.resolve(null));
@@ -647,6 +673,7 @@ export const HistoryPage = (): JSX.Element => {
       await window.echo?.library?.clearPlaybackHistory();
       const shouldCacheSnapshot = isDefaultHistoryQuery(filter, search);
       setItems([]);
+      setRecentItems([]);
       setPage(1);
       setTotal(0);
       setHasMore(false);
@@ -661,6 +688,7 @@ export const HistoryPage = (): JSX.Element => {
           hasMore: false,
           items: [],
           page: 1,
+          recentItems: [],
           search,
           stats: null,
           summary: nextSummary,
@@ -760,6 +788,34 @@ export const HistoryPage = (): JSX.Element => {
         <HistoryMetric icon={<Clock3 size={18} />} label={summaryLabels.duration} value={formatLongDuration(summary?.rangePlayedSeconds ?? 0, t)} />
         <HistoryMetric icon={<Music2 size={18} />} label={summaryLabels.tracks} value={t('historyPage.metric.tracks', { count: total.toLocaleString() })} />
         <HistoryMetric icon={<Clock3 size={18} />} label={summaryLabels.latest} value={formatDate(summary?.rangeLatestPlayedAt ?? null, t)} />
+      </section>
+
+      <section className="history-recent-section" aria-label={t('historyPage.recent.aria')}>
+        <header className="history-recent-header">
+          <div>
+            <span className="section-kicker">{t('historyPage.recent.kicker')}</span>
+            <h2>{t('historyPage.recent.title')}</h2>
+          </div>
+          <span>{t('historyPage.recent.count', { count: recentItems.length })}</span>
+        </header>
+        {recentItems.length > 0 ? (
+          <div className="history-recent-list">
+            {recentItems.map((entry) => (
+              <article className="history-recent-row" key={entry.id}>
+                <div className="history-recent-cover" data-empty={!entry.coverThumb}>
+                  {entry.coverThumb ? <img alt="" src={entry.coverThumb} /> : <Music2 size={17} />}
+                </div>
+                <div className="history-recent-copy">
+                  <strong>{entry.title}</strong>
+                  <span>{entry.artist || t('historyPage.list.unknownArtist')}</span>
+                </div>
+                <time dateTime={entry.startedAt}>{formatDate(entry.startedAt, t)}</time>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="history-recent-empty">{t('historyPage.recent.empty')}</p>
+        )}
       </section>
 
       <PlaybackStatsDashboardView stats={stats} onOpenArtist={handleOpenTopArtist} onOpenTrack={handleOpenTopTrack} />

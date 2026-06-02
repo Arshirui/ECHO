@@ -155,8 +155,10 @@ const formatAutomixLabel = (status: AudioStatus | null): string | null => {
   return `Automix${modeLabel}${secondsLabel}`;
 };
 
-const hasSharedMixRateTooHighWarning = (status: AudioStatus | null): boolean =>
-  Boolean(status?.warnings?.some((warning) => warning.startsWith('shared_output_mix_rate_too_high:')));
+const hasWindowsAudioRateWarning = (status: AudioStatus | null): boolean =>
+  Boolean(status?.warnings?.some((warning) =>
+    warning.startsWith('shared_output_mix_rate_too_high:') ||
+    warning.startsWith('windows_audio_default_format_unusual:')));
 
 export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsProps): JSX.Element => {
   const t = useOptionalI18n()?.t ?? translateFallback;
@@ -170,16 +172,17 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const bpm = isDisplayableBpmAnalysis(track?.bpm, track?.analysisStatus) ? (track?.bpm ?? null) : null;
   const displayBpm = bpm ? Math.round(bpm * playbackRate) : null;
   const automixLabel = formatAutomixLabel(status);
-  const sharedMixRateTooHigh = hasSharedMixRateTooHighWarning(status);
+  const windowsAudioRateWarning = hasWindowsAudioRateWarning(status);
   const isLoadingRemoteTrack = state === 'loading' && track?.mediaType === 'remote' && !isDlnaReceiverTrack(track) && !isAirPlayReceiverTrack(track);
   const streamingLabel = streamingSourceLabel(track);
   const chips: Chip[] = uniqueChips([
     isLoadingRemoteTrack ? { label: '加载中', className: 'tag-loading' } : null,
-    sharedMixRateTooHigh
+    windowsAudioRateWarning
       ? { label: 'Windows Rate High', className: 'tag-warning' }
       : status?.sampleRateMismatch
         ? { label: 'Rate Mismatch', className: 'tag-warning' }
         : null,
+    status?.roomCorrectionEnabled ? { label: 'FIR', className: 'tag-warning' } : null,
     automixLabel ? { label: automixLabel, className: 'tag-automix' } : null,
     isDlnaReceiverTrack(track) ? { label: 'DLNA', className: 'tag-dlna' } : null,
     isAirPlayReceiverTrack(track) ? { label: 'AIRPLAY', className: 'tag-airplay' } : null,

@@ -32,6 +32,8 @@
   <a href="#开发与构建">开发与构建</a>
 </p>
 
+<p align="center"><strong>反馈问题请礼貌 一股爹味跟我说话死全家</strong></p>
+
 <p align="center">
   <img src="https://img.shields.io/github/package-json/v/moekotori/echo?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/github/stars/moekotori/echo?style=flat-square&logo=github" alt="GitHub stars" />

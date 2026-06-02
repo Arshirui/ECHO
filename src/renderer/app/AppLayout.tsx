@@ -293,6 +293,32 @@ const lyricsMiniPlayerAutoHideDelayMs = 460;
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
   settings?.suppressAccountExpiryNotices === true;
 
+const trimRateTrailingZero = (value: string): string => value.replace(/\.0$/u, '');
+
+const formatAudioNoticeRate = (value: number): string => {
+  if (value >= 1000) {
+    return `${trimRateTrailingZero((value / 1000).toFixed(value % 1000 === 0 ? 0 : 1))} kHz`;
+  }
+
+  return `${Math.round(value)} Hz`;
+};
+
+const getWindowsAudioDefaultFormatWarningRate = (warnings: string[] | null | undefined): number | null => {
+  for (const warning of warnings ?? []) {
+    const defaultFormatMatch = /^windows_audio_default_format_unusual:(\d+)$/u.exec(warning);
+    if (defaultFormatMatch) {
+      return Number(defaultFormatMatch[1]);
+    }
+
+    const sharedMixRateMatch = /^shared_output_mix_rate_too_high:\d+->(\d+)$/u.exec(warning);
+    if (sharedMixRateMatch) {
+      return Number(sharedMixRateMatch[1]);
+    }
+  }
+
+  return null;
+};
+
 const readInitialRouteId = (routes: AppRoute[]): AppRouteId => {
   const defaultRoute = routes.find((route) => route.id === 'home') ?? routes.find((route) => route.id === 'songs') ?? routes[0];
 
@@ -403,6 +429,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const lyricsMiniPlayerHostRef = useRef<HTMLDivElement | null>(null);
   const lyricsMiniPlayerAutoHideTimerRef = useRef<number | null>(null);
   const lastAudioErrorRef = useRef<string | null>(null);
+  const notifiedWindowsAudioDefaultFormatKeysRef = useRef<Set<string>>(new Set());
   const previousRouteIdRef = useRef<AppRouteId>('songs');
   const routeSwitchSequenceRef = useRef(0);
   const routeSwitchTraceRef = useRef<RouteSwitchTrace | null>(null);
@@ -1172,6 +1199,21 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       message: formatAudioHostError(rawError) ?? rawError,
     });
   }, [playbackStatusSnapshot.audioStatus?.error, playbackStatusSnapshot.error]);
+
+  useEffect(() => {
+    const rate = getWindowsAudioDefaultFormatWarningRate(playbackStatusSnapshot.audioStatus?.warnings);
+    if (!rate || !Number.isFinite(rate)) {
+      return;
+    }
+
+    const noticeKey = `windows-default-format:${Math.round(rate)}`;
+    if (notifiedWindowsAudioDefaultFormatKeysRef.current.has(noticeKey)) {
+      return;
+    }
+
+    notifiedWindowsAudioDefaultFormatKeysRef.current.add(noticeKey);
+    setChromeNotice(t('notice.audioDefaultFormatWarning', { rate: formatAudioNoticeRate(rate) }));
+  }, [playbackStatusSnapshot.audioStatus?.warnings, t]);
 
   useEffect(() => {
     const rawError = playbackStatusSnapshot.audioStatus?.error ?? playbackStatusSnapshot.error;

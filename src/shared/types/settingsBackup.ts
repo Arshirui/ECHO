@@ -26,6 +26,31 @@ export type DataPackageExportResult = {
 
 export type DataBackupRunReason = 'manual' | 'automatic' | 'before-import';
 
+export type DataBackupProgressPhase =
+  | 'preparing'
+  | 'snapshot'
+  | 'scanning'
+  | 'writing'
+  | 'finalizing'
+  | 'completed'
+  | 'failed';
+
+export type DataBackupProgress = {
+  running: boolean;
+  reason: DataBackupRunReason;
+  phase: DataBackupProgressPhase;
+  percent: number | null;
+  processedEntries: number;
+  totalEntries: number | null;
+  processedBytes: number;
+  totalBytes: number | null;
+  currentEntry: string | null;
+  outputPath: string | null;
+  startedAt: string;
+  updatedAt: string;
+  error: string | null;
+};
+
 export type DataBackupStatus = {
   enabled: boolean;
   directory: string | null;
@@ -35,6 +60,7 @@ export type DataBackupStatus = {
   lastError: string | null;
   nextBackupAt: string | null;
   running: boolean;
+  progress: DataBackupProgress | null;
 };
 
 export type DataBackupExportResult = {

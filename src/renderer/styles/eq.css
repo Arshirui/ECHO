@@ -44,6 +44,9 @@
 .eq-ab-slot-actions,
 .eq-band-console-heading,
 .eq-band-strip-heading,
+.eq-room-correction-header,
+.eq-room-correction-actions,
+.eq-room-correction-trim,
 .channel-tool-group header,
 .channel-tool-group label,
 .channel-calibration-readout {
@@ -1137,6 +1140,109 @@
   min-width: 0;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.eq-room-correction {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(28, 47, 67, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.eq-room-correction[data-enabled="true"] {
+  border-color: rgba(31, 93, 102, 0.2);
+  background: rgba(232, 244, 243, 0.56);
+}
+
+.eq-room-correction[data-risk="true"] {
+  border-color: rgba(189, 93, 45, 0.26);
+  background: rgba(255, 245, 237, 0.8);
+}
+
+.eq-room-correction-header {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.eq-room-correction-header span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--theme-legacy-heading-text);
+  font-size: 12px;
+  font-weight: 920;
+}
+
+.eq-room-correction-header strong {
+  overflow: hidden;
+  color: var(--theme-legacy-muted-text);
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-room-correction-actions {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.eq-room-correction-trim {
+  gap: 8px;
+}
+
+.eq-room-correction-trim span,
+.eq-room-correction-trim strong {
+  flex: 0 0 auto;
+  color: var(--theme-legacy-heading-text);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.eq-room-correction-trim input {
+  min-width: 120px;
+}
+
+.eq-room-correction-details {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(82px, 1fr));
+  gap: 6px;
+}
+
+.eq-room-correction-details span {
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid rgba(28, 47, 67, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.eq-room-correction-details em,
+.eq-room-correction-details strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eq-room-correction-details em {
+  color: var(--theme-legacy-muted-text);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.eq-room-correction-details strong {
+  margin-top: 2px;
+  color: var(--theme-legacy-heading-text);
+  font-size: 11px;
+  font-weight: 920;
 }
 
 .eq-analyzer-mode {
@@ -2386,6 +2492,7 @@ html[data-theme="dark"] .eq-status-card[data-risk="true"],
 html[data-theme="dark"] .eq-signal-node[data-risk="true"],
 html[data-theme="dark"] .eq-simple-summary[data-risk="true"] span:nth-child(2),
 html[data-theme="dark"] .eq-level-meter[data-risk="true"],
+html[data-theme="dark"] .eq-room-correction[data-risk="true"],
 html[data-theme="dark"] .channel-balance-status-strip[data-risk="true"] span:last-child,
 html[data-theme="dark"] .eq-soft-button[data-risk="true"] {
   color: #ffd0b2;
@@ -2394,6 +2501,8 @@ html[data-theme="dark"] .eq-soft-button[data-risk="true"] {
 }
 
 html[data-theme="dark"] .eq-level-meter,
+html[data-theme="dark"] .eq-room-correction,
+html[data-theme="dark"] .eq-room-correction-details span,
 html[data-theme="dark"] .channel-balance-lane,
 html[data-theme="dark"] .channel-trim-lane label,
 html[data-theme="dark"] .channel-calibration-readout span,
@@ -2402,6 +2511,7 @@ html[data-theme="dark"] .channel-balance-readout span {
 }
 
 html[data-theme="dark"] .eq-preamp-bar input,
+html[data-theme="dark"] .eq-room-correction-trim input,
 html[data-theme="dark"] .eq-inspector-toggle input,
 html[data-theme="dark"] .eq-compare-toggle input,
 html[data-theme="dark"] .channel-tool-group input[type="range"] {
@@ -2535,6 +2645,10 @@ html[data-theme="dark"] .eq-panel-error {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .eq-room-correction-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .eq-band-list {
     grid-template-columns: repeat(2, minmax(116px, 1fr));
   }
@@ -2562,6 +2676,7 @@ html[data-theme="dark"] .eq-panel-error {
   .eq-simple-summary,
   .eq-inspector-fields,
   .eq-level-meter,
+  .eq-room-correction-details,
   .eq-band-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2594,6 +2709,10 @@ html[data-theme="dark"] .eq-panel-error {
 
   .eq-status-card {
     flex-basis: calc(50% - 6px);
+  }
+
+  .eq-room-correction-details {
+    grid-template-columns: 1fr;
   }
 
   .eq-signal-chain {

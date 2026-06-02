@@ -42,19 +42,34 @@ describe('data backup', () => {
     writeFileSync(join(userDataPath, 'cover-cache', 'cover.webp'), 'cover-bytes');
 
     try {
-      const { exportEchoUserDataBackup } = await import('./dataBackup');
+      const { exportEchoUserDataBackup, subscribeDataBackupProgress } = await import('./dataBackup');
+      const progressPhases: string[] = [];
+      const progressPercents: Array<number | null> = [];
+      const progressBytes: Array<{ processedBytes: number; totalBytes: number | null }> = [];
+      const unsubscribe = subscribeDataBackupProgress((progress) => {
+        progressPhases.push(progress.phase);
+        progressPercents.push(progress.percent);
+        progressBytes.push({ processedBytes: progress.processedBytes, totalBytes: progress.totalBytes });
+      });
       const result = await exportEchoUserDataBackup(join(backupRoot, 'backup.zip'), {
         date: new Date('2026-05-20T00:00:00.000Z'),
       });
+      unsubscribe();
 
       expect(result.filePath).toBe(join(backupRoot, 'backup.zip'));
       expect(result.sizeBytes).toBeGreaterThan(0);
       expect(existsSync(result.filePath)).toBe(true);
+      expect(progressPhases).toContain('scanning');
+      expect(progressPhases).toContain('writing');
+      expect(progressPhases.at(-1)).toBe('completed');
+      expect(progressPercents.at(-1)).toBe(100);
+      expect(progressBytes.every((progress) => progress.totalBytes === null || progress.processedBytes <= progress.totalBytes)).toBe(true);
 
       const unzipped = unzipSync(new Uint8Array(readFileSync(result.filePath)));
       const manifest = JSON.parse(strFromU8(unzipped['manifest.json'])) as { format: string; database: { health: { status: string } } };
       expect(manifest.format).toBe('echo-next-user-data-backup');
       expect(manifest.database.health.status).toBe('ok');
+      expect(strFromU8(unzipped['RESTORE.md'])).toContain('数据备份');
       expect(strFromU8(unzipped['user-data/accounts.json'])).toContain('spotify');
       expect(strFromU8(unzipped['cache/cover-cache/cover.webp'])).toBe('cover-bytes');
     } finally {

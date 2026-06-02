@@ -1480,7 +1480,7 @@ html[data-theme-preset="FINAL"] {
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='430' height='430' viewBox='0 0 430 430'%3E%3Cg fill='none' stroke='%23b88a4a' stroke-linecap='round' stroke-linejoin='round' opacity='.34'%3E%3Ccircle cx='215' cy='215' r='156' stroke-width='2'/%3E%3Ccircle cx='215' cy='215' r='134' stroke-width='1.2' stroke-dasharray='8 9'/%3E%3Cpath d='M103 225c0-74 45-126 112-126s112 52 112 126' stroke-width='6'/%3E%3Cpath d='M93 226c-21 9-35 31-35 58 0 39 25 68 61 68h21v-94h-23c-8 0-16-10-24-32zM337 226c21 9 35 31 35 58 0 39-25 68-61 68h-21v-94h23c8 0 16-10 24-32z' stroke-width='4'/%3E%3Cpath d='M130 263v85M300 263v85M174 88c15-10 33-15 53-14M157 110c33-24 86-23 120 0' stroke-width='2'/%3E%3Cpath d='M212 162l39 22v45l-39 22-39-22v-45zM212 182l21 12v24l-21 12-21-12v-24z' stroke-width='2'/%3E%3C/g%3E%3C/svg%3E");
   --final-hero-line:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='360' viewBox='0 0 520 360'%3E%3Cg fill='none' stroke='%23b88a4a' stroke-linecap='round' stroke-linejoin='round' opacity='.48'%3E%3Cpath d='M263 35c55 9 86 44 87 93 37 14 70 48 76 99 3 27-1 56-14 85M249 37c-60 13-94 50-96 107-35 19-56 49-63 88-6 34 0 66 17 94' stroke-width='2'/%3E%3Cpath d='M195 159c25-22 75-29 111-8M203 194c28 23 73 22 101-1M217 167c5 10 18 10 23 0M288 167c5 10 18 10 23 0M252 172c-9 20-4 32 14 35' stroke-width='2'/%3E%3Cpath d='M170 146c-43 21-76 52-99 93M345 149c42 23 72 53 92 90M129 241c47-15 95-12 146 8M244 250c69 14 123 6 162-23' stroke-width='1.5' opacity='.64'/%3E%3Cpath d='M177 128c12-58 74-75 111-48 24 17 37 47 34 86M184 104c16-34 71-45 103-13' stroke-width='2'/%3E%3Cpath d='M157 126c-11 20-21 47-20 82M356 133c9 23 12 51 8 82' stroke-width='4' opacity='.62'/%3E%3Cpath d='M343 96c26 13 40 36 38 66M151 103c-23 14-35 35-34 62' stroke-width='2'/%3E%3Cpath d='M354 62l18 10 18-10 18 10v21l-18 10-18-10-18 10-18-10V72zM354 62v31M390 62v41M336 72l18 10M390 82l18-10' stroke-width='2'/%3E%3Cpath d='M52 107l20 12v23l-20 12-20-12v-23zM92 107l20 12v23l-20 12-20-12v-23zM72 72l20 12v23l-20 12-20-12V84z' stroke-width='3' opacity='.82'/%3E%3Cpath d='M70 312c74-42 166-55 276-38M96 332c70-24 156-30 259-17' stroke-width='1.2' opacity='.42'/%3E%3C/g%3E%3Cg fill='%23b88a4a' opacity='.28'%3E%3Ccircle cx='422' cy='58' r='3'/%3E%3Ccircle cx='459' cy='110' r='2'/%3E%3Ccircle cx='66' cy='63' r='2'/%3E%3Cpath d='M452 265l5 10 10 5-10 5-5 10-5-10-10-5 10-5zM103 44l4 8 8 4-8 4-4 8-4-8-8-4 8-4z'/%3E%3C/g%3E%3C/svg%3E");
-  --final-character-hero: url("../assets/final-theme-character-hero.png");
+  --final-character-hero: url("../assets/final-theme-character-hero-clean.png");
   --final-hex-mark:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='92' height='62' viewBox='0 0 92 62'%3E%3Cg fill='none' stroke='%232f2b26' stroke-width='4' stroke-linejoin='round'%3E%3Cpath d='M18 5l14 8v16l-14 8-14-8V13z'/%3E%3Cpath d='M47 5l14 8v16l-14 8-14-8V13z'/%3E%3Cpath d='M32 31l14 8v16l-14 8-14-8V39z'/%3E%3C/g%3E%3C/svg%3E");
   --final-page-bg:
@@ -9420,5 +9420,2336 @@ html[data-theme-preset="FINAL"] .player-bar::before {
 
   html[data-theme-preset="FINAL"] .home-hero h1 {
     font-size: 38px;
+  }
+}
+
+/* FINAL logo correction: padded mark and no headphone-outline watermark. */
+html[data-theme-preset="FINAL"] {
+  --final-logo-mark: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22160%22%20height%3D%22150%22%20viewBox%3D%220%200%20160%20150%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23171511%22%20stroke-width%3D%227%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M80%208l32%2018v37L80%2081%2048%2063V26z%22%2F%3E%3Cpath%20d%3D%22M45%2070l32%2018v37l-32%2018-32-18V88z%22%2F%3E%3Cpath%20d%3D%22M115%2070l32%2018v37l-32%2018-32-18V88z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --final-logo-watermark: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22520%22%20height%3D%22320%22%20viewBox%3D%220%200%20520%20320%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23b78943%22%20stroke-width%3D%227%22%20stroke-linejoin%3D%22round%22%20opacity%3D%22.2%22%3E%3Cpath%20d%3D%22M260%2018l48%2027v55l-48%2027-48-27V45z%22%2F%3E%3Cpath%20d%3D%22M205%20112l48%2027v55l-48%2027-48-27v-55z%22%2F%3E%3Cpath%20d%3D%22M315%20112l48%2027v55l-48%2027-48-27v-55z%22%2F%3E%3C%2Fg%3E%3Ctext%20x%3D%22190%22%20y%3D%22285%22%20fill%3D%22%23b78943%22%20opacity%3D%22.18%22%20font-family%3D%22Georgia%2CTimes%20New%20Roman%2Cserif%22%20font-size%3D%2282%22%3Efinal%3C%2Ftext%3E%3C%2Fsvg%3E");
+  --final-hex-mark: var(--final-logo-mark);
+  --final-headphone-line: none;
+  --final-page-bg:
+    radial-gradient(circle at 78% 10%, rgb(var(--preset-accent-rgb) / 0.12), transparent 23%),
+    radial-gradient(circle at 12% 82%, rgb(var(--preset-secondary-rgb) / 0.1), transparent 26%),
+    linear-gradient(90deg, rgb(23 21 18 / 0.05) 0 1px, transparent 1px 100%),
+    var(--final-machined-grid),
+    var(--final-camera-grain) 0 0 / 72px 72px repeat,
+    linear-gradient(135deg, #f3f1eb 0%, #e3ded3 54%, #fffaf0 100%);
+  --echo-polish-app-bg-layer: var(--final-page-bg);
+  --echo-polish-page-bg: var(--final-page-bg);
+  --echo-polish-sidebar-bg:
+    linear-gradient(180deg, rgb(255 253 247 / 0.78), rgb(232 225 213 / 0.66) 58%, rgb(245 240 230 / 0.86)),
+    var(--final-paper);
+}
+
+html[data-theme="dark"][data-theme-preset="FINAL"] {
+  --final-logo-mark: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22160%22%20height%3D%22150%22%20viewBox%3D%220%200%20160%20150%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23f5d69b%22%20stroke-width%3D%227%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M80%208l32%2018v37L80%2081%2048%2063V26z%22%2F%3E%3Cpath%20d%3D%22M45%2070l32%2018v37l-32%2018-32-18V88z%22%2F%3E%3Cpath%20d%3D%22M115%2070l32%2018v37l-32%2018-32-18V88z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --final-logo-watermark: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22520%22%20height%3D%22320%22%20viewBox%3D%220%200%20520%20320%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23f5d69b%22%20stroke-width%3D%227%22%20stroke-linejoin%3D%22round%22%20opacity%3D%22.2%22%3E%3Cpath%20d%3D%22M260%2018l48%2027v55l-48%2027-48-27V45z%22%2F%3E%3Cpath%20d%3D%22M205%20112l48%2027v55l-48%2027-48-27v-55z%22%2F%3E%3Cpath%20d%3D%22M315%20112l48%2027v55l-48%2027-48-27v-55z%22%2F%3E%3C%2Fg%3E%3Ctext%20x%3D%22190%22%20y%3D%22285%22%20fill%3D%22%23f5d69b%22%20opacity%3D%22.16%22%20font-family%3D%22Georgia%2CTimes%20New%20Roman%2Cserif%22%20font-size%3D%2282%22%3Efinal%3C%2Ftext%3E%3C%2Fsvg%3E");
+  --final-page-bg:
+    radial-gradient(circle at 80% 8%, rgb(var(--preset-accent-rgb) / 0.1), transparent 25%),
+    radial-gradient(circle at 14% 82%, rgb(var(--preset-secondary-rgb) / 0.08), transparent 26%),
+    var(--final-machined-grid),
+    var(--final-camera-grain) 0 0 / 72px 72px repeat,
+    linear-gradient(135deg, #0f0e0c 0%, #1a1713 54%, #111519 100%);
+  --echo-polish-sidebar-bg:
+    linear-gradient(180deg, rgb(31 28 24 / 0.9), rgb(20 19 17 / 0.86) 58%, rgb(27 25 22 / 0.94));
+}
+
+html[data-theme-preset="FINAL"] .home-hero-copy::after {
+  top: 78px;
+  width: 108px;
+  height: 102px;
+  background: var(--final-logo-mark) center / contain no-repeat !important;
+}
+
+/* FINAL official-site cues: Kawasaki lab, D8000 AFDS, A8000 stainless machining. */
+html[data-theme-preset="FINAL"] {
+  --final-lab-rail:
+    linear-gradient(90deg, transparent 0 9%, rgb(var(--preset-accent-rgb) / 0.42) 9.06% 9.11%, transparent 9.18% 91%, rgb(var(--preset-secondary-rgb) / 0.18) 91.06% 91.11%, transparent 91.18%),
+    linear-gradient(180deg, transparent 0 17%, rgb(var(--preset-accent-rgb) / 0.26) 17.04% 17.08%, transparent 17.12% 83%, rgb(var(--preset-border-rgb) / 0.16) 83.04% 83.08%, transparent 83.12%);
+  --final-stainless-cut:
+    repeating-linear-gradient(112deg, rgb(255 255 255 / 0.2) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(90deg, rgb(var(--preset-secondary-rgb) / 0.12) 0 1px, transparent 1px 26px),
+    linear-gradient(135deg, rgb(255 255 255 / 0.72), rgb(218 221 220 / 0.28) 42%, rgb(255 250 239 / 0.44));
+  --final-afds-field:
+    radial-gradient(circle at 63% 42%, transparent 0 74px, rgb(var(--preset-accent-rgb) / 0.18) 75px 76px, transparent 77px 112px, rgb(var(--preset-secondary-rgb) / 0.1) 113px 114px, transparent 115px 156px, rgb(var(--preset-accent-rgb) / 0.14) 157px 158px, transparent 159px),
+    radial-gradient(circle at 63% 42%, rgb(255 255 255 / 0.22), transparent 28%);
+}
+
+html[data-theme-preset="FINAL"] .home-hero {
+  background:
+    var(--final-afds-field),
+    linear-gradient(90deg, rgb(255 255 255 / 0.66) 0 36%, transparent 58%),
+    var(--home-hero-bg) !important;
+  box-shadow:
+    0 20px 48px rgb(var(--preset-shadow-rgb) / 0.09),
+    inset 0 1px 0 rgb(255 255 255 / 0.76),
+    inset 0 0 0 1px rgb(255 255 255 / 0.36),
+    inset 0 -1px 0 rgb(var(--preset-border-rgb) / 0.2);
+}
+
+html[data-theme-preset="FINAL"] .home-hero::before {
+  background:
+    var(--final-lab-rail),
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.16) 0 1px, transparent 1px 100%),
+    linear-gradient(180deg, rgb(var(--preset-border-rgb) / 0.08) 0 1px, transparent 1px 100%),
+    radial-gradient(circle at 61% 41%, transparent 0 118px, rgb(var(--preset-accent-rgb) / 0.18) 119px 120px, transparent 121px 158px, rgb(var(--preset-secondary-rgb) / 0.11) 159px 160px, transparent 161px);
+  background-size: auto, 48px 48px, 48px 48px, auto;
+  opacity: 0.76;
+}
+
+html[data-theme-preset="FINAL"] .home-hero-copy::before {
+  opacity: 0.32;
+}
+
+html[data-theme-preset="FINAL"] .home-now-card,
+html[data-theme-preset="FINAL"] :is(.home-panel, .home-metric-tile, .home-week-stat, .home-week-heatmap) {
+  background:
+    var(--final-stainless-cut),
+    linear-gradient(180deg, rgb(var(--preset-panel-rgb) / 0.8), rgb(var(--preset-soft-rgb) / 0.36)) !important;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile::after {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  max-width: 130px;
+  color: rgb(var(--preset-secondary-rgb) / 0.34);
+  content: "FINAL LAB";
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  text-align: right;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile:nth-of-type(1)::after {
+  content: "D8000 / AFDS";
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile:nth-of-type(2)::after {
+  content: "A8000 / TETRA";
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile:nth-of-type(3)::after {
+  content: "ZE8000 / 8K";
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile:nth-of-type(4)::after {
+  content: "KAWASAKI";
+}
+
+html[data-theme-preset="FINAL"] .home-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-theme-preset="FINAL"] .home-panel::before {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 0 18px, rgb(var(--preset-accent-rgb) / 0.16) 18px 19px, transparent 19px),
+    linear-gradient(180deg, transparent 0 24px, rgb(var(--preset-border-rgb) / 0.12) 24px 25px, transparent 25px);
+  content: "";
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] .home-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme-preset="FINAL"] .home-now-card::after {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.52), transparent 26%, rgb(var(--preset-border-rgb) / 0.18) 54%, transparent 78%),
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.34) 0 8px, transparent 8px 18px);
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-track {
+  background:
+    repeating-linear-gradient(90deg, rgb(var(--preset-border-rgb) / 0.12) 0 1px, transparent 1px 18px),
+    rgb(var(--preset-border-rgb) / 0.12) !important;
+}
+
+/* FINAL legacy identity: older final audio design wordmark and denser packaging stamps. */
+html[data-theme-preset="FINAL"] {
+  --final-legacy-logo: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22210%22%20viewBox%3D%220%200%20220%20210%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23171511%22%20stroke-width%3D%227%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M110%208l34%2019v39l-34%2019-34-19V27z%22%2F%3E%3Cpath%20d%3D%22M70%2077l34%2019v39l-34%2019-34-19V96z%22%2F%3E%3Cpath%20d%3D%22M150%2077l34%2019v39l-34%2019-34-19V96z%22%2F%3E%3C%2Fg%3E%3Ctext%20x%3D%2238%22%20y%3D%22184%22%20fill%3D%22%23171511%22%20font-family%3D%22Georgia%2CTimes%20New%20Roman%2Cserif%22%20font-size%3D%2246%22%3Efinal%3C%2Ftext%3E%3Ctext%20x%3D%22139%22%20y%3D%22179%22%20fill%3D%22%235b3f1c%22%20font-family%3D%22Arial%2CHelvetica%2Csans-serif%22%20font-size%3D%2213%22%3Eaudio%3C%2Ftext%3E%3Ctext%20x%3D%22139%22%20y%3D%22194%22%20fill%3D%22%235b3f1c%22%20font-family%3D%22Arial%2CHelvetica%2Csans-serif%22%20font-size%3D%2213%22%3Edesign%3C%2Ftext%3E%3C%2Fsvg%3E");
+  --final-legacy-stamp: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22440%22%20height%3D%22260%22%20viewBox%3D%220%200%20440%20260%22%3E%3Ctext%20x%3D%220%22%20y%3D%2292%22%20fill%3D%22%23b78943%22%20opacity%3D%22.2%22%20font-family%3D%22Georgia%2CTimes%20New%20Roman%2Cserif%22%20font-size%3D%22108%22%3Efinal%3C%2Ftext%3E%3Ctext%20x%3D%229%22%20y%3D%22132%22%20fill%3D%22%235b3f1c%22%20opacity%3D%22.22%22%20font-family%3D%22Arial%2CHelvetica%2Csans-serif%22%20font-size%3D%2218%22%3Eaudio%20design%3C%2Ftext%3E%3Ctext%20x%3D%229%22%20y%3D%22174%22%20fill%3D%22%235b3f1c%22%20opacity%3D%22.16%22%20font-family%3D%22Georgia%2CTimes%20New%20Roman%2Cserif%22%20font-size%3D%2244%22%3E1974%3C%2Ftext%3E%3Ctext%20x%3D%22122%22%20y%3D%22174%22%20fill%3D%22%235b3f1c%22%20opacity%3D%22.18%22%20font-family%3D%22Arial%2CHelvetica%2Csans-serif%22%20font-size%3D%2214%22%3EKAWASAKI%20CITY%20%2F%20FINAL%20LAB%3C%2Ftext%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23b78943%22%20stroke-width%3D%223%22%20stroke-linejoin%3D%22round%22%20opacity%3D%22.18%22%3E%3Cpath%20d%3D%22M360%2026l25%2014v29l-25%2014-25-14V40z%22%2F%3E%3Cpath%20d%3D%22M330%2077l25%2014v29l-25%2014-25-14V91z%22%2F%3E%3Cpath%20d%3D%22M390%2077l25%2014v29l-25%2014-25-14V91z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --final-page-bg:
+    var(--final-legacy-stamp) right 34px top 54px / 300px 177px no-repeat,
+    radial-gradient(circle at 78% 10%, rgb(var(--preset-accent-rgb) / 0.12), transparent 23%),
+    radial-gradient(circle at 12% 82%, rgb(var(--preset-secondary-rgb) / 0.1), transparent 26%),
+    linear-gradient(90deg, rgb(23 21 18 / 0.05) 0 1px, transparent 1px 100%),
+    var(--final-machined-grid),
+    var(--final-camera-grain) 0 0 / 72px 72px repeat,
+    linear-gradient(135deg, #f3f1eb 0%, #e3ded3 54%, #fffaf0 100%);
+  --echo-polish-app-bg-layer: var(--final-page-bg);
+  --echo-polish-page-bg: var(--final-page-bg);
+}
+
+html[data-theme="dark"][data-theme-preset="FINAL"] {
+  --final-legacy-logo: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22210%22%20viewBox%3D%220%200%20220%20210%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23f5d69b%22%20stroke-width%3D%227%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M110%208l34%2019v39l-34%2019-34-19V27z%22%2F%3E%3Cpath%20d%3D%22M70%2077l34%2019v39l-34%2019-34-19V96z%22%2F%3E%3Cpath%20d%3D%22M150%2077l34%2019v39l-34%2019-34-19V96z%22%2F%3E%3C%2Fg%3E%3Ctext%20x%3D%2238%22%20y%3D%22184%22%20fill%3D%22%23f5d69b%22%20font-family%3D%22Georgia%2CTimes%20New%20Roman%2Cserif%22%20font-size%3D%2246%22%3Efinal%3C%2Ftext%3E%3Ctext%20x%3D%22139%22%20y%3D%22179%22%20fill%3D%22%23f5d69b%22%20opacity%3D%22.82%22%20font-family%3D%22Arial%2CHelvetica%2Csans-serif%22%20font-size%3D%2213%22%3Eaudio%3C%2Ftext%3E%3Ctext%20x%3D%22139%22%20y%3D%22194%22%20fill%3D%22%23f5d69b%22%20opacity%3D%22.82%22%20font-family%3D%22Arial%2CHelvetica%2Csans-serif%22%20font-size%3D%2213%22%3Edesign%3C%2Ftext%3E%3C%2Fsvg%3E");
+}
+
+html[data-theme-preset="FINAL"] .home-hero-copy::after {
+  top: 50px;
+  left: -8px;
+  width: 148px;
+  height: 142px;
+  background: var(--final-legacy-logo) center / contain no-repeat !important;
+}
+
+html[data-theme-preset="FINAL"] .home-hero h1,
+html[data-theme-preset="FINAL"] .home-hero p,
+html[data-theme-preset="FINAL"] .home-hero-actions {
+  box-sizing: border-box;
+  max-width: 610px;
+  padding-left: 176px;
+}
+
+html[data-theme-preset="FINAL"] .home-hero h1 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* FINAL legacy logo spacing correction. */
+html[data-theme-preset="FINAL"] {
+  --final-legacy-logo: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22244%22%20viewBox%3D%220%200%20220%20244%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23171511%22%20stroke-width%3D%227%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M110%208l34%2019v39l-34%2019-34-19V27z%22%2F%3E%3Cpath%20d%3D%22M70%2077l34%2019v39l-34%2019-34-19V96z%22%2F%3E%3Cpath%20d%3D%22M150%2077l34%2019v39l-34%2019-34-19V96z%22%2F%3E%3C%2Fg%3E%3Ctext%20x%3D%2235%22%20y%3D%22209%22%20fill%3D%22%23171511%22%20font-family%3D%22Georgia%2CTimes%20New%20Roman%2Cserif%22%20font-size%3D%2248%22%3Efinal%3C%2Ftext%3E%3Ctext%20x%3D%22141%22%20y%3D%22202%22%20fill%3D%22%235b3f1c%22%20font-family%3D%22Arial%2CHelvetica%2Csans-serif%22%20font-size%3D%2213%22%3Eaudio%3C%2Ftext%3E%3Ctext%20x%3D%22141%22%20y%3D%22218%22%20fill%3D%22%235b3f1c%22%20font-family%3D%22Arial%2CHelvetica%2Csans-serif%22%20font-size%3D%2213%22%3Edesign%3C%2Ftext%3E%3C%2Fsvg%3E");
+}
+
+html[data-theme="dark"][data-theme-preset="FINAL"] {
+  --final-legacy-logo: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22220%22%20height%3D%22244%22%20viewBox%3D%220%200%20220%20244%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23f5d69b%22%20stroke-width%3D%227%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M110%208l34%2019v39l-34%2019-34-19V27z%22%2F%3E%3Cpath%20d%3D%22M70%2077l34%2019v39l-34%2019-34-19V96z%22%2F%3E%3Cpath%20d%3D%22M150%2077l34%2019v39l-34%2019-34-19V96z%22%2F%3E%3C%2Fg%3E%3Ctext%20x%3D%2235%22%20y%3D%22209%22%20fill%3D%22%23f5d69b%22%20font-family%3D%22Georgia%2CTimes%20New%20Roman%2Cserif%22%20font-size%3D%2248%22%3Efinal%3C%2Ftext%3E%3Ctext%20x%3D%22141%22%20y%3D%22202%22%20fill%3D%22%23f5d69b%22%20opacity%3D%22.82%22%20font-family%3D%22Arial%2CHelvetica%2Csans-serif%22%20font-size%3D%2213%22%3Eaudio%3C%2Ftext%3E%3Ctext%20x%3D%22141%22%20y%3D%22218%22%20fill%3D%22%23f5d69b%22%20opacity%3D%22.82%22%20font-family%3D%22Arial%2CHelvetica%2Csans-serif%22%20font-size%3D%2213%22%3Edesign%3C%2Ftext%3E%3C%2Fsvg%3E");
+}
+
+html[data-theme-preset="FINAL"] .home-hero-copy::after {
+  top: 44px;
+  height: 166px;
+}
+
+html[data-theme-preset="FINAL"] .sidebar::after {
+  position: absolute;
+  right: 22px;
+  bottom: 176px;
+  left: 26px;
+  color: rgb(var(--preset-accent-rgb) / 0.38);
+  content: "final audio design\A SINCE 1974 / KAWASAKI";
+  font-family: Georgia, "Times New Roman", "Microsoft YaHei", serif;
+  font-size: 13px;
+  line-height: 1.7;
+  pointer-events: none;
+  white-space: pre;
+}
+
+html[data-theme-preset="FINAL"] .home-now-card::before {
+  width: 150px;
+}
+
+html[data-theme-preset="FINAL"] .home-now-card .home-now-status,
+html[data-theme-preset="FINAL"] .home-section-title {
+  position: relative;
+}
+
+html[data-theme-preset="FINAL"] .home-now-card .home-now-status::after,
+html[data-theme-preset="FINAL"] .home-section-title::after {
+  margin-left: 10px;
+  color: rgb(var(--preset-accent-rgb) / 0.52);
+  content: "final";
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 18px;
+  font-weight: 400;
+  vertical-align: -2px;
+}
+
+/* FINAL foreground pass: the character stands in front of the product UI. */
+html[data-theme-preset="FINAL"] .home-hero {
+  isolation: isolate;
+  overflow: visible !important;
+  z-index: 4;
+}
+
+html[data-theme-preset="FINAL"] .home-hero::before {
+  z-index: 1;
+}
+
+html[data-theme-preset="FINAL"] .home-hero::after {
+  top: -62px;
+  right: clamp(376px, 27vw, 520px);
+  bottom: auto;
+  z-index: 7;
+  width: clamp(430px, 29vw, 560px);
+  height: calc(100% + 136px);
+  background-position: center 16px;
+  clip-path: inset(0 0 88px 0);
+  filter:
+    drop-shadow(0 24px 32px rgb(var(--preset-shadow-rgb) / 0.18))
+    drop-shadow(0 0 18px rgb(255 253 247 / 0.58));
+}
+
+html[data-theme-preset="FINAL"] :is(.home-pulse, .home-content-grid, .home-recommend-panel, .home-stats-grid) {
+  position: relative;
+  z-index: 8;
+}
+
+html[data-theme-preset="FINAL"] .home-hero-copy {
+  z-index: 9;
+}
+
+html[data-theme-preset="FINAL"] .home-hero-copy::before {
+  z-index: 0;
+}
+
+html[data-theme-preset="FINAL"] .home-hero-copy::after {
+  z-index: 2;
+}
+
+html[data-theme-preset="FINAL"] .home-hero > .home-now-card {
+  z-index: 5;
+}
+
+html[data-theme-preset="FINAL"] .home-now-card::before,
+html[data-theme-preset="FINAL"] .home-now-card::after {
+  z-index: 0;
+}
+
+html[data-theme-preset="FINAL"] .home-now-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* FINAL reference packaging marks: quiet side rail and sidebar maker signature. */
+html[data-theme-preset="FINAL"] .page-surface:has(.home-page)::after {
+  position: absolute;
+  top: 92px;
+  right: 34px;
+  z-index: 0;
+  width: 112px;
+  min-height: 330px;
+  padding-top: 112px;
+  color: rgb(var(--preset-secondary-rgb) / 0.48);
+  background:
+    linear-gradient(90deg, transparent 0 55%, rgb(var(--preset-accent-rgb) / 0.42) 55% 56%, transparent 56%),
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.42) 0 2px, transparent 2px 9px) left 238px / 96px 36px no-repeat;
+  content: "MAKE\A SOUND\A PERFECT.";
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  line-height: 1.75;
+  pointer-events: none;
+  text-align: right;
+  white-space: pre;
+}
+
+html[data-theme-preset="FINAL"] .sidebar::before {
+  position: absolute;
+  bottom: 186px;
+  left: 24px;
+  width: 30px;
+  height: 28px;
+  background: var(--final-logo-mark) center / contain no-repeat;
+  content: "";
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] .sidebar::after {
+  padding-left: 40px;
+}
+
+/* FINAL media walls should sit directly on the paper grid, without card frames. */
+html[data-theme-preset="FINAL"] :is(
+  .albums-page .album-wall > .album-card,
+  .artists-page .artist-wall > .artist-card
+) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .albums-page .album-wall > .album-card:hover,
+  .albums-page .album-wall > .album-card:focus-visible,
+  .artists-page .artist-wall > .artist-card:hover,
+  .artists-page .artist-wall > .artist-card:focus-visible
+) {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .albums-page .album-wall .album-cover,
+  .artists-page .artist-wall .artist-avatar
+) {
+  border: 0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 22px rgb(var(--preset-shadow-rgb) / 0.11);
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .artists-page .artist-wall .artist-avatar[data-visual="avatar"],
+  .artists-page .artist-wall .artist-avatar[data-visual="cover"],
+  .artists-page .artist-wall .artist-avatar img
+) {
+  border-radius: 8px !important;
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .albums-page .album-wall > .album-card:hover .album-cover,
+  .albums-page .album-wall > .album-card:focus-visible .album-cover,
+  .artists-page .artist-wall > .artist-card:hover .artist-avatar,
+  .artists-page .artist-wall > .artist-card:focus-visible .artist-avatar
+) {
+  border: 0 !important;
+  box-shadow: 0 14px 28px rgb(var(--preset-shadow-rgb) / 0.14);
+}
+
+/* FINAL library refinement: product-spec markings from the official product language. */
+html[data-theme-preset="FINAL"] .page-surface:has(:is(.albums-page, .artists-page))::after {
+  position: absolute;
+  top: 148px;
+  right: 38px;
+  z-index: 0;
+  width: min(18vw, 230px);
+  height: 74px;
+  color: transparent;
+  background:
+    var(--final-logo-mark) right 0 top 0 / 50px 47px no-repeat,
+    linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.2), transparent) right 58px top 22px / 152px 1px no-repeat,
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.22) 0 1px, transparent 1px 13px) right 58px bottom 7px / 172px 12px no-repeat;
+  content: "";
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1.75;
+  opacity: 0.28;
+  pointer-events: none;
+  text-align: right;
+  white-space: pre;
+}
+
+html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .songs-header {
+  position: relative;
+}
+
+html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .songs-header::after {
+  position: absolute;
+  right: 0;
+  bottom: -10px;
+  left: min(360px, 38vw);
+  height: 12px;
+  color: transparent;
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.2), transparent 72%) left 9px top 2px / min(42vw, 520px) 1px no-repeat,
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.24) 0 1px, transparent 1px 16px) left bottom / min(42vw, 520px) 7px no-repeat;
+  content: "";
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  opacity: 0.52;
+  pointer-events: none;
+  text-align: right;
+  white-space: nowrap;
+}
+
+html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .songs-control-row {
+  position: relative;
+}
+
+html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .songs-control-row::after {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 4px;
+  width: min(28vw, 360px);
+  height: 26px;
+  background:
+    linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.26), transparent) left 12px top 50% / 100% 1px no-repeat,
+    radial-gradient(circle at 0 50%, rgb(var(--preset-accent-rgb) / 0.34) 0 3px, transparent 3.5px),
+    radial-gradient(circle at 78% 50%, rgb(var(--preset-accent-rgb) / 0.28) 0 3px, transparent 3.5px);
+  content: "";
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .albums-page .album-wall > .album-card,
+  .artists-page .artist-wall > .artist-card
+)::after {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 24px;
+  height: 22px;
+  background: var(--final-logo-mark) center / contain no-repeat;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .albums-page .album-wall > .album-card:hover,
+  .albums-page .album-wall > .album-card:focus-visible,
+  .artists-page .artist-wall > .artist-card:hover,
+  .artists-page .artist-wall > .artist-card:focus-visible
+)::after {
+  opacity: 0.28;
+  transform: translateY(0);
+}
+
+/* FINAL artist wall: keep portraits as precision-cut square tiles, not default round avatars. */
+html[data-theme-preset="FINAL"] .artists-page .artist-wall {
+  grid-template-columns: repeat(auto-fill, minmax(164px, 1fr));
+  gap: 18px 16px;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall > .artist-card {
+  justify-items: stretch;
+  gap: 9px;
+  padding: 0 !important;
+  text-align: left;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-avatar {
+  position: relative;
+  width: 100% !important;
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 6px !important;
+  background:
+    linear-gradient(135deg, rgb(var(--preset-panel-rgb) / 0.86), rgb(var(--preset-soft-rgb) / 0.58)),
+    rgb(var(--preset-panel-rgb) / 0.72) !important;
+  box-shadow:
+    0 10px 22px rgb(var(--preset-shadow-rgb) / 0.1),
+    inset 0 0 0 1px rgb(var(--preset-border-rgb) / 0.24) !important;
+  clip-path: none !important;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-avatar::before {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 1px solid rgb(var(--preset-border-rgb) / 0.2);
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.2), transparent 36%, transparent 64%, rgb(var(--preset-accent-rgb) / 0.12)) top 10px left 12px / calc(100% - 24px) 1px no-repeat,
+    linear-gradient(180deg, rgb(255 255 255 / 0.18), transparent 32%);
+  content: "";
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-avatar:is(
+  [data-visual="avatar"],
+  [data-visual="cover"],
+  [data-visual="letter"]
+),
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-avatar .deferred-wall-image,
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-avatar img,
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-avatar > span:not(.deferred-wall-image) {
+  border-radius: 6px !important;
+  clip-path: none !important;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-avatar img {
+  object-fit: cover;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-avatar[data-visual="letter"]::after {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 26px;
+  height: 24px;
+  background: var(--final-logo-mark) center / contain no-repeat;
+  content: "";
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-avatar > span:not(.deferred-wall-image) {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: rgb(var(--preset-ink-rgb) / 0.76);
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-copy {
+  align-items: start;
+  gap: 4px;
+  padding: 0 2px;
+  text-align: left;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-copy strong {
+  color: var(--preset-heading);
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall .artist-copy small {
+  color: rgb(var(--preset-secondary-rgb) / 0.76);
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall > .artist-card:hover .artist-avatar,
+html[data-theme-preset="FINAL"] .artists-page .artist-wall > .artist-card:focus-visible .artist-avatar {
+  border: 0 !important;
+  background:
+    linear-gradient(135deg, rgb(255 253 247 / 0.94), rgb(var(--preset-soft-rgb) / 0.68)),
+    rgb(var(--preset-panel-rgb) / 0.82) !important;
+  box-shadow:
+    0 14px 28px rgb(var(--preset-shadow-rgb) / 0.13),
+    inset 0 0 0 1px rgb(var(--preset-accent-rgb) / 0.28) !important;
+}
+
+html[data-theme-preset="FINAL"] .artists-page .artist-wall :is(.artist-avatar-refresh, .artist-card-action) {
+  border-radius: 6px !important;
+  background:
+    linear-gradient(135deg, rgb(255 253 247 / 0.9), rgb(var(--preset-soft-rgb) / 0.76)) !important;
+  box-shadow:
+    0 8px 18px rgb(var(--preset-shadow-rgb) / 0.11),
+    inset 0 0 0 1px rgb(var(--preset-border-rgb) / 0.32) !important;
+}
+
+/* FINAL transport nameplate: official product cues as a quiet machined audio deck. */
+html[data-theme-preset="FINAL"] .player-bar {
+  isolation: isolate;
+  overflow: hidden;
+  border-top-color: rgb(var(--preset-border-rgb) / 0.34) !important;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.58), transparent 18%, transparent 82%, rgb(var(--preset-accent-rgb) / 0.08)),
+    repeating-linear-gradient(112deg, rgb(255 255 255 / 0.18) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(90deg, rgb(var(--preset-secondary-rgb) / 0.08) 0 1px, transparent 1px 34px),
+    var(--final-player-bg),
+    var(--preset-app-bg) !important;
+}
+
+html[data-theme-preset="FINAL"] .player-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme-preset="FINAL"] .player-bar::after {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 0;
+  width: min(31vw, 460px);
+  height: 12px;
+  color: transparent;
+  background:
+    linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.18), transparent) center top / 100% 1px no-repeat,
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.22) 0 1px, transparent 1px 15px) center bottom / 100% 7px no-repeat;
+  content: "";
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  opacity: 0.42;
+  pointer-events: none;
+  text-align: right;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+html[data-theme-preset="FINAL"] .player-cover {
+  border-radius: 6px !important;
+  box-shadow:
+    0 12px 26px rgb(var(--preset-shadow-rgb) / 0.12),
+    inset 0 0 0 1px rgb(255 255 255 / 0.38) !important;
+}
+
+html[data-theme-preset="FINAL"] .player-cover[data-empty="true"] {
+  background:
+    radial-gradient(circle at 50% 50%, rgb(var(--preset-panel-rgb) / 0.52) 0 31%, transparent 32%),
+    var(--final-machined-metal),
+    rgb(var(--preset-panel-rgb) / 0.74) !important;
+}
+
+html[data-theme-preset="FINAL"] .player-cover[data-empty="true"] .player-cover-placeholder {
+  width: 68px;
+  height: 68px;
+}
+
+html[data-theme-preset="FINAL"] .player-cover[data-empty="true"] .player-cover-disc {
+  width: 58px;
+  height: 54px;
+  border-radius: 0;
+  background: var(--final-logo-mark) center / contain no-repeat !important;
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+html[data-theme-preset="FINAL"] .player-cover[data-empty="true"] .player-cover-note {
+  display: none;
+}
+
+html[data-theme-preset="FINAL"] .player-track-copy strong {
+  letter-spacing: 0;
+}
+
+html[data-theme-preset="FINAL"] .player-track-copy > span {
+  color: rgb(var(--preset-ink-rgb) / 0.58);
+}
+
+html[data-theme-preset="FINAL"] .player-bar .icon-button,
+html[data-theme-preset="FINAL"] .transport .icon-button,
+html[data-theme-preset="FINAL"] .player-bar .audio-icon-command {
+  border-radius: 6px !important;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .icon-button:hover,
+html[data-theme-preset="FINAL"] .transport .icon-button:hover,
+html[data-theme-preset="FINAL"] .player-bar .icon-button.is-soft-active,
+html[data-theme-preset="FINAL"] .player-bar .audio-icon-command:hover {
+  background:
+    linear-gradient(135deg, rgb(255 253 247 / 0.82), rgb(var(--preset-soft-rgb) / 0.6)) !important;
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--preset-accent-rgb) / 0.26),
+    0 8px 18px rgb(var(--preset-shadow-rgb) / 0.08) !important;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .play-button {
+  position: relative;
+  border-radius: 50% !important;
+  background:
+    radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.24) 0 8px, transparent 9px),
+    repeating-radial-gradient(circle at 50% 50%, rgb(255 255 255 / 0.18) 0 1px, transparent 1px 7px),
+    linear-gradient(180deg, #c29a54, #805b2b) !important;
+  box-shadow:
+    0 11px 24px rgb(var(--preset-shadow-rgb) / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.42),
+    inset 0 -10px 18px rgb(58 34 12 / 0.22) !important;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-row {
+  position: relative;
+  color: rgb(var(--preset-ink-rgb) / 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-row::before {
+  content: "";
+  display: none;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-track,
+html[data-theme-preset="FINAL"] .player-bar .progress-track[data-waveform="true"] {
+  height: 9px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--preset-border-rgb) / 0.22);
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgb(var(--preset-soft-rgb) / 0.72), rgb(var(--preset-panel-rgb) / 0.46)) !important;
+  box-shadow:
+    inset 0 1px 3px rgb(var(--preset-shadow-rgb) / 0.1),
+    0 1px 0 rgb(255 255 255 / 0.42) !important;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-track::before {
+  content: "";
+  display: none;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-fill {
+  background:
+    linear-gradient(90deg, #d6ae6a, #8b642f 72%, #4d3620) !important;
+  box-shadow: 0 0 14px rgb(var(--preset-accent-rgb) / 0.2);
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-thumb {
+  width: 10px;
+  height: 16px;
+  border: 1px solid rgb(255 253 247 / 0.9);
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, #d4aa62, #7c5629) !important;
+  box-shadow:
+    0 6px 14px rgb(var(--preset-shadow-rgb) / 0.16),
+    0 0 0 4px rgb(var(--preset-accent-rgb) / 0.11) !important;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-track[data-waveform="true"] {
+  height: 9px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgb(var(--preset-soft-rgb) / 0.72), rgb(var(--preset-panel-rgb) / 0.46)) !important;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-waveform i {
+  display: none;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-waveform i[data-played="true"] {
+  background: linear-gradient(180deg, #d7b473, #8a642f);
+  box-shadow: 0 0 10px rgb(var(--preset-accent-rgb) / 0.18);
+}
+
+@media (max-width: 1180px) {
+  html[data-theme-preset="FINAL"] .player-bar::after {
+    width: min(38vw, 420px);
+    opacity: 0.24;
+  }
+}
+
+@media (max-width: 860px) {
+  html[data-theme-preset="FINAL"] .player-bar::after,
+  html[data-theme-preset="FINAL"] .player-bar .progress-row::before {
+    display: none;
+  }
+}
+
+/* FINAL detail pages: album and artist views become product-spec packaging sheets. */
+html[data-theme-preset="FINAL"] {
+  --preset-ink-rgb: 23 21 17;
+}
+
+html[data-theme="dark"][data-theme-preset="FINAL"] {
+  --preset-ink-rgb: 245 214 155;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-page, .artist-detail-page) {
+  position: relative;
+  overflow: hidden;
+  background:
+    var(--final-legacy-stamp) right 46px top 34px / 260px 154px no-repeat,
+    linear-gradient(90deg, rgb(23 21 18 / 0.04) 0 1px, transparent 1px 100%) 0 0 / 44px 44px,
+    linear-gradient(180deg, rgb(var(--preset-border-rgb) / 0.08) 0 1px, transparent 1px 100%) 0 0 / 44px 44px,
+    var(--echo-polish-page-bg),
+    var(--theme-app-bg) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-page, .artist-detail-page)::before {
+  position: absolute;
+  top: 72px;
+  right: clamp(28px, 4vw, 72px);
+  z-index: 0;
+  width: min(34vw, 430px);
+  height: 124px;
+  color: rgb(var(--preset-secondary-rgb) / 0.28);
+  background:
+    var(--final-logo-mark) right top / 68px 64px no-repeat,
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.28), transparent 66%) right 82px top 22px / 220px 1px no-repeat,
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.22) 0 2px, transparent 2px 12px) right bottom / 230px 30px no-repeat;
+  content: "D8000 DC / AFDS\A ZE8000 MK2 / 8K SOUND\A A8000 / TRUE BERYLLIUM";
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  line-height: 1.75;
+  pointer-events: none;
+  text-align: right;
+  white-space: pre;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-page, .artist-detail-page) > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-hero, .artist-hero) {
+  border: 1px solid rgb(var(--preset-border-rgb) / 0.26) !important;
+  border-radius: 4px !important;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.72) 0 34%, rgb(255 253 247 / 0.32) 66%, transparent),
+    var(--final-afds-field),
+    var(--final-machined-metal),
+    rgb(var(--preset-panel-rgb) / 0.68) !important;
+  box-shadow:
+    0 18px 44px rgb(var(--preset-shadow-rgb) / 0.08),
+    inset 0 1px 0 rgb(255 255 255 / 0.56),
+    inset 0 0 0 1px rgb(255 255 255 / 0.24) !important;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-hero {
+  padding: 30px clamp(22px, 3vw, 42px);
+}
+
+html[data-theme-preset="FINAL"] .artist-hero {
+  min-height: clamp(330px, 38vw, 500px);
+}
+
+html[data-theme-preset="FINAL"] .artist-hero::after {
+  background:
+    linear-gradient(90deg, rgb(255 253 247 / 0.9) 0 36%, rgb(255 253 247 / 0.62) 58%, rgb(255 253 247 / 0.18) 100%),
+    linear-gradient(180deg, rgb(255 253 247 / 0.1), rgb(var(--preset-accent-rgb) / 0.08)),
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.18) 0 1px, transparent 1px 100%) 0 0 / 46px 46px;
+}
+
+html[data-theme-preset="FINAL"] .artist-hero-backdrop,
+html[data-theme-preset="FINAL"] .artist-hero-art img {
+  filter: saturate(0.82) contrast(0.92);
+  opacity: 0.62;
+}
+
+html[data-theme-preset="FINAL"] .artist-hero-copy {
+  color: var(--preset-heading);
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.72);
+}
+
+html[data-theme-preset="FINAL"] .artist-hero-copy h1,
+html[data-theme-preset="FINAL"] .album-detail-copy h1 {
+  color: var(--preset-heading) !important;
+  font-family: Georgia, "Times New Roman", "Microsoft YaHei", serif;
+  font-weight: 680;
+}
+
+html[data-theme-preset="FINAL"] .artist-hero .artist-detail-kicker,
+html[data-theme-preset="FINAL"] .artist-hero-meta {
+  color: rgb(var(--preset-ink-rgb) / 0.62);
+}
+
+html[data-theme-preset="FINAL"] .artist-hero-meta span:not(:last-child)::after {
+  background: rgb(var(--preset-border-rgb) / 0.32);
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-cover, .artist-hero-art) {
+  border: 1px solid rgb(var(--preset-border-rgb) / 0.28) !important;
+  border-radius: 6px !important;
+  background:
+    radial-gradient(circle at 50% 50%, rgb(var(--preset-panel-rgb) / 0.54) 0 30%, transparent 31%),
+    var(--final-machined-metal),
+    rgb(var(--preset-panel-rgb) / 0.74) !important;
+  box-shadow:
+    0 18px 38px rgb(var(--preset-shadow-rgb) / 0.13),
+    inset 0 0 0 1px rgb(255 255 255 / 0.38) !important;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-cover {
+  position: relative;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-cover img, .artist-hero-art img) {
+  border-radius: 6px !important;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-cover[data-empty="true"]::after,
+html[data-theme-preset="FINAL"] .artist-hero-art span::after {
+  position: absolute;
+  inset: 22%;
+  background: var(--final-logo-mark) center / contain no-repeat;
+  content: "";
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-facts, .album-detail-track-console, .album-detail-tabs, .artist-detail-tabs, .artist-detail-missing) {
+  border-color: rgb(var(--preset-border-rgb) / 0.24) !important;
+  border-radius: 4px !important;
+  background:
+    var(--final-machined-metal),
+    rgb(var(--preset-panel-rgb) / 0.56) !important;
+  box-shadow:
+    0 12px 28px rgb(var(--preset-shadow-rgb) / 0.06),
+    inset 0 1px 0 rgb(255 255 255 / 0.46) !important;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-facts {
+  position: relative;
+  padding: 18px 16px 18px 24px;
+  border: 1px solid rgb(var(--preset-border-rgb) / 0.24) !important;
+  border-left: 0;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-facts::before {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  color: rgb(var(--preset-accent-rgb) / 0.42);
+  content: "FINAL LAB";
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-tabs, .artist-detail-tabs) {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-tabs, .artist-detail-tabs)::after {
+  position: absolute;
+  right: 14px;
+  bottom: 8px;
+  width: min(32vw, 330px);
+  height: 14px;
+  background:
+    linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.24), transparent),
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.3) 0 1px, transparent 1px 13px);
+  content: "";
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-tab, .artist-detail-tabs button) {
+  border-radius: 4px !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-detail-tab[aria-current='page'], .artist-detail-tabs button[aria-current="page"]) {
+  color: var(--preset-heading) !important;
+  background: rgb(var(--preset-accent-rgb) / 0.12) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-track-row, .artist-track-row) {
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow:
+    inset 0 -1px 0 rgb(var(--preset-border-rgb) / 0.12) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-track-row:hover, .artist-track-row:hover) {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.1), transparent 76%) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-track-row[data-playing='true'], .artist-track-row[data-playing="true"]) {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.18), transparent 74%) !important;
+  box-shadow:
+    inset 3px 0 0 rgb(var(--preset-accent-rgb) / 0.78),
+    inset 0 -1px 0 rgb(var(--preset-border-rgb) / 0.16) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-primary-action, .artist-primary-action) {
+  border-radius: 6px !important;
+  background:
+    linear-gradient(180deg, #1f1c18, #0f0d0b) !important;
+  box-shadow:
+    0 12px 24px rgb(var(--preset-shadow-rgb) / 0.16),
+    inset 0 1px 0 rgb(255 255 255 / 0.18) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.album-icon-action, .artist-secondary-action, .artist-load-more, .artist-track-actions button) {
+  border-radius: 6px !important;
+  background:
+    linear-gradient(135deg, rgb(255 253 247 / 0.82), rgb(var(--preset-soft-rgb) / 0.62)) !important;
+}
+
+@media (max-width: 980px) {
+  html[data-theme-preset="FINAL"] :is(.album-detail-page, .artist-detail-page)::before {
+    opacity: 0.28;
+  }
+
+  html[data-theme-preset="FINAL"] .album-detail-hero {
+    padding: 24px 20px;
+  }
+}
+
+/* FINAL operational pages: queue and folders as a quiet Kawasaki lab console. */
+html[data-theme-preset="FINAL"] .page-surface:has(:is(.queue-page, .folders-workbench)) {
+  position: relative;
+  overflow: hidden;
+  background:
+    var(--final-legacy-stamp) right 42px top 44px / 286px 169px no-repeat,
+    linear-gradient(90deg, rgb(23 21 18 / 0.04) 0 1px, transparent 1px 100%) 0 0 / 42px 42px,
+    linear-gradient(180deg, rgb(var(--preset-border-rgb) / 0.08) 0 1px, transparent 1px 100%) 0 0 / 42px 42px,
+    var(--echo-polish-page-bg),
+    var(--theme-app-bg) !important;
+}
+
+html[data-theme-preset="FINAL"] .page-surface:has(:is(.queue-page, .folders-workbench))::after {
+  position: absolute;
+  right: 44px;
+  bottom: 108px;
+  z-index: 0;
+  width: min(38vw, 520px);
+  height: 86px;
+  color: rgb(var(--preset-secondary-rgb) / 0.2);
+  background:
+    var(--final-logo-mark) right top / 72px 68px no-repeat,
+    linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.24), transparent) right 92px top 26px / 280px 1px no-repeat,
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.22) 0 1px, transparent 1px 13px) right 92px bottom 4px / 340px 20px no-repeat;
+  content: "D8000 DC / AFDS ORDER MAP\A ZE8000 MK2 / 8K TRANSPORT";
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 11px;
+  font-weight: 820;
+  letter-spacing: 0.16em;
+  line-height: 1.7;
+  pointer-events: none;
+  text-align: right;
+  white-space: pre;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-page, .folders-workbench) {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-page-header h1, .folders-pane-header h1, .queue-now-main h2, .folder-detail-title h2) {
+  color: var(--preset-heading) !important;
+  font-family: Georgia, "Times New Roman", "Microsoft YaHei", serif;
+  font-weight: 680;
+  letter-spacing: 0;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-kicker, .queue-count, .folders-status-line, .folders-panel-heading h2) {
+  color: rgb(var(--preset-secondary-rgb) / 0.62);
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-weight: 820;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .queue-now-card,
+  .queue-toolbar,
+  .queue-saved-panel,
+  .queue-saved-item,
+  .queue-empty-state,
+  .folders-sidebar,
+  .folders-main,
+  .folders-actions-panel section,
+  .folder-metrics span,
+  .folder-scan-card
+) {
+  border-color: rgb(var(--preset-border-rgb) / 0.24) !important;
+  border-radius: 4px !important;
+  background:
+    var(--final-machined-metal),
+    rgb(var(--preset-panel-rgb) / 0.54) !important;
+  box-shadow:
+    0 14px 32px rgb(var(--preset-shadow-rgb) / 0.065),
+    inset 0 1px 0 rgb(255 255 255 / 0.5) !important;
+}
+
+html[data-theme-preset="FINAL"] .queue-now-card {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-theme-preset="FINAL"] .queue-now-card::before {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  z-index: 0;
+  color: rgb(var(--preset-accent-rgb) / 0.4);
+  content: "FINAL QUEUE / AFDS SEQUENCE";
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.16em;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] .queue-now-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-now-cover, .queue-row-cover, .folder-cover-stack) {
+  position: relative;
+  border-color: rgb(var(--preset-border-rgb) / 0.28) !important;
+  border-radius: 6px !important;
+  background:
+    radial-gradient(circle at 50% 50%, rgb(var(--preset-panel-rgb) / 0.48) 0 31%, transparent 32%),
+    var(--final-machined-metal),
+    rgb(var(--preset-panel-rgb) / 0.72) !important;
+  box-shadow:
+    0 12px 26px rgb(var(--preset-shadow-rgb) / 0.12),
+    inset 0 0 0 1px rgb(255 255 255 / 0.36) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-now-cover, .queue-row-cover)[data-empty="true"]::after,
+html[data-theme-preset="FINAL"] .folder-cover-stack[data-cover-count='0']::after {
+  position: absolute;
+  inset: 24%;
+  background: var(--final-logo-mark) center / contain no-repeat;
+  content: "";
+  opacity: 0.34;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] .folder-cover-stack img {
+  border-color: rgb(255 253 247 / 0.82) !important;
+  border-radius: 5px !important;
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .queue-quality-row span,
+  .queue-now-meta span,
+  .queue-row-quality span,
+  .queue-row-source,
+  .folder-source-switch,
+  .folder-toggle,
+  .folder-import-box input,
+  .folder-import-box button,
+  .folder-action-grid button,
+  .folder-sort-control .sort-button
+) {
+  border-radius: 4px !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-quality-row span, .queue-now-meta span, .queue-row-quality span, .queue-row-source) {
+  border-color: rgb(var(--preset-border-rgb) / 0.24) !important;
+  background:
+    linear-gradient(135deg, rgb(255 253 247 / 0.66), rgb(var(--preset-soft-rgb) / 0.46)) !important;
+  color: rgb(var(--preset-secondary-rgb) / 0.82) !important;
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-weight: 820;
+  letter-spacing: 0.03em;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-icon-button, .queue-tool-button, .queue-repeat-group, .queue-repeat-group button) {
+  border-radius: 6px !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-tool-button, .queue-repeat-group button, .folder-import-box button, .folder-action-grid button, .folder-toggle) {
+  background:
+    linear-gradient(135deg, rgb(255 253 247 / 0.78), rgb(var(--preset-soft-rgb) / 0.56)) !important;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.28),
+    0 8px 18px rgb(var(--preset-shadow-rgb) / 0.055) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-tool-button.is-active, .queue-repeat-group button.is-active, .folder-source-switch button.active) {
+  color: var(--preset-on-accent) !important;
+  background:
+    linear-gradient(180deg, #c29a54, #805b2b) !important;
+  box-shadow:
+    0 10px 20px rgb(var(--preset-shadow-rgb) / 0.12),
+    inset 0 1px 0 rgb(255 255 255 / 0.28) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-row, .folder-root-button, .folder-tree-node) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow:
+    inset 0 -1px 0 rgb(var(--preset-border-rgb) / 0.14) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-row:hover, .folder-root-button:hover, .folder-tree-node:hover) {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.1), transparent 78%) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-row[data-current='true'], .folder-root-button[data-active='true'], .folder-tree-node[data-active='true']) {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.17), transparent 74%) !important;
+  box-shadow:
+    inset 3px 0 0 rgb(var(--preset-accent-rgb) / 0.78),
+    inset 0 -1px 0 rgb(var(--preset-border-rgb) / 0.18) !important;
+}
+
+html[data-theme-preset="FINAL"] .queue-row[data-drop-target='true'],
+html[data-theme-preset="FINAL"] .folder-root-button[data-drop-target='true'] {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-secondary-rgb) / 0.16), transparent 74%) !important;
+  box-shadow:
+    inset 0 2px 0 rgb(var(--preset-secondary-rgb) / 0.44),
+    inset 0 -1px 0 rgb(var(--preset-border-rgb) / 0.18) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.queue-drag-handle, .folder-expand-hit, .queue-empty-icon) {
+  border-radius: 4px !important;
+}
+
+html[data-theme-preset="FINAL"] .folders-sidebar {
+  padding: 14px 14px 14px 0;
+}
+
+html[data-theme-preset="FINAL"] .folders-actions-panel {
+  padding: 14px 0 14px 14px;
+}
+
+html[data-theme-preset="FINAL"] .folders-actions-panel section {
+  padding: 12px;
+}
+
+html[data-theme-preset="FINAL"] .folders-main {
+  padding: 16px;
+}
+
+html[data-theme-preset="FINAL"] .folder-source-switch {
+  background:
+    linear-gradient(135deg, rgb(255 253 247 / 0.7), rgb(var(--preset-soft-rgb) / 0.52)) !important;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.24) !important;
+}
+
+html[data-theme-preset="FINAL"] .folder-metrics span {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-theme-preset="FINAL"] .folder-metrics span::after {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  color: rgb(var(--preset-accent-rgb) / 0.34);
+  content: "KAWASAKI";
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  pointer-events: none;
+}
+
+@media (max-width: 980px) {
+  html[data-theme-preset="FINAL"] .page-surface:has(:is(.queue-page, .folders-workbench))::after {
+    opacity: 0.28;
+  }
+
+  html[data-theme-preset="FINAL"] .folders-main,
+  html[data-theme-preset="FINAL"] .folders-actions-panel section {
+    padding: 12px;
+  }
+}
+
+/* FINAL dense library pages: songs, downloads, and inbox as precision catalog sheets. */
+html[data-theme-preset="FINAL"] .page-surface:has(:is(.songs-page, .downloads-page, .inbox-page)) {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgb(23 21 18 / 0.04) 0 1px, transparent 1px 100%) 0 0 / 40px 40px,
+    linear-gradient(180deg, rgb(var(--preset-border-rgb) / 0.08) 0 1px, transparent 1px 100%) 0 0 / 40px 40px,
+    radial-gradient(circle at 78% 10%, rgb(var(--preset-accent-rgb) / 0.08), transparent 23%),
+    radial-gradient(circle at 12% 82%, rgb(var(--preset-secondary-rgb) / 0.08), transparent 26%),
+    var(--final-machined-grid),
+    var(--final-camera-grain) 0 0 / 72px 72px repeat,
+    linear-gradient(135deg, #f3f1eb 0%, #e3ded3 54%, #fffaf0 100%),
+    var(--theme-app-bg) !important;
+}
+
+html[data-theme-preset="FINAL"] .page-surface:has(:is(.songs-page, .downloads-page, .inbox-page))::before {
+  display: none;
+  content: "";
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] :is(.songs-page, .downloads-page, .inbox-page) {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme-preset="FINAL"] :is(.songs-title-group h1, .downloads-header h1, .inbox-hero-copy h1) {
+  color: var(--preset-heading) !important;
+  font-family: Georgia, "Times New Roman", "Microsoft YaHei", serif;
+  font-weight: 680;
+  letter-spacing: 0;
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .search-box,
+  .songs-import-hint,
+  .downloads-panel,
+  .downloads-url-panel,
+  .downloads-search-panel,
+  .downloads-search-box,
+  .downloads-url-box input,
+  .download-output-path,
+  .download-toggle-row,
+  .inbox-hero,
+  .inbox-story-panel,
+  .inbox-processing-panel,
+  .inbox-toolbar,
+  .inbox-filter-row,
+  .inbox-facet-row,
+  .inbox-bulk-bar,
+  .inbox-album-wall,
+  .inbox-empty-state,
+  .inbox-notice
+) {
+  border-color: rgb(var(--preset-border-rgb) / 0.24) !important;
+  border-radius: 4px !important;
+  background:
+    var(--final-machined-metal),
+    rgb(var(--preset-panel-rgb) / 0.54) !important;
+  box-shadow:
+    0 14px 32px rgb(var(--preset-shadow-rgb) / 0.06),
+    inset 0 1px 0 rgb(255 255 255 / 0.48) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.downloads-panel, .inbox-story-panel, .inbox-processing-panel, .inbox-hero) {
+  position: relative;
+  overflow: hidden;
+}
+
+html[data-theme-preset="FINAL"] :is(.downloads-panel, .inbox-story-panel, .inbox-processing-panel, .inbox-hero)::after {
+  position: absolute;
+  right: 14px;
+  bottom: 9px;
+  z-index: 0;
+  color: rgb(var(--preset-accent-rgb) / 0.28);
+  content: "FINAL LAB / KAWASAKI";
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] :is(.downloads-panel, .inbox-story-panel, .inbox-processing-panel, .inbox-hero) > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme-preset="FINAL"] :is(.track-list-shell, .inbox-list, .download-job-list, .download-search-results) {
+  position: relative;
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .track-row,
+  .download-search-result,
+  .download-job-row,
+  .inbox-track-row,
+  .inbox-album-card,
+  .inbox-processing-card,
+  .inbox-quality-summary span,
+  .inbox-stats span,
+  .inbox-story-numbers span
+) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow:
+    inset 0 -1px 0 rgb(var(--preset-border-rgb) / 0.14) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.track-row:hover, .download-search-result:hover, .download-job-row:hover, .inbox-track-row:hover, .inbox-album-card:hover, .inbox-processing-card:hover) {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.1), transparent 78%) !important;
+  transform: none !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.track-row[data-playing="true"], .track-row[data-selected="true"], .inbox-processing-card[data-active="true"]) {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.17), transparent 74%) !important;
+  box-shadow:
+    inset 3px 0 0 rgb(var(--preset-accent-rgb) / 0.78),
+    inset 0 -1px 0 rgb(var(--preset-border-rgb) / 0.18) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.track-row[data-drop-target="true"], .download-job-row[data-status="downloading"], .download-job-row[data-status="extracting_audio"], .download-job-row[data-status="importing"]) {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-secondary-rgb) / 0.16), transparent 76%) !important;
+  box-shadow:
+    inset 3px 0 0 rgb(var(--preset-secondary-rgb) / 0.58),
+    inset 0 -1px 0 rgb(var(--preset-border-rgb) / 0.18) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.track-cover, .download-search-thumb, .download-job-icon, .inbox-track-cover, .inbox-album-art) {
+  position: relative;
+  border-color: rgb(var(--preset-border-rgb) / 0.28) !important;
+  border-radius: 6px !important;
+  background:
+    radial-gradient(circle at 50% 50%, rgb(var(--preset-panel-rgb) / 0.48) 0 31%, transparent 32%),
+    var(--final-machined-metal),
+    rgb(var(--preset-panel-rgb) / 0.72) !important;
+  box-shadow:
+    0 10px 22px rgb(var(--preset-shadow-rgb) / 0.11),
+    inset 0 0 0 1px rgb(255 255 255 / 0.34) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.track-cover, .inbox-track-cover, .inbox-album-art)[data-empty="true"]::after,
+html[data-theme-preset="FINAL"] .download-job-icon::after {
+  position: absolute;
+  inset: 24%;
+  background: var(--final-logo-mark) center / contain no-repeat;
+  content: "";
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .tool-button,
+  .duplicate-toggle,
+  .duplicate-analyze-button,
+  .sort-button,
+  .library-source-switch,
+  .library-source-switch button,
+  .list-filter-chip,
+  .downloads-action-button,
+  .download-icon-button,
+  .download-search-scope,
+  .download-search-scope button,
+  .inbox-icon-button,
+  .inbox-command-button,
+  .inbox-selection-toggle,
+  .inbox-load-more,
+  .inbox-select-field,
+  .inbox-search-field,
+  .inbox-facet-row label,
+  .inbox-story-tags button,
+  .inbox-reason-row span,
+  .playing-pill,
+  .duplicate-version-badge
+) {
+  border-radius: 4px !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.library-source-switch button[aria-pressed="true"], .download-search-scope button.active, .list-filter-chip[data-active="true"], .list-filter-chip.active) {
+  color: var(--preset-on-accent) !important;
+  border-color: rgb(var(--preset-accent-rgb) / 0.46) !important;
+  background:
+    linear-gradient(180deg, #c29a54, #805b2b) !important;
+  box-shadow:
+    0 10px 20px rgb(var(--preset-shadow-rgb) / 0.12),
+    inset 0 1px 0 rgb(255 255 255 / 0.28) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.download-progress-track, .download-progress-track span) {
+  border-radius: 999px !important;
+}
+
+html[data-theme-preset="FINAL"] .download-progress-track {
+  border: 1px solid rgb(var(--preset-border-rgb) / 0.22);
+  background:
+    repeating-linear-gradient(90deg, rgb(var(--preset-secondary-rgb) / 0.12) 0 1px, transparent 1px 18px),
+    linear-gradient(90deg, rgb(var(--preset-soft-rgb) / 0.72), rgb(var(--preset-panel-rgb) / 0.46)) !important;
+  box-shadow:
+    inset 0 1px 3px rgb(var(--preset-shadow-rgb) / 0.1),
+    0 1px 0 rgb(255 255 255 / 0.42) !important;
+}
+
+html[data-theme-preset="FINAL"] .download-progress-track span {
+  background:
+    linear-gradient(90deg, #d6ae6a, #8b642f 72%, #4d3620) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.download-provider-chip, .download-tool-pill, .inbox-reason-row span, .inbox-track-title span) {
+  border-color: rgb(var(--preset-border-rgb) / 0.24) !important;
+  background:
+    linear-gradient(135deg, rgb(255 253 247 / 0.66), rgb(var(--preset-soft-rgb) / 0.46)) !important;
+  color: rgb(var(--preset-secondary-rgb) / 0.82) !important;
+  font-family: Outfit, "Microsoft YaHei", sans-serif;
+  font-weight: 820;
+  letter-spacing: 0.03em;
+}
+
+@media (max-width: 980px) {
+  html[data-theme-preset="FINAL"] .page-surface:has(:is(.songs-page, .downloads-page, .inbox-page))::before {
+    opacity: 0.28;
+  }
+}
+
+/* FINAL research-grade refinement: transparent sound, 8K timing, beryllium, and stainless machining. */
+html[data-theme-preset="FINAL"] {
+  --final-transparent-glass:
+    linear-gradient(135deg, rgb(255 255 255 / 0.58), rgb(246 241 231 / 0.36) 42%, rgb(255 253 247 / 0.7));
+  --final-beryllium-edge:
+    linear-gradient(90deg, rgb(217 174 101 / 0.78), rgb(139 100 47 / 0.46), rgb(255 245 218 / 0.58));
+  --final-stainless-ridge:
+    repeating-linear-gradient(112deg, rgb(255 255 255 / 0.24) 0 1px, transparent 1px 7px),
+    linear-gradient(135deg, rgb(255 255 255 / 0.5), rgb(220 217 207 / 0.24) 52%, rgb(255 251 241 / 0.42));
+  --final-8k-timing-rail:
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.2) 0 1px, transparent 1px 10px),
+    linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.24), transparent);
+}
+
+html[data-theme-preset="FINAL"] :is(
+  .home-hero,
+  .home-panel,
+  .home-metric-tile,
+  .home-now-card,
+  .home-week-stat,
+  .home-week-heatmap,
+  .downloads-panel,
+  .downloads-url-panel,
+  .downloads-search-panel,
+  .inbox-hero,
+  .inbox-story-panel,
+  .inbox-processing-panel,
+  .queue-now-card,
+  .queue-toolbar,
+  .queue-saved-panel,
+  .folders-sidebar,
+  .folders-main,
+  .folders-actions-panel section
+) {
+  border-color: rgb(var(--preset-border-rgb) / 0.2) !important;
+  background:
+    var(--final-transparent-glass),
+    var(--final-stainless-ridge),
+    rgb(var(--preset-panel-rgb) / 0.58) !important;
+  box-shadow:
+    0 18px 42px rgb(var(--preset-shadow-rgb) / 0.07),
+    inset 0 1px 0 rgb(255 255 255 / 0.62),
+    inset 0 -1px 0 rgb(var(--preset-border-rgb) / 0.11) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.home-panel, .home-metric-tile, .home-now-card, .queue-now-card, .folders-main)::after {
+  opacity: 0.26;
+}
+
+html[data-theme-preset="FINAL"] :is(.home-metric-tile, .home-now-card, .home-panel, .home-week-heatmap) {
+  border-radius: 3px !important;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile::before {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 14px;
+  width: 2px;
+  background: var(--final-beryllium-edge);
+  content: "";
+  opacity: 0.64;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile > svg {
+  color: rgb(var(--preset-secondary-rgb) / 0.78);
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile:nth-of-type(1)::after {
+  content: "PTM / TRANSPARENCY";
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile:nth-of-type(2)::after {
+  content: "TETRA-CHAMBER";
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile:nth-of-type(3)::after {
+  content: "8K TIMING";
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile:nth-of-type(4)::after {
+  content: "KAWASAKI QA";
+}
+
+html[data-theme-preset="FINAL"] :is(.track-row, .album-track-row, .artist-track-row, .queue-row, .folder-root-button, .folder-tree-node) {
+  position: relative;
+}
+
+html[data-theme-preset="FINAL"] :is(.track-row, .album-track-row, .artist-track-row)::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 34px;
+  height: 1px;
+  background: var(--final-beryllium-edge);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 140ms ease, width 140ms ease;
+}
+
+html[data-theme-preset="FINAL"] :is(.track-row:hover, .album-track-row:hover, .artist-track-row:hover)::before,
+html[data-theme-preset="FINAL"] :is(.track-row[data-playing="true"], .track-row[data-selected="true"], .album-track-row[data-playing='true'], .artist-track-row[data-playing="true"])::before {
+  width: 52px;
+  opacity: 0.72;
+}
+
+html[data-theme-preset="FINAL"] :is(.track-cover, .download-search-thumb, .download-job-icon, .inbox-track-cover, .inbox-album-art, .queue-now-cover, .queue-row-cover) {
+  outline: 1px solid rgb(255 253 247 / 0.58);
+  outline-offset: -3px;
+}
+
+html[data-theme-preset="FINAL"] .player-bar {
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.54), transparent 28%, rgb(255 255 255 / 0.3)),
+    var(--final-stainless-ridge),
+    rgb(var(--preset-panel-rgb) / 0.9) !important;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .progress-track,
+html[data-theme-preset="FINAL"] .player-bar .progress-track[data-waveform="true"] {
+  background:
+    var(--final-8k-timing-rail),
+    linear-gradient(90deg, rgb(var(--preset-soft-rgb) / 0.78), rgb(var(--preset-panel-rgb) / 0.5)) !important;
+}
+
+html[data-theme-preset="FINAL"] .player-bar .play-button {
+  border-color: rgb(255 245 218 / 0.62) !important;
+  background:
+    radial-gradient(circle at 50% 22%, rgb(255 245 218 / 0.38), transparent 34%),
+    linear-gradient(180deg, #d6ae6a, #805a2b) !important;
+}
+
+/* FINAL home acoustic console: fill the landing view with subtle product-sheet density. */
+html[data-theme-preset="FINAL"] .home-page {
+  position: relative;
+}
+
+html[data-theme-preset="FINAL"] .home-page::before {
+  position: absolute;
+  top: 22px;
+  right: clamp(22px, 3vw, 56px);
+  bottom: 120px;
+  left: clamp(300px, 24vw, 500px);
+  z-index: 0;
+  background:
+    radial-gradient(ellipse at 58% 9%, transparent 0 108px, rgb(var(--preset-accent-rgb) / 0.12) 109px 110px, transparent 111px 176px, rgb(var(--preset-secondary-rgb) / 0.08) 177px 178px, transparent 179px),
+    linear-gradient(90deg, transparent 0 63%, rgb(var(--preset-accent-rgb) / 0.14) 63% 63.08%, transparent 63.16%),
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.12) 0 1px, transparent 1px 18px) right 16% top 28px / 300px 20px no-repeat,
+    repeating-linear-gradient(180deg, rgb(var(--preset-border-rgb) / 0.08) 0 1px, transparent 1px 34px);
+  content: "";
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] .home-page > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme-preset="FINAL"] .home-hero {
+  min-height: 318px;
+  background:
+    radial-gradient(circle at 65% 45%, transparent 0 138px, rgb(var(--preset-accent-rgb) / 0.12) 139px 140px, transparent 141px 198px, rgb(var(--preset-border-rgb) / 0.1) 199px 200px, transparent 201px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.76) 0 35%, transparent 58%),
+    var(--home-hero-bg) !important;
+}
+
+html[data-theme-preset="FINAL"] .home-hero::before {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.24) 0 1px, transparent 1px 100%),
+    linear-gradient(180deg, rgb(var(--preset-border-rgb) / 0.1) 0 1px, transparent 1px 100%),
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.18) 0 1px, transparent 1px 12px) right 42px bottom 24px / 420px 22px no-repeat,
+    linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.2), transparent) right 42px bottom 62px / 430px 1px no-repeat;
+  background-size: 48px 48px, 48px 48px, auto, auto;
+  opacity: 0.8;
+}
+
+html[data-theme-preset="FINAL"] .home-hero-copy {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+html[data-theme-preset="FINAL"] .home-hero h1 {
+  text-shadow:
+    0 1px 0 rgb(255 253 247 / 0.72),
+    0 12px 26px rgb(var(--preset-shadow-rgb) / 0.08);
+}
+
+html[data-theme-preset="FINAL"] .home-now-card {
+  min-height: 286px;
+  padding: 22px 24px 20px;
+}
+
+html[data-theme-preset="FINAL"] .home-now-card::before {
+  right: 24px;
+  bottom: 18px;
+  left: 24px;
+  width: auto;
+  height: 1px;
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.42), transparent 32%, rgb(var(--preset-border-rgb) / 0.16) 58%, transparent);
+  opacity: 0.78;
+}
+
+html[data-theme-preset="FINAL"] .home-now-card::after {
+  right: 24px;
+  bottom: 26px;
+  left: auto;
+  width: min(72%, 390px);
+  height: 22px;
+  background:
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.26) 0 2px, transparent 2px 12px),
+    linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.14), transparent);
+  opacity: 0.62;
+}
+
+html[data-theme-preset="FINAL"] .home-now-card .home-artwork {
+  border-radius: 4px !important;
+  box-shadow:
+    0 18px 36px rgb(var(--preset-shadow-rgb) / 0.13),
+    0 0 0 1px rgb(255 253 247 / 0.68),
+    inset 0 1px 0 rgb(255 255 255 / 0.46) !important;
+}
+
+html[data-theme-preset="FINAL"] .home-now-copy {
+  position: relative;
+  padding-top: 18px;
+}
+
+html[data-theme-preset="FINAL"] .home-now-copy::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 170px;
+  height: 2px;
+  background: var(--final-beryllium-edge);
+  content: "";
+  opacity: 0.78;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-grid {
+  gap: 14px;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile {
+  grid-template-columns: 54px minmax(0, 1fr);
+  min-height: 76px;
+  gap: 12px;
+  align-items: center;
+  padding: 18px 18px 16px 24px;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.66), transparent 42%),
+    var(--final-transparent-glass),
+    var(--final-stainless-ridge) !important;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile > svg {
+  width: 42px;
+  height: 42px;
+  justify-self: center;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile div {
+  min-width: 0;
+  padding-right: 8px;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile strong {
+  font-size: 25px;
+}
+
+html[data-theme-preset="FINAL"] .home-metric-tile:hover {
+  background:
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.1), transparent 74%),
+    var(--final-transparent-glass),
+    var(--final-stainless-ridge) !important;
+}
+
+html[data-theme-preset="FINAL"] .home-panel {
+  position: relative;
+  padding: 20px;
+}
+
+html[data-theme-preset="FINAL"] .home-section-header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgb(var(--preset-border-rgb) / 0.14);
+}
+
+html[data-theme-preset="FINAL"] .home-section-header::before {
+  width: 78px;
+  height: 18px;
+  margin-right: 8px;
+  background: var(--final-8k-timing-rail);
+  content: "";
+  opacity: 0.5;
+}
+
+html[data-theme-preset="FINAL"] .home-section-header h2 {
+  font-family: Georgia, "Times New Roman", "Microsoft YaHei", serif;
+  font-size: 19px;
+  font-weight: 760;
+}
+
+html[data-theme-preset="FINAL"] :is(.home-cover-card, .home-recommend-rail .home-cover-card) {
+  position: relative;
+  padding: 8px;
+  border: 1px solid rgb(var(--preset-border-rgb) / 0.12);
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.34), rgb(var(--preset-soft-rgb) / 0.18));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.42),
+    0 12px 24px rgb(var(--preset-shadow-rgb) / 0.055);
+}
+
+html[data-theme-preset="FINAL"] .home-cover-card::after {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  left: 10px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.32), transparent);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+html[data-theme-preset="FINAL"] .home-cover-card:hover::after {
+  opacity: 1;
+}
+
+html[data-theme-preset="FINAL"] .home-cover-card img,
+html[data-theme-preset="FINAL"] .home-cover-card .deferred-wall-image {
+  border-radius: 3px !important;
+}
+
+html[data-theme-preset="FINAL"] .home-week-summary {
+  gap: 10px;
+}
+
+html[data-theme-preset="FINAL"] .home-week-stat {
+  min-height: 82px;
+  border-radius: 3px !important;
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / 0.54), rgb(var(--preset-soft-rgb) / 0.38)),
+    var(--final-stainless-ridge) !important;
+}
+
+html[data-theme-preset="FINAL"] .home-week-heatmap {
+  padding: 14px;
+  border-radius: 3px !important;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.5), rgb(var(--preset-soft-rgb) / 0.32)),
+    var(--final-machined-grid) !important;
+}
+
+/* FINAL lyrics page: warm acoustic paper, clear active line, and precision timing rails. */
+html[data-theme-preset="FINAL"] .page-surface:has(.lyrics-page) {
+  background:
+    linear-gradient(90deg, rgb(23 21 18 / 0.035) 0 1px, transparent 1px 100%) 0 0 / 44px 44px,
+    linear-gradient(180deg, rgb(var(--preset-border-rgb) / 0.07) 0 1px, transparent 1px 100%) 0 0 / 44px 44px,
+    var(--final-machined-grid),
+    linear-gradient(135deg, #f3f1eb 0%, #e5dfd3 58%, #fffaf0 100%) !important;
+}
+
+html[data-theme-preset="FINAL"] .lyrics-page {
+  --lyrics-readable-color: #2d281f;
+  --lyrics-context-opacity: 0.34;
+  --lyrics-active-gradient:
+    linear-gradient(92deg, #171511 0%, #8b642f 54%, #d6ae6a 100%);
+  --lyrics-active-shadow:
+    0 1px 0 rgb(255 253 247 / 0.76),
+    0 10px 28px rgb(var(--preset-shadow-rgb) / 0.12);
+  color: #2d281f;
+}
+
+html[data-theme-preset="FINAL"] .lyrics-backdrop {
+  background:
+    radial-gradient(circle at 72% 22%, rgb(var(--preset-accent-rgb) / 0.12), transparent 28%),
+    radial-gradient(circle at 22% 84%, rgb(var(--preset-secondary-rgb) / 0.08), transparent 30%),
+    linear-gradient(90deg, rgb(23 21 18 / 0.04) 0 1px, transparent 1px 100%) 0 0 / 42px 42px,
+    var(--final-camera-grain) 0 0 / 72px 72px repeat,
+    linear-gradient(135deg, #f3f1eb 0%, #e6e0d5 54%, #fffaf0 100%);
+}
+
+html[data-theme-preset="FINAL"] .lyrics-backdrop::before {
+  background:
+    radial-gradient(ellipse at 50% 43%, rgb(255 253 247 / 0.78), rgb(255 253 247 / 0.46) 34%, transparent 64%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.12), rgb(229 224 215 / 0.36) 72%, rgb(218 211 198 / 0.54));
+}
+
+html[data-theme-preset="FINAL"] .lyrics-backdrop::after {
+  filter: blur(76px) brightness(0.95) saturate(0.9);
+  opacity: 0.1;
+}
+
+html[data-theme-preset="FINAL"] .lyrics-page::before {
+  position: absolute;
+  top: 78px;
+  right: clamp(38px, 6vw, 120px);
+  z-index: 1;
+  width: min(34vw, 520px);
+  height: 86px;
+  background:
+    linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.18), transparent) right 0 top 28px / 340px 1px no-repeat,
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.2) 0 1px, transparent 1px 12px) right 0 bottom 10px / 420px 22px no-repeat;
+  content: "";
+  opacity: 0.58;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] :is(.lyrics-left-panel, .lyrics-mv-panel, .lyrics-track-header, .lyrics-match-panel, .lyrics-offset-controls) {
+  color: #2d281f;
+}
+
+html[data-theme-preset="FINAL"] .lyrics-back-button {
+  color: rgb(var(--preset-secondary-rgb) / 0.78);
+  border-color: rgb(var(--preset-border-rgb) / 0.18);
+  background:
+    linear-gradient(135deg, rgb(255 253 247 / 0.68), rgb(var(--preset-soft-rgb) / 0.42)) !important;
+}
+
+html[data-theme-preset="FINAL"] .lyrics-scroll {
+  scrollbar-color: rgb(var(--preset-accent-rgb) / 0.42) transparent;
+}
+
+html[data-theme-preset="FINAL"] .lyrics-line {
+  color: rgb(45 40 31 / 0.74);
+  text-shadow: 0 1px 0 rgb(255 253 247 / 0.64);
+}
+
+html[data-theme-preset="FINAL"] .lyrics-line[data-focus-distance="1"] {
+  opacity: 0.54;
+}
+
+html[data-theme-preset="FINAL"] .lyrics-line[data-focus-distance="2"] {
+  opacity: 0.28;
+}
+
+html[data-theme-preset="FINAL"] .lyrics-line[data-focus-distance="3"],
+html[data-theme-preset="FINAL"] .lyrics-line[data-focus-distance="4"] {
+  opacity: 0.16;
+}
+
+html[data-theme-preset="FINAL"] .lyrics-line[data-active="true"] {
+  color: #171511;
+  opacity: 1;
+}
+
+html[data-theme-preset="FINAL"] .lyrics-line[data-active="true"] span {
+  background-image: var(--lyrics-active-gradient);
+  text-shadow: var(--lyrics-active-shadow);
+}
+
+html[data-theme-preset="FINAL"] .lyrics-line small,
+html[data-theme-preset="FINAL"] .lyrics-line em {
+  color: rgb(var(--preset-secondary-rgb) / 0.54);
+  text-shadow: 0 1px 0 rgb(255 253 247 / 0.58);
+}
+
+html[data-theme-preset="FINAL"] .lyrics-line[data-active="true"] small,
+html[data-theme-preset="FINAL"] .lyrics-line[data-active="true"] em {
+  color: rgb(76 54 28 / 0.72);
+}
+
+html[data-theme-preset="FINAL"] .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-track-header {
+  border-color: rgb(var(--preset-border-rgb) / 0.18);
+  background:
+    var(--final-transparent-glass),
+    var(--final-stainless-ridge),
+    rgb(var(--preset-panel-rgb) / 0.52) !important;
+}
+
+html[data-theme-preset="FINAL"] :is(.lyrics-match-panel, .lyrics-offset-controls) {
+  border-color: rgb(var(--preset-border-rgb) / 0.2);
+  border-radius: 4px;
+  background:
+    var(--final-transparent-glass),
+    rgb(var(--preset-panel-rgb) / 0.48) !important;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-bar {
+  min-height: 84px;
+  height: 84px;
+  box-sizing: border-box;
+  align-items: center;
+  overflow: visible;
+  padding: 8px 28px 12px !important;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.72), transparent 28%, rgb(255 255 255 / 0.42)),
+    var(--final-stainless-ridge),
+    rgb(var(--preset-panel-rgb) / 0.92) !important;
+  box-shadow:
+    0 -18px 40px rgb(var(--preset-shadow-rgb) / 0.08),
+    inset 0 1px 0 rgb(255 255 255 / 0.58) !important;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-now {
+  display: none !important;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-center {
+  grid-column: 2;
+  align-self: center;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .transport {
+  align-items: center;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .progress-row {
+  width: 100%;
+  min-width: 0;
+}
+
+html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host {
+  bottom: clamp(18px, 2.4vh, 30px);
+}
+
+html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar {
+  min-height: 72px;
+  overflow: visible;
+}
+
+/* FINAL lyrics transport repair: keep the bottom deck compact and prevent the page header from colliding with it. */
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-left-panel {
+  grid-template-rows: clamp(54px, 8vh, 86px) minmax(0, 1fr) 0 !important;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-scroll {
+  grid-row: 1 / 4;
+  padding-bottom: clamp(124px, 15vh, 168px) !important;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-track-header {
+  display: none !important;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-bar {
+  height: 96px;
+  min-height: 96px;
+  grid-template-columns: minmax(260px, 430px) minmax(360px, 620px) minmax(220px, 1fr);
+  gap: clamp(14px, 2vw, 30px);
+  padding: 10px 26px 12px !important;
+  overflow: hidden !important;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-bar::after {
+  top: 16px;
+  width: min(27vw, 380px);
+  opacity: 0.22;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-now {
+  display: flex !important;
+  grid-column: 1;
+  max-width: 430px;
+  min-height: 72px;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-cover {
+  width: 72px;
+  height: 72px;
+  border-radius: 5px !important;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-track-copy {
+  gap: 3px;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-track-copy strong {
+  font-size: 15px;
+  line-height: 1.12;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-track-copy > span {
+  font-size: 12px;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-tags {
+  max-height: 21px;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-center {
+  grid-column: 2;
+  align-self: center;
+}
+
+html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .output-status {
+  grid-column: 3;
+  align-self: center;
+  justify-self: end;
+}
+
+@media (max-width: 980px) {
+  html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-bar {
+    height: 86px;
+    min-height: 86px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-now,
+  html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .output-status {
+    display: none !important;
+  }
+
+  html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-center {
+    grid-column: 1;
+  }
+}
+
+/* FINAL album detail correction: a centered product sheet instead of a stretched empty drafting table. */
+html[data-theme-preset="FINAL"] .album-detail-page {
+  --album-detail-page-x: clamp(22px, 3vw, 38px);
+  --album-detail-track-content-x: clamp(18px, 2vw, 28px);
+  width: min(100%, 1360px);
+  margin-inline: auto;
+  padding-bottom: 132px;
+  gap: 14px;
+  overflow: visible;
+  background:
+    linear-gradient(90deg, rgb(23 21 18 / 0.035) 0 1px, transparent 1px 100%) 0 0 / 42px 42px,
+    linear-gradient(180deg, rgb(var(--preset-border-rgb) / 0.07) 0 1px, transparent 1px 100%) 0 0 / 42px 42px,
+    radial-gradient(circle at 70% 8%, rgb(var(--preset-accent-rgb) / 0.08), transparent 24%),
+    var(--echo-polish-page-bg),
+    var(--theme-app-bg) !important;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-page::before {
+  top: 58px;
+  right: 20px;
+  width: 260px;
+  height: 98px;
+  background:
+    var(--final-logo-mark) right top / 46px 43px no-repeat,
+    linear-gradient(90deg, transparent, rgb(var(--preset-accent-rgb) / 0.2), transparent) right 58px top 18px / 130px 1px no-repeat,
+    repeating-linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.2) 0 1px, transparent 1px 13px) right 58px bottom 8px / 160px 12px no-repeat;
+  color: rgb(var(--preset-secondary-rgb) / 0.17);
+  content: "D8000 / AFDS\A A8000 / BERYLLIUM";
+  font-size: 9px;
+  opacity: 0.58;
+}
+
+html[data-theme-preset="FINAL"] .album-back-button {
+  left: var(--album-detail-page-x);
+}
+
+html[data-theme-preset="FINAL"] .album-detail-hero {
+  width: 100%;
+  min-height: 300px;
+  grid-template-columns: minmax(220px, 292px) minmax(280px, 470px) minmax(210px, 270px);
+  justify-content: start;
+  gap: clamp(26px, 3vw, 44px);
+  padding: 26px clamp(22px, 3vw, 34px);
+  overflow: hidden;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-hero::after {
+  position: absolute;
+  top: 22px;
+  right: clamp(290px, 23vw, 360px);
+  bottom: 22px;
+  z-index: 0;
+  width: min(30vw, 330px);
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 70px, rgb(var(--preset-accent-rgb) / 0.12) 71px 72px, transparent 73px 116px, rgb(var(--preset-border-rgb) / 0.12) 117px 118px, transparent 119px),
+    linear-gradient(90deg, rgb(var(--preset-accent-rgb) / 0.16), transparent 68%) left 50% / 100% 1px no-repeat;
+  content: "";
+  opacity: 0.48;
+  pointer-events: none;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-cover {
+  width: min(292px, 21vw);
+  min-width: 220px;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-console {
+  max-width: 470px;
+  gap: 16px;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-copy h1 {
+  max-width: 440px;
+  font-size: clamp(38px, 3.2vw, 58px);
+  line-height: 0.98;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-meta {
+  max-width: 420px;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-facts {
+  width: min(100%, 270px);
+  align-self: center;
+  padding: 18px 16px;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-track-console {
+  width: 100%;
+  max-width: 100%;
+  margin-inline: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgb(var(--preset-border-rgb) / 0.2) !important;
+}
+
+html[data-theme-preset="FINAL"] .album-detail-tabs {
+  justify-content: flex-start;
+  gap: 26px;
+  min-height: 42px;
+  padding-inline: var(--album-detail-track-content-x);
+}
+
+html[data-theme-preset="FINAL"] .album-detail-tabs::after {
+  right: var(--album-detail-track-content-x);
+  width: min(24vw, 260px);
+  opacity: 0.38;
+}
+
+html[data-theme-preset="FINAL"] .album-track-section {
+  gap: 8px;
+}
+
+html[data-theme-preset="FINAL"] .album-track-toolbar {
+  padding-top: 10px;
+}
+
+html[data-theme-preset="FINAL"] .album-track-header,
+html[data-theme-preset="FINAL"] .album-track-row {
+  grid-template-columns: 46px minmax(260px, 1fr) minmax(180px, 260px) 62px 30px;
+  gap: 16px;
+}
+
+html[data-theme-preset="FINAL"] .album-track-row {
+  min-height: 52px;
+}
+
+html[data-theme-preset="FINAL"] .album-track-tags em {
+  color: rgb(var(--preset-secondary-rgb) / 0.72);
+}
+
+html[data-theme-preset="FINAL"] .album-related-library {
+  padding: 16px var(--album-detail-track-content-x) 18px;
+  border-top-color: rgb(var(--preset-border-rgb) / 0.16);
+}
+
+html[data-theme-preset="FINAL"] .album-related-album-strip {
+  grid-auto-columns: minmax(120px, 148px);
+  gap: 16px;
+  padding-bottom: 4px;
+}
+
+html[data-theme-preset="FINAL"] .album-related-album-cover {
+  border: 0 !important;
+  border-radius: 4px !important;
+  box-shadow:
+    0 12px 24px rgb(var(--preset-shadow-rgb) / 0.1),
+    inset 0 0 0 1px rgb(255 255 255 / 0.3) !important;
+}
+
+html[data-theme-preset="FINAL"] .album-related-album-copy strong {
+  font-size: 12px;
+}
+
+html[data-theme-preset="FINAL"] .album-related-album-copy span,
+html[data-theme-preset="FINAL"] .album-related-album-copy small {
+  font-size: 11px;
+}
+
+@media (max-width: 1180px) {
+  html[data-theme-preset="FINAL"] .album-detail-hero {
+    grid-template-columns: minmax(200px, 270px) minmax(260px, 1fr);
+  }
+
+  html[data-theme-preset="FINAL"] .album-detail-hero::after,
+  html[data-theme-preset="FINAL"] .album-detail-facts {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  html[data-theme-preset="FINAL"] .album-detail-page {
+    width: 100%;
+    padding-inline: 18px;
+  }
+
+  html[data-theme-preset="FINAL"] .album-detail-hero {
+    grid-template-columns: 1fr;
+  }
+
+  html[data-theme-preset="FINAL"] .album-detail-cover {
+    width: min(100%, 320px);
+  }
+
+  html[data-theme-preset="FINAL"] .album-track-header,
+  html[data-theme-preset="FINAL"] .album-track-row {
+    grid-template-columns: 36px minmax(0, 1fr) 56px 28px;
   }
 }

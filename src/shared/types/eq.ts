@@ -117,3 +117,25 @@ export type EqProfileBindingInfo = {
   profileId: string;
   profileName: string;
 } | null;
+
+export type RoomCorrectionStatus = 'empty' | 'loaded' | 'active' | 'error';
+
+export type RoomCorrectionChannelMode = 'none' | 'mono' | 'stereo';
+
+export type RoomCorrectionState = {
+  enabled: boolean;
+  status: RoomCorrectionStatus;
+  irId: string | null;
+  irName: string | null;
+  channelMode: RoomCorrectionChannelMode;
+  sampleRate: number | null;
+  tapCount: number;
+  trimDb: number;
+  latencySamples: number;
+  clippingRisk: boolean;
+  error: string | null;
+};
+
+export const roomCorrectionMinTrimDb = -24;
+export const roomCorrectionMaxTrimDb = 6;
+export const roomCorrectionMaxTaps = 8192;

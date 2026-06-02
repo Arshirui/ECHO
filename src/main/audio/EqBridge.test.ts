@@ -56,6 +56,21 @@ const createEqControlServer = async (
   let responseBands = (options.responseBands ?? createBridge().getState().bands).map((band) => ({ ...band }));
   let responseEnabled = true;
   let responsePreampDb = 0;
+  let roomCorrectionState = {
+    type: 'roomCorrection:state',
+    ok: true,
+    enabled: false,
+    status: 'empty',
+    irId: '',
+    irName: '',
+    channelMode: 'none',
+    sampleRate: 0,
+    tapCount: 0,
+    trimDb: 0,
+    latencySamples: 0,
+    clippingRisk: false,
+    error: '',
+  };
   const clients: net.Socket[] = [];
   const server = net.createServer((socket) => {
     sockets.push(socket);
@@ -94,6 +109,31 @@ const createEqControlServer = async (
           }
           if (message.type === 'channelBalance.setState') {
             socket.write(`${JSON.stringify({ type: 'channelBalance:state' })}\n`);
+          } else if (message.type === 'roomCorrection.loadIr') {
+            roomCorrectionState = {
+              ...roomCorrectionState,
+              status: roomCorrectionState.enabled ? 'active' : 'loaded',
+              irId: String(message.irId ?? ''),
+              irName: String(message.irName ?? ''),
+              channelMode: 'mono',
+              sampleRate: 48000,
+              tapCount: 128,
+              error: '',
+            };
+            socket.write(`${JSON.stringify(roomCorrectionState)}\n`);
+          } else if (message.type === 'roomCorrection.setEnabled') {
+            roomCorrectionState = {
+              ...roomCorrectionState,
+              enabled: message.enabled === true,
+              status: roomCorrectionState.irId ? message.enabled === true ? 'active' : 'loaded' : 'empty',
+            };
+            socket.write(`${JSON.stringify(roomCorrectionState)}\n`);
+          } else if (message.type === 'roomCorrection.setTrim') {
+            roomCorrectionState = { ...roomCorrectionState, trimDb: Number(message.trimDb ?? 0) };
+            socket.write(`${JSON.stringify(roomCorrectionState)}\n`);
+          } else if (message.type === 'roomCorrection.clear') {
+            roomCorrectionState = { ...roomCorrectionState, enabled: false, status: 'empty', irId: '', irName: '', channelMode: 'none', sampleRate: 0, tapCount: 0, error: '' };
+            socket.write(`${JSON.stringify(roomCorrectionState)}\n`);
           } else {
             socket.write(`${JSON.stringify({ type: 'eq:state', enabled: responseEnabled, preampDb: responsePreampDb, bands: responseBands })}\n`);
           }
@@ -223,6 +263,72 @@ describe('EqBridge protocol validation', () => {
       expect.objectContaining({ type: 'eq:set-band-filter-type', band: 3, filterType: 'lowShelf' }),
       expect.objectContaining({ type: 'eq:set-band-enabled', band: 3, enabled: false }),
     ]));
+  });
+
+  it('does not send optional DSP sync commands when Room Correction and channel balance are default off', async () => {
+    const bridge = createBridge();
+    const server = await createEqControlServer();
+    bridge.connect(server.port);
+
+    await expect.poll(() => server.messages.some((message) => message.type === 'eq:set-preset')).toBe(true);
+
+    expect(server.messages.some((message) => String(message.type).startsWith('roomCorrection.'))).toBe(false);
+    expect(server.messages.some((message) => String(message.type).startsWith('channelBalance.'))).toBe(false);
+  });
+
+  it('imports room correction WAV files and sends the copied IR to native control', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'echo-next-eq-'));
+    tempDirs.push(dir);
+    const sourceIr = join(dir, 'desk-ir.wav');
+    writeFileSync(sourceIr, Buffer.from('RIFF----WAVEfmt '));
+    const bridge = new EqBridge(dir);
+    const server = await createEqControlServer();
+    bridge.connect(server.port);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const state = await bridge.importRoomCorrectionIr(sourceIr);
+
+    expect(state).toMatchObject({
+      status: 'loaded',
+      irName: 'desk-ir',
+      channelMode: 'mono',
+      sampleRate: 48000,
+      tapCount: 128,
+    });
+    const loadMessage = server.messages.find((message) => message.type === 'roomCorrection.loadIr');
+    expect(loadMessage).toEqual(expect.objectContaining({
+      irId: state.irId,
+      irName: 'desk-ir',
+    }));
+    expect(String(loadMessage?.path)).toContain('room-correction');
+    expect(existsSync(String(loadMessage?.path))).toBe(true);
+  });
+
+  it('persists room correction trim and enabled state independently from EQ presets', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'echo-next-eq-'));
+    tempDirs.push(dir);
+    const sourceIr = join(dir, 'room.wav');
+    writeFileSync(sourceIr, Buffer.from('RIFF----WAVEfmt '));
+    const bridge = new EqBridge(dir);
+    const server = await createEqControlServer();
+    bridge.connect(server.port);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await bridge.importRoomCorrectionIr(sourceIr);
+    await bridge.setRoomCorrectionTrim(-99);
+    const enabled = await bridge.setRoomCorrectionEnabled(true);
+
+    expect(enabled).toMatchObject({ enabled: true, status: 'active', trimDb: -24 });
+    expect(server.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'roomCorrection.setTrim', trimDb: -24 }),
+      expect.objectContaining({ type: 'roomCorrection.setEnabled', enabled: true }),
+    ]));
+
+    const reloaded = new EqBridge(dir);
+    expect(reloaded.getRoomCorrectionState()).toMatchObject({ enabled: true, irName: 'room', trimDb: -24 });
+
+    const cleared = await bridge.clearRoomCorrection();
+    expect(cleared).toMatchObject({ enabled: false, status: 'empty', irId: null });
   });
 
   it('backs up old EQ files before first Phase 2 format write', async () => {

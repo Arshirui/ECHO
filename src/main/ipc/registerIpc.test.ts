@@ -23,6 +23,7 @@ const destroyTrayMock = vi.fn();
 const fromWebContentsMock = vi.fn();
 const refreshGlobalShortcutRegistrationMock = vi.fn(() => null);
 const refreshDataBackupSchedulerMock = vi.fn();
+const subscribeDataBackupProgressMock = vi.fn(() => () => undefined);
 const getDataBackupStatusMock = vi.fn(() => ({
   enabled: false,
   directory: null,
@@ -32,6 +33,7 @@ const getDataBackupStatusMock = vi.fn(() => ({
   lastError: null,
   nextBackupAt: null,
   running: false,
+  progress: null,
 }));
 const runDataBackupNowMock = vi.fn();
 const importEchoUserDataBackupMock = vi.fn();
@@ -167,6 +169,7 @@ vi.mock('../app/dataBackup', () => ({
   importEchoUserDataBackup: importEchoUserDataBackupMock,
   refreshDataBackupScheduler: refreshDataBackupSchedulerMock,
   runDataBackupNow: runDataBackupNowMock,
+  subscribeDataBackupProgress: subscribeDataBackupProgressMock,
 }));
 
 vi.mock('../network/proxySettings', () => ({
@@ -276,6 +279,7 @@ describe('app IPC cover cache directory', () => {
     fromPartitionMock.mockClear();
     refreshGlobalShortcutRegistrationMock.mockClear();
     refreshDataBackupSchedulerMock.mockClear();
+    subscribeDataBackupProgressMock.mockClear();
     getDataBackupStatusMock.mockClear();
     runDataBackupNowMock.mockReset();
     importEchoUserDataBackupMock.mockReset();

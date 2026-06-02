@@ -13,6 +13,7 @@ import type { TaskbarPlaybackStatus } from '../shared/types/taskbarPlayback';
 import type {
   DataBackupExportResult,
   DataBackupImportResult,
+  DataBackupProgress,
   DataBackupStatus,
   DataPackageExportResult,
   SettingsImportResult,
@@ -35,6 +36,7 @@ import type {
   EqSetBandGainRequest,
   EqSetBandQRequest,
   EqState,
+  RoomCorrectionState,
 } from '../shared/types/eq';
 import type { GlobalShortcutAction, GlobalShortcutValidationResult } from '../shared/types/globalShortcuts';
 import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../shared/types/desktopLyrics';
@@ -292,6 +294,7 @@ export type EchoApi = {
     exportDataPackage: () => Promise<DataPackageExportResult | null>;
     chooseDataBackupDirectory: () => Promise<string | null>;
     getDataBackupStatus: () => Promise<DataBackupStatus>;
+    onDataBackupProgress: (handler: (progress: DataBackupProgress) => void) => () => void;
     runDataBackupNow: () => Promise<DataBackupExportResult>;
     importDataBackup: () => Promise<DataBackupImportResult | null>;
     openDataBackupDirectory: () => Promise<void>;
@@ -789,6 +792,11 @@ export type EchoApi = {
     getChannelBalanceState: () => Promise<ChannelBalanceState>;
     setChannelBalanceState: (patch: Partial<ChannelBalanceState>) => Promise<ChannelBalanceState>;
     resetChannelBalance: () => Promise<ChannelBalanceState>;
+    getRoomCorrectionState: () => Promise<RoomCorrectionState>;
+    importRoomCorrectionIr: () => Promise<RoomCorrectionState | null>;
+    setRoomCorrectionEnabled: (enabled: boolean) => Promise<RoomCorrectionState>;
+    setRoomCorrectionTrim: (trimDb: number) => Promise<RoomCorrectionState>;
+    clearRoomCorrection: () => Promise<RoomCorrectionState>;
   };
 };
 

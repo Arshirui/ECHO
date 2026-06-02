@@ -5,8 +5,8 @@ import {
   channelBalanceMaxGainDb,
   channelBalanceMinGainDb,
 } from '../../../shared/types/audio';
-import type { EqBand, EqFilterType, EqPreset, EqProfile, EqProfileBindingInfo, EqProfileBindingTarget, EqState } from '../../../shared/types/eq';
-import { eqFilterTypes, eqFrequenciesHz, eqMaxFrequencyHz, eqMaxPreampDb, eqMaxQ, eqMinFrequencyHz, eqMinPreampDb, eqMinQ } from '../../../shared/types/eq';
+import type { EqBand, EqFilterType, EqPreset, EqProfile, EqProfileBindingInfo, EqProfileBindingTarget, EqState, RoomCorrectionState } from '../../../shared/types/eq';
+import { eqFilterTypes, eqFrequenciesHz, eqMaxFrequencyHz, eqMaxPreampDb, eqMaxQ, eqMinFrequencyHz, eqMinPreampDb, eqMinQ, roomCorrectionMaxTrimDb, roomCorrectionMinTrimDb } from '../../../shared/types/eq';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
 import { getEqBridge } from '../../utils/echoBridge';
@@ -131,6 +131,27 @@ const eqQPresetValues: Record<EqFilterType, { wide: number; normal: number; narr
   highPass: { wide: 0.5, normal: 0.7, narrow: 1.2 },
   notch: { wide: 3, normal: 6, narrow: 10 },
 };
+
+const fallbackRoomCorrectionState: RoomCorrectionState = {
+  enabled: false,
+  status: 'empty',
+  irId: null,
+  irName: null,
+  channelMode: 'none',
+  sampleRate: null,
+  tapCount: 0,
+  trimDb: 0,
+  latencySamples: 0,
+  clippingRisk: false,
+  error: null,
+};
+const roomCorrectionErrorLabelKeys: Record<string, TranslationKey> = {
+  invalid_impulse: 'settings.eq.room.error.invalidImpulse',
+  invalid_wav: 'settings.eq.room.error.invalidWav',
+  impulse_too_long: 'settings.eq.room.error.tooLong',
+  missing_file: 'settings.eq.room.error.missingFile',
+  missing_ir: 'settings.eq.room.error.missingIr',
+};
 const eqAutoGainStatusKeys: Record<EqAutoGainStatus, TranslationKey> = {
   idle: 'settings.eq.autoGain.status.idle',
   reducing: 'settings.eq.autoGain.status.reducing',
@@ -159,6 +180,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const { t } = useI18n();
   const [state, setState] = useState<EqState>(fallbackState);
   const [channelBalance, setChannelBalance] = useState<ChannelBalanceState>(fallbackChannelBalanceState);
+  const [roomCorrection, setRoomCorrection] = useState<RoomCorrectionState>(fallbackRoomCorrectionState);
   const [presets, setPresets] = useState<EqPreset[]>([]);
   const [profiles, setProfiles] = useState<EqProfile[]>([]);
   const [profileName, setProfileName] = useState('');
@@ -215,8 +237,8 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const estimatedOutputPeakDb = audioLevels?.estimatedOutputPeakDb ?? null;
   const realtimeLevelClippingRisk = estimatedOutputPeakDb !== null && estimatedOutputPeakDb >= 0;
   const realtimeLevelClipped = (audioLevels?.clipCount ?? 0) > 0;
-  const clippingRisk = Boolean(state.clippingRisk || channelBalance.clippingRisk || audioStatus?.clippingRisk || realtimeLevelClippingRisk || realtimeLevelClipped);
-  const eqOrBalanceEnabled = state.enabled || channelBalance.enabled;
+  const clippingRisk = Boolean(state.clippingRisk || roomCorrection.clippingRisk || channelBalance.clippingRisk || audioStatus?.clippingRisk || realtimeLevelClippingRisk || realtimeLevelClipped);
+  const eqOrBalanceEnabled = state.enabled || roomCorrection.enabled || channelBalance.enabled;
   const dspActive = Boolean(audioStatus?.dspActive || eqOrBalanceEnabled);
   const recommendedPreampDb = computeRecommendedPreamp(state);
   const maxBandGainDb = computeMaxBandGainDb(state.bands);
@@ -232,6 +254,15 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const selectedPresetMetadata = describePreset(state.presetId);
   const needsSafePreamp = estimatedPeakGainDb > 0 || clippingRisk;
   const autoGainActive = autoGainEnabled && (autoGainStatus === 'reducing' || autoGainStatus === 'recovering' || autoGainStatus === 'clipping');
+  const roomCorrectionStatusLabel = roomCorrection.error
+    ? t(roomCorrectionErrorLabelKeys[roomCorrection.error] ?? 'settings.eq.room.error')
+    : roomCorrection.status === 'active'
+      ? t('settings.eq.room.active')
+      : roomCorrection.status === 'loaded'
+        ? t('settings.eq.room.loaded')
+        : roomCorrection.status === 'error'
+          ? t('settings.eq.room.error')
+          : t('settings.eq.room.empty');
   const currentOutputTarget: EqProfileBindingTarget = {
     outputMode: audioStatus?.outputMode ?? 'shared',
     outputBackend: audioStatus?.outputBackend ?? null,
@@ -253,12 +284,13 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         return;
       }
 
-      const [nextState, nextPresets, nextProfiles, nextBinding, nextChannelBalance] = await Promise.all([
+      const [nextState, nextPresets, nextProfiles, nextBinding, nextChannelBalance, nextRoomCorrection] = await Promise.all([
         eq.getState(),
         eq.listPresets(),
         eq.listProfiles(),
         eq.getProfileBinding(currentOutputTarget),
         eq.getChannelBalanceState(),
+        eq.getRoomCorrectionState?.() ?? Promise.resolve(fallbackRoomCorrectionState),
       ]);
       setState(nextState);
       setPresets(nextPresets);
@@ -268,6 +300,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         setSelectedProfileId(nextProfiles[0].id);
       }
       setChannelBalance(nextChannelBalance);
+      setRoomCorrection(nextRoomCorrection);
       setError(null);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
@@ -334,6 +367,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const commitChannelBalance = useCallback(
     (nextState: ChannelBalanceState): void => {
       setChannelBalance(nextState);
+      onAudioStatusRefresh?.();
+    },
+    [onAudioStatusRefresh],
+  );
+
+  const commitRoomCorrection = useCallback(
+    (nextState: RoomCorrectionState): void => {
+      setRoomCorrection(nextState);
       onAudioStatusRefresh?.();
     },
     [onAudioStatusRefresh],
@@ -950,6 +991,74 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     }
   };
 
+  const importRoomCorrectionIr = async (): Promise<void> => {
+    const eq = getEqBridge();
+
+    if (!eq?.importRoomCorrectionIr) {
+      setError(t('settings.eq.error.bridgeControlEq'));
+      return;
+    }
+
+    try {
+      const imported = await eq.importRoomCorrectionIr();
+      if (imported) {
+        commitRoomCorrection(imported);
+      }
+      setError(null);
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : String(importError));
+    }
+  };
+
+  const toggleRoomCorrection = (): void => {
+    const eq = getEqBridge();
+
+    if (!eq?.setRoomCorrectionEnabled) {
+      setError(t('settings.eq.error.bridgeControlEq'));
+      return;
+    }
+
+    void eq.setRoomCorrectionEnabled(!roomCorrection.enabled)
+      .then((nextState) => {
+        commitRoomCorrection(nextState);
+        setError(null);
+      })
+      .catch((toggleError: unknown) => setError(toggleError instanceof Error ? toggleError.message : String(toggleError)));
+  };
+
+  const setRoomCorrectionTrim = (trimDb: number): void => {
+    const eq = getEqBridge();
+
+    if (!eq?.setRoomCorrectionTrim) {
+      setError(t('settings.eq.error.bridgeControlEq'));
+      return;
+    }
+
+    setRoomCorrection((current) => ({ ...current, trimDb }));
+    void eq.setRoomCorrectionTrim(trimDb)
+      .then((nextState) => {
+        commitRoomCorrection(nextState);
+        setError(null);
+      })
+      .catch((trimError: unknown) => setError(trimError instanceof Error ? trimError.message : String(trimError)));
+  };
+
+  const clearRoomCorrection = (): void => {
+    const eq = getEqBridge();
+
+    if (!eq?.clearRoomCorrection) {
+      setError(t('settings.eq.error.bridgeControlEq'));
+      return;
+    }
+
+    void eq.clearRoomCorrection()
+      .then((nextState) => {
+        commitRoomCorrection(nextState);
+        setError(null);
+      })
+      .catch((clearError: unknown) => setError(clearError instanceof Error ? clearError.message : String(clearError)));
+  };
+
   const overwritePreset = async (): Promise<void> => {
     if (!canOverwritePreset || !selectedPreset) {
       return;
@@ -1215,13 +1324,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
 
   const { leftDb: leftTotalDb, rightDb: rightTotalDb } = computeEffectiveChannelGains(channelBalance);
   const channelBalanceRisk = leftTotalDb > 0 || rightTotalDb > 0 || Boolean(channelBalance.clippingRisk);
-  const dspSource = state.enabled && channelBalance.enabled
-    ? t('settings.eq.bitPerfect.sourceBoth')
-    : state.enabled
-      ? t('settings.eq.bitPerfect.sourceEq')
-      : channelBalance.enabled
-        ? t('settings.eq.bitPerfect.sourceChannel')
-        : audioStatus?.bitPerfectDisabledReason?.replaceAll('_', ' ') ?? '';
+  const activeDspSourceLabels = [
+    state.enabled ? t('settings.eq.bitPerfect.sourceEq') : null,
+    roomCorrection.enabled ? t('settings.eq.bitPerfect.sourceRoom') : null,
+    channelBalance.enabled ? t('settings.eq.bitPerfect.sourceChannel') : null,
+  ].filter((label): label is string => Boolean(label));
+  const dspSource = activeDspSourceLabels.length
+    ? activeDspSourceLabels.join(' + ')
+    : audioStatus?.bitPerfectDisabledReason?.replaceAll('_', ' ') ?? '';
   const bitPerfectText = dspActive
     ? t('settings.eq.bitPerfect.disabled', { reason: dspSource ? ` (${dspSource})` : '' })
     : t('settings.eq.bitPerfect.readyPath');
@@ -1286,6 +1396,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <strong>{dspActive ? t('common.disabled') : t('common.ready')}</strong>
         </span>
         <span>
+          <em>{t('settings.eq.room.short')}</em>
+          <strong>{roomCorrectionStatusLabel}</strong>
+        </span>
+        <span>
           <em>{t('settings.eq.mode.current')}</em>
           <strong>{eqUiMode === 'pro' ? t('settings.eq.mode.pro') : t('settings.eq.mode.simple')}</strong>
         </span>
@@ -1314,7 +1428,12 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <em>{t('settings.eq.signal.peq')}</em>
             <strong>{state.enabled ? `${activeBandCount}/${state.bands.length}` : t('settings.eq.channel.bypassed')}</strong>
           </span>
-          <span className="eq-signal-node" data-active={state.enabled || channelBalance.enabled} data-risk={clippingRisk}>
+          <span className="eq-signal-node" data-active={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk}>
+            <Waves size={14} aria-hidden="true" />
+            <em>{t('settings.eq.room.short')}</em>
+            <strong>{roomCorrection.enabled ? formatDb(roomCorrection.trimDb) : roomCorrectionStatusLabel}</strong>
+          </span>
+          <span className="eq-signal-node" data-active={state.enabled || roomCorrection.enabled || channelBalance.enabled} data-risk={clippingRisk}>
             <ShieldCheck size={14} aria-hidden="true" />
             <em>{t('settings.eq.signal.limiter')}</em>
             <strong>{clippingRisk ? t('settings.eq.signal.protecting') : t('settings.eq.signal.armed')}</strong>
@@ -1345,6 +1464,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         <div className="eq-status-card">
           <span>{t('settings.eq.status.processor')}</span>
           <strong>{t('settings.eq.status.realtimeIir')}</strong>
+        </div>
+        <div className="eq-status-card" data-active={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk || roomCorrection.status === 'error'}>
+          <span>{t('settings.eq.room.title')}</span>
+          <strong>{roomCorrectionStatusLabel}</strong>
         </div>
         <div className="eq-status-card" data-risk={clippingRisk}>
           <span>{clippingRisk ? t('settings.eq.status.clippingRisk') : t('settings.eq.status.headroom')}</span>
@@ -1458,6 +1581,59 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                   <strong>{t(analyzerStatusKey)}</strong>
                 </span>
               </div>
+            ) : null}
+            {showAdvancedTools ? (
+              <section className="eq-room-correction" data-enabled={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk || roomCorrection.status === 'error'}>
+                <div className="eq-room-correction-header">
+                  <span>
+                    <Waves size={15} aria-hidden="true" />
+                    {t('settings.eq.room.title')}
+                  </span>
+                  <strong>{roomCorrectionStatusLabel}</strong>
+                </div>
+                <div className="eq-room-correction-actions">
+                  <button className="eq-soft-button" type="button" onClick={importRoomCorrectionIr}>
+                    {t('settings.eq.room.import')}
+                  </button>
+                  <button className="eq-soft-button" data-active={roomCorrection.enabled} type="button" disabled={!roomCorrection.irId} onClick={toggleRoomCorrection}>
+                    {roomCorrection.enabled ? t('settings.eq.room.disable') : t('settings.eq.room.enable')}
+                  </button>
+                  <button className="eq-soft-button" type="button" disabled={!roomCorrection.irId} onClick={clearRoomCorrection}>
+                    {t('settings.eq.room.clear')}
+                  </button>
+                </div>
+                <label className="eq-room-correction-trim">
+                  <span>{t('settings.eq.room.trim')}</span>
+                  <input
+                    type="range"
+                    min={roomCorrectionMinTrimDb}
+                    max={roomCorrectionMaxTrimDb}
+                    step="0.1"
+                    value={roomCorrection.trimDb}
+                    disabled={!roomCorrection.irId}
+                    onChange={(event) => setRoomCorrectionTrim(Number(event.currentTarget.value))}
+                  />
+                  <strong>{formatDb(roomCorrection.trimDb)}</strong>
+                </label>
+                <div className="eq-room-correction-details">
+                  <span>
+                    <em>{t('settings.eq.room.ir')}</em>
+                    <strong>{roomCorrection.irName ?? t('settings.eq.room.empty')}</strong>
+                  </span>
+                  <span>
+                    <em>{t('settings.eq.room.channelMode')}</em>
+                    <strong>{roomCorrection.channelMode}</strong>
+                  </span>
+                  <span>
+                    <em>{t('settings.eq.room.sampleRate')}</em>
+                    <strong>{roomCorrection.sampleRate ? `${Math.round(roomCorrection.sampleRate)} Hz` : '--'}</strong>
+                  </span>
+                  <span>
+                    <em>{t('settings.eq.room.tapCount')}</em>
+                    <strong>{roomCorrection.tapCount > 0 ? String(roomCorrection.tapCount) : '--'}</strong>
+                  </span>
+                </div>
+              </section>
             ) : null}
           </div>
           <EqCurveView

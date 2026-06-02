@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Disc3, ExternalLink, FolderOpen, Heart, Info, ListEnd, Loader2, MoreHorizontal, Play, RefreshCw, Star } from 'lucide-react';
+import { ArrowLeft, Disc3, ExternalLink, FolderOpen, Heart, Info, ListEnd, Loader2, MoreHorizontal, Play, Plus, RefreshCw, Star } from 'lucide-react';
 import type { AlbumOnlineInfo, AlbumOnlineInfoRequestOptions, EditableTrackTags, LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent, useLikedTrackIds } from '../../hooks/useLikedMedia';
 import { useAnimatedBackNavigation } from '../../hooks/useAnimatedBackNavigation';
@@ -860,6 +860,40 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
     }
   }, [albumSource, appendTracksToQueue, getAllAlbumTracks, t]);
 
+  const handleAddAlbumToPlaylist = useCallback(async (): Promise<void> => {
+    setAlbumMenuPosition(null);
+    try {
+      setPlayError(null);
+      setTrackActionMessage(null);
+      const library = window.echo?.library;
+      if (!library) {
+        throw new Error(t('albumDetail.tracks.error.desktopBridgeActions'));
+      }
+
+      const playlist = await resolvePlaylistForTrackAdd(library);
+      if (!playlist) {
+        return;
+      }
+
+      const tracks = await getAllAlbumTracks();
+      const localTrackIds = tracks.filter((track) => track.mediaType !== 'streaming').map((track) => track.id);
+      if (localTrackIds.length === 0) {
+        setPlayError('流媒体歌曲不能加入本地歌单，请在流媒体歌单中单独管理。');
+        return;
+      }
+
+      if (library.addTracksToPlaylist) {
+        await library.addTracksToPlaylist(playlist.id, localTrackIds);
+      } else {
+        await Promise.all(localTrackIds.map((trackId) => library.addTrackToPlaylist(playlist.id, trackId)));
+      }
+      window.dispatchEvent(new Event('library:playlists-changed'));
+      setTrackActionMessage(t('albumDetail.tracks.status.addedToPlaylist', { playlist: playlist.name }));
+    } catch (error) {
+      setPlayError(error instanceof Error ? error.message : String(error));
+    }
+  }, [getAllAlbumTracks, t]);
+
   const handleShowAlbumInFolder = useCallback(async (): Promise<void> => {
     setAlbumMenuPosition(null);
     try {
@@ -1647,6 +1681,10 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
           style={{ left: albumMenuPosition.x, top: albumMenuPosition.y }}
           onMouseDown={(event) => event.stopPropagation()}
         >
+          <button className="album-menu-item" role="menuitem" type="button" onClick={() => void handleAddAlbumToPlaylist()}>
+            <Plus size={16} />
+            <span>{t('albumMenu.action.addToPlaylist')}</span>
+          </button>
           <button className="album-menu-item" role="menuitem" type="button" onClick={() => void handleAddAlbumToQueue()}>
             <ListEnd size={16} />
             <span>{t('albumDetail.action.addToQueue')}</span>

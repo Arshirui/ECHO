@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AudioStatus, ChannelBalanceState } from '../../../shared/types/audio';
-import type { EqPreset, EqState } from '../../../shared/types/eq';
+import type { EqPreset, EqState, RoomCorrectionState } from '../../../shared/types/eq';
 import { I18nProvider } from '../../i18n/I18nProvider';
 import { EqPanel } from './EqPanel';
 
@@ -45,6 +45,21 @@ const channelBalanceState = (overrides: Partial<ChannelBalanceState> = {}): Chan
   invertRight: false,
   constantPower: true,
   clippingRisk: false,
+  ...overrides,
+});
+
+const roomCorrectionState = (overrides: Partial<RoomCorrectionState> = {}): RoomCorrectionState => ({
+  enabled: false,
+  status: 'empty',
+  irId: null,
+  irName: null,
+  channelMode: 'none',
+  sampleRate: null,
+  tapCount: 0,
+  trimDb: 0,
+  latencySamples: 0,
+  clippingRisk: false,
+  error: null,
   ...overrides,
 });
 
@@ -159,6 +174,35 @@ beforeEach(() => {
       getChannelBalanceState: vi.fn().mockResolvedValue(channelBalanceState()),
       setChannelBalanceState: vi.fn().mockImplementation((patch) => Promise.resolve(channelBalanceState(patch))),
       resetChannelBalance: vi.fn().mockResolvedValue(channelBalanceState()),
+      getRoomCorrectionState: vi.fn().mockResolvedValue(roomCorrectionState()),
+      importRoomCorrectionIr: vi.fn().mockResolvedValue(roomCorrectionState({
+        enabled: false,
+        status: 'loaded',
+        irId: 'ir-test',
+        irName: 'Desk IR',
+        channelMode: 'stereo',
+        sampleRate: 48000,
+        tapCount: 128,
+      })),
+      setRoomCorrectionEnabled: vi.fn().mockImplementation((enabled: boolean) => Promise.resolve(roomCorrectionState({
+        enabled,
+        status: enabled ? 'active' : 'loaded',
+        irId: 'ir-test',
+        irName: 'Desk IR',
+        channelMode: 'stereo',
+        sampleRate: 48000,
+        tapCount: 128,
+      }))),
+      setRoomCorrectionTrim: vi.fn().mockImplementation((trimDb: number) => Promise.resolve(roomCorrectionState({
+        status: 'loaded',
+        irId: 'ir-test',
+        irName: 'Desk IR',
+        channelMode: 'stereo',
+        sampleRate: 48000,
+        tapCount: 128,
+        trimDb,
+      }))),
+      clearRoomCorrection: vi.fn().mockResolvedValue(roomCorrectionState()),
     },
   } as unknown as Window['echo'];
 });
@@ -201,6 +245,57 @@ describe('EqPanel', () => {
     expect(screen.getByLabelText('Q')).toBeTruthy();
     expect(screen.getByLabelText('EQ profile name')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Store A' })).toBeTruthy();
+  });
+
+  it('shows Room Correction controls in Pro mode and calls the FIR bridge APIs', async () => {
+    const { container } = renderEqPanel();
+    await showAdvancedEqTools();
+
+    expect(screen.getAllByText('Room Correction').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Import IR' }));
+
+    await waitFor(() => expect(window.echo.eq.importRoomCorrectionIr).toHaveBeenCalled());
+    expect(await screen.findByText('Desk IR')).toBeTruthy();
+
+    const trimInput = container.querySelector('.eq-room-correction-trim input');
+    expect(trimInput).toBeTruthy();
+    fireEvent.change(trimInput as HTMLInputElement, { target: { value: '-4.5' } });
+    await waitFor(() => expect(window.echo.eq.setRoomCorrectionTrim).toHaveBeenCalledWith(-4.5));
+
+    const roomButtons = Array.from(container.querySelectorAll('.eq-room-correction-actions button'));
+    fireEvent.click(roomButtons[1]);
+    await waitFor(() => expect(window.echo.eq.setRoomCorrectionEnabled).toHaveBeenCalledWith(true));
+
+    fireEvent.click(roomButtons[2]);
+    await waitFor(() => expect(window.echo.eq.clearRoomCorrection).toHaveBeenCalled());
+  });
+
+  it('renders friendly Room Correction error labels', async () => {
+    vi.mocked(window.echo.eq.getRoomCorrectionState).mockResolvedValue(roomCorrectionState({
+      status: 'error',
+      error: 'impulse_too_long',
+    }));
+
+    renderEqPanel();
+
+    expect(await screen.findByText('IR too long')).toBeTruthy();
+  });
+
+  it('names Room Correction as the bit-perfect DSP source', async () => {
+    vi.mocked(window.echo.eq.getRoomCorrectionState).mockResolvedValue(roomCorrectionState({
+      enabled: true,
+      status: 'active',
+      irId: 'ir-test',
+      irName: 'Desk IR',
+      channelMode: 'stereo',
+      sampleRate: 48000,
+      tapCount: 128,
+    }));
+
+    renderEqPanel({ ...audioStatus, eqEnabled: false, dspActive: true, bitPerfectDisabledReason: 'room_correction_enabled', warnings: ['room_correction_bit_perfect_disabled'] });
+    await showAdvancedEqTools();
+
+    expect(await screen.findByText('DSP active: bit-perfect disabled (Room Correction).')).toBeTruthy();
   });
 
   it('updates PEQ band Q, filter type, and bypass state from the advanced inspector', async () => {

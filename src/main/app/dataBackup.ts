@@ -1,11 +1,12 @@
-import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { app } from 'electron';
-import { strFromU8, strToU8, unzip, zip, type AsyncZippable, type Unzipped } from 'fflate';
+import { strFromU8, strToU8, unzip, Zip, ZipPassThrough, type Unzipped } from 'fflate';
 import type {
   DataBackupExportResult,
   DataBackupImportResult,
+  DataBackupProgress,
   DataBackupRunReason,
   DataBackupStatus,
 } from '../../shared/types/settingsBackup';
@@ -31,7 +32,6 @@ const minRescheduleDelayMs = 15_000;
 const maxTimerDelayMs = 2_147_000_000;
 const dayMs = 24 * 60 * 60 * 1000;
 
-type ZipFiles = AsyncZippable;
 type Manifest = {
   format: typeof dataBackupFormat;
   version: typeof dataBackupVersion;
@@ -46,15 +46,127 @@ type Manifest = {
   entries: string[];
 };
 
+type StreamingZipWriter = {
+  addBytes: (entryPath: string, content: Uint8Array, onProgress?: ZipEntryProgressHandler) => Promise<string>;
+  addFile: (entryPath: string, sourcePath: string, onProgress?: ZipEntryProgressHandler) => Promise<string | null>;
+  close: () => Promise<number>;
+  abort: () => Promise<void>;
+};
+
+type ZipEntryProgressHandler = (bytes: number, final: boolean) => void;
+
+type ZipTask = {
+  zipPath: string;
+  sourcePath: string;
+  sizeBytes: number;
+};
+
+type ZipCollectionProgress = {
+  currentEntry: string | null;
+  processedEntries: number;
+  processedBytes: number;
+};
+
 let schedulerTimer: NodeJS.Timeout | null = null;
 let schedulerNextBackupAt: string | null = null;
 let runningBackup: Promise<DataBackupExportResult> | null = null;
+let currentDataBackupProgress: DataBackupProgress | null = null;
+let lastDataBackupProgressEmitAt = 0;
+
+const dataBackupProgressListeners = new Set<(progress: DataBackupProgress) => void>();
 
 const timestampForPath = (date = new Date()): string => date.toISOString().replace(/[:.]/g, '-');
 
 const yieldToEventLoop = (): Promise<void> => new Promise((resolveYield) => setTimeout(resolveYield, 0));
+const yieldToMainWork = (): Promise<void> => new Promise((resolveYield) => setImmediate(resolveYield));
 
 const toZipText = (value: unknown): Uint8Array => strToU8(`${JSON.stringify(value, null, 2)}\n`);
+
+const clampProgressPercent = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
+
+const notifyDataBackupProgressListener = (listener: (progress: DataBackupProgress) => void, progress: DataBackupProgress): void => {
+  try {
+    listener(progress);
+  } catch (error) {
+    console.warn('[data-backup] progress listener failed', error);
+  }
+};
+
+const emitDataBackupProgress = (progress: DataBackupProgress, options: { force?: boolean } = {}): void => {
+  currentDataBackupProgress = progress;
+  const now = Date.now();
+  if (!options.force && now - lastDataBackupProgressEmitAt < 250) {
+    return;
+  }
+
+  lastDataBackupProgressEmitAt = now;
+  for (const listener of dataBackupProgressListeners) {
+    notifyDataBackupProgressListener(listener, progress);
+  }
+};
+
+export const subscribeDataBackupProgress = (listener: (progress: DataBackupProgress) => void): (() => void) => {
+  dataBackupProgressListeners.add(listener);
+  if (currentDataBackupProgress) {
+    notifyDataBackupProgressListener(listener, currentDataBackupProgress);
+  }
+
+  return () => {
+    dataBackupProgressListeners.delete(listener);
+  };
+};
+
+const startDataBackupProgress = (
+  reason: DataBackupRunReason,
+  outputPath: string,
+  startedAt: string,
+): DataBackupProgress => {
+  const progress: DataBackupProgress = {
+    running: true,
+    reason,
+    phase: 'preparing',
+    percent: null,
+    processedEntries: 0,
+    totalEntries: null,
+    processedBytes: 0,
+    totalBytes: null,
+    currentEntry: null,
+    outputPath,
+    startedAt,
+    updatedAt: startedAt,
+    error: null,
+  };
+  emitDataBackupProgress(progress, { force: true });
+  return progress;
+};
+
+const updateDataBackupProgress = (
+  patch: Partial<DataBackupProgress>,
+  options: { force?: boolean } = {},
+): DataBackupProgress => {
+  const now = new Date().toISOString();
+  const progress: DataBackupProgress = {
+    ...(currentDataBackupProgress ?? {
+      running: true,
+      reason: 'manual' as DataBackupRunReason,
+      phase: 'preparing' as const,
+      percent: null,
+      processedEntries: 0,
+      totalEntries: null,
+      processedBytes: 0,
+      totalBytes: null,
+      currentEntry: null,
+      outputPath: null,
+      startedAt: now,
+      updatedAt: now,
+      error: null,
+    }),
+    ...patch,
+    updatedAt: now,
+  };
+  emitDataBackupProgress(progress, options);
+  return progress;
+};
 
 const safeZipPath = (path: string): string =>
   path.split(sep).join('/').replace(/\\/g, '/').replace(/^\/+/u, '').replace(/(?:^|\/)\.\.(?=\/|$)/gu, '_');
@@ -70,38 +182,188 @@ const isInsideDirectory = (directory: string, targetPath: string): boolean => {
 const isExcluded = (targetPath: string, excludedPaths: string[]): boolean =>
   excludedPaths.some((excludedPath) => isInsideDirectory(excludedPath, targetPath));
 
-const addFileToZip = async (
-  files: ZipFiles,
+const createStreamingZipWriter = async (outputPath: string): Promise<StreamingZipWriter> => {
+  const outputDirectory = dirname(outputPath);
+  const tempPath = `${outputPath}.tmp-${process.pid}-${Date.now()}`;
+  await mkdir(outputDirectory, { recursive: true });
+
+  const output = createWriteStream(tempPath);
+  let pendingDrain: Promise<void> | null = null;
+  let drainListener: (() => void) | null = null;
+  let drainResolve: (() => void) | null = null;
+  let streamError: Error | null = null;
+  let zipError: Error | null = null;
+  let outputClosed = false;
+
+  const resolvePendingDrain = (): void => {
+    if (drainListener) {
+      output.off('drain', drainListener);
+    }
+    const resolveDrain = drainResolve;
+    pendingDrain = null;
+    drainListener = null;
+    drainResolve = null;
+    resolveDrain?.();
+  };
+
+  output.once('error', (error) => {
+    streamError = error;
+    resolvePendingDrain();
+  });
+
+  const waitForOutput = async (): Promise<void> => {
+    if (pendingDrain) {
+      await pendingDrain;
+    }
+    if (zipError) {
+      throw zipError;
+    }
+    if (streamError) {
+      throw streamError;
+    }
+  };
+
+  const markBackpressure = (): void => {
+    if (pendingDrain) {
+      return;
+    }
+    pendingDrain = new Promise<void>((resolveDrain) => {
+      drainResolve = resolveDrain;
+      drainListener = resolvePendingDrain;
+      output.once('drain', resolvePendingDrain);
+    });
+  };
+
+  const completion = new Promise<void>((resolveCompletion, rejectCompletion) => {
+    output.once('close', () => {
+      outputClosed = true;
+      resolveCompletion();
+    });
+    output.once('error', rejectCompletion);
+  });
+
+  const zipWriter = new Zip((error, chunk, final) => {
+    if (error) {
+      zipError = error;
+      output.destroy(error);
+      resolvePendingDrain();
+      return;
+    }
+
+    if (chunk.length > 0 && !output.write(Buffer.from(chunk))) {
+      markBackpressure();
+    }
+    if (final) {
+      output.end();
+    }
+  });
+
+  const addBytes = async (entryPath: string, content: Uint8Array, onProgress?: ZipEntryProgressHandler): Promise<string> => {
+    await waitForOutput();
+    const zipPath = safeZipPath(entryPath);
+    const entry = new ZipPassThrough(zipPath);
+    zipWriter.add(entry);
+    entry.push(content, true);
+    onProgress?.(content.length, true);
+    await waitForOutput();
+    await yieldToMainWork();
+    return zipPath;
+  };
+
+  const addFile = async (entryPath: string, sourcePath: string, onProgress?: ZipEntryProgressHandler): Promise<string | null> => {
+    await waitForOutput();
+    if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) {
+      return null;
+    }
+
+    const zipPath = safeZipPath(entryPath);
+    const entry = new ZipPassThrough(zipPath);
+    zipWriter.add(entry);
+
+    for await (const chunk of createReadStream(sourcePath, { highWaterMark: 64 * 1024 })) {
+      const bytes = chunk instanceof Uint8Array ? chunk : Buffer.from(chunk);
+      entry.push(bytes, false);
+      onProgress?.(bytes.length, false);
+      await waitForOutput();
+      await yieldToMainWork();
+    }
+
+    entry.push(new Uint8Array(), true);
+    onProgress?.(0, true);
+    await waitForOutput();
+    await yieldToMainWork();
+    return zipPath;
+  };
+
+  const abort = async (): Promise<void> => {
+    zipWriter.terminate();
+    if (!outputClosed) {
+      output.destroy();
+      try {
+        await completion;
+      } catch {
+        // The caller will receive the original failure; abort only cleans up the temporary file.
+      }
+    }
+    rmSync(tempPath, { force: true, maxRetries: 3, retryDelay: 50 });
+  };
+
+  const close = async (): Promise<number> => {
+    try {
+      await waitForOutput();
+      zipWriter.end();
+      await completion;
+      if (zipError) {
+        throw zipError;
+      }
+      rmSync(outputPath, { force: true, maxRetries: 3, retryDelay: 50 });
+      await rename(tempPath, outputPath);
+      return statSync(outputPath).size;
+    } catch (error) {
+      await abort();
+      throw error;
+    }
+  };
+
+  return { addBytes, addFile, close, abort };
+};
+
+const collectFileForZip = async (
+  tasks: ZipTask[],
   entryPath: string,
   sourcePath: string,
   warnings: string[],
-  includedEntries: string[],
   skippedEntries: string[],
+  onCollected?: (task: ZipTask) => void,
 ): Promise<void> => {
   try {
-    if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) {
+    const fileStat = await stat(sourcePath);
+    if (!fileStat.isFile()) {
       skippedEntries.push(entryPath);
       return;
     }
 
-    const content = await readFile(sourcePath);
-    const zipPath = safeZipPath(entryPath);
-    files[zipPath] = new Uint8Array(content);
-    includedEntries.push(zipPath);
+    const task = {
+      zipPath: safeZipPath(entryPath),
+      sourcePath,
+      sizeBytes: fileStat.size,
+    };
+    tasks.push(task);
+    onCollected?.(task);
   } catch (error) {
     skippedEntries.push(entryPath);
     warnings.push(`${entryPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
 };
 
-const addDirectoryToZip = async (
-  files: ZipFiles,
+const collectDirectoryForZip = async (
+  tasks: ZipTask[],
   zipRoot: string,
   sourceRoot: string,
   warnings: string[],
-  includedEntries: string[],
   skippedEntries: string[],
   excludedPaths: string[] = [],
+  onCollected?: (task: ZipTask) => void,
 ): Promise<void> => {
   if (!existsSync(sourceRoot)) {
     skippedEntries.push(zipRoot);
@@ -135,7 +397,7 @@ const addDirectoryToZip = async (
         continue;
       }
 
-      await addFileToZip(files, safeRelativeZipPath(zipRoot, sourceRoot, sourcePath), sourcePath, warnings, includedEntries, skippedEntries);
+      await collectFileForZip(tasks, safeRelativeZipPath(zipRoot, sourceRoot, sourcePath), sourcePath, warnings, skippedEntries, onCollected);
       walkedFiles += 1;
       if (walkedFiles % 80 === 0) {
         await yieldToEventLoop();
@@ -146,17 +408,55 @@ const addDirectoryToZip = async (
   await walk(sourceRoot);
 };
 
-const zipAsync = (files: AsyncZippable): Promise<Uint8Array> =>
-  new Promise((resolveZip, rejectZip) => {
-    zip(files, { consume: true, level: 1 }, (error, data) => {
-      if (error) {
-        rejectZip(error);
-        return;
-      }
+const writeZipTask = async (
+  writer: StreamingZipWriter,
+  task: ZipTask,
+  warnings: string[],
+  includedEntries: string[],
+  skippedEntries: string[],
+  onProgress?: ZipEntryProgressHandler,
+): Promise<void> => {
+  try {
+    const zipPath = await writer.addFile(task.zipPath, task.sourcePath, onProgress);
+    if (zipPath) {
+      includedEntries.push(zipPath);
+    } else {
+      skippedEntries.push(task.zipPath);
+    }
+  } catch (error) {
+    skippedEntries.push(task.zipPath);
+    warnings.push(`${task.zipPath}: ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
+  }
+};
 
-      resolveZip(data);
+const collectBackupTasks = async (
+  sourceGroups: Array<{ zipRoot: string; sourceRoot: string; kind: 'file' | 'directory'; excludedPaths?: string[] }>,
+  warnings: string[],
+  skippedEntries: string[],
+  onProgress?: (progress: ZipCollectionProgress) => void,
+): Promise<ZipTask[]> => {
+  const tasks: ZipTask[] = [];
+  let collectedBytes = 0;
+  const handleCollected = (task: ZipTask): void => {
+    collectedBytes += task.sizeBytes;
+    onProgress?.({
+      currentEntry: task.zipPath,
+      processedEntries: tasks.length,
+      processedBytes: collectedBytes,
     });
-  });
+  };
+
+  for (const group of sourceGroups) {
+    if (group.kind === 'directory') {
+      await collectDirectoryForZip(tasks, group.zipRoot, group.sourceRoot, warnings, skippedEntries, group.excludedPaths ?? [], handleCollected);
+    } else {
+      await collectFileForZip(tasks, group.zipRoot, group.sourceRoot, warnings, skippedEntries, handleCollected);
+    }
+  }
+
+  return tasks;
+};
 
 const unzipAsync = (content: Uint8Array): Promise<Unzipped> =>
   new Promise((resolveUnzip, rejectUnzip) => {
@@ -169,23 +469,6 @@ const unzipAsync = (content: Uint8Array): Promise<Unzipped> =>
       resolveUnzip(data);
     });
   });
-
-const writeZipAtomically = async (outputPath: string, files: AsyncZippable): Promise<number> => {
-  const outputDirectory = dirname(outputPath);
-  const tempPath = `${outputPath}.tmp-${process.pid}-${Date.now()}`;
-  await mkdir(outputDirectory, { recursive: true });
-
-  try {
-    const zipBytes = await zipAsync(files);
-    await writeFile(tempPath, Buffer.from(zipBytes));
-    rmSync(outputPath, { force: true, maxRetries: 3, retryDelay: 50 });
-    await rename(tempPath, outputPath);
-    return statSync(outputPath).size;
-  } catch (error) {
-    rmSync(tempPath, { force: true, maxRetries: 3, retryDelay: 50 });
-    throw error;
-  }
-};
 
 const createRestoreReadme = (): string => `# ECHO Next 数据备份
 
@@ -235,70 +518,154 @@ export const exportEchoUserDataBackup = async (
   const warnings: string[] = [];
   const includedEntries: string[] = [];
   const skippedEntries: string[] = [];
-  const files: ZipFiles = {};
   const backupDirectory = dirname(outputPath);
+  let writer: StreamingZipWriter | null = null;
+  startDataBackupProgress(reason, outputPath, exportedAt);
 
-  checkpointProtectedLibrary(userDataPath);
-  const snapshot = await createDataProtectionSnapshot('manual-library-database-snapshot', userDataPath, exportedAtDate);
-  assertSnapshotIsHealthy(snapshot, userDataPath);
+  try {
+    updateDataBackupProgress({ phase: 'snapshot', currentEntry: libraryFileName }, { force: true });
+    checkpointProtectedLibrary(userDataPath);
+    const snapshot = await createDataProtectionSnapshot('manual-library-database-snapshot', userDataPath, exportedAtDate);
+    assertSnapshotIsHealthy(snapshot, userDataPath);
 
-  for (const entry of protectedDataEntries) {
-    const sourcePath = join(snapshot.snapshotPath, entry.name);
-    const entryPath = `user-data/${entry.name}`;
-    if (entry.kind === 'directory') {
-      await addDirectoryToZip(files, entryPath, sourcePath, warnings, includedEntries, skippedEntries, [backupDirectory]);
-    } else {
-      await addFileToZip(files, entryPath, sourcePath, warnings, includedEntries, skippedEntries);
+    const sourceGroups: Array<{ zipRoot: string; sourceRoot: string; kind: 'file' | 'directory'; excludedPaths?: string[] }> = [];
+    for (const entry of protectedDataEntries) {
+      const sourcePath = join(snapshot.snapshotPath, entry.name);
+      const entryPath = `user-data/${entry.name}`;
+      sourceGroups.push({
+        zipRoot: entryPath,
+        sourceRoot: sourcePath,
+        kind: entry.kind,
+        excludedPaths: entry.kind === 'directory' ? [backupDirectory] : undefined,
+      });
     }
+
+    for (const name of metadataFileNames) {
+      sourceGroups.push({ zipRoot: `user-data/${name}`, sourceRoot: join(userDataPath, name), kind: 'file' });
+    }
+
+    for (const name of runtimeCacheDirectories) {
+      sourceGroups.push({ zipRoot: `user-data/${name}`, sourceRoot: join(userDataPath, name), kind: 'directory', excludedPaths: [backupDirectory] });
+    }
+
+    const coverCacheSource = resolveCoverCacheSource(userDataPath, settings, warnings);
+    sourceGroups.push({ zipRoot: 'cache/cover-cache', sourceRoot: coverCacheSource, kind: 'directory', excludedPaths: [backupDirectory] });
+
+    updateDataBackupProgress({ phase: 'scanning', currentEntry: null, percent: null, processedEntries: 0, processedBytes: 0 }, { force: true });
+    const tasks = await collectBackupTasks(sourceGroups, warnings, skippedEntries, (progress) => {
+      updateDataBackupProgress({
+        phase: 'scanning',
+        currentEntry: progress.currentEntry,
+        processedEntries: progress.processedEntries,
+        processedBytes: progress.processedBytes,
+      });
+    });
+
+    let progressTotalBytes = tasks.reduce((total, task) => total + task.sizeBytes, 0);
+    const totalEntries = tasks.length + 2;
+    let processedBytes = 0;
+    let processedEntries = 0;
+
+    writer = await createStreamingZipWriter(outputPath);
+    updateDataBackupProgress({
+      phase: 'writing',
+      currentEntry: null,
+      percent: progressTotalBytes > 0 ? 0 : null,
+      processedEntries,
+      totalEntries,
+      processedBytes,
+      totalBytes: progressTotalBytes,
+    }, { force: true });
+
+    const handleWriteProgress = (entryPath: string, bytes: number, final: boolean): void => {
+      processedBytes += bytes;
+      if (final) {
+        processedEntries += 1;
+      }
+
+      updateDataBackupProgress({
+        phase: 'writing',
+        currentEntry: entryPath,
+        percent: progressTotalBytes > 0 ? clampProgressPercent((processedBytes / progressTotalBytes) * 100) : null,
+        processedEntries,
+        totalEntries,
+        processedBytes,
+        totalBytes: progressTotalBytes,
+      });
+    };
+
+    for (const task of tasks) {
+      await writeZipTask(writer, task, warnings, includedEntries, skippedEntries, (bytes, final) => {
+        handleWriteProgress(task.zipPath, bytes, final);
+      });
+    }
+
+    const manifestEntries = Array.from(new Set(includedEntries)).sort();
+    const manifestPayload = toZipText({
+      format: dataBackupFormat,
+      version: dataBackupVersion,
+      exportedAt,
+      reason,
+      appVersion: app.getVersion(),
+      userDataPath,
+      settingsFile: 'user-data/echo-settings.json',
+      database: {
+        health: snapshot.libraryHealth,
+        backupMethod: snapshot.libraryBackupMethod,
+      },
+      coverCache: {
+        sourcePath: coverCacheSource,
+        restoredFrom: 'cache/cover-cache',
+      },
+      snapshot: {
+        sourcePath: snapshot.snapshotPath,
+        copied: snapshot.copied,
+        skipped: snapshot.skipped,
+      },
+      entries: manifestEntries,
+    } satisfies Manifest & Record<string, unknown>);
+    const restorePayload = strToU8(createRestoreReadme());
+    progressTotalBytes += manifestPayload.length + restorePayload.length;
+    updateDataBackupProgress({
+      phase: 'finalizing',
+      currentEntry: 'manifest.json',
+      percent: progressTotalBytes > 0 ? clampProgressPercent((processedBytes / progressTotalBytes) * 100) : null,
+      totalBytes: progressTotalBytes,
+    }, { force: true });
+    includedEntries.push(await writer.addBytes('manifest.json', manifestPayload, (bytes, final) => handleWriteProgress('manifest.json', bytes, final)));
+    includedEntries.push(await writer.addBytes('RESTORE.md', restorePayload, (bytes, final) => handleWriteProgress('RESTORE.md', bytes, final)));
+
+    const sizeBytes = await writer.close();
+    updateDataBackupProgress({
+      running: false,
+      phase: 'completed',
+      currentEntry: null,
+      percent: 100,
+      processedEntries: Array.from(new Set(includedEntries)).length,
+      totalEntries: Array.from(new Set(includedEntries)).length,
+      processedBytes,
+      totalBytes: progressTotalBytes,
+      error: null,
+    }, { force: true });
+    return {
+      filePath: outputPath,
+      exportedAt,
+      reason,
+      snapshotPath: snapshot.snapshotPath,
+      includedEntries: Array.from(new Set(includedEntries)).sort(),
+      skippedEntries: Array.from(new Set(skippedEntries)).sort(),
+      warnings,
+      sizeBytes,
+    };
+  } catch (error) {
+    updateDataBackupProgress({
+      running: false,
+      phase: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+    }, { force: true });
+    await writer?.abort();
+    throw error;
   }
-
-  for (const name of metadataFileNames) {
-    await addFileToZip(files, `user-data/${name}`, join(userDataPath, name), warnings, includedEntries, skippedEntries);
-  }
-
-  for (const name of runtimeCacheDirectories) {
-    await addDirectoryToZip(files, `user-data/${name}`, join(userDataPath, name), warnings, includedEntries, skippedEntries, [backupDirectory]);
-  }
-
-  const coverCacheSource = resolveCoverCacheSource(userDataPath, settings, warnings);
-  await addDirectoryToZip(files, 'cache/cover-cache', coverCacheSource, warnings, includedEntries, skippedEntries, [backupDirectory]);
-
-  files['manifest.json'] = toZipText({
-    format: dataBackupFormat,
-    version: dataBackupVersion,
-    exportedAt,
-    reason,
-    appVersion: app.getVersion(),
-    userDataPath,
-    settingsFile: 'user-data/echo-settings.json',
-    database: {
-      health: snapshot.libraryHealth,
-      backupMethod: snapshot.libraryBackupMethod,
-    },
-    coverCache: {
-      sourcePath: coverCacheSource,
-      restoredFrom: 'cache/cover-cache',
-    },
-    snapshot: {
-      sourcePath: snapshot.snapshotPath,
-      copied: snapshot.copied,
-      skipped: snapshot.skipped,
-    },
-    entries: Object.keys(files).sort(),
-  } satisfies Manifest & Record<string, unknown>);
-  files['RESTORE.md'] = strToU8(createRestoreReadme());
-
-  const sizeBytes = await writeZipAtomically(outputPath, files);
-  return {
-    filePath: outputPath,
-    exportedAt,
-    reason,
-    snapshotPath: snapshot.snapshotPath,
-    includedEntries: Object.keys(files).sort(),
-    skippedEntries: Array.from(new Set(skippedEntries)).sort(),
-    warnings,
-    sizeBytes,
-  };
 };
 
 const readManifest = (unzipped: Unzipped): Manifest => {
@@ -388,38 +755,51 @@ const createRollbackArchive = async (userDataPath: string, date: Date): Promise<
   const warnings: string[] = [];
   const includedEntries: string[] = [];
   const skippedEntries: string[] = [];
-  const files: ZipFiles = {};
+  let writer: StreamingZipWriter | null = null;
 
-  for (const entry of protectedDataEntries) {
-    const sourcePath = join(userDataPath, entry.name);
-    if (entry.kind === 'directory') {
-      await addDirectoryToZip(files, `user-data/${entry.name}`, sourcePath, warnings, includedEntries, skippedEntries, [rollbackDirectory]);
-    } else {
-      await addFileToZip(files, `user-data/${entry.name}`, sourcePath, warnings, includedEntries, skippedEntries);
+  try {
+    const sourceGroups: Array<{ zipRoot: string; sourceRoot: string; kind: 'file' | 'directory'; excludedPaths?: string[] }> = [];
+    for (const entry of protectedDataEntries) {
+      const sourcePath = join(userDataPath, entry.name);
+      sourceGroups.push({
+        zipRoot: `user-data/${entry.name}`,
+        sourceRoot: sourcePath,
+        kind: entry.kind,
+        excludedPaths: entry.kind === 'directory' ? [rollbackDirectory] : undefined,
+      });
     }
-  }
-  for (const name of metadataFileNames) {
-    await addFileToZip(files, `user-data/${name}`, join(userDataPath, name), warnings, includedEntries, skippedEntries);
-  }
-  for (const name of runtimeCacheDirectories) {
-    await addDirectoryToZip(files, `user-data/${name}`, join(userDataPath, name), warnings, includedEntries, skippedEntries, [rollbackDirectory]);
-  }
+    for (const name of metadataFileNames) {
+      sourceGroups.push({ zipRoot: `user-data/${name}`, sourceRoot: join(userDataPath, name), kind: 'file' });
+    }
+    for (const name of runtimeCacheDirectories) {
+      sourceGroups.push({ zipRoot: `user-data/${name}`, sourceRoot: join(userDataPath, name), kind: 'directory', excludedPaths: [rollbackDirectory] });
+    }
 
-  files['manifest.json'] = toZipText({
-    format: 'echo-next-import-rollback-archive',
-    version: 1,
-    exportedAt: date.toISOString(),
-    note: 'Created before importing an ECHO Next data backup.',
-    entries: Object.keys(files).sort(),
-    warnings,
-  });
+    const tasks = await collectBackupTasks(sourceGroups, warnings, skippedEntries);
+    if (tasks.length === 0) {
+      return null;
+    }
 
-  if (Object.keys(files).length <= 1) {
-    return null;
+    writer = await createStreamingZipWriter(rollbackPath);
+    for (const task of tasks) {
+      await writeZipTask(writer, task, warnings, includedEntries, skippedEntries);
+    }
+
+    includedEntries.push(await writer.addBytes('manifest.json', toZipText({
+      format: 'echo-next-import-rollback-archive',
+      version: 1,
+      exportedAt: date.toISOString(),
+      note: 'Created before importing an ECHO Next data backup.',
+      entries: Array.from(new Set(includedEntries)).sort(),
+      warnings,
+    })));
+
+    await writer.close();
+    return rollbackPath;
+  } catch (error) {
+    await writer?.abort();
+    throw error;
   }
-
-  await writeZipAtomically(rollbackPath, files);
-  return rollbackPath;
 };
 
 const validateBackupDatabase = async (unzipped: Unzipped, userDataPath: string, date: Date): Promise<void> => {
@@ -569,6 +949,7 @@ export const getDataBackupStatus = (): DataBackupStatus => {
     lastError: settings.autoDataBackupLastError ?? null,
     nextBackupAt: schedulerNextBackupAt ?? calculateNextBackupAt(settings),
     running: runningBackup !== null,
+    progress: currentDataBackupProgress,
   };
 };
 

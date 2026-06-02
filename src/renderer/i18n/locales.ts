@@ -818,7 +818,10 @@ export type TranslationKey =
   | 'audioProfessional.badge.sampleMismatch'
   | 'audioProfessional.badge.warning'
   | 'audioProfessional.issue.reason'
+  | 'audioProfessional.issue.roomCorrectionBitPerfectDisabled'
+  | 'audioProfessional.issue.roomCorrectionClippingRisk'
   | 'audioProfessional.issue.sharedMixRateTooHigh'
+  | 'audioProfessional.issue.windowsDefaultFormatUnusual'
   | 'audioProfessional.group.directDsp'
   | 'audioProfessional.group.playbackChain'
   | 'audioProfessional.group.sampleRate'
@@ -845,6 +848,7 @@ export type TranslationKey =
   | 'audioProfessional.row.outputLatency'
   | 'audioProfessional.row.outputMode'
   | 'audioProfessional.row.replayGain'
+  | 'audioProfessional.row.roomCorrection'
   | 'audioProfessional.row.requestedBuffer'
   | 'audioProfessional.row.requestedOutputSampleRate'
   | 'audioProfessional.row.resampler'
@@ -1067,6 +1071,7 @@ export type TranslationKey =
   | 'notice.action.openReport'
   | 'notice.audioError.description'
   | 'notice.audioError.title'
+  | 'notice.audioDefaultFormatWarning'
   | 'notice.diagnosticsCrash.description'
   | 'notice.importFiles.empty'
   | 'notice.importFiles.failed'
@@ -1168,6 +1173,11 @@ export type TranslationKey =
   | 'historyPage.refresh.none'
   | 'historyPage.refresh.removed'
   | 'historyPage.refresh.running'
+  | 'historyPage.recent.aria'
+  | 'historyPage.recent.count'
+  | 'historyPage.recent.empty'
+  | 'historyPage.recent.kicker'
+  | 'historyPage.recent.title'
   | 'historyPage.search.placeholder'
   | 'historyPage.summary.all.count'
   | 'historyPage.summary.all.duration'
@@ -1633,8 +1643,17 @@ export type TranslationKey =
   | 'mvSettings.offset.aria'
   | 'mvSettings.offset.description'
   | 'mvSettings.offset.earlier'
+  | 'mvSettings.offset.earlierShort'
+  | 'mvSettings.offset.input'
   | 'mvSettings.offset.later'
+  | 'mvSettings.offset.laterShort'
   | 'mvSettings.offset.reset'
+  | 'mvSettings.offset.resetShort'
+  | 'mvSettings.offset.slider'
+  | 'mvSettings.offset.startDescription'
+  | 'mvSettings.offset.startInput'
+  | 'mvSettings.offset.startTitle'
+  | 'mvSettings.offset.step'
   | 'mvSettings.offset.title'
   | 'mvSettings.provider.local'
   | 'mvSettings.quality.max'
@@ -2153,6 +2172,15 @@ export type TranslationKey =
   | 'settings.general.dataBackup.meta.nextRunPending'
   | 'settings.general.dataBackup.meta.noneYet'
   | 'settings.general.dataBackup.meta.notSet'
+  | 'settings.general.dataBackup.progress.completed'
+  | 'settings.general.dataBackup.progress.failed'
+  | 'settings.general.dataBackup.progress.finalizing'
+  | 'settings.general.dataBackup.progress.measuring'
+  | 'settings.general.dataBackup.progress.preparing'
+  | 'settings.general.dataBackup.progress.scanning'
+  | 'settings.general.dataBackup.progress.snapshot'
+  | 'settings.general.dataBackup.progress.waiting'
+  | 'settings.general.dataBackup.progress.writing'
   | 'settings.general.dataBackup.status.disabled'
   | 'settings.general.dataBackup.status.enabled'
   | 'settings.general.dataBackup.title'
@@ -2356,6 +2384,26 @@ export type TranslationKey =
   | 'settings.eq.autoGain.status.recovering'
   | 'settings.eq.autoGain.status.reducing'
   | 'settings.eq.autoGain.toggle'
+  | 'settings.eq.room.active'
+  | 'settings.eq.room.channelMode'
+  | 'settings.eq.room.clear'
+  | 'settings.eq.room.disable'
+  | 'settings.eq.room.empty'
+  | 'settings.eq.room.enable'
+  | 'settings.eq.room.error'
+  | 'settings.eq.room.error.invalidImpulse'
+  | 'settings.eq.room.error.invalidWav'
+  | 'settings.eq.room.error.missingFile'
+  | 'settings.eq.room.error.missingIr'
+  | 'settings.eq.room.error.tooLong'
+  | 'settings.eq.room.import'
+  | 'settings.eq.room.ir'
+  | 'settings.eq.room.loaded'
+  | 'settings.eq.room.sampleRate'
+  | 'settings.eq.room.short'
+  | 'settings.eq.room.tapCount'
+  | 'settings.eq.room.title'
+  | 'settings.eq.room.trim'
   | 'settings.eq.analyzer.overlayAria'
   | 'settings.eq.analyzer.input'
   | 'settings.eq.analyzer.mode'
@@ -2395,6 +2443,7 @@ export type TranslationKey =
   | 'settings.eq.bitPerfect.sourceBoth'
   | 'settings.eq.bitPerfect.sourceChannel'
   | 'settings.eq.bitPerfect.sourceEq'
+  | 'settings.eq.bitPerfect.sourceRoom'
   | 'settings.eq.channel.active'
   | 'settings.eq.channel.balance'
   | 'settings.eq.channel.bypassed'
@@ -3474,7 +3523,10 @@ const zhCN: TranslationMap = {
   'audioProfessional.badge.sampleMismatch': '采样率不匹配',
   'audioProfessional.badge.warning': '设备异常/警告',
   'audioProfessional.issue.reason': '异常原因',
-  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows 共享采样率过高：设备是 {deviceRate}，ECHO 当前输出 {decoderRate} PCM，可能导致变速。建议把 Windows 默认格式改到 48 kHz 或 96 kHz。',
+  'audioProfessional.issue.roomCorrectionBitPerfectDisabled': '房间校正会关闭 bit-perfect 输出。',
+  'audioProfessional.issue.roomCorrectionClippingRisk': '房间校正输出有削波风险，请降低 FIR Trim 或启用 Auto Gain。',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows 共享采样率过高：设备是 {deviceRate}，ECHO 当前输出 {decoderRate} PCM，可能导致变速。建议把 Windows 默认格式改到 48 kHz。',
+  'audioProfessional.issue.windowsDefaultFormatUnusual': 'Windows 默认格式设置偏高：当前是 {deviceRate}。ECHO 只会提醒，不会修改系统设置；建议改到 48 kHz。',
   'audioProfessional.group.directDsp': '直通与 DSP',
   'audioProfessional.group.playbackChain': '播放链路',
   'audioProfessional.group.sampleRate': '采样率链路',
@@ -3501,6 +3553,7 @@ const zhCN: TranslationMap = {
   'audioProfessional.row.outputLatency': '输出延迟',
   'audioProfessional.row.outputMode': '输出模式',
   'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.roomCorrection': '房间校正',
   'audioProfessional.row.requestedBuffer': '请求 buffer',
   'audioProfessional.row.requestedOutputSampleRate': '请求输出',
   'audioProfessional.row.resampler': '重采样器',
@@ -3826,6 +3879,7 @@ const zhCN: TranslationMap = {
   'notice.action.openReport': '打开报告',
   'notice.audioError.description': '已生成 Markdown 诊断报告，里面有详细原因和排查线索。',
   'notice.audioError.title': '音频错误',
+  'notice.audioDefaultFormatWarning': '音频设置提醒：Windows 默认格式设置偏高，当前是 {rate}。ECHO 只会提醒，不会修改系统设置；建议改到 48 kHz。',
   'notice.diagnosticsCrash.description': '上次 ECHO Next 没有正常退出，已准备 Markdown 报告用于排查。',
   'notice.importFiles.empty': '没有可导入的音频文件。',
   'notice.importFiles.failed': '{count} 个文件导入失败',
@@ -4009,6 +4063,11 @@ const zhCN: TranslationMap = {
   'historyPage.refresh.none': '没有发现失效历史歌曲。',
   'historyPage.refresh.removed': '已移除 {count} 首失效历史歌曲。',
   'historyPage.refresh.running': '正在刷新...',
+  'historyPage.recent.aria': '最近播放列表',
+  'historyPage.recent.count': '最近 {count} 首',
+  'historyPage.recent.empty': '暂无最近播放。',
+  'historyPage.recent.kicker': '按时间排序',
+  'historyPage.recent.title': '最近播放列表',
   'historyPage.search.placeholder': '搜索标题、艺术家、专辑或路径',
   'historyPage.summary.all.count': '总播放',
   'historyPage.summary.all.duration': '总时长',
@@ -4389,7 +4448,7 @@ const zhCN: TranslationMap = {
   'lyricsSettings.wordHighlight.title': '逐字歌词高亮',
   'route.mvSettings.description': 'MV 绑定与本地匹配设置。',
   'route.mvSettings.label': 'MV 设置',
-  'mvSettings.action.chooseFile': '选择文件',
+  'mvSettings.action.chooseFile': '导入本地视频',
   'mvSettings.action.close': '关闭 MV 设置',
   'mvSettings.action.collapseNetwork': '折叠网络来源',
   'mvSettings.action.dragReorder': '拖拽调整优先级',
@@ -4472,11 +4531,20 @@ const zhCN: TranslationMap = {
   'mvSettings.network.syncMode.precise': '精准',
   'mvSettings.network.title': '网络来源',
   'mvSettings.offset.aria': 'MV 同步延迟',
-  'mvSettings.offset.description': '只保存到当前这首歌的 MV；换歌后不会影响其他歌曲。',
+  'mvSettings.offset.description': '正数让 MV 画面提前，负数让 MV 画面延后；只记住当前歌曲的 MV。',
   'mvSettings.offset.earlier': 'MV 提前 {value}',
+  'mvSettings.offset.earlierShort': '提前 {value}',
+  'mvSettings.offset.input': '偏移秒数',
   'mvSettings.offset.later': 'MV 延后 {value}',
+  'mvSettings.offset.laterShort': '延后 {value}',
   'mvSettings.offset.reset': '重置 MV 延迟',
-  'mvSettings.offset.title': '本歌曲 MV 延迟',
+  'mvSettings.offset.resetShort': '重置',
+  'mvSettings.offset.slider': 'MV 同步延迟滑杆',
+  'mvSettings.offset.startDescription': '输入视频里的起点秒数，最高 600 秒；这首歌会直接从那里对齐播放。',
+  'mvSettings.offset.startInput': 'MV 起播秒数',
+  'mvSettings.offset.startTitle': '从第几秒开始播放',
+  'mvSettings.offset.step': '调节步长',
+  'mvSettings.offset.title': 'MV 音画校准',
   'mvSettings.provider.local': '本地',
   'mvSettings.quality.max': '最高',
   'mvSettings.search.input': 'MV 搜索关键词',
@@ -4990,6 +5058,15 @@ const zhCN: TranslationMap = {
   'settings.general.dataBackup.meta.noneYet': '暂无自动备份',
   'settings.general.dataBackup.meta.nextRunPending': '选择目录并开启后生效',
   'settings.general.dataBackup.meta.atPath': '{time} · {path}',
+  'settings.general.dataBackup.progress.preparing': '准备中',
+  'settings.general.dataBackup.progress.snapshot': '创建快照',
+  'settings.general.dataBackup.progress.scanning': '扫描数据',
+  'settings.general.dataBackup.progress.writing': '写入备份',
+  'settings.general.dataBackup.progress.finalizing': '收尾中',
+  'settings.general.dataBackup.progress.completed': '已完成',
+  'settings.general.dataBackup.progress.failed': '失败',
+  'settings.general.dataBackup.progress.measuring': '统计中',
+  'settings.general.dataBackup.progress.waiting': '等待写入',
   'settings.general.dataBackup.action.chooseDirectory': '选择目录',
   'settings.general.dataBackup.action.choosingDirectory': '选择中...',
   'settings.general.dataBackup.action.backupNow': '立即备份',
@@ -5197,6 +5274,26 @@ const zhCN: TranslationMap = {
   'settings.eq.autoGain.status.recovering': 'Recovering',
   'settings.eq.autoGain.status.reducing': 'Reducing',
   'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.room.active': 'Active',
+  'settings.eq.room.channelMode': '声道',
+  'settings.eq.room.clear': '清除',
+  'settings.eq.room.disable': '禁用 FIR',
+  'settings.eq.room.empty': '未加载',
+  'settings.eq.room.enable': '启用 FIR',
+  'settings.eq.room.error': '错误',
+  'settings.eq.room.error.invalidImpulse': 'IR 无效',
+  'settings.eq.room.error.invalidWav': 'WAV 无效',
+  'settings.eq.room.error.missingFile': 'IR 文件缺失',
+  'settings.eq.room.error.missingIr': '未加载 IR',
+  'settings.eq.room.error.tooLong': 'IR 过长',
+  'settings.eq.room.import': '导入 IR',
+  'settings.eq.room.ir': 'IR',
+  'settings.eq.room.loaded': 'Loaded',
+  'settings.eq.room.sampleRate': '采样率',
+  'settings.eq.room.short': 'FIR',
+  'settings.eq.room.tapCount': 'Taps',
+  'settings.eq.room.title': '房间校正',
+  'settings.eq.room.trim': 'Trim',
   'settings.eq.analyzer.overlayAria': 'EQ 实时频谱叠加',
   'settings.eq.analyzer.input': 'Input',
   'settings.eq.analyzer.mode': '频谱模式',
@@ -5236,6 +5333,7 @@ const zhCN: TranslationMap = {
   'settings.eq.bitPerfect.sourceBoth': 'EQ + 声道平衡',
   'settings.eq.bitPerfect.sourceChannel': '声道平衡',
   'settings.eq.bitPerfect.sourceEq': 'EQ',
+  'settings.eq.bitPerfect.sourceRoom': '房间校正',
   'settings.eq.channel.active': '启用',
   'settings.eq.channel.balance': '平衡',
   'settings.eq.channel.bypassed': '旁路',
@@ -6030,6 +6128,7 @@ const zhTW: TranslationMap = {
   'notice.action.openReport': '開啟報告',
   'notice.audioError.description': '已產生 Markdown 診斷報告，裡面有詳細原因與排查線索。',
   'notice.audioError.title': '音訊錯誤',
+  'notice.audioDefaultFormatWarning': '音訊設定提醒：Windows 預設格式設定偏高，目前是 {rate}。ECHO 只會提醒，不會修改系統設定；建議改到 48 kHz。',
   'notice.diagnosticsCrash.description': '上次 ECHO Next 未正常結束，已準備 Markdown 報告用於排查。',
   'notice.importFiles.empty': '沒有可匯入的音訊檔案。',
   'notice.importFiles.failed': '{count} 個檔案匯入失敗',
@@ -6487,7 +6586,10 @@ const zhTW: TranslationMap = {
   'audioProfessional.badge.sampleMismatch': '取樣率不符',
   'audioProfessional.badge.warning': '裝置異常/警告',
   'audioProfessional.issue.reason': '異常原因',
-  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows 共享取樣率過高：裝置是 {deviceRate}，ECHO 目前輸出 {decoderRate} PCM，可能導致變速。建議把 Windows 預設格式改到 48 kHz 或 96 kHz。',
+  'audioProfessional.issue.roomCorrectionBitPerfectDisabled': '房間校正會關閉 bit-perfect 輸出。',
+  'audioProfessional.issue.roomCorrectionClippingRisk': '房間校正輸出有削波風險，請降低 FIR Trim 或啟用 Auto Gain。',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows 共享取樣率過高：裝置是 {deviceRate}，ECHO 目前輸出 {decoderRate} PCM，可能導致變速。建議把 Windows 預設格式改到 48 kHz。',
+  'audioProfessional.issue.windowsDefaultFormatUnusual': 'Windows 預設格式設定偏高：目前是 {deviceRate}。ECHO 只會提醒，不會修改系統設定；建議改到 48 kHz。',
   'audioProfessional.group.directDsp': '直通與 DSP',
   'audioProfessional.group.playbackChain': '播放鏈路',
   'audioProfessional.group.sampleRate': '取樣率鏈路',
@@ -6514,6 +6616,7 @@ const zhTW: TranslationMap = {
   'audioProfessional.row.outputLatency': '輸出延遲',
   'audioProfessional.row.outputMode': '輸出模式',
   'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.roomCorrection': '房間校正',
   'audioProfessional.row.requestedBuffer': '要求 buffer',
   'audioProfessional.row.requestedOutputSampleRate': '要求輸出',
   'audioProfessional.row.resampler': '重取樣器',
@@ -6771,6 +6874,11 @@ const zhTW: TranslationMap = {
   'historyPage.refresh.none': '沒有發現失效歷史歌曲。',
   'historyPage.refresh.removed': '已移除 {count} 首失效歷史歌曲。',
   'historyPage.refresh.running': '正在刷新...',
+  'historyPage.recent.aria': '最近播放列表',
+  'historyPage.recent.count': '最近 {count} 首',
+  'historyPage.recent.empty': '暫無最近播放。',
+  'historyPage.recent.kicker': '按時間排序',
+  'historyPage.recent.title': '最近播放列表',
   'historyPage.search.placeholder': '搜尋標題、藝術家、專輯或路徑',
   'historyPage.summary.all.count': '總播放',
   'historyPage.summary.all.duration': '總時長',
@@ -7148,7 +7256,7 @@ const zhTW: TranslationMap = {
   'lyricsSettings.wordHighlight.title': '逐字歌詞高亮',
   'route.mvSettings.description': 'MV 綁定與本地匹配設定。',
   'route.mvSettings.label': 'MV 設定',
-  'mvSettings.action.chooseFile': '選擇檔案',
+  'mvSettings.action.chooseFile': '匯入本地影片',
   'mvSettings.action.close': '關閉 MV 設定',
   'mvSettings.action.collapseNetwork': '折疊網路來源',
   'mvSettings.action.dragReorder': '拖曳調整優先級',
@@ -7231,11 +7339,20 @@ const zhTW: TranslationMap = {
   'mvSettings.network.syncMode.precise': '精準',
   'mvSettings.network.title': '網路來源',
   'mvSettings.offset.aria': 'MV 同步延遲',
-  'mvSettings.offset.description': '只儲存到目前這首歌的 MV；換歌後不會影響其他歌曲。',
+  'mvSettings.offset.description': '正數讓 MV 畫面提前，負數讓 MV 畫面延後；只記住目前歌曲的 MV。',
   'mvSettings.offset.earlier': 'MV 提前 {value}',
+  'mvSettings.offset.earlierShort': '提前 {value}',
+  'mvSettings.offset.input': '偏移秒數',
   'mvSettings.offset.later': 'MV 延後 {value}',
+  'mvSettings.offset.laterShort': '延後 {value}',
   'mvSettings.offset.reset': '重置 MV 延遲',
-  'mvSettings.offset.title': '本歌曲 MV 延遲',
+  'mvSettings.offset.resetShort': '重置',
+  'mvSettings.offset.slider': 'MV 同步延遲滑桿',
+  'mvSettings.offset.startDescription': '輸入影片裡的起點秒數，最高 600 秒；這首歌會直接從那裡對齊播放。',
+  'mvSettings.offset.startInput': 'MV 起播秒數',
+  'mvSettings.offset.startTitle': '從第幾秒開始播放',
+  'mvSettings.offset.step': '調節步長',
+  'mvSettings.offset.title': 'MV 音畫校準',
   'mvSettings.provider.local': '本地',
   'mvSettings.quality.max': '最高',
   'mvSettings.search.input': 'MV 搜尋關鍵字',
@@ -7446,6 +7563,15 @@ const zhTW: TranslationMap = {
   'settings.general.dataBackup.meta.noneYet': '暫無自動備份',
   'settings.general.dataBackup.meta.nextRunPending': '選擇目錄並開啟後生效',
   'settings.general.dataBackup.meta.atPath': '{time} · {path}',
+  'settings.general.dataBackup.progress.preparing': '準備中',
+  'settings.general.dataBackup.progress.snapshot': '建立快照',
+  'settings.general.dataBackup.progress.scanning': '掃描資料',
+  'settings.general.dataBackup.progress.writing': '寫入備份',
+  'settings.general.dataBackup.progress.finalizing': '收尾中',
+  'settings.general.dataBackup.progress.completed': '已完成',
+  'settings.general.dataBackup.progress.failed': '失敗',
+  'settings.general.dataBackup.progress.measuring': '統計中',
+  'settings.general.dataBackup.progress.waiting': '等待寫入',
   'settings.general.dataBackup.action.chooseDirectory': '選擇目錄',
   'settings.general.dataBackup.action.choosingDirectory': '選擇中...',
   'settings.general.dataBackup.action.backupNow': '立即備份',
@@ -7502,6 +7628,26 @@ const zhTW: TranslationMap = {
   'settings.eq.autoGain.status.recovering': 'Recovering',
   'settings.eq.autoGain.status.reducing': 'Reducing',
   'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.room.active': 'Active',
+  'settings.eq.room.channelMode': '聲道',
+  'settings.eq.room.clear': '清除',
+  'settings.eq.room.disable': '停用 FIR',
+  'settings.eq.room.empty': '未載入',
+  'settings.eq.room.enable': '啟用 FIR',
+  'settings.eq.room.error': '錯誤',
+  'settings.eq.room.error.invalidImpulse': 'IR 無效',
+  'settings.eq.room.error.invalidWav': 'WAV 無效',
+  'settings.eq.room.error.missingFile': 'IR 檔案遺失',
+  'settings.eq.room.error.missingIr': '未載入 IR',
+  'settings.eq.room.error.tooLong': 'IR 過長',
+  'settings.eq.room.import': '匯入 IR',
+  'settings.eq.room.ir': 'IR',
+  'settings.eq.room.loaded': 'Loaded',
+  'settings.eq.room.sampleRate': '取樣率',
+  'settings.eq.room.short': 'FIR',
+  'settings.eq.room.tapCount': 'Taps',
+  'settings.eq.room.title': '房間校正',
+  'settings.eq.room.trim': 'Trim',
   'settings.eq.analyzer.overlayAria': 'EQ 即時頻譜疊加',
   'settings.eq.analyzer.input': 'Input',
   'settings.eq.analyzer.mode': '頻譜模式',
@@ -7524,6 +7670,11 @@ const zhTW: TranslationMap = {
   'settings.eq.band.modeStandard': '標準頻點',
   'settings.eq.bitPerfect.channelDisabled': 'DSP 已啟用：bit-perfect 已關閉。',
   'settings.eq.bitPerfect.disabled': 'DSP 已啟用：bit-perfect 已關閉{reason}。',
+  'settings.eq.bitPerfect.readyPath': '可保留 bit-perfect 路徑。',
+  'settings.eq.bitPerfect.sourceBoth': 'EQ + 聲道平衡',
+  'settings.eq.bitPerfect.sourceChannel': '聲道平衡',
+  'settings.eq.bitPerfect.sourceEq': 'EQ',
+  'settings.eq.bitPerfect.sourceRoom': '房間校正',
   'settings.eq.channel.active': '啟用',
   'settings.eq.channel.center': '置中',
   'settings.eq.channel.constantPower': '恆定功率',
@@ -8610,6 +8761,7 @@ const jaJP: TranslationMap = {
   'notice.action.openReport': 'レポートを開く',
   'notice.audioError.description': 'Markdown 診断レポートを作成しました。詳しい原因と調査の手がかりが含まれています。',
   'notice.audioError.title': '音声エラー',
+  'notice.audioDefaultFormatWarning': '音声設定の通知: Windows の既定形式が高めです。現在は {rate} です。ECHO は通知のみを行い、システム設定は変更しません。48 kHz への変更をおすすめします。',
   'notice.diagnosticsCrash.description': '前回 ECHO Next は正常終了しませんでした。調査用の Markdown レポートを準備しました。',
   'notice.importFiles.empty': '取り込める音声ファイルがありません。',
   'notice.importFiles.failed': '{count} 個のファイルの取り込みに失敗しました',
@@ -9078,7 +9230,10 @@ const jaJP: TranslationMap = {
   'audioProfessional.badge.sampleMismatch': 'サンプルレート不一致',
   'audioProfessional.badge.warning': 'デバイス警告',
   'audioProfessional.issue.reason': '理由',
-  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows の共有サンプルレートが高すぎます。デバイスは {deviceRate}、ECHO は現在 {decoderRate} PCM を出力しているため、再生速度が変わる可能性があります。Windows の既定形式を 48 kHz または 96 kHz に下げてください。',
+  'audioProfessional.issue.roomCorrectionBitPerfectDisabled': 'ルーム補正は bit-perfect 出力を無効にします。',
+  'audioProfessional.issue.roomCorrectionClippingRisk': 'ルーム補正の出力にクリップの危険があります。FIR Trim を下げるか Auto Gain を有効にしてください。',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows の共有サンプルレートが高すぎます。デバイスは {deviceRate}、ECHO は現在 {decoderRate} PCM を出力しているため、再生速度が変わる可能性があります。Windows の既定形式を 48 kHz に下げてください。',
+  'audioProfessional.issue.windowsDefaultFormatUnusual': 'Windows の既定形式が高めに設定されています。現在は {deviceRate} です。ECHO は通知のみを行い、システム設定は変更しません。48 kHz に変更することをおすすめします。',
   'audioProfessional.group.directDsp': 'Direct / DSP',
   'audioProfessional.group.playbackChain': '再生チェーン',
   'audioProfessional.group.sampleRate': 'サンプルレート',
@@ -9105,6 +9260,7 @@ const jaJP: TranslationMap = {
   'audioProfessional.row.outputLatency': '出力遅延',
   'audioProfessional.row.outputMode': '出力モード',
   'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.roomCorrection': 'ルーム補正',
   'audioProfessional.row.requestedBuffer': '要求 buffer',
   'audioProfessional.row.requestedOutputSampleRate': '要求出力',
   'audioProfessional.row.resampler': 'リサンプラー',
@@ -9364,6 +9520,11 @@ const jaJP: TranslationMap = {
   'historyPage.refresh.none': '無効な履歴の曲は見つかりませんでした。',
   'historyPage.refresh.removed': '無効な履歴の曲を {count} 曲削除しました。',
   'historyPage.refresh.running': '更新中...',
+  'historyPage.recent.aria': '最近再生した曲リスト',
+  'historyPage.recent.count': '最近 {count} 曲',
+  'historyPage.recent.empty': '最近再生した曲はまだありません。',
+  'historyPage.recent.kicker': '時間順',
+  'historyPage.recent.title': '最近再生した曲',
   'historyPage.search.placeholder': 'タイトル、アーティスト、アルバム、パスを検索',
   'historyPage.summary.all.count': '総再生',
   'historyPage.summary.all.duration': '総再生時間',
@@ -9744,7 +9905,7 @@ const jaJP: TranslationMap = {
   'lyricsSettings.wordHighlight.title': '単語ごとの歌詞ハイライト',
   'route.mvSettings.description': 'MV の紐付けとローカル検索設定。',
   'route.mvSettings.label': 'MV 設定',
-  'mvSettings.action.chooseFile': 'ファイルを選択',
+  'mvSettings.action.chooseFile': 'ローカル動画をインポート',
   'mvSettings.action.close': 'MV 設定を閉じる',
   'mvSettings.action.collapseNetwork': 'ネットワークソースを折りたたむ',
   'mvSettings.action.dragReorder': 'ドラッグして優先度を変更',
@@ -9827,11 +9988,20 @@ const jaJP: TranslationMap = {
   'mvSettings.network.syncMode.precise': '高精度',
   'mvSettings.network.title': 'ネットワークソース',
   'mvSettings.offset.aria': 'MV 同期遅延',
-  'mvSettings.offset.description': '現在の曲の MV だけに保存され、別の曲には影響しません。',
+  'mvSettings.offset.description': '正の値で MV 映像を早め、負の値で遅らせます。現在の曲の MV だけに保存されます。',
   'mvSettings.offset.earlier': 'MV を {value} 早める',
+  'mvSettings.offset.earlierShort': '早める {value}',
+  'mvSettings.offset.input': 'オフセット秒数',
   'mvSettings.offset.later': 'MV を {value} 遅らせる',
+  'mvSettings.offset.laterShort': '遅らせる {value}',
   'mvSettings.offset.reset': 'MV 遅延をリセット',
-  'mvSettings.offset.title': 'この曲の MV 遅延',
+  'mvSettings.offset.resetShort': 'リセット',
+  'mvSettings.offset.slider': 'MV 同期遅延スライダー',
+  'mvSettings.offset.startDescription': '動画内の開始秒数を入力します。最大 600 秒まで、この曲はその位置から同期再生されます。',
+  'mvSettings.offset.startInput': 'MV 開始秒数',
+  'mvSettings.offset.startTitle': '何秒目から再生',
+  'mvSettings.offset.step': '調整ステップ',
+  'mvSettings.offset.title': 'MV 音ズレ補正',
   'mvSettings.provider.local': 'ローカル',
   'mvSettings.quality.max': '最大',
   'mvSettings.search.input': 'MV 検索キーワード',
@@ -10043,6 +10213,10 @@ const jaJP: TranslationMap = {
   'settings.eq.bitPerfect.channelDisabled': 'DSP 有効: bit-perfect は無効です。',
   'settings.eq.bitPerfect.disabled': 'DSP 有効: bit-perfect は無効です{reason}。',
   'settings.eq.bitPerfect.readyPath': 'bit-perfect 経路を維持できます。',
+  'settings.eq.bitPerfect.sourceBoth': 'EQ + チャンネルバランス',
+  'settings.eq.bitPerfect.sourceChannel': 'チャンネルバランス',
+  'settings.eq.bitPerfect.sourceEq': 'EQ',
+  'settings.eq.bitPerfect.sourceRoom': 'ルーム補正',
   'settings.eq.channel.active': '有効',
   'settings.eq.channel.balance': 'バランス',
   'settings.eq.channel.bypassed': 'バイパス',
@@ -10087,6 +10261,26 @@ const jaJP: TranslationMap = {
   'settings.eq.autoGain.status.recovering': 'Recovering',
   'settings.eq.autoGain.status.reducing': 'Reducing',
   'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.room.active': 'Active',
+  'settings.eq.room.channelMode': 'チャンネル',
+  'settings.eq.room.clear': 'クリア',
+  'settings.eq.room.disable': 'FIR 無効',
+  'settings.eq.room.empty': '未読込',
+  'settings.eq.room.enable': 'FIR 有効',
+  'settings.eq.room.error': 'エラー',
+  'settings.eq.room.error.invalidImpulse': 'IR 無効',
+  'settings.eq.room.error.invalidWav': 'WAV 無効',
+  'settings.eq.room.error.missingFile': 'IR ファイルなし',
+  'settings.eq.room.error.missingIr': 'IR 未読込',
+  'settings.eq.room.error.tooLong': 'IR が長すぎます',
+  'settings.eq.room.import': 'IR 読込',
+  'settings.eq.room.ir': 'IR',
+  'settings.eq.room.loaded': 'Loaded',
+  'settings.eq.room.sampleRate': 'サンプル',
+  'settings.eq.room.short': 'FIR',
+  'settings.eq.room.tapCount': 'Taps',
+  'settings.eq.room.title': 'ルーム補正',
+  'settings.eq.room.trim': 'Trim',
   'settings.eq.analyzer.overlayAria': 'EQ リアルタイムスペクトラム表示',
   'settings.eq.analyzer.input': 'Input',
   'settings.eq.analyzer.mode': 'スペクトラムモード',
@@ -10258,6 +10452,15 @@ const jaJP: TranslationMap = {
   'settings.general.dataBackup.meta.noneYet': '自動バックアップはまだありません',
   'settings.general.dataBackup.meta.nextRunPending': '保存先を選んで有効にすると反映されます',
   'settings.general.dataBackup.meta.atPath': '{time} · {path}',
+  'settings.general.dataBackup.progress.preparing': '準備中',
+  'settings.general.dataBackup.progress.snapshot': 'スナップショット作成',
+  'settings.general.dataBackup.progress.scanning': 'スキャン中',
+  'settings.general.dataBackup.progress.writing': '書き込み中',
+  'settings.general.dataBackup.progress.finalizing': '完了処理中',
+  'settings.general.dataBackup.progress.completed': '完了',
+  'settings.general.dataBackup.progress.failed': '失敗',
+  'settings.general.dataBackup.progress.measuring': '集計中',
+  'settings.general.dataBackup.progress.waiting': '書き込み待機中',
   'settings.general.dataBackup.action.chooseDirectory': '保存先を選択',
   'settings.general.dataBackup.action.choosingDirectory': '選択中...',
   'settings.general.dataBackup.action.backupNow': '今すぐバックアップ',
@@ -11272,6 +11475,7 @@ const enUS: TranslationMap = {
   'notice.action.openReport': 'Open Report',
   'notice.audioError.description': 'A Markdown diagnostics report was generated with detailed causes and troubleshooting clues.',
   'notice.audioError.title': 'Audio Error',
+  'notice.audioDefaultFormatWarning': 'Audio settings reminder: the Windows default format looks too high at {rate}. ECHO will only warn you and will not change system settings; 48 kHz is recommended.',
   'notice.diagnosticsCrash.description': 'ECHO Next did not exit normally last time. A Markdown report is ready for troubleshooting.',
   'notice.importFiles.empty': 'No audio files can be imported.',
   'notice.importFiles.failed': '{count} files failed to import',
@@ -11740,7 +11944,10 @@ const enUS: TranslationMap = {
   'audioProfessional.badge.sampleMismatch': 'Sample-rate mismatch',
   'audioProfessional.badge.warning': 'Device issue/warning',
   'audioProfessional.issue.reason': 'Reason',
-  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows shared rate is too high: the device is at {deviceRate} while ECHO is outputting {decoderRate} PCM, so playback may sound sped up. Set the Windows default format to 48 kHz or 96 kHz.',
+  'audioProfessional.issue.roomCorrectionBitPerfectDisabled': 'Room correction disables bit-perfect output.',
+  'audioProfessional.issue.roomCorrectionClippingRisk': 'Room correction output has clipping risk. Lower FIR Trim or enable Auto Gain.',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows shared rate is too high: the device is at {deviceRate} while ECHO is outputting {decoderRate} PCM, so playback may sound sped up. Set the Windows default format to 48 kHz.',
+  'audioProfessional.issue.windowsDefaultFormatUnusual': 'The Windows default format looks too high: it is currently {deviceRate}. ECHO will only warn you and will not change system settings; 48 kHz is recommended.',
   'audioProfessional.group.directDsp': 'Direct And DSP',
   'audioProfessional.group.playbackChain': 'Playback Chain',
   'audioProfessional.group.sampleRate': 'Sample-Rate Chain',
@@ -11767,6 +11974,7 @@ const enUS: TranslationMap = {
   'audioProfessional.row.outputLatency': 'Output latency',
   'audioProfessional.row.outputMode': 'Output mode',
   'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.roomCorrection': 'Room correction',
   'audioProfessional.row.requestedBuffer': 'Requested buffer',
   'audioProfessional.row.requestedOutputSampleRate': 'Requested output',
   'audioProfessional.row.resampler': 'Resampler',
@@ -12026,6 +12234,11 @@ const enUS: TranslationMap = {
   'historyPage.refresh.none': 'No invalid history songs found.',
   'historyPage.refresh.removed': 'Removed {count} invalid history songs.',
   'historyPage.refresh.running': 'Refreshing...',
+  'historyPage.recent.aria': 'Recently played list',
+  'historyPage.recent.count': '{count} recent',
+  'historyPage.recent.empty': 'No recent playback yet.',
+  'historyPage.recent.kicker': 'Sorted by time',
+  'historyPage.recent.title': 'Recently played',
   'historyPage.search.placeholder': 'Search title, artist, album, or path',
   'historyPage.summary.all.count': 'Total plays',
   'historyPage.summary.all.duration': 'Total time',
@@ -12406,7 +12619,7 @@ const enUS: TranslationMap = {
   'lyricsSettings.wordHighlight.title': 'Word-by-word lyrics highlight',
   'route.mvSettings.description': 'MV binding and local matching settings.',
   'route.mvSettings.label': 'MV Settings',
-  'mvSettings.action.chooseFile': 'Choose file',
+  'mvSettings.action.chooseFile': 'Import local video',
   'mvSettings.action.close': 'Close MV settings',
   'mvSettings.action.collapseNetwork': 'Collapse network sources',
   'mvSettings.action.dragReorder': 'Drag to set priority',
@@ -12489,11 +12702,20 @@ const enUS: TranslationMap = {
   'mvSettings.network.syncMode.precise': 'Precise',
   'mvSettings.network.title': 'Network Sources',
   'mvSettings.offset.aria': 'MV sync offset',
-  'mvSettings.offset.description': 'Saved only for this song MV; other songs are unaffected.',
+  'mvSettings.offset.description': 'Positive values advance the MV; negative values delay it. Saved only for this song MV.',
   'mvSettings.offset.earlier': 'MV earlier {value}',
+  'mvSettings.offset.earlierShort': 'Earlier {value}',
+  'mvSettings.offset.input': 'Offset seconds',
   'mvSettings.offset.later': 'MV later {value}',
+  'mvSettings.offset.laterShort': 'Later {value}',
   'mvSettings.offset.reset': 'Reset MV offset',
-  'mvSettings.offset.title': 'This song MV offset',
+  'mvSettings.offset.resetShort': 'Reset',
+  'mvSettings.offset.slider': 'MV sync offset slider',
+  'mvSettings.offset.startDescription': 'Enter the start second in the video, up to 600s. This song aligns from there.',
+  'mvSettings.offset.startInput': 'MV start second',
+  'mvSettings.offset.startTitle': 'Start video from',
+  'mvSettings.offset.step': 'Adjustment step',
+  'mvSettings.offset.title': 'MV sync calibration',
   'mvSettings.provider.local': 'Local',
   'mvSettings.quality.max': 'Max',
   'mvSettings.search.input': 'MV search keywords',
@@ -12744,6 +12966,26 @@ const enUS: TranslationMap = {
   'settings.eq.autoGain.status.recovering': 'Recovering',
   'settings.eq.autoGain.status.reducing': 'Reducing',
   'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.room.active': 'Active',
+  'settings.eq.room.channelMode': 'Channels',
+  'settings.eq.room.clear': 'Clear',
+  'settings.eq.room.disable': 'Disable FIR',
+  'settings.eq.room.empty': 'No IR',
+  'settings.eq.room.enable': 'Enable FIR',
+  'settings.eq.room.error': 'Error',
+  'settings.eq.room.error.invalidImpulse': 'Invalid IR',
+  'settings.eq.room.error.invalidWav': 'Invalid WAV',
+  'settings.eq.room.error.missingFile': 'Missing IR file',
+  'settings.eq.room.error.missingIr': 'No IR loaded',
+  'settings.eq.room.error.tooLong': 'IR too long',
+  'settings.eq.room.import': 'Import IR',
+  'settings.eq.room.ir': 'IR',
+  'settings.eq.room.loaded': 'Loaded',
+  'settings.eq.room.sampleRate': 'Sample rate',
+  'settings.eq.room.short': 'FIR',
+  'settings.eq.room.tapCount': 'Taps',
+  'settings.eq.room.title': 'Room Correction',
+  'settings.eq.room.trim': 'Trim',
   'settings.eq.analyzer.overlayAria': 'EQ realtime spectrum overlay',
   'settings.eq.analyzer.input': 'Input',
   'settings.eq.analyzer.mode': 'Analyzer mode',
@@ -12783,6 +13025,7 @@ const enUS: TranslationMap = {
   'settings.eq.bitPerfect.sourceBoth': 'EQ + Channel Balance',
   'settings.eq.bitPerfect.sourceChannel': 'Channel Balance',
   'settings.eq.bitPerfect.sourceEq': 'EQ',
+  'settings.eq.bitPerfect.sourceRoom': 'Room Correction',
   'settings.eq.channel.active': 'Active',
   'settings.eq.channel.balance': 'Balance',
   'settings.eq.channel.bypassed': 'Bypassed',
@@ -12994,6 +13237,15 @@ const enUS: TranslationMap = {
   'settings.general.dataBackup.action.importBackup': 'Import Backup',
   'settings.general.dataBackup.action.importingBackup': 'Importing...',
   'settings.general.dataBackup.action.openDirectory': 'Open Directory',
+  'settings.general.dataBackup.progress.preparing': 'Preparing',
+  'settings.general.dataBackup.progress.snapshot': 'Creating snapshot',
+  'settings.general.dataBackup.progress.scanning': 'Scanning data',
+  'settings.general.dataBackup.progress.writing': 'Writing backup',
+  'settings.general.dataBackup.progress.finalizing': 'Finalizing',
+  'settings.general.dataBackup.progress.completed': 'Completed',
+  'settings.general.dataBackup.progress.failed': 'Failed',
+  'settings.general.dataBackup.progress.measuring': 'Measuring',
+  'settings.general.dataBackup.progress.waiting': 'Waiting to write',
   'settings.general.dataPackage.title': 'Export / Migrate ECHO Data Package',
   'settings.general.dataPackage.description': 'Export settings, library indexes, playlist snapshots, cover cache paths, and account-state notes. Music files and login secrets are not included.',
   'settings.general.dataPackage.action.export': 'Export ECHO Data Package',

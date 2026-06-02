@@ -35,11 +35,17 @@ const formatIssueReason = (
   value: string,
   fallback: string,
   formatSharedMixRateTooHigh: (decoderRate: number, deviceRate: number) => string,
+  formatWindowsAudioDefaultFormatUnusual: (deviceRate: number) => string,
 ): string => {
   const sharedMixRateMatch = /^shared_output_mix_rate_too_high:(\d+)->(\d+)$/u.exec(value);
+  const windowsAudioDefaultFormatMatch = /^windows_audio_default_format_unusual:(\d+)$/u.exec(value);
 
   if (sharedMixRateMatch) {
     return formatSharedMixRateTooHigh(Number(sharedMixRateMatch[1]), Number(sharedMixRateMatch[2]));
+  }
+
+  if (windowsAudioDefaultFormatMatch) {
+    return formatWindowsAudioDefaultFormatUnusual(Number(windowsAudioDefaultFormatMatch[1]));
   }
 
   return normalizeReason(value, fallback);
@@ -102,14 +108,27 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
   const issueReasons = useMemo(() => (
     [status?.error, ...(status?.warnings ?? [])]
       .filter((reason): reason is string => Boolean(reason?.trim()))
-      .map((reason) => formatIssueReason(
-        reason,
-        unknown,
-        (decoderRate, deviceRate) => t('audioProfessional.issue.sharedMixRateTooHigh', {
-          decoderRate: formatRate(decoderRate, unknown),
-          deviceRate: formatRate(deviceRate, unknown),
-        }),
-      ))
+      .map((reason) => {
+        if (reason === 'room_correction_bit_perfect_disabled') {
+          return t('audioProfessional.issue.roomCorrectionBitPerfectDisabled');
+        }
+
+        if (reason === 'room_correction_clipping_risk') {
+          return t('audioProfessional.issue.roomCorrectionClippingRisk');
+        }
+
+        return formatIssueReason(
+          reason,
+          unknown,
+          (decoderRate, deviceRate) => t('audioProfessional.issue.sharedMixRateTooHigh', {
+            decoderRate: formatRate(decoderRate, unknown),
+            deviceRate: formatRate(deviceRate, unknown),
+          }),
+          (deviceRate) => t('audioProfessional.issue.windowsDefaultFormatUnusual', {
+            deviceRate: formatRate(deviceRate, unknown),
+          }),
+        );
+      })
   ), [status, t, unknown]);
 
   const badges = useMemo<ProfessionalStatusBadge[]>(() => {
@@ -121,7 +140,7 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
     if (status?.resampling) {
       nextBadges.push({ label: t('audioProfessional.badge.resampling'), tone: 'warning' });
     }
-    if (status?.dspActive || status?.eqEnabled || status?.channelBalanceEnabled) {
+    if (status?.dspActive || status?.eqEnabled || status?.roomCorrectionEnabled || status?.channelBalanceEnabled) {
       nextBadges.push({ label: t('audioProfessional.badge.dsp'), tone: 'warning' });
     }
     if (status?.replayGainEnabled) {
@@ -174,6 +193,7 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
         { label: t('audioProfessional.row.resampling'), value: status?.resampling ? yes : no, tone: status?.resampling ? 'warning' : 'good' },
         { label: t('audioProfessional.row.sampleRateMismatch'), value: status?.sampleRateMismatch ? yes : no, tone: status?.sampleRateMismatch ? 'danger' : 'good' },
         { label: t('audioProfessional.row.eq'), value: status?.eqEnabled ? enabled : disabled, tone: status?.eqEnabled ? 'warning' : 'muted' },
+        { label: t('audioProfessional.row.roomCorrection'), value: status?.roomCorrectionEnabled ? enabled : disabled, tone: status?.roomCorrectionEnabled ? 'warning' : 'muted' },
         { label: t('audioProfessional.row.channelBalance'), value: status?.channelBalanceEnabled ? enabled : disabled, tone: status?.channelBalanceEnabled ? 'warning' : 'muted' },
         { label: t('audioProfessional.row.replayGain'), value: status?.replayGainEnabled ? `${status.replayGainMode ?? 'track'} / ${formatDb(status.replayGainAppliedDb, '0.00 dB')}` : disabled },
         { label: t('audioProfessional.row.clippingProtection'), value: status?.replayGainPreventedClipping || status?.clippingRisk ? enabled : disabled, tone: status?.clippingRisk ? 'danger' : 'muted' },

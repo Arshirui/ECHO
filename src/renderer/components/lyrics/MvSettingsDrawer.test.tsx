@@ -305,7 +305,7 @@ describe('MvSettingsDrawer', () => {
   it('contains the MV choose action and omits the local search shortcut', async () => {
     renderDrawer();
 
-    expect(await screen.findByRole('button', { name: /Choose file/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Import local video/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Find local/ })).toBeNull();
   });
 
@@ -313,7 +313,7 @@ describe('MvSettingsDrawer', () => {
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
     renderDrawer();
 
-    fireEvent.click(await screen.findByRole('button', { name: /Choose file/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Import local video/ }));
 
     await waitFor(() => expect(window.echo.mv.chooseLocalVideo).toHaveBeenCalledWith('track-1'));
     expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'mv:changed' }));
@@ -327,7 +327,7 @@ describe('MvSettingsDrawer', () => {
   it('does not replay the current track when replay on MV change is disabled', async () => {
     renderDrawer({ ...defaultMvSettings, replayAudioOnChange: false });
 
-    fireEvent.click(await screen.findByRole('button', { name: /Choose file/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Import local video/ }));
 
     await waitFor(() => expect(window.echo.mv.chooseLocalVideo).toHaveBeenCalledWith('track-1'));
     expect(window.echo.playback.playLocalFile).not.toHaveBeenCalled();
@@ -442,13 +442,41 @@ describe('MvSettingsDrawer', () => {
   });
 
   it('saves MV offset from the MV drawer', async () => {
-    const { container } = renderDrawer({ ...defaultMvSettings, restartAudioOnLoad: true }, makeVideo());
+    const { container } = renderDrawer(defaultMvSettings, makeVideo());
 
     await waitFor(() => expect(screen.getByLabelText('MV sync offset')).toBeTruthy());
-    fireEvent.click(screen.getByTitle('MV earlier 100ms'));
+    fireEvent.click(screen.getByTitle('MV earlier 500ms'));
 
-    await waitFor(() => expect(window.echo.mv.setOffset).toHaveBeenCalledWith('track-1', 100));
-    expect(container.querySelector('.mv-offset-value')?.textContent).toBe('+100ms');
+    await waitFor(() => expect(window.echo.mv.setOffset).toHaveBeenCalledWith('track-1', 500));
+    expect(container.querySelector('.mv-offset-value')?.textContent).toBe('+500ms');
+  });
+
+  it('saves a larger MV offset from the range and number controls', async () => {
+    const { container } = renderDrawer(defaultMvSettings, makeVideo());
+
+    fireEvent.change(await screen.findByRole('slider', { name: /MV sync offset slider/ }), { target: { value: '45000' } });
+
+    await waitFor(() => expect(window.echo.mv.setOffset).toHaveBeenCalledWith('track-1', 45000));
+    expect(container.querySelector('.mv-offset-value')?.textContent).toBe('+45s');
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Offset seconds/ }), { target: { value: '-600' } });
+
+    await waitFor(() => expect(window.echo.mv.setOffset).toHaveBeenLastCalledWith('track-1', -600000));
+    expect(container.querySelector('.mv-offset-value')?.textContent).toBe('-600s');
+  });
+
+  it('sets the MV start second for the current song', async () => {
+    const { container } = renderDrawer(defaultMvSettings, makeVideo());
+
+    fireEvent.change(await screen.findByRole('spinbutton', { name: /MV start second/ }), { target: { value: '12.5' } });
+
+    await waitFor(() => expect(window.echo.mv.setOffset).toHaveBeenCalledWith('track-1', 12500));
+    expect(container.querySelector('.mv-offset-value')?.textContent).toBe('+12.5s');
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /MV start second/ }), { target: { value: '600' } });
+
+    await waitFor(() => expect(window.echo.mv.setOffset).toHaveBeenLastCalledWith('track-1', 600000));
+    expect(container.querySelector('.mv-offset-value')?.textContent).toBe('+600s');
   });
 
   it('resets immersive MV background tuning', async () => {
