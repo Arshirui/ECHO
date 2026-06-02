@@ -16,6 +16,7 @@ dist/
 /.codex-backups/
 
 # Native/Electron build outputs
+electron-app/build/
 native/**/build/
 native/**/cmake-build-*/
 CMakeFiles/
@@ -40,6 +41,8 @@ dist-packaged*/
 
 # Local media/lyrics scratch files
 *.lrc
+/tmp-*
+/*.patch
 
 # Local runtime state
 /room-correction-state.json
