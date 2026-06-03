@@ -176,6 +176,33 @@ describe('lyricsParser', () => {
     ]);
   });
 
+  it('keeps AMLL TTML inline translation and romanization out of primary lyric text', () => {
+    const ttml = [
+      '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">',
+      '<body><div>',
+      '<p begin="00:00:01.000" end="00:00:02.000">',
+      '<span begin="00:00:01.000" end="00:00:01.500">Hello</span><span begin="00:00:01.500" end="00:00:02.000">world</span>',
+      '<span ttm:role="x-translation">你好世界</span>',
+      '<span ttm:role="x-roman">hello world</span>',
+      '</p>',
+      '</div></body>',
+      '</tt>',
+    ].join('');
+
+    expect(parseSyncedLyrics(ttml)).toEqual([
+      {
+        timeMs: 1000,
+        text: 'Hello world',
+        translation: '你好世界',
+        romanization: 'hello world',
+        words: [
+          { text: 'Hello ', startMs: 1000, endMs: 1500 },
+          { text: 'world', startMs: 1500, endMs: 2000 },
+        ],
+      },
+    ]);
+  });
+
   it('derives TTML paragraph timing from child spans when the paragraph has no begin', () => {
     const ttml = [
       '<tt xmlns="http://www.w3.org/ns/ttml">',

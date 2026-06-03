@@ -161,6 +161,8 @@ beforeEach(() => {
         }),
       ),
       exportPreset: vi.fn().mockResolvedValue('D:\\Exports\\Desk Headphones.json'),
+      exportApoPreset: vi.fn().mockResolvedValue('D:\\Exports\\Desk Headphones.txt'),
+      exportApoGraphicEqPreset: vi.fn().mockResolvedValue('D:\\Exports\\Desk Headphones GraphicEQ.txt'),
       previewImportPreset: vi.fn().mockResolvedValue({
         request: {
           name: 'User Bright',
@@ -262,7 +264,7 @@ describe('EqPanel', () => {
     expect(screen.getByRole('button', { name: 'Hold original' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Bass lift/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Vocal focus/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Air/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'AirBrighter space' })).toBeTruthy();
     expect(screen.getAllByText('Headroom').length).toBeGreaterThan(0);
     expect(screen.getByText('Bit-perfect')).toBeTruthy();
   });
@@ -327,23 +329,142 @@ describe('EqPanel', () => {
     expect((screen.getByLabelText('Simple tone amount') as HTMLInputElement).value).toBe('1.5');
   });
 
+  it('lets Simple users nudge tone amount without dragging the slider', async () => {
+    renderEqPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Bass lift/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More' }));
+
+    await waitFor(() => expect((screen.getByLabelText('Simple tone amount') as HTMLInputElement).value).toBe('1.1'));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 0, gainDb: 2.8 }));
+    await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(-2.8));
+  });
+
   it('shows beginner-friendly Simple listening zones that react to tone changes', async () => {
+    vi.mocked(window.echo.eq.getState).mockResolvedValue(eqState());
     renderEqPanel();
 
     expect(await screen.findByLabelText('Simple listening zone changes')).toBeTruthy();
-    expect(screen.getByRole('group', { name: 'Low end Neutral' })).toBeTruthy();
-    expect(screen.getByRole('group', { name: 'Vocal Neutral' })).toBeTruthy();
-    expect(screen.getByRole('group', { name: 'Air Neutral' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Apply Low end tone, current Neutral' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Apply Vocal tone, current Neutral' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Apply Air tone, current Neutral' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /Bass lift/i }));
 
-    await waitFor(() => expect(screen.getByRole('group', { name: 'Low end +2.2 dB' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply Low end tone, current +2.2 dB' })).toBeTruthy());
     expect(screen.getByText('Kick and weight')).toBeTruthy();
     expect(screen.queryByText('Fc')).toBeNull();
 
     fireEvent.input(await screen.findByLabelText('Simple tone amount'), { target: { value: '1.5' } });
 
-    await waitFor(() => expect(screen.getByRole('group', { name: 'Low end +3.4 dB' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply Low end tone, current +3.4 dB' })).toBeTruthy());
+  });
+
+  it('summarizes the current Simple vibe in beginner language', async () => {
+    vi.mocked(window.echo.eq.getState).mockResolvedValue(eqState());
+    renderEqPanel();
+
+    const insight = await screen.findByLabelText('Simple current vibe summary');
+    expect(insight.textContent).toContain('Current vibeNeutral');
+    expect(insight.textContent).toContain('Main changeNeutral');
+    expect(insight.textContent).toContain('AmountReady');
+
+    fireEvent.click(screen.getByRole('button', { name: /Bass lift/i }));
+
+    await waitFor(() => expect(insight.textContent).toContain('Current vibeBass lift'));
+    await waitFor(() => expect(insight.textContent).toContain('Main changeLow end +2.2 dB'));
+    expect(insight.textContent).toContain('Amount100%');
+  });
+
+  it('lets Simple users explore beginner tones with Next vibe', async () => {
+    vi.mocked(window.echo.eq.getState).mockResolvedValue(eqState());
+    renderEqPanel();
+
+    const insight = await screen.findByLabelText('Simple current vibe summary');
+    fireEvent.click(screen.getByRole('button', { name: 'Next vibe' }));
+
+    await waitFor(() => expect(insight.textContent).toContain('Current vibeBass lift'));
+    await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(-2.5));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 0, gainDb: 2.5 }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next vibe' }));
+
+    await waitFor(() => expect(insight.textContent).toContain('Current vibeVocal focus'));
+    await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(-1.7));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 16, gainDb: 1.7 }));
+  });
+
+  it('lets Simple listening zones apply matching beginner tone curves', async () => {
+    vi.mocked(window.echo.eq.getState).mockResolvedValue(eqState());
+    renderEqPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply Vocal tone, current Neutral' }));
+
+    await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(-1.7));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 16, gainDb: 1.7 }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply Vocal tone, current +1.0 dB' })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Air tone, current -0.3 dB' }));
+
+    await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(-2));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 27, gainDb: 2 }));
+  });
+
+  it('lets Simple users undo the last beginner EQ tweak', async () => {
+    vi.mocked(window.echo.eq.getState).mockResolvedValue(eqState());
+    renderEqPanel();
+
+    const undo = await screen.findByRole<HTMLButtonElement>('button', { name: /Undo/i });
+    expect(undo.disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: /Bass lift/i }));
+
+    await waitFor(() => expect(undo.disabled).toBe(false));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply Low end tone, current +2.2 dB' })).toBeTruthy());
+    fireEvent.click(undo);
+
+    await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(0));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply Low end tone, current Neutral' })).toBeTruthy());
+  });
+
+  it('lets Simple users save the current beginner tone as a user preset', async () => {
+    vi.mocked(window.echo.eq.getState).mockResolvedValue(eqState());
+    renderEqPanel();
+
+    const saveVibe = await screen.findByRole<HTMLButtonElement>('button', { name: 'Save vibe' });
+    expect(saveVibe.disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: /Bass lift/i }));
+
+    await waitFor(() => expect(saveVibe.disabled).toBe(false));
+    fireEvent.click(saveVibe);
+
+    await waitFor(() =>
+      expect(window.echo.eq.savePreset).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'Bass lift 100%',
+        preampDb: -2.5,
+      })),
+    );
+    await waitFor(() => expect(window.echo.eq.listPresets).toHaveBeenCalled());
+  });
+
+  it('shows a beginner-safe headroom action in Simple mode when boosts can clip', async () => {
+    vi.mocked(window.echo.eq.getState).mockResolvedValue(eqState({
+      enabled: true,
+      presetId: 'custom',
+      presetName: 'Custom',
+      preampDb: 0,
+      bands: bands.map((band, index) => (index === 0 ? { ...band, gainDb: 6 } : band)),
+    }));
+    renderEqPanel();
+
+    expect(await screen.findByLabelText('Simple safe headroom')).toBeTruthy();
+    expect(screen.getByText('Needs headroom')).toBeTruthy();
+    expect(screen.getByText('Peak +6.0 dB / suggested -6.0 dB')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Make safe-6.0 dB' }));
+
+    await waitFor(() => expect(window.echo.eq.setPreamp).toHaveBeenCalledWith(-6));
   });
 
   it('shows the active Simple tone name instead of a generic modified label', async () => {
@@ -1019,6 +1140,39 @@ describe('EqPanel', () => {
       })),
     );
     expect(window.echo.eq.savePreset).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'Desk Headphones' }));
+    expect((await screen.findByRole('status')).textContent).toBe('Exported EQ preset to D:\\Exports\\Desk Headphones.json');
+  });
+
+  it('exports Equalizer APO config files with visible completion feedback', async () => {
+    renderEqPanel();
+
+    fireEvent.change(await screen.findByLabelText('Preset name'), { target: { value: 'Desk Headphones' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Export APO' }));
+
+    await waitFor(() =>
+      expect(window.echo.eq.exportApoPreset).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'Desk Headphones',
+        bands: expect.any(Array),
+      })),
+    );
+    expect(window.echo.eq.savePreset).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'Desk Headphones' }));
+    expect((await screen.findByRole('status')).textContent).toBe('Exported Equalizer APO config to D:\\Exports\\Desk Headphones.txt');
+  });
+
+  it('exports Equalizer APO GraphicEQ files with visible completion feedback', async () => {
+    renderEqPanel();
+
+    fireEvent.change(await screen.findByLabelText('Preset name'), { target: { value: 'Desk Headphones' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Export GraphicEQ' }));
+
+    await waitFor(() =>
+      expect(window.echo.eq.exportApoGraphicEqPreset).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'Desk Headphones',
+        bands: expect.any(Array),
+      })),
+    );
+    expect(window.echo.eq.savePreset).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'Desk Headphones' }));
+    expect((await screen.findByRole('status')).textContent).toBe('Exported GraphicEQ config to D:\\Exports\\Desk Headphones GraphicEQ.txt');
   });
 
   it('imports an EQ preset file and applies the imported preset', async () => {
@@ -1087,7 +1241,7 @@ describe('EqPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview APO' }));
 
     expect(await screen.findByText('Import safety')).toBeTruthy();
-    expect(screen.getByText('Needs headroom')).toBeTruthy();
+    expect(screen.getAllByText('Needs headroom').length).toBeGreaterThan(0);
     expect(screen.getAllByText('+6.0 dB').length).toBeGreaterThan(0);
     expect(screen.getByText('+6.0 dB @ 80')).toBeTruthy();
     expect(screen.getByText('-4.0 dB @ 1k')).toBeTruthy();

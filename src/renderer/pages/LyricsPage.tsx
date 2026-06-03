@@ -502,6 +502,8 @@ const reasonLabels: Record<string, string> = {
   local_sidecar_priority: "本地歌词",
   auto_accept: "自动采用",
   rejected_by_user: "已拒绝",
+  amll_ttml_provider: "AMLL TTML",
+  netease_id: "NetEase ID",
   netease_provider: "NetEase",
   qqmusic_provider: "QQ 音乐",
   kugou_provider: "酷狗",
@@ -517,13 +519,14 @@ const visibleReasons = (candidate: LyricsSearchCandidate): string[] =>
 const sourceFilterKey = (candidate: LyricsSearchCandidate): LyricsProviderId =>
   candidate.provider;
 
-const searchableLyricsProviderIds: LyricsProviderId[] = ["local", "lrclib", "netease", "qqmusic", "kugou", "kuwo"];
+const searchableLyricsProviderIds: LyricsProviderId[] = ["local", "lrclib", "amll-ttml", "netease", "qqmusic", "kugou", "kuwo"];
 const searchableLyricsProviderSet = new Set<string>(searchableLyricsProviderIds);
 const isCandidateSourceFilter = (value: string | null): value is CandidateSourceFilter =>
   value === "all" || searchableLyricsProviderSet.has(value ?? "");
 const lyricsProviderLabels: Partial<Record<LyricsProviderId, string>> = {
   local: "本地",
   lrclib: "LRCLIB",
+  "amll-ttml": "AMLL TTML",
   netease: "NetEase",
   qqmusic: "QQ 音乐",
   kugou: "酷狗",
@@ -534,13 +537,14 @@ const lyricsProviderLabels: Partial<Record<LyricsProviderId, string>> = {
 const lyricsProviderSortOrder = new Map<LyricsProviderId, number>([
   ["local", 0],
   ["lrclib", 1],
-  ["netease", 2],
-  ["qqmusic", 3],
-  ["kugou", 4],
-  ["kuwo", 5],
-  ["musixmatch", 6],
-  ["genius", 7],
-  ["manual", 8],
+  ["amll-ttml", 2],
+  ["netease", 3],
+  ["qqmusic", 4],
+  ["kugou", 5],
+  ["kuwo", 6],
+  ["musixmatch", 7],
+  ["genius", 8],
+  ["manual", 9],
 ]);
 
 const mergeLyricsCandidates = (

@@ -76,11 +76,12 @@ const editorTabs: Array<{ key: EditorTab; label: string; icon: typeof Tag }> = [
   { key: 'file', label: '文件', icon: FileAudio },
 ];
 
-const lyricSearchProviders: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo'];
+const lyricSearchProviders: LyricsProviderId[] = ['local', 'lrclib', 'amll-ttml', 'netease', 'qqmusic', 'kugou', 'kuwo'];
 
 const lyricProviderLabels: Record<LyricsProviderId, string> = {
   local: '本地',
   lrclib: 'LRCLIB',
+  'amll-ttml': 'AMLL TTML',
   netease: '网易云',
   qqmusic: 'QQ 音乐',
   kugou: '酷狗',

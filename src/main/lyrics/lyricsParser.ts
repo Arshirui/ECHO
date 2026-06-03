@@ -731,6 +731,23 @@ const firstTtmlAttribute = (attributes: Map<string, string>, names: string[]): s
   return null;
 };
 
+const ttmlRoleKind = (attributes: Map<string, string>): 'translation' | 'romanization' | null => {
+  const role = firstTtmlAttribute(attributes, ['ttm:role', 'role'])?.toLowerCase();
+  if (!role) {
+    return null;
+  }
+
+  if (role.includes('x-translation')) {
+    return 'translation';
+  }
+
+  if (role.includes('x-roman')) {
+    return 'romanization';
+  }
+
+  return null;
+};
+
 const shouldInsertTtmlTextSpace = (left: string, right: string): boolean => {
   const leftCharacters = Array.from(left);
   const rightCharacters = Array.from(right);
@@ -795,6 +812,8 @@ const parseTtmlParagraph = (
   const durationMs = parseTtmlTime(attributes.get('dur'));
   const parentStartMs = beginMs ?? 0;
   const parts: TtmlTextPart[] = [];
+  let inlineTranslation: string | null = null;
+  let inlineRomanization: string | null = null;
   let cursor = 0;
 
   for (const match of content.matchAll(ttmlSpanPattern)) {
@@ -809,6 +828,20 @@ const parseTtmlParagraph = (
     });
 
     const spanAttributes = parseTtmlAttributes(match[1]);
+    const roleKind = ttmlRoleKind(spanAttributes);
+    if (roleKind) {
+      const text = normalizeTtmlTextPart(match[2]);
+      if (text) {
+        if (roleKind === 'translation') {
+          inlineTranslation = inlineTranslation ? `${inlineTranslation} ${text}` : text;
+        } else {
+          inlineRomanization = inlineRomanization ? `${inlineRomanization} ${text}` : text;
+        }
+      }
+      cursor = match.index + match[0].length;
+      continue;
+    }
+
     const spanStartMs = resolveTtmlChildTime(parseTtmlTime(spanAttributes.get('begin')), parentStartMs);
     const spanEndMs =
       resolveTtmlChildTime(parseTtmlTime(spanAttributes.get('end')), parentStartMs) ??
@@ -862,7 +895,7 @@ const parseTtmlParagraph = (
       })),
   );
 
-  const line = {
+  const line: LyricLine = {
     timeMs: lineBeginMs,
     ...attachWordTimings(splitInlineTranslation(text), words),
   };
@@ -870,6 +903,12 @@ const parseTtmlParagraph = (
   const translation = lineId ? translationsById.get(lineId) : undefined;
   if (translation && !line.translation) {
     line.translation = translation;
+  }
+  if (inlineTranslation && !line.translation) {
+    line.translation = inlineTranslation;
+  }
+  if (inlineRomanization && !line.romanization) {
+    line.romanization = inlineRomanization;
   }
 
   return line;

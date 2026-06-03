@@ -1514,6 +1514,8 @@ export type TranslationKey =
   | 'lyricsSettings.fontPicker.searchPlaceholder'
   | 'lyricsSettings.fontPicker.title'
   | 'lyricsSettings.provider.cached'
+  | 'lyricsSettings.provider.amllTtml'
+  | 'lyricsSettings.provider.amllTtmlDescription'
   | 'lyricsSettings.provider.chineseCatalogDescription'
   | 'lyricsSettings.provider.genius'
   | 'lyricsSettings.provider.kugou'
@@ -2524,6 +2526,9 @@ export type TranslationKey =
   | 'settings.eq.error.presetName'
   | 'settings.eq.error.profileName'
   | 'settings.eq.error.profileTarget'
+  | 'settings.eq.export.successApo'
+  | 'settings.eq.export.successGraphicEq'
+  | 'settings.eq.export.successPreset'
   | 'settings.eq.import.filters'
   | 'settings.eq.import.filtersValue'
   | 'settings.eq.import.filterPreview'
@@ -2604,6 +2609,25 @@ export type TranslationKey =
   | 'settings.eq.signal.preamp'
   | 'settings.eq.signal.protecting'
   | 'settings.eq.signal.title'
+  | 'settings.eq.simpleAction.customPresetName'
+  | 'settings.eq.simpleAction.lastTweak'
+  | 'settings.eq.simpleAction.nextVibe'
+  | 'settings.eq.simpleAction.nextVibeDetail'
+  | 'settings.eq.simpleAction.savedPresetName'
+  | 'settings.eq.simpleAction.saveVibe'
+  | 'settings.eq.simpleAction.saveVibeDetail'
+  | 'settings.eq.simpleInsight.amount'
+  | 'settings.eq.simpleInsight.aria'
+  | 'settings.eq.simpleInsight.custom'
+  | 'settings.eq.simpleInsight.mainChange'
+  | 'settings.eq.simpleInsight.ready'
+  | 'settings.eq.simpleInsight.vibe'
+  | 'settings.eq.simpleSafety.action'
+  | 'settings.eq.simpleSafety.aria'
+  | 'settings.eq.simpleSafety.risk'
+  | 'settings.eq.simpleSafety.riskDetail'
+  | 'settings.eq.simpleSafety.safe'
+  | 'settings.eq.simpleSafety.safeDetail'
   | 'settings.eq.simpleTone.air'
   | 'settings.eq.simpleTone.airDetail'
   | 'settings.eq.simpleTone.amount'
@@ -2613,12 +2637,15 @@ export type TranslationKey =
   | 'settings.eq.simpleTone.bassDetail'
   | 'settings.eq.simpleTone.flat'
   | 'settings.eq.simpleTone.flatDetail'
+  | 'settings.eq.simpleTone.less'
+  | 'settings.eq.simpleTone.more'
   | 'settings.eq.simpleTone.vocal'
   | 'settings.eq.simpleTone.vocalDetail'
   | 'settings.eq.simpleTone.warm'
   | 'settings.eq.simpleTone.warmDetail'
   | 'settings.eq.simpleZone.air'
   | 'settings.eq.simpleZone.airDetail'
+  | 'settings.eq.simpleZone.applyAria'
   | 'settings.eq.simpleZone.aria'
   | 'settings.eq.simpleZone.low'
   | 'settings.eq.simpleZone.lowDetail'
@@ -4533,6 +4560,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.fontPicker.searchPlaceholder': '搜索已安装字体',
   'lyricsSettings.fontPicker.title': '选择歌词字体',
   'lyricsSettings.provider.cached': '缓存歌词',
+  'lyricsSettings.provider.amllTtml': 'AMLL TTML',
+  'lyricsSettings.provider.amllTtmlDescription': '逐词 TTML 歌词库，需要匹配网易云 ID，默认关闭',
   'lyricsSettings.provider.chineseCatalogDescription': '中文曲库补充',
   'lyricsSettings.provider.genius': 'Genius',
   'lyricsSettings.provider.kugou': '酷狗音乐',
@@ -5543,6 +5572,9 @@ const zhCN: TranslationMap = {
   'settings.eq.error.presetName': '请输入预设名称。',
   'settings.eq.error.profileName': '请输入配置档名称。',
   'settings.eq.error.profileTarget': '请选择一个配置档。',
+  'settings.eq.export.successApo': '已导出 Equalizer APO 配置：{path}',
+  'settings.eq.export.successGraphicEq': '已导出 GraphicEQ 配置：{path}',
+  'settings.eq.export.successPreset': '已导出 EQ 预设：{path}',
   'settings.eq.import.filters': 'Filter',
   'settings.eq.import.filtersValue': '{count} 导入 / {skipped} 跳过',
   'settings.eq.import.filterPreview': 'Filter 明细',
@@ -5623,6 +5655,25 @@ const zhCN: TranslationMap = {
   'settings.eq.signal.preamp': '前级',
   'settings.eq.signal.protecting': '保护中',
   'settings.eq.signal.title': '信号链',
+  'settings.eq.simpleAction.customPresetName': '我的 EQ 听感',
+  'settings.eq.simpleAction.lastTweak': '上一下',
+  'settings.eq.simpleAction.nextVibe': '换个听感',
+  'settings.eq.simpleAction.nextVibeDetail': '试试看',
+  'settings.eq.simpleAction.savedPresetName': '{name} {amount}%',
+  'settings.eq.simpleAction.saveVibe': '保存听感',
+  'settings.eq.simpleAction.saveVibeDetail': '保存当前',
+  'settings.eq.simpleInsight.amount': '强度',
+  'settings.eq.simpleInsight.aria': 'Simple 当前听感摘要',
+  'settings.eq.simpleInsight.custom': '手动听感',
+  'settings.eq.simpleInsight.mainChange': '主要变化',
+  'settings.eq.simpleInsight.ready': '就绪',
+  'settings.eq.simpleInsight.vibe': '当前听感',
+  'settings.eq.simpleSafety.action': '留出余量',
+  'settings.eq.simpleSafety.aria': 'Simple 安全余量',
+  'settings.eq.simpleSafety.risk': '需要余量',
+  'settings.eq.simpleSafety.riskDetail': '峰值 {peak} / 建议 {preamp}',
+  'settings.eq.simpleSafety.safe': '余量安心',
+  'settings.eq.simpleSafety.safeDetail': '峰值 {peak} / 前级 {preamp}',
   'settings.eq.simpleTone.air': '空气感',
   'settings.eq.simpleTone.airDetail': '更亮更开阔',
   'settings.eq.simpleTone.amount': '味道强度',
@@ -5632,12 +5683,15 @@ const zhCN: TranslationMap = {
   'settings.eq.simpleTone.bassDetail': '鼓点更饱满',
   'settings.eq.simpleTone.flat': '恢复平直',
   'settings.eq.simpleTone.flatDetail': '回到原点',
+  'settings.eq.simpleTone.less': '淡一点',
+  'settings.eq.simpleTone.more': '浓一点',
   'settings.eq.simpleTone.vocal': '人声靠前',
   'settings.eq.simpleTone.vocalDetail': '歌词更清楚',
   'settings.eq.simpleTone.warm': '暖一点',
   'settings.eq.simpleTone.warmDetail': '柔和耐听',
   'settings.eq.simpleZone.air': '空气感',
   'settings.eq.simpleZone.airDetail': '亮度和空间',
+  'settings.eq.simpleZone.applyAria': '应用{zone}听感，当前{value}',
   'settings.eq.simpleZone.aria': 'Simple 听感区域变化',
   'settings.eq.simpleZone.low': '低频',
   'settings.eq.simpleZone.lowDetail': '鼓点和厚度',
@@ -7469,6 +7523,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.fontPicker.searchPlaceholder': '搜尋已安裝字體',
   'lyricsSettings.fontPicker.title': '選擇歌詞字體',
   'lyricsSettings.provider.cached': '快取歌詞',
+  'lyricsSettings.provider.amllTtml': 'AMLL TTML',
+  'lyricsSettings.provider.amllTtmlDescription': '逐詞 TTML 歌詞庫，需要匹配網易雲 ID，預設關閉',
   'lyricsSettings.provider.chineseCatalogDescription': '中文曲庫補充',
   'lyricsSettings.provider.genius': 'Genius',
   'lyricsSettings.provider.kugou': '酷狗音樂',
@@ -7990,6 +8046,9 @@ const zhTW: TranslationMap = {
   'settings.eq.error.bridgeDeletePreset': '桌面橋接不可用。請在 ECHO Next 桌面端刪除 EQ 預設。',
   'settings.eq.error.bridgeSavePreset': '桌面橋接不可用。請在 ECHO Next 桌面端儲存 EQ 預設。',
   'settings.eq.error.presetName': '請輸入預設名稱。',
+  'settings.eq.export.successApo': '已匯出 Equalizer APO 設定：{path}',
+  'settings.eq.export.successGraphicEq': '已匯出 GraphicEQ 設定：{path}',
+  'settings.eq.export.successPreset': '已匯出 EQ 預設：{path}',
   'settings.eq.import.filters': 'Filter',
   'settings.eq.import.filtersValue': '{count} 匯入 / {skipped} 跳過',
   'settings.eq.import.filterPreview': 'Filter 明細',
@@ -8061,6 +8120,25 @@ const zhTW: TranslationMap = {
   'settings.eq.signal.preamp': '前級',
   'settings.eq.signal.protecting': '保護中',
   'settings.eq.signal.title': '訊號鏈',
+  'settings.eq.simpleAction.customPresetName': '我的 EQ 聽感',
+  'settings.eq.simpleAction.lastTweak': '上一個調整',
+  'settings.eq.simpleAction.nextVibe': '換個聽感',
+  'settings.eq.simpleAction.nextVibeDetail': '試試看',
+  'settings.eq.simpleAction.savedPresetName': '{name} {amount}%',
+  'settings.eq.simpleAction.saveVibe': '儲存聽感',
+  'settings.eq.simpleAction.saveVibeDetail': '儲存目前',
+  'settings.eq.simpleInsight.amount': '強度',
+  'settings.eq.simpleInsight.aria': 'Simple 目前聽感摘要',
+  'settings.eq.simpleInsight.custom': '手動聽感',
+  'settings.eq.simpleInsight.mainChange': '主要變化',
+  'settings.eq.simpleInsight.ready': '就緒',
+  'settings.eq.simpleInsight.vibe': '目前聽感',
+  'settings.eq.simpleSafety.action': '留出餘量',
+  'settings.eq.simpleSafety.aria': 'Simple 安全餘量',
+  'settings.eq.simpleSafety.risk': '需要餘量',
+  'settings.eq.simpleSafety.riskDetail': '峰值 {peak} / 建議 {preamp}',
+  'settings.eq.simpleSafety.safe': '餘量安心',
+  'settings.eq.simpleSafety.safeDetail': '峰值 {peak} / 前級 {preamp}',
   'settings.eq.simpleTone.air': '空氣感',
   'settings.eq.simpleTone.airDetail': '更亮更開闊',
   'settings.eq.simpleTone.amount': '味道強度',
@@ -8070,12 +8148,15 @@ const zhTW: TranslationMap = {
   'settings.eq.simpleTone.bassDetail': '鼓點更飽滿',
   'settings.eq.simpleTone.flat': '恢復平直',
   'settings.eq.simpleTone.flatDetail': '回到原點',
+  'settings.eq.simpleTone.less': '淡一點',
+  'settings.eq.simpleTone.more': '濃一點',
   'settings.eq.simpleTone.vocal': '人聲靠前',
   'settings.eq.simpleTone.vocalDetail': '歌詞更清楚',
   'settings.eq.simpleTone.warm': '暖一點',
   'settings.eq.simpleTone.warmDetail': '柔和耐聽',
   'settings.eq.simpleZone.air': '空氣感',
   'settings.eq.simpleZone.airDetail': '亮度和空間',
+  'settings.eq.simpleZone.applyAria': '套用{zone}聽感，目前{value}',
   'settings.eq.simpleZone.aria': 'Simple 聽感區域變化',
   'settings.eq.simpleZone.low': '低頻',
   'settings.eq.simpleZone.lowDetail': '鼓點和厚度',
@@ -10247,6 +10328,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.fontPicker.searchPlaceholder': 'インストール済みフォントを検索',
   'lyricsSettings.fontPicker.title': '歌詞フォントを選択',
   'lyricsSettings.provider.cached': 'キャッシュ歌詞',
+  'lyricsSettings.provider.amllTtml': 'AMLL TTML',
+  'lyricsSettings.provider.amllTtmlDescription': '単語単位 TTML 歌詞ライブラリ。NetEase ID の照合が必要で、既定では無効です',
   'lyricsSettings.provider.chineseCatalogDescription': '中国語カタログ補完',
   'lyricsSettings.provider.genius': 'Genius',
   'lyricsSettings.provider.kugou': 'KuGou Music',
@@ -10660,6 +10743,9 @@ const jaJP: TranslationMap = {
   'settings.eq.error.bridgeDeletePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを削除してください。',
   'settings.eq.error.bridgeSavePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを保存してください。',
   'settings.eq.error.presetName': 'プリセット名を入力してください。',
+  'settings.eq.export.successApo': 'Equalizer APO 設定を書き出しました: {path}',
+  'settings.eq.export.successGraphicEq': 'GraphicEQ 設定を書き出しました: {path}',
+  'settings.eq.export.successPreset': 'EQ プリセットを書き出しました: {path}',
   'settings.eq.import.filters': 'Filter',
   'settings.eq.import.filtersValue': '{count} インポート / {skipped} スキップ',
   'settings.eq.import.filterPreview': 'Filter 詳細',
@@ -10810,6 +10896,25 @@ const jaJP: TranslationMap = {
   'settings.eq.signal.preamp': 'プリアンプ',
   'settings.eq.signal.protecting': '保護中',
   'settings.eq.signal.title': '信号チェーン',
+  'settings.eq.simpleAction.customPresetName': 'My EQ Tone',
+  'settings.eq.simpleAction.lastTweak': '直前の調整',
+  'settings.eq.simpleAction.nextVibe': '次の音',
+  'settings.eq.simpleAction.nextVibeDetail': '試してみる',
+  'settings.eq.simpleAction.savedPresetName': '{name} {amount}%',
+  'settings.eq.simpleAction.saveVibe': '音作りを保存',
+  'settings.eq.simpleAction.saveVibeDetail': '現在を保存',
+  'settings.eq.simpleInsight.amount': '強さ',
+  'settings.eq.simpleInsight.aria': 'Simple 現在の音作り概要',
+  'settings.eq.simpleInsight.custom': '手動音作り',
+  'settings.eq.simpleInsight.mainChange': '主な変化',
+  'settings.eq.simpleInsight.ready': '準備完了',
+  'settings.eq.simpleInsight.vibe': '現在の音',
+  'settings.eq.simpleSafety.action': '余裕を確保',
+  'settings.eq.simpleSafety.aria': 'Simple 安全ヘッドルーム',
+  'settings.eq.simpleSafety.risk': '余裕が必要',
+  'settings.eq.simpleSafety.riskDetail': 'ピーク {peak} / 推奨 {preamp}',
+  'settings.eq.simpleSafety.safe': '余裕あり',
+  'settings.eq.simpleSafety.safeDetail': 'ピーク {peak} / プリアンプ {preamp}',
   'settings.eq.simpleTone.air': '空気感',
   'settings.eq.simpleTone.airDetail': '明るく広がる',
   'settings.eq.simpleTone.amount': '味の強さ',
@@ -10819,12 +10924,15 @@ const jaJP: TranslationMap = {
   'settings.eq.simpleTone.bassDetail': 'キックを豊かに',
   'settings.eq.simpleTone.flat': 'フラット',
   'settings.eq.simpleTone.flatDetail': '元に戻す',
+  'settings.eq.simpleTone.less': '弱める',
+  'settings.eq.simpleTone.more': '強める',
   'settings.eq.simpleTone.vocal': 'ボーカル前へ',
   'settings.eq.simpleTone.vocalDetail': '歌詞を明瞭に',
   'settings.eq.simpleTone.warm': '少し暖かく',
   'settings.eq.simpleTone.warmDetail': '柔らかく聴く',
   'settings.eq.simpleZone.air': '空気感',
   'settings.eq.simpleZone.airDetail': '明るさと広がり',
+  'settings.eq.simpleZone.applyAria': '{zone} の音作りを適用、現在 {value}',
   'settings.eq.simpleZone.aria': 'Simple 音域変化',
   'settings.eq.simpleZone.low': '低域',
   'settings.eq.simpleZone.lowDetail': 'キックと厚み',
@@ -13090,6 +13198,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.fontPicker.searchPlaceholder': 'Search installed fonts',
   'lyricsSettings.fontPicker.title': 'Choose Lyrics Font',
   'lyricsSettings.provider.cached': 'Cached lyrics',
+  'lyricsSettings.provider.amllTtml': 'AMLL TTML',
+  'lyricsSettings.provider.amllTtmlDescription': 'Word-timed TTML library; requires a NetEase ID match and is off by default',
   'lyricsSettings.provider.chineseCatalogDescription': 'Chinese catalog supplement',
   'lyricsSettings.provider.genius': 'Genius',
   'lyricsSettings.provider.kugou': 'KuGou Music',
@@ -13615,6 +13725,9 @@ const enUS: TranslationMap = {
   'settings.eq.error.presetName': 'Enter a preset name before saving.',
   'settings.eq.error.profileName': 'Enter a profile name before saving.',
   'settings.eq.error.profileTarget': 'Select a profile first.',
+  'settings.eq.export.successApo': 'Exported Equalizer APO config to {path}',
+  'settings.eq.export.successGraphicEq': 'Exported GraphicEQ config to {path}',
+  'settings.eq.export.successPreset': 'Exported EQ preset to {path}',
   'settings.eq.import.filters': 'Filter',
   'settings.eq.import.filtersValue': '{count} imported / {skipped} skipped',
   'settings.eq.import.filterPreview': 'Filter details',
@@ -13695,6 +13808,25 @@ const enUS: TranslationMap = {
   'settings.eq.signal.preamp': 'Preamp',
   'settings.eq.signal.protecting': 'Protecting',
   'settings.eq.signal.title': 'Signal Path',
+  'settings.eq.simpleAction.customPresetName': 'My EQ Tone',
+  'settings.eq.simpleAction.lastTweak': 'Last tweak',
+  'settings.eq.simpleAction.nextVibe': 'Next vibe',
+  'settings.eq.simpleAction.nextVibeDetail': 'Explore',
+  'settings.eq.simpleAction.savedPresetName': '{name} {amount}%',
+  'settings.eq.simpleAction.saveVibe': 'Save vibe',
+  'settings.eq.simpleAction.saveVibeDetail': 'Save current',
+  'settings.eq.simpleInsight.amount': 'Amount',
+  'settings.eq.simpleInsight.aria': 'Simple current vibe summary',
+  'settings.eq.simpleInsight.custom': 'Manual vibe',
+  'settings.eq.simpleInsight.mainChange': 'Main change',
+  'settings.eq.simpleInsight.ready': 'Ready',
+  'settings.eq.simpleInsight.vibe': 'Current vibe',
+  'settings.eq.simpleSafety.action': 'Make safe',
+  'settings.eq.simpleSafety.aria': 'Simple safe headroom',
+  'settings.eq.simpleSafety.risk': 'Needs headroom',
+  'settings.eq.simpleSafety.riskDetail': 'Peak {peak} / suggested {preamp}',
+  'settings.eq.simpleSafety.safe': 'Headroom ready',
+  'settings.eq.simpleSafety.safeDetail': 'Peak {peak} / preamp {preamp}',
   'settings.eq.comfort.direct': 'Native direct',
   'settings.eq.comfort.directDetail': 'When DSP is off, volume is not reduced and samples are not changed. Good for hearing the original path.',
   'settings.eq.comfort.risk': 'Watch the level',
@@ -13710,12 +13842,15 @@ const enUS: TranslationMap = {
   'settings.eq.simpleTone.bassDetail': 'Fuller kick',
   'settings.eq.simpleTone.flat': 'Flat reset',
   'settings.eq.simpleTone.flatDetail': 'Back to neutral',
+  'settings.eq.simpleTone.less': 'Less',
+  'settings.eq.simpleTone.more': 'More',
   'settings.eq.simpleTone.vocal': 'Vocal focus',
   'settings.eq.simpleTone.vocalDetail': 'Clearer lyrics',
   'settings.eq.simpleTone.warm': 'Warmth',
   'settings.eq.simpleTone.warmDetail': 'Softer listen',
   'settings.eq.simpleZone.air': 'Air',
   'settings.eq.simpleZone.airDetail': 'Shine and space',
+  'settings.eq.simpleZone.applyAria': 'Apply {zone} tone, current {value}',
   'settings.eq.simpleZone.aria': 'Simple listening zone changes',
   'settings.eq.simpleZone.low': 'Low end',
   'settings.eq.simpleZone.lowDetail': 'Kick and weight',

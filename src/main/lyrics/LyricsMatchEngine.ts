@@ -85,6 +85,9 @@ const sanitizeQueryForProvider = (query: LyricsQuery, provider: LyricsProvider):
     ? query
     : {
         trackId: query.trackId,
+        mediaType: query.mediaType,
+        sourceId: query.sourceId,
+        stableKey: query.stableKey,
         title: query.title,
         artist: query.artist,
         album: query.album ?? null,

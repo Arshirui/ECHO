@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, AudioWaveform, Copy, Gauge, Headphones, Plus, RadioTower, Redo2, RotateCcw, Save, ShieldCheck, Shuffle, SlidersHorizontal, Trash2, Undo2, Waves } from 'lucide-react';
+import { Activity, AudioWaveform, Copy, Gauge, Headphones, Plus, RadioTower, Redo2, RotateCcw, Save, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Undo2, Waves } from 'lucide-react';
 import type { AudioStatus, ChannelBalanceMonoMode, ChannelBalanceState } from '../../../shared/types/audio';
 import {
   channelBalanceMaxGainDb,
@@ -51,6 +51,7 @@ type EqSimpleZoneOption = {
   id: 'low' | 'vocal' | 'air';
   minFrequencyHz: number;
   maxFrequencyHz: number;
+  toneId: Extract<EqSimpleToneId, 'bass' | 'vocal' | 'air'>;
   labelKey: TranslationKey;
   detailKey: TranslationKey;
 };
@@ -243,10 +244,11 @@ const simpleToneOptions: EqSimpleToneOption[] = [
   { id: 'warm', icon: 'gauge', labelKey: 'settings.eq.simpleTone.warm', detailKey: 'settings.eq.simpleTone.warmDetail' },
   { id: 'flat', icon: 'reset', labelKey: 'settings.eq.simpleTone.flat', detailKey: 'settings.eq.simpleTone.flatDetail' },
 ];
+const exploratorySimpleToneIds: Exclude<EqSimpleToneId, 'flat'>[] = ['bass', 'vocal', 'air', 'warm'];
 const simpleZoneOptions: EqSimpleZoneOption[] = [
-  { id: 'low', minFrequencyHz: 20, maxFrequencyHz: 160, labelKey: 'settings.eq.simpleZone.low', detailKey: 'settings.eq.simpleZone.lowDetail' },
-  { id: 'vocal', minFrequencyHz: 250, maxFrequencyHz: 4000, labelKey: 'settings.eq.simpleZone.vocal', detailKey: 'settings.eq.simpleZone.vocalDetail' },
-  { id: 'air', minFrequencyHz: 5000, maxFrequencyHz: 20000, labelKey: 'settings.eq.simpleZone.air', detailKey: 'settings.eq.simpleZone.airDetail' },
+  { id: 'low', minFrequencyHz: 20, maxFrequencyHz: 160, toneId: 'bass', labelKey: 'settings.eq.simpleZone.low', detailKey: 'settings.eq.simpleZone.lowDetail' },
+  { id: 'vocal', minFrequencyHz: 250, maxFrequencyHz: 4000, toneId: 'vocal', labelKey: 'settings.eq.simpleZone.vocal', detailKey: 'settings.eq.simpleZone.vocalDetail' },
+  { id: 'air', minFrequencyHz: 5000, maxFrequencyHz: 20000, toneId: 'air', labelKey: 'settings.eq.simpleZone.air', detailKey: 'settings.eq.simpleZone.airDetail' },
 ];
 const eqQPresetValues: Record<EqFilterType, { wide: number; normal: number; narrow: number }> = {
   peaking: { wide: 0.7, normal: 1.4, narrow: 4 },
@@ -411,6 +413,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const [profileBinding, setProfileBinding] = useState<EqProfileBindingInfo>(null);
   const [saveName, setSaveName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<EqPresetImportPreviewResult | null>(null);
   const [importReport, setImportReport] = useState<{ presetName: string; preampDb: number; metadata: EqPresetImportMetadata } | null>(null);
   const [importAuditionSnapshot, setImportAuditionSnapshot] = useState<EqImportAuditionSnapshot | null>(null);
@@ -483,6 +486,11 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const selectedBandEnabled = selectedBand?.enabled !== false;
   const activeBandCount = state.bands.filter((band) => band.enabled !== false).length;
   const configuredBandCount = state.bands.filter((band, index) => !isBandSlotAvailable(band, index)).length;
+  const hasCustomEqShape = Math.abs(state.preampDb) > 0.05 || state.bands.some((band) => (
+    band.enabled !== false &&
+    isEqFilterGainEditable(band.filterType) &&
+    Math.abs(band.gainDb) > 0.05
+  ));
   const selectedBandMode = frequencyEditUnlocked ? t('settings.eq.band.modeFree') : t('settings.eq.band.modeStandard');
   const selectedPresetMetadata = describePreset(state.presetId);
   const simpleToneNames = simpleToneOptions.map((option) => ({ id: option.id, name: t(option.labelKey) }));
@@ -490,12 +498,31 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     ? simpleToneNames.find((option) => option.name === state.presetName)?.id ?? null
     : null;
   const simpleZoneSummaries = summarizeSimpleZones(state.bands);
+  const simpleDominantZone = simpleZoneSummaries.reduce<EqSimpleZoneSummary | null>((strongest, zone) => (
+    !strongest || Math.abs(zone.averageGainDb) > Math.abs(strongest.averageGainDb) ? zone : strongest
+  ), null);
   const displayPresetName = state.presetId === 'custom'
     ? activeSimpleTone
       ? state.presetName
       : t('settings.eq.preset.modified')
     : state.presetName;
+  const canSaveSimplePreset = state.presetId === 'custom' && hasCustomEqShape;
   const needsSafePreamp = estimatedPeakGainDb > 0 || clippingRisk;
+  const simpleInsightVibe = activeSimpleTone
+    ? state.presetName
+    : hasCustomEqShape
+      ? t('settings.eq.simpleInsight.custom')
+      : t('settings.eq.simpleZone.neutral');
+  const simpleInsightMainChange = simpleDominantZone && Math.abs(simpleDominantZone.averageGainDb) > 0.05
+    ? `${t(simpleDominantZone.labelKey)} ${formatDb(simpleDominantZone.averageGainDb)}`
+    : t('settings.eq.simpleZone.neutral');
+  const simpleInsightAmount = activeSimpleTone && activeSimpleTone !== 'flat'
+    ? `${Math.round(simpleToneIntensity * 100)}%`
+    : t('settings.eq.simpleInsight.ready');
+  const simpleSafetyTitle = needsSafePreamp ? t('settings.eq.simpleSafety.risk') : t('settings.eq.simpleSafety.safe');
+  const simpleSafetyDetail = needsSafePreamp
+    ? t('settings.eq.simpleSafety.riskDetail', { peak: formatDb(estimatedPeakGainDb), preamp: formatDb(recommendedPreampDb) })
+    : t('settings.eq.simpleSafety.safeDetail', { peak: formatDb(estimatedPeakGainDb), preamp: formatDb(state.preampDb) });
   const autoGainActive = autoGainEnabled && (autoGainStatus === 'reducing' || autoGainStatus === 'recovering' || autoGainStatus === 'clipping');
   const roomCorrectionStatusLabel = roomCorrection.error
     ? t(roomCorrectionErrorLabelKeys[roomCorrection.error] ?? 'settings.eq.room.error')
@@ -1299,12 +1326,24 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     });
   };
 
+  const applyNextSimpleTone = (): void => {
+    const currentIndex = activeSimpleTone && activeSimpleTone !== 'flat'
+      ? exploratorySimpleToneIds.indexOf(activeSimpleTone)
+      : -1;
+    const nextTone = exploratorySimpleToneIds[(currentIndex + 1) % exploratorySimpleToneIds.length] ?? 'bass';
+    applySimpleTone(nextTone);
+  };
+
   const adjustSimpleToneIntensity = (intensity: number): void => {
     if (!activeSimpleTone || activeSimpleTone === 'flat') {
       return;
     }
 
     applySimpleTone(activeSimpleTone, intensity);
+  };
+
+  const nudgeSimpleToneIntensity = (delta: number): void => {
+    adjustSimpleToneIntensity(Math.round((simpleToneIntensity + delta) * 100) / 100);
   };
 
   const setPreset = (presetId: string): void => {
@@ -1377,9 +1416,11 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
       });
       if (exportedPath) {
         setSaveName('');
+        setExportNotice(t('settings.eq.export.successPreset', { path: exportedPath }));
       }
       setError(null);
     } catch (saveError) {
+      setExportNotice(null);
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     }
   };
@@ -1461,13 +1502,17 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         return;
       }
 
-      await eq.exportApoPreset({
+      const exportedPath = await eq.exportApoPreset({
         name: saveName,
         preampDb: state.preampDb,
         bands: state.bands,
       });
+      if (exportedPath) {
+        setExportNotice(t('settings.eq.export.successApo', { path: exportedPath }));
+      }
       setError(null);
     } catch (saveError) {
+      setExportNotice(null);
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     }
   };
@@ -1486,13 +1531,17 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         return;
       }
 
-      await eq.exportApoGraphicEqPreset({
+      const exportedPath = await eq.exportApoGraphicEqPreset({
         name: saveName,
         preampDb: state.preampDb,
         bands: state.bands,
       });
+      if (exportedPath) {
+        setExportNotice(t('settings.eq.export.successGraphicEq', { path: exportedPath }));
+      }
       setError(null);
     } catch (saveError) {
+      setExportNotice(null);
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     }
   };
@@ -1727,6 +1776,44 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         presetName: duplicated.name,
         preampDb: duplicated.preampDb,
         bands: duplicated.bands.map((band) => ({ ...band })),
+      });
+      setError(null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
+    }
+  };
+
+  const saveSimplePreset = async (): Promise<void> => {
+    if (!canSaveSimplePreset) {
+      return;
+    }
+
+    try {
+      const eq = getEqBridge();
+
+      if (!eq) {
+        setError(t('settings.eq.error.bridgeSavePreset'));
+        return;
+      }
+
+      const presetName = activeSimpleTone && activeSimpleTone !== 'flat'
+        ? t('settings.eq.simpleAction.savedPresetName', {
+          amount: String(Math.round(simpleToneIntensity * 100)),
+          name: state.presetName,
+        })
+        : t('settings.eq.simpleAction.customPresetName');
+      const saved = await eq.savePreset({
+        name: presetName,
+        preampDb: state.preampDb,
+        bands: state.bands,
+      });
+      setPresets(await eq.listPresets());
+      commitState({
+        ...state,
+        presetId: saved.id,
+        presetName: saved.name,
+        preampDb: saved.preampDb,
+        bands: saved.bands.map((band) => ({ ...band })),
       });
       setError(null);
     } catch (saveError) {
@@ -2120,8 +2207,11 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               </button>
             ))}
             {activeSimpleTone && activeSimpleTone !== 'flat' ? (
-              <label className="eq-simple-tone-amount">
+              <div className="eq-simple-tone-amount">
                 <span>{t('settings.eq.simpleTone.amount')}</span>
+                <button type="button" aria-label={t('settings.eq.simpleTone.less')} disabled={simpleToneIntensity <= 0.5} onClick={() => nudgeSimpleToneIntensity(-0.1)}>
+                  {t('settings.eq.simpleTone.less')}
+                </button>
                 <input
                   aria-label={t('settings.eq.simpleTone.amountAria')}
                   type="range"
@@ -2132,34 +2222,83 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                   onInput={(event) => adjustSimpleToneIntensity(Number(event.currentTarget.value))}
                   onChange={(event) => adjustSimpleToneIntensity(Number(event.currentTarget.value))}
                 />
+                <button type="button" aria-label={t('settings.eq.simpleTone.more')} disabled={simpleToneIntensity >= 1.5} onClick={() => nudgeSimpleToneIntensity(0.1)}>
+                  {t('settings.eq.simpleTone.more')}
+                </button>
                 <strong>{`${Math.round(simpleToneIntensity * 100)}%`}</strong>
-              </label>
+              </div>
             ) : null}
+          </section>
+          <section className="eq-simple-insight" aria-label={t('settings.eq.simpleInsight.aria')}>
+            <span>
+              <em>{t('settings.eq.simpleInsight.vibe')}</em>
+              <strong>{simpleInsightVibe}</strong>
+            </span>
+            <span>
+              <em>{t('settings.eq.simpleInsight.mainChange')}</em>
+              <strong>{simpleInsightMainChange}</strong>
+            </span>
+            <span>
+              <em>{t('settings.eq.simpleInsight.amount')}</em>
+              <strong>{simpleInsightAmount}</strong>
+            </span>
           </section>
           <section className="eq-simple-zones" aria-label={t('settings.eq.simpleZone.aria')}>
             {simpleZoneSummaries.map((zone) => {
               const zoneLabel = t(zone.labelKey);
               const zoneDetail = t(zone.detailKey);
               const isNeutral = Math.abs(zone.averageGainDb) <= 0.05;
+              const zoneValue = isNeutral ? t('settings.eq.simpleZone.neutral') : formatDb(zone.averageGainDb);
               return (
-                <article
-                  aria-label={`${zoneLabel} ${isNeutral ? t('settings.eq.simpleZone.neutral') : formatDb(zone.averageGainDb)}`}
+                <button
+                  aria-label={t('settings.eq.simpleZone.applyAria', { value: zoneValue, zone: zoneLabel })}
                   data-direction={isNeutral ? 'neutral' : zone.averageGainDb > 0 ? 'boost' : 'cut'}
                   key={zone.id}
-                  role="group"
+                  type="button"
+                  onClick={() => applySimpleTone(zone.toneId)}
                 >
                   <div>
                     <span>{zoneLabel}</span>
-                    <strong>{isNeutral ? t('settings.eq.simpleZone.neutral') : formatDb(zone.averageGainDb)}</strong>
+                    <strong>{zoneValue}</strong>
                   </div>
                   <div className="eq-simple-zone-bar" aria-hidden="true">
                     <span style={{ width: `${zone.levelPercent}%` } as CSSProperties} />
                   </div>
                   <small>{zoneDetail}</small>
-                </article>
+                </button>
               );
             })}
           </section>
+          <section className="eq-simple-safety" data-risk={needsSafePreamp} aria-label={t('settings.eq.simpleSafety.aria')}>
+            <span className="eq-simple-safety__icon">
+              <ShieldCheck size={15} aria-hidden="true" />
+            </span>
+            <div>
+              <strong>{simpleSafetyTitle}</strong>
+              <small>{simpleSafetyDetail}</small>
+            </div>
+            <button className="eq-soft-button" type="button" disabled={!canAutoPreamp && !needsSafePreamp} onClick={() => handlePreampChange(recommendedPreampDb)}>
+              <span>{t('settings.eq.simpleSafety.action')}</span>
+              <strong>{formatDb(recommendedPreampDb)}</strong>
+            </button>
+          </section>
+          <div className="eq-simple-actions">
+            <button className="eq-soft-button" type="button" aria-label={t('settings.eq.simpleAction.nextVibe')} onClick={applyNextSimpleTone}>
+              <Sparkles size={14} aria-hidden="true" />
+              <span>{t('settings.eq.simpleAction.nextVibe')}</span>
+              <strong>{t('settings.eq.simpleAction.nextVibeDetail')}</strong>
+            </button>
+            <button className="eq-soft-button" type="button" aria-label={t('settings.eq.simpleAction.saveVibe')} disabled={!canSaveSimplePreset} onClick={() => void saveSimplePreset()}>
+              <Save size={14} aria-hidden="true" />
+              <span>{t('settings.eq.simpleAction.saveVibe')}</span>
+              <strong>{t('settings.eq.simpleAction.saveVibeDetail')}</strong>
+            </button>
+            <button className="eq-soft-button" type="button" disabled={undoStack.length === 0} onClick={undoEq}>
+              <Undo2 size={14} aria-hidden="true" />
+              <span>{t('settings.eq.action.undo')}</span>
+              <strong>{t('settings.eq.simpleAction.lastTweak')}</strong>
+            </button>
+          </div>
         </>
       ) : null}
 
@@ -3118,6 +3257,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
       </footer>
 
       {error ? <p className="eq-panel-error">{error}</p> : null}
+      {!error && exportNotice ? <p className="eq-panel-success" role="status">{exportNotice}</p> : null}
       {apoPasteOpen ? (
         <section className="eq-apo-paste">
           <label>

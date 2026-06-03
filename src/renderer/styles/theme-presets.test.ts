@@ -115,6 +115,16 @@ describe('theme presets stylesheet', () => {
     expect(css).toContain('opacity: 1 !important;');
   });
 
+  it('keeps FINAL artist hero secondary actions readable on light artwork', () => {
+    const css = readFileSync('src/renderer/styles/theme-presets.css', 'utf8');
+
+    expect(css).toContain('html[data-theme-preset="FINAL"] .artist-hero .artist-secondary-action {');
+    expect(css).toContain('color: rgb(var(--preset-ink-rgb) / 0.84) !important;');
+    expect(css).toContain('background-color: rgb(255 253 247 / 0.76) !important;');
+    expect(css).toContain('html[data-theme-preset="FINAL"] .artist-hero .artist-secondary-action:disabled {');
+    expect(css).toContain('opacity: 0.76 !important;');
+  });
+
   it('extends FINAL precision console styling into queue and folders pages', () => {
     const css = readFileSync('src/renderer/styles/theme-presets.css', 'utf8');
 
@@ -192,7 +202,8 @@ describe('theme presets stylesheet', () => {
     expect(css).toMatch(
       /html\[data-theme-preset="FINAL"\] \.app-shell:not\(\.app-shell--lyrics-player-drawer\):has\(\.lyrics-page \.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.player-now \{\r?\n  display: flex !important;/,
     );
-    expect(css).toContain('grid-template-columns: minmax(260px, 430px) minmax(360px, 620px) minmax(220px, 1fr);');
+    expect(css).toContain('html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--wallpaper):not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-center {');
+    expect(css).toContain('width: 100%;\n  max-width: 620px;\n  grid-column: 2;\n  justify-self: center;');
   });
 
   it('rebuilds the FINAL mini lyrics player as a readable dark transport', () => {
@@ -200,15 +211,16 @@ describe('theme presets stylesheet', () => {
 
     expect(css).toContain('/* FINAL mini player: readable MV drawer controls on dark or bright video. */');
     expect(css).toContain('html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar {');
-    expect(css).toContain('background:\n    linear-gradient(90deg, rgb(255 245 218 / 0.08), transparent 24%, rgb(255 245 218 / 0.06)),');
-    expect(css).toContain('rgb(18 17 15 / 0.9) !important;');
+    expect(css).toContain('linear-gradient(90deg, rgb(255 255 255 / 0.08), transparent 24%, rgb(var(--final-lab-gold-rgb) / 0.045)),');
+    expect(css).toContain('rgb(10 11 12 / 0.9) !important;');
     expect(css).toContain('html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar::before,');
     expect(css).toContain('display: none !important;');
     expect(css).toContain('grid-template-columns: auto minmax(240px, 1fr);');
-    expect(css).toContain('color: rgb(244 230 202 / 0.94) !important;');
+    expect(css).toContain('color: rgb(232 237 236 / 0.94) !important;');
     expect(css).toContain('html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .progress-track[data-waveform="true"] {');
     expect(css).toContain('/* FINAL mini player containment: keep the progress rail and right-side controls inside the capsule. */');
     expect(css).toContain('grid-template-columns: minmax(0, 1fr) auto;');
+    expect(css).toContain('grid-template-columns: auto minmax(210px, 340px);');
     expect(css).toContain('width: min(34vw, 340px);');
     expect(css).toContain('max-width: 152px;');
     expect(css).toContain('flex: 0 0 30px;');

@@ -31,6 +31,7 @@ import {
 import { normalizeText, normalizeTextForIdentity } from './lyricsScoring';
 import { LocalLyricsProvider } from './LocalLyricsProvider';
 import { LrclibProvider, mapLrclibRecordToTrackLyrics, type LrclibRecord } from './LrclibProvider';
+import { AmllTtmlLyricsProvider } from './AmllTtmlLyricsProvider';
 import { KugouLyricsProvider } from './KugouLyricsProvider';
 import { KuwoLyricsProvider } from './KuwoLyricsProvider';
 import { NeteaseLyricsProvider } from './NeteaseLyricsProvider';
@@ -205,6 +206,7 @@ const providerName = (value: string): LyricsSource => {
     value === 'none' ||
     value === 'local' ||
     value === 'lrclib' ||
+    value === 'amll-ttml' ||
     value === 'netease' ||
     value === 'qqmusic' ||
     value === 'kugou' ||
@@ -223,6 +225,7 @@ const providerName = (value: string): LyricsSource => {
 const isSearchableLyricsProvider = (value: unknown): value is LyricsProviderId =>
   value === 'local' ||
   value === 'lrclib' ||
+  value === 'amll-ttml' ||
   value === 'netease' ||
   value === 'qqmusic' ||
   value === 'kugou' ||
@@ -331,7 +334,7 @@ const legacyCacheKeyFor = (query: LyricsQuery, provider: LyricsSource): string =
   ].join('|');
 
 const allCacheKeysFor = (query: LyricsQuery): string[] =>
-  ['local', 'lrclib', 'manual', 'cached', 'netease', 'qqmusic', 'kugou', 'kuwo', 'musixmatch', 'genius'].flatMap((provider) => [
+  ['local', 'lrclib', 'amll-ttml', 'manual', 'cached', 'netease', 'qqmusic', 'kugou', 'kuwo', 'musixmatch', 'genius'].flatMap((provider) => [
     cacheKeyFor(query, provider as LyricsSource),
     legacyCacheKeyFor(query, provider as LyricsSource),
   ]);
@@ -718,6 +721,7 @@ export class LyricsService {
     this.matchEngine = new LyricsMatchEngine([
       adaptLocalProvider(this.localProvider),
       adaptOnlineProvider(this.onlineProvider),
+      new AmllTtmlLyricsProvider(),
       new NeteaseLyricsProvider(),
       new QQMusicLyricsProvider(),
       new KugouLyricsProvider(),
@@ -1410,6 +1414,7 @@ export class LyricsService {
     if (
       provider !== 'local' &&
       provider !== 'lrclib' &&
+      provider !== 'amll-ttml' &&
       provider !== 'netease' &&
       provider !== 'qqmusic' &&
       provider !== 'kugou' &&

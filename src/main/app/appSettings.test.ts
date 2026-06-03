@@ -1033,10 +1033,11 @@ describe('app settings normalization', () => {
     const { normalizeSettings } = await import('./appSettings');
 
     const shortcuts = normalizeSettings({}).localShortcuts;
+    const defaults = createDefaultLocalShortcuts();
 
-    expect(shortcuts?.playPause).toEqual({ enabled: true, accelerator: 'Space' });
-    expect(shortcuts?.previousTrack).toEqual({ enabled: false, accelerator: 'A' });
-    expect(shortcuts?.nextTrack).toEqual({ enabled: false, accelerator: 'D' });
+    expect(shortcuts?.playPause).toEqual(defaults.playPause);
+    expect(shortcuts?.previousTrack).toEqual(defaults.previousTrack);
+    expect(shortcuts?.nextTrack).toEqual(defaults.nextTrack);
   });
 
   it('keeps valid global shortcuts and removes invalid or duplicate bindings', async () => {
@@ -1548,6 +1549,21 @@ describe('app settings normalization', () => {
 
     expect(settings.lyricsEnabledProviders).toEqual(['local', 'lrclib']);
     expect(settings.lyricsProviderOrder).toEqual(['local', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo']);
+  });
+
+  it('keeps AMLL TTML lyrics available as an explicit opt-in provider', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).lyricsEnabledProviders).toEqual(['local', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo']);
+    expect(normalizeSettings({}).lyricsProviderOrder).toEqual(['local', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo']);
+
+    const settings = normalizeSettings({
+      lyricsEnabledProviders: ['local', 'amll-ttml'],
+      lyricsProviderOrder: ['local', 'amll-ttml', 'lrclib'],
+    });
+
+    expect(settings.lyricsEnabledProviders).toEqual(['local', 'amll-ttml']);
+    expect(settings.lyricsProviderOrder).toEqual(['local', 'amll-ttml', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo']);
   });
 
   it('normalizes channel balance settings for old and malformed settings files', async () => {
