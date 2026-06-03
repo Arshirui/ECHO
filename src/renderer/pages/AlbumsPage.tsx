@@ -277,6 +277,11 @@ export const AlbumsPage = (): JSX.Element => {
     setSelectedAlbum(album);
   }, []);
 
+  const closeAlbumDetail = useCallback((): void => {
+    setSelectedAlbumReturnTo(null);
+    setSelectedAlbum(null);
+  }, []);
+
   useEffect(() => {
     const pendingRequest = consumePendingAlbumDetailNavigation();
     if (pendingRequest) {
@@ -297,27 +302,25 @@ export const AlbumsPage = (): JSX.Element => {
 
   const handleBackFromAlbumDetail = useCallback((): void => {
     if (selectedAlbumReturnTo === 'history') {
-      setSelectedAlbumReturnTo(null);
-      setSelectedAlbum(null);
+      closeAlbumDetail();
       window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'history' }));
       return;
     }
 
     if (selectedAlbumReturnTo === 'home') {
-      setSelectedAlbumReturnTo(null);
-      setSelectedAlbum(null);
+      closeAlbumDetail();
       window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'home' }));
       return;
     }
 
     if (selectedAlbumReturnTo === 'songs') {
+      closeAlbumDetail();
       window.dispatchEvent(new Event('app:navigate:songs'));
       return;
     }
 
-    setSelectedAlbumReturnTo(null);
-    setSelectedAlbum(null);
-  }, [selectedAlbumReturnTo]);
+    closeAlbumDetail();
+  }, [closeAlbumDetail, selectedAlbumReturnTo]);
 
   const getAllAlbumTracks = useCallback(async (albumId: string): Promise<LibraryTrack[]> => {
     const library = window.echo?.library;

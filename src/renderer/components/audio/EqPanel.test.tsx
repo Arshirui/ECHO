@@ -19,18 +19,18 @@ const eqState = (overrides: Partial<EqState> = {}): EqState => ({
   preampDb: 0,
   bands,
   presetId: 'flat',
-  presetName: 'Flat',
+  presetName: '原音如初',
   clippingRisk: false,
   ...overrides,
 });
 
 const presets: EqPreset[] = [
-  { id: 'flat', name: 'Flat', preampDb: 0, bands, createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'rock', name: 'Rock', preampDb: -3, bands, createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'harman-target', name: 'Harman Target', preampDb: -5, bands, createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'subsonic-filter', name: 'Subsonic Filter', preampDb: -2, bands: bands.map((band, index) => (index === 0 ? { ...band, frequencyHz: 24, filterType: 'highPass' as const } : band)), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'sibilance-tamer', name: 'Sibilance Tamer', preampDb: -4, bands: bands.map((band, index) => (index === 8 ? { ...band, frequencyHz: 8200, filterType: 'notch' as const, q: 6 } : band)), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'bluetooth-speaker-cleanup', name: 'Bluetooth Speaker Cleanup', preampDb: -3, bands: bands.map((band, index) => (index === 9 ? { ...band, frequencyHz: 18000, filterType: 'lowPass' as const } : band)), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'flat', name: '原音如初', preampDb: 0, bands, createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'rock', name: '黑曜摇滚', preampDb: -3, bands, createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'harman-target', name: '暖场哈曼', preampDb: -5, bands, createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'subsonic-filter', name: '暗涌滤波', preampDb: -2, bands: bands.map((band, index) => (index === 0 ? { ...band, frequencyHz: 24, filterType: 'highPass' as const } : band)), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'sibilance-tamer', name: '齿音柔化', preampDb: -4, bands: bands.map((band, index) => (index === 8 ? { ...band, frequencyHz: 8200, filterType: 'notch' as const, q: 6 } : band)), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'bluetooth-speaker-cleanup', name: '蓝牙清场', preampDb: -3, bands: bands.map((band, index) => (index === 9 ? { ...band, frequencyHz: 18000, filterType: 'lowPass' as const } : band)), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
   { id: 'user-bright', name: 'User Bright', preampDb: -4, bands, createdAt: 'now', updatedAt: 'now', readonly: false },
 ];
 
@@ -98,7 +98,7 @@ const audioStatus: AudioStatus = {
   channelBalanceEnabled: false,
   dspActive: true,
   preampDb: 0,
-  eqPresetName: 'Flat',
+  eqPresetName: '原音如初',
   clippingRisk: false,
   bitPerfectDisabledReason: 'eq_enabled',
   warnings: ['eq_enabled_bit_perfect_disabled'],
@@ -147,7 +147,7 @@ beforeEach(() => {
         Promise.resolve(eqState({ presetId: 'custom', presetName: 'Custom', bands: bands.map((item, index) => (index === band ? { ...item, enabled } : item)) })),
       ),
       setPreamp: vi.fn().mockImplementation((preampDb: number) => Promise.resolve(eqState({ preampDb }))),
-      setPreset: vi.fn().mockImplementation((presetId: string) => Promise.resolve(eqState({ presetId, presetName: presetId === 'rock' ? 'Rock' : 'User Bright' }))),
+      setPreset: vi.fn().mockImplementation((presetId: string) => Promise.resolve(eqState({ presetId, presetName: presetId === 'rock' ? '黑曜摇滚' : 'User Bright' }))),
       reset: vi.fn().mockResolvedValue(eqState()),
       savePreset: vi.fn().mockImplementation((request: { id?: string; name: string; preampDb: number; bands: EqState['bands'] }) =>
         Promise.resolve({
@@ -1105,7 +1105,7 @@ describe('EqPanel', () => {
     renderEqPanel();
 
     fireEvent.click(await screen.findByRole('button', { name: 'EQ preset' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Rock' }));
+    fireEvent.click(screen.getByRole('option', { name: '黑曜摇滚' }));
     fireEvent.click(screen.getByRole('button', { name: 'Reset EQ' }));
 
     await waitFor(() => expect(window.echo.eq.setPreset).toHaveBeenCalledWith('rock'));
@@ -1357,11 +1357,11 @@ describe('EqPanel', () => {
   it('filters presets by search and target curve category', async () => {
     renderEqPanel();
 
-    fireEvent.change(await screen.findByLabelText('Search presets'), { target: { value: 'Harman' } });
+    fireEvent.change(await screen.findByLabelText('Search presets'), { target: { value: '哈曼' } });
     fireEvent.click(screen.getByRole('button', { name: 'Target curves' }));
     fireEvent.click(screen.getByRole('button', { name: 'EQ preset' }));
 
-    expect(screen.getByRole('option', { name: 'Harman Target' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '暖场哈曼' })).toBeTruthy();
   });
 
   it('groups correction PEQ presets under utility metadata', async () => {
@@ -1370,9 +1370,9 @@ describe('EqPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Utility' }));
     fireEvent.click(screen.getByRole('button', { name: 'EQ preset' }));
 
-    expect(screen.getByRole('option', { name: 'Subsonic Filter' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'Sibilance Tamer' })).toBeTruthy();
-    expect(screen.getByRole('option', { name: 'Bluetooth Speaker Cleanup' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '暗涌滤波' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '齿音柔化' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '蓝牙清场' })).toBeTruthy();
   });
 
   it('shows channel balance controls and clamps channel balance patches', async () => {

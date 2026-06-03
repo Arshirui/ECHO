@@ -24,6 +24,8 @@ const historyPageCacheVersion = 1;
 const isHistoryPageTestRuntime = typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
 const historyCachedRefreshDelayMs = isHistoryPageTestRuntime ? 0 : 900;
 const historyStatsRefreshDelayMs = isHistoryPageTestRuntime ? 0 : 1600;
+const historyStatsPlaybackDeferDelayMs = 15_000;
+const historyStatsDeferredPlaybackStates = new Set(['loading', 'playing']);
 
 type HistoryFilter = 'all' | 'today' | 'week' | 'month' | 'completed';
 
@@ -280,6 +282,24 @@ const scheduleHistoryWork = (callback: () => void, delayMs = 0): (() => void) =>
   };
 };
 
+const shouldDeferHistoryStatsForPlayback = async (): Promise<boolean> => {
+  const echo = window.echo;
+  if (!echo) {
+    return false;
+  }
+
+  try {
+    const [audioStatus, playbackStatus] = await Promise.all([
+      echo.audio?.getStatus?.().catch(() => null) ?? Promise.resolve(null),
+      echo.playback?.getStatus?.().catch(() => null) ?? Promise.resolve(null),
+    ]);
+    const state = audioStatus?.state ?? playbackStatus?.state ?? 'idle';
+    return historyStatsDeferredPlaybackStates.has(state);
+  } catch {
+    return false;
+  }
+};
+
 const startOfDay = (date: Date): Date => {
   const next = new Date(date);
   next.setHours(0, 0, 0, 0);
@@ -467,6 +487,10 @@ export const HistoryPage = (): JSX.Element => {
       const statsRequestId = statsRequestIdRef.current + 1;
       statsRequestIdRef.current = statsRequestId;
 
+      const queueStatsRefresh = (delayMs: number): void => {
+        statsRefreshTimerRef.current = window.setTimeout(refreshStats, delayMs);
+      };
+
       const refreshStats = (): void => {
         statsRefreshTimerRef.current = null;
         const library = window.echo?.library;
@@ -481,16 +505,28 @@ export const HistoryPage = (): JSX.Element => {
           return;
         }
 
-        void library.getPlaybackStatsDashboard(historyQuery)
-          .then((nextStats) => {
+        void shouldDeferHistoryStatsForPlayback()
+          .then((shouldDefer) => {
             if (statsRequestIdRef.current !== statsRequestId) {
               return;
             }
 
-            setStats(nextStats);
-            if (shouldCacheSnapshot) {
-              mergeCachedHistoryPageData({ stats: nextStats });
+            if (shouldDefer) {
+              queueStatsRefresh(historyStatsPlaybackDeferDelayMs);
+              return;
             }
+
+            return library.getPlaybackStatsDashboard(historyQuery)
+              .then((nextStats) => {
+                if (statsRequestIdRef.current !== statsRequestId) {
+                  return;
+                }
+
+                setStats(nextStats);
+                if (shouldCacheSnapshot) {
+                  mergeCachedHistoryPageData({ stats: nextStats });
+                }
+              });
           })
           .catch((statsError) => {
             if (statsRequestIdRef.current === statsRequestId) {
@@ -499,7 +535,7 @@ export const HistoryPage = (): JSX.Element => {
           });
       };
 
-      statsRefreshTimerRef.current = window.setTimeout(refreshStats, historyStatsRefreshDelayMs);
+      queueStatsRefresh(historyStatsRefreshDelayMs);
     },
     [clearStatsRefreshTimer],
   );

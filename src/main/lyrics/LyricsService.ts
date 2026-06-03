@@ -753,10 +753,10 @@ export class LyricsService {
     const settings = safeSettings(this.readAppSettings);
     const cached = this.findCachedLyricsWithRepair(query);
     if (cached) {
-      const wordTimedCached = await this.refreshCachedNeteaseWordTimings(query, cached, settings);
-      const enrichedCached = await this.fillCachedRomanization(query, wordTimedCached);
-      const refreshedCached = await this.refreshCachedLyricsForPreferredSecondary(query, enrichedCached, settings);
-      return this.fillCachedUtatenKana(query, refreshedCached, settings);
+      const enrichedCached = await this.fillCachedRomanization(query, cached);
+      const kanaCached = await this.fillCachedUtatenKana(query, enrichedCached, settings);
+      this.refreshCachedLyricsInBackground(query, kanaCached, settings);
+      return kanaCached;
     }
 
     try {
@@ -1718,6 +1718,27 @@ export class LyricsService {
       this.secondaryLyricsRefreshMisses.add(refreshKey);
       return cached;
     }
+  }
+
+  private refreshCachedLyricsInBackground(
+    query: LyricsQuery,
+    cached: TrackLyrics,
+    settings: LyricsSettings,
+  ): void {
+    if (
+      !query.trackId ||
+      !settings.lyricsNetworkEnabled ||
+      !settings.lyricsAutoSearch
+    ) {
+      return;
+    }
+
+    void (async () => {
+      const wordTimedCached = await this.refreshCachedNeteaseWordTimings(query, cached, settings);
+      await this.refreshCachedLyricsForPreferredSecondary(query, wordTimedCached, settings);
+    })().catch(() => {
+      // Cached lyrics are already usable; secondary refreshes should never delay or fail playback.
+    });
   }
 
   private async refreshCachedNeteaseWordTimings(

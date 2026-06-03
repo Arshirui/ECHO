@@ -115,7 +115,7 @@ const fallbackState: EqState = {
   enabled: false,
   preampDb: 0,
   presetId: 'flat',
-  presetName: 'Flat',
+  presetName: '原音如初',
   clippingRisk: false,
   bands: eqFrequenciesHz.map((frequencyHz) => ({
     frequencyHz,

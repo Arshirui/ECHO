@@ -167,6 +167,42 @@ describe('LrclibProvider', () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain('q=Echo+Song+Echo+Artist');
   });
 
+  it('stops after the first keyword hit during automatic matching', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response('{"code":404}', { status: 404 }))
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            id: 8,
+            trackName: 'Echo Song',
+            artistName: 'Echo Artist',
+            albumName: 'Echo Album',
+            duration: 120,
+            syncedLyrics: '[00:01.00]Fast line',
+          },
+        ]),
+      );
+
+    const provider = new LrclibProvider();
+    const query = {
+      title: 'Echo Song (Acoustic)',
+      artist: 'Echo Artist',
+      album: 'Echo Album',
+      durationSeconds: 120,
+    };
+    const normalized = buildNormalizedLyricsQuery(query);
+    const results = await provider.search({
+      query,
+      normalized,
+      timeoutMs: 4500,
+      collectAllCandidates: false,
+    });
+
+    expect(results.map((result) => result.providerLyricsId)).toEqual(['8']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(normalized.searchVariants.length).toBeGreaterThan(1);
+  });
+
   it('loads exact lyrics from LRCLIB cache before using the slower live get endpoint', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({

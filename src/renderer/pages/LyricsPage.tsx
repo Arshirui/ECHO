@@ -212,7 +212,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsRestartOnApplyEnabled: false,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
-  lyricsOffsetControlsEnabled: false,
+  lyricsOffsetControlsEnabled: true,
   lyricsSmartAlignmentEnabled: true,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
@@ -999,7 +999,7 @@ const selectLyricsDisplaySettings = (
   lyricsRestartOnApplyEnabled: settings.lyricsRestartOnApplyEnabled === true,
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
   lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
-  lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
+  lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled !== false,
   lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled !== false,
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackLyricsDisplaySettings.lyricsSecondaryFontSizePx,
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackLyricsDisplaySettings.lyricsLineSpacingPercent,
@@ -3806,8 +3806,8 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       : currentOffsetMs;
 
     return (
-      <section className="lyrics-offset-controls" aria-label="Lyrics sync">
-        <span className="lyrics-offset-label">Lyrics offset</span>
+      <section className="lyrics-offset-controls" aria-label="歌词延迟">
+        <span className="lyrics-offset-label">本歌曲延迟</span>
         <span className="lyrics-offset-value">{formatOffset(currentOffsetMs)}</span>
         <div className="lyrics-offset-buttons">
           <button
@@ -3827,7 +3827,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
                 type="button"
                 key={step}
                 disabled={isLyricsOffsetSaving || nextOffsetMs === currentOffsetMs}
-                title={step > 0 ? `Lyrics earlier ${step}ms` : `Lyrics later ${Math.abs(step)}ms`}
+                title={step > 0 ? `歌词提前 ${step}ms` : `歌词延后 ${Math.abs(step)}ms`}
                 onClick={() => void handleLyricsOffsetChange(nextOffsetMs)}
               >
                 {isForward ? <FastForward size={14} /> : <Rewind size={14} />}
@@ -3838,14 +3838,14 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
           <button
             type="button"
             disabled={isLyricsOffsetSaving || currentOffsetMs === 0}
-            title="Reset lyrics offset"
+            title="重置本歌曲歌词延迟"
             onClick={() => void handleLyricsOffsetChange(0)}
           >
             <RotateCcw size={14} />
             <span>0ms</span>
           </button>
         </div>
-        <p>This offset is saved for the current track and reused next time.</p>
+        <p>只保存到当前歌曲；切到下一首会使用下一首自己的延迟。</p>
       </section>
     );
   }, [

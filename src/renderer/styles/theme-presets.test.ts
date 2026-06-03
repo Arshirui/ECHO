@@ -192,8 +192,12 @@ describe('theme presets stylesheet', () => {
     expect(css).toContain('/* FINAL lyrics page: warm acoustic paper, clear active line, and precision timing rails. */');
     expect(css).toContain('html[data-theme-preset="FINAL"] .page-surface:has(.lyrics-page)');
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-backdrop');
+    expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-back-button {\n  position: relative;\n  z-index: 80;');
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-line[data-active="true"] span');
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-track-header');
+    expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-back-button {\n  position: absolute;\n  top: max(18px, calc(var(--titlebar-height) + 8px));\n  left: 22px;\n  z-index: 80;');
+    expect(css).toContain('pointer-events: auto;');
+    expect(css).toContain('-webkit-app-region: no-drag !important;');
     expect(css).toContain('html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-bar');
     expect(css).toContain('/* FINAL lyrics transport repair: keep the bottom deck compact and prevent the page header from colliding with it. */');
     expect(css).toMatch(

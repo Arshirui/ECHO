@@ -445,7 +445,7 @@ export const defaultSettings: AppSettings = {
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
-  lyricsOffsetControlsEnabled: false,
+  lyricsOffsetControlsEnabled: true,
   lyricsSmartAlignmentEnabled: true,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
@@ -1639,7 +1639,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       ? Math.round(clamp(lyricsGlobalSyncOffsetMs, -1000, 1000))
       : defaultSettings.lyricsGlobalSyncOffsetMs,
     lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
-    lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
+    lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled !== false,
     lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled !== false,
     lyricsEnabled: settings.lyricsEnabled !== false,
     lyricsHeaderHidden: settings.lyricsHeaderHidden === true,

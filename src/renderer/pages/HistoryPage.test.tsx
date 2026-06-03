@@ -244,6 +244,30 @@ describe('HistoryPage', () => {
     expect(screen.getByText('Top History Song')).toBeTruthy();
   });
 
+  it('defers the stats dashboard refresh while playback is active', async () => {
+    const library = installLibraryMock({
+      getPlaybackHistory: vi.fn().mockResolvedValue(historyPage([historyEntry('active-playback')])),
+      getPlaybackStatsDashboard: vi.fn().mockResolvedValue(stats()),
+    });
+    const getAudioStatus = vi.fn().mockResolvedValue({ state: 'playing' });
+    const getPlaybackStatus = vi.fn().mockResolvedValue({ state: 'playing' });
+    Object.defineProperty(window, 'echo', {
+      configurable: true,
+      value: {
+        audio: { getStatus: getAudioStatus },
+        library,
+        playback: { getStatus: getPlaybackStatus },
+      },
+    });
+
+    renderHistoryPage();
+
+    await screen.findAllByText('History active-playback');
+    await waitFor(() => expect(getAudioStatus).toHaveBeenCalled());
+    expect(getPlaybackStatus).toHaveBeenCalled();
+    expect(library.getPlaybackStatsDashboard).not.toHaveBeenCalled();
+  });
+
   it('refreshes invalid history entries without clearing the whole history', async () => {
     const library = installLibraryMock({
       getPlaybackHistory: vi.fn()

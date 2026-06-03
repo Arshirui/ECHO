@@ -139,7 +139,7 @@ const makeAppSettings = (
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
-  lyricsOffsetControlsEnabled: false,
+  lyricsOffsetControlsEnabled: true,
   lyricsSmartAlignmentEnabled: false,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
@@ -2011,7 +2011,7 @@ describe("LyricsPage", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("First line\nふぁーすと\nSecond line\nThird line"));
   });
 
-  it("hides per-track lyrics offset controls by default", async () => {
+  it("shows simple per-track lyrics offset controls by default", async () => {
     const track = makeTrack();
     mockEcho(track);
     window.echo.lyrics = {
@@ -2038,7 +2038,9 @@ describe("LyricsPage", () => {
     );
 
     expect(await screen.findByText("First line")).toBeTruthy();
-    expect(container.querySelector(".lyrics-offset-controls")).toBeNull();
+    expect(container.querySelector(".lyrics-offset-controls")).toBeTruthy();
+    expect(screen.getByText("本歌曲延迟")).toBeTruthy();
+    expect(screen.getByText("只保存到当前歌曲；切到下一首会使用下一首自己的延迟。")).toBeTruthy();
   });
 
   it("hides smart lyrics alignment when disabled", async () => {

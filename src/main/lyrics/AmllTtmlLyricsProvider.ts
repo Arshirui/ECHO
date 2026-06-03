@@ -14,6 +14,7 @@ const amllHeaders = {
 };
 
 const maxSearchSongs = 5;
+const maxResolvedResults = 1;
 
 type NeteaseSong = {
   id: string;
@@ -22,6 +23,14 @@ type NeteaseSong = {
   album: string | null;
   durationSeconds: number | null;
   raw: unknown;
+};
+
+type SettledLyricsFetch = {
+  result: LyricsProviderResult | null;
+};
+
+type SettledTtmlFetch = {
+  result: LyricsProviderResult | null;
 };
 
 type AmllMetadata = {
@@ -36,6 +45,25 @@ type AmllMetadata = {
 };
 
 const searchQueryFor = (query: LyricsQuery): string => [query.title, query.artist].filter(Boolean).join(' ').trim();
+
+const neteaseSearchUrls = (query: string): string[] => {
+  const params = new URLSearchParams({ type: '1', s: query, limit: '5', offset: '0' });
+  return [
+    `https://music.163.com/api/search/get/web?${params.toString()}`,
+    `https://music.163.com/api/cloudsearch/pc?${params.toString()}`,
+  ];
+};
+
+const rawSongArtists = (song: Record<string, unknown>): Record<string, unknown>[] => {
+  const artists = song.artists ?? song.ar;
+  return Array.isArray(artists) ? artists.map(asRecord) : [];
+};
+
+const rawSongAlbum = (song: Record<string, unknown>): Record<string, unknown> =>
+  asRecord(song.album ?? song.al);
+
+const rawSongDurationMs = (song: Record<string, unknown>): number | null =>
+  number(song.duration) ?? number(song.dt);
 
 const decodeXmlEntities = (value: string): string =>
   value
@@ -204,11 +232,37 @@ export class AmllTtmlLyricsProvider implements LyricsProvider {
         seen.add(song.id);
         return true;
       });
-      const results = await Promise.all(candidates.slice(0, maxSearchSongs).map((song) => this.fetchLyrics(song, request)));
-      return results.filter((result): result is LyricsProviderResult => Boolean(result));
+      return await this.fetchFirstAvailableLyrics(candidates.slice(0, maxSearchSongs), request);
     } catch {
       return [];
     }
+  }
+
+  private async fetchFirstAvailableLyrics(
+    songs: NeteaseSong[],
+    request: LyricsProviderSearchRequest,
+  ): Promise<LyricsProviderResult[]> {
+    const pending = songs.map((song) =>
+      this.fetchLyrics(song, request)
+        .then((result): SettledLyricsFetch => ({ result }))
+        .catch((): SettledLyricsFetch => ({ result: null })),
+    );
+    const results: LyricsProviderResult[] = [];
+
+    while (pending.length > 0 && results.length < maxResolvedResults) {
+      const settled = await Promise.race(
+        pending.map((promise, pendingIndex) =>
+          promise.then((value) => ({ ...value, pendingIndex })),
+        ),
+      );
+      pending.splice(settled.pendingIndex, 1);
+
+      if (settled.result) {
+        results.push(settled.result);
+      }
+    }
+
+    return results;
   }
 
   private async searchSongs(request: LyricsProviderSearchRequest): Promise<NeteaseSong[]> {
@@ -216,6 +270,7 @@ export class AmllTtmlLyricsProvider implements LyricsProvider {
     const songs: NeteaseSong[] = [];
 
     for (const variant of request.normalized.searchVariants) {
+      const songsBeforeVariant = songs.length;
       if (request.signal?.aborted) {
         break;
       }
@@ -230,70 +285,101 @@ export class AmllTtmlLyricsProvider implements LyricsProvider {
         continue;
       }
 
-      const params = new URLSearchParams({ type: '1', s: query, limit: '5', offset: '0' });
-      const data = asRecord(
-        await fetchJsonWithTimeout(`https://music.163.com/api/search/get/web?${params.toString()}`, request.signal, neteaseHeaders, request.timeoutMs),
-      );
-      const rawSongs = asRecord(data.result).songs;
-      const songValues = Array.isArray(rawSongs) ? rawSongs : [];
-
-      for (const songValue of songValues) {
-        const song = asRecord(songValue);
-        const id = String(song.id ?? '');
-        if (!isValidNeteaseMusicId(id) || seen.has(id)) {
+      for (const url of neteaseSearchUrls(query)) {
+        let songValues: unknown[] = [];
+        try {
+          const data = asRecord(await fetchJsonWithTimeout(url, request.signal, neteaseHeaders, request.timeoutMs));
+          const rawSongs = asRecord(data.result).songs;
+          songValues = Array.isArray(rawSongs) ? rawSongs : [];
+        } catch {
           continue;
         }
 
-        const artists = Array.isArray(song.artists) ? song.artists.map(asRecord) : [];
-        const artist = artists.map((artistValue) => text(artistValue.name)).filter(Boolean).join(' / ');
-        const album = asRecord(song.album);
-        const durationMs = number(song.duration);
+        for (const songValue of songValues) {
+          const song = asRecord(songValue);
+          const id = String(song.id ?? '');
+          if (!isValidNeteaseMusicId(id) || seen.has(id)) {
+            continue;
+          }
 
-        seen.add(id);
-        songs.push({
-          id,
-          title: text(song.name) ?? request.query.title,
-          artist: artist || request.query.artist,
-          album: text(album.name),
-          durationSeconds: durationMs ? durationMs / 1000 : null,
-          raw: songValue,
-        });
+          const artists = rawSongArtists(song);
+          const artist = artists.map((artistValue) => text(artistValue.name)).filter(Boolean).join(' / ');
+          const album = rawSongAlbum(song);
+          const durationMs = rawSongDurationMs(song);
+
+          seen.add(id);
+          songs.push({
+            id,
+            title: text(song.name) ?? request.query.title,
+            artist: artist || request.query.artist,
+            album: text(album.name),
+            durationSeconds: durationMs ? durationMs / 1000 : null,
+            raw: songValue,
+          });
+        }
+
+        if (songValues.length > 0) {
+          break;
+        }
+      }
+
+      if (songs.length > songsBeforeVariant) {
+        break;
       }
     }
 
     return songs;
   }
 
-  private async fetchLyrics(song: NeteaseSong, request: LyricsProviderSearchRequest): Promise<LyricsProviderResult | null> {
-    for (const url of ttmlUrlsForNeteaseId(song.id)) {
-      try {
-        const ttml = await fetchTextWithTimeout(url, request.signal, request.timeoutMs);
-        if (parseSyncedLyrics(ttml).length === 0) {
-          continue;
-        }
+  private async fetchLyricsFromUrl(
+    song: NeteaseSong,
+    request: LyricsProviderSearchRequest,
+    url: string,
+  ): Promise<LyricsProviderResult | null> {
+    const ttml = await fetchTextWithTimeout(url, request.signal, request.timeoutMs);
+    if (parseSyncedLyrics(ttml).length === 0) {
+      return null;
+    }
 
-        const metadata = parseAmllMetadata(ttml);
-        return {
-          provider: 'amll-ttml',
-          providerLyricsId: `amll-ttml:ncm:${metadata.ncmMusicId ?? song.id}`,
-          title: metadata.title ?? song.title,
-          artist: metadata.artist ?? song.artist,
-          album: metadata.album ?? song.album,
-          durationSeconds: metadata.durationSeconds ?? song.durationSeconds,
-          instrumental: false,
-          plainLyrics: null,
-          syncedLyrics: ttml,
-          sourceUrl: url,
-          sourceLabel: 'AMLL TTML',
-          matchReasons: ['amll_ttml_provider', 'netease_id'],
-          raw: {
-            song: song.raw,
-            metadata,
-            url,
-          },
-        };
-      } catch {
-        // Try the next mirror before giving up on this NetEase id.
+    const metadata = parseAmllMetadata(ttml);
+    return {
+      provider: 'amll-ttml',
+      providerLyricsId: `amll-ttml:ncm:${metadata.ncmMusicId ?? song.id}`,
+      title: metadata.title ?? song.title,
+      artist: metadata.artist ?? song.artist,
+      album: metadata.album ?? song.album,
+      durationSeconds: metadata.durationSeconds ?? song.durationSeconds,
+      instrumental: false,
+      plainLyrics: null,
+      syncedLyrics: ttml,
+      sourceUrl: url,
+      sourceLabel: 'AMLL TTML',
+      matchReasons: ['amll_ttml_provider', 'netease_id'],
+      raw: {
+        song: song.raw,
+        metadata,
+        url,
+      },
+    };
+  }
+
+  private async fetchLyrics(song: NeteaseSong, request: LyricsProviderSearchRequest): Promise<LyricsProviderResult | null> {
+    const pending = ttmlUrlsForNeteaseId(song.id).map((url) =>
+      this.fetchLyricsFromUrl(song, request, url)
+        .then((result): SettledTtmlFetch => ({ result }))
+        .catch((): SettledTtmlFetch => ({ result: null })),
+    );
+
+    while (pending.length > 0) {
+      const settled = await Promise.race(
+        pending.map((promise, pendingIndex) =>
+          promise.then((value) => ({ ...value, pendingIndex })),
+        ),
+      );
+      pending.splice(settled.pendingIndex, 1);
+
+      if (settled.result) {
+        return settled.result;
       }
     }
 

@@ -175,6 +175,7 @@ const setSentinelReach = (pageSurface: HTMLElement, sentinel: Element): void => 
 
 beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', undefined);
+  window.localStorage.clear();
   window.localStorage.setItem('echo-next.locale', 'en-US');
 });
 
@@ -209,12 +210,15 @@ describe('AlbumsPage', () => {
     );
     window.addEventListener('app:navigate:songs', navigateSongs);
 
-    renderAlbumsPage();
+    const { container } = renderAlbumsPage();
     await screen.findByText('Dream within a dream');
     window.dispatchEvent(new CustomEvent('app:navigate:album-detail', { detail: { album: targetAlbum, returnTo: 'songs' } }));
     fireEvent.click(await screen.findByRole('button', { name: /Albums/ }));
 
     await waitFor(() => expect(navigateSongs).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByLabelText('Dream within a dream album details')).toBeNull());
+    expect(container.querySelector('.albums-page')?.getAttribute('data-detail-open')).toBe('false');
+    expect(screen.getByText('Dream within a dream')).toBeTruthy();
     window.removeEventListener('app:navigate:songs', navigateSongs);
   });
 
