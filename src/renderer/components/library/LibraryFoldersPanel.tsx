@@ -16,7 +16,9 @@ import {
 import { getLibraryBridge } from '../../utils/echoBridge';
 
 type LibraryFoldersPanelProps = {
+  autoRefresh?: boolean;
   autoFocus?: boolean;
+  pollScanStatuses?: boolean;
 };
 
 const terminalStatuses = new Set<LibraryScanStatus['status']>(['completed', 'failed', 'cancelled']);
@@ -94,8 +96,13 @@ const formatFolderError = (error: unknown): string => {
   return message || '导入失败';
 };
 
-export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelProps): JSX.Element => {
+export const LibraryFoldersPanel = ({
+  autoFocus = false,
+  autoRefresh = true,
+  pollScanStatuses = true,
+}: LibraryFoldersPanelProps): JSX.Element => {
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
+  const [foldersLoaded, setFoldersLoaded] = useState(false);
   const [folderPath, setFolderPath] = useState('');
   const [scanStatuses, setScanStatuses] = useState<ScanStatusByFolder>(getLibraryScanStatuses);
   const [message, setMessage] = useState<string | null>(null);
@@ -125,6 +132,8 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
       }
       setError(formatFolderError(refreshError));
       setDatabaseRecoveryAvailable(false);
+    } finally {
+      setFoldersLoaded(true);
     }
   }, []);
 
@@ -276,8 +285,12 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
   );
 
   useEffect(() => {
+    if (!autoRefresh) {
+      return;
+    }
+
     void refreshFolders();
-  }, [refreshFolders]);
+  }, [autoRefresh, refreshFolders]);
 
   useEffect(() => {
     return subscribeLibraryScanStatuses(setScanStatuses);
@@ -301,7 +314,7 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
   );
 
   useEffect(() => {
-    if (activeJobIds.length === 0) {
+    if (!pollScanStatuses || activeJobIds.length === 0) {
       return undefined;
     }
 
@@ -325,7 +338,7 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
     const timer = window.setInterval(pollActiveJobs, 1000);
 
     return () => window.clearInterval(timer);
-  }, [activeJobIds, updateScanStatus]);
+  }, [activeJobIds, pollScanStatuses, updateScanStatus]);
 
   useEffect(() => {
     for (const status of Object.values(scanStatuses)) {
@@ -394,7 +407,9 @@ export const LibraryFoldersPanel = ({ autoFocus = false }: LibraryFoldersPanelPr
         </div>
       ) : null}
 
-      {folders.length === 0 ? (
+      {!foldersLoaded && !autoRefresh ? (
+        <p className="audio-empty">{'\u66f2\u5e93\u6587\u4ef6\u5939\u5c06\u5728\u754c\u9762\u7a7a\u95f2\u540e\u8bfb\u53d6\uff0c\u4e5f\u53ef\u4ee5\u70b9\u51fb\u5237\u65b0\u7acb\u5373\u8bfb\u53d6\u3002'}</p>
+      ) : folders.length === 0 ? (
         <p className="audio-empty">还没有导入曲库文件夹。</p>
       ) : (
         <div className="library-folder-list">

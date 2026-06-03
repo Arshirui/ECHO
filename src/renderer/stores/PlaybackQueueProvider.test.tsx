@@ -3254,6 +3254,172 @@ describe('PlaybackQueueProvider playback modes', () => {
     expect(playLocalFile.mock.calls.map((call) => call[0].trackId)).toEqual(['track-1', 'track-3', 'track-4', 'track-2']);
   });
 
+  it('keeps shuffled local playlist playback inside the active playlist', async () => {
+    const playlistTracks = [makeTrack(3), makeTrack(4), makeTrack(5)];
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    const getTracks = vi.fn().mockResolvedValue({
+      items: [makeTrack(99)],
+      page: 1,
+      pageSize: 128,
+      total: 1,
+      hasMore: false,
+    });
+    const playLocalFile = vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.trackId,
+        positionMs: 0,
+        durationMs: 120000,
+        filePath: request.filePath,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playLocalFile,
+      },
+      library: {
+        getTracks,
+      },
+    } as unknown as Window['echo'];
+
+    const LocalPlaylistShuffleProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="shuffle-mode">{queue.isShuffleEnabled ? 'on' : 'off'}</output>
+          <button type="button" onClick={() => void queue.playPlaylistSequence(playlistTracks, { label: 'Local Mix', playlistId: 'playlist-local' })}>
+            play playlist
+          </button>
+          <button type="button" onClick={queue.toggleShuffle}>
+            shuffle
+          </button>
+          <button type="button" onClick={() => void queue.playNext()}>
+            next
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <LocalPlaylistShuffleProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'play playlist' }));
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-3'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'shuffle' }));
+    await waitFor(() => expect(screen.getByLabelText('shuffle-mode').textContent).toBe('on'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'next' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-5'));
+    expect(playLocalFile.mock.calls.map((call) => call[0].trackId)).toEqual(['track-3', 'track-5']);
+    expect(getTracks).not.toHaveBeenCalled();
+    expect(randomSpy).toHaveBeenCalled();
+  });
+
+  it('keeps shuffled streaming playlist playback inside the active playlist', async () => {
+    const streamingTracks: LibraryTrack[] = [
+      {
+        ...makeTrack(1),
+        id: 'streaming:qqmusic:first',
+        mediaType: 'streaming',
+        path: 'streaming:qqmusic:first',
+        provider: 'qqmusic',
+        providerTrackId: 'first',
+        stableKey: 'streaming:qqmusic:first',
+      },
+      {
+        ...makeTrack(2),
+        id: 'streaming:qqmusic:second',
+        mediaType: 'streaming',
+        path: 'streaming:qqmusic:second',
+        provider: 'qqmusic',
+        providerTrackId: 'second',
+        stableKey: 'streaming:qqmusic:second',
+      },
+      {
+        ...makeTrack(3),
+        id: 'streaming:qqmusic:third',
+        mediaType: 'streaming',
+        path: 'streaming:qqmusic:third',
+        provider: 'qqmusic',
+        providerTrackId: 'third',
+        stableKey: 'streaming:qqmusic:third',
+      },
+    ];
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    const getTracks = vi.fn().mockResolvedValue({
+      items: [makeTrack(99)],
+      page: 1,
+      pageSize: 128,
+      total: 1,
+      hasMore: false,
+    });
+    const playMediaItem = vi.fn().mockImplementation((request: { item: { trackId: string } }) =>
+      Promise.resolve({
+        state: 'playing',
+        currentTrackId: request.item.trackId,
+        positionMs: 0,
+        durationMs: 120000,
+        filePath: `streaming://${request.item.trackId}`,
+      }),
+    );
+
+    window.echo = {
+      playback: {
+        playMediaItem,
+      },
+      library: {
+        getTracks,
+      },
+    } as unknown as Window['echo'];
+
+    const StreamingPlaylistShuffleProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <output aria-label="shuffle-mode">{queue.isShuffleEnabled ? 'on' : 'off'}</output>
+          <button type="button" onClick={() => void queue.playPlaylistSequence(streamingTracks, { label: 'QQ Mix', playlistId: 'playlist-streaming' })}>
+            play playlist
+          </button>
+          <button type="button" onClick={queue.toggleShuffle}>
+            shuffle
+          </button>
+          <button type="button" onClick={() => void queue.playNext()}>
+            next
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <StreamingPlaylistShuffleProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'play playlist' }));
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('streaming:qqmusic:first'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'shuffle' }));
+    await waitFor(() => expect(screen.getByLabelText('shuffle-mode').textContent).toBe('on'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'next' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('streaming:qqmusic:third'));
+    expect(playMediaItem.mock.calls.map((call) => call[0].item.trackId)).toEqual(['streaming:qqmusic:first', 'streaming:qqmusic:third']);
+    expect(getTracks).not.toHaveBeenCalled();
+    expect(randomSpy).toHaveBeenCalled();
+  });
+
   it('exits playlist sequence playback and resumes the saved queue item', async () => {
     const queueTracks = [makeTrack(1), makeTrack(2)];
     const playlistTracks = [makeTrack(3), makeTrack(4)];

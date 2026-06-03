@@ -230,6 +230,20 @@ afterEach(() => {
 });
 
 describe('LibraryFoldersPanel', () => {
+  it('can defer mount-time folder loading until auto refresh is enabled', async () => {
+    libraryMock.getFolders.mockResolvedValue([baseFolder()]);
+
+    const { rerender } = render(<LibraryFoldersPanel autoRefresh={false} />);
+
+    await new Promise((resolve) => window.setTimeout(resolve, 25));
+    expect(libraryMock.getFolders).not.toHaveBeenCalled();
+
+    rerender(<LibraryFoldersPanel autoRefresh />);
+
+    await waitFor(() => expect(libraryMock.getFolders).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Music')).toBeTruthy();
+  });
+
   it('calls chooseFolder, addFolder, and scanFolder when choosing a folder', async () => {
     libraryMock.getFolders.mockResolvedValue([]);
     libraryMock.chooseFolder.mockResolvedValue('D:\\Music');

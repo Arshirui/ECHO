@@ -612,6 +612,7 @@ describe('AlbumDetailView', () => {
     await waitFor(() => expect(getArtists).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Echo Unit', sort: 'default' }));
     expect(navigate).toHaveBeenCalledTimes(1);
     expect((navigate.mock.calls[0]?.[0] as CustomEvent).detail.artist.id).toBe('artist-1');
+    expect((navigate.mock.calls[0]?.[0] as CustomEvent).detail.returnTo).toBe('albums');
 
     window.removeEventListener('app:navigate:artist-detail', navigate);
   });

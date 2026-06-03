@@ -1306,7 +1306,7 @@ export const AlbumDetailView = ({ album, onBack }: AlbumDetailViewProps): JSX.El
       return;
     }
 
-    void openArtistDetailByName(artistName)
+    void openArtistDetailByName(artistName, { returnTo: 'albums' })
       .then((artist) => {
         if (!artist) {
           setTrackActionMessage(t('albumDetail.artist.notFound', { artist: artistName }));

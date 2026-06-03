@@ -4945,6 +4945,7 @@ export const SettingsPage = (): JSX.Element => {
     playbackStatus: segmentPlaybackStatus,
     playbackVisualIntent: sharedPlaybackStatus.playbackVisualIntent,
   });
+  const libraryHeavyRefreshAllowed = segmentVisualState !== 'playing' && segmentVisualState !== 'loading';
   const segmentIsSpotifyTrack = isSpotifyTrack(segmentCurrentTrack);
   const segmentTitle = segmentCurrentTrack?.title ?? titleFromPath(segmentFilePath);
   const segmentArtist = segmentCurrentTrack?.artist ?? segmentCurrentTrack?.albumArtist ?? '';
@@ -5356,11 +5357,26 @@ export const SettingsPage = (): JSX.Element => {
       return undefined;
     }
 
-    return scheduleSettingsIdleTask(() => {
-      void refreshCacheInventory();
+    let cacheInventoryTimer: number | null = null;
+    const cancelIdleTask = scheduleSettingsIdleTask(() => {
       void refreshDuplicateSummary();
+
+      if (!libraryHeavyRefreshAllowed) {
+        return;
+      }
+
+      cacheInventoryTimer = window.setTimeout(() => {
+        void refreshCacheInventory();
+      }, 900);
     });
-  }, [activeSection, libraryDeferredRefreshReady, refreshCacheInventory, refreshDuplicateSummary]);
+
+    return () => {
+      cancelIdleTask();
+      if (cacheInventoryTimer !== null) {
+        window.clearTimeout(cacheInventoryTimer);
+      }
+    };
+  }, [activeSection, libraryDeferredRefreshReady, libraryHeavyRefreshAllowed, refreshCacheInventory, refreshDuplicateSummary]);
 
   useEffect(() => {
     if (activeSection !== 'library') {
@@ -5438,7 +5454,7 @@ export const SettingsPage = (): JSX.Element => {
   }, [activeSection, deferredAboutReleaseNotes, updateStatus?.releaseNotes]);
 
   useEffect(() => {
-    if (activeSection !== 'library') {
+    if (activeSection !== 'library' || !libraryDeferredRefreshReady || appSettings?.autoFetchArtistImages !== true) {
       return undefined;
     }
 
@@ -5469,18 +5485,21 @@ export const SettingsPage = (): JSX.Element => {
       }
     };
 
-    void refreshSummary();
-    timer = window.setInterval(() => {
+    const cancelInitialRefresh = scheduleSettingsIdleTask(() => {
       void refreshSummary();
-    }, 750);
+      timer = window.setInterval(() => {
+        void refreshSummary();
+      }, 3000);
+    });
 
     return () => {
       disposed = true;
+      cancelInitialRefresh();
       if (timer !== null) {
         window.clearInterval(timer);
       }
     };
-  }, [activeSection]);
+  }, [activeSection, appSettings?.autoFetchArtistImages, libraryDeferredRefreshReady]);
 
   useEffect(() => {
     if (activeSection === 'appearance') {
@@ -6343,11 +6362,6 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomSave = (): void => {
-    if (themeCustomWarnings.length > 0) {
-      setThemeCustomMessage(t('settings.appearance.themeCustom.message.lowContrast'));
-      return;
-    }
-
     const currentTheme = activeThemeCustom;
     const nextThemes = currentTheme
       ? updateThemeCustomThemeTone(savedThemeCustomThemes, currentTheme.id, themeCustomTone, themeCustomDraft)
@@ -12308,7 +12322,7 @@ export const SettingsPage = (): JSX.Element => {
                       <Palette size={15} />
                       {t('settings.appearance.themeCustom.action.autoFix')}
                     </button>
-                    <button className="settings-action-button" type="button" onClick={handleThemeCustomSave} disabled={themeCustomWarnings.length > 0}>
+                    <button className="settings-action-button" type="button" onClick={handleThemeCustomSave}>
                       <Save size={15} />
                       {t('settings.appearance.themeCustom.action.save')}
                     </button>
@@ -12549,7 +12563,7 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={Download} id="library" title={t('settings.nav.library.label')}>
               <div id="settings-row-library-folders" data-search-highlight={highlightedSettingId === 'settings-row-library-folders' ? 'true' : undefined}>
-                <LibraryFoldersPanel />
+                <LibraryFoldersPanel autoRefresh={libraryDeferredRefreshReady} pollScanStatuses={false} />
               </div>
               <SettingRow
                 id="settings-row-live-library-updates"

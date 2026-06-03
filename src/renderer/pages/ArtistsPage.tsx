@@ -434,6 +434,11 @@ export const ArtistsPage = (): JSX.Element => {
     setSelectedArtist(artist);
   }, []);
 
+  const closeArtistDetail = useCallback((): void => {
+    setSelectedArtistReturnTo(null);
+    setSelectedArtist(null);
+  }, []);
+
   useEffect(() => {
     const pendingRequest = consumePendingArtistDetailNavigation();
     if (pendingRequest) {
@@ -453,28 +458,32 @@ export const ArtistsPage = (): JSX.Element => {
   }, [openArtistDetail]);
 
   const handleBackFromArtistDetail = useCallback((): void => {
+    if (selectedArtistReturnTo === 'albums') {
+      closeArtistDetail();
+      window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'albums' }));
+      return;
+    }
+
     if (selectedArtistReturnTo === 'history') {
-      setSelectedArtistReturnTo(null);
-      setSelectedArtist(null);
+      closeArtistDetail();
       window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'history' }));
       return;
     }
 
     if (selectedArtistReturnTo === 'home') {
-      setSelectedArtistReturnTo(null);
-      setSelectedArtist(null);
+      closeArtistDetail();
       window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'home' }));
       return;
     }
 
     if (selectedArtistReturnTo === 'songs') {
+      closeArtistDetail();
       window.dispatchEvent(new Event('app:navigate:songs'));
       return;
     }
 
-    setSelectedArtistReturnTo(null);
-    setSelectedArtist(null);
-  }, [selectedArtistReturnTo]);
+    closeArtistDetail();
+  }, [closeArtistDetail, selectedArtistReturnTo]);
 
   const handleArtistKeyDown = useCallback((event: KeyboardEvent<HTMLElement>, artist: LibraryArtist): void => {
     if (event.key === 'Enter' || event.key === ' ') {
