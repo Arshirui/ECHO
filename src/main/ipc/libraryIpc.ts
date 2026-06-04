@@ -47,6 +47,7 @@ import type {
   StartPlaybackHistoryRequest,
   BpmAnalysisStartOptions,
   ReplayGainAnalysisStartOptions,
+  LyricsBackfillStartOptions,
   AddLocalAudioFilesToPlaylistResult,
   LibraryScanMode,
   LibraryAllUserDataDeleteResult,
@@ -70,7 +71,7 @@ import { closeDefaultRemoteSourceService, getRemoteSourceService } from '../libr
 import { closeDefaultLyricsService } from '../lyrics/LyricsService';
 import { closeDefaultMvService } from '../mv/MvService';
 import { SongCardRenderer } from '../library/SongCardRenderer';
-import { createLibraryHealthReport, writeLibraryHealthReportMarkdown } from '../library/LibraryHealthReport';
+import { createLibraryHealthReportAsync, writeLibraryHealthReportMarkdown } from '../library/LibraryHealthReport';
 import { closeDefaultStreamingService, getStreamingService } from '../streaming/StreamingService';
 import { decodeM3u8ProviderTrackId } from '../streaming/M3u8Playlist';
 import { createLibraryRecoveryRelaunchArgs } from '../app/libraryRecoveryMode';
@@ -93,6 +94,7 @@ const sortValues = new Set<LibrarySort>([
   'random',
   'title',
   'artist',
+  'artistAlbum',
   'album',
   'recent',
 ]);
@@ -241,8 +243,8 @@ const getDatabaseProtectionStatusForRenderer = (options: LibraryDatabaseProtecti
 
 const formatReportTimestamp = (): string => new Date().toISOString().replace(/[:.]/g, '-');
 
-const createLibraryHealthReportForRenderer = (): LibraryHealthReport =>
-  createLibraryHealthReport({
+const createLibraryHealthReportForRenderer = (): Promise<LibraryHealthReport> =>
+  createLibraryHealthReportAsync({
     getSummary: () => getLibraryService().getSummary(),
     getDiagnostics: () => getLibraryService().getDiagnostics(),
     getDatabaseProtectionStatus: getDatabaseProtectionStatusForRenderer,
@@ -915,6 +917,11 @@ const optionalLimit = (value: unknown, fallback: number): number => {
   return Number.isFinite(parsed) ? Math.max(1, Math.min(500, Math.floor(parsed))) : fallback;
 };
 
+const optionalLargeLimit = (value: unknown, fallback: number): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(20000, Math.floor(parsed))) : fallback;
+};
+
 const networkTagProviders = new Set<NetworkTagProvider>(['mock', 'musicbrainz', 'cover-art-archive', 'netease-cloud-music', 'qq-music', 'kugou-music']);
 const missingMetadataFields = new Set<MissingMetadataField>([
   'cover',
@@ -1073,6 +1080,24 @@ const normalizeReplayGainAnalysisStartOptions = (value: unknown): ReplayGainAnal
   return {
     limit: optionalLimit(input.limit, 100),
     trackIds: trackIds?.length ? [...new Set(trackIds)] : undefined,
+    force: input.force === true,
+  };
+};
+
+const normalizeLyricsBackfillStartOptions = (value: unknown): LyricsBackfillStartOptions => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { limit: optionalLargeLimit(value, 10000) };
+  }
+
+  const input = value as Record<string, unknown>;
+  const concurrency = Number(input.concurrency);
+  const autoAcceptScore = Number(input.autoAcceptScore);
+  const mode = input.mode === 'complete' ? 'complete' : 'quick';
+  return {
+    mode,
+    limit: optionalLargeLimit(input.limit, 10000),
+    concurrency: Number.isFinite(concurrency) ? Math.max(1, Math.min(24, Math.floor(concurrency))) : undefined,
+    autoAcceptScore: Number.isFinite(autoAcceptScore) ? Math.max(0.3, Math.min(0.95, autoAcceptScore)) : undefined,
     force: input.force === true,
   };
 };
@@ -1660,6 +1685,9 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryScanFolder, (_event, folderId: unknown) =>
     getLibraryService().scanFolder(requireText(folderId, 'folderId')),
   );
+  ipcMain.handle(IpcChannels.LibraryScanFolderChanges, (_event, folderId: unknown) =>
+    getLibraryService().scanFolderChanges(requireText(folderId, 'folderId')),
+  );
   ipcMain.handle(IpcChannels.LibraryRescanEmbeddedTags, (_event, mode: unknown) =>
     getLibraryService().rescanEmbeddedTags(normalizeEmbeddedTagRescanMode(mode)),
   );
@@ -1706,10 +1734,10 @@ export const registerLibraryIpc = (): void => {
       return null;
     }
 
-    return writeLibraryHealthReportMarkdown(createLibraryHealthReportForRenderer(), result.filePath);
+    return writeLibraryHealthReportMarkdown(await createLibraryHealthReportForRenderer(), result.filePath);
   });
   ipcMain.handle(IpcChannels.LibraryRefreshDuplicateTracks, (_event, mode: unknown) =>
-    getLibraryService().refreshDuplicateTracksAsync(normalizeDuplicateMode(mode)),
+    getLibraryService().refreshDuplicateTracksPlaybackSafe(normalizeDuplicateMode(mode)),
   );
   ipcMain.handle(IpcChannels.LibraryGetDuplicateTrackVersions, (_event, trackId: unknown) =>
     getLibraryService().getDuplicateTrackVersions(requireText(trackId, 'trackId')),
@@ -1956,7 +1984,7 @@ export const registerLibraryIpc = (): void => {
     getLibraryService().getAlbumTracks(requireText(albumId, 'albumId'), normalizeQuery(query)),
   );
   ipcMain.handle(IpcChannels.LibraryGetSummary, () => getLibraryService().getSummary());
-  ipcMain.handle(IpcChannels.LibraryRefreshAlbumGrouping, () => getLibraryService().refreshAlbumGrouping());
+  ipcMain.handle(IpcChannels.LibraryRefreshAlbumGrouping, () => getLibraryService().refreshAlbumGroupingPlaybackSafe());
   ipcMain.handle(IpcChannels.LibraryGetDiagnostics, () => getLibraryService().getDiagnostics());
   ipcMain.handle(IpcChannels.LibraryGetMoveCandidates, (_event, options: unknown) =>
     getLibraryService().getMoveCandidates(
@@ -2034,7 +2062,7 @@ export const registerLibraryIpc = (): void => {
     getLibraryService().getPlaybackHistorySummary(normalizePlaybackHistoryQuery(query)),
   );
   ipcMain.handle(IpcChannels.LibraryGetPlaybackStatsDashboard, (_event, query: unknown) =>
-    getLibraryService().getPlaybackStatsDashboard(normalizePlaybackHistoryQuery(query)),
+    getLibraryService().getPlaybackStatsDashboardPlaybackSafe(normalizePlaybackHistoryQuery(query)),
   );
   ipcMain.handle(IpcChannels.LibraryRefreshInvalidPlaybackHistory, () =>
     getLibraryService().refreshInvalidPlaybackHistory(),
@@ -2320,5 +2348,17 @@ export const registerLibraryIpc = (): void => {
   });
   ipcMain.handle(IpcChannels.LibraryGetReplayGainAnalysisStatus, (_event, jobId: unknown) =>
     getLibraryService().getReplayGainAnalysisStatus(requireText(jobId, 'jobId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryStartLyricsBackfill, (_event, request: unknown) =>
+    getLibraryService().startLyricsBackfill(normalizeLyricsBackfillStartOptions(request)),
+  );
+  ipcMain.handle(IpcChannels.LibraryGetLyricsBackfillStatus, (_event, jobId: unknown) =>
+    getLibraryService().getLyricsBackfillStatus(requireText(jobId, 'jobId')),
+  );
+  ipcMain.handle(IpcChannels.LibraryGetCurrentLyricsBackfillStatus, () =>
+    getLibraryService().getCurrentLyricsBackfillStatus(),
+  );
+  ipcMain.handle(IpcChannels.LibraryCancelLyricsBackfill, (_event, jobId: unknown) =>
+    getLibraryService().cancelLyricsBackfill(requireText(jobId, 'jobId')),
   );
 };

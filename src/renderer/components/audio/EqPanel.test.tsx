@@ -105,10 +105,10 @@ const audioStatus: AudioStatus = {
   error: null,
 };
 
-const renderEqPanel = (status: AudioStatus | null = audioStatus): ReturnType<typeof render> =>
+const renderEqPanel = (status: AudioStatus | null = audioStatus, options: { surface?: 'full' | 'eq-only' } = {}): ReturnType<typeof render> =>
   render(
     <I18nProvider>
-      <EqPanel audioStatus={status} />
+      <EqPanel audioStatus={status} surface={options.surface} />
     </I18nProvider>,
   );
 
@@ -269,6 +269,21 @@ describe('EqPanel', () => {
     expect(screen.getByText('Bit-perfect')).toBeTruthy();
   });
 
+  it('keeps detached DSP modules out of the EQ-only surface', async () => {
+    const { container } = renderEqPanel(audioStatus, { surface: 'eq-only' });
+
+    await screen.findByRole('img', { name: 'Draggable 31-band EQ frequency response' });
+    expect(screen.getByLabelText('Quick EQ preamp')).toBeTruthy();
+    expect(screen.queryByLabelText('Balance')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Quick -6 dB headroom' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Quick native direct' })).toBeNull();
+
+    await showAdvancedEqTools();
+    expect(container.querySelector('.channel-balance-panel')).toBeNull();
+    expect(container.querySelector('.eq-room-correction')).toBeNull();
+    expect(container.querySelector('.eq-dsp-headroom-control')).toBeNull();
+  });
+
   it('updates preamp from the quick strip slider', async () => {
     renderEqPanel();
 
@@ -287,6 +302,38 @@ describe('EqPanel', () => {
 
     fireEvent.pointerUp(compare);
     await waitFor(() => expect(window.echo.eq.setEnabled).toHaveBeenCalledWith(true));
+  });
+
+  it('locks OPRA headphone correction until converted and only A/B bypasses EQ', async () => {
+    const opraState = eqState({
+      enabled: true,
+      presetId: 'opra-sennheiser-hd650',
+      presetName: '耳机校正 - Sennheiser / HD 650 / AutoEQ',
+      preampDb: -5.2,
+    });
+    vi.mocked(window.echo.eq.getState).mockResolvedValue(opraState);
+    window.echo.eq.setEnabled = vi.fn().mockImplementation((enabled: boolean) => Promise.resolve({ ...opraState, enabled }));
+    renderEqPanel();
+
+    expect(await screen.findByLabelText('Headphone correction EQ lock')).toBeTruthy();
+    expect(screen.getAllByText('Managed by headphone correction').length).toBeGreaterThan(0);
+    expect((screen.getByLabelText('Quick EQ preamp') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /Bass lift/i }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Compare original' }));
+    await waitFor(() => expect(window.echo.eq.setEnabled).toHaveBeenCalledWith(false));
+    expect(window.echo.eq.setRoomCorrectionEnabled).not.toHaveBeenCalled();
+    expect(window.echo.eq.setChannelBalanceState).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convert to custom EQ' }));
+    await waitFor(() =>
+      expect(window.echo.eq.savePreset).toHaveBeenCalledWith(expect.objectContaining({
+        id: expect.stringMatching(/^custom-opra-sennheiser-hd650-/),
+        name: 'Custom EQ - Sennheiser / HD 650 / AutoEQ',
+        preampDb: -5.2,
+      })),
+    );
+    await waitFor(() => expect(window.echo.eq.listPresets).toHaveBeenCalled());
   });
 
   it('shows readable DSP comfort guidance in Simple mode', async () => {
@@ -639,7 +686,7 @@ describe('EqPanel', () => {
     fireEvent.pointerMove(curve, { clientX: 410, clientY: 94, pointerId: 1 });
     fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1 });
 
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 5.5 }));
     await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: 400 }));
 
     await showAdvancedEqTools();
@@ -681,7 +728,7 @@ describe('EqPanel', () => {
     fireEvent.pointerUp(curve, { clientX: 510, clientY: 94, pointerId: 1 });
 
     expect(point.matrixTransform).toHaveBeenCalled();
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 5.5 }));
     await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: 400 }));
   });
 
@@ -708,7 +755,7 @@ describe('EqPanel', () => {
     fireEvent.pointerMove(curve, { clientX: 410, clientY: 94, pointerId: 1, shiftKey: true });
     fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1, shiftKey: true });
 
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.7 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 5.5 }));
     await waitFor(() => expect(window.echo.eq.setBandFrequency).toHaveBeenCalledWith({ band: 2, frequencyHz: expect.any(Number) }));
   });
 
@@ -1024,13 +1071,13 @@ describe('EqPanel', () => {
     const node = await screen.findByTestId('eq-curve-node-2');
     fireEvent.pointerDown(node, { clientX: 410, clientY: 94, pointerId: 1 });
     fireEvent.pointerUp(curve, { clientX: 410, clientY: 94, pointerId: 1 });
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 5.5 }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 0 }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
-    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 3.5 }));
+    await waitFor(() => expect(window.echo.eq.setBandGain).toHaveBeenCalledWith({ band: 2, gainDb: 5.5 }));
   });
 
   it('keeps APO-style filter stack controls inside Pro mode', async () => {
@@ -1381,11 +1428,64 @@ describe('EqPanel', () => {
 
     fireEvent.change(await screen.findByLabelText('Balance'), { target: { value: '400' } });
     fireEvent.change(screen.getByLabelText('Left Gain'), { target: { value: '-50' } });
+    fireEvent.change(screen.getByLabelText('Right Delay'), { target: { value: '80' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sum' }));
 
     await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ balance: 1 }));
     await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ leftGainDb: -12 }));
+    await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ rightDelayMs: 10 }));
     await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ monoMode: 'sum' }));
+  });
+
+  it('applies spatial calibration measurements to gain and delay trims', async () => {
+    renderEqPanel();
+    await showAdvancedEqTools();
+
+    fireEvent.change(await screen.findByLabelText('Left distance'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('Right distance'), { target: { value: '134.3' } });
+    fireEvent.change(screen.getByLabelText('Left SPL'), { target: { value: '75' } });
+    fireEvent.change(screen.getByLabelText('Right SPL'), { target: { value: '72' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply measurement' }));
+
+    await waitFor(() =>
+      expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({
+        enabled: true,
+        balance: 0,
+        leftGainDb: -3,
+        rightGainDb: 0,
+        leftDelayMs: 1,
+        rightDelayMs: 0,
+        monoMode: 'off',
+        swapLeftRight: false,
+        invertLeft: false,
+        invertRight: false,
+      }),
+    );
+  });
+
+  it('nudges spatial calibration from listening checks', async () => {
+    renderEqPanel();
+    await showAdvancedEqTools();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Image pulls left' }));
+    await waitFor(() =>
+      expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({
+        enabled: true,
+        monoMode: 'off',
+        leftDelayMs: 0.05,
+        rightDelayMs: 0,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Right is louder' }));
+    await waitFor(() =>
+      expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({
+        enabled: true,
+        monoMode: 'off',
+        leftGainDb: 0,
+        rightGainDb: -0.2,
+      }),
+    );
   });
 
   it('resets monitor tools without changing balance or gain trim', async () => {

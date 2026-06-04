@@ -47,8 +47,13 @@ import {
 } from '../../shared/types/globalShortcuts';
 import {
   channelBalanceMaxBalance,
+  channelBalanceBandIds,
+  channelBalanceBandMaxGainDb,
+  channelBalanceBandMinGainDb,
+  channelBalanceMaxDelayMs,
   channelBalanceMaxGainDb,
   channelBalanceMinBalance,
+  channelBalanceMinDelayMs,
   channelBalanceMinGainDb,
   type AudioExportFormat,
   type ChannelBalanceMonoMode,
@@ -193,6 +198,7 @@ const librarySorts: LibrarySort[] = [
   'random',
   'title',
   'artist',
+  'artistAlbum',
   'album',
   'recent',
 ];
@@ -207,6 +213,7 @@ export const defaultAppearancePreferences: AppearancePreferences = {
   baseFontSize: 14,
   lineHeight: 1.35,
   textDepth: 62,
+  albumCoverShape: 'rounded',
 };
 
 const defaultRememberedAudioOutput: RememberedAudioOutput = {
@@ -301,6 +308,13 @@ export const defaultChannelBalanceSettings: ChannelBalanceState = {
   balance: 0,
   leftGainDb: 0,
   rightGainDb: 0,
+  bandGains: {
+    low: { leftGainDb: 0, rightGainDb: 0 },
+    mid: { leftGainDb: 0, rightGainDb: 0 },
+    high: { leftGainDb: 0, rightGainDb: 0 },
+  },
+  leftDelayMs: 0,
+  rightDelayMs: 0,
   swapLeftRight: false,
   monoMode: 'off',
   invertLeft: false,
@@ -350,6 +364,8 @@ export const defaultSettings: AppSettings = {
   appearanceCustomThemes: [],
   appearanceThemeCustomId: null,
   appearanceThemePresetsExpanded: false,
+  appearanceThemeCustomExpanded: false,
+  appearanceSidebarLayoutExpanded: false,
   appearancePreferences: { ...defaultAppearancePreferences },
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
   sidebarHiddenRouteIds: [],
@@ -422,7 +438,7 @@ export const defaultSettings: AppSettings = {
   networkProxyUrl: null,
   networkProxyBypassRules: defaultNetworkProxyBypassRules,
   networkProxyPacUrl: null,
-  networkMetadataEnabled: false,
+  networkMetadataEnabled: true,
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
   onlineArtistInfoBandsintownAppId: null,
   onlineArtistInfoTicketmasterApiKey: null,
@@ -441,7 +457,9 @@ export const defaultSettings: AppSettings = {
   lyricsDeepSearchEnabled: true,
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.5,
+  lyricsBackfillAutoAcceptScore: 0.45,
   lyricsRestartOnApplyEnabled: false,
+  lyricsAutoSaveSidecarEnabled: false,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
@@ -504,6 +522,7 @@ export const defaultSettings: AppSettings = {
   mvAutoApplyThreshold: 0.7,
   mvPreferHighestViewCount: false,
   mvImmersiveBackground: true,
+  mvImmersiveBackgroundAutoScale: true,
   mvImmersiveBackgroundScalePercent: 115,
   mvImmersiveBackgroundOffsetXPercent: 50,
   mvImmersiveBackgroundOffsetYPercent: 50,
@@ -525,6 +544,7 @@ export const defaultSettings: AppSettings = {
   lowLoadPlaybackEnhancementsEnabled: false,
   homeRandomHeroTitleEnabled: false,
   playerWaveformProgressEnabled: false,
+  signalPathControlEnabled: false,
   fixedVolumeEnabled: false,
   gaplessPlaybackEnabled: false,
   audioTransportFadeEnabled: false,
@@ -1005,6 +1025,9 @@ const normalizeAppearanceFontFamily = (value: unknown, fallback: string): string
   return normalizeRequiredText(value, fallback);
 };
 
+const normalizeAlbumCoverShape = (value: unknown): AppearancePreferences['albumCoverShape'] =>
+  value === 'square' ? 'square' : 'rounded';
+
 const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { ...defaultAppearancePreferences };
@@ -1031,6 +1054,7 @@ const normalizeAppearancePreferences = (value: unknown): AppearancePreferences =
     textDepth: Number.isFinite(textDepth)
       ? clamp(textDepth, 35, 100)
       : defaultAppearancePreferences.textDepth,
+    albumCoverShape: normalizeAlbumCoverShape(input.albumCoverShape),
   };
 };
 
@@ -1385,6 +1409,25 @@ export const normalizeChannelBalanceSettings = (value: unknown): ChannelBalanceS
   const balance = Number(input.balance);
   const leftGainDb = Number(input.leftGainDb);
   const rightGainDb = Number(input.rightGainDb);
+  const leftDelayMs = Number(input.leftDelayMs);
+  const rightDelayMs = Number(input.rightDelayMs);
+  const rawBandGains = input.bandGains && typeof input.bandGains === 'object' && !Array.isArray(input.bandGains)
+    ? input.bandGains as Partial<NonNullable<ChannelBalanceState['bandGains']>>
+    : {};
+  const bandGains = channelBalanceBandIds.reduce<NonNullable<ChannelBalanceState['bandGains']>>((next, bandId) => {
+    const band = rawBandGains[bandId];
+    const leftBandGainDb = Number(band?.leftGainDb);
+    const rightBandGainDb = Number(band?.rightGainDb);
+    next[bandId] = {
+      leftGainDb: Number.isFinite(leftBandGainDb) ? clamp(leftBandGainDb, channelBalanceBandMinGainDb, channelBalanceBandMaxGainDb) : 0,
+      rightGainDb: Number.isFinite(rightBandGainDb) ? clamp(rightBandGainDb, channelBalanceBandMinGainDb, channelBalanceBandMaxGainDb) : 0,
+    };
+    return next;
+  }, {
+    low: { leftGainDb: 0, rightGainDb: 0 },
+    mid: { leftGainDb: 0, rightGainDb: 0 },
+    high: { leftGainDb: 0, rightGainDb: 0 },
+  });
   const monoMode: ChannelBalanceMonoMode =
     input.monoMode === 'sum' || input.monoMode === 'left' || input.monoMode === 'right' || input.monoMode === 'off'
       ? input.monoMode
@@ -1395,6 +1438,9 @@ export const normalizeChannelBalanceSettings = (value: unknown): ChannelBalanceS
     balance: Number.isFinite(balance) ? clamp(balance, channelBalanceMinBalance, channelBalanceMaxBalance) : 0,
     leftGainDb: Number.isFinite(leftGainDb) ? clamp(leftGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : 0,
     rightGainDb: Number.isFinite(rightGainDb) ? clamp(rightGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : 0,
+    bandGains,
+    leftDelayMs: Number.isFinite(leftDelayMs) ? clamp(leftDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : 0,
+    rightDelayMs: Number.isFinite(rightDelayMs) ? clamp(rightDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : 0,
     swapLeftRight: input.swapLeftRight === true,
     monoMode,
     invertLeft: input.invertLeft === true,
@@ -1482,6 +1528,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const desktopLyricsOpacityPercent = Number(settings.desktopLyricsOpacityPercent);
   const lyricsProviderTimeoutMs = Number(settings.lyricsProviderTimeoutMs);
   const lyricsTotalMatchTimeoutMs = Number(settings.lyricsTotalMatchTimeoutMs);
+  const lyricsBackfillAutoAcceptScore = Number(settings.lyricsBackfillAutoAcceptScore);
   const mvProviderOrder = normalizeMvProviderList(settings.mvProviderOrder, defaultSettings.mvProviderOrder);
   const mvAutoApplyThreshold = Number(settings.mvAutoApplyThreshold);
   const mvImmersiveBackgroundScalePercent = Number(settings.mvImmersiveBackgroundScalePercent);
@@ -1518,6 +1565,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     appearanceCustomThemes,
     appearanceThemeCustomId,
     appearanceThemePresetsExpanded: settings.appearanceThemePresetsExpanded === true,
+    appearanceThemeCustomExpanded: settings.appearanceThemeCustomExpanded === true,
+    appearanceSidebarLayoutExpanded: settings.appearanceSidebarLayoutExpanded === true,
     appearancePreferences: normalizeAppearancePreferences(settings.appearancePreferences),
     sidebarRouteOrder: normalizeSidebarRouteOrder(settings.sidebarRouteOrder),
     sidebarHiddenRouteIds: normalizeSidebarHiddenRouteIds(settings.sidebarHiddenRouteIds),
@@ -1601,7 +1650,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     networkProxyUrl,
     networkProxyBypassRules: normalizeNetworkProxyBypassRules(settings.networkProxyBypassRules),
     networkProxyPacUrl,
-    networkMetadataEnabled: settings.networkMetadataEnabled === true,
+    networkMetadataEnabled: settings.networkMetadataEnabled !== false,
     networkMetadataProviders: providers.length ? providers : defaultSettings.networkMetadataProviders,
     onlineArtistInfoBandsintownAppId: normalizeOptionalText(settings.onlineArtistInfoBandsintownAppId),
     onlineArtistInfoTicketmasterApiKey: normalizeOptionalText(settings.onlineArtistInfoTicketmasterApiKey),
@@ -1631,7 +1680,11 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsAutoAcceptScore: Number.isFinite(lyricsAutoAcceptScore)
       ? clamp(lyricsAutoAcceptScore, 0.3, 1)
       : defaultSettings.lyricsAutoAcceptScore,
+    lyricsBackfillAutoAcceptScore: Number.isFinite(lyricsBackfillAutoAcceptScore)
+      ? clamp(lyricsBackfillAutoAcceptScore, 0.3, 0.95)
+      : defaultSettings.lyricsBackfillAutoAcceptScore,
     lyricsRestartOnApplyEnabled: settings.lyricsRestartOnApplyEnabled === true,
+    lyricsAutoSaveSidecarEnabled: settings.lyricsAutoSaveSidecarEnabled === true,
     lyricsDefaultOffsetMs: Number.isFinite(lyricsDefaultOffsetMs)
       ? Math.round(clamp(lyricsDefaultOffsetMs, -10000, 10000))
       : defaultSettings.lyricsDefaultOffsetMs,
@@ -1731,6 +1784,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.mvAutoApplyThreshold,
     mvPreferHighestViewCount: settings.mvPreferHighestViewCount === true,
     mvImmersiveBackground: settings.mvImmersiveBackground !== false,
+    mvImmersiveBackgroundAutoScale: settings.mvImmersiveBackgroundAutoScale !== false,
     mvImmersiveBackgroundScalePercent: Number.isFinite(mvImmersiveBackgroundScalePercent)
       ? Math.round(clamp(mvImmersiveBackgroundScalePercent, 100, 220))
       : defaultSettings.mvImmersiveBackgroundScalePercent,
@@ -1764,6 +1818,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lowLoadPlaybackEnhancementsEnabled: settings.lowLoadPlaybackEnhancementsEnabled === true,
     homeRandomHeroTitleEnabled: settings.homeRandomHeroTitleEnabled === true,
     playerWaveformProgressEnabled: settings.playerWaveformProgressEnabled === true,
+    signalPathControlEnabled: settings.signalPathControlEnabled === true,
     fixedVolumeEnabled: settings.fixedVolumeEnabled === true,
     gaplessPlaybackEnabled: settings.gaplessPlaybackEnabled === true,
     audioTransportFadeEnabled: settings.audioTransportFadeEnabled === true,

@@ -1,8 +1,10 @@
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AudioWaveform, Copy, Gauge, Headphones, Plus, RadioTower, Redo2, RotateCcw, Save, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Undo2, Waves } from 'lucide-react';
 import type { AudioStatus, ChannelBalanceMonoMode, ChannelBalanceState } from '../../../shared/types/audio';
 import {
+  channelBalanceMaxDelayMs,
   channelBalanceMaxGainDb,
+  channelBalanceMinDelayMs,
   channelBalanceMinGainDb,
 } from '../../../shared/types/audio';
 import type { EqBand, EqFilterType, EqPreset, EqPresetImportMetadata, EqPresetImportPreviewResult, EqProfile, EqProfileBindingInfo, EqProfileBindingTarget, EqState, RoomCorrectionState } from '../../../shared/types/eq';
@@ -37,6 +39,7 @@ import {
 type EqPanelProps = {
   audioStatus: AudioStatus | null;
   onAudioStatusRefresh?: () => void;
+  surface?: 'full' | 'eq-only';
 };
 
 type EqUiMode = 'simple' | 'pro';
@@ -78,6 +81,7 @@ const eqUiModeStorageKey = 'echo-next.eq.uiMode';
 const eqAnalyzerStorageKey = 'echo-next.eq.spectrumAnalyzer';
 const eqAnalyzerModeStorageKey = 'echo-next.eq.analyzerMode';
 const eqAutoGainStorageKey = 'echo-next.eq.autoGainEnabled';
+const headphoneCorrectionPresetPrefix = '耳机校正 -';
 
 const readEqUiMode = (): EqUiMode => {
   try {
@@ -110,6 +114,12 @@ const readEqAutoGainEnabled = (): boolean => {
     return false;
   }
 };
+
+const isHeadphoneCorrectionPresetName = (presetName: string): boolean =>
+  presetName.trim().startsWith(headphoneCorrectionPresetPrefix);
+
+const formatHeadphoneCorrectionPresetDetail = (presetName: string): string =>
+  presetName.replace(/^耳机校正 -\s*/u, '').trim() || presetName;
 
 const fallbackState: EqState = {
   enabled: false,
@@ -210,6 +220,8 @@ const fallbackChannelBalanceState: ChannelBalanceState = {
   balance: 0,
   leftGainDb: 0,
   rightGainDb: 0,
+  leftDelayMs: 0,
+  rightDelayMs: 0,
   swapLeftRight: false,
   monoMode: 'off',
   invertLeft: false,
@@ -300,6 +312,33 @@ const formatLevelDb = (value: number | null | undefined): string => {
 
   return formatDb(value);
 };
+
+const formatDelayMs = (value: number | null | undefined): string => {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '--';
+  }
+
+  return `${value.toFixed(2)} ms`;
+};
+
+const parseOptionalNumber = (value: string): number | null => {
+  if (!value.trim()) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const roundCalibrationDelayMs = (value: number): number =>
+  Math.round(Math.max(channelBalanceMinDelayMs, Math.min(channelBalanceMaxDelayMs, value)) * 100) / 100;
+
+const roundCalibrationGainDb = (value: number): number =>
+  Math.round(Math.max(channelBalanceMinGainDb, Math.min(channelBalanceMaxGainDb, value)) * 10) / 10;
+
+const speedOfSoundCmPerMs = 34.3;
+const spatialDelayNudgeMs = 0.05;
+const spatialGainNudgeDb = 0.2;
 
 const estimateSlotOutputPeak = (slot: EqSnapshot, inputPeakDb: number | null | undefined): number | null => {
   if (inputPeakDb === null || inputPeakDb === undefined || !Number.isFinite(inputPeakDb)) {
@@ -401,7 +440,7 @@ const resolveImportCompatibility = (metadata: EqPresetImportMetadata): EqImportC
   return 'clean';
 };
 
-export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JSX.Element => {
+export const EqPanel = ({ audioStatus, onAudioStatusRefresh, surface = 'full' }: EqPanelProps): JSX.Element => {
   const { t } = useI18n();
   const [state, setState] = useState<EqState>(fallbackState);
   const [channelBalance, setChannelBalance] = useState<ChannelBalanceState>(fallbackChannelBalanceState);
@@ -427,6 +466,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const [redoStack, setRedoStack] = useState<EqSnapshot[]>([]);
   const [loudnessMatchedAb, setLoudnessMatchedAb] = useState(false);
   const [calibrationMode, setCalibrationMode] = useState(false);
+  const [calibrationLeftDistanceCm, setCalibrationLeftDistanceCm] = useState('');
+  const [calibrationRightDistanceCm, setCalibrationRightDistanceCm] = useState('');
+  const [calibrationLeftSplDb, setCalibrationLeftSplDb] = useState('');
+  const [calibrationRightSplDb, setCalibrationRightSplDb] = useState('');
   const [eqUiMode, setEqUiMode] = useState<EqUiMode>(readEqUiMode);
   const [spectrumAnalyzerEnabled, setSpectrumAnalyzerEnabled] = useState(readEqAnalyzerEnabled);
   const [analyzerMode, setAnalyzerMode] = useState<EqAnalyzerMode>(readEqAnalyzerMode);
@@ -442,12 +485,16 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const autoGainManualHoldUntilMs = useRef(0);
   const autoGainApplying = useRef(false);
   const showAdvancedTools = eqUiMode === 'pro';
+  const showEmbeddedDspModules = surface !== 'eq-only';
 
   const selectedPreset = presets.find((preset) => preset.id === state.presetId);
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
   const selectedPresetReadonly = selectedPreset?.readonly ?? true;
   const canOverwritePreset = Boolean(selectedPreset && !selectedPreset.readonly);
-  const frequencyEditUnlocked = showAdvancedTools && frequencyUnlocked;
+  const headphoneCorrectionPresetActive = isHeadphoneCorrectionPresetName(state.presetName);
+  const headphoneCorrectionManaged = headphoneCorrectionPresetActive && state.presetId !== 'custom';
+  const headphoneCorrectionDetail = headphoneCorrectionPresetActive ? formatHeadphoneCorrectionPresetDetail(state.presetName) : '';
+  const frequencyEditUnlocked = showAdvancedTools && frequencyUnlocked && !headphoneCorrectionManaged;
   const audioLevels = audioStatus?.audioLevels ?? null;
   const visualSpectrumBins = Array.isArray(audioLevels?.visualSpectrum) ? audioLevels.visualSpectrum : [];
   const visualSpectrumHasSignal = visualSpectrumBins.some((value) => Number.isFinite(value) && value > 0.01);
@@ -473,6 +520,8 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const clippingRisk = Boolean(state.clippingRisk || roomCorrection.clippingRisk || channelBalance.clippingRisk || audioStatus?.clippingRisk || audioStatus?.dspClippingRisk || dspLimiterProtecting || realtimeLevelClippingRisk || realtimeLevelClipped);
   const eqOrBalanceEnabled = state.enabled || roomCorrection.enabled || channelBalance.enabled;
   const dspActive = Boolean(audioStatus?.dspActive || eqOrBalanceEnabled);
+  const surfaceDspActive = showEmbeddedDspModules ? dspActive : state.enabled;
+  const surfaceClippingRisk = showEmbeddedDspModules ? clippingRisk : Boolean(state.clippingRisk || audioStatus?.clippingRisk || audioStatus?.dspClippingRisk || dspLimiterProtecting || realtimeLevelClippingRisk || realtimeLevelClipped);
   const dspHeadroomArmed = Math.abs(state.dspHeadroomDb ?? 0) > 0.05;
   const dspHeadroomActive = dspActive && dspHeadroomArmed;
   const recommendedPreampDb = computeRecommendedPreamp(state);
@@ -506,8 +555,9 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
       ? state.presetName
       : t('settings.eq.preset.modified')
     : state.presetName;
+  const displayPresetLabel = headphoneCorrectionManaged ? t('settings.eq.headphoneCorrection.managed') : displayPresetName;
   const canSaveSimplePreset = state.presetId === 'custom' && hasCustomEqShape;
-  const needsSafePreamp = estimatedPeakGainDb > 0 || clippingRisk;
+  const needsSafePreamp = estimatedPeakGainDb > 0 || surfaceClippingRisk;
   const simpleInsightVibe = activeSimpleTone
     ? state.presetName
     : hasCustomEqShape
@@ -775,6 +825,58 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     }
   };
 
+  const requireCustomHeadphoneCorrection = (): boolean => {
+    if (!headphoneCorrectionManaged) {
+      return true;
+    }
+
+    setError(t('settings.eq.headphoneCorrection.lockedError'));
+    return false;
+  };
+
+  const convertHeadphoneCorrectionToCustom = async (): Promise<void> => {
+    if (!headphoneCorrectionManaged) {
+      return;
+    }
+
+    try {
+      const eq = getEqBridge();
+
+      if (!eq) {
+        setError(t('settings.eq.error.bridgeSavePreset'));
+        return;
+      }
+
+      const saved = await eq.savePreset({
+        id: `custom-${state.presetId}-${Date.now()}`,
+        name: t('settings.eq.headphoneCorrection.customName', { name: headphoneCorrectionDetail }),
+        preampDb: state.preampDb,
+        bands: state.bands,
+      });
+      setPresets(await eq.listPresets());
+      pushUndoSnapshot(createEqHistorySnapshot(state));
+      commitState({
+        ...state,
+        presetId: saved.id,
+        presetName: saved.name,
+        preampDb: saved.preampDb,
+        bands: saved.bands.map((band) => ({ ...band })),
+        clippingRisk: false,
+      });
+      setError(null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
+    }
+  };
+
+  const toggleHeadphoneCorrectionCompare = (): void => {
+    if (!headphoneCorrectionPresetActive) {
+      return;
+    }
+
+    setEnabled(!state.enabled);
+  };
+
   const setEnabled = (enabled: boolean): void => {
     const eq = getEqBridge();
     setState((current) => ({ ...current, enabled }));
@@ -816,6 +918,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   );
 
   const handleBandChange = (band: number, gainDb: number): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     if (!isEqFilterGainEditable(state.bands[band]?.filterType)) {
       return;
     }
@@ -834,6 +940,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const handleBandCommit = (band: number, gainDb: number): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     if (!isEqFilterGainEditable(state.bands[band]?.filterType)) {
       return;
     }
@@ -867,6 +977,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   );
 
   const handleBandFrequencyChange = (band: number, frequencyHz: number): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     beginEqEdit();
     const safeFrequencyHz = resolveBandFrequency(frequencyHz, frequencyEditUnlocked);
     setSelectedBandIndex(band);
@@ -882,6 +996,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const handleBandFrequencyCommit = (band: number, frequencyHz: number): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     commitEqEdit();
     const safeFrequencyHz = resolveBandFrequency(frequencyHz, frequencyEditUnlocked);
     setSelectedBandIndex(band);
@@ -912,6 +1030,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   );
 
   const handleBandQCommit = (band: number, q: number): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const safeQ = Math.round(Math.max(eqMinQ, Math.min(eqMaxQ, Number.isFinite(q) ? q : 1)) * 10) / 10;
     pushUndoSnapshot(createEqHistorySnapshot(state));
     setSelectedBandIndex(band);
@@ -929,6 +1051,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const handleBandFilterTypeChange = (band: number, filterType: EqFilterType): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const eq = getEqBridge();
     const gainEditable = isEqFilterGainEditable(filterType);
     pushUndoSnapshot(createEqHistorySnapshot(state));
@@ -962,6 +1088,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const toggleBandEnabled = (band: number, enabled: boolean): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const eq = getEqBridge();
     pushUndoSnapshot(createEqHistorySnapshot(state));
     setSelectedBandIndex(band);
@@ -983,6 +1113,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const commitBandSlot = (band: number, nextBand: EqBand): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const eq = getEqBridge();
     const safeBand: EqBand = {
       frequencyHz: Math.max(eqMinFrequencyHz, Math.min(eqMaxFrequencyHz, Math.round(nextBand.frequencyHz * 10) / 10)),
@@ -1023,6 +1157,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const addFilterSlot = (): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const bandCount = state.bands.length;
     const orderedIndexes = Array.from({ length: bandCount }, (_, offset) => (selectedBandIndex + 1 + offset) % bandCount);
     const targetBand = orderedIndexes.find((index) => isBandSlotAvailable(state.bands[index], index)) ?? selectedBandIndex;
@@ -1030,6 +1168,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const deleteSelectedFilter = (): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     if (!selectedBand) {
       return;
     }
@@ -1048,6 +1190,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const handlePreampChange = (preampDb: number): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const eq = getEqBridge();
     pushUndoSnapshot(createEqHistorySnapshot(state));
     markAutoGainUserBaseline(preampDb);
@@ -1169,6 +1315,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const undoEq = (): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const snapshot = undoStack.at(-1);
 
     if (!snapshot) {
@@ -1181,6 +1331,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const redoEq = (): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const snapshot = redoStack.at(-1);
 
     if (!snapshot) {
@@ -1193,6 +1347,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const resetSelectedBand = (): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const eq = getEqBridge();
     pushUndoSnapshot(createEqHistorySnapshot(state));
     clearGainDebounce(selectedBandIndex);
@@ -1232,6 +1390,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const resetAllGains = (): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const eq = getEqBridge();
     const nextBands = state.bands.map((band) => ({ ...band, gainDb: 0 }));
     const nextState = { ...state, presetId: 'custom', presetName: 'Custom', bands: nextBands };
@@ -1250,6 +1412,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const resetStandardFrequencies = (): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const eq = getEqBridge();
     const nextBands = state.bands.map((band, index) => ({ ...band, frequencyHz: eqFrequenciesHz[index] ?? band.frequencyHz }));
     const nextState = { ...state, presetId: 'custom', presetName: 'Custom', bands: nextBands };
@@ -1289,6 +1455,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const applySimpleTone = (tone: EqSimpleToneId, intensity = simpleToneIntensity): void => {
+    if (!requireCustomHeadphoneCorrection()) {
+      return;
+    }
+
     const toneOption = simpleToneOptions.find((option) => option.id === tone);
     const safeIntensity = tone === 'flat' ? 1 : Math.max(0.5, Math.min(1.5, Math.round(intensity * 100) / 100));
     setSimpleToneIntensity(safeIntensity);
@@ -2030,6 +2200,29 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const { leftDb: leftTotalDb, rightDb: rightTotalDb } = computeEffectiveChannelGains(channelBalance);
+  const leftDelayMs = channelBalance.leftDelayMs ?? 0;
+  const rightDelayMs = channelBalance.rightDelayMs ?? 0;
+  const measuredLeftDistanceCm = parseOptionalNumber(calibrationLeftDistanceCm);
+  const measuredRightDistanceCm = parseOptionalNumber(calibrationRightDistanceCm);
+  const measuredLeftSplDb = parseOptionalNumber(calibrationLeftSplDb);
+  const measuredRightSplDb = parseOptionalNumber(calibrationRightSplDb);
+  const hasDistanceMeasurement = measuredLeftDistanceCm !== null && measuredRightDistanceCm !== null && measuredLeftDistanceCm > 0 && measuredRightDistanceCm > 0;
+  const hasSplMeasurement = measuredLeftSplDb !== null && measuredRightSplDb !== null;
+  const distanceDifferenceCm = hasDistanceMeasurement ? measuredRightDistanceCm - measuredLeftDistanceCm : 0;
+  const calculatedLeftDelayMs = hasDistanceMeasurement
+    ? (distanceDifferenceCm > 0 ? roundCalibrationDelayMs(distanceDifferenceCm / speedOfSoundCmPerMs) : 0)
+    : leftDelayMs;
+  const calculatedRightDelayMs = hasDistanceMeasurement
+    ? (distanceDifferenceCm < 0 ? roundCalibrationDelayMs(Math.abs(distanceDifferenceCm) / speedOfSoundCmPerMs) : 0)
+    : rightDelayMs;
+  const splDifferenceDb = hasSplMeasurement ? measuredLeftSplDb - measuredRightSplDb : 0;
+  const calculatedLeftGainDb = hasSplMeasurement
+    ? (splDifferenceDb > 0 ? roundCalibrationGainDb(-splDifferenceDb) : 0)
+    : channelBalance.leftGainDb;
+  const calculatedRightGainDb = hasSplMeasurement
+    ? (splDifferenceDb < 0 ? roundCalibrationGainDb(splDifferenceDb) : 0)
+    : channelBalance.rightGainDb;
+  const calibrationReady = hasDistanceMeasurement || hasSplMeasurement;
   const channelBalanceRisk = leftTotalDb > 0 || rightTotalDb > 0 || Boolean(channelBalance.clippingRisk);
   const activeDspSourceLabels = [
     state.enabled ? t('settings.eq.bitPerfect.sourceEq') : null,
@@ -2071,6 +2264,50 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
     ? t('settings.eq.channel.center')
     : `${channelBalance.balance < 0 ? 'L' : 'R'} ${Math.round(Math.abs(channelBalance.balance) * 100)}%`;
 
+  const applySpatialCalibrationMeasurements = (): void => {
+    if (!calibrationReady) {
+      return;
+    }
+
+    patchChannelBalance({
+      enabled: true,
+      balance: hasSplMeasurement ? 0 : channelBalance.balance,
+      leftGainDb: calculatedLeftGainDb,
+      rightGainDb: calculatedRightGainDb,
+      leftDelayMs: calculatedLeftDelayMs,
+      rightDelayMs: calculatedRightDelayMs,
+      monoMode: 'off',
+      swapLeftRight: false,
+      invertLeft: false,
+      invertRight: false,
+    });
+  };
+
+  const resetSpatialCalibrationMeasurements = (): void => {
+    setCalibrationLeftDistanceCm('');
+    setCalibrationRightDistanceCm('');
+    setCalibrationLeftSplDb('');
+    setCalibrationRightSplDb('');
+  };
+
+  const nudgeSpatialDelay = (side: 'left' | 'right'): void => {
+    patchChannelBalance({
+      enabled: true,
+      monoMode: 'off',
+      leftDelayMs: side === 'left' ? roundCalibrationDelayMs(leftDelayMs + spatialDelayNudgeMs) : leftDelayMs,
+      rightDelayMs: side === 'right' ? roundCalibrationDelayMs(rightDelayMs + spatialDelayNudgeMs) : rightDelayMs,
+    });
+  };
+
+  const nudgeSpatialGain = (side: 'left' | 'right'): void => {
+    patchChannelBalance({
+      enabled: true,
+      monoMode: 'off',
+      leftGainDb: side === 'left' ? roundCalibrationGainDb(channelBalance.leftGainDb - spatialGainNudgeDb) : channelBalance.leftGainDb,
+      rightGainDb: side === 'right' ? roundCalibrationGainDb(channelBalance.rightGainDb - spatialGainNudgeDb) : channelBalance.rightGainDb,
+    });
+  };
+
   return (
     <section className="eq-panel" aria-label="ECHO Next EQ panel" data-enabled={state.enabled} data-mode={eqUiMode}>
       <header className="eq-header">
@@ -2100,10 +2337,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <EqPresetSelector presets={presets} value={state.presetId} onChange={setPreset} />
           {showAdvancedTools ? (
             <>
-              <button className="eq-icon-action" type="button" aria-label={t('settings.eq.action.undo')} title={t('settings.eq.action.undo')} disabled={undoStack.length === 0} onClick={undoEq}>
+              <button className="eq-icon-action" type="button" aria-label={t('settings.eq.action.undo')} title={t('settings.eq.action.undo')} disabled={undoStack.length === 0 || headphoneCorrectionManaged} onClick={undoEq}>
                 <Undo2 size={15} />
               </button>
-              <button className="eq-icon-action" type="button" aria-label={t('settings.eq.action.redo')} title={t('settings.eq.action.redo')} disabled={redoStack.length === 0} onClick={redoEq}>
+              <button className="eq-icon-action" type="button" aria-label={t('settings.eq.action.redo')} title={t('settings.eq.action.redo')} disabled={redoStack.length === 0 || headphoneCorrectionManaged} onClick={redoEq}>
                 <Redo2 size={15} />
               </button>
             </>
@@ -2114,7 +2351,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </div>
       </header>
 
-      <div className="eq-quick-strip" data-risk={clippingRisk} data-active={dspActive}>
+      <div className="eq-quick-strip" data-risk={surfaceClippingRisk} data-active={surfaceDspActive}>
         <button
           className="eq-quick-action eq-quick-action--primary"
           data-active={state.enabled}
@@ -2141,8 +2378,21 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </button>
         <div className="eq-quick-metric">
           <span>{t('settings.eq.status.preset')}</span>
-          <strong>{displayPresetName}</strong>
+          <strong>{displayPresetLabel}</strong>
         </div>
+        {headphoneCorrectionPresetActive ? (
+          <button
+            aria-label={state.enabled ? t('settings.eq.headphoneCorrection.compareOriginal') : t('settings.eq.headphoneCorrection.compareCorrected')}
+            className="eq-quick-action"
+            data-active={!state.enabled}
+            type="button"
+            onClick={toggleHeadphoneCorrectionCompare}
+          >
+            <Headphones size={15} aria-hidden="true" />
+            <span>{t('settings.eq.headphoneCorrection.ab')}</span>
+            <strong>{state.enabled ? t('settings.eq.headphoneCorrection.compareOriginal') : t('settings.eq.headphoneCorrection.compareCorrected')}</strong>
+          </button>
+        ) : null}
         <label className="eq-quick-slider">
           <span>{t('settings.eq.status.preamp')}</span>
           <input
@@ -2152,6 +2402,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             max={eqMaxPreampDb}
             step="0.1"
             value={state.preampDb}
+            disabled={headphoneCorrectionManaged}
             onChange={(event) => handlePreampChange(Number(event.currentTarget.value))}
           />
           <strong>{formatDb(state.preampDb)}</strong>
@@ -2168,35 +2419,54 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <span>{t('settings.eq.autoGain.toggle')}</span>
           <strong>{formatDb(autoGainAdjustmentDb)}</strong>
         </button>
-        <button
-          aria-label="Quick -6 dB headroom"
-          className="eq-quick-action"
-          data-active={Math.abs((state.dspHeadroomDb ?? 0) + 6) <= 0.05}
-          type="button"
-          onClick={() => handleDspHeadroomChange(-6)}
-        >
-          <ShieldCheck size={15} aria-hidden="true" />
-          <span>{t('settings.eq.status.headroom')}</span>
-          <strong>-6 dB</strong>
-        </button>
-        <button
-          aria-label="Quick native direct"
-          className="eq-quick-action"
-          disabled={!eqOrBalanceEnabled}
-          type="button"
-          onClick={handleNativeDirect}
-        >
-          <RadioTower size={15} aria-hidden="true" />
-          <span>{t('settings.eq.routing.playbackPath')}</span>
-          <strong>{t('settings.eq.routing.nativeDirect')}</strong>
-        </button>
+        {showEmbeddedDspModules ? (
+          <button
+            aria-label="Quick -6 dB headroom"
+            className="eq-quick-action"
+            data-active={Math.abs((state.dspHeadroomDb ?? 0) + 6) <= 0.05}
+            type="button"
+            onClick={() => handleDspHeadroomChange(-6)}
+          >
+            <ShieldCheck size={15} aria-hidden="true" />
+            <span>{t('settings.eq.status.headroom')}</span>
+            <strong>-6 dB</strong>
+          </button>
+        ) : null}
+        {showEmbeddedDspModules ? (
+          <button
+            aria-label="Quick native direct"
+            className="eq-quick-action"
+            disabled={!eqOrBalanceEnabled}
+            type="button"
+            onClick={handleNativeDirect}
+          >
+            <RadioTower size={15} aria-hidden="true" />
+            <span>{t('settings.eq.routing.playbackPath')}</span>
+            <strong>{t('settings.eq.routing.nativeDirect')}</strong>
+          </button>
+        ) : null}
       </div>
+
+      {headphoneCorrectionManaged ? (
+        <section className="eq-headphone-lock" aria-label={t('settings.eq.headphoneCorrection.lockAria')}>
+          <span className="eq-headphone-lock__icon">
+            <Headphones size={16} aria-hidden="true" />
+          </span>
+          <div>
+            <strong>{t('settings.eq.headphoneCorrection.managed')}</strong>
+            <small>{t('settings.eq.headphoneCorrection.lockDetail', { name: headphoneCorrectionDetail })}</small>
+          </div>
+          <button className="eq-soft-button" type="button" onClick={() => void convertHeadphoneCorrectionToCustom()}>
+            {t('settings.eq.headphoneCorrection.convert')}
+          </button>
+        </section>
+      ) : null}
 
       {!showAdvancedTools ? (
         <>
           <section className="eq-simple-tones" aria-label={t('settings.eq.simpleTone.aria')}>
             {simpleToneOptions.map((option) => (
-              <button type="button" data-active={activeSimpleTone === option.id} key={option.id} onClick={() => applySimpleTone(option.id)}>
+              <button type="button" data-active={activeSimpleTone === option.id} disabled={headphoneCorrectionManaged} key={option.id} onClick={() => applySimpleTone(option.id)}>
                 {option.icon === 'waves' ? <Waves size={15} aria-hidden="true" /> : null}
                 {option.icon === 'headphones' ? <Headphones size={15} aria-hidden="true" /> : null}
                 {option.icon === 'waveform' ? <AudioWaveform size={15} aria-hidden="true" /> : null}
@@ -2209,7 +2479,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             {activeSimpleTone && activeSimpleTone !== 'flat' ? (
               <div className="eq-simple-tone-amount">
                 <span>{t('settings.eq.simpleTone.amount')}</span>
-                <button type="button" aria-label={t('settings.eq.simpleTone.less')} disabled={simpleToneIntensity <= 0.5} onClick={() => nudgeSimpleToneIntensity(-0.1)}>
+                <button type="button" aria-label={t('settings.eq.simpleTone.less')} disabled={simpleToneIntensity <= 0.5 || headphoneCorrectionManaged} onClick={() => nudgeSimpleToneIntensity(-0.1)}>
                   {t('settings.eq.simpleTone.less')}
                 </button>
                 <input
@@ -2219,10 +2489,11 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                   max="1.5"
                   step="0.05"
                   value={simpleToneIntensity}
+                  disabled={headphoneCorrectionManaged}
                   onInput={(event) => adjustSimpleToneIntensity(Number(event.currentTarget.value))}
                   onChange={(event) => adjustSimpleToneIntensity(Number(event.currentTarget.value))}
                 />
-                <button type="button" aria-label={t('settings.eq.simpleTone.more')} disabled={simpleToneIntensity >= 1.5} onClick={() => nudgeSimpleToneIntensity(0.1)}>
+                <button type="button" aria-label={t('settings.eq.simpleTone.more')} disabled={simpleToneIntensity >= 1.5 || headphoneCorrectionManaged} onClick={() => nudgeSimpleToneIntensity(0.1)}>
                   {t('settings.eq.simpleTone.more')}
                 </button>
                 <strong>{`${Math.round(simpleToneIntensity * 100)}%`}</strong>
@@ -2253,6 +2524,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                 <button
                   aria-label={t('settings.eq.simpleZone.applyAria', { value: zoneValue, zone: zoneLabel })}
                   data-direction={isNeutral ? 'neutral' : zone.averageGainDb > 0 ? 'boost' : 'cut'}
+                  disabled={headphoneCorrectionManaged}
                   key={zone.id}
                   type="button"
                   onClick={() => applySimpleTone(zone.toneId)}
@@ -2277,23 +2549,23 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               <strong>{simpleSafetyTitle}</strong>
               <small>{simpleSafetyDetail}</small>
             </div>
-            <button className="eq-soft-button" type="button" disabled={!canAutoPreamp && !needsSafePreamp} onClick={() => handlePreampChange(recommendedPreampDb)}>
+            <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged || (!canAutoPreamp && !needsSafePreamp)} onClick={() => handlePreampChange(recommendedPreampDb)}>
               <span>{t('settings.eq.simpleSafety.action')}</span>
               <strong>{formatDb(recommendedPreampDb)}</strong>
             </button>
           </section>
           <div className="eq-simple-actions">
-            <button className="eq-soft-button" type="button" aria-label={t('settings.eq.simpleAction.nextVibe')} onClick={applyNextSimpleTone}>
+            <button className="eq-soft-button" type="button" aria-label={t('settings.eq.simpleAction.nextVibe')} disabled={headphoneCorrectionManaged} onClick={applyNextSimpleTone}>
               <Sparkles size={14} aria-hidden="true" />
               <span>{t('settings.eq.simpleAction.nextVibe')}</span>
               <strong>{t('settings.eq.simpleAction.nextVibeDetail')}</strong>
             </button>
-            <button className="eq-soft-button" type="button" aria-label={t('settings.eq.simpleAction.saveVibe')} disabled={!canSaveSimplePreset} onClick={() => void saveSimplePreset()}>
+            <button className="eq-soft-button" type="button" aria-label={t('settings.eq.simpleAction.saveVibe')} disabled={headphoneCorrectionManaged || !canSaveSimplePreset} onClick={() => void saveSimplePreset()}>
               <Save size={14} aria-hidden="true" />
               <span>{t('settings.eq.simpleAction.saveVibe')}</span>
               <strong>{t('settings.eq.simpleAction.saveVibeDetail')}</strong>
             </button>
-            <button className="eq-soft-button" type="button" disabled={undoStack.length === 0} onClick={undoEq}>
+            <button className="eq-soft-button" type="button" disabled={undoStack.length === 0 || headphoneCorrectionManaged} onClick={undoEq}>
               <Undo2 size={14} aria-hidden="true" />
               <span>{t('settings.eq.action.undo')}</span>
               <strong>{t('settings.eq.simpleAction.lastTweak')}</strong>
@@ -2302,6 +2574,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </>
       ) : null}
 
+      {showEmbeddedDspModules ? (
       <div className="eq-dsp-guard" data-mode={dspGuardMode}>
         <div className="eq-dsp-guard__main">
           <span className="eq-dsp-guard__icon">
@@ -2319,7 +2592,9 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <small>{dspGuardModules}</small>
         </div>
       </div>
+      ) : null}
 
+      {showEmbeddedDspModules ? (
       <div className="eq-routing-summary" data-active={dspActive} data-risk={clippingRisk}>
         <span>
           <em>{t('settings.eq.routing.playbackPath')}</em>
@@ -2351,11 +2626,12 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           </button>
         </div>
       </div>
+      ) : null}
 
-      <div className="eq-simple-summary" data-risk={clippingRisk} data-mode={eqUiMode}>
+      <div className="eq-simple-summary" data-risk={surfaceClippingRisk} data-mode={eqUiMode}>
         <span>
           <em>{t('settings.eq.status.preset')}</em>
-          <strong>{displayPresetName}</strong>
+          <strong>{displayPresetLabel}</strong>
         </span>
         <span>
           <em>{t('settings.eq.status.headroom')}</em>
@@ -2363,12 +2639,14 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </span>
         <span>
           <em>{t('settings.eq.status.bitPerfect')}</em>
-          <strong>{dspActive ? t('settings.eq.signal.dspActive') : t('settings.eq.signal.bitPerfectOutput')}</strong>
+          <strong>{surfaceDspActive ? t('settings.eq.signal.dspActive') : t('settings.eq.signal.bitPerfectOutput')}</strong>
         </span>
-        <span>
-          <em>{t('settings.eq.room.short')}</em>
-          <strong>{roomCorrectionStatusLabel}</strong>
-        </span>
+        {showEmbeddedDspModules ? (
+          <span>
+            <em>{t('settings.eq.room.short')}</em>
+            <strong>{roomCorrectionStatusLabel}</strong>
+          </span>
+        ) : null}
         <span>
           <em>{t('settings.eq.mode.current')}</em>
           <strong>{eqUiMode === 'pro' ? t('settings.eq.mode.pro') : t('settings.eq.mode.simple')}</strong>
@@ -2379,7 +2657,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         <div className="eq-signal-heading">
           <Activity size={16} aria-hidden="true" />
           <span>{t('settings.eq.signal.title')}</span>
-          <strong>{dspActive ? t('settings.eq.signal.dspActive') : t('settings.eq.signal.bitPerfectOutput')}</strong>
+          <strong>{surfaceDspActive ? t('settings.eq.signal.dspActive') : t('settings.eq.signal.bitPerfectOutput')}</strong>
         </div>
         <div className="eq-signal-chain">
           <span className="eq-signal-node" data-active="true">
@@ -2392,30 +2670,34 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <em>{t('settings.eq.signal.preamp')}</em>
             <strong>{formatDb(state.preampDb)}</strong>
           </span>
-          <span className="eq-signal-node" data-active={dspHeadroomActive} data-standby={dspHeadroomArmed && !dspHeadroomActive}>
-            <ShieldCheck size={14} aria-hidden="true" />
-            <em>{t('settings.eq.status.headroom')}</em>
-            <strong>{dspHeadroomArmed ? formatDb(state.dspHeadroomDb ?? 0) : t('settings.eq.channel.bypassed')}</strong>
-          </span>
+          {showEmbeddedDspModules ? (
+            <span className="eq-signal-node" data-active={dspHeadroomActive} data-standby={dspHeadroomArmed && !dspHeadroomActive}>
+              <ShieldCheck size={14} aria-hidden="true" />
+              <em>{t('settings.eq.status.headroom')}</em>
+              <strong>{dspHeadroomArmed ? formatDb(state.dspHeadroomDb ?? 0) : t('settings.eq.channel.bypassed')}</strong>
+            </span>
+          ) : null}
           <span className="eq-signal-node" data-active={state.enabled}>
             <SlidersHorizontal size={14} aria-hidden="true" />
             <em>{t('settings.eq.signal.peq')}</em>
             <strong>{state.enabled ? `${activeBandCount}/${state.bands.length}` : t('settings.eq.channel.bypassed')}</strong>
           </span>
-          <span className="eq-signal-node" data-active={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk}>
-            <Waves size={14} aria-hidden="true" />
-            <em>{t('settings.eq.room.short')}</em>
-            <strong>{roomCorrection.enabled ? formatDb(roomCorrection.trimDb) : roomCorrectionStatusLabel}</strong>
-          </span>
-          <span className="eq-signal-node" data-active={state.enabled || roomCorrection.enabled || channelBalance.enabled} data-risk={clippingRisk}>
+          {showEmbeddedDspModules ? (
+            <span className="eq-signal-node" data-active={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk}>
+              <Waves size={14} aria-hidden="true" />
+              <em>{t('settings.eq.room.short')}</em>
+              <strong>{roomCorrection.enabled ? formatDb(roomCorrection.trimDb) : roomCorrectionStatusLabel}</strong>
+            </span>
+          ) : null}
+          <span className="eq-signal-node" data-active={showEmbeddedDspModules ? state.enabled || roomCorrection.enabled || channelBalance.enabled : state.enabled} data-risk={surfaceClippingRisk}>
             <ShieldCheck size={14} aria-hidden="true" />
             <em>{t('settings.eq.signal.limiter')}</em>
-            <strong>{dspLimiterProtecting ? t('settings.eq.signal.protecting') : clippingRisk ? t('settings.eq.status.warning') : t('settings.eq.signal.armed')}</strong>
+            <strong>{dspLimiterProtecting ? t('settings.eq.signal.protecting') : surfaceClippingRisk ? t('settings.eq.status.warning') : t('settings.eq.signal.armed')}</strong>
           </span>
-          <span className="eq-signal-node" data-active={dspActive}>
+          <span className="eq-signal-node" data-active={surfaceDspActive}>
             <Waves size={14} aria-hidden="true" />
             <em>{t('settings.eq.signal.output')}</em>
-            <strong>{dspActive ? t('settings.eq.signal.dspOutput') : t('settings.eq.status.bitPerfect')}</strong>
+            <strong>{surfaceDspActive ? t('settings.eq.signal.dspOutput') : t('settings.eq.status.bitPerfect')}</strong>
           </span>
         </div>
       </div>
@@ -2428,7 +2710,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </div>
         <div className="eq-status-card">
           <span>{t('settings.eq.status.preset')}</span>
-          <strong>{displayPresetName}</strong>
+          <strong>{displayPresetLabel}</strong>
         </div>
         <div className="eq-status-card">
           <span>{t('settings.eq.status.estimatedPeak')}</span>
@@ -2438,17 +2720,19 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <span>{t('settings.eq.status.processor')}</span>
           <strong>{t('settings.eq.status.realtimeIir')}</strong>
         </div>
-        <div className="eq-status-card" data-active={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk || roomCorrection.status === 'error'}>
-          <span>{t('settings.eq.room.title')}</span>
-          <strong>{roomCorrectionStatusLabel}</strong>
+        {showEmbeddedDspModules ? (
+          <div className="eq-status-card" data-active={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk || roomCorrection.status === 'error'}>
+            <span>{t('settings.eq.room.title')}</span>
+            <strong>{roomCorrectionStatusLabel}</strong>
+          </div>
+        ) : null}
+        <div className="eq-status-card" data-risk={surfaceClippingRisk}>
+          <span>{surfaceClippingRisk ? t('settings.eq.status.clippingRisk') : t('settings.eq.status.headroom')}</span>
+          <strong>{surfaceClippingRisk ? t('settings.eq.status.warning') : t('settings.eq.status.safe')}</strong>
         </div>
-        <div className="eq-status-card" data-risk={clippingRisk}>
-          <span>{clippingRisk ? t('settings.eq.status.clippingRisk') : t('settings.eq.status.headroom')}</span>
-          <strong>{clippingRisk ? t('settings.eq.status.warning') : t('settings.eq.status.safe')}</strong>
-        </div>
-        <div className="eq-status-card" data-active={dspActive}>
+        <div className="eq-status-card" data-active={surfaceDspActive}>
           <span>{t('settings.eq.status.bitPerfect')}</span>
-          <strong>{dspActive ? t('common.disabled') : t('common.ready')}</strong>
+          <strong>{surfaceDspActive ? t('common.disabled') : t('common.ready')}</strong>
         </div>
       </div>
       ) : null}
@@ -2463,7 +2747,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </aside>
       ) : null}
 
-      <div className="eq-workbench">
+      <div className="eq-workbench" data-managed={headphoneCorrectionManaged}>
         <div className="eq-curve-column">
           <div className="eq-preamp-bar" data-auto-gain={autoGainActive}>
             <div>
@@ -2478,7 +2762,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               <span>{t('settings.eq.status.estimatedPeak')}</span>
               <strong>{formatDb(estimatedPeakGainDb)}</strong>
             </div>
-            <div className="eq-level-meter" data-risk={clippingRisk}>
+            <div className="eq-level-meter" data-risk={surfaceClippingRisk}>
               <span>
                 <em>{t('settings.eq.level.inputPeak')}</em>
                 <strong>{formatLevelDb(audioLevels?.inputPeakDb)}</strong>
@@ -2507,11 +2791,13 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               max={eqMaxPreampDb}
               step="0.1"
               value={state.preampDb}
+              disabled={headphoneCorrectionManaged}
               onChange={(event) => handlePreampChange(Number(event.currentTarget.value))}
             />
-            <button className="eq-soft-button" data-risk={needsSafePreamp} type="button" disabled={!canAutoPreamp && !needsSafePreamp} onClick={() => handlePreampChange(recommendedPreampDb)}>
+            <button className="eq-soft-button" data-risk={needsSafePreamp} type="button" disabled={headphoneCorrectionManaged || (!canAutoPreamp && !needsSafePreamp)} onClick={() => handlePreampChange(recommendedPreampDb)}>
               {needsSafePreamp ? t('settings.eq.action.applySafePreamp') : t('settings.eq.action.autoPreamp', { value: formatDb(recommendedPreampDb) })}
             </button>
+            {showEmbeddedDspModules ? (
             <div className="eq-dsp-headroom-control" data-active={dspHeadroomActive}>
               <div>
                 <span>{t('settings.eq.headroom.dsp')}</span>
@@ -2541,6 +2827,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               </div>
               <p>{t('settings.eq.headroom.nativeBypassNote')}</p>
             </div>
+            ) : null}
             <div className="eq-auto-gain-controls">
               <button
                 className="eq-soft-button eq-auto-gain-toggle"
@@ -2584,7 +2871,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                 </span>
               </div>
             ) : null}
-            {showAdvancedTools ? (
+            {showAdvancedTools && showEmbeddedDspModules ? (
               <section className="eq-room-correction" data-enabled={roomCorrection.enabled} data-risk={roomCorrection.clippingRisk || roomCorrection.status === 'error'}>
                 <div className="eq-room-correction-header">
                   <span>
@@ -2648,10 +2935,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             visualSpectrum={audioLevels?.visualSpectrum}
             visualTelemetryState={audioLevels?.visualTelemetryState}
             onBandSelect={setSelectedBandIndex}
-            onBandChange={handleBandChange}
-            onBandCommit={handleBandCommit}
-            onBandFrequencyChange={handleBandFrequencyChange}
-            onBandFrequencyCommit={handleBandFrequencyCommit}
+            onBandChange={headphoneCorrectionManaged ? () => setError(t('settings.eq.headphoneCorrection.lockedError')) : handleBandChange}
+            onBandCommit={headphoneCorrectionManaged ? () => setError(t('settings.eq.headphoneCorrection.lockedError')) : handleBandCommit}
+            onBandFrequencyChange={headphoneCorrectionManaged ? () => setError(t('settings.eq.headphoneCorrection.lockedError')) : handleBandFrequencyChange}
+            onBandFrequencyCommit={headphoneCorrectionManaged ? () => setError(t('settings.eq.headphoneCorrection.lockedError')) : handleBandFrequencyCommit}
           />
           {showAdvancedTools ? (
           <div className="eq-band-console" aria-label={t('settings.eq.band.console')} data-bypassed={!selectedBandEnabled}>
@@ -2707,6 +2994,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                       max={eqMaxFrequencyHz}
                       step={frequencyEditUnlocked ? 1 : undefined}
                       value={Math.round(selectedBand?.frequencyHz ?? eqFrequenciesHz[selectedBandIndex] ?? 1000)}
+                      disabled={headphoneCorrectionManaged}
                       onChange={(event) => handleBandFrequencyChange(selectedBandIndex, Number(event.currentTarget.value))}
                       onBlur={(event) => handleBandFrequencyCommit(selectedBandIndex, Number(event.currentTarget.value))}
                     />
@@ -2721,7 +3009,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                       max="12"
                       step="0.1"
                       value={selectedBandGainEditable ? selectedBand?.gainDb ?? 0 : 0}
-                      disabled={!selectedBandGainEditable}
+                      disabled={headphoneCorrectionManaged || !selectedBandGainEditable}
                       onChange={(event) => handleBandChange(selectedBandIndex, Number(event.currentTarget.value))}
                       onBlur={(event) => handleBandCommit(selectedBandIndex, Number(event.currentTarget.value))}
                     />
@@ -2736,7 +3024,12 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                       max={eqMaxQ}
                       step="0.1"
                       value={selectedBand?.q ?? 1}
+                      disabled={headphoneCorrectionManaged}
                       onChange={(event) => {
+                        if (headphoneCorrectionManaged) {
+                          setError(t('settings.eq.headphoneCorrection.lockedError'));
+                          return;
+                        }
                         const q = Number(event.currentTarget.value);
                         setState((current) => ({
                           ...current,
@@ -2753,6 +3046,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                     <select
                       aria-label={t('settings.eq.band.filterType')}
                       value={selectedBand?.filterType ?? 'peaking'}
+                      disabled={headphoneCorrectionManaged}
                       onChange={(event) => handleBandFilterTypeChange(selectedBandIndex, event.currentTarget.value as EqFilterType)}
                     >
                       {eqFilterTypes.map((filterType) => (
@@ -2768,32 +3062,33 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                     <input
                       type="checkbox"
                       checked={selectedBand?.enabled !== false}
+                      disabled={headphoneCorrectionManaged}
                       onChange={(event) => toggleBandEnabled(selectedBandIndex, event.currentTarget.checked)}
                     />
                     <span>{selectedBand?.enabled === false ? t('settings.eq.band.bypassed') : t('settings.eq.band.enabled')}</span>
                   </label>
                   <label className="eq-inspector-toggle">
-                    <input type="checkbox" checked={frequencyUnlocked} onChange={(event) => setFrequencyUnlocked(event.currentTarget.checked)} />
+                    <input type="checkbox" checked={frequencyUnlocked} disabled={headphoneCorrectionManaged} onChange={(event) => setFrequencyUnlocked(event.currentTarget.checked)} />
                     <span>{t('settings.eq.action.unlockFrequency')}</span>
                   </label>
-                  <button className="eq-soft-button" type="button" onClick={resetSelectedBand}>
+                  <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged} onClick={resetSelectedBand}>
                     {t('settings.eq.action.resetBand', { frequency: selectedBand ? formatFrequencyLabel(selectedBand.frequencyHz) : t('settings.eq.band.fallback') })}
                   </button>
                 </div>
                 <div className="eq-stepper-group" aria-label={t('settings.eq.band.gainStepper')}>
-                  <button className="eq-soft-button" type="button" disabled={!selectedBandGainEditable} onClick={() => adjustSelectedGain(-0.5)}>-0.5</button>
-                  <button className="eq-soft-button" type="button" disabled={!selectedBandGainEditable} onClick={() => adjustSelectedGain(-0.1)}>-0.1</button>
-                  <button className="eq-soft-button" type="button" disabled={!selectedBandGainEditable} onClick={() => adjustSelectedGain(0.1)}>+0.1</button>
-                  <button className="eq-soft-button" type="button" disabled={!selectedBandGainEditable} onClick={() => adjustSelectedGain(0.5)}>+0.5</button>
+                  <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged || !selectedBandGainEditable} onClick={() => adjustSelectedGain(-0.5)}>-0.5</button>
+                  <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged || !selectedBandGainEditable} onClick={() => adjustSelectedGain(-0.1)}>-0.1</button>
+                  <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged || !selectedBandGainEditable} onClick={() => adjustSelectedGain(0.1)}>+0.1</button>
+                  <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged || !selectedBandGainEditable} onClick={() => adjustSelectedGain(0.5)}>+0.5</button>
                 </div>
                 <div className="eq-stepper-group eq-q-preset-group" aria-label={t('settings.eq.band.qPresets')}>
-                  <button className="eq-soft-button" type="button" onClick={() => handleBandQPresetCommit(selectedBandIndex, selectedBandQPresets.wide)}>
+                  <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged} onClick={() => handleBandQPresetCommit(selectedBandIndex, selectedBandQPresets.wide)}>
                     {t('settings.eq.band.qPresetWide')}
                   </button>
-                  <button className="eq-soft-button" type="button" onClick={() => handleBandQPresetCommit(selectedBandIndex, selectedBandQPresets.normal)}>
+                  <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged} onClick={() => handleBandQPresetCommit(selectedBandIndex, selectedBandQPresets.normal)}>
                     {t('settings.eq.band.qPresetNormal')}
                   </button>
-                  <button className="eq-soft-button" type="button" onClick={() => handleBandQPresetCommit(selectedBandIndex, selectedBandQPresets.narrow)}>
+                  <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged} onClick={() => handleBandQPresetCommit(selectedBandIndex, selectedBandQPresets.narrow)}>
                     {t('settings.eq.band.qPresetNarrow')}
                   </button>
                 </div>
@@ -2892,22 +3187,22 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               ))}
             </div>
             <div className="eq-band-actions">
-              <button className="eq-soft-button" type="button" onClick={addFilterSlot}>
+              <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged} onClick={addFilterSlot}>
                 <Plus size={14} />
                 {t('settings.eq.action.addFilter')}
               </button>
-              <button className="eq-soft-button" type="button" disabled={!selectedBand} onClick={deleteSelectedFilter}>
+              <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged || !selectedBand} onClick={deleteSelectedFilter}>
                 <Trash2 size={14} />
                 {t('settings.eq.action.deleteFilter')}
               </button>
-              <button className="eq-soft-button" type="button" onClick={resetSelectedBand}>
+              <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged} onClick={resetSelectedBand}>
                 {t('settings.eq.action.resetSelected')}
               </button>
-              <button className="eq-soft-button" type="button" onClick={resetAllGains}>
+              <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged} onClick={resetAllGains}>
                 {t('settings.eq.action.resetAllGains')}
               </button>
               {showAdvancedTools ? (
-                <button className="eq-soft-button" type="button" onClick={resetStandardFrequencies}>
+                <button className="eq-soft-button" type="button" disabled={headphoneCorrectionManaged} onClick={resetStandardFrequencies}>
                   {t('settings.eq.action.resetFrequencies')}
                 </button>
               ) : null}
@@ -2987,14 +3282,15 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <button className="eq-soft-button" type="button" onClick={() => setEnabled(!state.enabled)}>
               {state.enabled ? t('settings.eq.action.toggleBypassOn') : t('settings.eq.action.toggleBypassOff')}
             </button>
-            <span className="eq-compare-health" data-risk={clippingRisk}>
-              {clippingRisk ? t('settings.eq.warning.lowerPreamp') : <><ShieldCheck size={14} /> {t('settings.eq.status.safeHeadroomShort')}</>}
+            <span className="eq-compare-health" data-risk={surfaceClippingRisk}>
+              {surfaceClippingRisk ? t('settings.eq.warning.lowerPreamp') : <><ShieldCheck size={14} /> {t('settings.eq.status.safeHeadroomShort')}</>}
             </span>
           </div>
         </div>
         </details>
       ) : null}
 
+      {showEmbeddedDspModules ? (
       <details className="eq-pro-section" open>
         <summary>{t('settings.eq.section.channel')}</summary>
       <section className="channel-balance-panel" aria-label="Channel balance panel" data-enabled={channelBalance.enabled}>
@@ -3039,6 +3335,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
           <span>
             <em>{t('settings.eq.channel.group.gainTrim')}</em>
             <strong>{formatDb(Math.max(leftTotalDb, rightTotalDb))}</strong>
+          </span>
+          <span>
+            <em>{t('settings.eq.channel.group.timing')}</em>
+            <strong>{`${formatDelayMs(leftDelayMs)} / ${formatDelayMs(rightDelayMs)}`}</strong>
           </span>
           <span>
             <em>{t('settings.eq.channel.dsp')}</em>
@@ -3106,6 +3406,37 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                   {t('settings.eq.action.resetTrimsOnly')}
                 </button>
               </div>
+              <div className="channel-trim-lane channel-delay-lane">
+                <label>
+                  <span>{t('settings.eq.channel.leftDelay')}</span>
+                  <input
+                    aria-label={t('settings.eq.channel.leftDelay')}
+                    type="range"
+                    min={channelBalanceMinDelayMs}
+                    max={channelBalanceMaxDelayMs}
+                    step="0.01"
+                    value={leftDelayMs}
+                    onChange={(event) => patchChannelBalance({ leftDelayMs: Number(event.currentTarget.value) })}
+                  />
+                  <strong>{formatDelayMs(leftDelayMs)}</strong>
+                </label>
+                <label>
+                  <span>{t('settings.eq.channel.rightDelay')}</span>
+                  <input
+                    aria-label={t('settings.eq.channel.rightDelay')}
+                    type="range"
+                    min={channelBalanceMinDelayMs}
+                    max={channelBalanceMaxDelayMs}
+                    step="0.01"
+                    value={rightDelayMs}
+                    onChange={(event) => patchChannelBalance({ rightDelayMs: Number(event.currentTarget.value) })}
+                  />
+                  <strong>{formatDelayMs(rightDelayMs)}</strong>
+                </label>
+                <button className="eq-soft-button" type="button" onClick={() => patchChannelBalance({ leftDelayMs: 0, rightDelayMs: 0 })}>
+                  {t('settings.eq.action.resetDelaysOnly')}
+                </button>
+              </div>
             </div>
             {calibrationMode ? (
               <div className="channel-calibration-readout">
@@ -3120,6 +3451,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                 <span>
                   <em>{t('settings.eq.level.headroom')}</em>
                   <strong>{formatLevelDb(audioLevels?.headroomDb)}</strong>
+                </span>
+                <span>
+                  <em>{t('settings.eq.channel.group.timing')}</em>
+                  <strong>{`L ${formatDelayMs(leftDelayMs)} / R ${formatDelayMs(rightDelayMs)}`}</strong>
                 </span>
               </div>
             ) : null}
@@ -3184,6 +3519,112 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               </button>
             </div>
           </section>
+
+          <section className="channel-tool-group channel-calibration-wizard">
+            <header>
+              <span>{t('settings.eq.channel.wizard.title')}</span>
+              <strong>{calibrationReady ? t('settings.eq.channel.wizard.ready') : t('settings.eq.channel.wizard.empty')}</strong>
+            </header>
+            <div className="channel-wizard-monitor" role="group" aria-label={t('settings.eq.channel.wizard.monitor')}>
+              <button className="eq-soft-button" type="button" onClick={() => applyMonitorTool('mono')}>
+                {t('settings.eq.channel.wizard.previewCenter')}
+              </button>
+              <button className="eq-soft-button" type="button" onClick={() => applyMonitorTool('left')}>
+                {t('settings.eq.channel.wizard.previewLeft')}
+              </button>
+              <button className="eq-soft-button" type="button" onClick={() => applyMonitorTool('right')}>
+                {t('settings.eq.channel.wizard.previewRight')}
+              </button>
+            </div>
+            <div className="channel-wizard-nudges" role="group" aria-label={t('settings.eq.channel.wizard.nudge')}>
+              <button className="eq-soft-button" type="button" onClick={() => nudgeSpatialDelay('left')}>
+                {t('settings.eq.channel.wizard.imageLeft')}
+              </button>
+              <button className="eq-soft-button" type="button" onClick={() => nudgeSpatialDelay('right')}>
+                {t('settings.eq.channel.wizard.imageRight')}
+              </button>
+              <button className="eq-soft-button" type="button" onClick={() => nudgeSpatialGain('left')}>
+                {t('settings.eq.channel.wizard.leftLouder')}
+              </button>
+              <button className="eq-soft-button" type="button" onClick={() => nudgeSpatialGain('right')}>
+                {t('settings.eq.channel.wizard.rightLouder')}
+              </button>
+            </div>
+            <div className="channel-wizard-fields">
+              <label>
+                <span>{t('settings.eq.channel.wizard.leftDistance')}</span>
+                <input
+                  aria-label={t('settings.eq.channel.wizard.leftDistance')}
+                  inputMode="decimal"
+                  min="1"
+                  type="number"
+                  value={calibrationLeftDistanceCm}
+                  onChange={(event) => setCalibrationLeftDistanceCm(event.currentTarget.value)}
+                />
+                <em>cm</em>
+              </label>
+              <label>
+                <span>{t('settings.eq.channel.wizard.rightDistance')}</span>
+                <input
+                  aria-label={t('settings.eq.channel.wizard.rightDistance')}
+                  inputMode="decimal"
+                  min="1"
+                  type="number"
+                  value={calibrationRightDistanceCm}
+                  onChange={(event) => setCalibrationRightDistanceCm(event.currentTarget.value)}
+                />
+                <em>cm</em>
+              </label>
+              <label>
+                <span>{t('settings.eq.channel.wizard.leftSpl')}</span>
+                <input
+                  aria-label={t('settings.eq.channel.wizard.leftSpl')}
+                  inputMode="decimal"
+                  type="number"
+                  value={calibrationLeftSplDb}
+                  onChange={(event) => setCalibrationLeftSplDb(event.currentTarget.value)}
+                />
+                <em>dB</em>
+              </label>
+              <label>
+                <span>{t('settings.eq.channel.wizard.rightSpl')}</span>
+                <input
+                  aria-label={t('settings.eq.channel.wizard.rightSpl')}
+                  inputMode="decimal"
+                  type="number"
+                  value={calibrationRightSplDb}
+                  onChange={(event) => setCalibrationRightSplDb(event.currentTarget.value)}
+                />
+                <em>dB</em>
+              </label>
+            </div>
+            <div className="channel-calibration-readout channel-wizard-readout">
+              <span>
+                <em>{t('settings.eq.channel.leftDelay')}</em>
+                <strong>{formatDelayMs(calculatedLeftDelayMs)}</strong>
+              </span>
+              <span>
+                <em>{t('settings.eq.channel.rightDelay')}</em>
+                <strong>{formatDelayMs(calculatedRightDelayMs)}</strong>
+              </span>
+              <span>
+                <em>{t('settings.eq.channel.leftGain')}</em>
+                <strong>{formatDb(calculatedLeftGainDb)}</strong>
+              </span>
+              <span>
+                <em>{t('settings.eq.channel.rightGain')}</em>
+                <strong>{formatDb(calculatedRightGainDb)}</strong>
+              </span>
+            </div>
+            <div className="channel-wizard-actions">
+              <button className="eq-soft-button" type="button" disabled={!calibrationReady} onClick={applySpatialCalibrationMeasurements}>
+                {t('settings.eq.channel.wizard.apply')}
+              </button>
+              <button className="eq-soft-button" type="button" disabled={!calibrationReady} onClick={resetSpatialCalibrationMeasurements}>
+                {t('settings.eq.channel.wizard.clear')}
+              </button>
+            </div>
+          </section>
         </div>
 
         <div className="channel-balance-readout" data-risk={channelBalanceRisk || clippingRisk}>
@@ -3208,6 +3649,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
         </div>
       </section>
       </details>
+      ) : null}
 
       <footer className="eq-preset-tools eq-preset-console">
         <div className="eq-preset-console-main">

@@ -870,6 +870,12 @@ describe('AppLayout standalone routes', () => {
     let jobsUpdated: ((jobs: Array<{ id: string; importedTrackId: string | null }>) => void) | null = null;
     const unsubscribeDownloads = vi.fn();
     const onLibraryChanged = vi.fn();
+    const onPlaylistsChanged = vi.fn();
+    const receivedEvents: Event[] = [];
+    const handleLibraryChanged = (event: Event): void => {
+      receivedEvents.push(event);
+      onLibraryChanged(event);
+    };
     window.echo = {
       downloads: {
         onJobsUpdated: vi.fn((handler) => {
@@ -878,7 +884,8 @@ describe('AppLayout standalone routes', () => {
         }),
       },
     } as unknown as Window['echo'];
-    window.addEventListener('library:changed', onLibraryChanged);
+    window.addEventListener('library:changed', handleLibraryChanged);
+    window.addEventListener('library:playlists-changed', onPlaylistsChanged);
 
     const { unmount } = render(
       <AppProviders>
@@ -887,6 +894,7 @@ describe('AppLayout standalone routes', () => {
     );
 
     await waitFor(() => expect(window.echo?.downloads?.onJobsUpdated).toHaveBeenCalledTimes(1));
+    vi.useFakeTimers();
 
     act(() => {
       jobsUpdated?.([{ id: 'job-1', importedTrackId: null }]);
@@ -896,16 +904,22 @@ describe('AppLayout standalone routes', () => {
     act(() => {
       jobsUpdated?.([{ id: 'job-1', importedTrackId: 'track-1' }]);
     });
-    expect(onLibraryChanged).toHaveBeenCalledTimes(1);
+    expect(onLibraryChanged).not.toHaveBeenCalled();
 
     act(() => {
       jobsUpdated?.([{ id: 'job-1', importedTrackId: 'track-1' }]);
     });
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
     expect(onLibraryChanged).toHaveBeenCalledTimes(1);
+    expect((receivedEvents[0] as CustomEvent).detail).toEqual({ preserveScroll: true });
+    expect(onPlaylistsChanged).toHaveBeenCalledTimes(1);
 
     unmount();
     expect(unsubscribeDownloads).toHaveBeenCalledTimes(1);
-    window.removeEventListener('library:changed', onLibraryChanged);
+    window.removeEventListener('library:changed', handleLibraryChanged);
+    window.removeEventListener('library:playlists-changed', onPlaylistsChanged);
   });
 
   it('marks main-process library updates as scroll-preserving', async () => {
@@ -962,10 +976,35 @@ describe('AppLayout standalone routes', () => {
       </AppProviders>,
     );
 
+    expect(screen.queryByRole('button', { name: /打开音频链路/u })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Playback queue' }));
 
     await waitFor(() => expect(screen.getByText('Full queue page')).toBeTruthy());
     expect(screen.queryByRole('complementary', { name: '播放队列抽屉' })).toBeNull();
+  });
+
+  it('shows the shell signal path button only when the app setting enables it', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ signalPathControlEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithQueue} />
+      </AppProviders>,
+    );
+
+    expect(await screen.findByRole('button', { name: /打开音频链路/u })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Playback queue' })).toBeTruthy();
+
+    const sidebar = screen.getByRole('complementary', { name: 'Main navigation' });
+    fireEvent.click(within(sidebar).getByRole('button', { name: 'Lyrics' }));
+
+    await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /打开音频链路/u })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Playback queue' })).toBeTruthy();
   });
 
   it('opens the lightweight queue drawer from the lyrics player bar', async () => {
@@ -980,6 +1019,7 @@ describe('AppLayout standalone routes', () => {
 
     await waitFor(() => expect(screen.getByText('Standalone lyrics page')).toBeTruthy());
     expect(screen.queryByRole('complementary', { name: '播放队列抽屉' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /打开音频链路/u })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Playback queue' }));
 

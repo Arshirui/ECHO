@@ -127,7 +127,7 @@ const makeAppSettings = (
   appWallpaperBrightnessPercent: 100,
   appWallpaperUiOpacityPercent: 100,
   appWallpaperUnifiedOpacityEnabled: false,
-  networkMetadataEnabled: false,
+  networkMetadataEnabled: true,
   networkMetadataProviders: ["netease-cloud-music", "qq-music"],
   lyricsNetworkEnabled: true,
   lyricsPreferredProvider: "lrclib",
@@ -136,6 +136,7 @@ const makeAppSettings = (
   lyricsDeepSearchEnabled: true,
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.5,
+  lyricsBackfillAutoAcceptScore: 0.45,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
@@ -1582,7 +1583,7 @@ describe("LyricsPage", () => {
     expect(video.currentTime).toBeCloseTo(9.2, 3);
   });
 
-  it("seeks when a synced lyric line is clicked", async () => {
+  it("does not seek when a synced lyric line is clicked", async () => {
     const track = makeTrack();
     const { seek } = mockEcho(track, 0);
     render(
@@ -1595,7 +1596,8 @@ describe("LyricsPage", () => {
 
     fireEvent.click(await screen.findByText("Second line"));
 
-    await waitFor(() => expect(seek).toHaveBeenCalledWith(10));
+    expect(seek).not.toHaveBeenCalled();
+    expect(document.querySelector('.lyrics-line[data-seekable="true"]')).toBeNull();
   });
 
   it("uses album artwork as the MV fallback and shows a default visual without cover art", async () => {
@@ -1938,7 +1940,7 @@ describe("LyricsPage", () => {
     expect(await screen.findByText("已复制封面原图")).toBeTruthy();
   });
 
-  it("copies visible lyrics from the lyrics context menu", async () => {
+  it("copies the current lyric line from the lyrics context menu", async () => {
     const writeText = installClipboardTextMock();
     const track = makeTrack();
     mockEcho(track);
@@ -1969,13 +1971,13 @@ describe("LyricsPage", () => {
     );
 
     expect(await screen.findByText("First line")).toBeTruthy();
-    fireEvent.contextMenu(container.querySelector(".lyrics-scroll") as HTMLElement);
+    fireEvent.contextMenu(container.querySelector('.lyrics-line[data-lyric-index="0"]') as HTMLElement);
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("First line\nfirst roman\nSecond line\nThird line"));
-    expect(await screen.findByText("已复制歌词")).toBeTruthy();
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("First line"));
+    expect(await screen.findByText("已复制当句歌词")).toBeTruthy();
   });
 
-  it("copies UtaTen kana only when kana pronunciation is enabled", async () => {
+  it("copies the current lyric text when kana pronunciation is enabled", async () => {
     const writeText = installClipboardTextMock();
     const track = makeTrack();
     mockEcho(track, 0, { lyricsUtatenKanaEnabled: true });
@@ -2006,9 +2008,9 @@ describe("LyricsPage", () => {
     );
 
     expect(await screen.findByText("First line")).toBeTruthy();
-    fireEvent.contextMenu(container.querySelector(".lyrics-scroll") as HTMLElement);
+    fireEvent.contextMenu(container.querySelector('.lyrics-line[data-lyric-index="0"]') as HTMLElement);
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("First line\nふぁーすと\nSecond line\nThird line"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("First line"));
   });
 
   it("shows simple per-track lyrics offset controls by default", async () => {
@@ -3938,11 +3940,11 @@ describe("LyricsPage", () => {
       expect(page.style.getPropertyValue("--lyrics-font-size")).toBe("52px"),
     );
     expect(page.dataset.background).toBe("cover");
-    expect(page.dataset.smartReadable).toBe("true");
+    expect(page.dataset.smartReadable).toBeUndefined();
     expect(page.dataset.lyricsColorMode).toBe("manual");
     expect(container.querySelector(".lyrics-mv-panel")?.getAttribute("data-lyrics-readability")).toBe("true");
     expect(page.style.getPropertyValue("--lyrics-color")).toBe("#FFFFFF");
-    expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toMatch(/^rgb\(/);
+    expect(page.style.getPropertyValue("--lyrics-smart-primary-color")).toBe("");
     expect(page.style.getPropertyValue("--lyrics-cover-opacity")).toBe("0.24");
     expect(page.style.getPropertyValue("--lyrics-background-surface-alpha")).toBe("0.24");
     expect(page.style.getPropertyValue("--lyrics-cover-blur")).toBe("4px");
@@ -4058,8 +4060,8 @@ describe("LyricsPage", () => {
             initialLyrics={[
               {
                 timeMs: 0,
-                text: "Original line",
-                romanization: "Romanized line",
+                text: "君が好き",
+                romanization: "kimi ga suki",
                 translation: "Translated line",
               },
             ]}
@@ -4068,7 +4070,7 @@ describe("LyricsPage", () => {
       </PlaybackQueueProvider>,
     );
 
-    expect(await screen.findByText("Romanized line")).toBeTruthy();
+    expect(await screen.findByText("kimi ga suki")).toBeTruthy();
     expect(screen.getByText("Translated line")).toBeTruthy();
 
     window.dispatchEvent(
@@ -4080,20 +4082,67 @@ describe("LyricsPage", () => {
       }),
     );
 
-    await waitFor(() => expect(screen.queryByText("Romanized line")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("kimi ga suki")).toBeNull());
     expect(screen.queryByText("Translated line")).toBeNull();
   });
 
-  it("hides line translations when configured", async () => {
+  it("keeps initial secondary lyrics hidden until display settings load", async () => {
     const track = makeTrack();
-    mockEcho(track, 0, { lyricsTranslationEnabled: false });
+    const pendingSettings = deferred<AppSettings>();
+    mockEcho(track);
+    window.echo.app.getSettings = vi.fn().mockReturnValue(pendingSettings.promise);
 
     render(
       <PlaybackQueueProvider>
         <QueueSeed track={track}>
           <LyricsPage
             initialLyrics={[
-              { timeMs: 0, text: "Original line", translation: "Translated line" },
+              {
+                timeMs: 0,
+                text: "Original line",
+                romanization: "Romanized line",
+                translation: "Translated line",
+              },
+            ]}
+          />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Original line")).toBeTruthy();
+    expect(screen.queryByText("Romanized line")).toBeNull();
+    expect(screen.queryByText("Translated line")).toBeNull();
+
+    await act(async () => {
+      pendingSettings.resolve(
+        makeAppSettings({
+          lyricsRomanizationEnabled: false,
+          lyricsTranslationEnabled: false,
+        }),
+      );
+      await pendingSettings.promise;
+    });
+
+    await screen.findByText("Original line");
+    expect(screen.queryByText("Romanized line")).toBeNull();
+    expect(screen.queryByText("Translated line")).toBeNull();
+  });
+
+  it("hides secondary lyric lines when configured", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, { lyricsRomanizationEnabled: false, lyricsTranslationEnabled: false });
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage
+            initialLyrics={[
+              {
+                timeMs: 0,
+                text: "Original line",
+                romanization: "Romanized line",
+                translation: "Translated line",
+              },
             ]}
           />
         </QueueSeed>
@@ -4101,6 +4150,7 @@ describe("LyricsPage", () => {
     );
 
     await screen.findByText("Original line");
+    expect(screen.queryByText("Romanized line")).toBeNull();
     expect(screen.queryByText("Translated line")).toBeNull();
   });
 

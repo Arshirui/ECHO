@@ -34,7 +34,7 @@ const settings: AppSettings = {
   appWallpaperBrightnessPercent: 100,
   appWallpaperUiOpacityPercent: 100,
   appWallpaperUnifiedOpacityEnabled: false,
-  networkMetadataEnabled: false,
+  networkMetadataEnabled: true,
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
   lyricsNetworkEnabled: true,
   lyricsPreferredProvider: 'lrclib',
@@ -43,6 +43,7 @@ const settings: AppSettings = {
   lyricsDeepSearchEnabled: true,
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.7,
+  lyricsBackfillAutoAcceptScore: 0.45,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsOffsetControlsEnabled: false,
@@ -875,6 +876,23 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ sidebarAutoHideEnabled: true }));
   });
 
+  it('saves the bottom signal path control from general settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const nextSettings = { ...settings, signalPathControlEnabled: true };
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue(nextSettings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const row = screen.getByText('底栏信号路径').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ signalPathControlEnabled: true }));
+  });
+
   it('saves sidebar visibility and order from appearance controls', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     let currentSettings: AppSettings = {
@@ -896,6 +914,9 @@ describe('SettingsPage', () => {
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
     const row = screen.getByText('settings.appearance.sidebar.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: /settings\.appearance\.sidebar\.summary\.allVisible/ }));
+    await waitFor(() => expect(setSettingsMock).toHaveBeenLastCalledWith({ appearanceSidebarLayoutExpanded: true }));
+    expect(within(row).getByText('route.dsp.label')).toBeTruthy();
     const streamingItem = within(row).getByText('route.streaming.label').closest('.settings-sidebar-route-item') as HTMLElement;
     fireEvent.click(streamingItem.querySelector('.settings-sidebar-visibility-button') as HTMLButtonElement);
 
@@ -941,6 +962,39 @@ describe('SettingsPage', () => {
       expect(lastPatch.sidebarRouteOrder?.slice(0, 2)).toEqual(['songs', 'home']);
       expect(lastPatch.sidebarHiddenRouteIds).toEqual(['streaming']);
     });
+  });
+
+  it('keeps sidebar layout controls collapsed by default and remembers expansion', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    let currentSettings: AppSettings = {
+      ...settings,
+      sidebarRouteOrder: [...defaultSidebarRouteOrder],
+      sidebarHiddenRouteIds: [],
+      appearanceSidebarLayoutExpanded: false,
+    };
+    getSettingsMock.mockResolvedValue(currentSettings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => {
+      currentSettings = { ...currentSettings, ...patch };
+      return currentSettings;
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    const row = screen.getByText('settings.appearance.sidebar.title').closest('.setting-row') as HTMLElement;
+    const toggle = within(row).getByRole('button', { name: /settings\.appearance\.sidebar\.summary\.allVisible/ });
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(within(row).queryByText('route.home.label')).toBeNull();
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenLastCalledWith({ appearanceSidebarLayoutExpanded: true }));
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(row.contains(within(row).getByText('route.home.label'))).toBe(true);
   });
 
   it('opens community links through the desktop external-url bridge', async () => {

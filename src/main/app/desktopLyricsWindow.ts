@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { BrowserWindow, screen } from 'electron';
-import type { IpcMainEvent } from 'electron';
+import type { Display, IpcMainEvent, Rectangle } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { DesktopLyricsBounds } from '../../shared/types/appSettings';
@@ -77,9 +77,11 @@ const emitDesktopLyricsStateChanged = (): void => {
   }
 };
 
+const getDesktopLyricsConstrainArea = (display: Display): Rectangle => display.bounds;
+
 const isBoundsVisible = (bounds: DesktopLyricsBounds): boolean =>
   screen.getAllDisplays().some((display) => {
-    const area = display.workArea;
+    const area = getDesktopLyricsConstrainArea(display);
     const overlapWidth = Math.min(bounds.x + bounds.width, area.x + area.width) - Math.max(bounds.x, area.x);
     const overlapHeight = Math.min(bounds.y + bounds.height, area.y + area.height) - Math.max(bounds.y, area.y);
     return overlapWidth >= 96 && overlapHeight >= 48;
@@ -87,7 +89,7 @@ const isBoundsVisible = (bounds: DesktopLyricsBounds): boolean =>
 
 const clampBoundsToVisibleArea = (bounds: DesktopLyricsBounds): DesktopLyricsBounds => {
   const display = screen.getDisplayMatching(bounds);
-  const area = display.workArea;
+  const area = getDesktopLyricsConstrainArea(display);
   const width = Math.max(desktopLyricsMinimumSize.width, Math.min(bounds.width, area.width));
   const height = Math.max(desktopLyricsMinimumSize.height, Math.min(bounds.height, area.height));
 

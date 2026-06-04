@@ -21,7 +21,7 @@
 }
 
 .folders-sidebar {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   padding-right: 16px;
   border-right: 1px solid rgba(33, 49, 70, 0.08);
 }
@@ -55,6 +55,25 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.folders-scan-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  color: #654713;
+  border: 1px solid rgba(184, 138, 52, 0.32);
+  border-radius: 8px;
+  background: rgba(255, 243, 210, 0.86);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.45;
+}
+
+.folders-scan-warning svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
 }
 
 .folder-source-switch {
@@ -597,6 +616,12 @@ html[data-theme="dark"] .folders-actions-panel section {
 
 html[data-theme="dark"] .folders-panel-heading h2 {
   color: var(--echo-heading-text);
+}
+
+html[data-theme="dark"] .folders-scan-warning {
+  color: #f3d694;
+  border-color: rgba(243, 190, 90, 0.34);
+  background: rgba(90, 66, 25, 0.42);
 }
 
 html[data-theme="dark"] .folder-root-button,

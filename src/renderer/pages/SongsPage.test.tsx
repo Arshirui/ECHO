@@ -392,12 +392,12 @@ describe('SongsPage', () => {
     installEcho([makeTrack()]);
 
     await renderSongsPage();
-    fireEvent.click(screen.getByRole('button', { name: /默认排序/ }));
-    fireEvent.click(screen.getByRole('option', { name: '按艺术家' }));
+    fireEvent.click(screen.getByRole('button', { name: /默认排序|Default sort/ }));
+    fireEvent.click(screen.getByRole('option', { name: /按艺术家 \/ 专辑|By artist \/ album/ }));
 
-    await waitFor(() => expect(window.localStorage.getItem('echo-next.songs.sort')).toBe('artist'));
+    await waitFor(() => expect(window.localStorage.getItem('echo-next.songs.sort')).toBe('artistAlbum'));
     await waitFor(() =>
-      expect(window.echo.library.getTracks).toHaveBeenCalledWith(expect.objectContaining({ sort: 'artist' })),
+      expect(window.echo.library.getTracks).toHaveBeenCalledWith(expect.objectContaining({ sort: 'artistAlbum' })),
     );
   });
 
@@ -406,8 +406,8 @@ describe('SongsPage', () => {
 
     await renderSongsPage();
     await screen.findByText('Song One');
-    fireEvent.click(screen.getByRole('button', { name: /默认排序/ }));
-    fireEvent.click(screen.getByRole('option', { name: '只看重复歌曲' }));
+    fireEvent.click(screen.getByRole('button', { name: /默认排序|Default sort/ }));
+    fireEvent.click(screen.getByRole('option', { name: /只看重复歌曲|Duplicates only/ }));
 
     await waitFor(() =>
       expect(window.echo.library.getTracks).toHaveBeenLastCalledWith(
@@ -418,7 +418,7 @@ describe('SongsPage', () => {
         }),
       ),
     );
-    expect(screen.getByRole('button', { name: /只看重复歌曲/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /只看重复歌曲|Duplicates only/ })).toBeTruthy();
   });
 
   it('loads liked state for loaded tracks outside the visible virtual window', async () => {
@@ -470,6 +470,18 @@ describe('SongsPage', () => {
 
     await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
     window.removeEventListener('app:navigate:import-folder', navigate);
+  });
+
+  it('dispatches file import from the import file toolbar button', async () => {
+    installEcho();
+    const importFile = vi.fn();
+    window.addEventListener('app:import-file', importFile);
+
+    await renderSongsPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Import File' }));
+
+    await waitFor(() => expect(importFile).toHaveBeenCalledTimes(1));
+    window.removeEventListener('app:import-file', importFile);
   });
 
   it('plays a local file from TrackRow and exposes queue currentTrackId to TrackList', async () => {
@@ -703,7 +715,7 @@ describe('SongsPage', () => {
 
     await renderSongsPage();
     await screen.findByText('Song One');
-    fireEvent.click(screen.getByRole('button', { name: '清空列表' }));
+    fireEvent.click(screen.getByRole('button', { name: /清空列表|Clear list/ }));
 
     await waitFor(() => expect(window.confirm).toHaveBeenCalledWith('清空歌曲列表？\n这会从列表移除 1 首歌曲，不会删除本地音乐文件。'));
     await waitFor(() => expect(window.echo.library.clearTracks).toHaveBeenCalledTimes(1));

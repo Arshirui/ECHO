@@ -130,6 +130,8 @@ export type AppThemeCustomTheme = {
   updatedAt: string;
 };
 
+export type AlbumCoverShape = 'rounded' | 'square';
+
 export type AppearancePreferences = {
   mainFontFamily: string;
   mainFontFilePath: string | null;
@@ -140,6 +142,7 @@ export type AppearancePreferences = {
   baseFontSize: number;
   lineHeight: number;
   textDepth: number;
+  albumCoverShape: AlbumCoverShape;
 };
 
 export type RememberedAudioOutput = {
@@ -181,6 +184,8 @@ export type AppSettings = {
   appearanceCustomThemes?: AppThemeCustomTheme[];
   appearanceThemeCustomId?: string | null;
   appearanceThemePresetsExpanded?: boolean;
+  appearanceThemeCustomExpanded?: boolean;
+  appearanceSidebarLayoutExpanded?: boolean;
   appearancePreferences?: AppearancePreferences;
   sidebarRouteOrder?: SidebarRouteId[];
   sidebarHiddenRouteIds?: SidebarRouteId[];
@@ -272,7 +277,9 @@ export type AppSettings = {
   lyricsDeepSearchEnabled: boolean;
   lyricsAutoSearch: boolean;
   lyricsAutoAcceptScore: number;
+  lyricsBackfillAutoAcceptScore?: number;
   lyricsRestartOnApplyEnabled?: boolean;
+  lyricsAutoSaveSidecarEnabled?: boolean;
   lyricsDefaultOffsetMs: number;
   lyricsGlobalSyncOffsetMs: number;
   lyricsTimelineCorrectionEnabled?: boolean;
@@ -335,6 +342,7 @@ export type AppSettings = {
   mvAutoApplyThreshold?: number;
   mvPreferHighestViewCount?: boolean;
   mvImmersiveBackground?: boolean;
+  mvImmersiveBackgroundAutoScale?: boolean;
   mvImmersiveBackgroundScalePercent?: number;
   mvImmersiveBackgroundOffsetXPercent?: number;
   mvImmersiveBackgroundOffsetYPercent?: number;
@@ -356,6 +364,7 @@ export type AppSettings = {
   lowLoadPlaybackEnhancementsEnabled?: boolean;
   homeRandomHeroTitleEnabled?: boolean;
   playerWaveformProgressEnabled?: boolean;
+  signalPathControlEnabled?: boolean;
   fixedVolumeEnabled?: boolean;
   gaplessPlaybackEnabled?: boolean;
   audioTransportFadeEnabled?: boolean;

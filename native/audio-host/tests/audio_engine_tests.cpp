@@ -155,6 +155,106 @@ void testConvolutionRejectsLongImpulseAndClipsSafely()
     require(std::abs(buffer.getSample(0, 0)) <= 1.0f, "hot convolution limited");
 }
 
+void testChannelBalanceDelayCompensation()
+{
+    echo::ChannelBalanceProcessor processor;
+    processor.prepare(1000.0, 16, 2);
+
+    echo::ChannelBalanceState state;
+    state.enabled = true;
+    state.leftDelayMs = 2.0f;
+    state.rightDelayMs = 0.0f;
+    processor.setState(state);
+    processor.reset();
+
+    juce::AudioBuffer<float> buffer(2, 6);
+    buffer.clear();
+    buffer.setSample(0, 0, 0.5f);
+    buffer.setSample(1, 0, 0.25f);
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    require(std::abs(buffer.getSample(0, 0)) <= nearTolerance, "left delay sample 0");
+    require(std::abs(buffer.getSample(0, 1)) <= nearTolerance, "left delay sample 1");
+    require(std::abs(buffer.getSample(0, 2) - 0.5f) <= nearTolerance, "left delay sample 2");
+    require(std::abs(buffer.getSample(1, 0) - 0.25f) <= nearTolerance, "right dry timing");
+    requireFinite(buffer, "channel delay finite");
+}
+
+void testChannelBalanceSoloKeepsPhysicalSide()
+{
+    echo::ChannelBalanceProcessor processor;
+    processor.prepare(48000.0, 16, 2);
+
+    echo::ChannelBalanceState state;
+    state.enabled = true;
+    state.monoMode = echo::ChannelBalanceMonoMode::LeftOnly;
+    processor.setState(state);
+
+    juce::AudioBuffer<float> liveLeftOnlyBuffer(2, 4);
+    liveLeftOnlyBuffer.clear();
+    liveLeftOnlyBuffer.setSample(0, 0, 0.625f);
+    liveLeftOnlyBuffer.setSample(1, 0, 0.375f);
+    processor.processBlock(liveLeftOnlyBuffer, 0, liveLeftOnlyBuffer.getNumSamples());
+
+    require(std::abs(liveLeftOnlyBuffer.getSample(0, 0) - 0.625f) <= nearTolerance, "live left solo keeps physical left immediately");
+    require(std::abs(liveLeftOnlyBuffer.getSample(1, 0)) <= nearTolerance, "live left solo mutes physical right immediately");
+
+    state.monoMode = echo::ChannelBalanceMonoMode::RightOnly;
+    processor.setState(state);
+    processor.reset();
+
+    juce::AudioBuffer<float> rightOnlyBuffer(2, 4);
+    rightOnlyBuffer.clear();
+    rightOnlyBuffer.setSample(0, 0, 0.25f);
+    rightOnlyBuffer.setSample(1, 0, 0.75f);
+    processor.processBlock(rightOnlyBuffer, 0, rightOnlyBuffer.getNumSamples());
+
+    require(std::abs(rightOnlyBuffer.getSample(0, 0)) <= nearTolerance, "right solo mutes physical left");
+    require(std::abs(rightOnlyBuffer.getSample(1, 0) - 0.75f) <= nearTolerance, "right solo keeps physical right");
+
+    state.monoMode = echo::ChannelBalanceMonoMode::LeftOnly;
+    processor.setState(state);
+    processor.reset();
+
+    juce::AudioBuffer<float> leftOnlyBuffer(2, 4);
+    leftOnlyBuffer.clear();
+    leftOnlyBuffer.setSample(0, 0, 0.5f);
+    leftOnlyBuffer.setSample(1, 0, 0.125f);
+    processor.processBlock(leftOnlyBuffer, 0, leftOnlyBuffer.getNumSamples());
+
+    require(std::abs(leftOnlyBuffer.getSample(0, 0) - 0.5f) <= nearTolerance, "left solo keeps physical left");
+    require(std::abs(leftOnlyBuffer.getSample(1, 0)) <= nearTolerance, "left solo mutes physical right");
+    requireFinite(rightOnlyBuffer, "right solo finite");
+    requireFinite(leftOnlyBuffer, "left solo finite");
+}
+
+void testChannelBalanceBandGainCompensation()
+{
+    echo::ChannelBalanceProcessor processor;
+    processor.prepare(48000.0, 4096, 2);
+
+    echo::ChannelBalanceState state;
+    state.enabled = true;
+    state.leftBandGainsDb[0] = -6.0f;
+    state.rightBandGainsDb[0] = 0.0f;
+    processor.setState(state);
+    processor.reset();
+
+    juce::AudioBuffer<float> buffer(2, 4096);
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        buffer.setSample(0, sample, 0.5f);
+        buffer.setSample(1, sample, 0.5f);
+    }
+
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    const auto leftTail = std::abs(buffer.getSample(0, buffer.getNumSamples() - 1));
+    const auto rightTail = std::abs(buffer.getSample(1, buffer.getNumSamples() - 1));
+    require(leftTail < rightTail * 0.7f, "left low band attenuation applies to audio");
+    requireFinite(buffer, "channel band compensation finite");
+}
+
 void testDspChainBypassPreservesDryBuffer()
 {
     echo::EqProcessor eqProcessor;
@@ -1197,6 +1297,9 @@ int main()
         { "FIR convolution delay impulse", testConvolutionDelayImpulse },
         { "FIR convolution stereo mapping", testConvolutionStereoMapping },
         { "FIR convolution rejects long IR and clips safely", testConvolutionRejectsLongImpulseAndClipsSafely },
+        { "Channel balance delay compensation", testChannelBalanceDelayCompensation },
+        { "Channel balance solo keeps physical side", testChannelBalanceSoloKeepsPhysicalSide },
+        { "Channel balance band gain compensation", testChannelBalanceBandGainCompensation },
         { "DSP chain bypass preserves dry buffer", testDspChainBypassPreservesDryBuffer },
         { "DSP chain limiter protects active output", testDspChainLimiterProtectsActiveOutput },
         { "DSP headroom only applies to active DSP", testDspHeadroomOnlyAppliesToActiveDsp },

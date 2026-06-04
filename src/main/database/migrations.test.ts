@@ -56,6 +56,7 @@ describe('database migrations', () => {
     expect(librarySchemaSql).toContain('CREATE TABLE IF NOT EXISTS artist_online_info_cache');
     expect(librarySchemaSql).toContain('CREATE TABLE IF NOT EXISTS artist_event_cache');
     expect(librarySchemaSql).toContain('CREATE TABLE IF NOT EXISTS library_inbox_item_states');
+    expect(librarySchemaSql).toContain('CREATE TABLE IF NOT EXISTS lyrics_backfill_jobs');
   });
 
   it('adds scan directory snapshots to existing databases without touching library rows', () => {
@@ -64,7 +65,7 @@ describe('database migrations', () => {
     runMigrations(database as unknown as EchoDatabase);
 
     const migrationSql = database.executedSql.join('\n');
-    expect(database.insertedMigrationIds).toEqual([36, 37, 38, 39]);
+    expect(database.insertedMigrationIds).toEqual([36, 37, 38, 39, 40, 41]);
     expect(migrationSql).toContain('CREATE TABLE IF NOT EXISTS scan_directory_snapshots');
     expect(migrationSql).not.toMatch(/\b(?:DELETE|UPDATE)\s+(?:FROM\s+)?(?:folders|tracks|scan_jobs)\b/iu);
   });
@@ -75,7 +76,7 @@ describe('database migrations', () => {
     runMigrations(database as unknown as EchoDatabase);
 
     const migrationSql = database.executedSql.join('\n');
-    expect(database.insertedMigrationIds).toEqual([37, 38, 39]);
+    expect(database.insertedMigrationIds).toEqual([37, 38, 39, 40, 41]);
     expect(migrationSql).toContain('CREATE TABLE IF NOT EXISTS artist_online_info_cache');
     expect(migrationSql).toContain('CREATE TABLE IF NOT EXISTS artist_event_cache');
     expect(migrationSql).not.toMatch(/\b(?:DELETE|UPDATE)\s+(?:FROM\s+)?(?:folders|tracks|artists|artist_tracks|artist_albums)\b/iu);
@@ -87,7 +88,7 @@ describe('database migrations', () => {
     runMigrations(database as unknown as EchoDatabase);
 
     const migrationSql = database.executedSql.join('\n');
-    expect(database.insertedMigrationIds).toEqual([38, 39]);
+    expect(database.insertedMigrationIds).toEqual([38, 39, 40, 41]);
     expect(migrationSql).toContain('CREATE TABLE IF NOT EXISTS library_inbox_item_states');
     expect(migrationSql).not.toMatch(/\b(?:DELETE|UPDATE)\s+(?:FROM\s+)?(?:folders|tracks|library_inbox_items|library_inbox_batches)\b/iu);
   });
@@ -101,13 +102,13 @@ describe('database migrations', () => {
     runMigrations(database as unknown as EchoDatabase);
 
     const migrationSql = database.executedSql.join('\n');
-    expect(database.insertedMigrationIds).toEqual([39]);
+    expect(database.insertedMigrationIds).toEqual([39, 40, 41]);
     expect(migrationSql).toContain('ALTER TABLE artist_online_info_cache ADD COLUMN region TEXT');
     expect(migrationSql).toContain('ALTER TABLE artist_event_cache ADD COLUMN region TEXT');
     expect(migrationSql).not.toMatch(/\b(?:DELETE|UPDATE)\s+(?:FROM\s+)?(?:folders|tracks|artists|artist_tracks|artist_albums)\b/iu);
   });
 
-  it('keeps inbox item states as the latest additive step', () => {
-    expect(migrations.at(-1)).toMatchObject({ id: 39 });
+  it('keeps lyrics backfill persistence as the latest additive step', () => {
+    expect(migrations.at(-1)).toMatchObject({ id: 41 });
   });
 });

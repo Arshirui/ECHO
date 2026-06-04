@@ -59,6 +59,8 @@ describe('app settings normalization', () => {
     expect(settings.appearanceCustomThemes).toEqual([]);
     expect(settings.appearanceThemeCustomId).toBeNull();
     expect(settings.appearanceThemePresetsExpanded).toBe(false);
+    expect(settings.appearanceThemeCustomExpanded).toBe(false);
+    expect(settings.appearanceSidebarLayoutExpanded).toBe(false);
     expect(settings.albumMergeStrategy).toBe('standard');
     expect(settings.chineseCrossScriptSearchEnabled).toBe(true);
     expect(settings.artistWallAlbumArtwork).toBe(false);
@@ -122,11 +124,13 @@ describe('app settings normalization', () => {
     expect(settings.lyricsDeepSearchEnabled).toBe(true);
     expect(settings.lyricsAutoSearch).toBe(true);
     expect(settings.lyricsAutoAcceptScore).toBe(0.5);
+    expect(settings.lyricsBackfillAutoAcceptScore).toBe(0.45);
     expect(settings.lyricsRestartOnApplyEnabled).toBe(false);
+    expect(settings.lyricsAutoSaveSidecarEnabled).toBe(false);
     expect(settings.lyricsDefaultOffsetMs).toBe(0);
     expect(settings.lyricsGlobalSyncOffsetMs).toBe(0);
     expect(settings.lyricsTimelineCorrectionEnabled).toBe(true);
-    expect(settings.lyricsOffsetControlsEnabled).toBe(false);
+    expect(settings.lyricsOffsetControlsEnabled).toBe(true);
     expect(settings.lyricsSmartAlignmentEnabled).toBe(true);
     expect(settings.lyricsEnabled).toBe(true);
     expect(settings.lyricsHeaderHidden).toBe(false);
@@ -172,6 +176,7 @@ describe('app settings normalization', () => {
     expect(settings.mvAutoApplyThreshold).toBe(0.7);
     expect(settings.mvPreferHighestViewCount).toBe(false);
     expect(settings.mvImmersiveBackground).toBe(true);
+    expect(settings.mvImmersiveBackgroundAutoScale).toBe(true);
     expect(settings.mvImmersiveBackgroundScalePercent).toBe(115);
     expect(settings.mvImmersiveBackgroundOffsetXPercent).toBe(50);
     expect(settings.mvImmersiveBackgroundOffsetYPercent).toBe(50);
@@ -197,12 +202,27 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ coverCacheDir: '   ' }).coverCacheDir).toBeNull();
   });
 
+  it('defaults network metadata backfill to NetEase and QQ sources', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).networkMetadataEnabled).toBe(true);
+    expect(normalizeSettings({}).networkMetadataProviders).toEqual(['netease-cloud-music', 'qq-music']);
+    expect(normalizeSettings({ networkMetadataEnabled: false }).networkMetadataEnabled).toBe(false);
+    expect(normalizeSettings({ networkMetadataProviders: [] }).networkMetadataProviders).toEqual(['netease-cloud-music', 'qq-music']);
+  });
+
   it('normalizes safe mode as an explicit diagnostic opt-in', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
     expect(normalizeSettings({}).safeModeEnabled).toBe(false);
     expect(normalizeSettings({ safeModeEnabled: true }).safeModeEnabled).toBe(true);
     expect(normalizeSettings({ safeModeEnabled: 'true' }).safeModeEnabled).toBe(false);
+  });
+
+  it('keeps the artist-album song sort preference', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({ songsSort: 'artistAlbum' }).songsSort).toBe('artistAlbum');
   });
 
   it('normalizes fast startup as an explicit opt-in', async () => {
@@ -1375,6 +1395,8 @@ describe('app settings normalization', () => {
         lyricsDeepSearchEnabled: false,
         lyricsAutoSearch: false,
         lyricsAutoAcceptScore: 2,
+        lyricsBackfillAutoAcceptScore: 2,
+        lyricsAutoSaveSidecarEnabled: true,
         lyricsDefaultOffsetMs: -24000,
         lyricsGlobalSyncOffsetMs: 24000,
         lyricsTimelineCorrectionEnabled: false,
@@ -1422,6 +1444,8 @@ describe('app settings normalization', () => {
       lyricsDeepSearchEnabled: false,
       lyricsAutoSearch: false,
       lyricsAutoAcceptScore: 1,
+      lyricsBackfillAutoAcceptScore: 0.95,
+      lyricsAutoSaveSidecarEnabled: true,
       lyricsDefaultOffsetMs: -10000,
       lyricsGlobalSyncOffsetMs: 1000,
       lyricsTimelineCorrectionEnabled: false,
@@ -1467,6 +1491,7 @@ describe('app settings normalization', () => {
         lyricsLineSpacingPercent: 20,
         lyricsLineMaxChars: -1,
         lyricsAutoAcceptScore: 0.1,
+        lyricsBackfillAutoAcceptScore: 0.1,
         lyricsContextOpacityPercent: 64.4,
         lyricsPlayerBarDrawerAutoHideEnabled: true,
         lyricsPlayerBarDrawerOpacityPercent: 12,
@@ -1490,6 +1515,7 @@ describe('app settings normalization', () => {
       lyricsLineSpacingPercent: 60,
       lyricsLineMaxChars: 0,
       lyricsAutoAcceptScore: 0.3,
+      lyricsBackfillAutoAcceptScore: 0.3,
       lyricsContextOpacityPercent: 64,
       lyricsPlayerBarDrawerAutoHideEnabled: true,
       lyricsPlayerBarDrawerOpacityPercent: 20,
@@ -1566,6 +1592,14 @@ describe('app settings normalization', () => {
     expect(settings.lyricsProviderOrder).toEqual(['local', 'amll-ttml', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo']);
   });
 
+  it('keeps the bottom signal path control opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).signalPathControlEnabled).toBe(false);
+    expect(normalizeSettings({ signalPathControlEnabled: true }).signalPathControlEnabled).toBe(true);
+    expect(normalizeSettings({ signalPathControlEnabled: 'true' as never }).signalPathControlEnabled).toBe(false);
+  });
+
   it('normalizes channel balance settings for old and malformed settings files', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -1574,6 +1608,8 @@ describe('app settings normalization', () => {
       balance: 0,
       leftGainDb: 0,
       rightGainDb: 0,
+      leftDelayMs: 0,
+      rightDelayMs: 0,
       monoMode: 'off',
       constantPower: true,
     });
@@ -1585,6 +1621,8 @@ describe('app settings normalization', () => {
           balance: -5,
           leftGainDb: -99,
           rightGainDb: 99,
+          leftDelayMs: -3,
+          rightDelayMs: 99,
           monoMode: 'right',
           invertLeft: true,
           constantPower: false,
@@ -1595,6 +1633,8 @@ describe('app settings normalization', () => {
       balance: -1,
       leftGainDb: -12,
       rightGainDb: 6,
+      leftDelayMs: 0,
+      rightDelayMs: 10,
       monoMode: 'right',
       invertLeft: true,
       constantPower: false,
@@ -1613,6 +1653,7 @@ describe('app settings normalization', () => {
         mvAutoApplyThreshold: 0.82,
         mvPreferHighestViewCount: true,
         mvImmersiveBackground: false,
+        mvImmersiveBackgroundAutoScale: false,
         mvImmersiveBackgroundScalePercent: 180,
         mvImmersiveBackgroundOffsetXPercent: 18,
         mvImmersiveBackgroundOffsetYPercent: 76,
@@ -1633,6 +1674,7 @@ describe('app settings normalization', () => {
       mvAutoApplyThreshold: 0.82,
       mvPreferHighestViewCount: true,
       mvImmersiveBackground: false,
+      mvImmersiveBackgroundAutoScale: false,
       mvImmersiveBackgroundScalePercent: 180,
       mvImmersiveBackgroundOffsetXPercent: 18,
       mvImmersiveBackgroundOffsetYPercent: 76,
@@ -1651,6 +1693,7 @@ describe('app settings normalization', () => {
         mvAutoApplyThreshold: 0.1,
         mvMaxQuality: '8k' as never,
         mvImmersiveBackgroundScalePercent: 999,
+        mvImmersiveBackgroundAutoScale: 'yes' as never,
         mvImmersiveBackgroundOffsetXPercent: -10,
         mvImmersiveBackgroundOffsetYPercent: 140,
         mvImmersiveBackgroundBlurPx: 99,
@@ -1665,6 +1708,7 @@ describe('app settings normalization', () => {
       mvAutoApplyThreshold: 0.3,
       mvPreferHighestViewCount: false,
       mvImmersiveBackground: true,
+      mvImmersiveBackgroundAutoScale: true,
       mvImmersiveBackgroundScalePercent: 220,
       mvImmersiveBackgroundOffsetXPercent: 0,
       mvImmersiveBackgroundOffsetYPercent: 100,

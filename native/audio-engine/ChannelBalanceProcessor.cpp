@@ -51,10 +51,10 @@ void applyMono(ChannelBalanceMonoMode mode, float left, float right, float& outp
         }
         case ChannelBalanceMonoMode::LeftOnly:
             outputLeft = left;
-            outputRight = left;
+            outputRight = 0.0f;
             break;
         case ChannelBalanceMonoMode::RightOnly:
-            outputLeft = right;
+            outputLeft = 0.0f;
             outputRight = right;
             break;
         case ChannelBalanceMonoMode::Off:
@@ -82,13 +82,40 @@ float clampChannelGainDb(float value)
     return std::max(channelBalanceMinGainDb, std::min(channelBalanceMaxGainDb, value));
 }
 
-ChannelBalanceProcessor::ChannelBalanceProcessor() = default;
+float clampChannelBandGainDb(float value)
+{
+    if (! std::isfinite(value))
+        return 0.0f;
+
+    return std::max(channelBalanceBandMinGainDb, std::min(channelBalanceBandMaxGainDb, value));
+}
+
+float clampChannelDelayMs(float value)
+{
+    if (! std::isfinite(value))
+        return 0.0f;
+
+    return std::max(channelBalanceMinDelayMs, std::min(channelBalanceMaxDelayMs, value));
+}
+
+ChannelBalanceProcessor::ChannelBalanceProcessor()
+{
+    for (int band = 0; band < channelBalanceBandCount; ++band)
+    {
+        atomicLeftBandGainsDb[static_cast<size_t>(band)].store(0.0f, std::memory_order_relaxed);
+        atomicRightBandGainsDb[static_cast<size_t>(band)].store(0.0f, std::memory_order_relaxed);
+    }
+}
 
 void ChannelBalanceProcessor::prepare(double sampleRate, int maximumBlockSize, int channelCount)
 {
     currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
     preparedChannels = std::max(1, channelCount);
     preparedBlockSize = std::max(1, maximumBlockSize);
+    const int maxDelaySamples = std::max(1, static_cast<int>(std::ceil(currentSampleRate * channelBalanceMaxDelayMs / 1000.0f)));
+    delayBufferLength = maxDelaySamples + 2;
+    delayHistory.assign(static_cast<size_t>(std::min(2, preparedChannels)), std::vector<float>(static_cast<size_t>(delayBufferLength), 0.0f));
+    delayWriteIndex = 0;
     updateSmoothingSteps();
     reset();
 }
@@ -99,6 +126,10 @@ void ChannelBalanceProcessor::reset()
     smoothedBalance = target.balance;
     smoothedLeftGainDb = target.leftGainDb;
     smoothedRightGainDb = target.rightGainDb;
+    smoothedLeftBandGainsDb = target.leftBandGainsDb;
+    smoothedRightBandGainsDb = target.rightBandGainsDb;
+    smoothedLeftDelayMs = target.leftDelayMs;
+    smoothedRightDelayMs = target.rightDelayMs;
     enabledMix = target.enabled ? 1.0f : 0.0f;
     swapMix = target.swapLeftRight ? 1.0f : 0.0f;
     monoMix = 1.0f;
@@ -108,6 +139,11 @@ void ChannelBalanceProcessor::reset()
     previousMonoMode = target.monoMode;
     activeMonoMode = target.monoMode;
     targetMonoMode = target.monoMode;
+    for (auto& channelHistory : delayHistory)
+        std::fill(channelHistory.begin(), channelHistory.end(), 0.0f);
+    lowBandState = {};
+    highLowpassState = {};
+    delayWriteIndex = 0;
     clippingRisk.store(false, std::memory_order_release);
 }
 
@@ -123,10 +159,21 @@ void ChannelBalanceProcessor::processBlock(juce::AudioBuffer<float>& buffer, int
 
     const auto target = readTargetSnapshot();
     updateSwitchTargets(target);
+    const bool physicalSoloActive = target.enabled
+        && (target.monoMode == ChannelBalanceMonoMode::LeftOnly || target.monoMode == ChannelBalanceMonoMode::RightOnly);
 
     balanceStep = (target.balance - smoothedBalance) / static_cast<float>(parameterSmoothingSamples);
     leftGainStepDb = (target.leftGainDb - smoothedLeftGainDb) / static_cast<float>(parameterSmoothingSamples);
     rightGainStepDb = (target.rightGainDb - smoothedRightGainDb) / static_cast<float>(parameterSmoothingSamples);
+    for (int band = 0; band < channelBalanceBandCount; ++band)
+    {
+        leftBandGainStepsDb[static_cast<size_t>(band)] =
+            (target.leftBandGainsDb[static_cast<size_t>(band)] - smoothedLeftBandGainsDb[static_cast<size_t>(band)]) / static_cast<float>(parameterSmoothingSamples);
+        rightBandGainStepsDb[static_cast<size_t>(band)] =
+            (target.rightBandGainsDb[static_cast<size_t>(band)] - smoothedRightBandGainsDb[static_cast<size_t>(band)]) / static_cast<float>(parameterSmoothingSamples);
+    }
+    leftDelayStepMs = (target.leftDelayMs - smoothedLeftDelayMs) / static_cast<float>(parameterSmoothingSamples);
+    rightDelayStepMs = (target.rightDelayMs - smoothedRightDelayMs) / static_cast<float>(parameterSmoothingSamples);
 
     bool risk = false;
 
@@ -138,6 +185,12 @@ void ChannelBalanceProcessor::processBlock(juce::AudioBuffer<float>& buffer, int
         {
             smoothedBalance = moveTowards(smoothedBalance, target.balance, balanceStep);
             smoothedLeftGainDb = moveTowards(smoothedLeftGainDb, target.leftGainDb, leftGainStepDb);
+            for (int band = 0; band < channelBalanceBandCount; ++band)
+                smoothedLeftBandGainsDb[static_cast<size_t>(band)] = moveTowards(
+                    smoothedLeftBandGainsDb[static_cast<size_t>(band)],
+                    target.leftBandGainsDb[static_cast<size_t>(band)],
+                    leftBandGainStepsDb[static_cast<size_t>(band)]);
+            smoothedLeftDelayMs = moveTowards(smoothedLeftDelayMs, target.leftDelayMs, leftDelayStepMs);
             enabledMix = moveTowards(enabledMix, target.enabled ? 1.0f : 0.0f, enabledStep);
             invertLeftMix = moveTowards(invertLeftMix, target.invertLeft ? 1.0f : 0.0f, invertLeftStep);
             constantPowerMix = moveTowards(constantPowerMix, target.constantPower ? 1.0f : 0.0f, constantPowerStep);
@@ -152,8 +205,11 @@ void ChannelBalanceProcessor::processBlock(juce::AudioBuffer<float>& buffer, int
 
             const float dry = leftSamples[sample];
             const float inverted = dry * (1.0f - (2.0f * invertLeftMix));
-            const float wet = inverted * balanceLeft * dbToGain(smoothedLeftGainDb);
-            const float mixed = dry + (wet - dry) * enabledMix;
+            const float wet = applyBandCompensation(0, inverted * balanceLeft * dbToGain(smoothedLeftGainDb), smoothedLeftBandGainsDb);
+            pushDelaySample(0, wet);
+            const float delayedWet = readDelaySample(0, smoothedLeftDelayMs);
+            delayWriteIndex = (delayWriteIndex + 1) % delayBufferLength;
+            const float mixed = dry + (delayedWet - dry) * enabledMix;
             leftSamples[sample] = sanitize(mixed);
 
             if (std::abs(leftSamples[sample]) > 0.98f)
@@ -172,6 +228,19 @@ void ChannelBalanceProcessor::processBlock(juce::AudioBuffer<float>& buffer, int
         smoothedBalance = moveTowards(smoothedBalance, target.balance, balanceStep);
         smoothedLeftGainDb = moveTowards(smoothedLeftGainDb, target.leftGainDb, leftGainStepDb);
         smoothedRightGainDb = moveTowards(smoothedRightGainDb, target.rightGainDb, rightGainStepDb);
+        for (int band = 0; band < channelBalanceBandCount; ++band)
+        {
+            smoothedLeftBandGainsDb[static_cast<size_t>(band)] = moveTowards(
+                smoothedLeftBandGainsDb[static_cast<size_t>(band)],
+                target.leftBandGainsDb[static_cast<size_t>(band)],
+                leftBandGainStepsDb[static_cast<size_t>(band)]);
+            smoothedRightBandGainsDb[static_cast<size_t>(band)] = moveTowards(
+                smoothedRightBandGainsDb[static_cast<size_t>(band)],
+                target.rightBandGainsDb[static_cast<size_t>(band)],
+                rightBandGainStepsDb[static_cast<size_t>(band)]);
+        }
+        smoothedLeftDelayMs = moveTowards(smoothedLeftDelayMs, target.leftDelayMs, leftDelayStepMs);
+        smoothedRightDelayMs = moveTowards(smoothedRightDelayMs, target.rightDelayMs, rightDelayStepMs);
         enabledMix = moveTowards(enabledMix, target.enabled ? 1.0f : 0.0f, enabledStep);
         swapMix = moveTowards(swapMix, target.swapLeftRight ? 1.0f : 0.0f, swapStep);
         monoMix = moveTowards(monoMix, 1.0f, monoStep);
@@ -195,8 +264,8 @@ void ChannelBalanceProcessor::processBlock(juce::AudioBuffer<float>& buffer, int
         const float swappedRight = dryRight + (dryLeft - dryRight) * swapMix;
         const float invertedLeft = swappedLeft * (1.0f - (2.0f * invertLeftMix));
         const float invertedRight = swappedRight * (1.0f - (2.0f * invertRightMix));
-        const float balancedLeft = invertedLeft * balanceLeft * dbToGain(smoothedLeftGainDb);
-        const float balancedRight = invertedRight * balanceRight * dbToGain(smoothedRightGainDb);
+        const float balancedLeft = applyBandCompensation(0, invertedLeft * balanceLeft * dbToGain(smoothedLeftGainDb), smoothedLeftBandGainsDb);
+        const float balancedRight = applyBandCompensation(1, invertedRight * balanceRight * dbToGain(smoothedRightGainDb), smoothedRightBandGainsDb);
 
         float previousMonoLeft = balancedLeft;
         float previousMonoRight = balancedRight;
@@ -207,8 +276,13 @@ void ChannelBalanceProcessor::processBlock(juce::AudioBuffer<float>& buffer, int
 
         const float wetLeft = previousMonoLeft + (activeMonoLeft - previousMonoLeft) * monoMix;
         const float wetRight = previousMonoRight + (activeMonoRight - previousMonoRight) * monoMix;
-        const float outputLeft = dryLeft + (wetLeft - dryLeft) * enabledMix;
-        const float outputRight = dryRight + (wetRight - dryRight) * enabledMix;
+        pushDelaySample(0, wetLeft);
+        pushDelaySample(1, wetRight);
+        const float delayedWetLeft = readDelaySample(0, smoothedLeftDelayMs);
+        const float delayedWetRight = readDelaySample(1, smoothedRightDelayMs);
+        delayWriteIndex = (delayWriteIndex + 1) % delayBufferLength;
+        const float outputLeft = physicalSoloActive ? delayedWetLeft : dryLeft + (delayedWetLeft - dryLeft) * enabledMix;
+        const float outputRight = physicalSoloActive ? delayedWetRight : dryRight + (delayedWetRight - dryRight) * enabledMix;
 
         leftSamples[sample] = sanitize(outputLeft);
         rightSamples[sample] = sanitize(outputRight);
@@ -228,6 +302,13 @@ void ChannelBalanceProcessor::setState(const ChannelBalanceState& state)
     atomicBalance.store(clampChannelBalance(state.balance), std::memory_order_release);
     atomicLeftGainDb.store(clampChannelGainDb(state.leftGainDb), std::memory_order_release);
     atomicRightGainDb.store(clampChannelGainDb(state.rightGainDb), std::memory_order_release);
+    for (int band = 0; band < channelBalanceBandCount; ++band)
+    {
+        atomicLeftBandGainsDb[static_cast<size_t>(band)].store(clampChannelBandGainDb(state.leftBandGainsDb[static_cast<size_t>(band)]), std::memory_order_release);
+        atomicRightBandGainsDb[static_cast<size_t>(band)].store(clampChannelBandGainDb(state.rightBandGainsDb[static_cast<size_t>(band)]), std::memory_order_release);
+    }
+    atomicLeftDelayMs.store(clampChannelDelayMs(state.leftDelayMs), std::memory_order_release);
+    atomicRightDelayMs.store(clampChannelDelayMs(state.rightDelayMs), std::memory_order_release);
     targetSwapLeftRight.store(state.swapLeftRight, std::memory_order_release);
     atomicMonoMode.store(static_cast<int>(state.monoMode), std::memory_order_release);
     targetInvertLeft.store(state.invertLeft, std::memory_order_release);
@@ -242,6 +323,13 @@ ChannelBalanceState ChannelBalanceProcessor::getState() const
     state.balance = atomicBalance.load(std::memory_order_acquire);
     state.leftGainDb = atomicLeftGainDb.load(std::memory_order_acquire);
     state.rightGainDb = atomicRightGainDb.load(std::memory_order_acquire);
+    for (int band = 0; band < channelBalanceBandCount; ++band)
+    {
+        state.leftBandGainsDb[static_cast<size_t>(band)] = atomicLeftBandGainsDb[static_cast<size_t>(band)].load(std::memory_order_acquire);
+        state.rightBandGainsDb[static_cast<size_t>(band)] = atomicRightBandGainsDb[static_cast<size_t>(band)].load(std::memory_order_acquire);
+    }
+    state.leftDelayMs = atomicLeftDelayMs.load(std::memory_order_acquire);
+    state.rightDelayMs = atomicRightDelayMs.load(std::memory_order_acquire);
     state.swapLeftRight = targetSwapLeftRight.load(std::memory_order_acquire);
     state.monoMode = monoModeFromInt(atomicMonoMode.load(std::memory_order_acquire));
     state.invertLeft = targetInvertLeft.load(std::memory_order_acquire);
@@ -278,6 +366,13 @@ ChannelBalanceProcessor::TargetSnapshot ChannelBalanceProcessor::readTargetSnaps
     target.balance = clampChannelBalance(atomicBalance.load(std::memory_order_acquire));
     target.leftGainDb = clampChannelGainDb(atomicLeftGainDb.load(std::memory_order_acquire));
     target.rightGainDb = clampChannelGainDb(atomicRightGainDb.load(std::memory_order_acquire));
+    for (int band = 0; band < channelBalanceBandCount; ++band)
+    {
+        target.leftBandGainsDb[static_cast<size_t>(band)] = clampChannelBandGainDb(atomicLeftBandGainsDb[static_cast<size_t>(band)].load(std::memory_order_acquire));
+        target.rightBandGainsDb[static_cast<size_t>(band)] = clampChannelBandGainDb(atomicRightBandGainsDb[static_cast<size_t>(band)].load(std::memory_order_acquire));
+    }
+    target.leftDelayMs = clampChannelDelayMs(atomicLeftDelayMs.load(std::memory_order_acquire));
+    target.rightDelayMs = clampChannelDelayMs(atomicRightDelayMs.load(std::memory_order_acquire));
     target.swapLeftRight = targetSwapLeftRight.load(std::memory_order_acquire);
     target.monoMode = monoModeFromInt(atomicMonoMode.load(std::memory_order_acquire));
     target.invertLeft = targetInvertLeft.load(std::memory_order_acquire);
@@ -290,10 +385,20 @@ void ChannelBalanceProcessor::updateSwitchTargets(const TargetSnapshot& target)
 {
     if (targetMonoMode != target.monoMode)
     {
-        previousMonoMode = activeMonoMode;
-        targetMonoMode = target.monoMode;
-        activeMonoMode = target.monoMode;
-        monoMix = 0.0f;
+        if (target.monoMode == ChannelBalanceMonoMode::LeftOnly || target.monoMode == ChannelBalanceMonoMode::RightOnly)
+        {
+            targetMonoMode = target.monoMode;
+            activeMonoMode = target.monoMode;
+            previousMonoMode = target.monoMode;
+            monoMix = 1.0f;
+        }
+        else
+        {
+            previousMonoMode = activeMonoMode;
+            targetMonoMode = target.monoMode;
+            activeMonoMode = target.monoMode;
+            monoMix = 0.0f;
+        }
     }
 
     enabledStep = ((target.enabled ? 1.0f : 0.0f) - enabledMix) / static_cast<float>(switchSmoothingSamples);
@@ -319,5 +424,56 @@ void ChannelBalanceProcessor::calculateBalanceGains(float balance, bool constant
     const float compensation = std::sqrt(2.0f);
     leftGain = std::min(1.0f, std::cos(pan) * compensation);
     rightGain = std::min(1.0f, std::sin(pan) * compensation);
+}
+
+float ChannelBalanceProcessor::applyBandCompensation(int channel, float sample, const std::array<float, channelBalanceBandCount>& bandGainsDb)
+{
+    const int safeChannel = channel <= 0 ? 0 : 1;
+    const float lowCutoffHz = 200.0f;
+    const float highCutoffHz = 2000.0f;
+    const float lowAlpha = 1.0f - std::exp((-2.0f * pi * lowCutoffHz) / static_cast<float>(currentSampleRate));
+    const float highAlpha = 1.0f - std::exp((-2.0f * pi * highCutoffHz) / static_cast<float>(currentSampleRate));
+
+    lowBandState[static_cast<size_t>(safeChannel)] += lowAlpha * (sample - lowBandState[static_cast<size_t>(safeChannel)]);
+    highLowpassState[static_cast<size_t>(safeChannel)] += highAlpha * (sample - highLowpassState[static_cast<size_t>(safeChannel)]);
+
+    const float low = lowBandState[static_cast<size_t>(safeChannel)];
+    const float high = sample - highLowpassState[static_cast<size_t>(safeChannel)];
+    const float mid = sample - low - high;
+
+    return sanitize(
+        low * dbToGain(bandGainsDb[0])
+        + mid * dbToGain(bandGainsDb[1])
+        + high * dbToGain(bandGainsDb[2]));
+}
+
+float ChannelBalanceProcessor::readDelaySample(int channel, float delayMs) const
+{
+    if (channel < 0 || channel >= static_cast<int>(delayHistory.size()) || delayBufferLength <= 0)
+        return 0.0f;
+
+    const float safeDelayMs = clampChannelDelayMs(delayMs);
+    const float delaySamples = safeDelayMs * static_cast<float>(currentSampleRate) / 1000.0f;
+    const int wholeSamples = std::min(delayBufferLength - 2, std::max(0, static_cast<int>(std::floor(delaySamples))));
+    const float fraction = delaySamples - static_cast<float>(wholeSamples);
+    const auto& history = delayHistory[static_cast<size_t>(channel)];
+
+    const auto wrapIndex = [this](int index) {
+        while (index < 0)
+            index += delayBufferLength;
+        return index % delayBufferLength;
+    };
+
+    const float newer = history[static_cast<size_t>(wrapIndex(delayWriteIndex - wholeSamples))];
+    const float older = history[static_cast<size_t>(wrapIndex(delayWriteIndex - wholeSamples - 1))];
+    return sanitize(newer + (older - newer) * fraction);
+}
+
+void ChannelBalanceProcessor::pushDelaySample(int channel, float sample)
+{
+    if (channel < 0 || channel >= static_cast<int>(delayHistory.size()) || delayBufferLength <= 0)
+        return;
+
+    delayHistory[static_cast<size_t>(channel)][static_cast<size_t>(delayWriteIndex)] = sanitize(sample);
 }
 } // namespace echo

@@ -156,6 +156,7 @@ const defaultSidebarLayoutSettings: SidebarLayoutSettings = {
   sidebarAutoHideEnabled: false,
 };
 
+const downloadLibraryChangeDebounceMs = 250;
 const persistentRouteIds = new Set<AppRouteId>(['songs', 'albums', 'artists', 'streaming', 'playlists']);
 const readSongsNavigationRemoteSourceId = (event: Event): string | null => {
   if (!(event instanceof CustomEvent) || typeof event.detail !== 'object' || event.detail === null) {
@@ -361,6 +362,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [desktopLyricsLocked, setDesktopLyricsLocked] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
   const [audioIssueDiagnosticsWindowEnabled, setAudioIssueDiagnosticsWindowEnabled] = useState(false);
+  const [signalPathControlEnabled, setSignalPathControlEnabled] = useState(false);
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
   const [sidebarLayoutSettings, setSidebarLayoutSettings] = useState<SidebarLayoutSettings>(defaultSidebarLayoutSettings);
   const [lyricsMiniPlayerCoverSample, setLyricsMiniPlayerCoverSample] = useState<ReadableColorSample | null>(null);
@@ -435,6 +437,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const routeSwitchTraceRef = useRef<RouteSwitchTrace | null>(null);
   const routeSwitchCommittedRouteIdRef = useRef<AppRouteId>(activeRouteId);
   const downloadImportedTrackIdsRef = useRef<Map<string, string | null>>(new Map());
+  const downloadLibraryChangedTimerRef = useRef<number | null>(null);
   const notifiedUpdateKeysRef = useRef<Set<string>>(new Set());
   const visibleRoutes = useMemo(
     () =>
@@ -807,6 +810,47 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
+      if (!settings || !Object.prototype.hasOwnProperty.call(settings, 'signalPathControlEnabled')) {
+        return;
+      }
+
+      setSignalPathControlEnabled(settings.signalPathControlEnabled === true);
+    };
+
+    const refreshSettings = (): void => {
+      void window.echo?.app?.getSettings?.()
+        .then((settings) => {
+          if (!cancelled) {
+            applySettings(settings);
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    const handleSettingsChanged = (event: Event): void => {
+      if (event instanceof CustomEvent) {
+        applySettings(event.detail as Partial<AppSettings> | null | undefined);
+        return;
+      }
+
+      if (!cancelled) {
+        refreshSettings();
+      }
+    };
+
+    refreshSettings();
+    window.addEventListener('settings:changed', handleSettingsChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
+
+  useEffect(() => {
     const syncWallpaperOrientation = (): void => {
       setIsAppWallpaperPortraitViewport(isPortraitViewport());
     };
@@ -1097,7 +1141,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const handleShowChromeNotice = (event: Event): void => {
       const message = (event as CustomEvent<string>).detail;
       if (typeof message === 'string' && message.trim()) {
-        setChromeNotice(message);
+        setChromeNotice((current) => (current === message ? current : message));
       }
     };
 
@@ -1581,6 +1625,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const handleNavigatePlugins = (): void => {
       navigateRoute('plugins');
     };
+    const handleNavigateDsp = (): void => {
+      navigateRoute('dsp');
+    };
     const handleNavigateNowPlaying = (): void => {
       navigateRoute('queue');
     };
@@ -1625,6 +1672,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     window.addEventListener('app:navigate:settings', handleNavigateSettings);
     window.addEventListener(settingsBackNavigationEvent, handleNavigateSettingsBack);
     window.addEventListener('app:navigate:plugins', handleNavigatePlugins);
+    window.addEventListener('app:navigate:dsp', handleNavigateDsp);
     window.addEventListener('app:navigate:queue', handleNavigateQueue);
     window.addEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
     window.addEventListener('app:navigate:lyrics', handleNavigateLyrics);
@@ -1638,6 +1686,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       window.removeEventListener('app:navigate:settings', handleNavigateSettings);
       window.removeEventListener(settingsBackNavigationEvent, handleNavigateSettingsBack);
       window.removeEventListener('app:navigate:plugins', handleNavigatePlugins);
+      window.removeEventListener('app:navigate:dsp', handleNavigateDsp);
       window.removeEventListener('app:navigate:queue', handleNavigateQueue);
       window.removeEventListener('app:navigate:now-playing', handleNavigateNowPlaying);
       window.removeEventListener('app:navigate:lyrics', handleNavigateLyrics);
@@ -1763,6 +1812,12 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     }
 
     const importedTrackIds = downloadImportedTrackIdsRef.current;
+    const flushDownloadLibraryChanged = (): void => {
+      downloadLibraryChangedTimerRef.current = null;
+      clearSongsFirstPageSnapshot();
+      window.dispatchEvent(new CustomEvent('library:changed', { detail: { preserveScroll: true } }));
+      window.dispatchEvent(new Event('library:playlists-changed'));
+    };
     return downloads.onJobsUpdated((jobs: DownloadJob[]) => {
       let importedNewTrack = false;
       const nextJobIds = new Set<string>();
@@ -1786,11 +1841,18 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       }
 
       if (importedNewTrack) {
-        clearSongsFirstPageSnapshot();
-        window.dispatchEvent(new Event('library:changed'));
-        window.dispatchEvent(new Event('library:playlists-changed'));
+        if (downloadLibraryChangedTimerRef.current === null) {
+          downloadLibraryChangedTimerRef.current = window.setTimeout(flushDownloadLibraryChanged, downloadLibraryChangeDebounceMs);
+        }
       }
     });
+  }, []);
+
+  useEffect(() => () => {
+    if (downloadLibraryChangedTimerRef.current !== null) {
+      window.clearTimeout(downloadLibraryChangedTimerRef.current);
+      downloadLibraryChangedTimerRef.current = null;
+    }
   }, []);
 
   const handleImportFolder = useCallback(async (): Promise<void> => {
@@ -1864,6 +1926,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       console.error('Failed to open local audio file from app chrome', error);
     }
   }, [navigateRoute, notifyLibraryChanged, playbackQueue, t]);
+
+  useEffect(() => {
+    const handleAppImportFile = (): void => {
+      void handleImportFile();
+    };
+
+    window.addEventListener('app:import-file', handleAppImportFile);
+    return () => window.removeEventListener('app:import-file', handleAppImportFile);
+  }, [handleImportFile]);
 
   useEffect(() => {
     const unsubscribe = window.echo?.playback?.onLocalAudioFilesOpened?.((paths) => {
@@ -2240,6 +2311,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
             hasDesktopLyricsBridge={hasDesktopLyricsBridge}
             onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
             onOpenQueue={isLyricsRoute ? handleOpenLyricsQueueDrawer : handleOpenShellQueue}
+            showQueueButton={true}
+            showSignalPathControl={!isLyricsRoute && signalPathControlEnabled}
             onToggleDesktopLyrics={handleToggleDesktopLyrics}
             onUnlockDesktopLyrics={handleUnlockDesktopLyrics}
           />

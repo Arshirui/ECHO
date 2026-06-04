@@ -160,12 +160,20 @@ describe('LibraryStore track metadata safety', () => {
       album: 'Collab Album',
       albumArtist: 'The Weeknd/Daft Punk',
     }));
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\feat-dot.flac', {
+      id: 'track-feat-dot',
+      title: 'Feat Dot Song',
+      artist: 'Aimer feat. milet',
+      album: 'Feat Dot Album',
+      albumArtist: 'Aimer feat. milet',
+    }));
     store.refreshAlbums(new AlbumService(), '2026-01-01T00:00:00.000Z');
     store.refreshArtists();
 
     const artists = store.getArtists({ pageSize: 20 }).items;
     const artistNames = artists.map((artist) => artist.name);
     const numericArtist = artists.find((artist) => artist.name === '22/7')!;
+    const miletArtist = artists.find((artist) => artist.name === 'milet')!;
 
     expect(artistNames).toContain('22/7');
     expect(artistNames).not.toContain('22');
@@ -173,7 +181,12 @@ describe('LibraryStore track metadata safety', () => {
     expect(artistNames).toContain('The Weeknd');
     expect(artistNames).toContain('Daft Punk');
     expect(artistNames).not.toContain('The Weeknd/Daft Punk');
+    expect(artistNames).toContain('Aimer');
+    expect(artistNames).toContain('milet');
+    expect(artistNames).not.toContain('Aimer feat. milet');
     expect(store.getArtistTracks(numericArtist.id, { pageSize: 10 }).items.map((track) => track.title)).toEqual(['Numeric Slash Song']);
+    expect(store.getArtistTracks(miletArtist.id, { pageSize: 10 }).items.map((track) => track.title)).toEqual(['Feat Dot Song']);
+    expect(store.getArtistAlbums(miletArtist.id, { pageSize: 10 }).items.map((album) => album.title)).toEqual(['Feat Dot Album']);
   });
 
   it('filters filename track numbers out of the artist index', () => {
@@ -251,5 +264,35 @@ describe('LibraryStore track metadata safety', () => {
     expect(tracks.total).toBe(1);
     expect(tracks.hasMore).toBe(false);
     expect(tracks.items.map((track) => track.id)).toEqual(['track-1']);
+  });
+
+  it('seeds album rows for newly scanned tracks before the full grouping refresh runs', () => {
+    const store = makeStore();
+    const folder = store.addFolder('D:\\Music');
+    const albumService = new AlbumService();
+
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\one.flac', { id: 'track-1', title: 'One', trackNo: 1 }));
+
+    expect(store.getAlbums({ pageSize: 10 }).total).toBe(0);
+
+    store.seedAlbumsForTracks(['track-1'], albumService, '2026-01-01T00:00:00.000Z');
+
+    const seededAlbum = store.getAlbums({ pageSize: 10 }).items[0];
+    expect(seededAlbum).toMatchObject({
+      title: 'Safe Album',
+      albumArtist: 'Safe Artist',
+      trackCount: 1,
+    });
+    expect(store.getAlbumTracks(seededAlbum.id, { pageSize: 10 }).items.map((track) => track.id)).toEqual(['track-1']);
+
+    store.upsertTrack(baseTrack(folder.id, 'D:\\Music\\two.flac', { id: 'track-2', title: 'Two', trackNo: 2 }));
+    store.seedAlbumsForTracks(['track-2'], albumService, '2026-01-01T00:00:01.000Z');
+
+    expect(store.getAlbums({ pageSize: 10 }).items[0]).toMatchObject({
+      title: 'Safe Album',
+      trackCount: 2,
+      duration: 240,
+    });
+    expect(store.getFolderOverviews()[0]).toMatchObject({ albumCount: 1, trackCount: 2 });
   });
 });

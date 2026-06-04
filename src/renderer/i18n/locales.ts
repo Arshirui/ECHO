@@ -1004,6 +1004,7 @@ export type TranslationKey =
   | 'folders.action.refresh'
   | 'folders.action.remove'
   | 'folders.action.scan'
+  | 'folders.action.scanChanges'
   | 'folders.confirm.deleteTrack'
   | 'folders.confirm.removeRoot'
   | 'folders.count.tracks'
@@ -1040,6 +1041,7 @@ export type TranslationKey =
   | 'folders.message.noPlayableTracks'
   | 'folders.message.queuedTracks'
   | 'folders.message.scanCancelled'
+  | 'folders.message.incrementalScanStarted'
   | 'folders.message.scanStarted'
   | 'folders.metrics.duration'
   | 'folders.metrics.label'
@@ -1063,6 +1065,7 @@ export type TranslationKey =
   | 'folders.prompt.createPlaylist'
   | 'folders.queueSource.recursive'
   | 'folders.scan.progress'
+  | 'folders.scan.unresponsiveWarning'
   | 'folders.sidebar.kicker'
   | 'folders.sidebar.title'
   | 'folders.sort.album'
@@ -1156,6 +1159,8 @@ export type TranslationKey =
   | 'route.audioSettings.label'
   | 'route.connect.description'
   | 'route.connect.label'
+  | 'route.dsp.description'
+  | 'route.dsp.label'
   | 'route.downloads.description'
   | 'route.downloads.label'
   | 'route.folders.description'
@@ -1456,6 +1461,8 @@ export type TranslationKey =
   | 'lyricsSettings.display.desktopFont'
   | 'lyricsSettings.display.desktopLyrics'
   | 'lyricsSettings.display.desktopLyricsDescription'
+  | 'lyricsSettings.display.desktopOpacity'
+  | 'lyricsSettings.display.desktopOpacityDescription'
   | 'lyricsSettings.display.desktopRomanization'
   | 'lyricsSettings.display.desktopTranslation'
   | 'lyricsSettings.display.disableMvTrackInfoAutoShow'
@@ -1532,6 +1539,8 @@ export type TranslationKey =
   | 'lyricsSettings.preview.secondary'
   | 'lyricsSettings.online.autoSearch'
   | 'lyricsSettings.online.autoSearchDescription'
+  | 'lyricsSettings.online.autoSaveSidecar'
+  | 'lyricsSettings.online.autoSaveSidecarDescription'
   | 'lyricsSettings.online.deepSearch'
   | 'lyricsSettings.online.deepSearchDescription'
   | 'lyricsSettings.online.enable'
@@ -1625,6 +1634,8 @@ export type TranslationKey =
   | 'mvSettings.error.noNetworkCandidates'
   | 'mvSettings.general.enabled'
   | 'mvSettings.immersive.blur'
+  | 'mvSettings.immersive.autoScale'
+  | 'mvSettings.immersive.autoScaleDescription'
   | 'mvSettings.immersive.brightness'
   | 'mvSettings.immersive.description'
   | 'mvSettings.immersive.dragHint'
@@ -1746,6 +1757,7 @@ export type TranslationKey =
   | 'songs.search.placeholder'
   | 'songs.sort.album'
   | 'songs.sort.artist'
+  | 'songs.sort.artistAlbum'
   | 'songs.sort.createdAsc'
   | 'songs.sort.createdDesc'
   | 'songs.sort.default'
@@ -1854,6 +1866,10 @@ export type TranslationKey =
   | 'settings.appearance.artistAvatars.message.queued'
   | 'settings.appearance.artistAvatars.title'
   | 'settings.appearance.artistAvatars.toggle'
+  | 'settings.appearance.albumCoverShape.description'
+  | 'settings.appearance.albumCoverShape.rounded'
+  | 'settings.appearance.albumCoverShape.square'
+  | 'settings.appearance.albumCoverShape.title'
   | 'settings.appearance.font.choose'
   | 'settings.appearance.font.chinese.description'
   | 'settings.appearance.font.chinese.title'
@@ -1891,7 +1907,9 @@ export type TranslationKey =
   | 'settings.appearance.wallpaper.videoStatus'
   | 'settings.appearance.wallpaper.visualProtection'
   | 'settings.appearance.sidebar.count'
+  | 'settings.appearance.sidebar.collapse'
   | 'settings.appearance.sidebar.description'
+  | 'settings.appearance.sidebar.expand'
   | 'settings.appearance.sidebar.fixed'
   | 'settings.appearance.sidebar.hidden'
   | 'settings.appearance.sidebar.hideAria'
@@ -1996,6 +2014,8 @@ export type TranslationKey =
   | 'settings.appearance.themeCustom.action.save'
   | 'settings.appearance.themeCustom.advanced.hide'
   | 'settings.appearance.themeCustom.advanced.show'
+  | 'settings.appearance.themeCustom.collapse'
+  | 'settings.appearance.themeCustom.expand'
   | 'settings.appearance.themeCustom.description'
   | 'settings.appearance.themeCustom.field.accent'
   | 'settings.appearance.themeCustom.field.accent.description'
@@ -2385,6 +2405,7 @@ export type TranslationKey =
   | 'settings.eq.action.resetBand'
   | 'settings.eq.action.resetAllGains'
   | 'settings.eq.action.resetChannelBalance'
+  | 'settings.eq.action.resetDelaysOnly'
   | 'settings.eq.action.resetEq'
   | 'settings.eq.action.resetFrequencies'
   | 'settings.eq.action.resetMonitorTools'
@@ -2489,8 +2510,10 @@ export type TranslationKey =
   | 'settings.eq.channel.group.gainTrim'
   | 'settings.eq.channel.group.monitorTools'
   | 'settings.eq.channel.group.phaseTools'
+  | 'settings.eq.channel.group.timing'
   | 'settings.eq.channel.invertLeft'
   | 'settings.eq.channel.invertRight'
+  | 'settings.eq.channel.leftDelay'
   | 'settings.eq.channel.leftGain'
   | 'settings.eq.channel.leftTotal'
   | 'settings.eq.channel.mono.left'
@@ -2504,10 +2527,29 @@ export type TranslationKey =
   | 'settings.eq.channel.quick.rightSolo'
   | 'settings.eq.channel.quick.swapCheck'
   | 'settings.eq.channel.quickTools'
+  | 'settings.eq.channel.rightDelay'
   | 'settings.eq.channel.rightGain'
   | 'settings.eq.channel.rightTotal'
   | 'settings.eq.channel.swap'
   | 'settings.eq.channel.title'
+  | 'settings.eq.channel.wizard.apply'
+  | 'settings.eq.channel.wizard.clear'
+  | 'settings.eq.channel.wizard.empty'
+  | 'settings.eq.channel.wizard.imageLeft'
+  | 'settings.eq.channel.wizard.imageRight'
+  | 'settings.eq.channel.wizard.leftDistance'
+  | 'settings.eq.channel.wizard.leftLouder'
+  | 'settings.eq.channel.wizard.leftSpl'
+  | 'settings.eq.channel.wizard.monitor'
+  | 'settings.eq.channel.wizard.nudge'
+  | 'settings.eq.channel.wizard.previewCenter'
+  | 'settings.eq.channel.wizard.previewLeft'
+  | 'settings.eq.channel.wizard.previewRight'
+  | 'settings.eq.channel.wizard.ready'
+  | 'settings.eq.channel.wizard.rightDistance'
+  | 'settings.eq.channel.wizard.rightLouder'
+  | 'settings.eq.channel.wizard.rightSpl'
+  | 'settings.eq.channel.wizard.title'
   | 'settings.eq.comfort.direct'
   | 'settings.eq.comfort.directDetail'
   | 'settings.eq.comfort.risk'
@@ -2586,6 +2628,15 @@ export type TranslationKey =
   | 'settings.eq.filter.lowPass'
   | 'settings.eq.filter.notch'
   | 'settings.eq.filter.peaking'
+  | 'settings.eq.headphoneCorrection.ab'
+  | 'settings.eq.headphoneCorrection.compareCorrected'
+  | 'settings.eq.headphoneCorrection.compareOriginal'
+  | 'settings.eq.headphoneCorrection.convert'
+  | 'settings.eq.headphoneCorrection.customName'
+  | 'settings.eq.headphoneCorrection.lockAria'
+  | 'settings.eq.headphoneCorrection.lockDetail'
+  | 'settings.eq.headphoneCorrection.lockedError'
+  | 'settings.eq.headphoneCorrection.managed'
   | 'settings.eq.level.clips'
   | 'settings.eq.level.estimatedOutputPeak'
   | 'settings.eq.level.headroom'
@@ -3975,6 +4026,7 @@ const zhCN: TranslationMap = {
   'folders.action.refresh': '刷新文件夹',
   'folders.action.remove': '移除',
   'folders.action.scan': '扫描',
+  'folders.action.scanChanges': '增量扫描',
   'folders.confirm.deleteTrack': '删除这个音乐文件？\n{title}',
   'folders.confirm.removeRoot': '从曲库索引中移除“{name}”？音乐文件会保留在磁盘上。',
   'folders.count.tracks': '{count} 首',
@@ -4011,6 +4063,7 @@ const zhCN: TranslationMap = {
   'folders.message.noPlayableTracks': '这个文件夹里没有可播放歌曲。',
   'folders.message.queuedTracks': '已加入队列 {count} 首。',
   'folders.message.scanCancelled': '扫描已取消。',
+  'folders.message.incrementalScanStarted': '增量扫描已开始，只处理新增和移除。',
   'folders.message.scanStarted': '扫描已开始。',
   'folders.metrics.duration': '时长',
   'folders.metrics.label': '文件夹指标',
@@ -4034,6 +4087,7 @@ const zhCN: TranslationMap = {
   'folders.prompt.createPlaylist': '还没有歌单。输入名称来创建一个：',
   'folders.queueSource.recursive': '{name} 文件夹',
   'folders.scan.progress': '{processed}/{total} 个文件，{errors} 个错误',
+  'folders.scan.unresponsiveWarning': '正在扫描曲库。扫描期间软件可能短暂未响应，这是正常现象；请等待或使用取消扫描。',
   'folders.sidebar.kicker': '曲库',
   'folders.sidebar.title': '文件夹',
   'folders.sort.album': '专辑',
@@ -4127,6 +4181,8 @@ const zhCN: TranslationMap = {
   'route.audioSettings.label': '音频设置',
   'route.connect.description': 'DLNA / AirPlay 无线播放。',
   'route.connect.label': '连接',
+  'route.dsp.description': '信号链调音工作台。',
+  'route.dsp.label': 'DSP',
   'connectPage.controls.aria': 'Connect 控制',
   'connectPage.controls.disconnect': '断开',
   'connectPage.controls.pause': '暂停',
@@ -4509,6 +4565,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.display.desktopFont': '桌面歌词字体',
   'lyricsSettings.display.desktopLyrics': '桌面歌词',
   'lyricsSettings.display.desktopLyricsDescription': '开启后用独立透明窗口在桌面置顶显示当前歌词。',
+  'lyricsSettings.display.desktopOpacity': '桌面歌词透明度',
+  'lyricsSettings.display.desktopOpacityDescription': '当前 {opacity}%，调低可减少遮挡。',
   'lyricsSettings.display.desktopRomanization': '桌面歌词显示罗马音',
   'lyricsSettings.display.desktopTranslation': '桌面歌词显示翻译',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': '关闭MV自动显示歌曲信息',
@@ -4585,6 +4643,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.preview.secondary': '辅助歌词行',
   'lyricsSettings.online.autoSearch': '自动匹配歌词',
   'lyricsSettings.online.autoSearchDescription': '本地歌词始终优先；在线结果达到阈值才会自动应用。',
+  'lyricsSettings.online.autoSaveSidecar': '自动保存本地歌词文件',
+  'lyricsSettings.online.autoSaveSidecarDescription': '默认关闭；在线或手动应用的歌词会保存为歌曲同名旁挂文件，不覆盖已有 .lrc / .ttml / .txt。',
   'lyricsSettings.online.deepSearch': '深度优先搜索',
   'lyricsSettings.online.deepSearchDescription': '开启后多个在线平台会并发搜索；任一结果达到自动应用阈值就立即停止其他源并返回。',
   'lyricsSettings.online.enable': '启用在线歌词匹配',
@@ -4678,6 +4738,8 @@ const zhCN: TranslationMap = {
   'mvSettings.error.noNetworkCandidates': '没有找到网络 MV 候选',
   'mvSettings.general.enabled': '启用 MV',
   'mvSettings.immersive.blur': '毛玻璃模糊',
+  'mvSettings.immersive.autoScale': '自动缩放',
+  'mvSettings.immersive.autoScaleDescription': '根据 MV 宽高自动补偿缩放，尽量避免背景黑边。',
   'mvSettings.immersive.brightness': '背景亮度',
   'mvSettings.immersive.description': '开启后，歌词页使用当前 MV 作为背景。',
   'mvSettings.immersive.dragHint': '也可以在歌词页空白处拖动调整。',
@@ -4799,6 +4861,7 @@ const zhCN: TranslationMap = {
   'songs.search.placeholder': '搜索曲目 / 艺人 / 专辑...',
   'songs.sort.album': '按专辑',
   'songs.sort.artist': '按艺术家',
+  'songs.sort.artistAlbum': '按艺术家 / 专辑',
   'songs.sort.createdAsc': '创建时间（正序）',
   'songs.sort.createdDesc': '创建时间（倒序）',
   'songs.sort.default': '默认排序',
@@ -4907,6 +4970,10 @@ const zhCN: TranslationMap = {
   'settings.appearance.artistAvatars.message.queued': '已加入 {queued} 个歌手头像。跳过 {skipped} 个。',
   'settings.appearance.artistAvatars.title': '歌手头像',
   'settings.appearance.artistAvatars.toggle': '自动获取歌手头像',
+  'settings.appearance.albumCoverShape.title': '专辑封面形状',
+  'settings.appearance.albumCoverShape.description': '选择专辑封面显示为圆角或方角；该设置优先于主题预设。默认圆角。',
+  'settings.appearance.albumCoverShape.rounded': '圆角',
+  'settings.appearance.albumCoverShape.square': '方角',
   'settings.appearance.font.choose': '选择',
   'settings.appearance.font.chinese.description': '当主字体缺少中文字符时，优先使用这个中文字体补齐。',
   'settings.appearance.font.chinese.title': '中文字体',
@@ -4921,10 +4988,12 @@ const zhCN: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.title': '播放界面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '开启后，正在播放页会在空闲时从小封面抽样生成轻量背景；低负载模式会自动跳过。默认关闭。',
   'settings.appearance.reset.action': '恢复默认',
-  'settings.appearance.reset.description': '恢复 Monocraft、站酷快乐体、字号、行距与文字深浅。',
+  'settings.appearance.reset.description': '恢复 Monocraft、站酷快乐体、字号、行距、文字深浅与圆角封面。',
   'settings.appearance.reset.title': '外观默认值',
   'settings.appearance.sidebar.title': '左侧栏',
   'settings.appearance.sidebar.description': '调整左侧入口的顺序和显示状态，不会改动页面或播放链路。',
+  'settings.appearance.sidebar.expand': '展开左侧栏布局',
+  'settings.appearance.sidebar.collapse': '收起左侧栏布局',
   'settings.appearance.sidebar.mainGroup': '主导航',
   'settings.appearance.sidebar.utilityGroup': '底部入口',
   'settings.appearance.sidebar.reset': '恢复默认',
@@ -5049,6 +5118,8 @@ const zhCN: TranslationMap = {
   'settings.appearance.themeCustom.action.import': '导入参数',
   'settings.appearance.themeCustom.action.reset': '重置当前自定义',
   'settings.appearance.themeCustom.action.save': '保存自定义',
+  'settings.appearance.themeCustom.expand': '展开我的主题',
+  'settings.appearance.themeCustom.collapse': '收起我的主题',
   'settings.appearance.themeCustom.advanced.show': '展开高级设置',
   'settings.appearance.themeCustom.advanced.hide': '收起高级设置',
   'settings.appearance.themeCustom.field.appBg': '底色',
@@ -5438,6 +5509,7 @@ const zhCN: TranslationMap = {
   'settings.eq.action.resetBand': '重置 {frequency}',
   'settings.eq.action.resetAllGains': '重置全部增益',
   'settings.eq.action.resetChannelBalance': '重置声道平衡',
+  'settings.eq.action.resetDelaysOnly': '重置延迟',
   'settings.eq.action.resetEq': '重置 EQ',
   'settings.eq.action.resetFrequencies': '恢复标准频点',
   'settings.eq.action.resetMonitorTools': '重置监听工具',
@@ -5534,7 +5606,7 @@ const zhCN: TranslationMap = {
   'settings.eq.channel.calibrationMode': '校准模式',
   'settings.eq.channel.center': '居中',
   'settings.eq.channel.constantPower': '恒定功率',
-  'settings.eq.channel.description': 'Balance 用于左右偏移；L/R Gain 用于精细校正；Mono Sum 用于单声道检查；Invert 用于相位检查。',
+  'settings.eq.channel.description': 'Balance 用于左右偏移；L/R Gain 校正响度；L/R Delay 校正到达时间；Mono Sum 和 Invert 用于监听检查。',
   'settings.eq.channel.dsp': 'DSP',
   'settings.eq.channel.effectiveLeft': '左有效增益',
   'settings.eq.channel.effectiveRight': '右有效增益',
@@ -5542,8 +5614,10 @@ const zhCN: TranslationMap = {
   'settings.eq.channel.group.gainTrim': 'Gain Trim',
   'settings.eq.channel.group.monitorTools': '监听工具',
   'settings.eq.channel.group.phaseTools': '相位工具',
+  'settings.eq.channel.group.timing': 'Timing',
   'settings.eq.channel.invertLeft': '左声道反相',
   'settings.eq.channel.invertRight': '右声道反相',
+  'settings.eq.channel.leftDelay': '左延迟',
   'settings.eq.channel.leftGain': '左增益',
   'settings.eq.channel.leftTotal': '左总增益',
   'settings.eq.channel.mono.left': '左',
@@ -5557,10 +5631,29 @@ const zhCN: TranslationMap = {
   'settings.eq.channel.quick.rightSolo': '右声道 Solo',
   'settings.eq.channel.quick.swapCheck': '交换检查',
   'settings.eq.channel.quickTools': '快速监听工具',
+  'settings.eq.channel.rightDelay': '右延迟',
   'settings.eq.channel.rightGain': '右增益',
   'settings.eq.channel.rightTotal': '右总增益',
   'settings.eq.channel.swap': '交换 L/R',
   'settings.eq.channel.title': '声道平衡',
+  'settings.eq.channel.wizard.apply': '应用测量校准',
+  'settings.eq.channel.wizard.clear': '清空测量',
+  'settings.eq.channel.wizard.empty': '等待测量',
+  'settings.eq.channel.wizard.imageLeft': '声像偏左',
+  'settings.eq.channel.wizard.imageRight': '声像偏右',
+  'settings.eq.channel.wizard.leftDistance': '左距离',
+  'settings.eq.channel.wizard.leftLouder': '左边更响',
+  'settings.eq.channel.wizard.leftSpl': '左 SPL',
+  'settings.eq.channel.wizard.monitor': '空间校准监听',
+  'settings.eq.channel.wizard.nudge': '空间校准微调',
+  'settings.eq.channel.wizard.previewCenter': '中心检查',
+  'settings.eq.channel.wizard.previewLeft': '左检查',
+  'settings.eq.channel.wizard.previewRight': '右检查',
+  'settings.eq.channel.wizard.ready': '可应用',
+  'settings.eq.channel.wizard.rightDistance': '右距离',
+  'settings.eq.channel.wizard.rightLouder': '右边更响',
+  'settings.eq.channel.wizard.rightSpl': '右 SPL',
+  'settings.eq.channel.wizard.title': '空间校准向导',
   'settings.eq.comfort.direct': '原声直通',
   'settings.eq.comfort.directDetail': 'DSP 关闭时不压低音量、不改动采样，适合放心听原声。',
   'settings.eq.comfort.risk': '需要留意电平',
@@ -5639,6 +5732,15 @@ const zhCN: TranslationMap = {
   'settings.eq.filter.lowPass': '低通',
   'settings.eq.filter.notch': '陷波',
   'settings.eq.filter.peaking': '峰值',
+  'settings.eq.headphoneCorrection.ab': '耳机校正 A/B',
+  'settings.eq.headphoneCorrection.compareCorrected': '校正后',
+  'settings.eq.headphoneCorrection.compareOriginal': '对比原声',
+  'settings.eq.headphoneCorrection.convert': '转为自定义 EQ',
+  'settings.eq.headphoneCorrection.customName': '自定义 EQ - {name}',
+  'settings.eq.headphoneCorrection.lockAria': '耳机校正 EQ 锁定提示',
+  'settings.eq.headphoneCorrection.lockDetail': '{name} 由耳机校正管理。要手动改参数，先转为自定义 EQ。',
+  'settings.eq.headphoneCorrection.lockedError': '这个 OPRA preset 由耳机校正管理。请先点“转为自定义 EQ”再修改参数。',
+  'settings.eq.headphoneCorrection.managed': '由耳机校正管理',
   'settings.eq.level.clips': '削波 {count}',
   'settings.eq.level.estimatedOutputPeak': '估算输出峰值',
   'settings.eq.level.headroom': '余量',
@@ -7023,6 +7125,7 @@ const zhTW: TranslationMap = {
   'folders.action.refresh': '重新整理資料夾',
   'folders.action.remove': '移除',
   'folders.action.scan': '掃描',
+  'folders.action.scanChanges': '增量掃描',
   'folders.confirm.deleteTrack': '刪除這個音樂檔？\n{title}',
   'folders.confirm.removeRoot': '從曲庫索引中移除「{name}」？音樂檔會保留在磁碟上。',
   'folders.count.tracks': '{count} 首',
@@ -7059,6 +7162,7 @@ const zhTW: TranslationMap = {
   'folders.message.noPlayableTracks': '這個資料夾裡沒有可播放歌曲。',
   'folders.message.queuedTracks': '已加入佇列 {count} 首。',
   'folders.message.scanCancelled': '掃描已取消。',
+  'folders.message.incrementalScanStarted': '增量掃描已開始，只處理新增和移除。',
   'folders.message.scanStarted': '掃描已開始。',
   'folders.metrics.duration': '長度',
   'folders.metrics.label': '資料夾指標',
@@ -7082,6 +7186,7 @@ const zhTW: TranslationMap = {
   'folders.prompt.createPlaylist': '還沒有播放清單。輸入名稱來建立一個：',
   'folders.queueSource.recursive': '{name} 資料夾',
   'folders.scan.progress': '{processed}/{total} 個檔案，{errors} 個錯誤',
+  'folders.scan.unresponsiveWarning': '正在掃描曲庫。掃描期間軟體可能短暫未回應，這是正常現象；請等待或使用取消掃描。',
   'folders.sidebar.kicker': '曲庫',
   'folders.sidebar.title': '資料夾',
   'folders.sort.album': '專輯',
@@ -7103,6 +7208,8 @@ const zhTW: TranslationMap = {
   'route.audioSettings.label': '音訊設定',
   'route.connect.description': 'DLNA / AirPlay 無線播放。',
   'route.connect.label': '連接',
+  'route.dsp.description': '訊號鏈調音工作台。',
+  'route.dsp.label': 'DSP',
   'connectPage.controls.aria': 'Connect 控制',
   'connectPage.controls.disconnect': '中斷連接',
   'connectPage.controls.pause': '暫停',
@@ -7479,6 +7586,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.display.desktopFont': '桌面歌詞字體',
   'lyricsSettings.display.desktopLyrics': '桌面歌詞',
   'lyricsSettings.display.desktopLyricsDescription': '開啟後用獨立透明視窗在桌面置頂顯示目前歌詞。',
+  'lyricsSettings.display.desktopOpacity': '桌面歌詞透明度',
+  'lyricsSettings.display.desktopOpacityDescription': '目前 {opacity}%，調低可減少遮擋。',
   'lyricsSettings.display.desktopRomanization': '桌面歌詞顯示羅馬音',
   'lyricsSettings.display.desktopTranslation': '桌面歌詞顯示翻譯',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': '關閉 MV 自動顯示歌曲資訊',
@@ -7555,6 +7664,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.preview.secondary': '輔助歌詞行',
   'lyricsSettings.online.autoSearch': '自動匹配歌詞',
   'lyricsSettings.online.autoSearchDescription': '本地歌詞始終優先；線上結果達到閾值才會自動套用。',
+  'lyricsSettings.online.autoSaveSidecar': '自動儲存本地歌詞檔',
+  'lyricsSettings.online.autoSaveSidecarDescription': '預設關閉；線上或手動套用的歌詞會儲存為歌曲同名旁掛檔，不覆蓋既有 .lrc / .ttml / .txt。',
   'lyricsSettings.online.deepSearch': '深度優先搜尋',
   'lyricsSettings.online.deepSearchDescription': '開啟後多個線上平台會並行搜尋；任一結果達到自動套用門檻就會立即停止其他來源並返回。',
   'lyricsSettings.online.enable': '啟用線上歌詞匹配',
@@ -7648,6 +7759,8 @@ const zhTW: TranslationMap = {
   'mvSettings.error.noNetworkCandidates': '沒有找到網路 MV 候選',
   'mvSettings.general.enabled': '啟用 MV',
   'mvSettings.immersive.blur': '毛玻璃模糊',
+  'mvSettings.immersive.autoScale': '自動縮放',
+  'mvSettings.immersive.autoScaleDescription': '依照 MV 寬高自動補償縮放，盡量避免背景黑邊。',
   'mvSettings.immersive.brightness': '背景亮度',
   'mvSettings.immersive.description': '開啟後，歌詞頁使用目前 MV 作為背景。',
   'mvSettings.immersive.dragHint': '也可以在歌詞頁空白處拖動調整。',
@@ -7807,6 +7920,7 @@ const zhTW: TranslationMap = {
   'songs.search.placeholder': '搜尋曲目 / 藝人 / 專輯...',
   'songs.sort.album': '按專輯',
   'songs.sort.artist': '按藝人',
+  'songs.sort.artistAlbum': '按藝人 / 專輯',
   'songs.sort.createdAsc': '建立時間（正序）',
   'songs.sort.createdDesc': '建立時間（倒序）',
   'songs.sort.default': '預設排序',
@@ -7973,6 +8087,7 @@ const zhTW: TranslationMap = {
   'settings.eq.action.exportApoPreset': '匯出 APO',
   'settings.eq.action.pasteApoPreset': '貼上 APO',
   'settings.eq.action.resetChannelBalance': '重置聲道平衡',
+  'settings.eq.action.resetDelaysOnly': '重置延遲',
   'settings.eq.action.save': '儲存',
   'settings.eq.action.showAdvanced': 'PEQ 控制台',
   'settings.eq.autoGain.adjustment': 'Auto {value}',
@@ -8035,12 +8150,33 @@ const zhTW: TranslationMap = {
   'settings.eq.channel.active': '啟用',
   'settings.eq.channel.center': '置中',
   'settings.eq.channel.constantPower': '恆定功率',
-  'settings.eq.channel.description': 'Balance 用於左右偏移；L/R Gain 用於精細校正；Mono Sum 用於單聲道檢查；Invert 用於相位檢查。',
+  'settings.eq.channel.description': 'Balance 用於左右偏移；L/R Gain 校正響度；L/R Delay 校正到達時間；Mono Sum 和 Invert 用於監聽檢查。',
+  'settings.eq.channel.group.timing': 'Timing',
   'settings.eq.channel.invertLeft': '左聲道反相',
   'settings.eq.channel.invertRight': '右聲道反相',
+  'settings.eq.channel.leftDelay': '左延遲',
   'settings.eq.channel.mono.off': '關閉',
   'settings.eq.channel.mono.sum': '合併',
+  'settings.eq.channel.rightDelay': '右延遲',
   'settings.eq.channel.title': '聲道平衡',
+  'settings.eq.channel.wizard.apply': '套用測量校準',
+  'settings.eq.channel.wizard.clear': '清空測量',
+  'settings.eq.channel.wizard.empty': '等待測量',
+  'settings.eq.channel.wizard.imageLeft': '聲像偏左',
+  'settings.eq.channel.wizard.imageRight': '聲像偏右',
+  'settings.eq.channel.wizard.leftDistance': '左距離',
+  'settings.eq.channel.wizard.leftLouder': '左邊較響',
+  'settings.eq.channel.wizard.leftSpl': '左 SPL',
+  'settings.eq.channel.wizard.monitor': '空間校準監聽',
+  'settings.eq.channel.wizard.nudge': '空間校準微調',
+  'settings.eq.channel.wizard.previewCenter': '中心檢查',
+  'settings.eq.channel.wizard.previewLeft': '左檢查',
+  'settings.eq.channel.wizard.previewRight': '右檢查',
+  'settings.eq.channel.wizard.ready': '可套用',
+  'settings.eq.channel.wizard.rightDistance': '右距離',
+  'settings.eq.channel.wizard.rightLouder': '右邊較響',
+  'settings.eq.channel.wizard.rightSpl': '右 SPL',
+  'settings.eq.channel.wizard.title': '空間校準嚮導',
   'settings.eq.comfort.direct': '原聲直通',
   'settings.eq.comfort.directDetail': 'DSP 關閉時不壓低音量、不改動取樣，適合放心聽原聲。',
   'settings.eq.comfort.risk': '需要留意電平',
@@ -8114,6 +8250,15 @@ const zhTW: TranslationMap = {
   'settings.eq.import.sourceEcho': 'ECHO JSON',
   'settings.eq.import.updateAudition': '更新試聽',
   'settings.eq.import.useSafePreamp': '使用建議餘量',
+  'settings.eq.headphoneCorrection.ab': '耳機校正 A/B',
+  'settings.eq.headphoneCorrection.compareCorrected': '校正後',
+  'settings.eq.headphoneCorrection.compareOriginal': '對比原聲',
+  'settings.eq.headphoneCorrection.convert': '轉為自訂 EQ',
+  'settings.eq.headphoneCorrection.customName': '自訂 EQ - {name}',
+  'settings.eq.headphoneCorrection.lockAria': '耳機校正 EQ 鎖定提示',
+  'settings.eq.headphoneCorrection.lockDetail': '{name} 由耳機校正管理。要手動改參數，先轉為自訂 EQ。',
+  'settings.eq.headphoneCorrection.lockedError': '這個 OPRA preset 由耳機校正管理。請先點「轉為自訂 EQ」再修改參數。',
+  'settings.eq.headphoneCorrection.managed': '由耳機校正管理',
   'settings.eq.preamp.inputSafety': 'Headroom 管理',
   'settings.eq.preamp.safeHeadroom': '安全餘量',
   'settings.eq.preset.readonly': '內建預設為唯讀。',
@@ -8606,6 +8751,8 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeSchedule.status.disabled': '關閉後仍使用上面的手動主題模式。',
   'settings.appearance.sidebar.title': '側邊欄',
   'settings.appearance.sidebar.description': '調整側邊入口的順序與顯示狀態，不會改動頁面或播放鏈路。',
+  'settings.appearance.sidebar.expand': '展開側邊欄佈局',
+  'settings.appearance.sidebar.collapse': '收起側邊欄佈局',
   'settings.appearance.sidebar.mainGroup': '主導覽',
   'settings.appearance.sidebar.utilityGroup': '底部入口',
   'settings.appearance.sidebar.reset': '恢復預設',
@@ -8624,6 +8771,10 @@ const zhTW: TranslationMap = {
   'settings.appearance.sidebar.showAria': '顯示 {label}',
   'settings.appearance.nowPlayingCoverColor.title': '播放介面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '開啟後，正在播放頁會在閒置時從小封面取樣生成輕量背景；低負載模式會自動略過。預設關閉。',
+  'settings.appearance.albumCoverShape.title': '專輯封面形狀',
+  'settings.appearance.albumCoverShape.description': '選擇專輯封面顯示為圓角或方角；此設定優先於主題預設。預設圓角。',
+  'settings.appearance.albumCoverShape.rounded': '圓角',
+  'settings.appearance.albumCoverShape.square': '方角',
   'settings.appearance.wallpaper.title': '自訂背景',
   'settings.appearance.wallpaper.description': '橫向與直向背景會分開儲存；直向視窗只會套用直向背景。支援圖片與本地影片。',
   'settings.appearance.wallpaper.choose': '選擇橫向背景',
@@ -8717,6 +8868,8 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeCustom.action.import': '匯入參數',
   'settings.appearance.themeCustom.action.reset': '重置目前自訂',
   'settings.appearance.themeCustom.action.save': '儲存自訂',
+  'settings.appearance.themeCustom.expand': '展開我的主題',
+  'settings.appearance.themeCustom.collapse': '收起我的主題',
   'settings.appearance.themeCustom.advanced.show': '展開進階設定',
   'settings.appearance.themeCustom.advanced.hide': '收起進階設定',
   'settings.appearance.themeCustom.field.appBg': '底色',
@@ -9804,6 +9957,7 @@ const jaJP: TranslationMap = {
   'folders.action.refresh': 'フォルダーを更新',
   'folders.action.remove': '削除',
   'folders.action.scan': 'スキャン',
+  'folders.action.scanChanges': '差分スキャン',
   'folders.confirm.deleteTrack': 'この音楽ファイルを削除しますか？\n{title}',
   'folders.confirm.removeRoot': '「{name}」をライブラリインデックスから削除しますか？音楽ファイルはディスク上に残ります。',
   'folders.count.tracks': '{count} 曲',
@@ -9840,6 +9994,7 @@ const jaJP: TranslationMap = {
   'folders.message.noPlayableTracks': 'このフォルダーには再生可能な曲がありません。',
   'folders.message.queuedTracks': '{count} 曲をキューに追加しました。',
   'folders.message.scanCancelled': 'スキャンをキャンセルしました。',
+  'folders.message.incrementalScanStarted': '差分スキャンを開始しました。追加と削除だけを処理します。',
   'folders.message.scanStarted': 'スキャンを開始しました。',
   'folders.metrics.duration': '再生時間',
   'folders.metrics.label': 'フォルダー指標',
@@ -9863,6 +10018,7 @@ const jaJP: TranslationMap = {
   'folders.prompt.createPlaylist': 'プレイリストがまだありません。作成する名前を入力してください:',
   'folders.queueSource.recursive': '{name} フォルダー',
   'folders.scan.progress': '{processed}/{total} ファイル、エラー {errors} 件',
+  'folders.scan.unresponsiveWarning': 'ライブラリをスキャン中です。スキャン中は一時的に応答しないことがありますが、正常です。待つか、スキャンをキャンセルしてください。',
   'folders.sidebar.kicker': 'ライブラリ',
   'folders.sidebar.title': 'フォルダー',
   'folders.sort.album': 'アルバム',
@@ -9902,6 +10058,8 @@ const jaJP: TranslationMap = {
   'route.audioSettings.label': '音声設定',
   'route.connect.description': 'DLNA / AirPlay ワイヤレス再生。',
   'route.connect.label': '接続',
+  'route.dsp.description': '信号チェーン調整ワークベンチ。',
+  'route.dsp.label': 'DSP',
   'connectPage.controls.aria': 'Connect controls',
   'connectPage.controls.disconnect': '切断',
   'connectPage.controls.pause': '一時停止',
@@ -10284,6 +10442,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.display.desktopFont': 'デスクトップ歌詞フォント',
   'lyricsSettings.display.desktopLyrics': 'デスクトップ歌詞',
   'lyricsSettings.display.desktopLyricsDescription': '独立した透明ウィンドウで現在の歌詞をデスクトップ最前面に表示します。',
+  'lyricsSettings.display.desktopOpacity': 'デスクトップ歌詞の透明度',
+  'lyricsSettings.display.desktopOpacityDescription': '現在 {opacity}%。下げると画面を遮りにくくなります。',
   'lyricsSettings.display.desktopRomanization': 'デスクトップ歌詞にローマ字を表示',
   'lyricsSettings.display.desktopTranslation': 'デスクトップ歌詞に翻訳を表示',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': 'MV で曲情報を自動表示しない',
@@ -10360,6 +10520,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.preview.secondary': 'サブ歌詞行',
   'lyricsSettings.online.autoSearch': '歌詞を自動マッチ',
   'lyricsSettings.online.autoSearchDescription': 'ローカル歌詞を常に優先します。オンライン結果はしきい値に達した場合だけ自動適用します。',
+  'lyricsSettings.online.autoSaveSidecar': 'ローカル歌詞ファイルを自動保存',
+  'lyricsSettings.online.autoSaveSidecarDescription': '既定ではオフです。オンラインまたは手動で適用した歌詞を曲と同名のサイドカーファイルとして保存し、既存の .lrc / .ttml / .txt は上書きしません。',
   'lyricsSettings.online.deepSearch': '深度優先検索',
   'lyricsSettings.online.deepSearchDescription': 'オンにすると複数のオンラインプラットフォームを並列検索し、いずれかが自動適用しきい値に達した時点で他のソースを停止して返します。',
   'lyricsSettings.online.enable': 'オンライン歌詞マッチングを有効化',
@@ -10453,6 +10615,8 @@ const jaJP: TranslationMap = {
   'mvSettings.error.noNetworkCandidates': 'ネットワーク MV 候補が見つかりません',
   'mvSettings.general.enabled': 'MV を有効化',
   'mvSettings.immersive.blur': '背景ぼかし',
+  'mvSettings.immersive.autoScale': '自動ズーム',
+  'mvSettings.immersive.autoScaleDescription': 'MV の縦横比に合わせて背景を拡大し、黒帯をできるだけ避けます。',
   'mvSettings.immersive.brightness': '背景の明るさ',
   'mvSettings.immersive.description': 'オンにすると、歌詞ページで現在の MV を背景として使います。',
   'mvSettings.immersive.dragHint': '歌詞ページの空き領域をドラッグして調整できます。',
@@ -10636,6 +10800,7 @@ const jaJP: TranslationMap = {
   'songs.search.placeholder': '曲 / アーティスト / アルバムを検索...',
   'songs.sort.album': 'アルバム順',
   'songs.sort.artist': 'アーティスト順',
+  'songs.sort.artistAlbum': 'アーティスト / アルバム順',
   'songs.sort.createdAsc': '作成日時（昇順）',
   'songs.sort.createdDesc': '作成日時（降順）',
   'songs.sort.default': 'デフォルト順',
@@ -10713,6 +10878,7 @@ const jaJP: TranslationMap = {
   'settings.eq.action.holdOriginal': '押して原音を聴く',
   'settings.eq.action.resetBand': '{frequency} をリセット',
   'settings.eq.action.resetChannelBalance': 'チャンネルバランスをリセット',
+  'settings.eq.action.resetDelaysOnly': '遅延をリセット',
   'settings.eq.action.resetEq': 'EQ をリセット',
   'settings.eq.action.save': '保存',
   'settings.eq.band.fallback': 'バンド',
@@ -10729,10 +10895,12 @@ const jaJP: TranslationMap = {
   'settings.eq.channel.bypassed': 'バイパス',
   'settings.eq.channel.center': '中央',
   'settings.eq.channel.constantPower': '定電力',
-  'settings.eq.channel.description': 'Balance は左右の定位補正、L/R Gain は細かな補正、Mono Sum はモノ確認、Invert は位相確認に使います。',
+  'settings.eq.channel.description': 'Balance は左右定位、L/R Gain は音量、L/R Delay は到達時間を補正します。Mono Sum と Invert は確認用です。',
   'settings.eq.channel.dsp': 'DSP',
+  'settings.eq.channel.group.timing': 'Timing',
   'settings.eq.channel.invertLeft': '左を反転',
   'settings.eq.channel.invertRight': '右を反転',
+  'settings.eq.channel.leftDelay': '左遅延',
   'settings.eq.channel.leftGain': '左ゲイン',
   'settings.eq.channel.leftTotal': '左合計',
   'settings.eq.channel.mono.left': '左',
@@ -10740,10 +10908,29 @@ const jaJP: TranslationMap = {
   'settings.eq.channel.mono.right': '右',
   'settings.eq.channel.mono.sum': '合成',
   'settings.eq.channel.monoMode': 'モノモード',
+  'settings.eq.channel.rightDelay': '右遅延',
   'settings.eq.channel.rightGain': '右ゲイン',
   'settings.eq.channel.rightTotal': '右合計',
   'settings.eq.channel.swap': 'L/R 交換',
   'settings.eq.channel.title': 'チャンネルバランス',
+  'settings.eq.channel.wizard.apply': '測定補正を適用',
+  'settings.eq.channel.wizard.clear': '測定をクリア',
+  'settings.eq.channel.wizard.empty': '測定待ち',
+  'settings.eq.channel.wizard.imageLeft': '定位が左寄り',
+  'settings.eq.channel.wizard.imageRight': '定位が右寄り',
+  'settings.eq.channel.wizard.leftDistance': '左距離',
+  'settings.eq.channel.wizard.leftLouder': '左が大きい',
+  'settings.eq.channel.wizard.leftSpl': '左 SPL',
+  'settings.eq.channel.wizard.monitor': '空間補正モニター',
+  'settings.eq.channel.wizard.nudge': '空間補正の微調整',
+  'settings.eq.channel.wizard.previewCenter': '中央確認',
+  'settings.eq.channel.wizard.previewLeft': '左確認',
+  'settings.eq.channel.wizard.previewRight': '右確認',
+  'settings.eq.channel.wizard.ready': '適用可',
+  'settings.eq.channel.wizard.rightDistance': '右距離',
+  'settings.eq.channel.wizard.rightLouder': '右が大きい',
+  'settings.eq.channel.wizard.rightSpl': '右 SPL',
+  'settings.eq.channel.wizard.title': '空間補正ウィザード',
   'settings.eq.curve.aria': 'ドラッグ可能な 31 バンド EQ 周波数特性',
   'settings.eq.curve.dragBand': '{frequency} EQ バンドをドラッグ',
   'settings.eq.filter.highShelf': 'ハイシェルフ',
@@ -10752,6 +10939,15 @@ const jaJP: TranslationMap = {
   'settings.eq.filter.lowPass': 'ローパス',
   'settings.eq.filter.notch': 'ノッチ',
   'settings.eq.filter.peaking': 'ピーキング',
+  'settings.eq.headphoneCorrection.ab': 'ヘッドホン補正 A/B',
+  'settings.eq.headphoneCorrection.compareCorrected': '補正後',
+  'settings.eq.headphoneCorrection.compareOriginal': '原音と比較',
+  'settings.eq.headphoneCorrection.convert': 'カスタム EQ に変換',
+  'settings.eq.headphoneCorrection.customName': 'カスタム EQ - {name}',
+  'settings.eq.headphoneCorrection.lockAria': 'ヘッドホン補正 EQ ロック',
+  'settings.eq.headphoneCorrection.lockDetail': '{name} はヘッドホン補正で管理されています。手動調整するには、先にカスタム EQ に変換してください。',
+  'settings.eq.headphoneCorrection.lockedError': 'この OPRA preset はヘッドホン補正で管理されています。先に「カスタム EQ に変換」を押してから調整してください。',
+  'settings.eq.headphoneCorrection.managed': 'ヘッドホン補正が管理中',
   'settings.eq.error.bridgeChannelBalance': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でチャンネルバランスを操作してください。',
   'settings.eq.error.bridgeControlEq': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ を操作してください。',
   'settings.eq.error.bridgeDeletePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを削除してください。',
@@ -11444,6 +11640,8 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeSchedule.status.disabled': 'オフのときは上の手動テーマ設定をそのまま使います。',
   'settings.appearance.sidebar.title': 'サイドバー',
   'settings.appearance.sidebar.description': 'サイドバー項目の順序と表示状態を調整します。ページ内容や再生経路は変更しません。',
+  'settings.appearance.sidebar.expand': 'サイドバー配置を展開',
+  'settings.appearance.sidebar.collapse': 'サイドバー配置を閉じる',
   'settings.appearance.sidebar.mainGroup': 'メインナビ',
   'settings.appearance.sidebar.utilityGroup': '下部項目',
   'settings.appearance.sidebar.reset': '初期状態に戻す',
@@ -11462,6 +11660,10 @@ const jaJP: TranslationMap = {
   'settings.appearance.sidebar.showAria': '{label} を表示',
   'settings.appearance.nowPlayingCoverColor.title': '再生画面のカバー色',
   'settings.appearance.nowPlayingCoverColor.description': '有効にすると、再生中ページがアイドル時に小さなカバー画像から軽量な背景色を抽出します。低負荷モードでは自動的にスキップします。既定はオフです。',
+  'settings.appearance.albumCoverShape.title': 'アルバムカバー形状',
+  'settings.appearance.albumCoverShape.description': 'アルバムアートを角丸または四角で表示します。この設定はテーマプリセットより優先されます。既定は角丸です。',
+  'settings.appearance.albumCoverShape.rounded': '角丸',
+  'settings.appearance.albumCoverShape.square': '四角',
   'settings.appearance.wallpaper.title': 'カスタム背景',
   'settings.appearance.wallpaper.description': '横向きと縦向きの背景を別々に保存します。縦向きウィンドウでは縦向き背景だけを適用します。画像とローカル動画に対応します。',
   'settings.appearance.wallpaper.choose': '横向き背景を選択',
@@ -11555,6 +11757,8 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeCustom.action.import': 'Import Parameters',
   'settings.appearance.themeCustom.action.reset': 'Reset Custom Colors',
   'settings.appearance.themeCustom.action.save': 'Save Custom Colors',
+  'settings.appearance.themeCustom.expand': 'Expand My Theme',
+  'settings.appearance.themeCustom.collapse': 'Collapse My Theme',
   'settings.appearance.themeCustom.advanced.show': 'Show Advanced Settings',
   'settings.appearance.themeCustom.advanced.hide': 'Hide Advanced Settings',
   'settings.appearance.themeCustom.field.appBg': 'Base',
@@ -12674,6 +12878,7 @@ const enUS: TranslationMap = {
   'folders.action.refresh': 'Refresh folders',
   'folders.action.remove': 'Remove',
   'folders.action.scan': 'Scan',
+  'folders.action.scanChanges': 'Scan changes',
   'folders.confirm.deleteTrack': 'Delete the music file?\n{title}',
   'folders.confirm.removeRoot': 'Remove "{name}" from the library index? Music files stay on disk.',
   'folders.count.tracks': '{count} tracks',
@@ -12710,6 +12915,7 @@ const enUS: TranslationMap = {
   'folders.message.noPlayableTracks': 'No playable tracks in this folder.',
   'folders.message.queuedTracks': 'Queued {count} tracks.',
   'folders.message.scanCancelled': 'Scan cancelled.',
+  'folders.message.incrementalScanStarted': 'Incremental scan started. Only additions and removals will be processed.',
   'folders.message.scanStarted': 'Scan started.',
   'folders.metrics.duration': 'Duration',
   'folders.metrics.label': 'Folder metrics',
@@ -12733,6 +12939,7 @@ const enUS: TranslationMap = {
   'folders.prompt.createPlaylist': 'No playlists yet. Enter a name to create one:',
   'folders.queueSource.recursive': '{name} folder',
   'folders.scan.progress': '{processed}/{total} files, {errors} errors',
+  'folders.scan.unresponsiveWarning': 'Library scan is running. The app may briefly become unresponsive during scanning; this is normal. Please wait or cancel the scan.',
   'folders.sidebar.kicker': 'Library',
   'folders.sidebar.title': 'Folders',
   'folders.sort.album': 'Album',
@@ -12772,6 +12979,8 @@ const enUS: TranslationMap = {
   'route.audioSettings.label': 'Audio Settings',
   'route.connect.description': 'DLNA / AirPlay wireless playback.',
   'route.connect.label': 'Connect',
+  'route.dsp.description': 'Signal-chain tuning workbench.',
+  'route.dsp.label': 'DSP',
   'connectPage.controls.aria': 'Connect controls',
   'connectPage.controls.disconnect': 'Disconnect',
   'connectPage.controls.pause': 'Pause',
@@ -13154,6 +13363,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.display.desktopFont': 'Desktop lyrics font',
   'lyricsSettings.display.desktopLyrics': 'Desktop Lyrics',
   'lyricsSettings.display.desktopLyricsDescription': 'Shows the current lyrics in an independent transparent always-on-top desktop window.',
+  'lyricsSettings.display.desktopOpacity': 'Desktop lyrics opacity',
+  'lyricsSettings.display.desktopOpacityDescription': 'Currently {opacity}%; lower it to reduce visual blocking.',
   'lyricsSettings.display.desktopRomanization': 'Show romanization in desktop lyrics',
   'lyricsSettings.display.desktopTranslation': 'Show translation in desktop lyrics',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': 'Disable MV auto track info',
@@ -13230,6 +13441,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.preview.secondary': 'Secondary lyric line',
   'lyricsSettings.online.autoSearch': 'Auto match lyrics',
   'lyricsSettings.online.autoSearchDescription': 'Local lyrics always take priority; online results are applied automatically only when they reach the threshold.',
+  'lyricsSettings.online.autoSaveSidecar': 'Auto-save local lyrics files',
+  'lyricsSettings.online.autoSaveSidecarDescription': 'Off by default; online or manually applied lyrics are saved as same-name sidecar files without overwriting existing .lrc / .ttml / .txt files.',
   'lyricsSettings.online.deepSearch': 'Deep priority search',
   'lyricsSettings.online.deepSearchDescription': 'When enabled, online sources search in parallel; the first result that reaches the auto-apply threshold stops the rest and returns immediately.',
   'lyricsSettings.online.enable': 'Enable online lyrics matching',
@@ -13323,6 +13536,8 @@ const enUS: TranslationMap = {
   'mvSettings.error.noNetworkCandidates': 'No network MV candidates found',
   'mvSettings.general.enabled': 'Enable MV',
   'mvSettings.immersive.blur': 'Glass blur',
+  'mvSettings.immersive.autoScale': 'Auto scale',
+  'mvSettings.immersive.autoScaleDescription': 'Automatically compensates for the MV aspect ratio to reduce background black bars.',
   'mvSettings.immersive.brightness': 'Background brightness',
   'mvSettings.immersive.description': 'Use the current MV as the lyrics page background.',
   'mvSettings.immersive.dragHint': 'Drag empty space on the lyrics page to fine tune it.',
@@ -13506,6 +13721,7 @@ const enUS: TranslationMap = {
   'songs.search.placeholder': 'Search songs / artists / albums...',
   'songs.sort.album': 'By album',
   'songs.sort.artist': 'By artist',
+  'songs.sort.artistAlbum': 'By artist / album',
   'songs.sort.createdAsc': 'Created time (ascending)',
   'songs.sort.createdDesc': 'Created time (descending)',
   'songs.sort.default': 'Default sort',
@@ -13604,6 +13820,7 @@ const enUS: TranslationMap = {
   'settings.eq.action.resetBand': 'Reset {frequency}',
   'settings.eq.action.resetAllGains': 'Reset all gains',
   'settings.eq.action.resetChannelBalance': 'Reset channel balance',
+  'settings.eq.action.resetDelaysOnly': 'Reset delays',
   'settings.eq.action.resetEq': 'Reset EQ',
   'settings.eq.action.resetFrequencies': 'Standard bands',
   'settings.eq.action.resetMonitorTools': 'Reset monitor tools',
@@ -13700,7 +13917,7 @@ const enUS: TranslationMap = {
   'settings.eq.channel.calibrationMode': 'Calibration mode',
   'settings.eq.channel.center': 'Center',
   'settings.eq.channel.constantPower': 'Constant Power',
-  'settings.eq.channel.description': 'Balance shifts left/right. L/R Gain fine-tunes correction. Mono Sum checks mono. Invert checks phase.',
+  'settings.eq.channel.description': 'Balance shifts left/right. L/R Gain corrects level. L/R Delay aligns arrival time. Mono Sum and Invert are monitor checks.',
   'settings.eq.channel.dsp': 'DSP',
   'settings.eq.channel.effectiveLeft': 'Effective L',
   'settings.eq.channel.effectiveRight': 'Effective R',
@@ -13708,8 +13925,10 @@ const enUS: TranslationMap = {
   'settings.eq.channel.group.gainTrim': 'Gain Trim',
   'settings.eq.channel.group.monitorTools': 'Monitor Tools',
   'settings.eq.channel.group.phaseTools': 'Phase Tools',
+  'settings.eq.channel.group.timing': 'Timing',
   'settings.eq.channel.invertLeft': 'Invert Left',
   'settings.eq.channel.invertRight': 'Invert Right',
+  'settings.eq.channel.leftDelay': 'Left Delay',
   'settings.eq.channel.leftGain': 'Left Gain',
   'settings.eq.channel.leftTotal': 'Left total',
   'settings.eq.channel.mono.left': 'Left',
@@ -13723,10 +13942,29 @@ const enUS: TranslationMap = {
   'settings.eq.channel.quick.rightSolo': 'Right Solo',
   'settings.eq.channel.quick.swapCheck': 'Swap Check',
   'settings.eq.channel.quickTools': 'Quick monitor tools',
+  'settings.eq.channel.rightDelay': 'Right Delay',
   'settings.eq.channel.rightGain': 'Right Gain',
   'settings.eq.channel.rightTotal': 'Right total',
   'settings.eq.channel.swap': 'Swap L/R',
   'settings.eq.channel.title': 'Channel Balance',
+  'settings.eq.channel.wizard.apply': 'Apply measurement',
+  'settings.eq.channel.wizard.clear': 'Clear measurement',
+  'settings.eq.channel.wizard.empty': 'Waiting',
+  'settings.eq.channel.wizard.imageLeft': 'Image pulls left',
+  'settings.eq.channel.wizard.imageRight': 'Image pulls right',
+  'settings.eq.channel.wizard.leftDistance': 'Left distance',
+  'settings.eq.channel.wizard.leftLouder': 'Left is louder',
+  'settings.eq.channel.wizard.leftSpl': 'Left SPL',
+  'settings.eq.channel.wizard.monitor': 'Spatial calibration monitor',
+  'settings.eq.channel.wizard.nudge': 'Spatial calibration nudges',
+  'settings.eq.channel.wizard.previewCenter': 'Center check',
+  'settings.eq.channel.wizard.previewLeft': 'Left check',
+  'settings.eq.channel.wizard.previewRight': 'Right check',
+  'settings.eq.channel.wizard.ready': 'Ready',
+  'settings.eq.channel.wizard.rightDistance': 'Right distance',
+  'settings.eq.channel.wizard.rightLouder': 'Right is louder',
+  'settings.eq.channel.wizard.rightSpl': 'Right SPL',
+  'settings.eq.channel.wizard.title': 'Spatial Calibration Wizard',
   'settings.eq.curve.aria': 'Draggable 31-band EQ frequency response',
   'settings.eq.curve.dragBand': 'Drag {frequency} EQ band',
   'settings.eq.curve.fineEdit': 'Shift fine edit',
@@ -13799,6 +14037,15 @@ const enUS: TranslationMap = {
   'settings.eq.filter.lowPass': 'Low pass',
   'settings.eq.filter.notch': 'Notch',
   'settings.eq.filter.peaking': 'Peaking',
+  'settings.eq.headphoneCorrection.ab': 'Headphone correction A/B',
+  'settings.eq.headphoneCorrection.compareCorrected': 'Corrected',
+  'settings.eq.headphoneCorrection.compareOriginal': 'Compare original',
+  'settings.eq.headphoneCorrection.convert': 'Convert to custom EQ',
+  'settings.eq.headphoneCorrection.customName': 'Custom EQ - {name}',
+  'settings.eq.headphoneCorrection.lockAria': 'Headphone correction EQ lock',
+  'settings.eq.headphoneCorrection.lockDetail': '{name} is managed by headphone correction. Convert to a custom EQ before editing parameters.',
+  'settings.eq.headphoneCorrection.lockedError': 'This OPRA preset is managed by headphone correction. Convert it to a custom EQ before editing parameters.',
+  'settings.eq.headphoneCorrection.managed': 'Managed by headphone correction',
   'settings.eq.level.clips': 'Clips {count}',
   'settings.eq.level.estimatedOutputPeak': 'Est. output peak',
   'settings.eq.level.headroom': 'Headroom',
@@ -14472,6 +14719,8 @@ const enUS: TranslationMap = {
   'settings.appearance.themeSchedule.status.disabled': 'When disabled, the manual theme mode above stays in effect.',
   'settings.appearance.sidebar.title': 'Sidebar',
   'settings.appearance.sidebar.description': 'Adjust the order and visibility of sidebar entries without affecting pages or playback.',
+  'settings.appearance.sidebar.expand': 'Expand sidebar layout',
+  'settings.appearance.sidebar.collapse': 'Collapse sidebar layout',
   'settings.appearance.sidebar.mainGroup': 'Main Navigation',
   'settings.appearance.sidebar.utilityGroup': 'Bottom Entries',
   'settings.appearance.sidebar.reset': 'Reset',
@@ -14583,6 +14832,8 @@ const enUS: TranslationMap = {
   'settings.appearance.themeCustom.action.import': 'Import Parameters',
   'settings.appearance.themeCustom.action.reset': 'Reset Custom Colors',
   'settings.appearance.themeCustom.action.save': 'Save Custom Colors',
+  'settings.appearance.themeCustom.expand': 'Expand My Theme',
+  'settings.appearance.themeCustom.collapse': 'Collapse My Theme',
   'settings.appearance.themeCustom.advanced.show': 'Show Advanced Settings',
   'settings.appearance.themeCustom.advanced.hide': 'Hide Advanced Settings',
   'settings.appearance.themeCustom.field.appBg': 'Base',
@@ -14698,6 +14949,10 @@ const enUS: TranslationMap = {
   'settings.appearance.artistAvatars.message.queued': 'Queued {queued} artist avatars. Skipped {skipped}.',
   'settings.appearance.artistAvatars.title': 'Artist Avatars',
   'settings.appearance.artistAvatars.toggle': 'Auto Fetch Artist Avatars',
+  'settings.appearance.albumCoverShape.title': 'Album Cover Shape',
+  'settings.appearance.albumCoverShape.description': 'Show album artwork with rounded or square corners. This preference overrides theme presets. Rounded is the default.',
+  'settings.appearance.albumCoverShape.rounded': 'Rounded',
+  'settings.appearance.albumCoverShape.square': 'Square',
   'settings.appearance.font.choose': 'Choose',
   'settings.appearance.font.chinese.description': 'Used first when the main font does not include Chinese glyphs.',
   'settings.appearance.font.chinese.title': 'Chinese Font',
@@ -14710,7 +14965,7 @@ const enUS: TranslationMap = {
   'settings.appearance.lineHeight.description': 'Adjust default UI text spacing for denser or airier reading.',
   'settings.appearance.lineHeight.title': 'Interface Line Height',
   'settings.appearance.reset.action': 'Reset',
-  'settings.appearance.reset.description': 'Restore Monocraft, ZCOOL Happy, base size, line height, and text depth.',
+  'settings.appearance.reset.description': 'Restore Monocraft, ZCOOL Happy, base size, line height, text depth, and rounded covers.',
   'settings.appearance.reset.title': 'Appearance Defaults',
   'settings.appearance.textDepth.description': 'Adjust interface text darkness. Lower values make text lighter.',
   'settings.appearance.textDepth.title': 'Text Depth',

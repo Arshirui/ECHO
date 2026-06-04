@@ -1,8 +1,10 @@
 import type { AudioLevelTelemetry, ChannelBalanceState } from '../../../shared/types/audio';
 import {
   channelBalanceMaxBalance,
+  channelBalanceMaxDelayMs,
   channelBalanceMaxGainDb,
   channelBalanceMinBalance,
+  channelBalanceMinDelayMs,
   channelBalanceMinGainDb,
 } from '../../../shared/types/audio';
 import type { EqBand, EqFilterType, EqState } from '../../../shared/types/eq';
@@ -249,6 +251,16 @@ const presetMetadataMap: Record<string, PresetMetadata> = {
   'harman-in-ear': targetMetadata('settings.eq.preset.meta.type.harmanInEar'),
   'diffuse-field': targetMetadata('settings.eq.preset.meta.type.diffuseField'),
   'bk-room-curve': targetMetadata('settings.eq.preset.meta.type.bkRoomCurve'),
+  'harman-over-ear-2013': targetMetadata('settings.eq.preset.meta.type.harmanTarget'),
+  'harman-over-ear-2015': targetMetadata('settings.eq.preset.meta.type.harmanTarget'),
+  'harman-over-ear-2018-no-bass': targetMetadata('settings.eq.preset.meta.type.harmanTarget'),
+  'harman-in-ear-2016': targetMetadata('settings.eq.preset.meta.type.harmanInEar'),
+  'harman-in-ear-2017': targetMetadata('settings.eq.preset.meta.type.harmanInEar'),
+  'harman-in-ear-2019-no-bass': targetMetadata('settings.eq.preset.meta.type.harmanInEar'),
+  'harman-speaker-room-2013': targetMetadata('settings.eq.preset.meta.type.bkRoomCurve'),
+  'diffuse-field-iso-11904-1': targetMetadata('settings.eq.preset.meta.type.diffuseField'),
+  'diffuse-field-gras-kemar': targetMetadata('settings.eq.preset.meta.type.diffuseField'),
+  'diffuse-field-5128': targetMetadata('settings.eq.preset.meta.type.diffuseField'),
   'studio-neutral': utilityMetadata('settings.eq.preset.meta.type.studioNeutral'),
   'classic-smiley': genreMetadata('settings.eq.preset.meta.type.classicSmiley'),
   'vinyl-warmth': genreMetadata('settings.eq.preset.meta.type.vinylWarmth'),
@@ -501,6 +513,12 @@ export const clampChannelBalancePatch = (patch: Partial<ChannelBalanceState>): P
 
   if (typeof nextPatch.rightGainDb === 'number') {
     nextPatch.rightGainDb = clamp(nextPatch.rightGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb);
+  }
+  if (typeof nextPatch.leftDelayMs === 'number') {
+    nextPatch.leftDelayMs = clamp(nextPatch.leftDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs);
+  }
+  if (typeof nextPatch.rightDelayMs === 'number') {
+    nextPatch.rightDelayMs = clamp(nextPatch.rightDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs);
   }
 
   return nextPatch;

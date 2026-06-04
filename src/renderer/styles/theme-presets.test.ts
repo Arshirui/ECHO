@@ -62,6 +62,9 @@ describe('theme presets stylesheet', () => {
     expect(css).toContain('html[data-theme-preset="FINAL"] .player-cover[data-empty="true"] .player-cover-disc');
     expect(css).toContain('html[data-theme-preset="FINAL"] .player-bar .progress-track::before');
     expect(css).toMatch(
+      /html\[data-theme-preset="FINAL"\] \.player-bar \{[\s\S]*?overflow: visible;/,
+    );
+    expect(css).toMatch(
       /html\[data-theme-preset="FINAL"\] \.player-bar \.progress-track,\r?\nhtml\[data-theme-preset="FINAL"\] \.player-bar \.progress-track\[data-waveform="true"\] \{\r?\n  height: 9px;/,
     );
     expect(css).toMatch(
@@ -195,11 +198,17 @@ describe('theme presets stylesheet', () => {
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-back-button {\n  position: relative;\n  z-index: 80;');
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-line[data-active="true"] span');
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-track-header');
+    expect(css).toMatch(
+      /html\[data-theme-preset="FINAL"\] \.app-shell--lyrics-player-drawer \.lyrics-page\[data-view-mode="lyrics"\] > \.lyrics-track-header-floating \{\r?\n  border-color: transparent !important;\r?\n  background: transparent !important;\r?\n  box-shadow: none !important;/,
+    );
     expect(css).toContain('html[data-theme-preset="FINAL"] .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled="false"]) .lyrics-back-button {\n  position: absolute;\n  top: max(18px, calc(var(--titlebar-height) + 8px));\n  left: 22px;\n  z-index: 80;');
     expect(css).toContain('pointer-events: auto;');
     expect(css).toContain('-webkit-app-region: no-drag !important;');
     expect(css).toContain('html[data-theme-preset="FINAL"] .app-shell:not(.app-shell--lyrics-player-drawer):has(.lyrics-page .lyrics-mv-panel[data-mv-enabled="false"]) .player-bar');
     expect(css).toContain('/* FINAL lyrics transport repair: keep the bottom deck compact and prevent the page header from colliding with it. */');
+    expect(css).toMatch(
+      /html\[data-theme-preset="FINAL"\] \.app-shell:not\(\.app-shell--wallpaper\):not\(\.app-shell--lyrics-player-drawer\) \.player-bar \{[\s\S]*?overflow: visible;/,
+    );
     expect(css).toMatch(
       /html\[data-theme-preset="FINAL"\] \.app-shell:not\(\.app-shell--lyrics-player-drawer\):has\(\.lyrics-page \.lyrics-mv-panel\[data-mv-enabled="false"\]\) \.lyrics-track-header \{\r?\n  display: none !important;/,
     );
@@ -241,6 +250,11 @@ describe('theme presets stylesheet', () => {
     expect(css).toContain('overscroll-behavior: contain;');
     expect(css).toContain('html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .media-wall-scroll-shell {');
     expect(css).toContain('scrollbar-gutter: stable;');
+    expect(css).toContain('overflow-anchor: none;');
+    expect(css).toContain('html[data-theme-preset="FINAL"] .artists-page .artist-wall > .artist-card {\n  overflow-anchor: none;');
+    expect(css).toContain('html[data-theme-preset="FINAL"] .artists-page .artist-wall :is(');
+    expect(css).toContain('.artist-avatar[data-visual="avatar"],');
+    expect(css).toContain('clip-path: none !important;');
   });
 
   it('keeps the FINAL hero character from being hard-cropped', () => {

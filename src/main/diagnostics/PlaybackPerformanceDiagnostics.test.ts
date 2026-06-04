@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { beginMainBackgroundTask, getPlaybackPerformanceSnapshot, runPlaybackPerformanceStepSync } from './PlaybackPerformanceDiagnostics';
+import {
+  beginMainBackgroundTask,
+  getPlaybackPerformanceSnapshot,
+  recordIpcMainHandlerDuration,
+  runPlaybackPerformanceStepSync,
+} from './PlaybackPerformanceDiagnostics';
 
 describe('PlaybackPerformanceDiagnostics', () => {
   afterEach(() => {
@@ -39,5 +44,22 @@ describe('PlaybackPerformanceDiagnostics', () => {
       lastBackgroundTaskDurationMs: 4800,
       lastBackgroundTaskAgeMs: 200,
     });
+  });
+
+  it('keeps a recent slow IPC handler in the performance snapshot', () => {
+    let now = 10_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    recordIpcMainHandlerDuration('library:scan-folder', 420);
+    now = 10_250;
+
+    expect(getPlaybackPerformanceSnapshot()).toMatchObject({
+      lastSlowIpcChannel: 'library:scan-folder',
+      lastSlowIpcDurationMs: 420,
+      lastSlowIpcAgeMs: 250,
+      lastSlowIpcFailed: false,
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[ipc-perf] library:scan-folder 420ms SLOW'));
   });
 });

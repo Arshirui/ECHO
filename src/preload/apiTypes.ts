@@ -23,6 +23,14 @@ import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBr
 import type { AppCacheInventory, CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus, ConnectStartRequest } from '../shared/types/connect';
 import type {
+  OpraHeadphoneCorrectionApplyRequest,
+  OpraHeadphoneCorrectionApplyResult,
+  OpraHeadphoneCorrectionBrowseRequest,
+  OpraHeadphoneCorrectionBrowseResult,
+  OpraHeadphoneCorrectionSearchRequest,
+  OpraHeadphoneCorrectionSearchResult,
+} from '../shared/types/opra';
+import type {
   EqBindProfileRequest,
   EqPreset,
   EqPresetImportPreviewResult,
@@ -112,6 +120,8 @@ import type {
   BpmAnalysisStartOptions,
   ReplayGainAnalysisJobStatus,
   ReplayGainAnalysisStartOptions,
+  LyricsBackfillJobStatus,
+  LyricsBackfillStartOptions,
   LyricsBackgroundCoverResult,
   NetworkApplyOptions,
   NetworkApplyResult,
@@ -357,6 +367,7 @@ export type EchoApi = {
     openLibraryFolderPath: (request: LibraryFolderPathRequest) => Promise<void>;
     removeFolder: (folderId: string) => Promise<void>;
     scanFolder: (folderId: string) => Promise<LibraryScanStatus>;
+    scanFolderChanges: (folderId: string) => Promise<LibraryScanStatus>;
     rescanEmbeddedTags: (mode: Exclude<LibraryScanMode, 'normal'>) => Promise<LibraryScanStatus[]>;
     getScanStatus: (jobId: string) => Promise<LibraryScanStatus>;
     cancelScan: (jobId: string) => Promise<LibraryScanStatus>;
@@ -497,6 +508,10 @@ export type EchoApi = {
     getBpmAnalysisStatus: (jobId: string) => Promise<BpmAnalysisJobStatus>;
     startReplayGainAnalysis: (options?: ReplayGainAnalysisStartOptions) => Promise<ReplayGainAnalysisJobStatus>;
     getReplayGainAnalysisStatus: (jobId: string) => Promise<ReplayGainAnalysisJobStatus>;
+    startLyricsBackfill: (options?: LyricsBackfillStartOptions) => Promise<LyricsBackfillJobStatus>;
+    getLyricsBackfillStatus: (jobId: string) => Promise<LyricsBackfillJobStatus>;
+    getCurrentLyricsBackfillStatus: () => Promise<LyricsBackfillJobStatus | null>;
+    cancelLyricsBackfill: (jobId: string) => Promise<LyricsBackfillJobStatus>;
   };
   libraryLab: {
     setWatcherEnabled: (enabled: boolean) => Promise<LibraryLabState>;
@@ -790,6 +805,9 @@ export type EchoApi = {
     previewImportPreset: () => Promise<EqPresetImportPreviewResult | null>;
     importPreset: () => Promise<EqPresetImportResult | null>;
     deletePreset: (presetId: string) => Promise<EqPreset[]>;
+    browseHeadphoneCorrections: (request: OpraHeadphoneCorrectionBrowseRequest) => Promise<OpraHeadphoneCorrectionBrowseResult>;
+    searchHeadphoneCorrections: (request: OpraHeadphoneCorrectionSearchRequest) => Promise<OpraHeadphoneCorrectionSearchResult>;
+    applyHeadphoneCorrection: (request: OpraHeadphoneCorrectionApplyRequest) => Promise<OpraHeadphoneCorrectionApplyResult>;
     listProfiles: () => Promise<EqProfile[]>;
     saveProfile: (request: EqSaveProfileRequest) => Promise<EqProfile>;
     applyProfile: (profileId: string) => Promise<EqState>;

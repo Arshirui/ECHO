@@ -1263,6 +1263,37 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: 41,
+    apply: (database) => {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS lyrics_backfill_jobs (
+          id TEXT PRIMARY KEY,
+          mode TEXT NOT NULL,
+          status TEXT NOT NULL,
+          phase TEXT NOT NULL,
+          status_json TEXT NOT NULL,
+          options_json TEXT NOT NULL,
+          target_ids_json TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          finished_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_lyrics_backfill_jobs_status_updated
+          ON lyrics_backfill_jobs(status, updated_at);
+
+        CREATE TABLE IF NOT EXISTS lyrics_backfill_job_attempts (
+          job_id TEXT NOT NULL,
+          track_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'processed',
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (job_id, track_id),
+          FOREIGN KEY (job_id) REFERENCES lyrics_backfill_jobs(id) ON DELETE CASCADE
+        );
+      `);
+    },
+  },
 ];
 
 export const runMigrations = (database: EchoDatabase): MigrationRunResult => {

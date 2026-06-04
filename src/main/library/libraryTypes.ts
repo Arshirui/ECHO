@@ -81,6 +81,9 @@ import type {
   ReplayGainAnalysisJobStatus,
   ReplayGainAnalysisResult,
   ReplayGainAnalysisStartOptions,
+  LyricsBackfillJobStatus,
+  LyricsBackfillMode,
+  LyricsBackfillStartOptions,
   ArtistInsights,
   ArtistInsightsOptions,
   ArtistInsightEdge,
@@ -172,6 +175,9 @@ export type {
   ReplayGainAnalysisJobStatus,
   ReplayGainAnalysisResult,
   ReplayGainAnalysisStartOptions,
+  LyricsBackfillJobStatus,
+  LyricsBackfillMode,
+  LyricsBackfillStartOptions,
   ArtistInsights,
   ArtistInsightsOptions,
   ArtistInsightEdge,
@@ -386,7 +392,10 @@ export type LibraryScanMode = 'normal' | 'embedded-tags-all' | 'embedded-tags-mi
 
 export type LibraryScanOptions = {
   mode?: LibraryScanMode;
+  changesOnly?: boolean;
   deferGroupingRefresh?: boolean;
+  skipDeferredGroupingRefresh?: boolean;
+  reduceScanPressure?: boolean;
 };
 
 export type ScanResultCounts = {

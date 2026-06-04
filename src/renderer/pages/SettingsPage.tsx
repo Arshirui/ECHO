@@ -104,10 +104,10 @@ import type {
   DuplicateTrackIndexSummary,
   LibraryDatabaseProtectionStatus,
   LibraryScanStatus,
+  LyricsBackfillJobStatus,
   ReplayGainAnalysisJobStatus,
 } from '../../shared/types/library';
 import type { UpdateStatus } from '../../shared/types/updates';
-import { EqPanel } from '../components/audio/EqPanel';
 import { LibraryDiagnosticsPanel } from '../components/library/LibraryDiagnosticsPanel';
 import { LibraryHealthReportPanel } from '../components/library/LibraryHealthReportPanel';
 import { LibraryFoldersPanel } from '../components/library/LibraryFoldersPanel';
@@ -813,6 +813,8 @@ const defaultSettingsChannelBalance: ChannelBalanceState = {
   balance: 0,
   leftGainDb: 0,
   rightGainDb: 0,
+  leftDelayMs: 0,
+  rightDelayMs: 0,
   swapLeftRight: false,
   monoMode: 'off',
   invertLeft: false,
@@ -825,6 +827,8 @@ const hasNonMonoChannelBalanceEffect = (state: ChannelBalanceState): boolean =>
   Math.abs(state.balance) > 0.001 ||
   Math.abs(state.leftGainDb) > 0.001 ||
   Math.abs(state.rightGainDb) > 0.001 ||
+  Math.abs(state.leftDelayMs ?? 0) > 0.001 ||
+  Math.abs(state.rightDelayMs ?? 0) > 0.001 ||
   state.swapLeftRight ||
   state.invertLeft ||
   state.invertRight ||
@@ -898,6 +902,8 @@ const sidebarSettingsCopy = {
   mainGroupKey: 'settings.appearance.sidebar.mainGroup',
   utilityGroupKey: 'settings.appearance.sidebar.utilityGroup',
   resetKey: 'settings.appearance.sidebar.reset',
+  expandKey: 'settings.appearance.sidebar.expand',
+  collapseKey: 'settings.appearance.sidebar.collapse',
   visibleKey: 'settings.appearance.sidebar.visible',
   hiddenKey: 'settings.appearance.sidebar.hidden',
   fixedKey: 'settings.appearance.sidebar.fixed',
@@ -913,6 +919,7 @@ const sidebarSettingsRouteItems: SidebarSettingsRouteItem[] = [
   { id: 'folders', labelKey: 'route.folders.label', placement: 'main' },
   { id: 'remote', labelKey: 'route.remote.label', placement: 'main' },
   { id: 'connect', labelKey: 'route.connect.label', placement: 'main' },
+  { id: 'dsp', labelKey: 'route.dsp.label', placement: 'main' },
   { id: 'streaming', labelKey: 'route.streaming.label', placement: 'main' },
   { id: 'queue', labelKey: 'route.queue.label', placement: 'main' },
   { id: 'history', labelKey: 'route.history.label', placement: 'main' },
@@ -3991,6 +3998,8 @@ export const SettingsPage = (): JSX.Element => {
   const sidebarRouteOrder = useMemo(() => normalizeSidebarRouteOrder(appSettings?.sidebarRouteOrder), [appSettings?.sidebarRouteOrder]);
   const sidebarHiddenRouteIds = useMemo(() => normalizeSidebarHiddenRouteIds(appSettings?.sidebarHiddenRouteIds), [appSettings?.sidebarHiddenRouteIds]);
   const sidebarHiddenRouteIdSet = useMemo(() => new Set(sidebarHiddenRouteIds), [sidebarHiddenRouteIds]);
+  const sidebarLayoutExpanded = appSettings?.appearanceSidebarLayoutExpanded === true;
+  const sidebarLayoutSummary = sidebarHiddenRouteIds.length > 0 ? t('settings.appearance.sidebar.summary.hidden', { count: sidebarHiddenRouteIds.length }) : t('settings.appearance.sidebar.summary.allVisible');
   const sidebarSettingsGroups = useMemo(() => {
     const groups: Record<SidebarSettingsRouteItem['placement'], SidebarSettingsRouteItem[]> = {
       main: [],
@@ -4090,6 +4099,10 @@ export const SettingsPage = (): JSX.Element => {
   const [replayGainAnalysisJob, setReplayGainAnalysisJob] = useState<ReplayGainAnalysisJobStatus | null>(null);
   const [replayGainAnalysisBusy, setReplayGainAnalysisBusy] = useState(false);
   const [replayGainAnalysisMessage, setReplayGainAnalysisMessage] = useState<string | null>(null);
+  const [lyricsBackfillJob, setLyricsBackfillJob] = useState<LyricsBackfillJobStatus | null>(null);
+  const [lyricsBackfillBusy, setLyricsBackfillBusy] = useState(false);
+  const [lyricsBackfillMessage, setLyricsBackfillMessage] = useState<string | null>(null);
+  const lyricsBackfillPollGenerationRef = useRef(0);
   const [playbackAdvancedPanelExpanded, setPlaybackAdvancedPanelExpanded] = useState(() =>
     readBooleanStoragePreference(playbackAdvancedPanelExpandedStorageKey, false),
   );
@@ -4655,6 +4668,28 @@ export const SettingsPage = (): JSX.Element => {
         ],
       },
       {
+        id: 'row-album-cover-shape',
+        sectionKey: 'appearance',
+        targetId: 'settings-row-album-cover-shape',
+        title: t('settings.appearance.albumCoverShape.title'),
+        description: t('settings.appearance.albumCoverShape.description'),
+        terms: [
+          t('settings.appearance.albumCoverShape.title'),
+          t('settings.appearance.albumCoverShape.description'),
+          t('settings.appearance.albumCoverShape.rounded'),
+          t('settings.appearance.albumCoverShape.square'),
+          'album cover shape',
+          'cover radius',
+          'rounded cover',
+          'square cover',
+          '专辑封面',
+          '封面圆角',
+          '封面方角',
+          '方角',
+          '圆角',
+        ],
+      },
+      {
         id: 'row-library-folders',
         sectionKey: 'library',
         targetId: 'settings-row-library-folders',
@@ -4698,6 +4733,27 @@ export const SettingsPage = (): JSX.Element => {
           'missing cover',
           'fallback metadata',
           'network candidate',
+        ],
+      },
+      {
+        id: 'row-library-lyrics-backfill',
+        sectionKey: 'library',
+        targetId: 'settings-row-library-lyrics-backfill',
+        title: '\u4e00\u952e\u6b4c\u8bcd\u8865\u5168',
+        description: '\u540e\u53f0\u626b\u63cf\u7f3a\u5931\u6b4c\u8bcd\u5e76\u5206\u6279\u8865\u5168\uff0c\u5feb\u901f\u6a21\u5f0f\u4f18\u5148\u7f51\u6613\u3001QQ\u3001LRCLIB \u7b49\u9ad8\u547d\u4e2d\u6e90\u3002',
+        terms: [
+          '\u4e00\u952e\u6b4c\u8bcd\u8865\u5168',
+          '\u6b4c\u8bcd\u8865\u5168',
+          '\u7f3a\u5931\u6b4c\u8bcd',
+          '\u6279\u91cf\u6b4c\u8bcd',
+          '\u6b4c\u8bcd\u626b\u63cf',
+          '\u8fdb\u5ea6\u6761',
+          'lyrics backfill',
+          'lyrics completion',
+          'missing lyrics',
+          'batch lyrics',
+          'lrclib',
+          'amll',
         ],
       },
       {
@@ -6776,6 +6832,10 @@ export const SettingsPage = (): JSX.Element => {
     });
   }, [patchAppSettings]);
 
+  const handleSidebarLayoutToggle = useCallback((): void => {
+    patchAppSettings({ appearanceSidebarLayoutExpanded: !sidebarLayoutExpanded });
+  }, [patchAppSettings, sidebarLayoutExpanded]);
+
   const applyMiniPlayerState = useCallback(
     (state: MiniPlayerState): void => {
       setAppSettings((current) => (current ? { ...current, ...state.settings } : current));
@@ -7294,6 +7354,10 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleOpenPluginsPage = (): void => {
     window.dispatchEvent(new Event('app:navigate:plugins'));
+  };
+
+  const handleOpenDspPage = (): void => {
+    window.dispatchEvent(new Event('app:navigate:dsp'));
   };
 
   const handleOpenPluginDirectory = async (): Promise<void> => {
@@ -7848,6 +7912,9 @@ export const SettingsPage = (): JSX.Element => {
     pendingCacheDirectory === undefined ? null : pendingCacheDirectory ?? defaultCacheDirectory;
   const currentDownloadDirectoryLabel = downloadSettings?.outputDirectory ?? '尚未选择下载文件夹';
   const downloadsFeatureUnlocked = appSettings?.downloadsFeatureUnlocked === true;
+  const networkMetadataEnabled = appSettings?.networkMetadataEnabled ?? true;
+  const lyricsBackfillAutoAcceptScore = appSettings?.lyricsBackfillAutoAcceptScore ?? 0.45;
+  const lyricsBackfillAutoAcceptPercent = Math.round(lyricsBackfillAutoAcceptScore * 100);
 
   const handleDownloadFeatureUnlock = (): void => {
     if (!isDownloadFeatureUnlockCode(downloadUnlockInput)) {
@@ -7906,6 +7973,34 @@ export const SettingsPage = (): JSX.Element => {
       : artistImageProgress?.running
         ? '运行中'
         : '空闲';
+
+  const lyricsBackfillRunning = lyricsBackfillJob?.status === 'queued' || lyricsBackfillJob?.status === 'running';
+  const lyricsBackfillProgressTotal = Math.max(lyricsBackfillJob?.totalTracks ?? 0, 1);
+  const lyricsBackfillProgressDone = Math.max(
+    0,
+    Math.min(lyricsBackfillProgressTotal, lyricsBackfillJob?.processedTracks ?? 0),
+  );
+  const lyricsBackfillProgressPercent =
+    lyricsBackfillJob && lyricsBackfillJob.totalTracks > 0
+      ? Math.max(0, Math.min(100, Math.round((lyricsBackfillProgressDone / lyricsBackfillProgressTotal) * 100)))
+      : lyricsBackfillJob?.phase === 'collecting'
+        ? 4
+        : 0;
+  const lyricsBackfillStatusLabel = !lyricsBackfillJob
+    ? '未开始'
+    : lyricsBackfillJob.playbackThrottled
+      ? '播放中，降速补全'
+      : lyricsBackfillJob.phase === 'collecting'
+      ? `筛选缺失歌词 · 已检查 ${lyricsBackfillJob.scannedTracks} 首`
+      : lyricsBackfillJob.status === 'completed'
+        ? '已完成'
+        : lyricsBackfillJob.status === 'cancelled'
+          ? '已取消'
+          : lyricsBackfillJob.status === 'failed'
+            ? '失败'
+            : lyricsBackfillJob.mode === 'complete'
+              ? '完整补全中'
+              : '快速补全中';
 
   const handleDownloadDirectoryChoose = async (): Promise<void> => {
     try {
@@ -8719,6 +8814,158 @@ export const SettingsPage = (): JSX.Element => {
       setReplayGainAnalysisBusy(false);
       setReplayGainAnalysisMessage(null);
       setError(analysisError instanceof Error ? analysisError.message : String(analysisError));
+    }
+  };
+
+  const formatLyricsBackfillMessage = (status: LyricsBackfillJobStatus): string => {
+    if (status.phase === 'collecting') {
+      return `正在筛选缺失歌词：已检查 ${status.scannedTracks} 首`;
+    }
+
+    if (status.status === 'completed') {
+      return `歌词补全完成：命中 ${status.matchedTracks} 首，未找到 ${status.notFoundTracks} 首，跳过已有 ${status.alreadyCachedTracks} 首`;
+    }
+
+    if (status.status === 'cancelled') {
+      return `歌词补全已取消：已处理 ${status.processedTracks}/${status.totalTracks} 首`;
+    }
+
+    if (status.status === 'failed') {
+      return `歌词补全失败：已处理 ${status.processedTracks}/${status.totalTracks} 首，失败 ${status.errorCount} 首`;
+    }
+
+    return `歌词补全中：${status.processedTracks}/${status.totalTracks}，命中 ${status.matchedTracks} 首`;
+  };
+
+  const pollLyricsBackfillJob = async (jobId: string, generation: number): Promise<void> => {
+    const library = getLibraryBridge();
+    if (!library?.getLyricsBackfillStatus) {
+      return;
+    }
+
+    for (;;) {
+      if (lyricsBackfillPollGenerationRef.current !== generation) {
+        return;
+      }
+
+      const status = await library.getLyricsBackfillStatus(jobId);
+      if (lyricsBackfillPollGenerationRef.current !== generation) {
+        return;
+      }
+
+      setLyricsBackfillJob(status);
+      setLyricsBackfillMessage(formatLyricsBackfillMessage(status));
+
+      if (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') {
+        setLyricsBackfillBusy(false);
+        window.dispatchEvent(new Event('library:changed'));
+        return;
+      }
+
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 700);
+      });
+    }
+  };
+
+  const startLyricsBackfillPolling = (jobId: string): void => {
+    const generation = lyricsBackfillPollGenerationRef.current + 1;
+    lyricsBackfillPollGenerationRef.current = generation;
+    void pollLyricsBackfillJob(jobId, generation).catch((lyricsError) => {
+      if (lyricsBackfillPollGenerationRef.current !== generation) {
+        return;
+      }
+
+      setLyricsBackfillBusy(false);
+      setError(lyricsError instanceof Error ? lyricsError.message : String(lyricsError));
+    });
+  };
+
+  useEffect(() => {
+    let disposed = false;
+    const library = getLibraryBridge();
+    if (!library?.getCurrentLyricsBackfillStatus) {
+      return () => {
+        disposed = true;
+        lyricsBackfillPollGenerationRef.current += 1;
+      };
+    }
+
+    const restore = async (): Promise<void> => {
+      try {
+        const status = await library.getCurrentLyricsBackfillStatus();
+        if (disposed || !status) {
+          return;
+        }
+
+        setLyricsBackfillJob(status);
+        setLyricsBackfillMessage(formatLyricsBackfillMessage(status));
+        const running = status.status === 'queued' || status.status === 'running';
+        setLyricsBackfillBusy(running);
+        if (running) {
+          startLyricsBackfillPolling(status.id);
+        }
+      } catch (lyricsError) {
+        if (!disposed) {
+          setError(lyricsError instanceof Error ? lyricsError.message : String(lyricsError));
+        }
+      }
+    };
+
+    void restore();
+
+    return () => {
+      disposed = true;
+      lyricsBackfillPollGenerationRef.current += 1;
+    };
+  }, []);
+
+  const handleStartLyricsBackfill = async (mode: 'quick' | 'complete'): Promise<void> => {
+    const library = getLibraryBridge();
+
+    if (!library?.startLyricsBackfill) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to backfill lyrics.');
+      return;
+    }
+
+    try {
+      setLyricsBackfillBusy(true);
+      setLyricsBackfillMessage(null);
+      setError(null);
+      const job = await library.startLyricsBackfill({
+        mode,
+        limit: 10000,
+        concurrency: mode === 'complete' ? 6 : 18,
+        autoAcceptScore: lyricsBackfillAutoAcceptScore,
+      });
+      setLyricsBackfillJob(job);
+      setLyricsBackfillMessage(formatLyricsBackfillMessage(job));
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+        setLyricsBackfillBusy(false);
+        return;
+      }
+      startLyricsBackfillPolling(job.id);
+    } catch (lyricsError) {
+      setLyricsBackfillBusy(false);
+      setLyricsBackfillMessage(null);
+      setError(lyricsError instanceof Error ? lyricsError.message : String(lyricsError));
+    }
+  };
+
+  const handleCancelLyricsBackfill = async (): Promise<void> => {
+    const library = getLibraryBridge();
+    if (!library?.cancelLyricsBackfill || !lyricsBackfillJob) {
+      return;
+    }
+
+    try {
+      const status = await library.cancelLyricsBackfill(lyricsBackfillJob.id);
+      lyricsBackfillPollGenerationRef.current += 1;
+      setLyricsBackfillJob(status);
+      setLyricsBackfillMessage(formatLyricsBackfillMessage(status));
+      setLyricsBackfillBusy(false);
+    } catch (lyricsError) {
+      setError(lyricsError instanceof Error ? lyricsError.message : String(lyricsError));
     }
   };
 
@@ -9619,6 +9866,8 @@ export const SettingsPage = (): JSX.Element => {
     mainGroup: t(sidebarSettingsCopy.mainGroupKey),
     utilityGroup: t(sidebarSettingsCopy.utilityGroupKey),
     reset: t(sidebarSettingsCopy.resetKey),
+    expand: t(sidebarSettingsCopy.expandKey),
+    collapse: t(sidebarSettingsCopy.collapseKey),
     visible: t(sidebarSettingsCopy.visibleKey),
     hidden: t(sidebarSettingsCopy.hiddenKey),
     fixed: t(sidebarSettingsCopy.fixedKey),
@@ -9838,6 +10087,22 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() =>
                     patchAppSettings({
                       playerWaveformProgressEnabled: !(appSettings?.playerWaveformProgressEnabled ?? false),
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-signal-path-control"
+                highlighted={highlightedSettingId === 'settings-row-signal-path-control'}
+                title="底栏信号路径"
+                description="在底部播放栏显示 Signal Path 入口。默认关闭，歌词页始终隐藏。"
+              >
+                <ToggleButton
+                  active={appSettings?.signalPathControlEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      signalPathControlEnabled: !(appSettings?.signalPathControlEnabled ?? false),
                     })
                   }
                 />
@@ -11760,7 +12025,44 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={SlidersHorizontal} id="eq" title={t('settings.nav.eq.label')}>
-              <EqPanel audioStatus={status} onAudioStatusRefresh={refreshStatus} />
+              <SettingRow
+                title="DSP 工作台"
+                description="EQ、余量、声道与输出保护已经搬到侧栏里的调音工作区。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--dsp-workbench">
+                  <div className="settings-status-grid settings-status-grid--audio">
+                    <span>
+                      <em>Signal path</em>
+                      <strong>{status?.dspActive ? 'DSP path' : 'Native direct'}</strong>
+                    </span>
+                    <span>
+                      <em>EQ</em>
+                      <strong>{status?.eqEnabled ? 'Enabled' : 'Bypassed'}</strong>
+                    </span>
+                    <span>
+                      <em>Preset</em>
+                      <strong>{status?.eqPresetName ?? 'Flat'}</strong>
+                    </span>
+                    <span>
+                      <em>Safety</em>
+                      <strong>{status?.clippingRisk ? 'Headroom risk' : 'Protected'}</strong>
+                    </span>
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left">
+                    <button className="settings-action-button" type="button" onClick={handleOpenDspPage}>
+                      <SlidersHorizontal size={15} />
+                      打开 DSP 工作台
+                    </button>
+                    <button className="settings-action-button" type="button" onClick={() => void refreshStatus()}>
+                      <RefreshCw size={15} />
+                      刷新状态
+                    </button>
+                  </div>
+                  <p className="settings-inline-note">
+                    这里保留状态摘要；具体调音请从左侧 DSP 进入，布局更接近 Roon 的链路式工作流。
+                  </p>
+                </div>
+              </SettingRow>
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Palette} id="appearance" title={t('settings.nav.appearance.label')}>
@@ -11829,70 +12131,82 @@ export const SettingsPage = (): JSX.Element => {
               >
                 <div className="settings-sidebar-layout-panel">
                   <div className="settings-sidebar-layout-toolbar">
-                    <span>{sidebarHiddenRouteIds.length > 0 ? t('settings.appearance.sidebar.summary.hidden', { count: sidebarHiddenRouteIds.length }) : t('settings.appearance.sidebar.summary.allVisible')}</span>
+                    <button
+                      aria-expanded={sidebarLayoutExpanded}
+                      className="settings-sidebar-layout-toggle"
+                      type="button"
+                      disabled={!appSettings}
+                      onClick={handleSidebarLayoutToggle}
+                    >
+                      <ChevronDown size={16} />
+                      <span>{sidebarLayoutSummary}</span>
+                      <em>{sidebarLayoutExpanded ? sidebarSettingsText.collapse : sidebarSettingsText.expand}</em>
+                    </button>
                     <button className="settings-action-button" type="button" disabled={!appSettings} onClick={handleSidebarRoutesReset}>
                       <RotateCcw size={15} />
                       {sidebarSettingsText.reset}
                     </button>
                   </div>
-                  {(['main', 'utility'] as const).map((placement) => {
-                    const groupItems = sidebarSettingsGroups[placement];
+                  {sidebarLayoutExpanded
+                    ? (['main', 'utility'] as const).map((placement) => {
+                        const groupItems = sidebarSettingsGroups[placement];
 
-                    return (
-                      <section className="settings-sidebar-layout-group" key={placement}>
-                        <div className="settings-sidebar-layout-group-title">
-                          <strong>{placement === 'main' ? sidebarSettingsText.mainGroup : sidebarSettingsText.utilityGroup}</strong>
-                          <span>{t('settings.appearance.sidebar.count', { count: groupItems.length })}</span>
-                        </div>
-                        <div className="settings-sidebar-route-list">
-                          {groupItems.length > 0 ? (
-                            groupItems.map((item) => {
-                              const label = t(item.labelKey);
-                              const isLockedVisible = lockedVisibleSidebarRouteIdSet.has(item.id);
-                              const isVisible = isLockedVisible || !sidebarHiddenRouteIdSet.has(item.id);
+                        return (
+                          <section className="settings-sidebar-layout-group" key={placement}>
+                            <div className="settings-sidebar-layout-group-title">
+                              <strong>{placement === 'main' ? sidebarSettingsText.mainGroup : sidebarSettingsText.utilityGroup}</strong>
+                              <span>{t('settings.appearance.sidebar.count', { count: groupItems.length })}</span>
+                            </div>
+                            <div className="settings-sidebar-route-list">
+                              {groupItems.length > 0 ? (
+                                groupItems.map((item) => {
+                                  const label = t(item.labelKey);
+                                  const isLockedVisible = lockedVisibleSidebarRouteIdSet.has(item.id);
+                                  const isVisible = isLockedVisible || !sidebarHiddenRouteIdSet.has(item.id);
 
-                              return (
-                                <div
-                                  className="settings-sidebar-route-item"
-                                  data-dragging={draggingSidebarRouteId === item.id ? 'true' : undefined}
-                                  data-hidden={isVisible ? undefined : 'true'}
-                                  draggable={Boolean(appSettings)}
-                                  key={item.id}
-                                  onDragEnd={handleSidebarRouteDragEnd}
-                                  onDragOver={handleSidebarRouteDragOver}
-                                  onDragStart={(event) => handleSidebarRouteDragStart(event, item.id)}
-                                  onDrop={(event) => handleSidebarRouteDrop(event, item.id, placement)}
-                                >
-                                  <span className="settings-sidebar-route-drag-handle" aria-hidden="true">
-                                    <GripVertical size={15} />
-                                  </span>
-                                  <span className="settings-sidebar-route-copy">
-                                    <strong>{label}</strong>
-                                    <em>{isLockedVisible ? sidebarSettingsText.fixed : isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}</em>
-                                  </span>
-                                  <span className="settings-sidebar-route-actions">
-                                    <button
-                                      aria-label={isVisible ? t('settings.appearance.sidebar.hideAria', { label }) : t('settings.appearance.sidebar.showAria', { label })}
-                                      aria-pressed={isVisible}
-                                      className="settings-icon-button settings-sidebar-visibility-button"
-                                      disabled={!appSettings || isLockedVisible}
-                                      title={isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}
-                                      type="button"
-                                      onClick={() => handleSidebarRouteVisibilityToggle(item.id)}
+                                  return (
+                                    <div
+                                      className="settings-sidebar-route-item"
+                                      data-dragging={draggingSidebarRouteId === item.id ? 'true' : undefined}
+                                      data-hidden={isVisible ? undefined : 'true'}
+                                      draggable={Boolean(appSettings)}
+                                      key={item.id}
+                                      onDragEnd={handleSidebarRouteDragEnd}
+                                      onDragOver={handleSidebarRouteDragOver}
+                                      onDragStart={(event) => handleSidebarRouteDragStart(event, item.id)}
+                                      onDrop={(event) => handleSidebarRouteDrop(event, item.id, placement)}
                                     >
-                                      {isVisible ? <Eye size={15} /> : <EyeOff size={15} />}
-                                    </button>
-                                  </span>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <p className="settings-sidebar-layout-empty">{sidebarSettingsText.noItems}</p>
-                          )}
-                        </div>
-                      </section>
-                    );
-                  })}
+                                      <span className="settings-sidebar-route-drag-handle" aria-hidden="true">
+                                        <GripVertical size={15} />
+                                      </span>
+                                      <span className="settings-sidebar-route-copy">
+                                        <strong>{label}</strong>
+                                        <em>{isLockedVisible ? sidebarSettingsText.fixed : isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}</em>
+                                      </span>
+                                      <span className="settings-sidebar-route-actions">
+                                        <button
+                                          aria-label={isVisible ? t('settings.appearance.sidebar.hideAria', { label }) : t('settings.appearance.sidebar.showAria', { label })}
+                                          aria-pressed={isVisible}
+                                          className="settings-icon-button settings-sidebar-visibility-button"
+                                          disabled={!appSettings || isLockedVisible}
+                                          title={isVisible ? sidebarSettingsText.visible : sidebarSettingsText.hidden}
+                                          type="button"
+                                          onClick={() => handleSidebarRouteVisibilityToggle(item.id)}
+                                        >
+                                          {isVisible ? <Eye size={15} /> : <EyeOff size={15} />}
+                                        </button>
+                                      </span>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <p className="settings-sidebar-layout-empty">{sidebarSettingsText.noItems}</p>
+                              )}
+                            </div>
+                          </section>
+                        );
+                      })
+                    : null}
                 </div>
               </SettingRow>
               <SettingRow
@@ -12554,6 +12868,27 @@ export const SettingsPage = (): JSX.Element => {
                   onChange={(textDepth) => handleAppearanceChange({ ...appearancePreferences, textDepth })}
                 />
               </SettingRow>
+              <SettingRow
+                id="settings-row-album-cover-shape"
+                highlighted={highlightedSettingId === 'settings-row-album-cover-shape'}
+                title={t('settings.appearance.albumCoverShape.title')}
+                description={t('settings.appearance.albumCoverShape.description')}
+              >
+                <div className="settings-chip-row settings-chip-row--left">
+                  <ChipButton
+                    active={appearancePreferences.albumCoverShape !== 'square'}
+                    onClick={() => handleAppearanceChange({ ...appearancePreferences, albumCoverShape: 'rounded' })}
+                  >
+                    {t('settings.appearance.albumCoverShape.rounded')}
+                  </ChipButton>
+                  <ChipButton
+                    active={appearancePreferences.albumCoverShape === 'square'}
+                    onClick={() => handleAppearanceChange({ ...appearancePreferences, albumCoverShape: 'square' })}
+                  >
+                    {t('settings.appearance.albumCoverShape.square')}
+                  </ChipButton>
+                </div>
+              </SettingRow>
               <SettingRow title={t('settings.appearance.reset.title')} description={t('settings.appearance.reset.description')}>
                 <button className="settings-action-button" type="button" onClick={handleAppearanceReset}>
                   {t('settings.appearance.reset.action')}
@@ -12584,7 +12919,85 @@ export const SettingsPage = (): JSX.Element => {
                 title={'\u8d44\u6599\u8d28\u91cf\u6574\u7406'}
                 description={'\u7edf\u8ba1\u7f3a\u5c01\u9762\u3001\u56de\u9000\u5143\u6570\u636e\u548c\u7f51\u7edc\u5019\u9009\uff0c\u53ea\u505a\u5b9a\u5411\u67e5\u770b\u548c\u624b\u52a8\u8865\u5168\u5165\u53e3\u3002'}
               >
-                <LibraryQualityPanel autoRefresh={libraryDeferredRefreshReady} networkMetadataEnabled={appSettings?.networkMetadataEnabled ?? false} />
+                <LibraryQualityPanel autoRefresh={libraryDeferredRefreshReady} networkMetadataEnabled={networkMetadataEnabled} />
+              </SettingRow>
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel"
+                id="settings-row-library-lyrics-backfill"
+                highlighted={highlightedSettingId === 'settings-row-library-lyrics-backfill'}
+                title="一键歌词补全"
+                description="后台筛选缺失歌词并分批补全；快速模式优先网易、QQ、LRCLIB 等高命中源，完整模式会继续扩大来源。"
+              >
+                <div className="settings-cache-panel settings-cache-panel--lyrics-backfill">
+                  <div className="settings-inline-control">
+                    <span>命中率</span>
+                    <NumberRangeField
+                      min={30}
+                      max={95}
+                      step={1}
+                      suffix="%"
+                      value={lyricsBackfillAutoAcceptPercent}
+                      onChange={(value) => patchAppSettings({ lyricsBackfillAutoAcceptScore: value / 100 })}
+                    />
+                  </div>
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={lyricsBackfillBusy || lyricsBackfillRunning}
+                      onClick={() => void handleStartLyricsBackfill('quick')}
+                    >
+                      <Zap size={15} />
+                      快速补全缺失歌词
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      disabled={lyricsBackfillBusy || lyricsBackfillRunning}
+                      onClick={() => void handleStartLyricsBackfill('complete')}
+                    >
+                      <Search size={15} />
+                      完整补全
+                    </button>
+                    {lyricsBackfillRunning ? (
+                      <button
+                        className="settings-danger-button"
+                        type="button"
+                        onClick={() => void handleCancelLyricsBackfill()}
+                      >
+                        <X size={15} />
+                        取消
+                      </button>
+                    ) : null}
+                  </div>
+                  {lyricsBackfillMessage ? <p className="settings-inline-note">{lyricsBackfillMessage}</p> : null}
+                  {lyricsBackfillJob ? (
+                    <div className="settings-update-progress settings-lyrics-backfill-progress" role="status" aria-live="polite">
+                      <div className="settings-update-progress-label">
+                        <strong>歌词补全进度 · {lyricsBackfillStatusLabel}</strong>
+                        <span>
+                          {lyricsBackfillProgressDone} / {lyricsBackfillJob.totalTracks || 0}
+                        </span>
+                      </div>
+                      <div
+                        className="settings-update-progress-track"
+                        role="progressbar"
+                        aria-label="歌词补全进度"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={lyricsBackfillProgressPercent}
+                      >
+                        <span style={{ width: `${lyricsBackfillProgressPercent}%` }} />
+                      </div>
+                      <div className="settings-update-progress-meta">
+                        <span>
+                          命中 {lyricsBackfillJob.matchedTracks} · 未找到 {lyricsBackfillJob.notFoundTracks} · 已有 {lyricsBackfillJob.alreadyCachedTracks} · 失败 {lyricsBackfillJob.errorCount}
+                        </span>
+                        <span>{lyricsBackfillJob.currentTrackTitle ?? (lyricsBackfillJob.mode === 'complete' ? '完整模式' : '快速模式')}</span>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
@@ -13103,10 +13516,10 @@ export const SettingsPage = (): JSX.Element => {
               </SettingRow>
               <SettingRow title={t('settings.library.network.title')} description={t('settings.library.network.description')}>
                 <button
-                  className={`toggle-btn ${appSettings?.networkMetadataEnabled ? 'active' : ''}`}
+                  className={`toggle-btn ${networkMetadataEnabled ? 'active' : ''}`}
                   type="button"
-                  aria-pressed={appSettings?.networkMetadataEnabled ?? false}
-                  onClick={() => patchAppSettings({ networkMetadataEnabled: !(appSettings?.networkMetadataEnabled ?? false) })}
+                  aria-pressed={networkMetadataEnabled}
+                  onClick={() => patchAppSettings({ networkMetadataEnabled: !networkMetadataEnabled })}
                 >
                   <span />
                 </button>
@@ -13124,7 +13537,7 @@ export const SettingsPage = (): JSX.Element => {
                   ))}
                 </div>
               </SettingRow>
-              <NetworkMetadataPanel networkMetadataEnabled={appSettings?.networkMetadataEnabled ?? false} />
+              <NetworkMetadataPanel networkMetadataEnabled={networkMetadataEnabled} />
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Info} id="about" title={t('settings.nav.about.label')}>

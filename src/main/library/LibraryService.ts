@@ -20,7 +20,11 @@ import {
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
 import { getLibraryDatabaseManager, type LibraryDatabaseConnection } from '../database/LibraryDatabaseManager';
 import { assertDatabaseHealthy } from '../database/health';
-import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
+import {
+  isPlaybackActiveForMainWork,
+  runMainBackgroundTask,
+  runNonCriticalMainWork,
+} from '../diagnostics/MainProcessWorkScheduler';
 import { AlbumService } from './AlbumService';
 import type { AlbumMergeStrategy } from './AlbumService';
 import { getDefaultCoverCacheDir, migrateCoverCache, resolveConfiguredCoverCacheDir, resolveCoverCacheDir } from './CoverCacheManager';
@@ -44,6 +48,7 @@ import { ArtistEventsService } from './online/ArtistEventsService';
 import { ArtistOnlineInfoService, emptyArtistOnlineInfo } from './online/ArtistOnlineInfoService';
 import { BpmAnalysisJobQueue } from './audioAnalysis/BpmAnalysisJobQueue';
 import { ReplayGainAnalysisJobQueue } from './audioAnalysis/ReplayGainAnalysisJobQueue';
+import { LyricsBackfillJobPersistence, LyricsBackfillJobQueue } from './LyricsBackfillJobQueue';
 import { ArtistImageCacheService } from './artistImages/ArtistImageCacheService';
 import { fetchWithNetworkProxy } from '../network/networkFetch';
 import type { ArtistImageLookupInput, ArtistImageProvider } from './artistImages/ArtistImageTypes';
@@ -109,6 +114,8 @@ import type {
   BpmAnalysisStartOptions,
   ReplayGainAnalysisJobStatus,
   ReplayGainAnalysisStartOptions,
+  LyricsBackfillJobStatus,
+  LyricsBackfillStartOptions,
   ArtistImageCacheClearResult,
   ArtistImageCacheEntry,
   ArtistImageCacheSummary,
@@ -142,6 +149,7 @@ import type { MetadataReader } from './workers/MetadataReader';
 import { TsCoverExtractor } from './workers/TsCoverExtractor';
 import { TsFileScanner } from './workers/TsFileScanner';
 import { TsMetadataReader } from './workers/TsMetadataReader';
+import { createWorkerBackedLibraryScanWorkers } from './workers/WorkerBackedLibraryScan';
 import { getRemoteSourceService } from './remote/RemoteSourceService';
 import { writeEmbeddedTrackTags } from './TagWriter';
 import { backupPlaylistIfEnabled, type PlaylistBackupReason } from './PlaylistBackup';
@@ -181,20 +189,28 @@ const broadcastLibraryChanged = (): void => {
 const romanizedSearchPattern = /[a-z]{2,}/iu;
 const playbackHistoryRefreshConcurrency = 16;
 
+const createEmptyPlaybackStatsDashboard = (): PlaybackStatsDashboard => ({
+  generatedAt: new Date().toISOString(),
+  totals: {
+    playCount: 0,
+    completedCount: 0,
+    playedSeconds: 0,
+    uniqueTracks: 0,
+    uniqueArtists: 0,
+  },
+  topTracks: [],
+  topArtists: [],
+  topAlbums: [],
+  formatBreakdown: [],
+  qualityBreakdown: [],
+  dailyActivity: [],
+});
+
 const isExistingFile = async (filePath: string): Promise<boolean> => {
   try {
     return (await statFile(filePath)).isFile();
   } catch {
     return false;
-  }
-};
-
-const runMainBackgroundTask = async <T>(name: string, work: () => Promise<T> | T): Promise<T> => {
-  const clearBackgroundTask = beginMainBackgroundTask(name);
-  try {
-    return await work();
-  } finally {
-    clearBackgroundTask();
   }
 };
 
@@ -207,6 +223,9 @@ export class LibraryService {
   private lastGroupingRefreshAt: string | null = null;
   private groupingRefreshDelayedForPlaybackCount = 0;
   private lastGroupingRefreshError: string | null = null;
+  private readonly duplicateRefreshTimers = new Map<DuplicateTrackMode, NodeJS.Timeout>();
+  private readonly duplicateRefreshRunning = new Set<DuplicateTrackMode>();
+  private readonly playbackStatsDashboardCache = new Map<string, PlaybackStatsDashboard>();
   private artistImageStartupTimer: NodeJS.Timeout | null = null;
   private readonly moveCandidateService: LibraryMoveCandidateService;
   private readonly moveRepairService: LibraryMoveRepairService;
@@ -224,6 +243,7 @@ export class LibraryService {
   private searchIndexBackfillRunning = false;
   private searchIndexBackfillAllowDuringPlayback = false;
   private artistImagePlaybackStatusUnsubscribe: (() => void) | null = null;
+  private readonly lyricsBackfillJobQueue: LyricsBackfillJobQueue;
   private closed = false;
 
   constructor(
@@ -245,9 +265,14 @@ export class LibraryService {
     private readonly albumOnlineInfoService: AlbumOnlineInfoService | null = null,
     private readonly artistOnlineInfoService: ArtistOnlineInfoService | null = null,
     private readonly artistEventsService: ArtistEventsService | null = null,
+    private readonly closeWorkerResources: () => void = () => undefined,
   ) {
     this.moveCandidateService = new LibraryMoveCandidateService(this.database);
     this.moveRepairService = new LibraryMoveRepairService(this.database, this.moveCandidateService);
+    this.lyricsBackfillJobQueue = new LyricsBackfillJobQueue((query) => this.store.getTracks(query), {
+      persistence: new LyricsBackfillJobPersistence(this.database),
+    });
+    this.lyricsBackfillJobQueue.resumeLastIncompleteJob();
     this.bindArtistImagePlaybackDeferral();
     this.artistImageStartupTimer = setTimeout(() => {
       this.artistImageStartupTimer = null;
@@ -265,7 +290,9 @@ export class LibraryService {
       throw new Error(`Library folder path is not a directory: ${normalizedPath}`);
     }
 
-    return this.store.addFolder(normalizedPath);
+    const folder = this.store.addFolder(normalizedPath);
+    this.syncLiveLibraryWatcherFromSettings();
+    return folder;
   }
 
   getFolders(): LibraryFolder[] {
@@ -288,8 +315,11 @@ export class LibraryService {
     return this.store.resolveLibraryFolderPath(request);
   }
 
-  removeFolder(folderId: string): void {
-    this.store.removeFolder(folderId);
+  async removeFolder(folderId: string): Promise<void> {
+    await this.store.removeFolder(folderId);
+    this.syncLiveLibraryWatcherFromSettings();
+    this.scheduleGroupingRefresh();
+    this.notifyLibraryChanged();
   }
 
   scanFolder(folderId: string, options: LibraryScanOptions = {}): LibraryScanStatus {
@@ -309,6 +339,19 @@ export class LibraryService {
     }
 
     return job;
+  }
+
+  scanFolderChanges(folderId: string): LibraryScanStatus {
+    const folder = this.store.getFolder(folderId);
+
+    if (!folder) {
+      throw new Error(`Unknown library folder ${folderId}`);
+    }
+
+    return this.scanJobQueue.scanFolder(folder, {
+      changesOnly: true,
+      reduceScanPressure: true,
+    });
   }
 
   rescanPaths(folderId: string, paths: string[], options: LibraryScanOptions = {}): LibraryScanStatus {
@@ -373,6 +416,17 @@ export class LibraryService {
 
   refreshDuplicateTracksAsync(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackIndexSummary> {
     return this.store.refreshDuplicateTracksAsync(mode);
+  }
+
+  refreshDuplicateTracksPlaybackSafe(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackIndexSummary> {
+    return runNonCriticalMainWork({
+      name: `library:refresh-duplicate-tracks:${mode}`,
+      work: () => this.refreshDuplicateTracksAsync(mode),
+      fallback: () => {
+        this.scheduleDuplicateRefresh(mode);
+        return this.getDuplicateIndexSummary(mode);
+      },
+    });
   }
 
   previewDuplicateTrackCleanup(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackCleanupPreview> {
@@ -820,7 +874,11 @@ export class LibraryService {
     watcher.setAutoRescanEnabled(autoRescanEnabled);
 
     if (enabled) {
-      watcher.start();
+      if (watcher.isRunning()) {
+        watcher.restart();
+      } else {
+        watcher.start();
+      }
     } else {
       watcher.stop();
     }
@@ -1075,6 +1133,9 @@ export class LibraryService {
           this.startReplayGainAnalysis({ trackIds: [track.id], force: false });
         }
 
+        this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
+        this.store.refreshArtists();
+
         return track;
       });
       this.scheduleGroupingRefresh();
@@ -1182,7 +1243,18 @@ export class LibraryService {
   }
 
   getPlaybackStatsDashboard(query?: PlaybackHistoryQuery): PlaybackStatsDashboard {
-    return this.store.getPlaybackStatsDashboard(query);
+    const dashboard = this.store.getPlaybackStatsDashboard(query);
+    this.rememberPlaybackStatsDashboard(query, dashboard);
+    return dashboard;
+  }
+
+  async getPlaybackStatsDashboardPlaybackSafe(query?: PlaybackHistoryQuery): Promise<PlaybackStatsDashboard> {
+    const cached = this.playbackStatsDashboardCache.get(this.playbackStatsDashboardCacheKey(query));
+    if (await isPlaybackActiveForMainWork()) {
+      return cached ?? createEmptyPlaybackStatsDashboard();
+    }
+
+    return runMainBackgroundTask('library:get-playback-stats-dashboard', () => this.getPlaybackStatsDashboard(query));
   }
 
   async refreshInvalidPlaybackHistory(): Promise<PlaybackHistoryRefreshResult> {
@@ -1260,6 +1332,22 @@ export class LibraryService {
     }
   }
 
+  refreshAlbumGroupingPlaybackSafe(): Promise<LibrarySummary> {
+    if (this.hasRunningJobs()) {
+      throw new Error('Cannot refresh album grouping while a library scan is running.');
+    }
+
+    return runNonCriticalMainWork({
+      name: 'library:refresh-album-grouping',
+      work: () => this.refreshAlbumGrouping(),
+      fallback: () => {
+        this.groupingRefreshDelayedForPlaybackCount += 1;
+        this.scheduleGroupingRefresh(3000);
+        return this.store.getSummary();
+      },
+    });
+  }
+
   async loadEmbeddedTrackTags(trackId: string): Promise<EmbeddedTrackTagsLoadResult> {
     const currentTrack = this.store.getTrack(trackId);
 
@@ -1272,7 +1360,7 @@ export class LibraryService {
     }
 
     const metadata = await this.metadataReader.read(currentTrack.path);
-    const fileStat = statSync(currentTrack.path);
+    const fileStat = await statFile(currentTrack.path);
     let coverId = currentTrack.coverId;
 
     if (metadata.embeddedCover) {
@@ -1353,7 +1441,7 @@ export class LibraryService {
       coverData = await readCoverImageFromUrl(coverUrl, request.coverMimeType ?? null).catch(() => null);
     }
 
-    const fileStat = statSync(currentTrack.path);
+    const fileStat = await statFile(currentTrack.path);
     const fieldSources = {
       ...currentTrack.fieldSources,
       title: 'manual',
@@ -1441,7 +1529,7 @@ export class LibraryService {
     }> = [];
 
     for (const track of tracks) {
-      const fileStat = statSync(track.path);
+      const fileStat = await statFile(track.path);
       const fieldSources = {
         ...track.fieldSources,
         album: 'manual',
@@ -1916,6 +2004,22 @@ export class LibraryService {
     return this.replayGainAnalysisJobQueue.getStatus(jobId);
   }
 
+  startLyricsBackfill(options: LyricsBackfillStartOptions = {}): LyricsBackfillJobStatus {
+    return this.lyricsBackfillJobQueue.start(options);
+  }
+
+  getLyricsBackfillStatus(jobId: string): LyricsBackfillJobStatus {
+    return this.lyricsBackfillJobQueue.getStatus(jobId);
+  }
+
+  getCurrentLyricsBackfillStatus(): LyricsBackfillJobStatus | null {
+    return this.lyricsBackfillJobQueue.getCurrentStatus();
+  }
+
+  cancelLyricsBackfill(jobId: string): LyricsBackfillJobStatus {
+    return this.lyricsBackfillJobQueue.cancel(jobId);
+  }
+
   getDefaultCoverCacheDir(): string {
     return getDefaultCoverCacheDir(this.databasePath);
   }
@@ -1935,7 +2039,13 @@ export class LibraryService {
 
   close(): void {
     this.closed = true;
+    this.lyricsBackfillJobQueue.dispose();
     this.watcherService?.stop();
+    for (const timer of this.duplicateRefreshTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.duplicateRefreshTimers.clear();
+    this.duplicateRefreshRunning.clear();
     this.artistImagePlaybackStatusUnsubscribe?.();
     this.artistImagePlaybackStatusUnsubscribe = null;
     if (this.artistImageStartupTimer) {
@@ -1955,6 +2065,7 @@ export class LibraryService {
       this.searchIndexBackfillTimer = null;
     }
     (this.scanJobQueue as { dispose?: () => void }).dispose?.();
+    this.closeWorkerResources();
 
     this.closeDatabase();
   }
@@ -1991,6 +2102,64 @@ export class LibraryService {
 
   private notifyLibraryChanged(): void {
     broadcastLibraryChanged();
+  }
+
+  private playbackStatsDashboardCacheKey(query?: PlaybackHistoryQuery): string {
+    return JSON.stringify({
+      page: query?.page ?? null,
+      pageSize: query?.pageSize ?? null,
+      search: query?.search ?? null,
+      from: query?.from ?? null,
+      to: query?.to ?? null,
+      completedOnly: query?.completedOnly ?? null,
+      sort: query?.sort ?? null,
+    });
+  }
+
+  private rememberPlaybackStatsDashboard(query: PlaybackHistoryQuery | undefined, dashboard: PlaybackStatsDashboard): void {
+    this.playbackStatsDashboardCache.set(this.playbackStatsDashboardCacheKey(query), dashboard);
+    if (this.playbackStatsDashboardCache.size <= 20) {
+      return;
+    }
+
+    const oldestKey = this.playbackStatsDashboardCache.keys().next().value;
+    if (oldestKey) {
+      this.playbackStatsDashboardCache.delete(oldestKey);
+    }
+  }
+
+  private scheduleDuplicateRefresh(mode: DuplicateTrackMode, delayMs = 5000): void {
+    if (this.closed || this.duplicateRefreshTimers.has(mode) || this.duplicateRefreshRunning.has(mode)) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      this.duplicateRefreshTimers.delete(mode);
+      void this.runScheduledDuplicateRefresh(mode);
+    }, Math.max(0, delayMs));
+    this.duplicateRefreshTimers.set(mode, timer);
+    timer.unref?.();
+  }
+
+  private async runScheduledDuplicateRefresh(mode: DuplicateTrackMode): Promise<void> {
+    if (this.closed || this.duplicateRefreshRunning.has(mode)) {
+      return;
+    }
+
+    if (await shouldDelayGroupingRefreshForAudio()) {
+      this.scheduleDuplicateRefresh(mode, 10_000);
+      return;
+    }
+
+    this.duplicateRefreshRunning.add(mode);
+    try {
+      await runMainBackgroundTask(`library:refresh-duplicate-tracks:${mode}`, () => this.refreshDuplicateTracksAsync(mode));
+      this.notifyLibraryChanged();
+    } catch (error) {
+      console.warn(`[library] Deferred duplicate refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.duplicateRefreshRunning.delete(mode);
+    }
   }
 
   private scheduleSearchIndexBackfill(delayMs = 10_000, options: { allowDuringPlayback?: boolean } = {}): void {
@@ -2051,34 +2220,51 @@ export class LibraryService {
     this.scheduleSearchIndexBackfill(0, { allowDuringPlayback: true });
   }
 
-  private previewRescanPathsFromWatcher(folderId: string, paths: string[]): number {
+  private async previewRescanPathsFromWatcher(folderId: string, paths: string[]): Promise<number> {
     const folder = this.store.getFolder(folderId);
     if (!folder) {
       return 0;
     }
 
     const timestamp = new Date().toISOString();
-    let changed = 0;
+    const previewTracks: Array<{
+      normalizedPath: string;
+      extension: string;
+      sizeBytes: number;
+      mtimeMs: number;
+    }> = [];
 
-    this.store.transaction(() => {
-      for (const filePath of paths) {
-        const normalizedPath = resolve(filePath);
-        const extension = extname(normalizedPath).toLocaleLowerCase();
-        if (!SCANNABLE_AUDIO_EXTENSIONS.has(extension) || this.store.getTrackByPath(normalizedPath)) {
-          continue;
-        }
+    for (const filePath of paths) {
+      const normalizedPath = resolve(filePath);
+      const extension = extname(normalizedPath).toLocaleLowerCase();
+      if (!SCANNABLE_AUDIO_EXTENSIONS.has(extension) || this.store.getTrackByPath(normalizedPath)) {
+        continue;
+      }
 
-        let fileStat;
-        try {
-          fileStat = statSync(normalizedPath);
-        } catch {
-          continue;
-        }
-
+      try {
+        const fileStat = await statFile(normalizedPath);
         if (!fileStat.isFile()) {
           continue;
         }
 
+        previewTracks.push({
+          normalizedPath,
+          extension,
+          sizeBytes: fileStat.size,
+          mtimeMs: Math.round(fileStat.mtimeMs),
+        });
+      } catch {
+        continue;
+      }
+
+      await yieldToMainLoop();
+    }
+
+    let changed = 0;
+    const changedTrackIds: string[] = [];
+
+    this.store.transaction(() => {
+      for (const { normalizedPath, extension, sizeBytes, mtimeMs } of previewTracks) {
         const title = basename(normalizedPath, extension) || basename(normalizedPath);
         const artist = 'Unknown Artist';
         const fieldSources: FieldSources = {
@@ -2100,8 +2286,8 @@ export class LibraryService {
         this.store.upsertTrack({
           path: normalizedPath,
           folderId: folder.id,
-          sizeBytes: fileStat.size,
-          mtimeMs: Math.round(fileStat.mtimeMs),
+          sizeBytes,
+          mtimeMs,
           title,
           artist,
           album: 'Unknown Album',
@@ -2125,11 +2311,16 @@ export class LibraryService {
           errors: [],
           updatedAt: timestamp,
         });
+        const track = this.store.getTrackByPath(normalizedPath);
+        if (track) {
+          changedTrackIds.push(track.id);
+        }
         changed += 1;
       }
     });
 
     if (changed > 0) {
+      this.store.seedAlbumsForTracks(changedTrackIds, this.albumService, timestamp, this.albumRefreshOptions());
       this.notifyLibraryChanged();
     }
 
@@ -2155,13 +2346,16 @@ export class LibraryService {
             this.lastWatcherRescanFinishedAt = null;
             this.lastWatcherRescanPathCount = paths.length;
             this.lastMetadataBackfillCount = metadataBackfillCount;
-            const job = this.rescanPaths(folderId, paths, { deferGroupingRefresh: true });
+            const job = this.rescanPaths(folderId, paths, {
+              deferGroupingRefresh: true,
+              skipDeferredGroupingRefresh: true,
+              reduceScanPressure: true,
+            });
             void this.scanJobQueue.waitForIdle(job.id)
               .then(() => {
                 const status = this.store.getScanJob(job.id);
                 this.lastWatcherRescanFinishedAt = new Date().toISOString();
                 this.lastSkippedByCacheCount = status?.skippedFiles ?? 0;
-                this.scheduleGroupingRefresh();
                 this.notifyLibraryChanged();
               })
               .catch((error) => {
@@ -2169,6 +2363,13 @@ export class LibraryService {
                 console.warn(`Library watcher rescan did not complete cleanly: ${error instanceof Error ? error.message : String(error)}`);
               });
             return job;
+          },
+          markMissingPaths: (folderId, paths) => {
+            const changed = this.store.markTracksMissingByPaths(folderId, paths);
+            if (changed > 0) {
+              this.notifyLibraryChanged();
+            }
+            return changed;
           },
           previewRescanPaths: (folderId, paths) => this.previewRescanPathsFromWatcher(folderId, paths),
           hasRunningJobs: () => this.scanJobQueue.hasRunningJobs(),
@@ -2181,11 +2382,6 @@ export class LibraryService {
   }
 
   private async shouldDelayWatcherRescanForLowLoadPlayback(): Promise<boolean> {
-    const settings = this.readAppSettings();
-    if (settings.lowLoadPlaybackModeEnabled !== true || settings.lowLoadPlaybackEnhancementsEnabled !== true) {
-      return false;
-    }
-
     try {
       const { getAudioSession } = await import('../audio/AudioSession');
       const state = getAudioSession().getStatus().state;
@@ -2302,6 +2498,7 @@ export class LibraryService {
       this.lastGroupingRefreshDurationMs = Date.now() - startedAtMs;
       this.lastGroupingRefreshAt = new Date().toISOString();
       this.lastGroupingRefreshError = null;
+      this.notifyLibraryChanged();
     } catch (error) {
       this.artistsDirty = true;
       this.lastGroupingRefreshDurationMs = Date.now() - startedAtMs;
@@ -2350,7 +2547,7 @@ export class LibraryService {
       return;
     }
 
-    const fileStat = statSync(track.path);
+    const fileStat = await statFile(track.path);
     const tagUpdate = {
       title: track.title,
       artist: track.artist,
@@ -2387,13 +2584,7 @@ const shouldDelayEmbeddedTagWriteForAudio = async (filePath: string): Promise<bo
 };
 
 const shouldDelayGroupingRefreshForAudio = async (): Promise<boolean> => {
-  try {
-    const { getAudioSession } = await import('../audio/AudioSession');
-    const status = getAudioSession().getStatus();
-    return status.state === 'loading' || status.state === 'playing';
-  } catch {
-    return false;
-  }
+  return isPlaybackActiveForMainWork();
 };
 
 export const createLibraryService = (
@@ -2421,6 +2612,25 @@ export const createLibraryService = (
     remoteAlbumMergeStrategy: readSettings().remoteAlbumMergeStrategy ?? 'conservative',
   }));
   const fileScanner = dependencies.fileScanner ?? new TsFileScanner();
+  const coverCacheDir = dependencies.coverCacheDir
+    ? resolveCoverCacheDir(databasePath, dependencies.coverCacheDir)
+    : resolveConfiguredCoverCacheDir(databasePath, (dependencies.appSettings ?? getAppSettingsSafe)());
+  const albumService = new AlbumService();
+  const appSettings = readSettings();
+  const recommendedScanConcurrency = getRecommendedScanConcurrency({
+    mode: appSettings.scanPerformanceMode ?? 'balanced',
+  });
+  const scanConcurrency: ScanConcurrencyRecommendation = {
+    ...recommendedScanConcurrency,
+    metadataConcurrency: dependencies.metadataConcurrency ?? recommendedScanConcurrency.metadataConcurrency,
+    coverConcurrency: dependencies.coverConcurrency ?? recommendedScanConcurrency.coverConcurrency,
+  };
+  const workerBackedScanWorkers =
+    dependencies.metadataReader || dependencies.coverExtractor || dependencies.metadataService
+      ? null
+      : createWorkerBackedLibraryScanWorkers({
+          workerCount: Math.max(scanConcurrency.metadataConcurrency, scanConcurrency.coverConcurrency),
+        });
   const metadataReader =
     dependencies.metadataReader ??
     (dependencies.metadataService
@@ -2435,25 +2645,13 @@ export const createLibraryService = (
               }),
             ),
         }
-      : new TsMetadataReader());
-  const coverExtractor = dependencies.coverExtractor ?? new TsCoverExtractor();
-  const coverCacheDir = dependencies.coverCacheDir
-    ? resolveCoverCacheDir(databasePath, dependencies.coverCacheDir)
-    : resolveConfiguredCoverCacheDir(databasePath, (dependencies.appSettings ?? getAppSettingsSafe)());
-  const albumService = new AlbumService();
-  const appSettings = readSettings();
-  const recommendedScanConcurrency = getRecommendedScanConcurrency({
-    mode: appSettings.scanPerformanceMode ?? 'balanced',
-  });
-  const scanConcurrency: ScanConcurrencyRecommendation = {
-    ...recommendedScanConcurrency,
-    metadataConcurrency: dependencies.metadataConcurrency ?? recommendedScanConcurrency.metadataConcurrency,
-    coverConcurrency: dependencies.coverConcurrency ?? recommendedScanConcurrency.coverConcurrency,
-  };
+      : workerBackedScanWorkers?.metadataReader ?? new TsMetadataReader());
+  const coverExtractor = dependencies.coverExtractor ?? workerBackedScanWorkers?.coverExtractor ?? new TsCoverExtractor();
   const scanJobQueue = new ScanJobQueue(store, fileScanner, metadataReader, coverExtractor, albumService, {
     coverCacheDir,
     metadataConcurrency: scanConcurrency.metadataConcurrency,
     coverConcurrency: scanConcurrency.coverConcurrency,
+    fileIdentityService: workerBackedScanWorkers?.fileIdentityService,
     getAlbumMergeStrategy: () => readSettings().albumMergeStrategy,
     shouldReduceScanPressure: shouldDelayGroupingRefreshForAudio,
     shouldDeferGroupingRefresh: shouldDelayGroupingRefreshForAudio,
@@ -2464,7 +2662,7 @@ export const createLibraryService = (
     },
     onDeferredGroupingRefresh: broadcastLibraryChanged,
     createDatabaseScanGuard: (scanStatus) =>
-      getAppSettings().dataProtectionDisabled === true
+      readSettings().dataProtectionDisabled === true
         ? null
         : createScanGuardLibraryDatabaseSnapshot(scanStatus, dirname(databasePath)),
     createCompletedScanSnapshot: async (scanStatus) => {
@@ -2477,7 +2675,7 @@ export const createLibraryService = (
         return;
       }
 
-      if (getAppSettings().dataProtectionDisabled === true) {
+      if (readSettings().dataProtectionDisabled === true) {
         return;
       }
 
@@ -2579,6 +2777,7 @@ export const createLibraryService = (
     albumOnlineInfoService,
     artistOnlineInfoService,
     artistEventsService,
+    () => workerBackedScanWorkers?.close(),
   );
 };
 
@@ -2731,6 +2930,9 @@ const supportedImageMimeType = (value: string | null | undefined): string | null
   return normalized === 'image/jpeg' || normalized === 'image/png' || normalized === 'image/webp' ? normalized : null;
 };
 
+const coverDownloadTimeoutMs = 6000;
+const maxNetworkCoverBytes = 12 * 1024 * 1024;
+
 const mimeTypeForImageUrl = (url: string): string => {
   const path = new URL(url).pathname;
   return mimeTypeForImagePath(path);
@@ -2746,8 +2948,11 @@ const readCoverImageFromUrl = async (url: string, mimeTypeHint: string | null): 
   }
 
   let response: Response;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), coverDownloadTimeoutMs);
   try {
     response = await fetchWithNetworkProxy(coverUrl, {
+      signal: controller.signal,
       headers: {
         Accept: 'image/avif,image/webp,image/png,image/jpeg,*/*',
         Referer: referer,
@@ -2756,17 +2961,36 @@ const readCoverImageFromUrl = async (url: string, mimeTypeHint: string | null): 
       },
     });
   } catch (error) {
+    clearTimeout(timeoutId);
     throw new Error(`封面下载失败，但标签信息仍可应用。${error instanceof Error ? ` ${error.message}` : ''}`);
   }
 
   if (!response.ok) {
+    clearTimeout(timeoutId);
     throw new Error('封面下载失败，但标签信息仍可应用。');
+  }
+
+  const contentLength = Number(response.headers.get('content-length') ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > maxNetworkCoverBytes) {
+    clearTimeout(timeoutId);
+    throw new Error('Network cover is too large; metadata can still be applied.');
   }
 
   const contentType = response.headers.get('content-type');
   const mimeType = supportedImageMimeType(mimeTypeHint) ?? supportedImageMimeType(contentType) ?? mimeTypeForImageUrl(coverUrl);
+  let data: Uint8Array;
+  try {
+    data = new Uint8Array(await response.arrayBuffer());
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (data.byteLength > maxNetworkCoverBytes) {
+    throw new Error('Network cover is too large; metadata can still be applied.');
+  }
+
   return {
-    data: new Uint8Array(await response.arrayBuffer()),
+    data,
     mimeType,
   };
 };

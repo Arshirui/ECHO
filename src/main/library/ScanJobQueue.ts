@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
+import { stat as statFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, relative, resolve } from 'node:path';
-import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
+import { setImmediate as yieldToMainLoop, setTimeout as delay } from 'node:timers/promises';
 import { SCANNABLE_AUDIO_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import type { AlbumMergeStrategy, AlbumService } from './AlbumService';
 import type { LibraryStore } from './LibraryStore';
@@ -75,12 +76,14 @@ type ScanJobQueueOptions = {
   createDatabaseScanGuard?: (status: LibraryScanStatus) => Promise<unknown | null> | unknown | null;
   createCompletedScanSnapshot?: (status: LibraryScanStatus) => Promise<void> | void;
   recoverDatabaseFromScanGuard?: (snapshot: unknown | null, status: LibraryScanStatus, error: unknown) => Promise<void> | void;
-  fileIdentityService?: FileIdentityService;
+  fileIdentityService?: { observe(filePath: string): FileIdentityObservation | Promise<FileIdentityObservation> };
   shouldReduceScanPressure?: () => boolean | Promise<boolean>;
   shouldDeferGroupingRefresh?: () => boolean | Promise<boolean>;
   onScanSettled?: (status: LibraryScanStatus) => void;
   onDeferredGroupingRefresh?: () => void;
 };
+
+type FileIdentityObserver = NonNullable<ScanJobQueueOptions['fileIdentityService']>;
 
 const progressFlushIntervalMs = 300;
 const progressFlushFileDelta = 64;
@@ -89,8 +92,10 @@ const deferredGroupingRefreshDelayMs = 1000;
 const largeScanFileThreshold = 2000;
 const largeScanWriteBatchSize = 128;
 const normalScanWriteBatchSize = 512;
+const reducedScanWriteBatchSize = 8;
 const scanFileSystemOperationTimeoutMs = 10_000;
 const scanDiscoveryYieldEveryEntries = 32;
+const scanPressureYieldDelayMs = 8;
 const maxStoredScanErrors = 200;
 const scanErrorSummaryThreshold = 20;
 const maxScanErrorMessageLength = 512;
@@ -127,8 +132,17 @@ const classifyScanError = (message: string): string => {
   return 'other';
 };
 
+const replaceControlCharacters = (value: string): string => {
+  let sanitized = '';
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    sanitized += (codePoint >= 0x00 && codePoint <= 0x1f) || (codePoint >= 0x7f && codePoint <= 0x9f) ? ' ' : character;
+  }
+  return sanitized;
+};
+
 const compactScanMessage = (message: unknown): string => {
-  const normalized = String(message ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/gu, ' ').replace(/\s+/gu, ' ').trim();
+  const normalized = replaceControlCharacters(String(message ?? '')).replace(/\s+/gu, ' ').trim();
   if (normalized.length <= maxScanErrorMessageLength) {
     return normalized;
   }
@@ -193,7 +207,7 @@ export class ScanJobQueue {
   private readonly createDatabaseScanGuard: (status: LibraryScanStatus) => Promise<unknown | null> | unknown | null;
   private readonly createCompletedScanSnapshot: (status: LibraryScanStatus) => Promise<void> | void;
   private readonly recoverDatabaseFromScanGuard: (snapshot: unknown | null, status: LibraryScanStatus, error: unknown) => Promise<void> | void;
-  private readonly fileIdentityService: FileIdentityService;
+  private readonly fileIdentityService: FileIdentityObserver;
   private readonly shouldReduceScanPressure: () => boolean | Promise<boolean>;
   private readonly shouldDeferGroupingRefresh: () => boolean | Promise<boolean>;
   private readonly onScanSettled: (status: LibraryScanStatus) => void;
@@ -242,7 +256,16 @@ export class ScanJobQueue {
 
   scanFolder(folder: LibraryFolder, options: LibraryScanOptions = {}): LibraryScanStatus {
     const job = this.store.createScanJob(folder.id);
-    this.enqueueScanJob(job.id, () => this.runJob(job.id, folder, options.mode ?? 'normal', options.deferGroupingRefresh === true));
+    this.enqueueScanJob(job.id, () =>
+      this.runJob(
+        job.id,
+        folder,
+        options.mode ?? 'normal',
+        options.changesOnly === true,
+        options.skipDeferredGroupingRefresh === true,
+        options.reduceScanPressure === true,
+      ),
+    );
 
     return job;
   }
@@ -253,14 +276,31 @@ export class ScanJobQueue {
     }
 
     const job = this.store.createScanJob(folder.id);
-    this.enqueueScanJob(job.id, () => this.runPathsJob(job.id, folder, paths, options.mode ?? 'normal', options.deferGroupingRefresh === true));
+    this.enqueueScanJob(job.id, () =>
+      this.runPathsJob(
+        job.id,
+        folder,
+        paths,
+        options.mode ?? 'normal',
+        options.skipDeferredGroupingRefresh === true,
+        options.reduceScanPressure === true,
+      ),
+    );
 
     return job;
   }
 
   scanStoredTracks(folder: LibraryFolder, options: LibraryScanOptions = {}): LibraryScanStatus {
     const job = this.store.createScanJob(folder.id);
-    this.enqueueScanJob(job.id, () => this.runStoredTracksJob(job.id, folder, options.mode ?? 'normal', options.deferGroupingRefresh === true));
+    this.enqueueScanJob(job.id, () =>
+      this.runStoredTracksJob(
+        job.id,
+        folder,
+        options.mode ?? 'normal',
+        options.skipDeferredGroupingRefresh === true,
+        options.reduceScanPressure === true,
+      ),
+    );
 
     return job;
   }
@@ -315,7 +355,14 @@ export class ScanJobQueue {
     this.scanJobTail = run.catch(() => undefined);
   }
 
-  private async runJob(jobId: string, folder: LibraryFolder, mode: LibraryScanMode, deferGroupingRefresh: boolean): Promise<void> {
+  private async runJob(
+    jobId: string,
+    folder: LibraryFolder,
+    mode: LibraryScanMode,
+    changesOnly: boolean,
+    skipDeferredGroupingRefresh: boolean,
+    forceReducedScanPressure: boolean,
+  ): Promise<void> {
     const progress = this.createProgressReporter(jobId);
     const errors: string[] = [];
 
@@ -326,19 +373,27 @@ export class ScanJobQueue {
         startedAt: new Date().toISOString(),
       });
 
-      const discovery = await this.discoverFiles(jobId, folder, errors, progress);
+      const discovery = await this.discoverFiles(jobId, folder, errors, progress, { suppressDiscoveredTotal: changesOnly });
+      const cacheStatesByPath = changesOnly ? this.store.getTrackCacheStatesByFolder(folder.id) : undefined;
+      const files = changesOnly && cacheStatesByPath
+        ? this.filterAddedFiles(discovery.files, cacheStatesByPath)
+        : discovery.files;
+      const discoveredPathsForMissing = changesOnly ? discovery.files.map((file) => file.path) : undefined;
       await this.runFilesJob(
         jobId,
         folder,
-        discovery.files,
+        files,
         mode,
         progress,
         errors,
         true,
-        deferGroupingRefresh,
         discovery.inaccessibleDirectories,
         discovery.protectedPaths,
         discovery.directorySnapshots,
+        skipDeferredGroupingRefresh,
+        forceReducedScanPressure,
+        cacheStatesByPath,
+        discoveredPathsForMissing,
       );
     } catch (error) {
       this.finishFailedOrCancelledJob(jobId, progress, errors, error, {
@@ -357,7 +412,8 @@ export class ScanJobQueue {
     folder: LibraryFolder,
     paths: string[],
     mode: LibraryScanMode,
-    deferGroupingRefresh: boolean,
+    skipDeferredGroupingRefresh: boolean,
+    forceReducedScanPressure: boolean,
   ): Promise<void> {
     const progress = this.createProgressReporter(jobId);
     const errors: string[] = [];
@@ -369,13 +425,13 @@ export class ScanJobQueue {
         startedAt: new Date().toISOString(),
       });
 
-      const files = this.normalizeLocalRescanPaths(folder, paths);
+      const files = await this.normalizeLocalRescanPaths(folder, paths);
       progress.flushNow({
         phase: 'discovering',
         totalFiles: files.length,
         errors,
       });
-      await this.runFilesJob(jobId, folder, files, mode, progress, errors, false, deferGroupingRefresh);
+      await this.runFilesJob(jobId, folder, files, mode, progress, errors, false, [], [], [], skipDeferredGroupingRefresh, forceReducedScanPressure);
     } catch (error) {
       this.finishFailedOrCancelledJob(jobId, progress, errors, error, {
         processedFiles: 0,
@@ -392,7 +448,8 @@ export class ScanJobQueue {
     jobId: string,
     folder: LibraryFolder,
     mode: LibraryScanMode,
-    deferGroupingRefresh: boolean,
+    skipDeferredGroupingRefresh: boolean,
+    forceReducedScanPressure: boolean,
   ): Promise<void> {
     const progress = this.createProgressReporter(jobId);
     const errors: string[] = [];
@@ -428,7 +485,7 @@ export class ScanJobQueue {
         return;
       }
 
-      await this.runFilesJob(jobId, folder, files, mode, progress, errors, false, deferGroupingRefresh);
+      await this.runFilesJob(jobId, folder, files, mode, progress, errors, false, [], [], [], skipDeferredGroupingRefresh, forceReducedScanPressure);
     } catch (error) {
       this.finishFailedOrCancelledJob(jobId, progress, errors, error, {
         processedFiles: 0,
@@ -449,10 +506,13 @@ export class ScanJobQueue {
     progress: ScanProgressReporter,
     errors: string[],
     markMissing: boolean,
-    deferGroupingRefresh = false,
     inaccessibleDirectories: readonly string[] = [],
     protectedPaths: readonly string[] = [],
     directorySnapshots: readonly ScanDirectorySnapshot[] = [],
+    skipDeferredGroupingRefresh = false,
+    forceReducedScanPressure = false,
+    cacheStatesOverride?: Map<string, StoredTrackCoverState>,
+    markMissingDiscoveredPaths?: readonly string[],
   ): Promise<void> {
     let processedFiles = 0;
     let skippedFiles = 0;
@@ -461,7 +521,7 @@ export class ScanJobQueue {
     let removedTracks = 0;
     let coverCount = 0;
     const addedTrackIds: string[] = [];
-    const reducedScanPressure = await this.resolveBooleanOption(this.shouldReduceScanPressure);
+    const reducedScanPressure = forceReducedScanPressure || (await this.resolveBooleanOption(this.shouldReduceScanPressure));
     const scanGuard = await Promise.resolve(this.createDatabaseScanGuard(this.getScanStatus(jobId)));
     const searchIndexRomanizerReady = preloadSearchIndexRomanizer();
 
@@ -475,8 +535,9 @@ export class ScanJobQueue {
       const changedFiles: ChangedFile[] = [];
       const coverRepairItems: CoverRepairItem[] = [];
       const identityUpdateItems: IdentityUpdateItem[] = [];
-      const cacheStatesByPath = this.store.getTrackCacheStatesByFolder(folder.id);
+      const cacheStatesByPath = cacheStatesOverride ?? this.store.getTrackCacheStatesByFolder(folder.id);
       let checkedFiles = 0;
+      const cacheYieldFileDelta = reducedScanPressure ? 64 : cacheCheckYieldFileDelta;
 
       for (const file of files) {
         this.throwIfCancelled(jobId);
@@ -502,8 +563,8 @@ export class ScanJobQueue {
               processedFiles,
               skippedFiles,
             });
-            if (checkedFiles % cacheCheckYieldFileDelta === 0) {
-              await yieldToMainLoop();
+            if (checkedFiles % cacheYieldFileDelta === 0) {
+              await this.yieldForScanPressure(reducedScanPressure);
             }
             continue;
           }
@@ -529,8 +590,8 @@ export class ScanJobQueue {
           file,
           existingTrackId: existing?.id ?? null,
         });
-        if (checkedFiles % cacheCheckYieldFileDelta === 0) {
-          await yieldToMainLoop();
+        if (checkedFiles % cacheYieldFileDelta === 0) {
+          await this.yieldForScanPressure(reducedScanPressure);
         }
       }
 
@@ -558,13 +619,13 @@ export class ScanJobQueue {
 
           try {
             metadata = await this.metadataReader.read(item.file.path);
-            identity = reducedOrLargeScanPressure ? null : this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
+            identity = reducedOrLargeScanPressure ? null : await this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
             this.collectWorkerMessages(errors, item.file.path, 'metadata', metadata.warnings, metadata.errors);
           } catch (error) {
             const message = compactScanMessage(error instanceof Error ? error.message : String(error));
             errors.push(`${item.file.path}: metadata: ${message}`);
             metadata = this.createFallbackMetadata(item.file, message);
-            identity = reducedOrLargeScanPressure ? null : this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
+            identity = reducedOrLargeScanPressure ? null : await this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
           }
 
           try {
@@ -600,7 +661,7 @@ export class ScanJobQueue {
             coverCount,
             errors,
           });
-          await yieldToMainLoop();
+          await this.yieldForScanPressure(reducedScanPressure);
         }),
       );
 
@@ -642,7 +703,7 @@ export class ScanJobQueue {
           }
 
           if (!reducedOrLargeScanPressure && !this.hasIdentityObservation(item.state)) {
-            item.identity = this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
+            item.identity = await this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
           }
 
           processedFiles += 1;
@@ -653,14 +714,14 @@ export class ScanJobQueue {
             coverCount,
             errors,
           });
-          await yieldToMainLoop();
+          await this.yieldForScanPressure(reducedScanPressure);
         }),
       );
 
       await this.processWithConcurrency(identityUpdateItems, metadataConcurrency, async (item) => {
         this.throwIfCancelled(jobId);
-        item.identity = this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
-        await yieldToMainLoop();
+        item.identity = await this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
+        await this.yieldForScanPressure(reducedScanPressure);
       });
 
       this.throwIfCancelled(jobId);
@@ -688,14 +749,11 @@ export class ScanJobQueue {
           updatedAt: timestamp,
           ...this.toTrackIdentityWrite(item.identity),
         });
-        await yieldToMainLoop();
+        await this.yieldForScanPressure(reducedScanPressure);
       });
 
       this.throwIfCancelled(jobId);
       await yieldToMainLoop();
-      const deferGroupingForPressure =
-        !deferGroupingRefresh &&
-        (largeScan || (await this.resolveBooleanOption(this.shouldDeferGroupingRefresh)));
 
       progress.flushNow({
         phase: 'writing_database',
@@ -709,13 +767,14 @@ export class ScanJobQueue {
       });
 
       await runMainBackgroundTask('library-scan:writing_database', async () => {
+        const coverChangedTrackIds: string[] = [];
         this.store.transaction(() => {
           this.store.upsertScanDirectorySnapshots(folder.id, directorySnapshots, timestamp);
 
           if (markMissing) {
             removedTracks = this.store.markTracksMissingFromFolder(
               folder.id,
-              [...files.map((file) => file.path), ...protectedPaths],
+              [...(markMissingDiscoveredPaths ?? files.map((file) => file.path)), ...protectedPaths],
               timestamp,
               { excludeDirectories: inaccessibleDirectories },
             );
@@ -727,6 +786,7 @@ export class ScanJobQueue {
 
               if (repairedCoverId && repairedCoverId !== item.state.coverId) {
                 this.store.updateTrackCover(item.state.id, repairedCoverId, timestamp);
+                coverChangedTrackIds.push(item.state.id);
                 updatedTracks += 1;
               }
             }
@@ -741,10 +801,14 @@ export class ScanJobQueue {
             }
           }
         });
+        if (coverChangedTrackIds.length > 0) {
+          this.store.seedAlbumsForTracks(coverChangedTrackIds, this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
+        }
 
-        const writeBatchSize = reducedOrLargeScanPressure ? largeScanWriteBatchSize : normalScanWriteBatchSize;
+        const writeBatchSize = reducedScanPressure ? reducedScanWriteBatchSize : largeScan ? largeScanWriteBatchSize : normalScanWriteBatchSize;
         for (let index = 0; index < preparedParsedItems.length; index += writeBatchSize) {
           const batch = preparedParsedItems.slice(index, index + writeBatchSize);
+          const changedTrackIds: string[] = [];
           this.store.transaction(() => {
             for (const item of batch) {
               const coverId = item.cover ? this.store.upsertCover(item.cover, timestamp) : null;
@@ -769,8 +833,10 @@ export class ScanJobQueue {
               } else {
                 updatedTracks += 1;
               }
+              changedTrackIds.push(item.trackId);
             }
           });
+          this.store.seedAlbumsForTracks(changedTrackIds, this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
 
           progress.flushNow({
             phase: 'writing_database',
@@ -782,10 +848,11 @@ export class ScanJobQueue {
             coverCount,
             errors,
           });
-          await yieldToMainLoop();
+          await this.yieldForScanPressure(reducedScanPressure);
         }
       });
 
+      let shouldScheduleGroupingRefresh = false;
       this.store.transaction(() => {
         progress.flushNow({
           phase: 'grouping_albums',
@@ -797,15 +864,6 @@ export class ScanJobQueue {
           coverCount,
           errors,
         });
-        if (!deferGroupingRefresh && !deferGroupingForPressure) {
-          const clearBackgroundTask = beginMainBackgroundTask('library-scan:grouping_albums');
-          try {
-            this.store.refreshAlbums(this.albumService, timestamp, { albumMergeStrategy: this.getAlbumMergeStrategy() });
-            this.store.refreshArtists();
-          } finally {
-            clearBackgroundTask();
-          }
-        }
         progress.flushNow({
           phase: 'writing_database',
           processedFiles,
@@ -819,6 +877,8 @@ export class ScanJobQueue {
         if (markMissing) {
           this.store.finishFolderScan(folder.id, timestamp);
         }
+        const hasGroupingChanges = addedTracks > 0 || updatedTracks > 0 || removedTracks > 0;
+        shouldScheduleGroupingRefresh = hasGroupingChanges;
         if (addedTrackIds.length > 0) {
           this.store.recordLibraryInboxBatch({
             scanJobId: jobId,
@@ -841,7 +901,7 @@ export class ScanJobQueue {
           finishedAt: new Date().toISOString(),
         });
       });
-      if (deferGroupingForPressure) {
+      if (!skipDeferredGroupingRefresh && shouldScheduleGroupingRefresh) {
         this.scheduleDeferredGroupingRefresh();
       }
       try {
@@ -938,6 +998,7 @@ export class ScanJobQueue {
     folder: LibraryFolder,
     errors: string[],
     progress: ScanProgressReporter,
+    options: { suppressDiscoveredTotal?: boolean } = {},
   ): Promise<ScanDiscoveryResult> {
     const files: ScannedAudioFile[] = [];
     const inaccessibleDirectories = new Set<string>();
@@ -973,11 +1034,13 @@ export class ScanJobQueue {
         }
 
         if (files.length % 100 === 0) {
-          progress.update({
-            phase: 'discovering',
-            totalFiles: files.length,
-            errors,
-          });
+          progress.update(options.suppressDiscoveredTotal === true
+            ? { phase: 'discovering', errors }
+            : {
+                phase: 'discovering',
+                totalFiles: files.length,
+                errors,
+              });
         }
       }
     } catch (error) {
@@ -993,7 +1056,20 @@ export class ScanJobQueue {
     };
   }
 
-  private normalizeLocalRescanPaths(folder: LibraryFolder, paths: string[]): ScannedAudioFile[] {
+  private filterAddedFiles(files: ScannedAudioFile[], cacheStatesByPath: Map<string, StoredTrackCoverState>): ScannedAudioFile[] {
+    if (cacheStatesByPath.size === 0 || files.length === 0) {
+      return files;
+    }
+
+    const existingPaths = new Set<string>();
+    for (const filePath of cacheStatesByPath.keys()) {
+      existingPaths.add(this.pathCompareValue(resolve(filePath)));
+    }
+
+    return files.filter((file) => !existingPaths.has(this.pathCompareValue(resolve(file.path))));
+  }
+
+  private async normalizeLocalRescanPaths(folder: LibraryFolder, paths: string[]): Promise<ScannedAudioFile[]> {
     const files: ScannedAudioFile[] = [];
     const seen = new Set<string>();
 
@@ -1008,7 +1084,7 @@ export class ScanJobQueue {
       seen.add(comparePath);
 
       try {
-        const fileStat = statSync(filePath);
+        const fileStat = await statFile(filePath);
         if (!fileStat.isFile()) {
           continue;
         }
@@ -1432,6 +1508,13 @@ export class ScanJobQueue {
     }
   }
 
+  private async yieldForScanPressure(initialReducedScanPressure = false): Promise<void> {
+    await yieldToMainLoop();
+    if (initialReducedScanPressure || (await this.resolveBooleanOption(this.shouldReduceScanPressure))) {
+      await delay(scanPressureYieldDelayMs);
+    }
+  }
+
   private scheduleDeferredGroupingRefresh(): void {
     if (this.deferredGroupingRefreshTimer) {
       return;
@@ -1506,9 +1589,9 @@ export class ScanJobQueue {
     return Boolean(state.identityStatus && (state.quickHash || state.fileIdentity || state.identityStatus === 'unsupported' || state.identityStatus === 'error'));
   }
 
-  private observeFileIdentity(filePath: string): FileIdentityObservation {
+  private async observeFileIdentity(filePath: string): Promise<FileIdentityObservation> {
     try {
-      return this.fileIdentityService.observe(filePath);
+      return await this.fileIdentityService.observe(filePath);
     } catch (error) {
       return {
         fileIdentity: null,

@@ -229,6 +229,7 @@ const libraryInboxBatchLimit = 30;
 const libraryInboxPageSize = 50;
 const libraryInboxMaxPageSize = 100;
 const libraryInboxAlbumWallLimit = 24;
+const albumSeedTrackBatchSize = 250;
 const libraryInboxPlaylistTrackLimit = 1000;
 const variousArtistsDisplayName = 'Various Artists';
 const variousArtistsKey = 'various artists';
@@ -1483,7 +1484,7 @@ export class LibraryStore {
     const startedAt = performance.now();
     const folder = this.requireFolder(query.folderId);
     const folderPath = this.resolveFolderScopedPath(folder, query.path);
-    const { page, pageSize, search, sort } = pageFromQuery(query);
+    const { page, pageSize, search, sort, excludeTrackIds, randomWindow } = pageFromQuery(query);
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const scope = this.folderTrackScope(folder.id, folderPath, query.recursive !== false);
@@ -1495,8 +1496,10 @@ export class LibraryStore {
       likePredicate('COALESCE(tracks.genre, \'\')'),
       likePredicate('tracks.path'),
     ], searchOptions);
-    const whereSql = searchFilter.sql ? `WHERE ${scope.sql} AND ${searchFilter.sql}` : `WHERE ${scope.sql}`;
-    const params = [...scope.params, ...searchFilter.params];
+    const excludeTrackIdsSql = excludeTrackIds.length > 0 ? `tracks.id NOT IN (${excludeTrackIds.map(() => '?').join(', ')})` : '';
+    const whereParts = [scope.sql, searchFilter.sql, excludeTrackIdsSql].filter(Boolean);
+    const whereSql = `WHERE ${whereParts.join(' AND ')}`;
+    const params = [...scope.params, ...searchFilter.params, ...excludeTrackIds];
     const selectSql = `SELECT
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
@@ -1511,15 +1514,45 @@ export class LibraryStore {
        ${whereSql}`;
     const orderSql = this.trackOrderSql(sort);
     const totalRow = this.getRow(`SELECT COUNT(*) AS total FROM tracks ${whereSql}`, ...params);
-    const rows = this.allRows(
-      `${selectSql}
+    const total = Number(totalRow?.total ?? 0);
+    const rows =
+      randomWindow && sort === 'random'
+        ? (() => {
+            if (total <= 0) {
+              return [];
+            }
+
+            const sampleSize = Math.min(total, Math.max(pageSize, Math.min(randomWindowMaxRows, pageSize * 3)));
+            const rowNumbers = randomOneBasedRowNumbers(total, sampleSize);
+            if (rowNumbers.length === 0) {
+              return [];
+            }
+
+            return shuffleRows(
+              this.allRows(
+                `WITH folder_tracks AS (
+                  ${selectSql}
+                ),
+                sampled_tracks AS (
+                  SELECT *, ROW_NUMBER() OVER () AS echo_random_row_number
+                  FROM folder_tracks
+                )
+                SELECT *
+                FROM sampled_tracks
+                WHERE echo_random_row_number IN (${rowNumbers.map(() => '?').join(', ')})`,
+                ...params,
+                ...rowNumbers,
+              ),
+            ).slice(0, pageSize);
+          })()
+        : this.allRows(
+            `${selectSql}
        ${orderSql}
        LIMIT ? OFFSET ?`,
-      ...params,
-      pageSize,
-      offset,
-    );
-    const total = Number(totalRow?.total ?? 0);
+            ...params,
+            pageSize,
+            offset,
+          );
 
     try {
       return {
@@ -1538,17 +1571,35 @@ export class LibraryStore {
     return this.resolveFolderScopedPath(this.requireFolder(request.folderId), request.path);
   }
 
-  removeFolder(folderId: string): void {
+  async removeFolder(folderId: string): Promise<void> {
+    const timestamp = nowIso();
     this.transaction(() => {
-      const timestamp = nowIso();
       this.run('UPDATE folders SET status = ?, enabled = ?, updated_at = ? WHERE id = ?', 'removed', 0, timestamp, folderId);
-      this.run('DELETE FROM tracks WHERE folder_id = ?', folderId);
       this.run('DELETE FROM scan_jobs WHERE folder_id = ?', folderId);
       this.run('DELETE FROM scan_directory_snapshots WHERE folder_id = ?', folderId);
-      this.run('DELETE FROM album_tracks');
-      this.run('DELETE FROM albums');
-      this.refreshArtists();
     });
+
+    const deleteBatchSize = 500;
+    while (true) {
+      const rows = this.allRows(
+        `SELECT id
+         FROM tracks
+         WHERE folder_id = ?
+         LIMIT ?`,
+        folderId,
+        deleteBatchSize,
+      );
+      const trackIds = rows.map((row) => textOrNull(row.id)).filter((trackId): trackId is string => Boolean(trackId));
+      if (trackIds.length === 0) {
+        break;
+      }
+
+      const placeholders = trackIds.map(() => '?').join(', ');
+      this.run(`DELETE FROM tracks WHERE id IN (${placeholders})`, ...trackIds);
+      await yieldToMainLoop();
+    }
+
+    this.run('DELETE FROM album_tracks WHERE track_id NOT IN (SELECT id FROM tracks)');
   }
 
   createScanJob(folderId: string): LibraryScanStatus {
@@ -4511,6 +4562,95 @@ export class LibraryStore {
     });
   }
 
+  seedAlbumsForTracks(
+    trackIds: readonly string[],
+    albumService: AlbumService,
+    now = nowIso(),
+    _options: { albumMergeStrategy?: AlbumMergeStrategy } = {},
+  ): void {
+    const uniqueTrackIds = Array.from(
+      new Set(trackIds.filter((trackId) => typeof trackId === 'string' && trackId.trim()).map((trackId) => trackId.trim())),
+    );
+    if (uniqueTrackIds.length === 0) {
+      return;
+    }
+
+    this.transaction(() => {
+      const affectedAlbumIds = new Set<string>();
+      const rows: DbRow[] = [];
+
+      for (let index = 0; index < uniqueTrackIds.length; index += albumSeedTrackBatchSize) {
+        const batch = uniqueTrackIds.slice(index, index + albumSeedTrackBatchSize);
+        const placeholders = batch.map(() => '?').join(', ');
+
+        for (const row of this.allRows(`SELECT DISTINCT album_id FROM album_tracks WHERE track_id IN (${placeholders})`, ...batch)) {
+          const albumId = textOrNull(row.album_id);
+          if (albumId) {
+            affectedAlbumIds.add(albumId);
+          }
+        }
+
+        this.run(`DELETE FROM album_tracks WHERE track_id IN (${placeholders})`, ...batch);
+
+        rows.push(
+          ...this.allRows(
+            `SELECT
+              tracks.id, tracks.path, tracks.artist, tracks.album, tracks.album_artist,
+              tracks.year, tracks.duration, tracks.cover_id, tracks.disc_no, tracks.track_no,
+              tracks.field_sources_json, covers.source_type AS cover_source_type,
+              covers.source_hash AS cover_source_hash, covers.album_path AS cover_album_path
+             FROM tracks
+             LEFT JOIN covers ON covers.id = tracks.cover_id
+             WHERE tracks.missing = 0 AND tracks.id IN (${placeholders})
+             ORDER BY tracks.album_artist COLLATE NOCASE, tracks.album COLLATE NOCASE, tracks.disc_no, tracks.track_no, tracks.title COLLATE NOCASE`,
+            ...batch,
+          ),
+        );
+      }
+
+      const groups = this.buildStandardAlbumGroupsForRows(rows, albumService);
+
+      for (const group of groups.values()) {
+        const existing = this.getRow('SELECT id FROM albums WHERE album_key = ?', group.albumKey);
+        const albumId = textOrNull(existing?.id) ?? group.id;
+        affectedAlbumIds.add(albumId);
+
+        if (!existing) {
+          this.run(
+            `INSERT INTO albums (
+              id, album_key, title, album_artist, year, cover_id, track_count, duration, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            albumId,
+            group.albumKey,
+            group.title,
+            group.albumArtist,
+            group.year,
+            group.coverId,
+            group.trackCount,
+            group.duration,
+            now,
+            now,
+          );
+        }
+
+        for (const link of group.links) {
+          this.run(
+            'INSERT OR REPLACE INTO album_tracks (album_id, track_id, disc_no, track_no, position) VALUES (?, ?, ?, ?, ?)',
+            albumId,
+            link.trackId,
+            link.discNo,
+            link.trackNo,
+            link.position,
+          );
+        }
+      }
+
+      for (const albumId of affectedAlbumIds) {
+        this.refreshSeededAlbumStats(albumId, now);
+      }
+    });
+  }
+
   refreshAlbums(
     albumService: AlbumService,
     now = nowIso(),
@@ -4531,74 +4671,7 @@ export class LibraryStore {
        ORDER BY tracks.album_artist COLLATE NOCASE, tracks.album COLLATE NOCASE, tracks.disc_no, tracks.track_no, tracks.title COLLATE NOCASE`,
     );
 
-    const standardGroups = new Map<string, StandardAlbumGroup>();
-
-    tracks.forEach((track, index) => {
-      const trackId = String(track.id);
-      const title = String(track.album || '');
-      const albumArtist = String(track.album_artist || '');
-      const trackAlbumArtist = albumArtistCreditForTrack(albumArtist, String(track.artist || ''));
-      const year = numberOrNull(track.year);
-      const fieldSources = parseJsonObject(track.field_sources_json);
-      const keyInput: AlbumKeyInput = {
-        albumTitle: title,
-        albumArtist,
-        fallbackArtist: String(track.artist || ''),
-        albumArtistSource: fieldSources.albumArtist,
-        year,
-        filePath: String(track.path),
-        trackId,
-        coverId: textOrNull(track.cover_id),
-        coverSourceHash: textOrNull(track.cover_source_hash),
-        mergeStrategy: 'standard',
-      };
-      const standardAlbumKey = albumService.makeAlbumKey(keyInput);
-      const standardGroup =
-        standardGroups.get(standardAlbumKey) ??
-        {
-          id: randomUUID(),
-          albumKey: standardAlbumKey,
-          title: title || 'Unknown Album',
-          albumArtist: trackAlbumArtist,
-          albumArtistCredits: createAlbumArtistCreditStats(),
-          year,
-          trackCount: 0,
-          duration: 0,
-          coverId: textOrNull(track.cover_id),
-          keyInput,
-          coverFingerprints: new Map<string, number>(),
-          coverSourceHashes: new Map<string, number>(),
-          links: [],
-        };
-      const coverSourceHash = textOrNull(track.cover_source_hash);
-      const coverVisualFingerprint = coverFingerprint(
-        textOrNull(track.cover_source_type),
-        coverSourceHash,
-        textOrNull(track.cover_album_path),
-      );
-
-      addAlbumArtistCredit(standardGroup.albumArtistCredits, albumArtist, String(track.artist || ''), fieldSources.albumArtist);
-      standardGroup.albumArtist = displayAlbumArtistForCredits(standardGroup.albumArtist, standardGroup.albumArtistCredits);
-      standardGroup.trackCount += 1;
-      standardGroup.duration += Number(track.duration ?? 0);
-      standardGroup.coverId = standardGroup.coverId ?? textOrNull(track.cover_id);
-
-      if (coverVisualFingerprint) {
-        standardGroup.coverFingerprints.set(coverVisualFingerprint, (standardGroup.coverFingerprints.get(coverVisualFingerprint) ?? 0) + 1);
-      }
-
-      if (coverSourceHash) {
-        standardGroup.coverSourceHashes.set(coverSourceHash, (standardGroup.coverSourceHashes.get(coverSourceHash) ?? 0) + 1);
-      }
-
-      standardGroup.links.push({
-        trackId,
-        discNo: numberOrNull(track.disc_no),
-        trackNo: numberOrNull(track.track_no),
-        position: index,
-      });
-      standardGroups.set(standardAlbumKey, standardGroup);
-    });
+    const standardGroups = this.buildStandardAlbumGroupsForRows(tracks, albumService);
 
     const albumIdsByKey = new Map<string, string>();
     const albumStats = new Map<string, AlbumIndexStats>();
@@ -4668,6 +4741,136 @@ export class LibraryStore {
         link.position,
       );
     }
+  }
+
+  private buildStandardAlbumGroupsForRows(tracks: DbRow[], albumService: AlbumService): Map<string, StandardAlbumGroup> {
+    const standardGroups = new Map<string, StandardAlbumGroup>();
+
+    tracks.forEach((track, index) => {
+      const trackId = String(track.id);
+      const title = String(track.album || '');
+      const albumArtist = String(track.album_artist || '');
+      const trackAlbumArtist = albumArtistCreditForTrack(albumArtist, String(track.artist || ''));
+      const year = numberOrNull(track.year);
+      const fieldSources = parseJsonObject(track.field_sources_json);
+      const keyInput: AlbumKeyInput = {
+        albumTitle: title,
+        albumArtist,
+        fallbackArtist: String(track.artist || ''),
+        albumArtistSource: fieldSources.albumArtist,
+        year,
+        filePath: String(track.path),
+        trackId,
+        coverId: textOrNull(track.cover_id),
+        coverSourceHash: textOrNull(track.cover_source_hash),
+        mergeStrategy: 'standard',
+      };
+      const standardAlbumKey = albumService.makeAlbumKey(keyInput);
+      const standardGroup =
+        standardGroups.get(standardAlbumKey) ??
+        {
+          id: randomUUID(),
+          albumKey: standardAlbumKey,
+          title: title || 'Unknown Album',
+          albumArtist: trackAlbumArtist,
+          albumArtistCredits: createAlbumArtistCreditStats(),
+          year,
+          trackCount: 0,
+          duration: 0,
+          coverId: textOrNull(track.cover_id),
+          keyInput,
+          coverFingerprints: new Map<string, number>(),
+          coverSourceHashes: new Map<string, number>(),
+          links: [],
+        };
+      const coverSourceHash = textOrNull(track.cover_source_hash);
+      const coverVisualFingerprint = coverFingerprint(
+        textOrNull(track.cover_source_type),
+        coverSourceHash,
+        textOrNull(track.cover_album_path),
+      );
+
+      addAlbumArtistCredit(standardGroup.albumArtistCredits, albumArtist, String(track.artist || ''), fieldSources.albumArtist);
+      standardGroup.albumArtist = displayAlbumArtistForCredits(standardGroup.albumArtist, standardGroup.albumArtistCredits);
+      standardGroup.trackCount += 1;
+      standardGroup.duration += Number(track.duration ?? 0);
+      standardGroup.coverId = standardGroup.coverId ?? textOrNull(track.cover_id);
+
+      if (coverVisualFingerprint) {
+        standardGroup.coverFingerprints.set(coverVisualFingerprint, (standardGroup.coverFingerprints.get(coverVisualFingerprint) ?? 0) + 1);
+      }
+
+      if (coverSourceHash) {
+        standardGroup.coverSourceHashes.set(coverSourceHash, (standardGroup.coverSourceHashes.get(coverSourceHash) ?? 0) + 1);
+      }
+
+      standardGroup.links.push({
+        trackId,
+        discNo: numberOrNull(track.disc_no),
+        trackNo: numberOrNull(track.track_no),
+        position: index,
+      });
+      standardGroups.set(standardAlbumKey, standardGroup);
+    });
+
+    return standardGroups;
+  }
+
+  private refreshSeededAlbumStats(albumId: string, now: string): void {
+    const rows = this.allRows(
+      `SELECT
+        tracks.id, tracks.artist, tracks.album, tracks.album_artist,
+        tracks.year, tracks.duration, tracks.cover_id, tracks.field_sources_json,
+        album_tracks.position
+       FROM album_tracks
+       INNER JOIN tracks ON tracks.id = album_tracks.track_id
+       WHERE album_tracks.album_id = ? AND tracks.missing = 0
+       ORDER BY album_tracks.position ASC`,
+      albumId,
+    );
+
+    if (rows.length === 0) {
+      this.run('DELETE FROM artist_albums WHERE album_id = ?', albumId);
+      this.run('DELETE FROM album_tracks WHERE album_id = ?', albumId);
+      this.run('DELETE FROM albums WHERE id = ?', albumId);
+      return;
+    }
+
+    const first = rows[0]!;
+    const credits = createAlbumArtistCreditStats();
+    let albumArtist = albumArtistCreditForTrack(String(first.album_artist || ''), String(first.artist || ''));
+    let year = numberOrNull(first.year);
+    let duration = 0;
+    let coverId: string | null = null;
+
+    for (const row of rows) {
+      const fieldSources = parseJsonObject(row.field_sources_json);
+      addAlbumArtistCredit(credits, String(row.album_artist || ''), String(row.artist || ''), fieldSources.albumArtist);
+      albumArtist = displayAlbumArtistForCredits(albumArtist, credits);
+      year ??= numberOrNull(row.year);
+      duration += Number(row.duration ?? 0);
+      coverId ??= textOrNull(row.cover_id);
+    }
+
+    this.run(
+      `UPDATE albums SET
+        title = ?,
+        album_artist = ?,
+        year = ?,
+        cover_id = ?,
+        track_count = ?,
+        duration = ?,
+        updated_at = ?
+       WHERE id = ?`,
+      String(first.album || '') || 'Unknown Album',
+      albumArtist,
+      year,
+      coverId,
+      rows.length,
+      duration,
+      now,
+      albumId,
+    );
   }
 
   private makeLooseAlbumKeys(standardGroups: Map<string, StandardAlbumGroup>, albumService: AlbumService): Map<string, string> {
@@ -5197,6 +5400,7 @@ export class LibraryStore {
   private unifiedAlbumOrderSql(sort: string): string {
     switch (sort) {
       case 'artist':
+      case 'artistAlbum':
         return 'ORDER BY album_artist COLLATE NOCASE, title COLLATE NOCASE';
       case 'recent':
       case 'createdDesc':
@@ -5326,6 +5530,7 @@ export class LibraryStore {
       case 'random':
         return `ORDER BY ${prioritySql}RANDOM()`;
       case 'artist':
+      case 'artistAlbum':
       case 'titleAsc':
       case 'default':
       case 'title':
@@ -7913,6 +8118,8 @@ export class LibraryStore {
     switch (sort) {
       case 'artist':
         return 'ORDER BY tracks.artist COLLATE NOCASE, tracks.title COLLATE NOCASE';
+      case 'artistAlbum':
+        return 'ORDER BY tracks.artist COLLATE NOCASE, tracks.album COLLATE NOCASE, COALESCE(tracks.disc_no, 0), COALESCE(tracks.track_no, 999999), tracks.title COLLATE NOCASE';
       case 'album':
         return 'ORDER BY tracks.album COLLATE NOCASE, tracks.title COLLATE NOCASE';
       case 'recent':
@@ -7968,6 +8175,8 @@ export class LibraryStore {
       case 'artistAsc':
       case 'artist':
         return "ORDER BY COALESCE(playlist_items.artist_snapshot, tracks.artist, albums.album_artist, '') COLLATE NOCASE ASC, COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE ASC, playlist_items.position ASC";
+      case 'artistAlbum':
+        return "ORDER BY COALESCE(playlist_items.artist_snapshot, tracks.artist, albums.album_artist, '') COLLATE NOCASE ASC, COALESCE(playlist_items.album_snapshot, tracks.album, albums.title, '') COLLATE NOCASE ASC, COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE ASC, playlist_items.position ASC";
       case 'album':
         return "ORDER BY COALESCE(playlist_items.album_snapshot, tracks.album, albums.title, '') COLLATE NOCASE ASC";
       case 'manual':
@@ -8002,6 +8211,7 @@ export class LibraryStore {
         return 'ORDER BY tracks.mtime_ms DESC, tracks.title COLLATE NOCASE';
       case 'random':
         return 'ORDER BY RANDOM()';
+      case 'artistAlbum':
       case 'default':
       default:
         return 'ORDER BY tracks.album COLLATE NOCASE, COALESCE(tracks.disc_no, 0), COALESCE(tracks.track_no, 0), tracks.title COLLATE NOCASE';
@@ -8011,6 +8221,7 @@ export class LibraryStore {
   private albumOrderSql(sort: string): string {
     switch (sort) {
       case 'artist':
+      case 'artistAlbum':
         return 'ORDER BY albums.album_artist COLLATE NOCASE, albums.title COLLATE NOCASE';
       case 'recent':
       case 'createdDesc':
@@ -8063,6 +8274,7 @@ export class LibraryStore {
         return 'ORDER BY artists.name COLLATE NOCASE DESC';
       case 'random':
         return 'ORDER BY RANDOM()';
+      case 'artistAlbum':
       case 'artist':
       case 'titleAsc':
       case 'default':

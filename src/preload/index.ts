@@ -177,6 +177,28 @@ const isHttpUrl = (value: string): boolean => /^https?:\/\//iu.test(value.trim()
 const systemAudioTransportFadeStepMs = 10;
 const audioTransportFadeCurves = new Set<AudioTransportFadeCurve>(['linear', 'smooth', 'equalPower']);
 const isRendererReadyUrl = (value: string): boolean => /^(?:blob|data):/iu.test(value.trim());
+const nativePreferredSystemLocalAudioExtensions = new Set(['.ape']);
+
+const getPlaybackPathExtension = (filePath: string): string => {
+  const pathPart = filePath.trim().replace(/[?#].*$/u, '');
+  const fileName = pathPart.split(/[\\/]/u).pop() ?? pathPart;
+  const dotIndex = fileName.lastIndexOf('.');
+  if (dotIndex <= 0 || dotIndex === fileName.length - 1) {
+    return '';
+  }
+
+  return fileName.slice(dotIndex).toLowerCase();
+};
+
+const isNativePreferredSystemLocalPath = (filePath: string | null | undefined): boolean => {
+  const rawPath = filePath?.trim() ?? '';
+  return (
+    rawPath.length > 0 &&
+    !isHttpUrl(rawPath) &&
+    !isRendererReadyUrl(rawPath) &&
+    nativePreferredSystemLocalAudioExtensions.has(getPlaybackPathExtension(rawPath))
+  );
+};
 const hashPathForDiagnostics = (value: string): string => {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index += 1) {
@@ -732,9 +754,13 @@ const connectSystemAudioGraph = (): void => {
   systemAudioSplitterNode.connect(systemAudioMonoLeftGainNode, 0);
   systemAudioSplitterNode.connect(systemAudioMonoRightGainNode, 1);
   systemAudioMonoLeftGainNode.connect(systemAudioMonoMergerNode, 0, 0);
-  systemAudioMonoLeftGainNode.connect(systemAudioMonoMergerNode, 0, 1);
-  systemAudioMonoRightGainNode.connect(systemAudioMonoMergerNode, 0, 0);
   systemAudioMonoRightGainNode.connect(systemAudioMonoMergerNode, 0, 1);
+
+  if (systemChannelBalanceMonoMode === 'sum') {
+    systemAudioMonoLeftGainNode.connect(systemAudioMonoMergerNode, 0, 1);
+    systemAudioMonoRightGainNode.connect(systemAudioMonoMergerNode, 0, 0);
+  }
+
   systemAudioMonoMergerNode.connect(systemAudioGainNode);
   systemAudioGainNode.connect(systemAudioContext.destination);
 };
@@ -1315,6 +1341,12 @@ const requiresNativeChainedPlayback = (request: Pick<PlaybackStartRequest, 'auto
   (request.automix?.enabled === true && Boolean(request.automix.nextItem)) ||
   (request.gapless?.enabled === true && Boolean(request.gapless.nextItem));
 
+const requiresNativeSystemLocalPlayback = (request: Pick<PlaybackStartRequest, 'filePath'>): boolean =>
+  isNativePreferredSystemLocalPath(request.filePath);
+
+const requiresNativeSystemMediaPlayback = (request: PlaybackMediaStartRequest): boolean =>
+  request.item.mediaType === 'local' && isNativePreferredSystemLocalPath(request.item.path);
+
 const withNativeSharedOutput = <T extends { output?: AudioOutputSettings }>(request: T): T => ({
   ...request,
   output: {
@@ -1322,6 +1354,14 @@ const withNativeSharedOutput = <T extends { output?: AudioOutputSettings }>(requ
     outputMode: 'shared',
   },
 });
+
+const withNativeSystemFallbackOutput = <T extends { output?: AudioOutputSettings }>(request: T): T => {
+  if (request.output?.outputMode && request.output.outputMode !== 'system') {
+    return request;
+  }
+
+  return withNativeSharedOutput(request);
+};
 
 const shouldUseSystemAudioMode = (): boolean =>
   systemAudioModeActive || lastNativeAudioStatus?.outputMode === 'system';
@@ -1612,6 +1652,7 @@ const echoApi: EchoApi = {
     openLibraryFolderPath: (request) => ipcRenderer.invoke(IpcChannels.LibraryOpenLibraryFolderPath, request),
     removeFolder: (folderId) => ipcRenderer.invoke(IpcChannels.LibraryRemoveFolder, folderId),
     scanFolder: (folderId) => ipcRenderer.invoke(IpcChannels.LibraryScanFolder, folderId),
+    scanFolderChanges: (folderId) => ipcRenderer.invoke(IpcChannels.LibraryScanFolderChanges, folderId),
     rescanEmbeddedTags: (mode) => ipcRenderer.invoke(IpcChannels.LibraryRescanEmbeddedTags, mode),
     getScanStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryGetScanStatus, jobId),
     cancelScan: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryCancelScan, jobId),
@@ -1767,6 +1808,10 @@ const echoApi: EchoApi = {
     getBpmAnalysisStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryGetBpmAnalysisStatus, jobId),
     startReplayGainAnalysis: (options) => ipcRenderer.invoke(IpcChannels.LibraryStartReplayGainAnalysis, options),
     getReplayGainAnalysisStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryGetReplayGainAnalysisStatus, jobId),
+    startLyricsBackfill: (options) => ipcRenderer.invoke(IpcChannels.LibraryStartLyricsBackfill, options),
+    getLyricsBackfillStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryGetLyricsBackfillStatus, jobId),
+    getCurrentLyricsBackfillStatus: () => ipcRenderer.invoke(IpcChannels.LibraryGetCurrentLyricsBackfillStatus),
+    cancelLyricsBackfill: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryCancelLyricsBackfill, jobId),
   },
   libraryLab: {
     setWatcherEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.LibraryLabSetWatcherEnabled, enabled),
@@ -1791,6 +1836,12 @@ const echoApi: EchoApi = {
         return ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, withNativeSharedOutput(request));
       }
 
+      if (requiresNativeSystemLocalPlayback(request)) {
+        stopSystemPlayback('stopped', false);
+        systemAudioModeActive = false;
+        return ipcRenderer.invoke(IpcChannels.PlaybackPlayLocalFile, withNativeSystemFallbackOutput(request));
+      }
+
       if (await shouldUseSystemAudioForPlayback(request.output)) {
         return isMainPlaybackRenderer
           ? playLocalFileWithSystemAudio(request)
@@ -1804,6 +1855,12 @@ const echoApi: EchoApi = {
         stopSystemPlayback('stopped', false);
         systemAudioModeActive = false;
         return ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, withNativeSharedOutput(request));
+      }
+
+      if (requiresNativeSystemMediaPlayback(request)) {
+        stopSystemPlayback('stopped', false);
+        systemAudioModeActive = false;
+        return ipcRenderer.invoke(IpcChannels.PlaybackPlayMediaItem, withNativeSystemFallbackOutput(request));
       }
 
       if (await shouldUseSystemAudioForPlayback(request.output)) {
@@ -2300,6 +2357,9 @@ const echoApi: EchoApi = {
     previewImportPreset: () => ipcRenderer.invoke(IpcChannels.EqPreviewImportPreset),
     importPreset: () => ipcRenderer.invoke(IpcChannels.EqImportPreset),
     deletePreset: (presetId) => ipcRenderer.invoke(IpcChannels.EqDeletePreset, presetId),
+    browseHeadphoneCorrections: (request) => ipcRenderer.invoke(IpcChannels.EqBrowseHeadphoneCorrections, request),
+    searchHeadphoneCorrections: (request) => ipcRenderer.invoke(IpcChannels.EqSearchHeadphoneCorrections, request),
+    applyHeadphoneCorrection: (request) => ipcRenderer.invoke(IpcChannels.EqApplyHeadphoneCorrection, request),
     listProfiles: () => ipcRenderer.invoke(IpcChannels.EqListProfiles),
     saveProfile: (request) => ipcRenderer.invoke(IpcChannels.EqSaveProfile, request),
     applyProfile: (profileId) => ipcRenderer.invoke(IpcChannels.EqApplyProfile, profileId),

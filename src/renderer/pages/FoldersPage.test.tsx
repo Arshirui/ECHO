@@ -198,6 +198,7 @@ let libraryMock: {
   chooseFolder: ReturnType<typeof vi.fn>;
   addFolder: ReturnType<typeof vi.fn>;
   scanFolder: ReturnType<typeof vi.fn>;
+  scanFolderChanges: ReturnType<typeof vi.fn>;
   removeFolder: ReturnType<typeof vi.fn>;
   getScanStatus: ReturnType<typeof vi.fn>;
 };
@@ -226,6 +227,7 @@ beforeEach(() => {
     chooseFolder: vi.fn().mockResolvedValue(null),
     addFolder: vi.fn(),
     scanFolder: vi.fn(),
+    scanFolderChanges: vi.fn(),
     removeFolder: vi.fn(),
     getScanStatus: vi.fn().mockResolvedValue(scanStatus()),
   };
@@ -296,6 +298,17 @@ beforeEach(() => {
     configurable: true,
     value: {
       library: libraryMock,
+      playback: {
+        playLocalFile: vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+          Promise.resolve({
+            state: 'playing',
+            currentTrackId: request.trackId,
+            positionMs: 0,
+            durationMs: 120000,
+            filePath: request.filePath,
+          }),
+        ),
+      },
       remoteSources: remoteSourcesMock,
     },
   });
@@ -343,6 +356,45 @@ describe('FoldersPage', () => {
     expect(libraryMock.getFolderChildren).not.toHaveBeenCalled();
   });
 
+  it('restores the expanded local tree and selected folder after a cold restart', async () => {
+    const firstRender = renderFoldersPage();
+
+    await screen.findByRole('heading', { name: 'Folders' });
+    fireEvent.click(screen.getByRole('button', { name: /Music/i }).querySelector('.folder-expand-hit')!);
+    const rockButton = (await screen.findByText('Rock')).closest('button');
+    expect(rockButton).toBeTruthy();
+    fireEvent.click(rockButton!);
+
+    await waitFor(() =>
+      expect(libraryMock.getFolderTracks).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          folderId: 'folder-1',
+          path: 'D:\\Music\\Rock',
+        }),
+      ),
+    );
+    expect(window.localStorage.getItem('echo-next.local-folder-tree-view.v1')).toContain('D:\\\\Music\\\\Rock');
+
+    firstRender.unmount();
+    __resetFoldersPageSessionForTests();
+    libraryMock.getFolderChildren.mockClear();
+    libraryMock.getFolderTracks.mockClear();
+
+    renderFoldersPage();
+
+    const restoredRockButton = (await screen.findByText('Rock')).closest('button');
+    expect(restoredRockButton?.getAttribute('data-active')).toBe('true');
+    await waitFor(() => expect(libraryMock.getFolderChildren).toHaveBeenCalledWith({ folderId: 'folder-1', parentPath: 'D:\\Music' }));
+    await waitFor(() =>
+      expect(libraryMock.getFolderTracks).toHaveBeenCalledWith(
+        expect.objectContaining({
+          folderId: 'folder-1',
+          path: 'D:\\Music\\Rock',
+        }),
+      ),
+    );
+  });
+
   it('ignores Escape folder-up navigation while the folders page is hidden', async () => {
     const { container } = renderFoldersPage();
 
@@ -384,6 +436,69 @@ describe('FoldersPage', () => {
           folderId: 'folder-1',
           path: 'D:\\Music',
           recursive: false,
+        }),
+      ),
+    );
+  });
+
+  it('plays the selected folder in folder order instead of random sort', async () => {
+    window.localStorage.setItem('echo-next.folders.sort', 'random');
+    libraryMock.getFolderTracks.mockResolvedValue(
+      page([
+        track({ id: 'track-1', title: 'First Folder Song' }),
+        track({ id: 'track-2', title: 'Second Folder Song', path: 'D:\\Music\\Second.flac' }),
+      ]),
+    );
+
+    renderFoldersPage();
+
+    await screen.findByText('First Folder Song');
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+
+    await waitFor(() =>
+      expect(libraryMock.getFolderTracks).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          folderId: 'folder-1',
+          path: 'D:\\Music',
+          recursive: true,
+          page: 1,
+          pageSize: 500,
+          sort: 'default',
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(window.echo?.playback?.playLocalFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackId: 'track-1',
+          filePath: 'D:\\Music\\Root.flac',
+        }),
+      ),
+    );
+  });
+
+  it('randomizes playback from the selected folder only', async () => {
+    libraryMock.getFolderTracks.mockResolvedValue(
+      page([
+        track({ id: 'track-1', title: 'First Folder Song' }),
+        track({ id: 'track-2', title: 'Second Folder Song', path: 'D:\\Music\\Second.flac' }),
+      ]),
+    );
+
+    renderFoldersPage();
+
+    await screen.findByText('First Folder Song');
+    fireEvent.click(screen.getByRole('button', { name: 'Random' }));
+
+    await waitFor(() =>
+      expect(libraryMock.getFolderTracks).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          folderId: 'folder-1',
+          path: 'D:\\Music',
+          recursive: true,
+          page: 1,
+          pageSize: 500,
+          sort: 'random',
         }),
       ),
     );
@@ -538,6 +653,30 @@ describe('FoldersPage', () => {
     } finally {
       window.removeEventListener('library:changed', changedHandler);
     }
+  });
+
+  it('starts a changes-only scan from the selected root management panel', async () => {
+    libraryMock.scanFolderChanges.mockResolvedValue(scanStatus({ folderId: 'folder-1' }));
+
+    renderFoldersPage();
+
+    await screen.findByRole('heading', { name: 'Folders' });
+    fireEvent.click(screen.getByRole('button', { name: 'Scan changes' }));
+
+    await waitFor(() => expect(libraryMock.scanFolderChanges).toHaveBeenCalledWith('folder-1'));
+    expect(libraryMock.scanFolder).not.toHaveBeenCalled();
+  });
+
+  it('warns users that scanning can briefly make the app unresponsive', async () => {
+    act(() => {
+      rememberLibraryScanStatus(scanStatus());
+    });
+
+    renderFoldersPage();
+
+    expect(
+      await screen.findByText(/The app may briefly become unresponsive during scanning; this is normal/i),
+    ).toBeTruthy();
   });
 
   it('refreshes folder overviews once for each terminal scan job', async () => {
