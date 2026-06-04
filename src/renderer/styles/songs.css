@@ -3125,6 +3125,16 @@ html[data-theme="dark"] .tag-editor-lyrics-status {
   background: #1f2631;
 }
 
+.tag-editor-lyrics-candidate--instrumental {
+  border-color: color-mix(in srgb, #c47a22 40%, transparent);
+  background: color-mix(in srgb, #fff3df 62%, var(--theme-panel-bg));
+}
+
+html[data-theme="dark"] .tag-editor-lyrics-candidate--instrumental {
+  border-color: rgba(255, 204, 128, 0.36);
+  background: color-mix(in srgb, #3a2c1d 54%, #1f2631);
+}
+
 .tag-editor-network-candidate {
   transition:
     border-color 160ms ease,
@@ -3281,6 +3291,18 @@ html[data-theme="dark"] .tag-editor-lyrics-status {
   font-weight: 800;
   line-height: 1;
   white-space: nowrap;
+}
+
+.tag-editor-lyrics-candidate--instrumental .tag-editor-lyrics-badges span:last-child {
+  color: #7a4a13;
+  border-color: rgba(184, 116, 36, 0.26);
+  background: rgba(255, 221, 171, 0.8);
+}
+
+html[data-theme="dark"] .tag-editor-lyrics-candidate--instrumental .tag-editor-lyrics-badges span:last-child {
+  color: #ffe5b8;
+  border-color: rgba(255, 204, 128, 0.22);
+  background: rgba(255, 183, 77, 0.22);
 }
 
 .tag-editor-lyrics-actions {

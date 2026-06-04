@@ -20,9 +20,12 @@ const getLibraryServiceMock = vi.fn();
 const ensureCoverCacheDirectoryMock = vi.fn();
 const ensureTrayMock = vi.fn();
 const destroyTrayMock = vi.fn();
+const requestAppQuitMock = vi.fn();
 const fromWebContentsMock = vi.fn();
+const appQuitMock = vi.fn();
 const refreshGlobalShortcutRegistrationMock = vi.fn(() => null);
 const refreshDataBackupSchedulerMock = vi.fn();
+const subscribeDataBackupProgressMock = vi.fn(() => () => undefined);
 const getDataBackupStatusMock = vi.fn(() => ({
   enabled: false,
   directory: null,
@@ -32,6 +35,7 @@ const getDataBackupStatusMock = vi.fn(() => ({
   lastError: null,
   nextBackupAt: null,
   running: false,
+  progress: null,
 }));
 const runDataBackupNowMock = vi.fn();
 const importEchoUserDataBackupMock = vi.fn();
@@ -65,6 +69,7 @@ vi.mock('electron', () => ({
   app: {
     getVersion: () => '0.0.0-test',
     getPath: appPathMock,
+    quit: appQuitMock,
   },
   BrowserWindow: {
     fromWebContents: fromWebContentsMock,
@@ -137,6 +142,7 @@ vi.mock('../app/appSettings', () => ({
 vi.mock('../app/tray', () => ({
   destroyTray: destroyTrayMock,
   ensureTray: ensureTrayMock,
+  requestAppQuit: requestAppQuitMock,
 }));
 
 vi.mock('../app/autoUpdater', () => ({
@@ -167,6 +173,7 @@ vi.mock('../app/dataBackup', () => ({
   importEchoUserDataBackup: importEchoUserDataBackupMock,
   refreshDataBackupScheduler: refreshDataBackupSchedulerMock,
   runDataBackupNow: runDataBackupNowMock,
+  subscribeDataBackupProgress: subscribeDataBackupProgressMock,
 }));
 
 vi.mock('../network/proxySettings', () => ({
@@ -272,10 +279,13 @@ describe('app IPC cover cache directory', () => {
     ensureCoverCacheDirectoryMock.mockReset();
     ensureTrayMock.mockClear();
     destroyTrayMock.mockClear();
+    requestAppQuitMock.mockClear();
+    appQuitMock.mockClear();
     fromWebContentsMock.mockReset();
     fromPartitionMock.mockClear();
     refreshGlobalShortcutRegistrationMock.mockClear();
     refreshDataBackupSchedulerMock.mockClear();
+    subscribeDataBackupProgressMock.mockClear();
     getDataBackupStatusMock.mockClear();
     runDataBackupNowMock.mockReset();
     importEchoUserDataBackupMock.mockReset();
@@ -516,6 +526,13 @@ describe('app IPC cover cache directory', () => {
 
     expect(result).toBe(true);
     expect(window.isFullScreen).toHaveBeenCalledTimes(1);
+  });
+
+  it('requests a real app quit through IPC', () => {
+    handlers[IpcChannels.AppQuit]!();
+
+    expect(requestAppQuitMock).toHaveBeenCalledTimes(1);
+    expect(appQuitMock).toHaveBeenCalledTimes(1);
   });
 
   it('exports app settings to a selected JSON backup', async () => {

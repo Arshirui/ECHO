@@ -227,6 +227,37 @@ describe('playbackStatusStore', () => {
     expect(snapshot.playbackStatus?.positionMs).toBe(60_000);
   });
 
+  it('keeps seek intent while a near-target playing status is still behind the requested target', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-25T00:00:00.000Z'));
+
+    beginPlaybackSeekSnapshot({
+      state: 'playing',
+      currentTrackId: 'track-b',
+      filePath: 'D:\\Music\\song-b.flac',
+      positionMs: 60_000,
+      durationMs: 300_000,
+    });
+
+    vi.advanceTimersByTime(500);
+
+    const hoveringSnapshot = setPlaybackStatusSnapshot({
+      audioStatus: audioStatus({ positionSeconds: 59.8 }),
+      error: null,
+    });
+    expect(hoveringSnapshot.audioStatus?.positionSeconds).toBe(59.8);
+    expect(hoveringSnapshot.playbackVisualIntent).not.toBeNull();
+
+    vi.advanceTimersByTime(500);
+
+    const settledSnapshot = setPlaybackStatusSnapshot({
+      audioStatus: audioStatus({ positionSeconds: 61 }),
+      error: null,
+    });
+    expect(settledSnapshot.audioStatus?.positionSeconds).toBe(61);
+    expect(settledSnapshot.playbackVisualIntent).toBeNull();
+  });
+
   it('keeps paused seek targets stable while waiting for audio status', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-25T00:00:00.000Z'));

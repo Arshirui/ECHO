@@ -236,11 +236,13 @@ export type AudioSessionDependencies = {
   transportFadeStepMs?: number;
   transportFadeWait?: (durationMs: number) => Promise<void>;
   disableWatchdogTimer?: boolean;
+  platform?: NodeJS.Platform | string;
 };
 
 const fallbackSampleRate = 44100;
 const fallbackSharedMixSampleRate = 48000;
 const maxReliableSharedOutputSampleRate = 96000;
+const recommendedWindowsSharedDefaultSampleRate = 48000;
 const preparedLocalPlaybackTtlMs = 2 * 60 * 1000;
 const preparedLocalPlaybackMaxItems = 50;
 const defaultWatchdogIntervalMs = 2000;
@@ -511,6 +513,23 @@ const normalizePositiveInteger = (value: unknown): number | null => {
 const capSharedOutputSampleRate = (sampleRate: number): number =>
   sampleRate > maxReliableSharedOutputSampleRate ? maxReliableSharedOutputSampleRate : sampleRate;
 
+const createWindowsSharedDefaultFormatWarning = (
+  platform: NodeJS.Platform | string,
+  outputMode: AudioOutputMode,
+  sharedDeviceSampleRate: number | null,
+): string | null => {
+  if (
+    platform !== 'win32' ||
+    outputMode !== 'shared' ||
+    sharedDeviceSampleRate === null ||
+    sharedDeviceSampleRate <= recommendedWindowsSharedDefaultSampleRate
+  ) {
+    return null;
+  }
+
+  return `windows_audio_default_format_unusual:${sharedDeviceSampleRate}`;
+};
+
 const normalizeResetReason = (reason: string): string => {
   const normalized = reason.trim().replace(/[\r\n]+/gu, ' ').slice(0, 96);
 
@@ -778,7 +797,8 @@ const getDsdDopDisabledWarning = (
 
   const eqState = getEqBridge().getState();
   const channelBalanceState = getEqBridge().getChannelBalanceState();
-  if (eqState.enabled || channelBalanceState.enabled) {
+  const roomCorrectionState = getEqBridge().getRoomCorrectionState();
+  if (eqState.enabled || roomCorrectionState.enabled || channelBalanceState.enabled) {
     return 'dsd_dop_disabled_by_dsp';
   }
 
@@ -1321,6 +1341,7 @@ export class AudioSession extends EventEmitter {
   private readonly logger: (message: string) => void;
   private readonly verboseLogger: (message: string) => void;
   private readonly diagnosticLogger: (message: string) => void;
+  private readonly platform: NodeJS.Platform | string;
   private readonly clock = new PlaybackClock();
   private outputSettings: Required<Pick<AudioOutputSettings, 'outputMode' | 'latencyProfile' | 'volume' | 'playbackRate' | 'playbackSpeedMode'>> &
     Omit<AudioOutputSettings, 'outputMode' | 'latencyProfile' | 'volume' | 'playbackRate' | 'playbackSpeedMode'> = {
@@ -1446,6 +1467,8 @@ export class AudioSession extends EventEmitter {
     bufferedFrames: null,
     underrunCallbacks: 0,
     underrunFrames: 0,
+    dspClippingRisk: false,
+    dspLimiterProtecting: false,
   };
   private lastNativeTelemetryStatusEmittedAt = 0;
   private lastLevelMeterStatusEmittedAt = 0;
@@ -1480,10 +1503,11 @@ export class AudioSession extends EventEmitter {
     super();
     this.logger = dependencies.logger ?? defaultLogger;
     this.verboseLogger = dependencies.logger ?? (verboseAudioLogsEnabled ? defaultLogger : noopLogger);
+    this.platform = dependencies.platform ?? process.platform;
     this.decoder = dependencies.decoder ?? new DecoderPipeline({ logger: this.logger });
     this.juceDecoder = dependencies.juceDecoder ?? new JuceDecodePipeline({ logger: this.logger });
     this.automixAnalyzer = dependencies.automixAnalyzer ?? new AutomixAnalyzer({ logger: this.logger });
-    this.deviceService = dependencies.deviceService ?? new DeviceService({ logger: this.logger });
+    this.deviceService = dependencies.deviceService ?? new DeviceService({ logger: this.logger, platform: this.platform });
     this.createBridge = dependencies.createBridge ?? (() => new NativeOutputBridge({ logger: this.logger }));
     this.isNativeHostAvailable = dependencies.isNativeHostAvailable ?? isNativeOutputBridgeAvailable;
     this.reportAudioError = dependencies.reportAudioError ?? defaultAudioErrorReporter;
@@ -1509,6 +1533,8 @@ export class AudioSession extends EventEmitter {
     this.hostStatus = this.isNativeHostAvailable() ? 'not-initialized' : 'unavailable';
     this.on('error', () => undefined);
     getEqBridge().on('state', this.eqStateListener);
+    getEqBridge().on('channelBalanceState', this.eqStateListener);
+    getEqBridge().on('roomCorrectionState', this.eqStateListener);
     if (!dependencies.disableWatchdogTimer) {
       this.watchdogTimer = setInterval(() => {
         void this.checkPlaybackWatchdog();
@@ -3223,33 +3249,40 @@ export class AudioSession extends EventEmitter {
     const plan = this.currentPlan;
     const eqState = getEqBridge().getState();
     const channelBalanceState = getEqBridge().getChannelBalanceState();
+    const roomCorrectionState = getEqBridge().getRoomCorrectionState();
+    const dspModuleActive = eqState.enabled || roomCorrectionState.enabled || channelBalanceState.enabled;
     const audioVisualSpectrumEnabled = isAudioVisualSpectrumEnabled();
     this.levelMeterTransform?.setVisualSpectrumEnabled(audioVisualSpectrumEnabled);
     const audioLevels = createAudioLevelTelemetry(
       audioVisualSpectrumEnabled ? this.levelSnapshot : this.createLevelSnapshotWithoutVisualTelemetry(this.levelSnapshot),
       eqState,
       channelBalanceState,
+      dspModuleActive,
     );
     const realtimeLevelClippingRisk = audioLevels.estimatedOutputPeakDb !== null && audioLevels.estimatedOutputPeakDb >= 0;
     const realtimeLevelClipped = audioLevels.clipCount > 0;
+    const nativeDspClippingRisk = this.nativeTelemetry.dspClippingRisk === true;
+    const nativeDspLimiterProtecting = this.nativeTelemetry.dspLimiterProtecting === true;
     const chainedPlaybackActive = this.activeAutomix !== null;
     const gaplessActive = this.activeAutomix?.gapless === true;
     const automixActive = chainedPlaybackActive && !gaplessActive;
     const settings = getReplayGainAudioSettings();
     const replayGainCalculation = this.currentReplayGainCalculation;
     const replayGainActive = replayGainCalculation.active && Math.abs(replayGainCalculation.appliedDb) >= 0.001;
-    const dspActive = eqState.enabled || channelBalanceState.enabled || chainedPlaybackActive || replayGainActive;
+    const dspActive = dspModuleActive || chainedPlaybackActive || replayGainActive;
     const bitPerfectDisabledReason = eqState.enabled
       ? 'eq_enabled'
-      : channelBalanceState.enabled
-        ? 'channel_balance_enabled'
-        : chainedPlaybackActive
-          ? gaplessActive
-            ? 'gapless_enabled'
-            : 'automix_enabled'
-          : replayGainActive
-            ? 'replay_gain_enabled'
-            : null;
+      : roomCorrectionState.enabled
+        ? 'room_correction_enabled'
+        : channelBalanceState.enabled
+          ? 'channel_balance_enabled'
+          : chainedPlaybackActive
+            ? gaplessActive
+              ? 'gapless_enabled'
+              : 'automix_enabled'
+            : replayGainActive
+              ? 'replay_gain_enabled'
+              : null;
     const warnings = [...(plan?.warnings ?? [])];
     for (const warning of this.outputWarnings) {
       if (!warnings.includes(warning)) {
@@ -3259,6 +3292,8 @@ export class AudioSession extends EventEmitter {
 
     if (eqState.enabled) {
       warnings.push('eq_enabled_bit_perfect_disabled');
+    } else if (roomCorrectionState.enabled) {
+      warnings.push('room_correction_bit_perfect_disabled');
     } else if (channelBalanceState.enabled) {
       warnings.push('channel_balance_bit_perfect_disabled');
     } else if (chainedPlaybackActive) {
@@ -3271,8 +3306,13 @@ export class AudioSession extends EventEmitter {
       warnings.push('replay_gain_disabled_by_dsd_direct');
     }
 
-    if (eqState.clippingRisk || channelBalanceState.clippingRisk) {
-      warnings.push(eqState.clippingRisk ? 'eq_clipping_risk' : 'channel_balance_clipping_risk');
+    if (eqState.clippingRisk || roomCorrectionState.clippingRisk || channelBalanceState.clippingRisk) {
+      warnings.push(eqState.clippingRisk ? 'eq_clipping_risk' : roomCorrectionState.clippingRisk ? 'room_correction_clipping_risk' : 'channel_balance_clipping_risk');
+    }
+    if (nativeDspLimiterProtecting && !warnings.includes('dsp_limiter_protecting')) {
+      warnings.push('dsp_limiter_protecting');
+    } else if (nativeDspClippingRisk && !warnings.includes('dsp_clipping_risk')) {
+      warnings.push('dsp_clipping_risk');
     }
     if (realtimeLevelClippingRisk && !warnings.includes('audio_level_clipping_risk')) {
       warnings.push('audio_level_clipping_risk');
@@ -3401,11 +3441,15 @@ export class AudioSession extends EventEmitter {
       bitPerfectCandidate: (plan?.bitPerfectCandidate ?? false) && !dspActive,
       sampleRateMismatch: plan?.sampleRateMismatch ?? false,
       eqEnabled: eqState.enabled,
+      roomCorrectionEnabled: roomCorrectionState.enabled,
       channelBalanceEnabled: channelBalanceState.enabled,
       dspActive,
       preampDb: eqState.preampDb,
+      dspHeadroomDb: eqState.dspHeadroomDb ?? 0,
       eqPresetName: eqState.presetName,
-      clippingRisk: eqState.clippingRisk || Boolean(channelBalanceState.clippingRisk) || realtimeLevelClippingRisk || realtimeLevelClipped,
+      clippingRisk: eqState.clippingRisk || roomCorrectionState.clippingRisk || Boolean(channelBalanceState.clippingRisk) || nativeDspClippingRisk || nativeDspLimiterProtecting || realtimeLevelClippingRisk || realtimeLevelClipped,
+      dspClippingRisk: nativeDspClippingRisk,
+      dspLimiterProtecting: nativeDspLimiterProtecting,
       audioLevels,
       bitPerfectDisabledReason,
       sharedStabilityTier: plan?.outputMode === 'shared' ? this.sharedStabilityTier : null,
@@ -3685,6 +3729,8 @@ export class AudioSession extends EventEmitter {
       this.mainEventLoopLagTimer = null;
     }
     getEqBridge().off('state', this.eqStateListener);
+    getEqBridge().off('channelBalanceState', this.eqStateListener);
+    getEqBridge().off('roomCorrectionState', this.eqStateListener);
     this.detachBridgeEvents();
     this.stopResources();
     this.juceDecoder.dispose?.();
@@ -3701,6 +3747,8 @@ export class AudioSession extends EventEmitter {
     }
 
     getEqBridge().off('state', this.eqStateListener);
+    getEqBridge().off('channelBalanceState', this.eqStateListener);
+    getEqBridge().off('roomCorrectionState', this.eqStateListener);
     await this.stopResourcesGracefully(reason);
     this.juceDecoder.dispose?.();
     this.detachBridgeEvents();
@@ -4707,9 +4755,18 @@ export class AudioSession extends EventEmitter {
           ? actualDeviceSampleRate ?? requestedOutputSampleRate
           : requestedOutputSampleRate;
     const warnings: string[] = [];
+    const windowsSharedDefaultFormatWarning = createWindowsSharedDefaultFormatWarning(
+      this.platform,
+      outputMode,
+      sharedDeviceSampleRate ?? (outputMode === 'shared' ? actualDeviceSampleRate : null),
+    );
 
     if (!fileSampleRate) {
       warnings.push('file_sample_rate_unknown_using_44100_fallback');
+    }
+
+    if (windowsSharedDefaultFormatWarning) {
+      warnings.push(windowsSharedDefaultFormatWarning);
     }
 
     const dsdDopDisabledWarning = getDsdDopDisabledWarning(
@@ -4851,6 +4908,7 @@ export class AudioSession extends EventEmitter {
     const readySharedRate =
       normalizePositiveInteger(readyDevice.sharedDeviceSampleRate) ??
       normalizePositiveInteger(readyDevice.sharedSampleRate);
+    const enumeratedSharedRate = normalizePositiveInteger(this.currentDevice?.sharedDeviceSampleRate);
     const selectedDevice = readySharedRate
       ? {
           ...(this.currentDevice ?? {
@@ -4861,7 +4919,7 @@ export class AudioSession extends EventEmitter {
             sampleRate: null,
             isDefault: false,
           }),
-          sharedDeviceSampleRate: readySharedRate,
+          sharedDeviceSampleRate: enumeratedSharedRate ?? readySharedRate,
         }
       : this.currentDevice;
     const readyDeviceName = typeof readyDevice.deviceName === 'string' ? readyDevice.deviceName : null;
@@ -4883,7 +4941,7 @@ export class AudioSession extends EventEmitter {
             }),
             name: readyDeviceName ?? selectedDevice?.name ?? this.currentOutputSettings.deviceName ?? 'Selected output',
             sampleRate: readySampleRate,
-            sharedDeviceSampleRate: readySharedRate ?? selectedDevice?.sharedDeviceSampleRate ?? readySampleRate,
+            sharedDeviceSampleRate: enumeratedSharedRate ?? readySharedRate ?? selectedDevice?.sharedDeviceSampleRate ?? readySampleRate,
           }
         : selectedDevice;
 
@@ -6838,6 +6896,8 @@ export class AudioSession extends EventEmitter {
           : Math.max(0, Math.round(Number(telemetry.bufferedFrames) || 0)),
       underrunCallbacks: Math.max(0, Math.round(Number(telemetry.underrunCallbacks) || 0)),
       underrunFrames: Math.max(0, Math.round(Number(telemetry.underrunFrames) || 0)),
+      dspClippingRisk: telemetry.dspClippingRisk === true,
+      dspLimiterProtecting: telemetry.dspLimiterProtecting === true,
       reportedAtMs:
         telemetry.reportedAtMs === null || telemetry.reportedAtMs === undefined
           ? null
@@ -7158,6 +7218,8 @@ export class AudioSession extends EventEmitter {
       bufferedFrames: null,
       underrunCallbacks: 0,
       underrunFrames: 0,
+      dspClippingRisk: false,
+      dspLimiterProtecting: false,
       reportedAtMs: null,
       nativePositionStalenessMs: null,
     };

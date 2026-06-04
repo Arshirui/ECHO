@@ -101,6 +101,7 @@ type AlbumDetailTranslationKey =
   | 'albumDetail.sources.releaseDetails'
   | 'albumDetail.status.libraryReady'
   | 'albumDetail.status.addedToQueue'
+  | 'albumDetail.status.copiedCover'
   | 'albumDetail.status.readingSignal'
   | 'albumDetail.status.unknownGenre'
   | 'albumDetail.status.unknownLength'
@@ -228,6 +229,7 @@ type ArtistDetailTranslationKey =
   | 'artistDetail.tracks.error.desktopBridgeActions'
   | 'artistDetail.tracks.error.desktopBridgeEdit'
   | 'artistDetail.tracks.error.desktopBridgeRead'
+  | 'artistDetail.tracks.expandAll'
   | 'artistDetail.tracks.error.noCoverSaved'
   | 'artistDetail.tracks.error.noCoverToCopy'
   | 'artistDetail.tracks.error.remoteFileAction'
@@ -808,21 +810,37 @@ export type TranslationKey =
   | 'audioDrawer.status.ratePending'
   | 'audioDrawer.status.sampleRatePending'
   | 'audioDrawer.title'
+  | 'audioDrawer.warning.highOutputSampleRate'
   | 'audioProfessional.action.hideDetails'
   | 'audioProfessional.action.refresh'
   | 'audioProfessional.action.showDetails'
   | 'audioProfessional.badge.bitPerfect'
   | 'audioProfessional.badge.dsp'
+  | 'audioProfessional.badge.protect'
   | 'audioProfessional.badge.replayGain'
   | 'audioProfessional.badge.resampling'
   | 'audioProfessional.badge.sampleMismatch'
   | 'audioProfessional.badge.warning'
   | 'audioProfessional.issue.reason'
+  | 'audioProfessional.issue.audioLevelClipped'
+  | 'audioProfessional.issue.audioLevelClippingRisk'
+  | 'audioProfessional.issue.dspClippingRisk'
+  | 'audioProfessional.issue.dspLimiterProtecting'
+  | 'audioProfessional.issue.roomCorrectionBitPerfectDisabled'
+  | 'audioProfessional.issue.roomCorrectionClippingRisk'
   | 'audioProfessional.issue.sharedMixRateTooHigh'
+  | 'audioProfessional.issue.windowsDefaultFormatUnusual'
   | 'audioProfessional.group.directDsp'
   | 'audioProfessional.group.playbackChain'
   | 'audioProfessional.group.sampleRate'
   | 'audioProfessional.group.stability'
+  | 'audioProfessional.signal.decode'
+  | 'audioProfessional.signal.dsp'
+  | 'audioProfessional.signal.fir'
+  | 'audioProfessional.signal.headroom'
+  | 'audioProfessional.signal.native'
+  | 'audioProfessional.signal.output'
+  | 'audioProfessional.signal.source'
   | 'audioProfessional.row.actualBuffer'
   | 'audioProfessional.row.actualDeviceSampleRate'
   | 'audioProfessional.row.bitDepth'
@@ -845,11 +863,14 @@ export type TranslationKey =
   | 'audioProfessional.row.outputLatency'
   | 'audioProfessional.row.outputMode'
   | 'audioProfessional.row.replayGain'
+  | 'audioProfessional.row.protectLimiter'
+  | 'audioProfessional.row.roomCorrection'
   | 'audioProfessional.row.requestedBuffer'
   | 'audioProfessional.row.requestedOutputSampleRate'
   | 'audioProfessional.row.resampler'
   | 'audioProfessional.row.resampling'
   | 'audioProfessional.row.sampleRateMismatch'
+  | 'audioProfessional.row.signalPath'
   | 'audioProfessional.row.sharedDeviceSampleRate'
   | 'audioProfessional.row.sharedStability'
   | 'audioProfessional.row.soxr'
@@ -859,7 +880,9 @@ export type TranslationKey =
   | 'audioProfessional.summary.pending'
   | 'audioProfessional.title'
   | 'audioProfessional.value.disabled'
+  | 'audioProfessional.value.dspPath'
   | 'audioProfessional.value.enabled'
+  | 'audioProfessional.value.nativePath'
   | 'audioProfessional.value.no'
   | 'audioProfessional.value.pending'
   | 'audioProfessional.value.ready'
@@ -1067,6 +1090,7 @@ export type TranslationKey =
   | 'notice.action.openReport'
   | 'notice.audioError.description'
   | 'notice.audioError.title'
+  | 'notice.audioDefaultFormatWarning'
   | 'notice.diagnosticsCrash.description'
   | 'notice.importFiles.empty'
   | 'notice.importFiles.failed'
@@ -1168,6 +1192,11 @@ export type TranslationKey =
   | 'historyPage.refresh.none'
   | 'historyPage.refresh.removed'
   | 'historyPage.refresh.running'
+  | 'historyPage.recent.aria'
+  | 'historyPage.recent.count'
+  | 'historyPage.recent.empty'
+  | 'historyPage.recent.kicker'
+  | 'historyPage.recent.title'
   | 'historyPage.search.placeholder'
   | 'historyPage.summary.all.count'
   | 'historyPage.summary.all.duration'
@@ -1485,6 +1514,8 @@ export type TranslationKey =
   | 'lyricsSettings.fontPicker.searchPlaceholder'
   | 'lyricsSettings.fontPicker.title'
   | 'lyricsSettings.provider.cached'
+  | 'lyricsSettings.provider.amllTtml'
+  | 'lyricsSettings.provider.amllTtmlDescription'
   | 'lyricsSettings.provider.chineseCatalogDescription'
   | 'lyricsSettings.provider.genius'
   | 'lyricsSettings.provider.kugou'
@@ -1633,8 +1664,19 @@ export type TranslationKey =
   | 'mvSettings.offset.aria'
   | 'mvSettings.offset.description'
   | 'mvSettings.offset.earlier'
+  | 'mvSettings.offset.earlierShort'
+  | 'mvSettings.offset.input'
   | 'mvSettings.offset.later'
+  | 'mvSettings.offset.laterShort'
+  | 'mvSettings.offset.replay'
+  | 'mvSettings.offset.replayTitle'
   | 'mvSettings.offset.reset'
+  | 'mvSettings.offset.resetShort'
+  | 'mvSettings.offset.slider'
+  | 'mvSettings.offset.startDescription'
+  | 'mvSettings.offset.startInput'
+  | 'mvSettings.offset.startTitle'
+  | 'mvSettings.offset.step'
   | 'mvSettings.offset.title'
   | 'mvSettings.provider.local'
   | 'mvSettings.quality.max'
@@ -1835,6 +1877,10 @@ export type TranslationKey =
   | 'settings.appearance.wallpaper.choose'
   | 'settings.appearance.wallpaper.clear'
   | 'settings.appearance.wallpaper.description'
+  | 'settings.appearance.wallpaper.landscapePath'
+  | 'settings.appearance.wallpaper.portraitChoose'
+  | 'settings.appearance.wallpaper.portraitClear'
+  | 'settings.appearance.wallpaper.portraitPath'
   | 'settings.appearance.wallpaper.scale'
   | 'settings.appearance.wallpaper.title'
   | 'settings.appearance.wallpaper.uiOpacity'
@@ -1932,6 +1978,8 @@ export type TranslationKey =
   | 'settings.appearance.themePreset.ginzaNoir.description'
   | 'settings.appearance.themePreset.frostJazz'
   | 'settings.appearance.themePreset.frostJazz.description'
+  | 'settings.appearance.themePreset.FINAL'
+  | 'settings.appearance.themePreset.FINAL.description'
   | 'settings.appearance.themePreset.title'
   | 'settings.appearance.themePreset.wisteriaBubble'
   | 'settings.appearance.themePreset.wisteriaBubble.description'
@@ -2147,6 +2195,15 @@ export type TranslationKey =
   | 'settings.general.dataBackup.meta.nextRunPending'
   | 'settings.general.dataBackup.meta.noneYet'
   | 'settings.general.dataBackup.meta.notSet'
+  | 'settings.general.dataBackup.progress.completed'
+  | 'settings.general.dataBackup.progress.failed'
+  | 'settings.general.dataBackup.progress.finalizing'
+  | 'settings.general.dataBackup.progress.measuring'
+  | 'settings.general.dataBackup.progress.preparing'
+  | 'settings.general.dataBackup.progress.scanning'
+  | 'settings.general.dataBackup.progress.snapshot'
+  | 'settings.general.dataBackup.progress.waiting'
+  | 'settings.general.dataBackup.progress.writing'
   | 'settings.general.dataBackup.status.disabled'
   | 'settings.general.dataBackup.status.enabled'
   | 'settings.general.dataBackup.title'
@@ -2301,16 +2358,22 @@ export type TranslationKey =
   | 'settings.library.networkPanel.unknownArtist'
   | 'settings.library.networkPanel.untitled'
   | 'settings.eq.action.autoPreamp'
+  | 'settings.eq.action.addFilter'
   | 'settings.eq.action.bypass'
   | 'settings.eq.action.delete'
+  | 'settings.eq.action.deleteFilter'
   | 'settings.eq.action.duplicatePreset'
+  | 'settings.eq.action.exportApoGraphicEqPreset'
+  | 'settings.eq.action.exportApoPreset'
   | 'settings.eq.action.freqDown'
   | 'settings.eq.action.freqFineDown'
   | 'settings.eq.action.freqFineUp'
   | 'settings.eq.action.freqUp'
   | 'settings.eq.action.holdBypass'
+  | 'settings.eq.action.holdOriginal'
   | 'settings.eq.action.hideAdvanced'
   | 'settings.eq.action.importPreset'
+  | 'settings.eq.action.pasteApoPreset'
   | 'settings.eq.action.applyA'
   | 'settings.eq.action.applyB'
   | 'settings.eq.action.applySafePreamp'
@@ -2342,23 +2405,68 @@ export type TranslationKey =
   | 'settings.eq.ab.loudnessMatched'
   | 'settings.eq.ab.summary'
   | 'settings.eq.ab.title'
+  | 'settings.eq.autoGain.adjustment'
+  | 'settings.eq.autoGain.status'
+  | 'settings.eq.autoGain.status.clipping'
+  | 'settings.eq.autoGain.status.holding'
+  | 'settings.eq.autoGain.status.idle'
+  | 'settings.eq.autoGain.status.recovering'
+  | 'settings.eq.autoGain.status.reducing'
+  | 'settings.eq.autoGain.toggle'
+  | 'settings.eq.room.active'
+  | 'settings.eq.room.channelMode'
+  | 'settings.eq.room.clear'
+  | 'settings.eq.room.disable'
+  | 'settings.eq.room.empty'
+  | 'settings.eq.room.enable'
+  | 'settings.eq.room.error'
+  | 'settings.eq.room.error.invalidImpulse'
+  | 'settings.eq.room.error.invalidWav'
+  | 'settings.eq.room.error.missingFile'
+  | 'settings.eq.room.error.missingIr'
+  | 'settings.eq.room.error.tooLong'
+  | 'settings.eq.room.import'
+  | 'settings.eq.room.ir'
+  | 'settings.eq.room.loaded'
+  | 'settings.eq.room.sampleRate'
+  | 'settings.eq.room.short'
+  | 'settings.eq.room.tapCount'
+  | 'settings.eq.room.title'
+  | 'settings.eq.room.trim'
+  | 'settings.eq.analyzer.overlayAria'
+  | 'settings.eq.analyzer.input'
+  | 'settings.eq.analyzer.mode'
+  | 'settings.eq.analyzer.postEq'
+  | 'settings.eq.analyzer.status'
+  | 'settings.eq.analyzer.status.live'
+  | 'settings.eq.analyzer.status.noSignal'
+  | 'settings.eq.analyzer.status.off'
+  | 'settings.eq.analyzer.status.priming'
+  | 'settings.eq.analyzer.toggle'
   | 'settings.eq.band.fallback'
   | 'settings.eq.band.frequency'
   | 'settings.eq.band.frequencyStepper'
   | 'settings.eq.band.frequencySnapped'
   | 'settings.eq.band.frequencyUnlocked'
   | 'settings.eq.band.gain'
+  | 'settings.eq.band.gainFixed'
   | 'settings.eq.band.gainStepper'
   | 'settings.eq.band.bypassed'
   | 'settings.eq.band.console'
   | 'settings.eq.band.enabled'
   | 'settings.eq.band.enabledShort'
+  | 'settings.eq.band.filters'
+  | 'settings.eq.band.filterStack'
   | 'settings.eq.band.filterType'
   | 'settings.eq.band.inspector'
   | 'settings.eq.band.matrix'
   | 'settings.eq.band.modeFree'
   | 'settings.eq.band.modeStandard'
   | 'settings.eq.band.q'
+  | 'settings.eq.band.qPresetNarrow'
+  | 'settings.eq.band.qPresetNormal'
+  | 'settings.eq.band.qPresets'
+  | 'settings.eq.band.qPresetWide'
   | 'settings.eq.band.readoutsAria'
   | 'settings.eq.bitPerfect.channelDisabled'
   | 'settings.eq.bitPerfect.disabled'
@@ -2366,6 +2474,7 @@ export type TranslationKey =
   | 'settings.eq.bitPerfect.sourceBoth'
   | 'settings.eq.bitPerfect.sourceChannel'
   | 'settings.eq.bitPerfect.sourceEq'
+  | 'settings.eq.bitPerfect.sourceRoom'
   | 'settings.eq.channel.active'
   | 'settings.eq.channel.balance'
   | 'settings.eq.channel.bypassed'
@@ -2399,6 +2508,12 @@ export type TranslationKey =
   | 'settings.eq.channel.rightTotal'
   | 'settings.eq.channel.swap'
   | 'settings.eq.channel.title'
+  | 'settings.eq.comfort.direct'
+  | 'settings.eq.comfort.directDetail'
+  | 'settings.eq.comfort.risk'
+  | 'settings.eq.comfort.riskDetail'
+  | 'settings.eq.comfort.tuned'
+  | 'settings.eq.comfort.tunedDetail'
   | 'settings.eq.curve.aria'
   | 'settings.eq.curve.dragBand'
   | 'settings.eq.curve.fineEdit'
@@ -2411,8 +2526,65 @@ export type TranslationKey =
   | 'settings.eq.error.presetName'
   | 'settings.eq.error.profileName'
   | 'settings.eq.error.profileTarget'
+  | 'settings.eq.export.successApo'
+  | 'settings.eq.export.successGraphicEq'
+  | 'settings.eq.export.successPreset'
+  | 'settings.eq.import.filters'
+  | 'settings.eq.import.filtersValue'
+  | 'settings.eq.import.filterPreview'
+  | 'settings.eq.import.filterEnabledAria'
+  | 'settings.eq.import.filterFrequencyAria'
+  | 'settings.eq.import.filterGainAria'
+  | 'settings.eq.import.filterQAria'
+  | 'settings.eq.import.filterTypeAria'
+  | 'settings.eq.import.graphicEq'
+  | 'settings.eq.import.estimatedPeak'
+  | 'settings.eq.import.includes'
+  | 'settings.eq.import.includesValue'
+  | 'settings.eq.import.maxBoost'
+  | 'settings.eq.import.maxCut'
+  | 'settings.eq.import.apoDirectives'
+  | 'settings.eq.import.apoDirectiveDetails'
+  | 'settings.eq.import.apoDirectivesValue'
+  | 'settings.eq.import.bandwidthFilters'
+  | 'settings.eq.import.bandwidthFiltersValue'
+  | 'settings.eq.import.compatibility'
+  | 'settings.eq.import.compatibility.adjusted'
+  | 'settings.eq.import.compatibility.clean'
+  | 'settings.eq.import.compatibility.partial'
+  | 'settings.eq.import.moreFilters'
+  | 'settings.eq.import.noFilters'
+  | 'settings.eq.import.preamp'
+  | 'settings.eq.import.preampAria'
+  | 'settings.eq.import.safePreamp'
+  | 'settings.eq.import.safetyDetail'
+  | 'settings.eq.import.safetyNeedsHeadroom'
+  | 'settings.eq.import.safetyOk'
+  | 'settings.eq.import.safetyTitle'
+  | 'settings.eq.import.audition'
+  | 'settings.eq.import.auditionPresetName'
+  | 'settings.eq.import.restoreAudition'
+  | 'settings.eq.import.clearPaste'
+  | 'settings.eq.import.applyPreview'
+  | 'settings.eq.import.cancelPreview'
+  | 'settings.eq.import.pasteDefaultName'
+  | 'settings.eq.import.pasteEmpty'
+  | 'settings.eq.import.pasteFileName'
+  | 'settings.eq.import.pasteIncludeWarning'
+  | 'settings.eq.import.pasteTitle'
+  | 'settings.eq.import.previewPaste'
+  | 'settings.eq.import.previewTitle'
+  | 'settings.eq.import.reportTitle'
+  | 'settings.eq.import.source'
+  | 'settings.eq.import.sourceApo'
+  | 'settings.eq.import.sourceEcho'
+  | 'settings.eq.import.updateAudition'
+  | 'settings.eq.import.useSafePreamp'
   | 'settings.eq.filter.highShelf'
+  | 'settings.eq.filter.highPass'
   | 'settings.eq.filter.lowShelf'
+  | 'settings.eq.filter.lowPass'
+  | 'settings.eq.filter.notch'
   | 'settings.eq.filter.peaking'
   | 'settings.eq.level.clips'
   | 'settings.eq.level.estimatedOutputPeak'
@@ -2437,6 +2609,72 @@ export type TranslationKey =
   | 'settings.eq.signal.preamp'
   | 'settings.eq.signal.protecting'
   | 'settings.eq.signal.title'
+  | 'settings.eq.simpleAction.customPresetName'
+  | 'settings.eq.simpleAction.lastTweak'
+  | 'settings.eq.simpleAction.nextVibe'
+  | 'settings.eq.simpleAction.nextVibeDetail'
+  | 'settings.eq.simpleAction.savedPresetName'
+  | 'settings.eq.simpleAction.saveVibe'
+  | 'settings.eq.simpleAction.saveVibeDetail'
+  | 'settings.eq.simpleInsight.amount'
+  | 'settings.eq.simpleInsight.aria'
+  | 'settings.eq.simpleInsight.custom'
+  | 'settings.eq.simpleInsight.mainChange'
+  | 'settings.eq.simpleInsight.ready'
+  | 'settings.eq.simpleInsight.vibe'
+  | 'settings.eq.simpleSafety.action'
+  | 'settings.eq.simpleSafety.aria'
+  | 'settings.eq.simpleSafety.risk'
+  | 'settings.eq.simpleSafety.riskDetail'
+  | 'settings.eq.simpleSafety.safe'
+  | 'settings.eq.simpleSafety.safeDetail'
+  | 'settings.eq.simpleTone.air'
+  | 'settings.eq.simpleTone.airDetail'
+  | 'settings.eq.simpleTone.amount'
+  | 'settings.eq.simpleTone.amountAria'
+  | 'settings.eq.simpleTone.aria'
+  | 'settings.eq.simpleTone.bass'
+  | 'settings.eq.simpleTone.bassDetail'
+  | 'settings.eq.simpleTone.flat'
+  | 'settings.eq.simpleTone.flatDetail'
+  | 'settings.eq.simpleTone.less'
+  | 'settings.eq.simpleTone.more'
+  | 'settings.eq.simpleTone.vocal'
+  | 'settings.eq.simpleTone.vocalDetail'
+  | 'settings.eq.simpleTone.warm'
+  | 'settings.eq.simpleTone.warmDetail'
+  | 'settings.eq.simpleZone.air'
+  | 'settings.eq.simpleZone.airDetail'
+  | 'settings.eq.simpleZone.applyAria'
+  | 'settings.eq.simpleZone.aria'
+  | 'settings.eq.simpleZone.low'
+  | 'settings.eq.simpleZone.lowDetail'
+  | 'settings.eq.simpleZone.neutral'
+  | 'settings.eq.simpleZone.vocal'
+  | 'settings.eq.simpleZone.vocalDetail'
+  | 'settings.eq.routing.action.armHeadroom6'
+  | 'settings.eq.routing.action.nativeDirect'
+  | 'settings.eq.routing.armed'
+  | 'settings.eq.routing.dspPath'
+  | 'settings.eq.routing.dspPathDetail'
+  | 'settings.eq.routing.headroomActiveDetail'
+  | 'settings.eq.routing.headroomStandby'
+  | 'settings.eq.routing.headroomStandbyDetail'
+  | 'settings.eq.routing.modules'
+  | 'settings.eq.routing.modulesActiveDetail'
+  | 'settings.eq.routing.modulesBypassed'
+  | 'settings.eq.routing.modulesBypassedDetail'
+  | 'settings.eq.routing.nativeBypassComfort'
+  | 'settings.eq.routing.nativeDirect'
+  | 'settings.eq.routing.nativeDirectDetail'
+  | 'settings.eq.routing.nativeNoGainDetail'
+  | 'settings.eq.routing.playbackPath'
+  | 'settings.eq.routing.protectActive'
+  | 'settings.eq.routing.protectActiveDetail'
+  | 'settings.eq.routing.safety'
+  | 'settings.eq.headroom.dsp'
+  | 'settings.eq.headroom.nativeBypassNote'
+  | 'settings.eq.headroom.presetsAria'
   | 'settings.eq.profile.bound'
   | 'settings.eq.profile.empty'
   | 'settings.eq.profile.nameAria'
@@ -2465,20 +2703,33 @@ export type TranslationKey =
   | 'settings.eq.preset.meta.type.bassBoost'
   | 'settings.eq.preset.meta.type.bkRoomCurve'
   | 'settings.eq.preset.meta.type.broadcastVoice'
+  | 'settings.eq.preset.meta.type.bluetoothSpeakerCleanup'
+  | 'settings.eq.preset.meta.type.acousticSilk'
   | 'settings.eq.preset.meta.type.classicSmiley'
   | 'settings.eq.preset.meta.type.classical'
+  | 'settings.eq.preset.meta.type.cinemaOrchestra'
+  | 'settings.eq.preset.meta.type.cityPop'
   | 'settings.eq.preset.meta.type.diffuseField'
+  | 'settings.eq.preset.meta.type.femaleVocalAir'
   | 'settings.eq.preset.meta.type.flat'
   | 'settings.eq.preset.meta.type.harmanInEar'
   | 'settings.eq.preset.meta.type.harmanTarget'
+  | 'settings.eq.preset.meta.type.headphoneNotch'
   | 'settings.eq.preset.meta.type.headphoneWarm'
+  | 'settings.eq.preset.meta.type.liveHouse'
+  | 'settings.eq.preset.meta.type.lofiDusk'
   | 'settings.eq.preset.meta.type.loudness'
   | 'settings.eq.preset.meta.type.night'
+  | 'settings.eq.preset.meta.type.pianoRoom'
   | 'settings.eq.preset.meta.type.rock'
+  | 'settings.eq.preset.meta.type.sibilanceTamer'
   | 'settings.eq.preset.meta.type.studioNeutral'
+  | 'settings.eq.preset.meta.type.subCleanup'
+  | 'settings.eq.preset.meta.type.subsonicFilter'
   | 'settings.eq.preset.meta.type.trebleSparkle'
   | 'settings.eq.preset.meta.type.vinylWarmth'
   | 'settings.eq.preset.meta.type.vocalClear'
+  | 'settings.eq.preset.meta.type.vocalDeEss'
   | 'settings.eq.preset.meta.utilityCaution'
   | 'settings.eq.preset.meta.utilityPurpose'
   | 'settings.eq.preset.meta.utilityScenario'
@@ -3249,6 +3500,7 @@ const zhCN: TranslationMap = {
   'albumDetail.sources.releaseAria': '当前匹配发行信息',
   'albumDetail.sources.releaseDetails': '当前发行',
   'albumDetail.status.addedToQueue': '已加入队列 {count} 首。',
+  'albumDetail.status.copiedCover': '已复制封面原图',
   'albumDetail.status.libraryReady': '{value} 就绪',
   'albumDetail.status.readingSignal': '正在读取信号',
   'albumDetail.status.unknownGenre': '未知流派',
@@ -3426,22 +3678,37 @@ const zhCN: TranslationMap = {
   'audioDrawer.status.ratePending': '采样率待定',
   'audioDrawer.status.sampleRatePending': '采样率待定',
   'audioDrawer.title': '音频设置',
+  'audioDrawer.warning.highOutputSampleRate': '当前音频设备采样率过高，可能导致播放速度异常，建议改为 48 kHz。',
   'audioProfessional.action.hideDetails': '收起专业详情',
   'audioProfessional.action.refresh': '刷新状态',
   'audioProfessional.action.showDetails': '展开专业详情',
   'audioProfessional.badge.bitPerfect': 'Bit-perfect',
   'audioProfessional.badge.dsp': 'DSP active',
+  'audioProfessional.badge.protect': 'Protect',
   'audioProfessional.badge.replayGain': 'ReplayGain',
   'audioProfessional.badge.resampling': '重采样',
   'audioProfessional.badge.sampleMismatch': '采样率不匹配',
   'audioProfessional.badge.warning': '设备异常/警告',
   'audioProfessional.issue.reason': '异常原因',
-  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows 共享采样率过高：设备是 {deviceRate}，ECHO 当前输出 {decoderRate} PCM，可能导致变速。建议把 Windows 默认格式改到 48 kHz 或 96 kHz。',
+  'audioProfessional.issue.audioLevelClipped': '实时电平检测到削波，请降低前级增益或关闭增益类 DSP。',
+  'audioProfessional.issue.audioLevelClippingRisk': '实时电平接近 0 dBFS，有削波风险。',
+  'audioProfessional.issue.dspClippingRisk': 'DSP 链路输出有削波风险，Protect limiter 已进入待命监控。',
+  'audioProfessional.issue.dspLimiterProtecting': 'Protect limiter 正在保护输出，说明 DSP 后级信号已经超过安全阈值。',
+  'audioProfessional.issue.roomCorrectionBitPerfectDisabled': '房间校正会关闭 bit-perfect 输出。',
+  'audioProfessional.issue.roomCorrectionClippingRisk': '房间校正输出有削波风险，请降低 FIR Trim 或启用 Auto Gain。',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows 共享采样率过高：设备是 {deviceRate}，ECHO 当前输出 {decoderRate} PCM，可能导致变速。建议把 Windows 默认格式改到 48 kHz。',
+  'audioProfessional.issue.windowsDefaultFormatUnusual': 'Windows 默认格式设置偏高：当前是 {deviceRate}。ECHO 只会提醒，不会修改系统设置；建议改到 48 kHz。',
   'audioProfessional.group.directDsp': '直通与 DSP',
   'audioProfessional.group.playbackChain': '播放链路',
   'audioProfessional.group.sampleRate': '采样率链路',
   'audioProfessional.group.stability': '稳定性',
-  'audioProfessional.row.actualBuffer': '实际 buffer',
+  'audioProfessional.signal.decode': '解码',
+  'audioProfessional.signal.dsp': 'DSP',
+  'audioProfessional.signal.fir': 'FIR',
+  'audioProfessional.signal.headroom': '余量',
+  'audioProfessional.signal.native': '原生',
+  'audioProfessional.signal.output': '输出',
+  'audioProfessional.signal.source': '来源',  'audioProfessional.row.actualBuffer': '实际 buffer',
   'audioProfessional.row.actualDeviceSampleRate': '实际设备采样率',
   'audioProfessional.row.bitDepth': '位深',
   'audioProfessional.row.bitPerfect': 'Bit-perfect',
@@ -3463,11 +3730,14 @@ const zhCN: TranslationMap = {
   'audioProfessional.row.outputLatency': '输出延迟',
   'audioProfessional.row.outputMode': '输出模式',
   'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.protectLimiter': 'Protect limiter',
+  'audioProfessional.row.roomCorrection': '房间校正',
   'audioProfessional.row.requestedBuffer': '请求 buffer',
   'audioProfessional.row.requestedOutputSampleRate': '请求输出',
   'audioProfessional.row.resampler': '重采样器',
   'audioProfessional.row.resampling': '重采样',
   'audioProfessional.row.sampleRateMismatch': '采样率不匹配',
+  'audioProfessional.row.signalPath': '信号路径',
   'audioProfessional.row.sharedDeviceSampleRate': '共享设备采样率',
   'audioProfessional.row.sharedStability': '共享稳定档',
   'audioProfessional.row.soxr': 'SOXR',
@@ -3477,7 +3747,9 @@ const zhCN: TranslationMap = {
   'audioProfessional.summary.pending': '等待音频状态',
   'audioProfessional.title': '专业播放状态',
   'audioProfessional.value.disabled': '关闭',
+  'audioProfessional.value.dspPath': 'DSP 路径：{modules}',
   'audioProfessional.value.enabled': '开启',
+  'audioProfessional.value.nativePath': '原生直通',
   'audioProfessional.value.no': '否',
   'audioProfessional.value.pending': '待确认',
   'audioProfessional.value.ready': '可直通',
@@ -3627,6 +3899,7 @@ const zhCN: TranslationMap = {
   'artistDetail.tracks.error.desktopBridgeActions': '桌面桥接不可用。请在 ECHO Next 桌面版中使用文件操作。',
   'artistDetail.tracks.error.desktopBridgeEdit': '桌面桥接不可用。请在 ECHO Next 桌面版中编辑内嵌标签。',
   'artistDetail.tracks.error.desktopBridgeRead': '桌面桥接不可用。请在 ECHO Next 桌面版中读取艺术家歌曲。',
+  'artistDetail.tracks.expandAll': '全部展开',
   'artistDetail.tracks.error.noCoverSaved': '没有保存任何封面图。',
   'artistDetail.tracks.error.noCoverToCopy': '这首歌没有可复制的封面图。',
   'artistDetail.tracks.error.remoteFileAction': '远程歌曲暂不支持本地文件操作。',
@@ -3788,6 +4061,7 @@ const zhCN: TranslationMap = {
   'notice.action.openReport': '打开报告',
   'notice.audioError.description': '已生成 Markdown 诊断报告，里面有详细原因和排查线索。',
   'notice.audioError.title': '音频错误',
+  'notice.audioDefaultFormatWarning': '音频设置提醒：Windows 默认格式设置偏高，当前是 {rate}。ECHO 只会提醒，不会修改系统设置；建议改到 48 kHz。',
   'notice.diagnosticsCrash.description': '上次 ECHO Next 没有正常退出，已准备 Markdown 报告用于排查。',
   'notice.importFiles.empty': '没有可导入的音频文件。',
   'notice.importFiles.failed': '{count} 个文件导入失败',
@@ -3971,6 +4245,11 @@ const zhCN: TranslationMap = {
   'historyPage.refresh.none': '没有发现失效历史歌曲。',
   'historyPage.refresh.removed': '已移除 {count} 首失效历史歌曲。',
   'historyPage.refresh.running': '正在刷新...',
+  'historyPage.recent.aria': '最近播放列表',
+  'historyPage.recent.count': '最近 {count} 首',
+  'historyPage.recent.empty': '暂无最近播放。',
+  'historyPage.recent.kicker': '按时间排序',
+  'historyPage.recent.title': '最近播放列表',
   'historyPage.search.placeholder': '搜索标题、艺术家、专辑或路径',
   'historyPage.summary.all.count': '总播放',
   'historyPage.summary.all.duration': '总时长',
@@ -4288,6 +4567,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.fontPicker.searchPlaceholder': '搜索已安装字体',
   'lyricsSettings.fontPicker.title': '选择歌词字体',
   'lyricsSettings.provider.cached': '缓存歌词',
+  'lyricsSettings.provider.amllTtml': 'AMLL TTML',
+  'lyricsSettings.provider.amllTtmlDescription': '逐词 TTML 歌词库，需要匹配网易云 ID，默认关闭',
   'lyricsSettings.provider.chineseCatalogDescription': '中文曲库补充',
   'lyricsSettings.provider.genius': 'Genius',
   'lyricsSettings.provider.kugou': '酷狗音乐',
@@ -4351,7 +4632,7 @@ const zhCN: TranslationMap = {
   'lyricsSettings.wordHighlight.title': '逐字歌词高亮',
   'route.mvSettings.description': 'MV 绑定与本地匹配设置。',
   'route.mvSettings.label': 'MV 设置',
-  'mvSettings.action.chooseFile': '选择文件',
+  'mvSettings.action.chooseFile': '导入本地视频',
   'mvSettings.action.close': '关闭 MV 设置',
   'mvSettings.action.collapseNetwork': '折叠网络来源',
   'mvSettings.action.dragReorder': '拖拽调整优先级',
@@ -4434,11 +4715,22 @@ const zhCN: TranslationMap = {
   'mvSettings.network.syncMode.precise': '精准',
   'mvSettings.network.title': '网络来源',
   'mvSettings.offset.aria': 'MV 同步延迟',
-  'mvSettings.offset.description': '只保存到当前这首歌的 MV；换歌后不会影响其他歌曲。',
+  'mvSettings.offset.description': '正数让 MV 画面提前，负数让 MV 画面延后；只记住当前歌曲的 MV。',
   'mvSettings.offset.earlier': 'MV 提前 {value}',
+  'mvSettings.offset.earlierShort': '提前 {value}',
+  'mvSettings.offset.input': '偏移秒数',
   'mvSettings.offset.later': 'MV 延后 {value}',
+  'mvSettings.offset.laterShort': '延后 {value}',
+  'mvSettings.offset.replay': '重播',
+  'mvSettings.offset.replayTitle': '重新播放当前歌曲，并按 MV 起播点同步视频',
   'mvSettings.offset.reset': '重置 MV 延迟',
-  'mvSettings.offset.title': '本歌曲 MV 延迟',
+  'mvSettings.offset.resetShort': '重置',
+  'mvSettings.offset.slider': 'MV 同步延迟滑杆',
+  'mvSettings.offset.startDescription': '输入视频里的起点秒数，最高 600 秒；这首歌会直接从那里对齐播放。',
+  'mvSettings.offset.startInput': 'MV 起播秒数',
+  'mvSettings.offset.startTitle': '从第几秒开始播放',
+  'mvSettings.offset.step': '调节步长',
+  'mvSettings.offset.title': 'MV 音画校准',
   'mvSettings.provider.local': '本地',
   'mvSettings.quality.max': '最高',
   'mvSettings.search.input': 'MV 搜索关键词',
@@ -4652,9 +4944,13 @@ const zhCN: TranslationMap = {
   'settings.appearance.textDepth.description': '调整界面文字颜色深浅；数值越低越浅。',
   'settings.appearance.textDepth.title': '文字颜色深浅',
   'settings.appearance.wallpaper.title': '自定义背景',
-  'settings.appearance.wallpaper.description': '支持图片和本地视频；视频静音循环，不进入音频链路。',
-  'settings.appearance.wallpaper.choose': '选择背景',
-  'settings.appearance.wallpaper.clear': '清除背景',
+  'settings.appearance.wallpaper.description': '横屏与竖屏背景独立保存；竖屏窗口只会应用竖屏背景。支持图片和本地视频。',
+  'settings.appearance.wallpaper.choose': '选择横屏背景',
+  'settings.appearance.wallpaper.clear': '清除横屏背景',
+  'settings.appearance.wallpaper.portraitChoose': '选择竖屏背景',
+  'settings.appearance.wallpaper.portraitClear': '清除竖屏背景',
+  'settings.appearance.wallpaper.landscapePath': '横屏',
+  'settings.appearance.wallpaper.portraitPath': '竖屏',
   'settings.appearance.wallpaper.videoStatus': '视频壁纸 · 静音循环',
   'settings.appearance.wallpaper.videoPause.smart': '智能暂停',
   'settings.appearance.wallpaper.videoPause.minimized': '最小化暂停',
@@ -4738,6 +5034,8 @@ const zhCN: TranslationMap = {
   'settings.appearance.themePreset.ginzaNoir.description': '黑曜石、香槟金和橱窗蓝，成熟一点。',
   'settings.appearance.themePreset.frostJazz': '霜林爵士',
   'settings.appearance.themePreset.frostJazz.description': '冷蓝爵士底色，带一抹梅紫舞台光。',
+  'settings.appearance.themePreset.FINAL': 'FINAL',
+  'settings.appearance.themePreset.FINAL.description': '参考 final 官网的黑白产品摄影、声学工程与 8K SOUND 语言，克制、精密、偏监听。',
   'settings.appearance.themeCustom.title': '自定义当前主题',
   'settings.appearance.themeCustom.description': '先选一个主题，再微调颜色；每个主题都会记住自己的自定义。',
   'settings.appearance.themeCustom.action.autoFix': '自动修正文字',
@@ -4847,7 +5145,7 @@ const zhCN: TranslationMap = {
   'settings.appearance.themeCustom.message.importFailed': '导入失败，请选择 ECHO 主题参数 JSON。',
   'settings.appearance.themeCustom.message.fixed': '已自动调整文字与按钮颜色。',
   'settings.appearance.themeCustom.message.invalidColor': '请输入 #RRGGBB 格式的安全颜色。',
-  'settings.appearance.themeCustom.message.lowContrast': '当前文字对比度不足，先自动修正或调深文字后再保存。',
+  'settings.appearance.themeCustom.message.lowContrast': '当前文字对比度不足，可能影响阅读。可自动修正或手动调整文字颜色。',
   'settings.appearance.themeCustom.message.reset': '已重置当前主题的自定义。',
   'settings.appearance.themeCustom.message.saved': '已保存当前主题自定义。',
   'settings.danger.database.kicker': '曲库数据库安全',
@@ -4946,6 +5244,15 @@ const zhCN: TranslationMap = {
   'settings.general.dataBackup.meta.noneYet': '暂无自动备份',
   'settings.general.dataBackup.meta.nextRunPending': '选择目录并开启后生效',
   'settings.general.dataBackup.meta.atPath': '{time} · {path}',
+  'settings.general.dataBackup.progress.preparing': '准备中',
+  'settings.general.dataBackup.progress.snapshot': '创建快照',
+  'settings.general.dataBackup.progress.scanning': '扫描数据',
+  'settings.general.dataBackup.progress.writing': '写入备份',
+  'settings.general.dataBackup.progress.finalizing': '收尾中',
+  'settings.general.dataBackup.progress.completed': '已完成',
+  'settings.general.dataBackup.progress.failed': '失败',
+  'settings.general.dataBackup.progress.measuring': '统计中',
+  'settings.general.dataBackup.progress.waiting': '等待写入',
   'settings.general.dataBackup.action.chooseDirectory': '选择目录',
   'settings.general.dataBackup.action.choosingDirectory': '选择中...',
   'settings.general.dataBackup.action.backupNow': '立即备份',
@@ -5103,17 +5410,23 @@ const zhCN: TranslationMap = {
   'settings.library.networkPanel.trackNotFound': '找不到该曲目。请先播放一首歌，或输入曲目 ID。',
   'settings.library.networkPanel.unknownArtist': '未知歌手',
   'settings.library.networkPanel.untitled': '未命名',
+  'settings.eq.action.addFilter': '新增滤波器',
   'settings.eq.action.autoPreamp': '自动 {value}',
   'settings.eq.action.bypass': '旁路',
   'settings.eq.action.delete': '删除',
+  'settings.eq.action.deleteFilter': '移除滤波器',
   'settings.eq.action.duplicatePreset': '复制当前',
+  'settings.eq.action.exportApoGraphicEqPreset': '导出 GraphicEQ',
+  'settings.eq.action.exportApoPreset': '导出 APO',
   'settings.eq.action.freqDown': '频率 -',
   'settings.eq.action.freqFineDown': '细 -',
   'settings.eq.action.freqFineUp': '细 +',
   'settings.eq.action.freqUp': '频率 +',
   'settings.eq.action.holdBypass': '按住旁路 EQ',
+  'settings.eq.action.holdOriginal': '按住听原声',
   'settings.eq.action.hideAdvanced': '隐藏 PEQ 控制台',
-  'settings.eq.action.importPreset': '导入预设',
+  'settings.eq.action.importPreset': '导入预设 / APO',
+  'settings.eq.action.pasteApoPreset': '粘贴 APO',
   'settings.eq.action.applyA': '应用 A',
   'settings.eq.action.applyB': '应用 B',
   'settings.eq.action.applySafePreamp': '应用安全前级',
@@ -5145,30 +5458,76 @@ const zhCN: TranslationMap = {
   'settings.eq.ab.loudnessMatched': '响度匹配',
   'settings.eq.ab.summary': '{preset} / peak {peak} / out {output} / preamp {preamp}',
   'settings.eq.ab.title': 'A/B 对比',
+  'settings.eq.autoGain.adjustment': 'Auto {value}',
+  'settings.eq.autoGain.status': '状态',
+  'settings.eq.autoGain.status.clipping': 'Clipping',
+  'settings.eq.autoGain.status.holding': 'Holding',
+  'settings.eq.autoGain.status.idle': 'Idle',
+  'settings.eq.autoGain.status.recovering': 'Recovering',
+  'settings.eq.autoGain.status.reducing': 'Reducing',
+  'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.room.active': 'Active',
+  'settings.eq.room.channelMode': '声道',
+  'settings.eq.room.clear': '清除',
+  'settings.eq.room.disable': '禁用 FIR',
+  'settings.eq.room.empty': '未加载',
+  'settings.eq.room.enable': '启用 FIR',
+  'settings.eq.room.error': '错误',
+  'settings.eq.room.error.invalidImpulse': 'IR 无效',
+  'settings.eq.room.error.invalidWav': 'WAV 无效',
+  'settings.eq.room.error.missingFile': 'IR 文件缺失',
+  'settings.eq.room.error.missingIr': '未加载 IR',
+  'settings.eq.room.error.tooLong': 'IR 过长',
+  'settings.eq.room.import': '导入 IR',
+  'settings.eq.room.ir': 'IR',
+  'settings.eq.room.loaded': 'Loaded',
+  'settings.eq.room.sampleRate': '采样率',
+  'settings.eq.room.short': 'FIR',
+  'settings.eq.room.tapCount': 'Taps',
+  'settings.eq.room.title': '房间校正',
+  'settings.eq.room.trim': 'Trim',
+  'settings.eq.analyzer.overlayAria': 'EQ 实时频谱叠加',
+  'settings.eq.analyzer.input': 'Input',
+  'settings.eq.analyzer.mode': '频谱模式',
+  'settings.eq.analyzer.postEq': 'Post EQ',
+  'settings.eq.analyzer.status': '状态',
+  'settings.eq.analyzer.status.live': 'Live',
+  'settings.eq.analyzer.status.noSignal': 'No signal',
+  'settings.eq.analyzer.status.off': 'Off',
+  'settings.eq.analyzer.status.priming': 'Priming',
+  'settings.eq.analyzer.toggle': '频谱',
   'settings.eq.band.fallback': '频段',
   'settings.eq.band.frequency': '频率',
   'settings.eq.band.frequencyStepper': '频率步进',
   'settings.eq.band.frequencySnapped': '吸附到标准频点',
   'settings.eq.band.frequencyUnlocked': '自由频率',
   'settings.eq.band.gain': '增益',
+  'settings.eq.band.gainFixed': '此类型不使用增益',
   'settings.eq.band.gainStepper': '增益步进',
+  'settings.eq.band.qPresets': 'Q 快捷值',
+  'settings.eq.band.qPresetWide': 'Wide',
+  'settings.eq.band.qPresetNormal': 'Normal',
+  'settings.eq.band.qPresetNarrow': 'Narrow',
   'settings.eq.band.bypassed': '旁路',
   'settings.eq.band.console': '选中频段控制台',
   'settings.eq.band.enabled': '启用此段',
   'settings.eq.band.enabledShort': '启用',
+  'settings.eq.band.filters': '滤波器',
+  'settings.eq.band.filterStack': 'APO 滤波器链',
   'settings.eq.band.filterType': '类型',
   'settings.eq.band.inspector': '选中频段',
   'settings.eq.band.matrix': 'PEQ 频段矩阵',
   'settings.eq.band.modeFree': '自由频率',
   'settings.eq.band.modeStandard': '标准频点',
   'settings.eq.band.q': 'Q',
-  'settings.eq.band.readoutsAria': '10 段 EQ 可拖动频段读数',
+  'settings.eq.band.readoutsAria': '31 段 EQ 可拖动频段读数',
   'settings.eq.bitPerfect.channelDisabled': 'DSP 已启用：bit-perfect 已关闭。',
   'settings.eq.bitPerfect.disabled': 'DSP 已启用：bit-perfect 已关闭{reason}。',
   'settings.eq.bitPerfect.readyPath': '可保留 bit-perfect 路径。',
   'settings.eq.bitPerfect.sourceBoth': 'EQ + 声道平衡',
   'settings.eq.bitPerfect.sourceChannel': '声道平衡',
   'settings.eq.bitPerfect.sourceEq': 'EQ',
+  'settings.eq.bitPerfect.sourceRoom': '房间校正',
   'settings.eq.channel.active': '启用',
   'settings.eq.channel.balance': '平衡',
   'settings.eq.channel.bypassed': '旁路',
@@ -5202,7 +5561,13 @@ const zhCN: TranslationMap = {
   'settings.eq.channel.rightTotal': '右总增益',
   'settings.eq.channel.swap': '交换 L/R',
   'settings.eq.channel.title': '声道平衡',
-  'settings.eq.curve.aria': '可拖动 10 段 EQ 频响曲线',
+  'settings.eq.comfort.direct': '原声直通',
+  'settings.eq.comfort.directDetail': 'DSP 关闭时不压低音量、不改动采样，适合放心听原声。',
+  'settings.eq.comfort.risk': '需要留意电平',
+  'settings.eq.comfort.riskDetail': '检测到潜在削波或保护动作，建议先预留 -6 dB Headroom。',
+  'settings.eq.comfort.tuned': '正在修饰声音',
+  'settings.eq.comfort.tunedDetail': '只处理已开启的 DSP 模块；关闭后会回到原生播放路径。',
+  'settings.eq.curve.aria': '可拖动 31 段 EQ 频响曲线',
   'settings.eq.curve.dragBand': '拖动 {frequency} EQ 频段',
   'settings.eq.curve.fineEdit': 'Shift 细调',
   'settings.eq.curve.freeFrequency': '自由频率',
@@ -5214,8 +5579,65 @@ const zhCN: TranslationMap = {
   'settings.eq.error.presetName': '请输入预设名称。',
   'settings.eq.error.profileName': '请输入配置档名称。',
   'settings.eq.error.profileTarget': '请选择一个配置档。',
+  'settings.eq.export.successApo': '已导出 Equalizer APO 配置：{path}',
+  'settings.eq.export.successGraphicEq': '已导出 GraphicEQ 配置：{path}',
+  'settings.eq.export.successPreset': '已导出 EQ 预设：{path}',
+  'settings.eq.import.filters': 'Filter',
+  'settings.eq.import.filtersValue': '{count} 导入 / {skipped} 跳过',
+  'settings.eq.import.filterPreview': 'Filter 明细',
+  'settings.eq.import.filterEnabledAria': '导入 Filter {index} 启用状态',
+  'settings.eq.import.filterFrequencyAria': '导入 Filter {index} 频率',
+  'settings.eq.import.filterGainAria': '导入 Filter {index} 增益',
+  'settings.eq.import.filterQAria': '导入 Filter {index} Q',
+  'settings.eq.import.filterTypeAria': '导入 Filter {index} 类型',
+  'settings.eq.import.estimatedPeak': '预计峰值',
+  'settings.eq.import.graphicEq': 'GraphicEQ 点',
+  'settings.eq.import.includes': 'Include 文件',
+  'settings.eq.import.includesValue': '{count} 展开 / {skipped} 跳过',
+  'settings.eq.import.maxBoost': '最大提升',
+  'settings.eq.import.maxCut': '最大削减',
+  'settings.eq.import.apoDirectives': 'APO 指令',
+  'settings.eq.import.apoDirectiveDetails': '指令明细',
+  'settings.eq.import.apoDirectivesValue': '{count} 识别 / {skipped} 声道 Filter 跳过',
+  'settings.eq.import.bandwidthFilters': 'BW 换算',
+  'settings.eq.import.bandwidthFiltersValue': '{count} 条转为 Q',
+  'settings.eq.import.compatibility': '兼容性',
+  'settings.eq.import.compatibility.adjusted': '已换算',
+  'settings.eq.import.compatibility.clean': '完整导入',
+  'settings.eq.import.compatibility.partial': '部分导入',
+  'settings.eq.import.moreFilters': '还有 {count} 条 Filter 未显示',
+  'settings.eq.import.noFilters': '没有需要显示的有效滤波器。',
+  'settings.eq.import.preamp': 'Preamp',
+  'settings.eq.import.preampAria': '导入预设 Preamp',
+  'settings.eq.import.safePreamp': '建议余量',
+  'settings.eq.import.safetyDetail': '按当前 Filter 粗略估算，应用前可先留出安全余量。',
+  'settings.eq.import.safetyNeedsHeadroom': '需要安全余量',
+  'settings.eq.import.safetyOk': '余量看起来安全',
+  'settings.eq.import.safetyTitle': '导入听感安全',
+  'settings.eq.import.audition': '试听导入',
+  'settings.eq.import.auditionPresetName': '试听 {name}',
+  'settings.eq.import.restoreAudition': '恢复原设置',
+  'settings.eq.import.clearPaste': '清空',
+  'settings.eq.import.applyPreview': '应用导入',
+  'settings.eq.import.cancelPreview': '取消导入',
+  'settings.eq.import.pasteDefaultName': '粘贴的 APO',
+  'settings.eq.import.pasteEmpty': '请先粘贴 Equalizer APO 配置。',
+  'settings.eq.import.pasteFileName': '粘贴内容',
+  'settings.eq.import.pasteIncludeWarning': '粘贴导入不会读取 Include 文件；如需展开 Include，请使用文件导入。',
+  'settings.eq.import.pasteTitle': 'APO 文本',
+  'settings.eq.import.previewPaste': '预览 APO',
+  'settings.eq.import.previewTitle': '导入预览',
+  'settings.eq.import.reportTitle': '导入完成',
+  'settings.eq.import.source': '来源',
+  'settings.eq.import.sourceApo': 'Equalizer APO',
+  'settings.eq.import.sourceEcho': 'ECHO JSON',
+  'settings.eq.import.updateAudition': '更新试听',
+  'settings.eq.import.useSafePreamp': '使用建议余量',
   'settings.eq.filter.highShelf': '高架',
+  'settings.eq.filter.highPass': '高通',
   'settings.eq.filter.lowShelf': '低架',
+  'settings.eq.filter.lowPass': '低通',
+  'settings.eq.filter.notch': '陷波',
   'settings.eq.filter.peaking': '峰值',
   'settings.eq.level.clips': '削波 {count}',
   'settings.eq.level.estimatedOutputPeak': '估算输出峰值',
@@ -5240,7 +5662,72 @@ const zhCN: TranslationMap = {
   'settings.eq.signal.preamp': '前级',
   'settings.eq.signal.protecting': '保护中',
   'settings.eq.signal.title': '信号链',
-  'settings.eq.profile.bound': '{output} 已绑定 {profile}',
+  'settings.eq.simpleAction.customPresetName': '我的 EQ 听感',
+  'settings.eq.simpleAction.lastTweak': '上一下',
+  'settings.eq.simpleAction.nextVibe': '换个听感',
+  'settings.eq.simpleAction.nextVibeDetail': '试试看',
+  'settings.eq.simpleAction.savedPresetName': '{name} {amount}%',
+  'settings.eq.simpleAction.saveVibe': '保存听感',
+  'settings.eq.simpleAction.saveVibeDetail': '保存当前',
+  'settings.eq.simpleInsight.amount': '强度',
+  'settings.eq.simpleInsight.aria': 'Simple 当前听感摘要',
+  'settings.eq.simpleInsight.custom': '手动听感',
+  'settings.eq.simpleInsight.mainChange': '主要变化',
+  'settings.eq.simpleInsight.ready': '就绪',
+  'settings.eq.simpleInsight.vibe': '当前听感',
+  'settings.eq.simpleSafety.action': '留出余量',
+  'settings.eq.simpleSafety.aria': 'Simple 安全余量',
+  'settings.eq.simpleSafety.risk': '需要余量',
+  'settings.eq.simpleSafety.riskDetail': '峰值 {peak} / 建议 {preamp}',
+  'settings.eq.simpleSafety.safe': '余量安心',
+  'settings.eq.simpleSafety.safeDetail': '峰值 {peak} / 前级 {preamp}',
+  'settings.eq.simpleTone.air': '空气感',
+  'settings.eq.simpleTone.airDetail': '更亮更开阔',
+  'settings.eq.simpleTone.amount': '味道强度',
+  'settings.eq.simpleTone.amountAria': 'Simple 听感强度',
+  'settings.eq.simpleTone.aria': 'Simple 听感快捷调节',
+  'settings.eq.simpleTone.bass': '低频弹性',
+  'settings.eq.simpleTone.bassDetail': '鼓点更饱满',
+  'settings.eq.simpleTone.flat': '恢复平直',
+  'settings.eq.simpleTone.flatDetail': '回到原点',
+  'settings.eq.simpleTone.less': '淡一点',
+  'settings.eq.simpleTone.more': '浓一点',
+  'settings.eq.simpleTone.vocal': '人声靠前',
+  'settings.eq.simpleTone.vocalDetail': '歌词更清楚',
+  'settings.eq.simpleTone.warm': '暖一点',
+  'settings.eq.simpleTone.warmDetail': '柔和耐听',
+  'settings.eq.simpleZone.air': '空气感',
+  'settings.eq.simpleZone.airDetail': '亮度和空间',
+  'settings.eq.simpleZone.applyAria': '应用{zone}听感，当前{value}',
+  'settings.eq.simpleZone.aria': 'Simple 听感区域变化',
+  'settings.eq.simpleZone.low': '低频',
+  'settings.eq.simpleZone.lowDetail': '鼓点和厚度',
+  'settings.eq.simpleZone.neutral': '平直',
+  'settings.eq.simpleZone.vocal': '人声',
+  'settings.eq.simpleZone.vocalDetail': '歌词和存在感',
+  'settings.eq.routing.action.armHeadroom6': '预设 -6dB 余量',
+  'settings.eq.routing.action.nativeDirect': '原生直通',
+  'settings.eq.routing.armed': '已待命',
+  'settings.eq.routing.dspPath': 'DSP 路径',
+  'settings.eq.routing.dspPathDetail': '当前处理会明确显示在链路中。',
+  'settings.eq.routing.headroomActiveDetail': '余量正在 DSP 路径中生效。',
+  'settings.eq.routing.headroomStandby': '余量待命',
+  'settings.eq.routing.headroomStandbyDetail': '仅在启用 DSP 后生效。',
+  'settings.eq.routing.modules': '模块',
+  'settings.eq.routing.modulesActiveDetail': '下方会显示每个启用的处理阶段。',
+  'settings.eq.routing.modulesBypassed': '已旁路',
+  'settings.eq.routing.modulesBypassedDetail': 'EQ / FIR / Balance 均关闭。',
+  'settings.eq.routing.nativeBypassComfort': 'DSP 旁路时会保持原生直通，样本不会被效果链改动。',
+  'settings.eq.routing.nativeDirect': '原生直通',
+  'settings.eq.routing.nativeDirectDetail': 'DSP 旁路时不会改动原生播放。',
+  'settings.eq.routing.nativeNoGainDetail': '原生直通下不做增益衰减。',
+  'settings.eq.routing.playbackPath': '播放路径',
+  'settings.eq.routing.protectActive': '保护中',
+  'settings.eq.routing.protectActiveDetail': 'Limiter 正在防止过载。',
+  'settings.eq.routing.safety': '安全',
+  'settings.eq.headroom.dsp': 'DSP 余量',
+  'settings.eq.headroom.nativeBypassNote': '仅在 EQ / FIR / Balance 启用时生效，原生旁路保持直通。',
+  'settings.eq.headroom.presetsAria': 'DSP 余量快捷档位',  'settings.eq.profile.bound': '{output} 已绑定 {profile}',
   'settings.eq.profile.empty': '未选择配置档',
   'settings.eq.profile.nameAria': 'EQ 配置档名称',
   'settings.eq.profile.namePlaceholder': '保存为配置档',
@@ -5248,7 +5735,7 @@ const zhCN: TranslationMap = {
   'settings.eq.profile.selectorAria': 'EQ 配置档',
   'settings.eq.profile.title': '配置档',
   'settings.eq.profile.unbound': '{output} 未绑定配置档',
-  'settings.eq.preset.approximation': '10 段近似',
+  'settings.eq.preset.approximation': '31 段近似',
   'settings.eq.preset.builtIn': '内置预设',
   'settings.eq.preset.copyName': '{name} 副本',
   'settings.eq.preset.filter.all': '全部',
@@ -5258,30 +5745,43 @@ const zhCN: TranslationMap = {
   'settings.eq.preset.filter.user': '用户',
   'settings.eq.preset.filter.utility': '工具',
   'settings.eq.preset.filterAria': '预设筛选',
-  'settings.eq.preset.meta.approximationCaution': '这是 10 段图示 EQ 近似，不是精确耳机校准。',
+  'settings.eq.preset.meta.approximationCaution': '这是 31 段图示 EQ 近似，不是精确耳机校准。',
   'settings.eq.preset.meta.genrePurpose': '用于快速塑造音乐风格取向。',
   'settings.eq.preset.meta.genreScenario': '适合按曲风试听，再按设备微调。',
   'settings.eq.preset.meta.targetPurpose': '用于接近常见听感目标曲线。',
   'settings.eq.preset.meta.targetScenario': '适合耳机或近场系统的目标曲线对比。',
   'settings.eq.preset.meta.tasteCaution': '这是听感取向，不是校准结果。',
-  'settings.eq.preset.meta.type.animeJpop': 'Anime / J-Pop',
-  'settings.eq.preset.meta.type.bassBoost': '低频增强',
-  'settings.eq.preset.meta.type.bkRoomCurve': 'B&K 房间曲线',
-  'settings.eq.preset.meta.type.broadcastVoice': '广播人声',
-  'settings.eq.preset.meta.type.classicSmiley': '经典微笑曲线',
-  'settings.eq.preset.meta.type.classical': '古典',
-  'settings.eq.preset.meta.type.diffuseField': 'Diffuse Field',
-  'settings.eq.preset.meta.type.flat': '平直',
-  'settings.eq.preset.meta.type.harmanInEar': 'Harman 入耳目标',
-  'settings.eq.preset.meta.type.harmanTarget': 'Harman 目标',
-  'settings.eq.preset.meta.type.headphoneWarm': '耳机暖声',
-  'settings.eq.preset.meta.type.loudness': '响度补偿',
-  'settings.eq.preset.meta.type.night': '夜间',
-  'settings.eq.preset.meta.type.rock': '摇滚',
-  'settings.eq.preset.meta.type.studioNeutral': '录音室中性',
-  'settings.eq.preset.meta.type.trebleSparkle': '高频空气感',
-  'settings.eq.preset.meta.type.vinylWarmth': '黑胶暖声',
-  'settings.eq.preset.meta.type.vocalClear': '人声清晰',
+  'settings.eq.preset.meta.type.animeJpop': '樱色电波',
+  'settings.eq.preset.meta.type.acousticSilk': '弦木柔光',
+  'settings.eq.preset.meta.type.bassBoost': '深海低频',
+  'settings.eq.preset.meta.type.bkRoomCurve': '木厅曲线',
+  'settings.eq.preset.meta.type.broadcastVoice': '电台近语',
+  'settings.eq.preset.meta.type.bluetoothSpeakerCleanup': '蓝牙清场',
+  'settings.eq.preset.meta.type.classicSmiley': '晨弧微笑',
+  'settings.eq.preset.meta.type.classical': '星厅古典',
+  'settings.eq.preset.meta.type.cinemaOrchestra': '银幕纵深',
+  'settings.eq.preset.meta.type.cityPop': '霓虹夜航',
+  'settings.eq.preset.meta.type.diffuseField': '漫野扩散',
+  'settings.eq.preset.meta.type.femaleVocalAir': '清露女声',
+  'settings.eq.preset.meta.type.flat': '原音如初',
+  'settings.eq.preset.meta.type.harmanInEar': '入耳晨光',
+  'settings.eq.preset.meta.type.harmanTarget': '暖场哈曼',
+  'settings.eq.preset.meta.type.headphoneNotch': '耳峰细修',
+  'settings.eq.preset.meta.type.headphoneWarm': '绒暖耳机',
+  'settings.eq.preset.meta.type.liveHouse': '小馆现场',
+  'settings.eq.preset.meta.type.lofiDusk': '雨窗低保真',
+  'settings.eq.preset.meta.type.loudness': '暮色响度',
+  'settings.eq.preset.meta.type.night': '月下轻听',
+  'settings.eq.preset.meta.type.pianoRoom': '琴房微光',
+  'settings.eq.preset.meta.type.rock': '黑曜摇滚',
+  'settings.eq.preset.meta.type.sibilanceTamer': '齿音柔化',
+  'settings.eq.preset.meta.type.studioNeutral': '录音室白描',
+  'settings.eq.preset.meta.type.subCleanup': '潜波净化',
+  'settings.eq.preset.meta.type.subsonicFilter': '暗涌滤波',
+  'settings.eq.preset.meta.type.trebleSparkle': '银砂高频',
+  'settings.eq.preset.meta.type.vinylWarmth': '黑胶余温',
+  'settings.eq.preset.meta.type.vocalClear': '人声如绸',
+  'settings.eq.preset.meta.type.vocalDeEss': '雪绒去齿',
   'settings.eq.preset.meta.utilityCaution': '工具型预设会改变监听判断，请确认后再保存。',
   'settings.eq.preset.meta.utilityPurpose': '用于检查、补偿或更安全的监听。',
   'settings.eq.preset.meta.utilityScenario': '适合定位问题、降低疲劳或做快速对比。',
@@ -5954,6 +6454,7 @@ const zhTW: TranslationMap = {
   'notice.action.openReport': '開啟報告',
   'notice.audioError.description': '已產生 Markdown 診斷報告，裡面有詳細原因與排查線索。',
   'notice.audioError.title': '音訊錯誤',
+  'notice.audioDefaultFormatWarning': '音訊設定提醒：Windows 預設格式設定偏高，目前是 {rate}。ECHO 只會提醒，不會修改系統設定；建議改到 48 kHz。',
   'notice.diagnosticsCrash.description': '上次 ECHO Next 未正常結束，已準備 Markdown 報告用於排查。',
   'notice.importFiles.empty': '沒有可匯入的音訊檔案。',
   'notice.importFiles.failed': '{count} 個檔案匯入失敗',
@@ -6060,6 +6561,7 @@ const zhTW: TranslationMap = {
   'albumDetail.sources.releaseAria': '目前匹配發行資訊',
   'albumDetail.sources.releaseDetails': '目前發行',
   'albumDetail.status.addedToQueue': '已加入佇列 {count} 首。',
+  'albumDetail.status.copiedCover': '已複製封面原圖',
   'albumDetail.status.libraryReady': '{value} 就緒',
   'albumDetail.status.readingSignal': '正在讀取訊號',
   'albumDetail.status.unknownGenre': '未知曲風',
@@ -6215,6 +6717,7 @@ const zhTW: TranslationMap = {
   'artistDetail.tracks.error.desktopBridgeActions': '桌面橋接不可用。請在 ECHO Next 桌面版中使用檔案操作。',
   'artistDetail.tracks.error.desktopBridgeEdit': '桌面橋接不可用。請在 ECHO Next 桌面版中編輯內嵌標籤。',
   'artistDetail.tracks.error.desktopBridgeRead': '桌面橋接不可用。請在 ECHO Next 桌面版中讀取藝術家歌曲。',
+  'artistDetail.tracks.expandAll': '全部展開',
   'artistDetail.tracks.error.noCoverSaved': '沒有儲存任何封面圖。',
   'artistDetail.tracks.error.noCoverToCopy': '這首歌沒有可複製的封面圖。',
   'artistDetail.tracks.error.remoteFileAction': '遠端歌曲暫不支援本地檔案操作。',
@@ -6401,22 +6904,37 @@ const zhTW: TranslationMap = {
   'audioDrawer.status.ratePending': '取樣率待定',
   'audioDrawer.status.sampleRatePending': '取樣率待定',
   'audioDrawer.title': '音訊設定',
+  'audioDrawer.warning.highOutputSampleRate': '目前音訊裝置取樣率過高，可能導致播放速度異常，建議改為 48 kHz。',
   'audioProfessional.action.hideDetails': '收起專業詳情',
   'audioProfessional.action.refresh': '重新整理狀態',
   'audioProfessional.action.showDetails': '展開專業詳情',
   'audioProfessional.badge.bitPerfect': 'Bit-perfect',
   'audioProfessional.badge.dsp': 'DSP active',
+  'audioProfessional.badge.protect': 'Protect',
   'audioProfessional.badge.replayGain': 'ReplayGain',
   'audioProfessional.badge.resampling': '重取樣',
   'audioProfessional.badge.sampleMismatch': '取樣率不符',
   'audioProfessional.badge.warning': '裝置異常/警告',
   'audioProfessional.issue.reason': '異常原因',
-  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows 共享取樣率過高：裝置是 {deviceRate}，ECHO 目前輸出 {decoderRate} PCM，可能導致變速。建議把 Windows 預設格式改到 48 kHz 或 96 kHz。',
+  'audioProfessional.issue.audioLevelClipped': '即時電平偵測到削波，請降低前級增益或關閉增益類 DSP。',
+  'audioProfessional.issue.audioLevelClippingRisk': '即時電平接近 0 dBFS，有削波風險。',
+  'audioProfessional.issue.dspClippingRisk': 'DSP 鏈路輸出有削波風險，Protect limiter 已進入待命監控。',
+  'audioProfessional.issue.dspLimiterProtecting': 'Protect limiter 正在保護輸出，表示 DSP 後級訊號已超過安全閾值。',
+  'audioProfessional.issue.roomCorrectionBitPerfectDisabled': '房間校正會關閉 bit-perfect 輸出。',
+  'audioProfessional.issue.roomCorrectionClippingRisk': '房間校正輸出有削波風險，請降低 FIR Trim 或啟用 Auto Gain。',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows 共享取樣率過高：裝置是 {deviceRate}，ECHO 目前輸出 {decoderRate} PCM，可能導致變速。建議把 Windows 預設格式改到 48 kHz。',
+  'audioProfessional.issue.windowsDefaultFormatUnusual': 'Windows 預設格式設定偏高：目前是 {deviceRate}。ECHO 只會提醒，不會修改系統設定；建議改到 48 kHz。',
   'audioProfessional.group.directDsp': '直通與 DSP',
   'audioProfessional.group.playbackChain': '播放鏈路',
   'audioProfessional.group.sampleRate': '取樣率鏈路',
   'audioProfessional.group.stability': '穩定性',
-  'audioProfessional.row.actualBuffer': '實際 buffer',
+  'audioProfessional.signal.decode': '解碼',
+  'audioProfessional.signal.dsp': 'DSP',
+  'audioProfessional.signal.fir': 'FIR',
+  'audioProfessional.signal.headroom': '餘量',
+  'audioProfessional.signal.native': '原生',
+  'audioProfessional.signal.output': '輸出',
+  'audioProfessional.signal.source': '來源',  'audioProfessional.row.actualBuffer': '實際 buffer',
   'audioProfessional.row.actualDeviceSampleRate': '實際裝置取樣率',
   'audioProfessional.row.bitDepth': '位元深度',
   'audioProfessional.row.bitPerfect': 'Bit-perfect',
@@ -6438,11 +6956,14 @@ const zhTW: TranslationMap = {
   'audioProfessional.row.outputLatency': '輸出延遲',
   'audioProfessional.row.outputMode': '輸出模式',
   'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.protectLimiter': 'Protect limiter',
+  'audioProfessional.row.roomCorrection': '房間校正',
   'audioProfessional.row.requestedBuffer': '要求 buffer',
   'audioProfessional.row.requestedOutputSampleRate': '要求輸出',
   'audioProfessional.row.resampler': '重取樣器',
   'audioProfessional.row.resampling': '重取樣',
   'audioProfessional.row.sampleRateMismatch': '取樣率不符',
+  'audioProfessional.row.signalPath': '訊號路徑',
   'audioProfessional.row.sharedDeviceSampleRate': '共享裝置取樣率',
   'audioProfessional.row.sharedStability': '共享穩定檔',
   'audioProfessional.row.soxr': 'SOXR',
@@ -6452,7 +6973,9 @@ const zhTW: TranslationMap = {
   'audioProfessional.summary.pending': '等待音訊狀態',
   'audioProfessional.title': '專業播放狀態',
   'audioProfessional.value.disabled': '關閉',
+  'audioProfessional.value.dspPath': 'DSP 路徑：{modules}',
   'audioProfessional.value.enabled': '開啟',
+  'audioProfessional.value.nativePath': '原生直通',
   'audioProfessional.value.no': '否',
   'audioProfessional.value.pending': '待確認',
   'audioProfessional.value.ready': '可直通',
@@ -6695,6 +7218,11 @@ const zhTW: TranslationMap = {
   'historyPage.refresh.none': '沒有發現失效歷史歌曲。',
   'historyPage.refresh.removed': '已移除 {count} 首失效歷史歌曲。',
   'historyPage.refresh.running': '正在刷新...',
+  'historyPage.recent.aria': '最近播放列表',
+  'historyPage.recent.count': '最近 {count} 首',
+  'historyPage.recent.empty': '暫無最近播放。',
+  'historyPage.recent.kicker': '按時間排序',
+  'historyPage.recent.title': '最近播放列表',
   'historyPage.search.placeholder': '搜尋標題、藝術家、專輯或路徑',
   'historyPage.summary.all.count': '總播放',
   'historyPage.summary.all.duration': '總時長',
@@ -7009,6 +7537,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.fontPicker.searchPlaceholder': '搜尋已安裝字體',
   'lyricsSettings.fontPicker.title': '選擇歌詞字體',
   'lyricsSettings.provider.cached': '快取歌詞',
+  'lyricsSettings.provider.amllTtml': 'AMLL TTML',
+  'lyricsSettings.provider.amllTtmlDescription': '逐詞 TTML 歌詞庫，需要匹配網易雲 ID，預設關閉',
   'lyricsSettings.provider.chineseCatalogDescription': '中文曲庫補充',
   'lyricsSettings.provider.genius': 'Genius',
   'lyricsSettings.provider.kugou': '酷狗音樂',
@@ -7072,7 +7602,7 @@ const zhTW: TranslationMap = {
   'lyricsSettings.wordHighlight.title': '逐字歌詞高亮',
   'route.mvSettings.description': 'MV 綁定與本地匹配設定。',
   'route.mvSettings.label': 'MV 設定',
-  'mvSettings.action.chooseFile': '選擇檔案',
+  'mvSettings.action.chooseFile': '匯入本地影片',
   'mvSettings.action.close': '關閉 MV 設定',
   'mvSettings.action.collapseNetwork': '折疊網路來源',
   'mvSettings.action.dragReorder': '拖曳調整優先級',
@@ -7155,11 +7685,22 @@ const zhTW: TranslationMap = {
   'mvSettings.network.syncMode.precise': '精準',
   'mvSettings.network.title': '網路來源',
   'mvSettings.offset.aria': 'MV 同步延遲',
-  'mvSettings.offset.description': '只儲存到目前這首歌的 MV；換歌後不會影響其他歌曲。',
+  'mvSettings.offset.description': '正數讓 MV 畫面提前，負數讓 MV 畫面延後；只記住目前歌曲的 MV。',
   'mvSettings.offset.earlier': 'MV 提前 {value}',
+  'mvSettings.offset.earlierShort': '提前 {value}',
+  'mvSettings.offset.input': '偏移秒數',
   'mvSettings.offset.later': 'MV 延後 {value}',
+  'mvSettings.offset.laterShort': '延後 {value}',
+  'mvSettings.offset.replay': '重播',
+  'mvSettings.offset.replayTitle': '重新播放目前歌曲，並按 MV 起播點同步影片',
   'mvSettings.offset.reset': '重置 MV 延遲',
-  'mvSettings.offset.title': '本歌曲 MV 延遲',
+  'mvSettings.offset.resetShort': '重置',
+  'mvSettings.offset.slider': 'MV 同步延遲滑桿',
+  'mvSettings.offset.startDescription': '輸入影片裡的起點秒數，最高 600 秒；這首歌會直接從那裡對齊播放。',
+  'mvSettings.offset.startInput': 'MV 起播秒數',
+  'mvSettings.offset.startTitle': '從第幾秒開始播放',
+  'mvSettings.offset.step': '調節步長',
+  'mvSettings.offset.title': 'MV 音畫校準',
   'mvSettings.provider.local': '本地',
   'mvSettings.quality.max': '最高',
   'mvSettings.search.input': 'MV 搜尋關鍵字',
@@ -7370,6 +7911,15 @@ const zhTW: TranslationMap = {
   'settings.general.dataBackup.meta.noneYet': '暫無自動備份',
   'settings.general.dataBackup.meta.nextRunPending': '選擇目錄並開啟後生效',
   'settings.general.dataBackup.meta.atPath': '{time} · {path}',
+  'settings.general.dataBackup.progress.preparing': '準備中',
+  'settings.general.dataBackup.progress.snapshot': '建立快照',
+  'settings.general.dataBackup.progress.scanning': '掃描資料',
+  'settings.general.dataBackup.progress.writing': '寫入備份',
+  'settings.general.dataBackup.progress.finalizing': '收尾中',
+  'settings.general.dataBackup.progress.completed': '已完成',
+  'settings.general.dataBackup.progress.failed': '失敗',
+  'settings.general.dataBackup.progress.measuring': '統計中',
+  'settings.general.dataBackup.progress.waiting': '等待寫入',
   'settings.general.dataBackup.action.chooseDirectory': '選擇目錄',
   'settings.general.dataBackup.action.choosingDirectory': '選擇中...',
   'settings.general.dataBackup.action.backupNow': '立即備份',
@@ -7411,20 +7961,77 @@ const zhTW: TranslationMap = {
   'settings.plugins.note': '外掛頁負責啟用、停用、重新載入、命令和日誌；這裡保留入口與安全邊界說明，避免兩套管理 UI 分岔。',
   'settings.nav.about.label': '關於 / 進階',
   'settings.nav.danger.label': '危險操作',
+  'settings.eq.action.addFilter': '新增濾波器',
   'settings.eq.action.autoPreamp': '自動 {value}',
   'settings.eq.action.delete': '刪除',
+  'settings.eq.action.deleteFilter': '移除濾波器',
   'settings.eq.action.holdBypass': '按住旁路 EQ',
+  'settings.eq.action.holdOriginal': '按住聽原聲',
   'settings.eq.action.hideAdvanced': '隱藏 PEQ 控制台',
+  'settings.eq.action.importPreset': '匯入預設 / APO',
+  'settings.eq.action.exportApoGraphicEqPreset': '匯出 GraphicEQ',
+  'settings.eq.action.exportApoPreset': '匯出 APO',
+  'settings.eq.action.pasteApoPreset': '貼上 APO',
   'settings.eq.action.resetChannelBalance': '重置聲道平衡',
   'settings.eq.action.save': '儲存',
   'settings.eq.action.showAdvanced': 'PEQ 控制台',
+  'settings.eq.autoGain.adjustment': 'Auto {value}',
+  'settings.eq.autoGain.status': '狀態',
+  'settings.eq.autoGain.status.clipping': 'Clipping',
+  'settings.eq.autoGain.status.holding': 'Holding',
+  'settings.eq.autoGain.status.idle': 'Idle',
+  'settings.eq.autoGain.status.recovering': 'Recovering',
+  'settings.eq.autoGain.status.reducing': 'Reducing',
+  'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.room.active': 'Active',
+  'settings.eq.room.channelMode': '聲道',
+  'settings.eq.room.clear': '清除',
+  'settings.eq.room.disable': '停用 FIR',
+  'settings.eq.room.empty': '未載入',
+  'settings.eq.room.enable': '啟用 FIR',
+  'settings.eq.room.error': '錯誤',
+  'settings.eq.room.error.invalidImpulse': 'IR 無效',
+  'settings.eq.room.error.invalidWav': 'WAV 無效',
+  'settings.eq.room.error.missingFile': 'IR 檔案遺失',
+  'settings.eq.room.error.missingIr': '未載入 IR',
+  'settings.eq.room.error.tooLong': 'IR 過長',
+  'settings.eq.room.import': '匯入 IR',
+  'settings.eq.room.ir': 'IR',
+  'settings.eq.room.loaded': 'Loaded',
+  'settings.eq.room.sampleRate': '取樣率',
+  'settings.eq.room.short': 'FIR',
+  'settings.eq.room.tapCount': 'Taps',
+  'settings.eq.room.title': '房間校正',
+  'settings.eq.room.trim': 'Trim',
+  'settings.eq.analyzer.overlayAria': 'EQ 即時頻譜疊加',
+  'settings.eq.analyzer.input': 'Input',
+  'settings.eq.analyzer.mode': '頻譜模式',
+  'settings.eq.analyzer.postEq': 'Post EQ',
+  'settings.eq.analyzer.status': '狀態',
+  'settings.eq.analyzer.status.live': 'Live',
+  'settings.eq.analyzer.status.noSignal': 'No signal',
+  'settings.eq.analyzer.status.off': 'Off',
+  'settings.eq.analyzer.status.priming': 'Priming',
+  'settings.eq.analyzer.toggle': '頻譜',
   'settings.eq.band.console': '選中頻段控制台',
   'settings.eq.band.enabledShort': '啟用',
+  'settings.eq.band.filters': '濾波器',
+  'settings.eq.band.filterStack': 'APO 濾波器鏈',
+  'settings.eq.band.gainFixed': '此類型不使用增益',
+  'settings.eq.band.qPresets': 'Q 快捷值',
+  'settings.eq.band.qPresetWide': 'Wide',
+  'settings.eq.band.qPresetNormal': 'Normal',
+  'settings.eq.band.qPresetNarrow': 'Narrow',
   'settings.eq.band.matrix': 'PEQ 頻段矩陣',
   'settings.eq.band.modeFree': '自由頻率',
   'settings.eq.band.modeStandard': '標準頻點',
   'settings.eq.bitPerfect.channelDisabled': 'DSP 已啟用：bit-perfect 已關閉。',
   'settings.eq.bitPerfect.disabled': 'DSP 已啟用：bit-perfect 已關閉{reason}。',
+  'settings.eq.bitPerfect.readyPath': '可保留 bit-perfect 路徑。',
+  'settings.eq.bitPerfect.sourceBoth': 'EQ + 聲道平衡',
+  'settings.eq.bitPerfect.sourceChannel': '聲道平衡',
+  'settings.eq.bitPerfect.sourceEq': 'EQ',
+  'settings.eq.bitPerfect.sourceRoom': '房間校正',
   'settings.eq.channel.active': '啟用',
   'settings.eq.channel.center': '置中',
   'settings.eq.channel.constantPower': '恆定功率',
@@ -7434,13 +8041,79 @@ const zhTW: TranslationMap = {
   'settings.eq.channel.mono.off': '關閉',
   'settings.eq.channel.mono.sum': '合併',
   'settings.eq.channel.title': '聲道平衡',
-  'settings.eq.curve.aria': '可拖動 10 段 EQ 頻響曲線',
+  'settings.eq.comfort.direct': '原聲直通',
+  'settings.eq.comfort.directDetail': 'DSP 關閉時不壓低音量、不改動取樣，適合放心聽原聲。',
+  'settings.eq.comfort.risk': '需要留意電平',
+  'settings.eq.comfort.riskDetail': '偵測到潛在削波或保護動作，建議先預留 -6 dB Headroom。',
+  'settings.eq.comfort.tuned': '正在修飾聲音',
+  'settings.eq.comfort.tunedDetail': '只處理已啟用的 DSP 模組；關閉後會回到原生播放路徑。',
+  'settings.eq.curve.aria': '可拖動 31 段 EQ 頻響曲線',
   'settings.eq.curve.dragBand': '拖動 {frequency} EQ 頻段',
+  'settings.eq.filter.highShelf': '高架',
+  'settings.eq.filter.highPass': '高通',
+  'settings.eq.filter.lowShelf': '低架',
+  'settings.eq.filter.lowPass': '低通',
+  'settings.eq.filter.notch': '陷波',
+  'settings.eq.filter.peaking': '峰值',
   'settings.eq.error.bridgeChannelBalance': '桌面橋接不可用。請在 ECHO Next 桌面端控制聲道平衡。',
   'settings.eq.error.bridgeControlEq': '桌面橋接不可用。請在 ECHO Next 桌面端控制 EQ。',
   'settings.eq.error.bridgeDeletePreset': '桌面橋接不可用。請在 ECHO Next 桌面端刪除 EQ 預設。',
   'settings.eq.error.bridgeSavePreset': '桌面橋接不可用。請在 ECHO Next 桌面端儲存 EQ 預設。',
   'settings.eq.error.presetName': '請輸入預設名稱。',
+  'settings.eq.export.successApo': '已匯出 Equalizer APO 設定：{path}',
+  'settings.eq.export.successGraphicEq': '已匯出 GraphicEQ 設定：{path}',
+  'settings.eq.export.successPreset': '已匯出 EQ 預設：{path}',
+  'settings.eq.import.filters': 'Filter',
+  'settings.eq.import.filtersValue': '{count} 匯入 / {skipped} 跳過',
+  'settings.eq.import.filterPreview': 'Filter 明細',
+  'settings.eq.import.filterEnabledAria': '匯入 Filter {index} 啟用狀態',
+  'settings.eq.import.filterFrequencyAria': '匯入 Filter {index} 頻率',
+  'settings.eq.import.filterGainAria': '匯入 Filter {index} 增益',
+  'settings.eq.import.filterQAria': '匯入 Filter {index} Q',
+  'settings.eq.import.filterTypeAria': '匯入 Filter {index} 類型',
+  'settings.eq.import.estimatedPeak': '預計峰值',
+  'settings.eq.import.graphicEq': 'GraphicEQ 點',
+  'settings.eq.import.includes': 'Include 檔案',
+  'settings.eq.import.includesValue': '{count} 展開 / {skipped} 跳過',
+  'settings.eq.import.maxBoost': '最大提升',
+  'settings.eq.import.maxCut': '最大削減',
+  'settings.eq.import.apoDirectives': 'APO 指令',
+  'settings.eq.import.apoDirectiveDetails': '指令明細',
+  'settings.eq.import.apoDirectivesValue': '{count} 識別 / {skipped} 聲道 Filter 跳過',
+  'settings.eq.import.bandwidthFilters': 'BW 換算',
+  'settings.eq.import.bandwidthFiltersValue': '{count} 條轉為 Q',
+  'settings.eq.import.compatibility': '相容性',
+  'settings.eq.import.compatibility.adjusted': '已換算',
+  'settings.eq.import.compatibility.clean': '完整匯入',
+  'settings.eq.import.compatibility.partial': '部分匯入',
+  'settings.eq.import.moreFilters': '還有 {count} 條 Filter 未顯示',
+  'settings.eq.import.noFilters': '沒有需要顯示的有效濾波器。',
+  'settings.eq.import.preamp': 'Preamp',
+  'settings.eq.import.preampAria': '匯入預設 Preamp',
+  'settings.eq.import.safePreamp': '建議餘量',
+  'settings.eq.import.safetyDetail': '依目前 Filter 粗略估算，套用前可先留出安全餘量。',
+  'settings.eq.import.safetyNeedsHeadroom': '需要安全餘量',
+  'settings.eq.import.safetyOk': '餘量看起來安全',
+  'settings.eq.import.safetyTitle': '匯入聽感安全',
+  'settings.eq.import.audition': '試聽匯入',
+  'settings.eq.import.auditionPresetName': '試聽 {name}',
+  'settings.eq.import.restoreAudition': '恢復原設定',
+  'settings.eq.import.clearPaste': '清空',
+  'settings.eq.import.applyPreview': '套用匯入',
+  'settings.eq.import.cancelPreview': '取消匯入',
+  'settings.eq.import.pasteDefaultName': '貼上的 APO',
+  'settings.eq.import.pasteEmpty': '請先貼上 Equalizer APO 設定。',
+  'settings.eq.import.pasteFileName': '貼上內容',
+  'settings.eq.import.pasteIncludeWarning': '貼上匯入不會讀取 Include 檔案；如需展開 Include，請使用檔案匯入。',
+  'settings.eq.import.pasteTitle': 'APO 文字',
+  'settings.eq.import.previewPaste': '預覽 APO',
+  'settings.eq.import.previewTitle': '匯入預覽',
+  'settings.eq.import.reportTitle': '匯入完成',
+  'settings.eq.import.source': '來源',
+  'settings.eq.import.sourceApo': 'Equalizer APO',
+  'settings.eq.import.sourceEcho': 'ECHO JSON',
+  'settings.eq.import.updateAudition': '更新試聽',
+  'settings.eq.import.useSafePreamp': '使用建議餘量',
   'settings.eq.preamp.inputSafety': 'Headroom 管理',
   'settings.eq.preamp.safeHeadroom': '安全餘量',
   'settings.eq.preset.readonly': '內建預設為唯讀。',
@@ -7461,7 +8134,72 @@ const zhTW: TranslationMap = {
   'settings.eq.signal.preamp': '前級',
   'settings.eq.signal.protecting': '保護中',
   'settings.eq.signal.title': '訊號鏈',
-  'settings.eq.mode.aria': 'EQ 顯示模式',
+  'settings.eq.simpleAction.customPresetName': '我的 EQ 聽感',
+  'settings.eq.simpleAction.lastTweak': '上一個調整',
+  'settings.eq.simpleAction.nextVibe': '換個聽感',
+  'settings.eq.simpleAction.nextVibeDetail': '試試看',
+  'settings.eq.simpleAction.savedPresetName': '{name} {amount}%',
+  'settings.eq.simpleAction.saveVibe': '儲存聽感',
+  'settings.eq.simpleAction.saveVibeDetail': '儲存目前',
+  'settings.eq.simpleInsight.amount': '強度',
+  'settings.eq.simpleInsight.aria': 'Simple 目前聽感摘要',
+  'settings.eq.simpleInsight.custom': '手動聽感',
+  'settings.eq.simpleInsight.mainChange': '主要變化',
+  'settings.eq.simpleInsight.ready': '就緒',
+  'settings.eq.simpleInsight.vibe': '目前聽感',
+  'settings.eq.simpleSafety.action': '留出餘量',
+  'settings.eq.simpleSafety.aria': 'Simple 安全餘量',
+  'settings.eq.simpleSafety.risk': '需要餘量',
+  'settings.eq.simpleSafety.riskDetail': '峰值 {peak} / 建議 {preamp}',
+  'settings.eq.simpleSafety.safe': '餘量安心',
+  'settings.eq.simpleSafety.safeDetail': '峰值 {peak} / 前級 {preamp}',
+  'settings.eq.simpleTone.air': '空氣感',
+  'settings.eq.simpleTone.airDetail': '更亮更開闊',
+  'settings.eq.simpleTone.amount': '味道強度',
+  'settings.eq.simpleTone.amountAria': 'Simple 聽感強度',
+  'settings.eq.simpleTone.aria': 'Simple 聽感快捷調整',
+  'settings.eq.simpleTone.bass': '低頻彈性',
+  'settings.eq.simpleTone.bassDetail': '鼓點更飽滿',
+  'settings.eq.simpleTone.flat': '恢復平直',
+  'settings.eq.simpleTone.flatDetail': '回到原點',
+  'settings.eq.simpleTone.less': '淡一點',
+  'settings.eq.simpleTone.more': '濃一點',
+  'settings.eq.simpleTone.vocal': '人聲靠前',
+  'settings.eq.simpleTone.vocalDetail': '歌詞更清楚',
+  'settings.eq.simpleTone.warm': '暖一點',
+  'settings.eq.simpleTone.warmDetail': '柔和耐聽',
+  'settings.eq.simpleZone.air': '空氣感',
+  'settings.eq.simpleZone.airDetail': '亮度和空間',
+  'settings.eq.simpleZone.applyAria': '套用{zone}聽感，目前{value}',
+  'settings.eq.simpleZone.aria': 'Simple 聽感區域變化',
+  'settings.eq.simpleZone.low': '低頻',
+  'settings.eq.simpleZone.lowDetail': '鼓點和厚度',
+  'settings.eq.simpleZone.neutral': '平直',
+  'settings.eq.simpleZone.vocal': '人聲',
+  'settings.eq.simpleZone.vocalDetail': '歌詞和存在感',
+  'settings.eq.routing.action.armHeadroom6': '預設 -6dB 餘量',
+  'settings.eq.routing.action.nativeDirect': '原生直通',
+  'settings.eq.routing.armed': '已待命',
+  'settings.eq.routing.dspPath': 'DSP 路徑',
+  'settings.eq.routing.dspPathDetail': '目前處理會明確顯示在鏈路中。',
+  'settings.eq.routing.headroomActiveDetail': '餘量正在 DSP 路徑中生效。',
+  'settings.eq.routing.headroomStandby': '餘量待命',
+  'settings.eq.routing.headroomStandbyDetail': '只會在啟用 DSP 後生效。',
+  'settings.eq.routing.modules': '模組',
+  'settings.eq.routing.modulesActiveDetail': '下方會顯示每個啟用的處理階段。',
+  'settings.eq.routing.modulesBypassed': '已旁路',
+  'settings.eq.routing.modulesBypassedDetail': 'EQ / FIR / Balance 均關閉。',
+  'settings.eq.routing.nativeBypassComfort': 'DSP 旁路時會保持原生直通，樣本不會被效果鏈改動。',
+  'settings.eq.routing.nativeDirect': '原生直通',
+  'settings.eq.routing.nativeDirectDetail': 'DSP 旁路時不會改動原生播放。',
+  'settings.eq.routing.nativeNoGainDetail': '原生直通下不做增益衰減。',
+  'settings.eq.routing.playbackPath': '播放路徑',
+  'settings.eq.routing.protectActive': '保護中',
+  'settings.eq.routing.protectActiveDetail': 'Limiter 正在防止過載。',
+  'settings.eq.routing.safety': '安全',
+  'settings.eq.headroom.dsp': 'DSP 餘量',
+  'settings.eq.headroom.nativeBypassNote': '僅在 EQ / FIR / Balance 啟用時生效，原生旁路保持直通。',
+  'settings.eq.headroom.presetsAria': 'DSP 餘量快捷檔位',  'settings.eq.mode.aria': 'EQ 顯示模式',
   'settings.eq.mode.current': '模式',
   'settings.eq.mode.pro': 'Pro',
   'settings.eq.mode.simple': 'Simple',
@@ -7887,9 +8625,13 @@ const zhTW: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.title': '播放介面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '開啟後，正在播放頁會在閒置時從小封面取樣生成輕量背景；低負載模式會自動略過。預設關閉。',
   'settings.appearance.wallpaper.title': '自訂背景',
-  'settings.appearance.wallpaper.description': '支援圖片與本地影片；影片會靜音循環，不會進入音訊鏈路。',
-  'settings.appearance.wallpaper.choose': '選擇背景',
-  'settings.appearance.wallpaper.clear': '清除背景',
+  'settings.appearance.wallpaper.description': '橫向與直向背景會分開儲存；直向視窗只會套用直向背景。支援圖片與本地影片。',
+  'settings.appearance.wallpaper.choose': '選擇橫向背景',
+  'settings.appearance.wallpaper.clear': '清除橫向背景',
+  'settings.appearance.wallpaper.portraitChoose': '選擇直向背景',
+  'settings.appearance.wallpaper.portraitClear': '清除直向背景',
+  'settings.appearance.wallpaper.landscapePath': '橫向',
+  'settings.appearance.wallpaper.portraitPath': '直向',
   'settings.appearance.wallpaper.videoStatus': '影片桌布 · 靜音循環',
   'settings.appearance.wallpaper.videoPause.smart': '智慧暫停',
   'settings.appearance.wallpaper.videoPause.minimized': '最小化暫停',
@@ -7960,6 +8702,8 @@ const zhTW: TranslationMap = {
   'settings.appearance.themePreset.ginzaNoir.description': '黑曜石、香檳金和櫥窗藍，成熟一點。',
   'settings.appearance.themePreset.frostJazz': '霜林爵士',
   'settings.appearance.themePreset.frostJazz.description': '冷藍爵士底色，帶一抹梅紫舞台光。',
+  'settings.appearance.themePreset.FINAL': 'FINAL',
+  'settings.appearance.themePreset.FINAL.description': '參考 final 官網的黑白產品攝影、聲學工程與 8K SOUND 語言，克制、精密、偏監聽。',
   'settings.appearance.themeCustom.title': '自訂目前主題',
   'settings.appearance.themeCustom.description': '先選一個主題，再微調顏色；每個主題都會記住自己的自訂。',
   'settings.appearance.themeCustom.action.autoFix': '自動修正文字',
@@ -8069,7 +8813,7 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeCustom.message.importFailed': '匯入失敗，請選擇 ECHO 主題參數 JSON。',
   'settings.appearance.themeCustom.message.fixed': '已自動調整文字與按鈕顏色。',
   'settings.appearance.themeCustom.message.invalidColor': '請輸入 #RRGGBB 格式的安全顏色。',
-  'settings.appearance.themeCustom.message.lowContrast': '目前文字對比不足，請先自動修正或調深文字後再儲存。',
+  'settings.appearance.themeCustom.message.lowContrast': '目前文字對比不足，可能影響閱讀。可自動修正或手動調整文字顏色。',
   'settings.appearance.themeCustom.message.reset': '已重置目前主題的自訂。',
   'settings.appearance.themeCustom.message.saved': '已儲存目前主題自訂。',
   'settings.appearance.density.title': '介面密度',
@@ -8499,6 +9243,7 @@ const jaJP: TranslationMap = {
   'notice.action.openReport': 'レポートを開く',
   'notice.audioError.description': 'Markdown 診断レポートを作成しました。詳しい原因と調査の手がかりが含まれています。',
   'notice.audioError.title': '音声エラー',
+  'notice.audioDefaultFormatWarning': '音声設定の通知: Windows の既定形式が高めです。現在は {rate} です。ECHO は通知のみを行い、システム設定は変更しません。48 kHz への変更をおすすめします。',
   'notice.diagnosticsCrash.description': '前回 ECHO Next は正常終了しませんでした。調査用の Markdown レポートを準備しました。',
   'notice.importFiles.empty': '取り込める音声ファイルがありません。',
   'notice.importFiles.failed': '{count} 個のファイルの取り込みに失敗しました',
@@ -8632,6 +9377,7 @@ const jaJP: TranslationMap = {
   'artistDetail.tracks.error.desktopBridgeActions': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でファイル操作を使ってください。',
   'artistDetail.tracks.error.desktopBridgeEdit': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で埋め込みタグを編集してください。',
   'artistDetail.tracks.error.desktopBridgeRead': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でアーティストの曲を読み込んでください。',
+  'artistDetail.tracks.expandAll': 'すべて展開',
   'artistDetail.tracks.error.noCoverSaved': 'この曲のカバーアートは保存されませんでした。',
   'artistDetail.tracks.error.noCoverToCopy': 'この曲にはコピーできるカバーアートがありません。',
   'artistDetail.tracks.error.remoteFileAction': 'リモート曲はまだローカルファイル操作に対応していません。',
@@ -8780,6 +9526,7 @@ const jaJP: TranslationMap = {
   'albumDetail.sources.releaseAria': '現在一致したリリース情報',
   'albumDetail.sources.releaseDetails': '現在のリリース',
   'albumDetail.status.addedToQueue': '{count} 曲をキューに追加しました。',
+  'albumDetail.status.copiedCover': 'カバー原画をコピーしました',
   'albumDetail.status.libraryReady': '{value} 準備完了',
   'albumDetail.status.readingSignal': '信号を読み込み中',
   'albumDetail.status.unknownGenre': '不明なジャンル',
@@ -8957,22 +9704,37 @@ const jaJP: TranslationMap = {
   'audioDrawer.status.ratePending': 'レート未確定',
   'audioDrawer.status.sampleRatePending': 'サンプルレート未確定',
   'audioDrawer.title': '音声設定',
+  'audioDrawer.warning.highOutputSampleRate': '現在のオーディオデバイスのサンプルレートが高すぎるため、再生速度が異常になる可能性があります。48 kHz への変更をおすすめします。',
   'audioProfessional.action.hideDetails': '詳細を閉じる',
   'audioProfessional.action.refresh': '状態を更新',
   'audioProfessional.action.showDetails': '詳細を表示',
   'audioProfessional.badge.bitPerfect': 'Bit-perfect',
   'audioProfessional.badge.dsp': 'DSP active',
+  'audioProfessional.badge.protect': 'Protect',
   'audioProfessional.badge.replayGain': 'ReplayGain',
   'audioProfessional.badge.resampling': 'リサンプル',
   'audioProfessional.badge.sampleMismatch': 'サンプルレート不一致',
   'audioProfessional.badge.warning': 'デバイス警告',
   'audioProfessional.issue.reason': '理由',
-  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows の共有サンプルレートが高すぎます。デバイスは {deviceRate}、ECHO は現在 {decoderRate} PCM を出力しているため、再生速度が変わる可能性があります。Windows の既定形式を 48 kHz または 96 kHz に下げてください。',
+  'audioProfessional.issue.audioLevelClipped': 'リアルタイムレベルでクリップを検出しました。プリアンプを下げるか、ゲイン系 DSP をオフにしてください。',
+  'audioProfessional.issue.audioLevelClippingRisk': 'リアルタイムレベルが 0 dBFS に近く、クリップの危険があります。',
+  'audioProfessional.issue.dspClippingRisk': 'DSP チェーン出力にクリップの危険があります。Protect limiter は待機監視中です。',
+  'audioProfessional.issue.dspLimiterProtecting': 'Protect limiter が出力を保護しています。DSP 後段の信号が安全しきい値を超えています。',
+  'audioProfessional.issue.roomCorrectionBitPerfectDisabled': 'ルーム補正は bit-perfect 出力を無効にします。',
+  'audioProfessional.issue.roomCorrectionClippingRisk': 'ルーム補正の出力にクリップの危険があります。FIR Trim を下げるか Auto Gain を有効にしてください。',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows の共有サンプルレートが高すぎます。デバイスは {deviceRate}、ECHO は現在 {decoderRate} PCM を出力しているため、再生速度が変わる可能性があります。Windows の既定形式を 48 kHz に下げてください。',
+  'audioProfessional.issue.windowsDefaultFormatUnusual': 'Windows の既定形式が高めに設定されています。現在は {deviceRate} です。ECHO は通知のみを行い、システム設定は変更しません。48 kHz に変更することをおすすめします。',
   'audioProfessional.group.directDsp': 'Direct / DSP',
   'audioProfessional.group.playbackChain': '再生チェーン',
   'audioProfessional.group.sampleRate': 'サンプルレート',
   'audioProfessional.group.stability': '安定性',
-  'audioProfessional.row.actualBuffer': '実 buffer',
+  'audioProfessional.signal.decode': 'デコード',
+  'audioProfessional.signal.dsp': 'DSP',
+  'audioProfessional.signal.fir': 'FIR',
+  'audioProfessional.signal.headroom': 'ヘッドルーム',
+  'audioProfessional.signal.native': 'ネイティブ',
+  'audioProfessional.signal.output': '出力',
+  'audioProfessional.signal.source': 'ソース',  'audioProfessional.row.actualBuffer': '実 buffer',
   'audioProfessional.row.actualDeviceSampleRate': '実デバイスレート',
   'audioProfessional.row.bitDepth': 'ビット深度',
   'audioProfessional.row.bitPerfect': 'Bit-perfect',
@@ -8994,11 +9756,14 @@ const jaJP: TranslationMap = {
   'audioProfessional.row.outputLatency': '出力遅延',
   'audioProfessional.row.outputMode': '出力モード',
   'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.protectLimiter': 'Protect limiter',
+  'audioProfessional.row.roomCorrection': 'ルーム補正',
   'audioProfessional.row.requestedBuffer': '要求 buffer',
   'audioProfessional.row.requestedOutputSampleRate': '要求出力',
   'audioProfessional.row.resampler': 'リサンプラー',
   'audioProfessional.row.resampling': 'リサンプル',
   'audioProfessional.row.sampleRateMismatch': 'レート不一致',
+  'audioProfessional.row.signalPath': '信号パス',
   'audioProfessional.row.sharedDeviceSampleRate': '共有デバイスレート',
   'audioProfessional.row.sharedStability': '共有安定度',
   'audioProfessional.row.soxr': 'SOXR',
@@ -9008,7 +9773,9 @@ const jaJP: TranslationMap = {
   'audioProfessional.summary.pending': '音声状態を待機中',
   'audioProfessional.title': 'プロ再生ステータス',
   'audioProfessional.value.disabled': 'オフ',
+  'audioProfessional.value.dspPath': 'DSP Path: {modules}',
   'audioProfessional.value.enabled': 'オン',
+  'audioProfessional.value.nativePath': 'Native Path',
   'audioProfessional.value.no': 'いいえ',
   'audioProfessional.value.pending': '確認中',
   'audioProfessional.value.ready': 'Direct ready',
@@ -9253,6 +10020,11 @@ const jaJP: TranslationMap = {
   'historyPage.refresh.none': '無効な履歴の曲は見つかりませんでした。',
   'historyPage.refresh.removed': '無効な履歴の曲を {count} 曲削除しました。',
   'historyPage.refresh.running': '更新中...',
+  'historyPage.recent.aria': '最近再生した曲リスト',
+  'historyPage.recent.count': '最近 {count} 曲',
+  'historyPage.recent.empty': '最近再生した曲はまだありません。',
+  'historyPage.recent.kicker': '時間順',
+  'historyPage.recent.title': '最近再生した曲',
   'historyPage.search.placeholder': 'タイトル、アーティスト、アルバム、パスを検索',
   'historyPage.summary.all.count': '総再生',
   'historyPage.summary.all.duration': '総再生時間',
@@ -9570,6 +10342,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.fontPicker.searchPlaceholder': 'インストール済みフォントを検索',
   'lyricsSettings.fontPicker.title': '歌詞フォントを選択',
   'lyricsSettings.provider.cached': 'キャッシュ歌詞',
+  'lyricsSettings.provider.amllTtml': 'AMLL TTML',
+  'lyricsSettings.provider.amllTtmlDescription': '単語単位 TTML 歌詞ライブラリ。NetEase ID の照合が必要で、既定では無効です',
   'lyricsSettings.provider.chineseCatalogDescription': '中国語カタログ補完',
   'lyricsSettings.provider.genius': 'Genius',
   'lyricsSettings.provider.kugou': 'KuGou Music',
@@ -9633,7 +10407,7 @@ const jaJP: TranslationMap = {
   'lyricsSettings.wordHighlight.title': '単語ごとの歌詞ハイライト',
   'route.mvSettings.description': 'MV の紐付けとローカル検索設定。',
   'route.mvSettings.label': 'MV 設定',
-  'mvSettings.action.chooseFile': 'ファイルを選択',
+  'mvSettings.action.chooseFile': 'ローカル動画をインポート',
   'mvSettings.action.close': 'MV 設定を閉じる',
   'mvSettings.action.collapseNetwork': 'ネットワークソースを折りたたむ',
   'mvSettings.action.dragReorder': 'ドラッグして優先度を変更',
@@ -9716,11 +10490,22 @@ const jaJP: TranslationMap = {
   'mvSettings.network.syncMode.precise': '高精度',
   'mvSettings.network.title': 'ネットワークソース',
   'mvSettings.offset.aria': 'MV 同期遅延',
-  'mvSettings.offset.description': '現在の曲の MV だけに保存され、別の曲には影響しません。',
+  'mvSettings.offset.description': '正の値で MV 映像を早め、負の値で遅らせます。現在の曲の MV だけに保存されます。',
   'mvSettings.offset.earlier': 'MV を {value} 早める',
+  'mvSettings.offset.earlierShort': '早める {value}',
+  'mvSettings.offset.input': 'オフセット秒数',
   'mvSettings.offset.later': 'MV を {value} 遅らせる',
+  'mvSettings.offset.laterShort': '遅らせる {value}',
+  'mvSettings.offset.replay': '再生',
+  'mvSettings.offset.replayTitle': '現在の曲を再生し直し、MV 開始位置に同期します',
   'mvSettings.offset.reset': 'MV 遅延をリセット',
-  'mvSettings.offset.title': 'この曲の MV 遅延',
+  'mvSettings.offset.resetShort': 'リセット',
+  'mvSettings.offset.slider': 'MV 同期遅延スライダー',
+  'mvSettings.offset.startDescription': '動画内の開始秒数を入力します。最大 600 秒まで、この曲はその位置から同期再生されます。',
+  'mvSettings.offset.startInput': 'MV 開始秒数',
+  'mvSettings.offset.startTitle': '何秒目から再生',
+  'mvSettings.offset.step': '調整ステップ',
+  'mvSettings.offset.title': 'MV 音ズレ補正',
   'mvSettings.provider.local': 'ローカル',
   'mvSettings.quality.max': '最大',
   'mvSettings.search.input': 'MV 検索キーワード',
@@ -9919,19 +10704,26 @@ const jaJP: TranslationMap = {
   'settings.nav.remote.description': 'NAS、WebDAV、Subsonic',
   'settings.nav.eq.label': 'EQ',
   'settings.nav.eq.description': 'イコライザーと出力保護',
+  'settings.eq.action.addFilter': 'フィルターを追加',
   'settings.eq.action.autoPreamp': '自動 {value}',
   'settings.eq.action.bypass': 'バイパス',
   'settings.eq.action.delete': '削除',
+  'settings.eq.action.deleteFilter': 'フィルターを削除',
   'settings.eq.action.holdBypass': '押している間 EQ をバイパス',
+  'settings.eq.action.holdOriginal': '押して原音を聴く',
   'settings.eq.action.resetBand': '{frequency} をリセット',
   'settings.eq.action.resetChannelBalance': 'チャンネルバランスをリセット',
   'settings.eq.action.resetEq': 'EQ をリセット',
   'settings.eq.action.save': '保存',
   'settings.eq.band.fallback': 'バンド',
-  'settings.eq.band.readoutsAria': '10 バンド EQ のドラッグ可能なバンド表示',
+  'settings.eq.band.readoutsAria': '31 バンド EQ のドラッグ可能なバンド表示',
   'settings.eq.bitPerfect.channelDisabled': 'DSP 有効: bit-perfect は無効です。',
   'settings.eq.bitPerfect.disabled': 'DSP 有効: bit-perfect は無効です{reason}。',
   'settings.eq.bitPerfect.readyPath': 'bit-perfect 経路を維持できます。',
+  'settings.eq.bitPerfect.sourceBoth': 'EQ + チャンネルバランス',
+  'settings.eq.bitPerfect.sourceChannel': 'チャンネルバランス',
+  'settings.eq.bitPerfect.sourceEq': 'EQ',
+  'settings.eq.bitPerfect.sourceRoom': 'ルーム補正',
   'settings.eq.channel.active': '有効',
   'settings.eq.channel.balance': 'バランス',
   'settings.eq.channel.bypassed': 'バイパス',
@@ -9952,21 +10744,136 @@ const jaJP: TranslationMap = {
   'settings.eq.channel.rightTotal': '右合計',
   'settings.eq.channel.swap': 'L/R 交換',
   'settings.eq.channel.title': 'チャンネルバランス',
-  'settings.eq.curve.aria': 'ドラッグ可能な 10 バンド EQ 周波数特性',
+  'settings.eq.curve.aria': 'ドラッグ可能な 31 バンド EQ 周波数特性',
   'settings.eq.curve.dragBand': '{frequency} EQ バンドをドラッグ',
+  'settings.eq.filter.highShelf': 'ハイシェルフ',
+  'settings.eq.filter.highPass': 'ハイパス',
+  'settings.eq.filter.lowShelf': 'ローシェルフ',
+  'settings.eq.filter.lowPass': 'ローパス',
+  'settings.eq.filter.notch': 'ノッチ',
+  'settings.eq.filter.peaking': 'ピーキング',
   'settings.eq.error.bridgeChannelBalance': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版でチャンネルバランスを操作してください。',
   'settings.eq.error.bridgeControlEq': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ を操作してください。',
   'settings.eq.error.bridgeDeletePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを削除してください。',
   'settings.eq.error.bridgeSavePreset': 'デスクトップブリッジを利用できません。ECHO Next デスクトップ版で EQ プリセットを保存してください。',
   'settings.eq.error.presetName': 'プリセット名を入力してください。',
+  'settings.eq.export.successApo': 'Equalizer APO 設定を書き出しました: {path}',
+  'settings.eq.export.successGraphicEq': 'GraphicEQ 設定を書き出しました: {path}',
+  'settings.eq.export.successPreset': 'EQ プリセットを書き出しました: {path}',
+  'settings.eq.import.filters': 'Filter',
+  'settings.eq.import.filtersValue': '{count} インポート / {skipped} スキップ',
+  'settings.eq.import.filterPreview': 'Filter 詳細',
+  'settings.eq.import.filterEnabledAria': 'インポート Filter {index} の有効状態',
+  'settings.eq.import.filterFrequencyAria': 'インポート Filter {index} の周波数',
+  'settings.eq.import.filterGainAria': 'インポート Filter {index} のゲイン',
+  'settings.eq.import.filterQAria': 'インポート Filter {index} の Q',
+  'settings.eq.import.filterTypeAria': 'インポート Filter {index} のタイプ',
+  'settings.eq.import.estimatedPeak': '推定ピーク',
+  'settings.eq.import.graphicEq': 'GraphicEQ 点',
+  'settings.eq.import.includes': 'Include ファイル',
+  'settings.eq.import.includesValue': '{count} 展開 / {skipped} スキップ',
+  'settings.eq.import.maxBoost': '最大ブースト',
+  'settings.eq.import.maxCut': '最大カット',
+  'settings.eq.import.apoDirectives': 'APO 指令',
+  'settings.eq.import.apoDirectiveDetails': '指令詳細',
+  'settings.eq.import.apoDirectivesValue': '{count} 認識 / {skipped} チャンネル Filter スキップ',
+  'settings.eq.import.bandwidthFilters': 'BW 変換',
+  'settings.eq.import.bandwidthFiltersValue': '{count} 件を Q に変換',
+  'settings.eq.import.compatibility': '互換性',
+  'settings.eq.import.compatibility.adjusted': '変換済み',
+  'settings.eq.import.compatibility.clean': '完全インポート',
+  'settings.eq.import.compatibility.partial': '部分インポート',
+  'settings.eq.import.moreFilters': 'ほか {count} 件の Filter は未表示',
+  'settings.eq.import.noFilters': '表示する有効なフィルターはありません。',
+  'settings.eq.import.preamp': 'Preamp',
+  'settings.eq.import.preampAria': 'インポートプリセット Preamp',
+  'settings.eq.import.safePreamp': '推奨ヘッドルーム',
+  'settings.eq.import.safetyDetail': '現在の Filter から概算します。適用前に安全な余裕を確保できます。',
+  'settings.eq.import.safetyNeedsHeadroom': 'ヘッドルームが必要',
+  'settings.eq.import.safetyOk': '余裕は安全そうです',
+  'settings.eq.import.safetyTitle': 'インポート安全性',
+  'settings.eq.import.audition': 'インポートを試聴',
+  'settings.eq.import.auditionPresetName': '試聴 {name}',
+  'settings.eq.import.restoreAudition': '元の設定に戻す',
+  'settings.eq.import.clearPaste': 'クリア',
+  'settings.eq.import.applyPreview': 'インポートを適用',
+  'settings.eq.import.cancelPreview': 'キャンセル',
+  'settings.eq.import.pasteDefaultName': '貼り付けた APO',
+  'settings.eq.import.pasteEmpty': 'Equalizer APO 設定を貼り付けてください。',
+  'settings.eq.import.pasteFileName': '貼り付け内容',
+  'settings.eq.import.pasteIncludeWarning': '貼り付けインポートでは Include ファイルを読み込みません。Include を展開するにはファイルインポートを使ってください。',
+  'settings.eq.import.pasteTitle': 'APO テキスト',
+  'settings.eq.import.previewPaste': 'APO をプレビュー',
+  'settings.eq.import.previewTitle': 'インポートプレビュー',
+  'settings.eq.import.reportTitle': 'インポート完了',
+  'settings.eq.import.source': 'ソース',
+  'settings.eq.import.sourceApo': 'Equalizer APO',
+  'settings.eq.import.sourceEcho': 'ECHO JSON',
+  'settings.eq.import.updateAudition': '試聴を更新',
+  'settings.eq.import.useSafePreamp': '推奨値を使用',
   'settings.eq.action.hideAdvanced': 'PEQ コンソールを隠す',
+  'settings.eq.action.importPreset': 'プリセット / APO をインポート',
+  'settings.eq.action.pasteApoPreset': 'APO を貼り付け',
+  'settings.eq.action.exportApoGraphicEqPreset': 'GraphicEQ へ書き出し',
+  'settings.eq.action.exportApoPreset': 'APO へ書き出し',
   'settings.eq.action.showAdvanced': 'PEQ コンソール',
   'settings.eq.ab.summary': '{preset} / peak {peak} / out {output} / preamp {preamp}',
+  'settings.eq.autoGain.adjustment': 'Auto {value}',
+  'settings.eq.autoGain.status': '状態',
+  'settings.eq.autoGain.status.clipping': 'Clipping',
+  'settings.eq.autoGain.status.holding': 'Holding',
+  'settings.eq.autoGain.status.idle': 'Idle',
+  'settings.eq.autoGain.status.recovering': 'Recovering',
+  'settings.eq.autoGain.status.reducing': 'Reducing',
+  'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.room.active': 'Active',
+  'settings.eq.room.channelMode': 'チャンネル',
+  'settings.eq.room.clear': 'クリア',
+  'settings.eq.room.disable': 'FIR 無効',
+  'settings.eq.room.empty': '未読込',
+  'settings.eq.room.enable': 'FIR 有効',
+  'settings.eq.room.error': 'エラー',
+  'settings.eq.room.error.invalidImpulse': 'IR 無効',
+  'settings.eq.room.error.invalidWav': 'WAV 無効',
+  'settings.eq.room.error.missingFile': 'IR ファイルなし',
+  'settings.eq.room.error.missingIr': 'IR 未読込',
+  'settings.eq.room.error.tooLong': 'IR が長すぎます',
+  'settings.eq.room.import': 'IR 読込',
+  'settings.eq.room.ir': 'IR',
+  'settings.eq.room.loaded': 'Loaded',
+  'settings.eq.room.sampleRate': 'サンプル',
+  'settings.eq.room.short': 'FIR',
+  'settings.eq.room.tapCount': 'Taps',
+  'settings.eq.room.title': 'ルーム補正',
+  'settings.eq.room.trim': 'Trim',
+  'settings.eq.analyzer.overlayAria': 'EQ リアルタイムスペクトラム表示',
+  'settings.eq.analyzer.input': 'Input',
+  'settings.eq.analyzer.mode': 'スペクトラムモード',
+  'settings.eq.analyzer.postEq': 'Post EQ',
+  'settings.eq.analyzer.status': '状態',
+  'settings.eq.analyzer.status.live': 'Live',
+  'settings.eq.analyzer.status.noSignal': 'No signal',
+  'settings.eq.analyzer.status.off': 'Off',
+  'settings.eq.analyzer.status.priming': 'Priming',
+  'settings.eq.analyzer.toggle': 'スペクトラム',
   'settings.eq.band.console': '選択バンドコンソール',
   'settings.eq.band.enabledShort': '有効',
+  'settings.eq.band.filters': 'フィルター',
+  'settings.eq.band.filterStack': 'APO フィルターチェーン',
+  'settings.eq.band.gainFixed': 'このタイプではゲイン固定',
+  'settings.eq.band.qPresets': 'Q クイック値',
+  'settings.eq.band.qPresetWide': 'Wide',
+  'settings.eq.band.qPresetNormal': 'Normal',
+  'settings.eq.band.qPresetNarrow': 'Narrow',
   'settings.eq.band.matrix': 'PEQ バンドマトリクス',
   'settings.eq.band.modeFree': '自由周波数',
   'settings.eq.band.modeStandard': '標準バンド',
+  'settings.eq.comfort.direct': '原音ダイレクト',
+  'settings.eq.comfort.directDetail': 'DSP オフ時は音量を下げず、サンプルも変更しません。原音を安心して聴けます。',
+  'settings.eq.comfort.risk': 'レベルに注意',
+  'settings.eq.comfort.riskDetail': 'クリップの可能性または保護動作を検出しました。まず -6 dB ヘッドルームを確保してください。',
+  'settings.eq.comfort.tuned': '音を調整中',
+  'settings.eq.comfort.tunedDetail': '有効な DSP モジュールだけを処理します。オフにするとネイティブ再生経路へ戻ります。',
   'settings.eq.level.clips': 'クリップ {count}',
   'settings.eq.level.estimatedOutputPeak': '推定出力ピーク',
   'settings.eq.level.headroom': 'ヘッドルーム',
@@ -10003,7 +10910,72 @@ const jaJP: TranslationMap = {
   'settings.eq.signal.preamp': 'プリアンプ',
   'settings.eq.signal.protecting': '保護中',
   'settings.eq.signal.title': '信号チェーン',
-  'settings.eq.mode.aria': 'EQ 表示モード',
+  'settings.eq.simpleAction.customPresetName': 'My EQ Tone',
+  'settings.eq.simpleAction.lastTweak': '直前の調整',
+  'settings.eq.simpleAction.nextVibe': '次の音',
+  'settings.eq.simpleAction.nextVibeDetail': '試してみる',
+  'settings.eq.simpleAction.savedPresetName': '{name} {amount}%',
+  'settings.eq.simpleAction.saveVibe': '音作りを保存',
+  'settings.eq.simpleAction.saveVibeDetail': '現在を保存',
+  'settings.eq.simpleInsight.amount': '強さ',
+  'settings.eq.simpleInsight.aria': 'Simple 現在の音作り概要',
+  'settings.eq.simpleInsight.custom': '手動音作り',
+  'settings.eq.simpleInsight.mainChange': '主な変化',
+  'settings.eq.simpleInsight.ready': '準備完了',
+  'settings.eq.simpleInsight.vibe': '現在の音',
+  'settings.eq.simpleSafety.action': '余裕を確保',
+  'settings.eq.simpleSafety.aria': 'Simple 安全ヘッドルーム',
+  'settings.eq.simpleSafety.risk': '余裕が必要',
+  'settings.eq.simpleSafety.riskDetail': 'ピーク {peak} / 推奨 {preamp}',
+  'settings.eq.simpleSafety.safe': '余裕あり',
+  'settings.eq.simpleSafety.safeDetail': 'ピーク {peak} / プリアンプ {preamp}',
+  'settings.eq.simpleTone.air': '空気感',
+  'settings.eq.simpleTone.airDetail': '明るく広がる',
+  'settings.eq.simpleTone.amount': '味の強さ',
+  'settings.eq.simpleTone.amountAria': 'Simple 音作りの強さ',
+  'settings.eq.simpleTone.aria': 'Simple 音作りクイック調整',
+  'settings.eq.simpleTone.bass': '低音弾力',
+  'settings.eq.simpleTone.bassDetail': 'キックを豊かに',
+  'settings.eq.simpleTone.flat': 'フラット',
+  'settings.eq.simpleTone.flatDetail': '元に戻す',
+  'settings.eq.simpleTone.less': '弱める',
+  'settings.eq.simpleTone.more': '強める',
+  'settings.eq.simpleTone.vocal': 'ボーカル前へ',
+  'settings.eq.simpleTone.vocalDetail': '歌詞を明瞭に',
+  'settings.eq.simpleTone.warm': '少し暖かく',
+  'settings.eq.simpleTone.warmDetail': '柔らかく聴く',
+  'settings.eq.simpleZone.air': '空気感',
+  'settings.eq.simpleZone.airDetail': '明るさと広がり',
+  'settings.eq.simpleZone.applyAria': '{zone} の音作りを適用、現在 {value}',
+  'settings.eq.simpleZone.aria': 'Simple 音域変化',
+  'settings.eq.simpleZone.low': '低域',
+  'settings.eq.simpleZone.lowDetail': 'キックと厚み',
+  'settings.eq.simpleZone.neutral': 'フラット',
+  'settings.eq.simpleZone.vocal': 'ボーカル',
+  'settings.eq.simpleZone.vocalDetail': '歌詞と存在感',
+  'settings.eq.routing.action.armHeadroom6': '-6dB ヘッドルームを待機',
+  'settings.eq.routing.action.nativeDirect': 'ネイティブ直通',
+  'settings.eq.routing.armed': '待機中',
+  'settings.eq.routing.dspPath': 'DSP パス',
+  'settings.eq.routing.dspPathDetail': '有効な処理は信号経路に明示されます。',
+  'settings.eq.routing.headroomActiveDetail': 'ヘッドルームは DSP パスで有効です。',
+  'settings.eq.routing.headroomStandby': 'ヘッドルーム待機',
+  'settings.eq.routing.headroomStandbyDetail': 'DSP を有効にした時だけ適用されます。',
+  'settings.eq.routing.modules': 'モジュール',
+  'settings.eq.routing.modulesActiveDetail': '有効な処理段は下に表示されます。',
+  'settings.eq.routing.modulesBypassed': 'バイパス済み',
+  'settings.eq.routing.modulesBypassedDetail': 'EQ / FIR / Balance はオフです。',
+  'settings.eq.routing.nativeBypassComfort': 'DSP バイパス時はネイティブ直通を保ち、サンプルはエフェクトチェーンで変更されません。',
+  'settings.eq.routing.nativeDirect': 'ネイティブ直通',
+  'settings.eq.routing.nativeDirectDetail': 'DSP バイパス時はネイティブ再生を変更しません。',
+  'settings.eq.routing.nativeNoGainDetail': 'ネイティブ直通ではゲインを下げません。',
+  'settings.eq.routing.playbackPath': '再生パス',
+  'settings.eq.routing.protectActive': '保護中',
+  'settings.eq.routing.protectActiveDetail': 'Limiter が過負荷を防いでいます。',
+  'settings.eq.routing.safety': '安全',
+  'settings.eq.headroom.dsp': 'DSP ヘッドルーム',
+  'settings.eq.headroom.nativeBypassNote': 'EQ / FIR / Balance が有効な時だけ適用され、ネイティブバイパスは直通のままです。',
+  'settings.eq.headroom.presetsAria': 'DSP ヘッドルームのプリセット',  'settings.eq.mode.aria': 'EQ 表示モード',
   'settings.eq.mode.current': 'モード',
   'settings.eq.mode.pro': 'Pro',
   'settings.eq.mode.simple': 'Simple',
@@ -10118,6 +11090,15 @@ const jaJP: TranslationMap = {
   'settings.general.dataBackup.meta.noneYet': '自動バックアップはまだありません',
   'settings.general.dataBackup.meta.nextRunPending': '保存先を選んで有効にすると反映されます',
   'settings.general.dataBackup.meta.atPath': '{time} · {path}',
+  'settings.general.dataBackup.progress.preparing': '準備中',
+  'settings.general.dataBackup.progress.snapshot': 'スナップショット作成',
+  'settings.general.dataBackup.progress.scanning': 'スキャン中',
+  'settings.general.dataBackup.progress.writing': '書き込み中',
+  'settings.general.dataBackup.progress.finalizing': '完了処理中',
+  'settings.general.dataBackup.progress.completed': '完了',
+  'settings.general.dataBackup.progress.failed': '失敗',
+  'settings.general.dataBackup.progress.measuring': '集計中',
+  'settings.general.dataBackup.progress.waiting': '書き込み待機中',
   'settings.general.dataBackup.action.chooseDirectory': '保存先を選択',
   'settings.general.dataBackup.action.choosingDirectory': '選択中...',
   'settings.general.dataBackup.action.backupNow': '今すぐバックアップ',
@@ -10482,9 +11463,13 @@ const jaJP: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.title': '再生画面のカバー色',
   'settings.appearance.nowPlayingCoverColor.description': '有効にすると、再生中ページがアイドル時に小さなカバー画像から軽量な背景色を抽出します。低負荷モードでは自動的にスキップします。既定はオフです。',
   'settings.appearance.wallpaper.title': 'カスタム背景',
-  'settings.appearance.wallpaper.description': '画像とローカル動画に対応します。動画はミュートでループし、音声経路には入りません。',
-  'settings.appearance.wallpaper.choose': '背景を選択',
-  'settings.appearance.wallpaper.clear': '背景をクリア',
+  'settings.appearance.wallpaper.description': '横向きと縦向きの背景を別々に保存します。縦向きウィンドウでは縦向き背景だけを適用します。画像とローカル動画に対応します。',
+  'settings.appearance.wallpaper.choose': '横向き背景を選択',
+  'settings.appearance.wallpaper.clear': '横向き背景をクリア',
+  'settings.appearance.wallpaper.portraitChoose': '縦向き背景を選択',
+  'settings.appearance.wallpaper.portraitClear': '縦向き背景をクリア',
+  'settings.appearance.wallpaper.landscapePath': '横向き',
+  'settings.appearance.wallpaper.portraitPath': '縦向き',
   'settings.appearance.wallpaper.videoStatus': '動画壁紙 ・ ミュートループ',
   'settings.appearance.wallpaper.videoPause.smart': '自動一時停止',
   'settings.appearance.wallpaper.videoPause.minimized': '最小化で停止',
@@ -10555,6 +11540,8 @@ const jaJP: TranslationMap = {
   'settings.appearance.themePreset.ginzaNoir.description': '黒曜石、シャンパンゴールド、ショーウィンドウの青。',
   'settings.appearance.themePreset.frostJazz': 'フロストジャズ',
   'settings.appearance.themePreset.frostJazz.description': '冷たいブルージャズに梅紫のステージライト。',
+  'settings.appearance.themePreset.FINAL': 'FINAL',
+  'settings.appearance.themePreset.FINAL.description': 'final公式のモノクロ製品写真、音響工学、8K SOUNDの言葉から着想した、抑制された精密なモニター調。',
   'settings.appearance.themeCustom.title': 'Customize Current Theme',
   'settings.appearance.themeCustom.description': 'Choose a theme first, then tune colors. Each theme keeps its own custom colors.',
   'settings.appearance.themeCustom.action.autoFix': 'Auto-fix Text',
@@ -10664,7 +11651,7 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeCustom.message.importFailed': 'Import failed. Choose an ECHO theme parameter JSON file.',
   'settings.appearance.themeCustom.message.fixed': 'Text and button colors were adjusted.',
   'settings.appearance.themeCustom.message.invalidColor': 'Use a safe #RRGGBB color.',
-  'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is too low. Auto-fix it or darken text before saving.',
+  'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is low and may affect readability. You can auto-fix it or adjust text colors.',
   'settings.appearance.themeCustom.message.reset': 'Custom colors for this theme were reset.',
   'settings.appearance.themeCustom.message.saved': 'Custom colors for this theme were saved.',
   'settings.appearance.density.title': '表示密度',
@@ -11126,6 +12113,7 @@ const enUS: TranslationMap = {
   'notice.action.openReport': 'Open Report',
   'notice.audioError.description': 'A Markdown diagnostics report was generated with detailed causes and troubleshooting clues.',
   'notice.audioError.title': 'Audio Error',
+  'notice.audioDefaultFormatWarning': 'Audio settings reminder: the Windows default format looks too high at {rate}. ECHO will only warn you and will not change system settings; 48 kHz is recommended.',
   'notice.diagnosticsCrash.description': 'ECHO Next did not exit normally last time. A Markdown report is ready for troubleshooting.',
   'notice.importFiles.empty': 'No audio files can be imported.',
   'notice.importFiles.failed': '{count} files failed to import',
@@ -11259,6 +12247,7 @@ const enUS: TranslationMap = {
   'artistDetail.tracks.error.desktopBridgeActions': 'Desktop bridge unavailable. Open ECHO Next in Electron to use file actions.',
   'artistDetail.tracks.error.desktopBridgeEdit': 'Desktop bridge unavailable. Open ECHO Next in Electron to edit embedded tags.',
   'artistDetail.tracks.error.desktopBridgeRead': 'Desktop bridge unavailable. Open ECHO Next in Electron to read artist tracks.',
+  'artistDetail.tracks.expandAll': 'Expand all',
   'artistDetail.tracks.error.noCoverSaved': 'No cover art was saved for this track.',
   'artistDetail.tracks.error.noCoverToCopy': 'This track does not have cover art to copy.',
   'artistDetail.tracks.error.remoteFileAction': 'Remote tracks do not support local file actions yet.',
@@ -11407,6 +12396,7 @@ const enUS: TranslationMap = {
   'albumDetail.sources.releaseAria': 'Current matched release info',
   'albumDetail.sources.releaseDetails': 'Current release',
   'albumDetail.status.addedToQueue': 'Added {count} tracks to queue.',
+  'albumDetail.status.copiedCover': 'Original cover copied',
   'albumDetail.status.libraryReady': '{value} ready',
   'albumDetail.status.readingSignal': 'Reading signal',
   'albumDetail.status.unknownGenre': 'Unknown genre',
@@ -11584,22 +12574,37 @@ const enUS: TranslationMap = {
   'audioDrawer.status.ratePending': 'Rate pending',
   'audioDrawer.status.sampleRatePending': 'Sample rate pending',
   'audioDrawer.title': 'Audio Settings',
+  'audioDrawer.warning.highOutputSampleRate': 'The current audio device sample rate is too high and may cause playback speed problems. 48 kHz is recommended.',
   'audioProfessional.action.hideDetails': 'Hide professional details',
   'audioProfessional.action.refresh': 'Refresh status',
   'audioProfessional.action.showDetails': 'Show professional details',
   'audioProfessional.badge.bitPerfect': 'Bit-perfect',
   'audioProfessional.badge.dsp': 'DSP active',
+  'audioProfessional.badge.protect': 'Protect',
   'audioProfessional.badge.replayGain': 'ReplayGain',
   'audioProfessional.badge.resampling': 'Resampling',
   'audioProfessional.badge.sampleMismatch': 'Sample-rate mismatch',
   'audioProfessional.badge.warning': 'Device issue/warning',
   'audioProfessional.issue.reason': 'Reason',
-  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows shared rate is too high: the device is at {deviceRate} while ECHO is outputting {decoderRate} PCM, so playback may sound sped up. Set the Windows default format to 48 kHz or 96 kHz.',
+  'audioProfessional.issue.audioLevelClipped': 'Real-time level metering detected clipping. Lower preamp gain or disable gain-boosting DSP.',
+  'audioProfessional.issue.audioLevelClippingRisk': 'Real-time level is near 0 dBFS and may clip.',
+  'audioProfessional.issue.dspClippingRisk': 'DSP chain output has clipping risk. Protect limiter is armed and monitoring.',
+  'audioProfessional.issue.dspLimiterProtecting': 'Protect limiter is actively protecting the output because post-DSP signal exceeded the safe threshold.',
+  'audioProfessional.issue.roomCorrectionBitPerfectDisabled': 'Room correction disables bit-perfect output.',
+  'audioProfessional.issue.roomCorrectionClippingRisk': 'Room correction output has clipping risk. Lower FIR Trim or enable Auto Gain.',
+  'audioProfessional.issue.sharedMixRateTooHigh': 'Windows shared rate is too high: the device is at {deviceRate} while ECHO is outputting {decoderRate} PCM, so playback may sound sped up. Set the Windows default format to 48 kHz.',
+  'audioProfessional.issue.windowsDefaultFormatUnusual': 'The Windows default format looks too high: it is currently {deviceRate}. ECHO will only warn you and will not change system settings; 48 kHz is recommended.',
   'audioProfessional.group.directDsp': 'Direct And DSP',
   'audioProfessional.group.playbackChain': 'Playback Chain',
   'audioProfessional.group.sampleRate': 'Sample-Rate Chain',
   'audioProfessional.group.stability': 'Stability',
-  'audioProfessional.row.actualBuffer': 'Actual buffer',
+  'audioProfessional.signal.decode': 'Decode',
+  'audioProfessional.signal.dsp': 'DSP',
+  'audioProfessional.signal.fir': 'FIR',
+  'audioProfessional.signal.headroom': 'Headroom',
+  'audioProfessional.signal.native': 'Native',
+  'audioProfessional.signal.output': 'Output',
+  'audioProfessional.signal.source': 'Source',  'audioProfessional.row.actualBuffer': 'Actual buffer',
   'audioProfessional.row.actualDeviceSampleRate': 'Actual device rate',
   'audioProfessional.row.bitDepth': 'Bit depth',
   'audioProfessional.row.bitPerfect': 'Bit-perfect',
@@ -11621,11 +12626,14 @@ const enUS: TranslationMap = {
   'audioProfessional.row.outputLatency': 'Output latency',
   'audioProfessional.row.outputMode': 'Output mode',
   'audioProfessional.row.replayGain': 'ReplayGain',
+  'audioProfessional.row.protectLimiter': 'Protect limiter',
+  'audioProfessional.row.roomCorrection': 'Room correction',
   'audioProfessional.row.requestedBuffer': 'Requested buffer',
   'audioProfessional.row.requestedOutputSampleRate': 'Requested output',
   'audioProfessional.row.resampler': 'Resampler',
   'audioProfessional.row.resampling': 'Resampling',
   'audioProfessional.row.sampleRateMismatch': 'Sample-rate mismatch',
+  'audioProfessional.row.signalPath': 'Signal path',
   'audioProfessional.row.sharedDeviceSampleRate': 'Shared device rate',
   'audioProfessional.row.sharedStability': 'Shared stability',
   'audioProfessional.row.soxr': 'SOXR',
@@ -11635,7 +12643,9 @@ const enUS: TranslationMap = {
   'audioProfessional.summary.pending': 'Waiting for audio status',
   'audioProfessional.title': 'Professional Playback Status',
   'audioProfessional.value.disabled': 'Disabled',
+  'audioProfessional.value.dspPath': 'DSP Path: {modules}',
   'audioProfessional.value.enabled': 'Enabled',
+  'audioProfessional.value.nativePath': 'Native Path',
   'audioProfessional.value.no': 'No',
   'audioProfessional.value.pending': 'Pending',
   'audioProfessional.value.ready': 'Ready',
@@ -11880,6 +12890,11 @@ const enUS: TranslationMap = {
   'historyPage.refresh.none': 'No invalid history songs found.',
   'historyPage.refresh.removed': 'Removed {count} invalid history songs.',
   'historyPage.refresh.running': 'Refreshing...',
+  'historyPage.recent.aria': 'Recently played list',
+  'historyPage.recent.count': '{count} recent',
+  'historyPage.recent.empty': 'No recent playback yet.',
+  'historyPage.recent.kicker': 'Sorted by time',
+  'historyPage.recent.title': 'Recently played',
   'historyPage.search.placeholder': 'Search title, artist, album, or path',
   'historyPage.summary.all.count': 'Total plays',
   'historyPage.summary.all.duration': 'Total time',
@@ -12197,6 +13212,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.fontPicker.searchPlaceholder': 'Search installed fonts',
   'lyricsSettings.fontPicker.title': 'Choose Lyrics Font',
   'lyricsSettings.provider.cached': 'Cached lyrics',
+  'lyricsSettings.provider.amllTtml': 'AMLL TTML',
+  'lyricsSettings.provider.amllTtmlDescription': 'Word-timed TTML library; requires a NetEase ID match and is off by default',
   'lyricsSettings.provider.chineseCatalogDescription': 'Chinese catalog supplement',
   'lyricsSettings.provider.genius': 'Genius',
   'lyricsSettings.provider.kugou': 'KuGou Music',
@@ -12260,7 +13277,7 @@ const enUS: TranslationMap = {
   'lyricsSettings.wordHighlight.title': 'Word-by-word lyrics highlight',
   'route.mvSettings.description': 'MV binding and local matching settings.',
   'route.mvSettings.label': 'MV Settings',
-  'mvSettings.action.chooseFile': 'Choose file',
+  'mvSettings.action.chooseFile': 'Import local video',
   'mvSettings.action.close': 'Close MV settings',
   'mvSettings.action.collapseNetwork': 'Collapse network sources',
   'mvSettings.action.dragReorder': 'Drag to set priority',
@@ -12343,11 +13360,22 @@ const enUS: TranslationMap = {
   'mvSettings.network.syncMode.precise': 'Precise',
   'mvSettings.network.title': 'Network Sources',
   'mvSettings.offset.aria': 'MV sync offset',
-  'mvSettings.offset.description': 'Saved only for this song MV; other songs are unaffected.',
+  'mvSettings.offset.description': 'Positive values advance the MV; negative values delay it. Saved only for this song MV.',
   'mvSettings.offset.earlier': 'MV earlier {value}',
+  'mvSettings.offset.earlierShort': 'Earlier {value}',
+  'mvSettings.offset.input': 'Offset seconds',
   'mvSettings.offset.later': 'MV later {value}',
+  'mvSettings.offset.laterShort': 'Later {value}',
+  'mvSettings.offset.replay': 'Replay',
+  'mvSettings.offset.replayTitle': 'Replay the current song and sync the video from the MV start point',
   'mvSettings.offset.reset': 'Reset MV offset',
-  'mvSettings.offset.title': 'This song MV offset',
+  'mvSettings.offset.resetShort': 'Reset',
+  'mvSettings.offset.slider': 'MV sync offset slider',
+  'mvSettings.offset.startDescription': 'Enter the start second in the video, up to 600s. This song aligns from there.',
+  'mvSettings.offset.startInput': 'MV start second',
+  'mvSettings.offset.startTitle': 'Start video from',
+  'mvSettings.offset.step': 'Adjustment step',
+  'mvSettings.offset.title': 'MV sync calibration',
   'mvSettings.provider.local': 'Local',
   'mvSettings.quality.max': 'Max',
   'mvSettings.search.input': 'MV search keywords',
@@ -12548,17 +13576,23 @@ const enUS: TranslationMap = {
   'settings.nav.eq.description': 'Equalizer and output safety',
   'settings.nav.shortcuts.label': 'Shortcuts',
   'settings.nav.shortcuts.description': 'Local shortcuts, global shortcuts, playback controls',
+  'settings.eq.action.addFilter': 'Add filter',
   'settings.eq.action.autoPreamp': 'Auto {value}',
   'settings.eq.action.bypass': 'Bypass',
   'settings.eq.action.delete': 'Delete',
+  'settings.eq.action.deleteFilter': 'Delete filter',
   'settings.eq.action.duplicatePreset': 'Duplicate current',
+  'settings.eq.action.exportApoGraphicEqPreset': 'Export GraphicEQ',
+  'settings.eq.action.exportApoPreset': 'Export APO',
   'settings.eq.action.freqDown': 'Freq -',
   'settings.eq.action.freqFineDown': 'Fine -',
   'settings.eq.action.freqFineUp': 'Fine +',
   'settings.eq.action.freqUp': 'Freq +',
   'settings.eq.action.holdBypass': 'Hold to Bypass EQ',
+  'settings.eq.action.holdOriginal': 'Hold original',
   'settings.eq.action.hideAdvanced': 'Hide PEQ console',
-  'settings.eq.action.importPreset': 'Import preset',
+  'settings.eq.action.importPreset': 'Import preset / APO',
+  'settings.eq.action.pasteApoPreset': 'Paste APO',
   'settings.eq.action.applyA': 'Apply A',
   'settings.eq.action.applyB': 'Apply B',
   'settings.eq.action.applySafePreamp': 'Apply safe preamp',
@@ -12590,6 +13624,44 @@ const enUS: TranslationMap = {
   'settings.eq.ab.loudnessMatched': 'Loudness matched',
   'settings.eq.ab.summary': '{preset} / peak {peak} / out {output} / preamp {preamp}',
   'settings.eq.ab.title': 'A/B Compare',
+  'settings.eq.autoGain.adjustment': 'Auto {value}',
+  'settings.eq.autoGain.status': 'Status',
+  'settings.eq.autoGain.status.clipping': 'Clipping',
+  'settings.eq.autoGain.status.holding': 'Holding',
+  'settings.eq.autoGain.status.idle': 'Idle',
+  'settings.eq.autoGain.status.recovering': 'Recovering',
+  'settings.eq.autoGain.status.reducing': 'Reducing',
+  'settings.eq.autoGain.toggle': 'Auto Gain',
+  'settings.eq.room.active': 'Active',
+  'settings.eq.room.channelMode': 'Channels',
+  'settings.eq.room.clear': 'Clear',
+  'settings.eq.room.disable': 'Disable FIR',
+  'settings.eq.room.empty': 'No IR',
+  'settings.eq.room.enable': 'Enable FIR',
+  'settings.eq.room.error': 'Error',
+  'settings.eq.room.error.invalidImpulse': 'Invalid IR',
+  'settings.eq.room.error.invalidWav': 'Invalid WAV',
+  'settings.eq.room.error.missingFile': 'Missing IR file',
+  'settings.eq.room.error.missingIr': 'No IR loaded',
+  'settings.eq.room.error.tooLong': 'IR too long',
+  'settings.eq.room.import': 'Import IR',
+  'settings.eq.room.ir': 'IR',
+  'settings.eq.room.loaded': 'Loaded',
+  'settings.eq.room.sampleRate': 'Sample rate',
+  'settings.eq.room.short': 'FIR',
+  'settings.eq.room.tapCount': 'Taps',
+  'settings.eq.room.title': 'Room Correction',
+  'settings.eq.room.trim': 'Trim',
+  'settings.eq.analyzer.overlayAria': 'EQ realtime spectrum overlay',
+  'settings.eq.analyzer.input': 'Input',
+  'settings.eq.analyzer.mode': 'Analyzer mode',
+  'settings.eq.analyzer.postEq': 'Post EQ',
+  'settings.eq.analyzer.status': 'Status',
+  'settings.eq.analyzer.status.live': 'Live',
+  'settings.eq.analyzer.status.noSignal': 'No signal',
+  'settings.eq.analyzer.status.off': 'Off',
+  'settings.eq.analyzer.status.priming': 'Priming',
+  'settings.eq.analyzer.toggle': 'Analyzer',
   'settings.eq.band.fallback': 'Band',
   'settings.eq.band.frequency': 'Frequency',
   'settings.eq.band.frequencyStepper': 'Frequency stepper',
@@ -12597,23 +13669,31 @@ const enUS: TranslationMap = {
   'settings.eq.band.frequencyUnlocked': 'Free frequency',
   'settings.eq.band.gain': 'Gain',
   'settings.eq.band.gainStepper': 'Gain stepper',
+  'settings.eq.band.gainFixed': 'Gain is fixed for this type',
+  'settings.eq.band.qPresets': 'Q presets',
+  'settings.eq.band.qPresetWide': 'Wide',
+  'settings.eq.band.qPresetNormal': 'Normal',
+  'settings.eq.band.qPresetNarrow': 'Narrow',
   'settings.eq.band.bypassed': 'Bypassed',
   'settings.eq.band.console': 'Selected band console',
   'settings.eq.band.enabled': 'Band enabled',
   'settings.eq.band.enabledShort': 'enabled',
+  'settings.eq.band.filters': 'filters',
+  'settings.eq.band.filterStack': 'APO Filter Stack',
   'settings.eq.band.filterType': 'Type',
   'settings.eq.band.inspector': 'Selected band',
   'settings.eq.band.matrix': 'PEQ Band Matrix',
   'settings.eq.band.modeFree': 'Free frequency',
   'settings.eq.band.modeStandard': 'Standard bands',
   'settings.eq.band.q': 'Q',
-  'settings.eq.band.readoutsAria': '10-band EQ draggable band readouts',
+  'settings.eq.band.readoutsAria': '31-band EQ draggable band readouts',
   'settings.eq.bitPerfect.channelDisabled': 'DSP active: bit-perfect disabled.',
   'settings.eq.bitPerfect.disabled': 'DSP active: bit-perfect disabled{reason}.',
   'settings.eq.bitPerfect.readyPath': 'Bit-perfect path can be preserved.',
   'settings.eq.bitPerfect.sourceBoth': 'EQ + Channel Balance',
   'settings.eq.bitPerfect.sourceChannel': 'Channel Balance',
   'settings.eq.bitPerfect.sourceEq': 'EQ',
+  'settings.eq.bitPerfect.sourceRoom': 'Room Correction',
   'settings.eq.channel.active': 'Active',
   'settings.eq.channel.balance': 'Balance',
   'settings.eq.channel.bypassed': 'Bypassed',
@@ -12647,7 +13727,7 @@ const enUS: TranslationMap = {
   'settings.eq.channel.rightTotal': 'Right total',
   'settings.eq.channel.swap': 'Swap L/R',
   'settings.eq.channel.title': 'Channel Balance',
-  'settings.eq.curve.aria': 'Draggable 10-band EQ frequency response',
+  'settings.eq.curve.aria': 'Draggable 31-band EQ frequency response',
   'settings.eq.curve.dragBand': 'Drag {frequency} EQ band',
   'settings.eq.curve.fineEdit': 'Shift fine edit',
   'settings.eq.curve.freeFrequency': 'Free frequency',
@@ -12659,8 +13739,65 @@ const enUS: TranslationMap = {
   'settings.eq.error.presetName': 'Enter a preset name before saving.',
   'settings.eq.error.profileName': 'Enter a profile name before saving.',
   'settings.eq.error.profileTarget': 'Select a profile first.',
+  'settings.eq.export.successApo': 'Exported Equalizer APO config to {path}',
+  'settings.eq.export.successGraphicEq': 'Exported GraphicEQ config to {path}',
+  'settings.eq.export.successPreset': 'Exported EQ preset to {path}',
+  'settings.eq.import.filters': 'Filter',
+  'settings.eq.import.filtersValue': '{count} imported / {skipped} skipped',
+  'settings.eq.import.filterPreview': 'Filter details',
+  'settings.eq.import.filterEnabledAria': 'Imported filter {index} enabled',
+  'settings.eq.import.filterFrequencyAria': 'Imported filter {index} frequency',
+  'settings.eq.import.filterGainAria': 'Imported filter {index} gain',
+  'settings.eq.import.filterQAria': 'Imported filter {index} Q',
+  'settings.eq.import.filterTypeAria': 'Imported filter {index} type',
+  'settings.eq.import.estimatedPeak': 'Estimated peak',
+  'settings.eq.import.graphicEq': 'GraphicEQ points',
+  'settings.eq.import.includes': 'Include files',
+  'settings.eq.import.includesValue': '{count} expanded / {skipped} skipped',
+  'settings.eq.import.maxBoost': 'Max boost',
+  'settings.eq.import.maxCut': 'Max cut',
+  'settings.eq.import.apoDirectives': 'APO directives',
+  'settings.eq.import.apoDirectiveDetails': 'Directive details',
+  'settings.eq.import.apoDirectivesValue': '{count} recognized / {skipped} channel filters skipped',
+  'settings.eq.import.bandwidthFilters': 'BW conversion',
+  'settings.eq.import.bandwidthFiltersValue': '{count} converted to Q',
+  'settings.eq.import.compatibility': 'Compatibility',
+  'settings.eq.import.compatibility.adjusted': 'Converted',
+  'settings.eq.import.compatibility.clean': 'Full import',
+  'settings.eq.import.compatibility.partial': 'Partial import',
+  'settings.eq.import.moreFilters': '{count} more filters hidden',
+  'settings.eq.import.noFilters': 'No active filters to show.',
+  'settings.eq.import.preamp': 'Preamp',
+  'settings.eq.import.preampAria': 'Imported preset preamp',
+  'settings.eq.import.safePreamp': 'Safe preamp',
+  'settings.eq.import.safetyDetail': 'Estimated from the imported filters. Reserve headroom before applying when needed.',
+  'settings.eq.import.safetyNeedsHeadroom': 'Needs headroom',
+  'settings.eq.import.safetyOk': 'Headroom looks safe',
+  'settings.eq.import.safetyTitle': 'Import safety',
+  'settings.eq.import.audition': 'Audition import',
+  'settings.eq.import.auditionPresetName': 'Audition {name}',
+  'settings.eq.import.restoreAudition': 'Restore current',
+  'settings.eq.import.clearPaste': 'Clear',
+  'settings.eq.import.applyPreview': 'Apply import',
+  'settings.eq.import.cancelPreview': 'Cancel import',
+  'settings.eq.import.pasteDefaultName': 'Pasted APO',
+  'settings.eq.import.pasteEmpty': 'Paste an Equalizer APO config first.',
+  'settings.eq.import.pasteFileName': 'Pasted text',
+  'settings.eq.import.pasteIncludeWarning': 'Pasted imports cannot read Include files. Use file import when Include expansion is needed.',
+  'settings.eq.import.pasteTitle': 'APO text',
+  'settings.eq.import.previewPaste': 'Preview APO',
+  'settings.eq.import.previewTitle': 'Import preview',
+  'settings.eq.import.reportTitle': 'Import complete',
+  'settings.eq.import.source': 'Source',
+  'settings.eq.import.sourceApo': 'Equalizer APO',
+  'settings.eq.import.sourceEcho': 'ECHO JSON',
+  'settings.eq.import.updateAudition': 'Update audition',
+  'settings.eq.import.useSafePreamp': 'Use safe preamp',
   'settings.eq.filter.highShelf': 'High shelf',
+  'settings.eq.filter.highPass': 'High pass',
   'settings.eq.filter.lowShelf': 'Low shelf',
+  'settings.eq.filter.lowPass': 'Low pass',
+  'settings.eq.filter.notch': 'Notch',
   'settings.eq.filter.peaking': 'Peaking',
   'settings.eq.level.clips': 'Clips {count}',
   'settings.eq.level.estimatedOutputPeak': 'Est. output peak',
@@ -12685,7 +13822,78 @@ const enUS: TranslationMap = {
   'settings.eq.signal.preamp': 'Preamp',
   'settings.eq.signal.protecting': 'Protecting',
   'settings.eq.signal.title': 'Signal Path',
-  'settings.eq.profile.bound': '{output} bound to {profile}',
+  'settings.eq.simpleAction.customPresetName': 'My EQ Tone',
+  'settings.eq.simpleAction.lastTweak': 'Last tweak',
+  'settings.eq.simpleAction.nextVibe': 'Next vibe',
+  'settings.eq.simpleAction.nextVibeDetail': 'Explore',
+  'settings.eq.simpleAction.savedPresetName': '{name} {amount}%',
+  'settings.eq.simpleAction.saveVibe': 'Save vibe',
+  'settings.eq.simpleAction.saveVibeDetail': 'Save current',
+  'settings.eq.simpleInsight.amount': 'Amount',
+  'settings.eq.simpleInsight.aria': 'Simple current vibe summary',
+  'settings.eq.simpleInsight.custom': 'Manual vibe',
+  'settings.eq.simpleInsight.mainChange': 'Main change',
+  'settings.eq.simpleInsight.ready': 'Ready',
+  'settings.eq.simpleInsight.vibe': 'Current vibe',
+  'settings.eq.simpleSafety.action': 'Make safe',
+  'settings.eq.simpleSafety.aria': 'Simple safe headroom',
+  'settings.eq.simpleSafety.risk': 'Needs headroom',
+  'settings.eq.simpleSafety.riskDetail': 'Peak {peak} / suggested {preamp}',
+  'settings.eq.simpleSafety.safe': 'Headroom ready',
+  'settings.eq.simpleSafety.safeDetail': 'Peak {peak} / preamp {preamp}',
+  'settings.eq.comfort.direct': 'Native direct',
+  'settings.eq.comfort.directDetail': 'When DSP is off, volume is not reduced and samples are not changed. Good for hearing the original path.',
+  'settings.eq.comfort.risk': 'Watch the level',
+  'settings.eq.comfort.riskDetail': 'Potential clipping or protection was detected. Start by reserving -6 dB headroom.',
+  'settings.eq.comfort.tuned': 'Sound is being shaped',
+  'settings.eq.comfort.tunedDetail': 'Only enabled DSP modules are processed. Turn them off to return to the native playback path.',
+  'settings.eq.simpleTone.air': 'Air',
+  'settings.eq.simpleTone.airDetail': 'Brighter space',
+  'settings.eq.simpleTone.amount': 'Tone amount',
+  'settings.eq.simpleTone.amountAria': 'Simple tone amount',
+  'settings.eq.simpleTone.aria': 'Simple tone quick tweaks',
+  'settings.eq.simpleTone.bass': 'Bass lift',
+  'settings.eq.simpleTone.bassDetail': 'Fuller kick',
+  'settings.eq.simpleTone.flat': 'Flat reset',
+  'settings.eq.simpleTone.flatDetail': 'Back to neutral',
+  'settings.eq.simpleTone.less': 'Less',
+  'settings.eq.simpleTone.more': 'More',
+  'settings.eq.simpleTone.vocal': 'Vocal focus',
+  'settings.eq.simpleTone.vocalDetail': 'Clearer lyrics',
+  'settings.eq.simpleTone.warm': 'Warmth',
+  'settings.eq.simpleTone.warmDetail': 'Softer listen',
+  'settings.eq.simpleZone.air': 'Air',
+  'settings.eq.simpleZone.airDetail': 'Shine and space',
+  'settings.eq.simpleZone.applyAria': 'Apply {zone} tone, current {value}',
+  'settings.eq.simpleZone.aria': 'Simple listening zone changes',
+  'settings.eq.simpleZone.low': 'Low end',
+  'settings.eq.simpleZone.lowDetail': 'Kick and weight',
+  'settings.eq.simpleZone.neutral': 'Neutral',
+  'settings.eq.simpleZone.vocal': 'Vocal',
+  'settings.eq.simpleZone.vocalDetail': 'Lyrics and presence',
+  'settings.eq.routing.action.armHeadroom6': 'Arm -6dB Headroom',
+  'settings.eq.routing.action.nativeDirect': 'Native Direct',
+  'settings.eq.routing.armed': 'Armed',
+  'settings.eq.routing.dspPath': 'DSP Path',
+  'settings.eq.routing.dspPathDetail': 'Processing is explicit and visible.',
+  'settings.eq.routing.headroomActiveDetail': 'Headroom is active in the DSP path.',
+  'settings.eq.routing.headroomStandby': 'Headroom Standby',
+  'settings.eq.routing.headroomStandbyDetail': 'Will apply only when DSP is enabled.',
+  'settings.eq.routing.modules': 'Modules',
+  'settings.eq.routing.modulesActiveDetail': 'Every active stage is shown below.',
+  'settings.eq.routing.modulesBypassed': 'Bypassed',
+  'settings.eq.routing.modulesBypassedDetail': 'EQ / FIR / Balance are off.',
+  'settings.eq.routing.nativeBypassComfort': 'DSP bypass keeps playback native-direct, and samples are not changed by the effect chain.',
+  'settings.eq.routing.nativeDirect': 'Native Direct',
+  'settings.eq.routing.nativeDirectDetail': 'DSP bypass keeps playback untouched.',
+  'settings.eq.routing.nativeNoGainDetail': 'No gain reduction on native bypass.',
+  'settings.eq.routing.playbackPath': 'Playback Path',
+  'settings.eq.routing.protectActive': 'Protect Active',
+  'settings.eq.routing.protectActiveDetail': 'Limiter is preventing overload.',
+  'settings.eq.routing.safety': 'Safety',
+  'settings.eq.headroom.dsp': 'DSP Headroom',
+  'settings.eq.headroom.nativeBypassNote': 'Only applies when EQ / FIR / Balance is active, so native bypass stays direct.',
+  'settings.eq.headroom.presetsAria': 'DSP Headroom presets',  'settings.eq.profile.bound': '{output} bound to {profile}',
   'settings.eq.profile.empty': 'No profile selected',
   'settings.eq.profile.nameAria': 'EQ profile name',
   'settings.eq.profile.namePlaceholder': 'Save as profile',
@@ -12693,7 +13901,7 @@ const enUS: TranslationMap = {
   'settings.eq.profile.selectorAria': 'EQ profile',
   'settings.eq.profile.title': 'Profiles',
   'settings.eq.profile.unbound': '{output} has no profile binding',
-  'settings.eq.preset.approximation': '10-band approximation',
+  'settings.eq.preset.approximation': '31-band approximation',
   'settings.eq.preset.builtIn': 'Built-in presets',
   'settings.eq.preset.copyName': 'Copy of {name}',
   'settings.eq.preset.filter.all': 'All',
@@ -12703,30 +13911,43 @@ const enUS: TranslationMap = {
   'settings.eq.preset.filter.user': 'User',
   'settings.eq.preset.filter.utility': 'Utility',
   'settings.eq.preset.filterAria': 'Preset filter',
-  'settings.eq.preset.meta.approximationCaution': 'This is a 10-band graphic EQ approximation, not exact headphone calibration.',
+  'settings.eq.preset.meta.approximationCaution': 'This is a 31-band graphic EQ approximation, not exact headphone calibration.',
   'settings.eq.preset.meta.genrePurpose': 'Shapes the playback toward a familiar genre voicing.',
   'settings.eq.preset.meta.genreScenario': 'Useful for quick listening by style before device-specific tweaks.',
   'settings.eq.preset.meta.targetPurpose': 'Approximates a common listening target curve.',
   'settings.eq.preset.meta.targetScenario': 'Useful for headphone or near-field target comparisons.',
   'settings.eq.preset.meta.tasteCaution': 'This is a voicing choice, not a calibration result.',
-  'settings.eq.preset.meta.type.animeJpop': 'Anime / J-Pop',
-  'settings.eq.preset.meta.type.bassBoost': 'Bass Boost',
-  'settings.eq.preset.meta.type.bkRoomCurve': 'B&K Room Curve',
-  'settings.eq.preset.meta.type.broadcastVoice': 'Broadcast Voice',
-  'settings.eq.preset.meta.type.classicSmiley': 'Classic Smiley',
-  'settings.eq.preset.meta.type.classical': 'Classical',
-  'settings.eq.preset.meta.type.diffuseField': 'Diffuse Field',
-  'settings.eq.preset.meta.type.flat': 'Flat',
-  'settings.eq.preset.meta.type.harmanInEar': 'Harman In-Ear',
-  'settings.eq.preset.meta.type.harmanTarget': 'Harman Target',
-  'settings.eq.preset.meta.type.headphoneWarm': 'Headphone Warm',
-  'settings.eq.preset.meta.type.loudness': 'Loudness',
-  'settings.eq.preset.meta.type.night': 'Night',
-  'settings.eq.preset.meta.type.rock': 'Rock',
-  'settings.eq.preset.meta.type.studioNeutral': 'Studio Neutral',
-  'settings.eq.preset.meta.type.trebleSparkle': 'Treble Sparkle',
-  'settings.eq.preset.meta.type.vinylWarmth': 'Vinyl Warmth',
-  'settings.eq.preset.meta.type.vocalClear': 'Vocal Clear',
+  'settings.eq.preset.meta.type.animeJpop': '樱色电波',
+  'settings.eq.preset.meta.type.acousticSilk': '弦木柔光',
+  'settings.eq.preset.meta.type.bassBoost': '深海低频',
+  'settings.eq.preset.meta.type.bkRoomCurve': '木厅曲线',
+  'settings.eq.preset.meta.type.broadcastVoice': '电台近语',
+  'settings.eq.preset.meta.type.bluetoothSpeakerCleanup': '蓝牙清场',
+  'settings.eq.preset.meta.type.classicSmiley': '晨弧微笑',
+  'settings.eq.preset.meta.type.classical': '星厅古典',
+  'settings.eq.preset.meta.type.cinemaOrchestra': '银幕纵深',
+  'settings.eq.preset.meta.type.cityPop': '霓虹夜航',
+  'settings.eq.preset.meta.type.diffuseField': '漫野扩散',
+  'settings.eq.preset.meta.type.femaleVocalAir': '清露女声',
+  'settings.eq.preset.meta.type.flat': '原音如初',
+  'settings.eq.preset.meta.type.harmanInEar': '入耳晨光',
+  'settings.eq.preset.meta.type.harmanTarget': '暖场哈曼',
+  'settings.eq.preset.meta.type.headphoneNotch': '耳峰细修',
+  'settings.eq.preset.meta.type.headphoneWarm': '绒暖耳机',
+  'settings.eq.preset.meta.type.liveHouse': '小馆现场',
+  'settings.eq.preset.meta.type.lofiDusk': '雨窗低保真',
+  'settings.eq.preset.meta.type.loudness': '暮色响度',
+  'settings.eq.preset.meta.type.night': '月下轻听',
+  'settings.eq.preset.meta.type.pianoRoom': '琴房微光',
+  'settings.eq.preset.meta.type.rock': '黑曜摇滚',
+  'settings.eq.preset.meta.type.sibilanceTamer': '齿音柔化',
+  'settings.eq.preset.meta.type.studioNeutral': '录音室白描',
+  'settings.eq.preset.meta.type.subCleanup': '潜波净化',
+  'settings.eq.preset.meta.type.subsonicFilter': '暗涌滤波',
+  'settings.eq.preset.meta.type.trebleSparkle': '银砂高频',
+  'settings.eq.preset.meta.type.vinylWarmth': '黑胶余温',
+  'settings.eq.preset.meta.type.vocalClear': '人声如绸',
+  'settings.eq.preset.meta.type.vocalDeEss': '雪绒去齿',
   'settings.eq.preset.meta.utilityCaution': 'Utility presets can change monitoring judgment; confirm before saving.',
   'settings.eq.preset.meta.utilityPurpose': 'Supports checks, compensation, or safer monitoring.',
   'settings.eq.preset.meta.utilityScenario': 'Useful for finding issues, reducing fatigue, or quick comparisons.',
@@ -12816,6 +14037,15 @@ const enUS: TranslationMap = {
   'settings.general.dataBackup.action.importBackup': 'Import Backup',
   'settings.general.dataBackup.action.importingBackup': 'Importing...',
   'settings.general.dataBackup.action.openDirectory': 'Open Directory',
+  'settings.general.dataBackup.progress.preparing': 'Preparing',
+  'settings.general.dataBackup.progress.snapshot': 'Creating snapshot',
+  'settings.general.dataBackup.progress.scanning': 'Scanning data',
+  'settings.general.dataBackup.progress.writing': 'Writing backup',
+  'settings.general.dataBackup.progress.finalizing': 'Finalizing',
+  'settings.general.dataBackup.progress.completed': 'Completed',
+  'settings.general.dataBackup.progress.failed': 'Failed',
+  'settings.general.dataBackup.progress.measuring': 'Measuring',
+  'settings.general.dataBackup.progress.waiting': 'Waiting to write',
   'settings.general.dataPackage.title': 'Export / Migrate ECHO Data Package',
   'settings.general.dataPackage.description': 'Export settings, library indexes, playlist snapshots, cover cache paths, and account-state notes. Music files and login secrets are not included.',
   'settings.general.dataPackage.action.export': 'Export ECHO Data Package',
@@ -13261,9 +14491,13 @@ const enUS: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.title': 'Now Playing Cover Color',
   'settings.appearance.nowPlayingCoverColor.description': 'Sample the small cover art while idle to tint the Now Playing page. Low-load playback mode skips it automatically. Off by default.',
   'settings.appearance.wallpaper.title': 'Custom Background',
-  'settings.appearance.wallpaper.description': 'Supports images and local videos. Videos loop silently and never enter the audio pipeline.',
-  'settings.appearance.wallpaper.choose': 'Choose Background',
-  'settings.appearance.wallpaper.clear': 'Clear Background',
+  'settings.appearance.wallpaper.description': 'Landscape and portrait backgrounds are saved separately. Portrait windows only apply the portrait background. Supports images and local videos.',
+  'settings.appearance.wallpaper.choose': 'Choose Landscape Background',
+  'settings.appearance.wallpaper.clear': 'Clear Landscape Background',
+  'settings.appearance.wallpaper.portraitChoose': 'Choose Portrait Background',
+  'settings.appearance.wallpaper.portraitClear': 'Clear Portrait Background',
+  'settings.appearance.wallpaper.landscapePath': 'Landscape',
+  'settings.appearance.wallpaper.portraitPath': 'Portrait',
   'settings.appearance.wallpaper.videoStatus': 'Video Wallpaper · Muted Loop',
   'settings.appearance.wallpaper.videoPause.smart': 'Smart Pause',
   'settings.appearance.wallpaper.videoPause.minimized': 'Pause When Minimized',
@@ -13334,6 +14568,8 @@ const enUS: TranslationMap = {
   'settings.appearance.themePreset.ginzaNoir.description': 'Obsidian, champagne gold, and boutique-window blue.',
   'settings.appearance.themePreset.frostJazz': 'Frost Jazz',
   'settings.appearance.themePreset.frostJazz.description': 'Cool blue jazz tones with a plum stage-light accent.',
+  'settings.appearance.themePreset.FINAL': 'FINAL',
+  'settings.appearance.themePreset.FINAL.description': 'A restrained monitor tone inspired by final product photography, acoustic engineering, and 8K SOUND.',
   'settings.appearance.themeCustom.title': 'Customize Current Theme',
   'settings.appearance.themeCustom.description': 'Choose a theme first, then tune colors. Each theme keeps its own custom colors.',
   'settings.appearance.themeCustom.action.autoFix': 'Auto-fix Text',
@@ -13443,7 +14679,7 @@ const enUS: TranslationMap = {
   'settings.appearance.themeCustom.message.importFailed': 'Import failed. Choose an ECHO theme parameter JSON file.',
   'settings.appearance.themeCustom.message.fixed': 'Text and button colors were adjusted.',
   'settings.appearance.themeCustom.message.invalidColor': 'Use a safe #RRGGBB color.',
-  'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is too low. Auto-fix it or darken text before saving.',
+  'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is low and may affect readability. You can auto-fix it or adjust text colors.',
   'settings.appearance.themeCustom.message.reset': 'Custom colors for this theme were reset.',
   'settings.appearance.themeCustom.message.saved': 'Custom colors for this theme were saved.',
   'settings.appearance.density.title': 'Interface Density',

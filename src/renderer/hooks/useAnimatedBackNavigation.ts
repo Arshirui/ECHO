@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 
 const backAnimationMs = 180;
 
@@ -11,10 +12,27 @@ const isEditableTarget = (target: EventTarget | null): boolean => {
   return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable;
 };
 
-export const useAnimatedBackNavigation = (onBack: () => void, enabled = true) => {
+type AnimatedBackNavigationOptions = {
+  rootRef?: RefObject<HTMLElement | null>;
+};
+
+const isVisibleRouteSurface = (element: HTMLElement | null | undefined): boolean => {
+  if (!element) {
+    return true;
+  }
+
+  return !element.closest('[hidden], [aria-hidden="true"]');
+};
+
+export const useAnimatedBackNavigation = (
+  onBack: () => void,
+  enabled = true,
+  options: AnimatedBackNavigationOptions = {},
+) => {
   const [isReturning, setIsReturning] = useState(false);
   const onBackRef = useRef(onBack);
   const timeoutRef = useRef<number | null>(null);
+  const rootRef = options.rootRef;
 
   useEffect(() => {
     onBackRef.current = onBack;
@@ -47,7 +65,7 @@ export const useAnimatedBackNavigation = (onBack: () => void, enabled = true) =>
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (!enabled) {
+      if (!enabled || !isVisibleRouteSurface(rootRef?.current)) {
         return;
       }
 
@@ -61,7 +79,7 @@ export const useAnimatedBackNavigation = (onBack: () => void, enabled = true) =>
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [enabled, returnBack]);
+  }, [enabled, returnBack, rootRef]);
 
   useEffect(
     () => () => {

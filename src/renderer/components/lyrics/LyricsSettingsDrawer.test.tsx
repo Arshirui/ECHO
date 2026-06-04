@@ -1310,6 +1310,52 @@ describe('LyricsSettingsDrawer', () => {
     expect(searchCandidates).toHaveBeenCalledWith('track-1', 'rough query', 'qqmusic');
   });
 
+  it('labels instrumental lyric search results before synced badges in the drawer', async () => {
+    const searchCandidates = vi.fn().mockResolvedValue([
+      makeLyricsCandidate({
+        id: 'instrumental-candidate',
+        title: 'Instrumental Candidate',
+        instrumental: true,
+        hasSynced: true,
+        hasPlain: false,
+        score: 0.93,
+        risk: 'low',
+      }),
+    ]);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings()),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
+      },
+      lyrics: {
+        getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics()),
+        searchCandidates,
+        applyCandidate: vi.fn().mockResolvedValue(makeTrackLyrics({ kind: 'instrumental', lines: [] })),
+        markInstrumental: vi.fn(),
+        clearCache: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(window.echo?.app.getSettings).toHaveBeenCalled());
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'instrumental query' } });
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+
+    const candidateTitle = await screen.findByText('Instrumental Candidate');
+    const candidateButton = candidateTitle.closest('button');
+    expect(candidateButton?.getAttribute('data-lyrics-kind')).toBe('instrumental');
+    expect(within(candidateButton as HTMLElement).getByText('纯音乐')).toBeTruthy();
+    expect(within(candidateButton as HTMLElement).queryByText('逐行同步')).toBeNull();
+  });
+
   it('searches NetEase podcast tracks through snapshot candidates in the drawer', async () => {
     const track = makeTrack({
       id: 'streaming:netease:3370584713',

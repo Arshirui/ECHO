@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IpcChannels } from '../shared/constants/ipcChannels';
 import type { EchoApi } from './apiTypes';
 import type { AudioOutputSettings, AudioStatus, ChannelBalanceMonoMode, ChannelBalanceState, PlaybackSpeedMode } from '../shared/types/audio';
+import type { RoomCorrectionState } from '../shared/types/eq';
 import type { AppSettings, AudioTransportFadeCurve, ReplayGainMode } from '../shared/types/appSettings';
 import type { GlobalShortcutAction } from '../shared/types/globalShortcuts';
 import type {
@@ -13,6 +14,7 @@ import type {
 import type { SmtcCommand, SmtcLyricsProgress } from '../shared/types/smtc';
 import type { UpdateStatus } from '../shared/types/updates';
 import type { DiagnosticConsoleEntry } from '../shared/types/diagnostics';
+import type { DataBackupProgress } from '../shared/types/settingsBackup';
 import { calculateReplayGain, dbToLinearGain, type ReplayGainCalculation, type ReplayGainTrackData } from '../shared/utils/replayGain';
 import { DEFAULT_REPLAY_GAIN_TARGET_LUFS } from '../shared/constants/replayGain';
 
@@ -448,6 +450,7 @@ const createFallbackAudioStatus = (): AudioStatus => ({
   sampleRateMismatch: false,
   latencyProfile: 'balanced',
   eqEnabled: false,
+  roomCorrectionEnabled: false,
   channelBalanceEnabled: systemChannelBalanceActive(),
   dspActive: systemChannelBalanceActive(),
   preampDb: 0,
@@ -606,6 +609,7 @@ const createSystemAudioStatus = (): AudioStatus => {
     sampleRateMismatch: false,
     latencyProfile: 'balanced',
     eqEnabled: false,
+    roomCorrectionEnabled: false,
     channelBalanceEnabled: systemChannelBalanceActive(),
     dspActive: systemChannelBalanceActive() || (systemReplayGainCalculation.active && Math.abs(systemReplayGainCalculation.appliedDb) >= 0.001),
     preampDb: 0,
@@ -1470,6 +1474,7 @@ const echoApi: EchoApi = {
       return () => ipcRenderer.off(IpcChannels.AppWindowFullscreenChanged, listener);
     },
     close: () => ipcRenderer.invoke(IpcChannels.AppWindowClose),
+    quit: () => ipcRenderer.invoke(IpcChannels.AppQuit),
     getSystemUserName: () => ipcRenderer.invoke(IpcChannels.AppGetSystemUserName),
     getSettings: () => ipcRenderer.invoke(IpcChannels.AppGetSettings),
     setSettings: (patch) => ipcRenderer.invoke(IpcChannels.AppSetSettings, patch),
@@ -1480,6 +1485,15 @@ const echoApi: EchoApi = {
     exportDataPackage: () => ipcRenderer.invoke(IpcChannels.AppExportDataPackage),
     chooseDataBackupDirectory: () => ipcRenderer.invoke(IpcChannels.AppChooseDataBackupDirectory),
     getDataBackupStatus: () => ipcRenderer.invoke(IpcChannels.AppGetDataBackupStatus),
+    onDataBackupProgress: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, progress: unknown): void => {
+        if (progress) {
+          handler(progress as DataBackupProgress);
+        }
+      };
+      ipcRenderer.on(IpcChannels.AppDataBackupProgress, listener);
+      return () => ipcRenderer.off(IpcChannels.AppDataBackupProgress, listener);
+    },
     runDataBackupNow: () => ipcRenderer.invoke(IpcChannels.AppRunDataBackupNow),
     importDataBackup: () => ipcRenderer.invoke(IpcChannels.AppImportDataBackup),
     openDataBackupDirectory: () => ipcRenderer.invoke(IpcChannels.AppOpenDataBackupDirectory),
@@ -2275,11 +2289,15 @@ const echoApi: EchoApi = {
     setBandFilterType: (request) => ipcRenderer.invoke(IpcChannels.EqSetBandFilterType, request),
     setBandEnabled: (request) => ipcRenderer.invoke(IpcChannels.EqSetBandEnabled, request),
     setPreamp: (preampDb) => ipcRenderer.invoke(IpcChannels.EqSetPreamp, preampDb),
+    setDspHeadroom: (headroomDb) => ipcRenderer.invoke(IpcChannels.EqSetDspHeadroom, headroomDb),
     setPreset: (presetId) => ipcRenderer.invoke(IpcChannels.EqSetPreset, presetId),
     reset: () => ipcRenderer.invoke(IpcChannels.EqReset),
     listPresets: () => ipcRenderer.invoke(IpcChannels.EqListPresets),
     savePreset: (request) => ipcRenderer.invoke(IpcChannels.EqSavePreset, request),
     exportPreset: (request) => ipcRenderer.invoke(IpcChannels.EqExportPreset, request),
+    exportApoPreset: (request) => ipcRenderer.invoke(IpcChannels.EqExportApoPreset, request),
+    exportApoGraphicEqPreset: (request) => ipcRenderer.invoke(IpcChannels.EqExportApoGraphicEqPreset, request),
+    previewImportPreset: () => ipcRenderer.invoke(IpcChannels.EqPreviewImportPreset),
     importPreset: () => ipcRenderer.invoke(IpcChannels.EqImportPreset),
     deletePreset: (presetId) => ipcRenderer.invoke(IpcChannels.EqDeletePreset, presetId),
     listProfiles: () => ipcRenderer.invoke(IpcChannels.EqListProfiles),
@@ -2303,6 +2321,11 @@ const echoApi: EchoApi = {
       applySystemChannelBalanceState(state);
       return state;
     },
+    getRoomCorrectionState: () => ipcRenderer.invoke(IpcChannels.RoomCorrectionGetState) as Promise<RoomCorrectionState>,
+    importRoomCorrectionIr: () => ipcRenderer.invoke(IpcChannels.RoomCorrectionImportIr) as Promise<RoomCorrectionState | null>,
+    setRoomCorrectionEnabled: (enabled) => ipcRenderer.invoke(IpcChannels.RoomCorrectionSetEnabled, enabled) as Promise<RoomCorrectionState>,
+    setRoomCorrectionTrim: (trimDb) => ipcRenderer.invoke(IpcChannels.RoomCorrectionSetTrim, trimDb) as Promise<RoomCorrectionState>,
+    clearRoomCorrection: () => ipcRenderer.invoke(IpcChannels.RoomCorrectionClear) as Promise<RoomCorrectionState>,
   },
 };
 

@@ -1658,7 +1658,9 @@ describe('Audio Core sample-rate regression guard', () => {
       sharedDeviceSampleRate: 384000,
       isDefault: true,
     };
-    const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 44100)], [384000], [sharedDevice]);
+    const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 44100)], [384000], [sharedDevice], {
+      platform: 'win32',
+    });
 
     const status = await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
 
@@ -1673,6 +1675,7 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.actualDeviceSampleRate).toBe(384000);
     expect(status.sharedDeviceSampleRate).toBe(384000);
     expect(status.sampleRateMismatch).toBe(true);
+    expect(status.warnings).toContain('windows_audio_default_format_unusual:384000');
     expect(status.warnings).toContain('shared_output_sample_rate_capped:384000->96000');
     expect(status.warnings).toContain('shared_output_mix_rate_too_high:96000->384000');
     expect(decoder.decodeRequests.at(-1)).toMatchObject({
@@ -1680,6 +1683,35 @@ describe('Audio Core sample-rate regression guard', () => {
       decoderOutputSampleRate: 96000,
       resamplerEngine: 'soxr',
     });
+  });
+
+  it('warns about unusual Windows shared default formats without changing 96 kHz output', async () => {
+    const sharedDevice: AudioDeviceInfo = {
+      id: 'shared:96k',
+      index: 0,
+      name: 'Studio speakers',
+      outputMode: 'shared',
+      sampleRate: 96000,
+      sharedDeviceSampleRate: 96000,
+      isDefault: true,
+    };
+    const { bridges, session } = createSessionHarness([probe('song.flac', 44100)], [96000], [sharedDevice], {
+      platform: 'win32',
+    });
+
+    const status = await session.playLocalFile({ filePath: 'song.flac', output: { outputMode: 'shared' } });
+
+    expect(bridges).toHaveLength(1);
+    expect(bridges[0].stop).not.toHaveBeenCalled();
+    expect(bridges[0].startOptions).toMatchObject({
+      requestedOutputSampleRate: 96000,
+      sharedMixSampleRate: 96000,
+    });
+    expect(status.requestedOutputSampleRate).toBe(96000);
+    expect(status.actualDeviceSampleRate).toBe(96000);
+    expect(status.sampleRateMismatch).toBe(false);
+    expect(status.warnings).toContain('windows_audio_default_format_unusual:96000');
+    expect(status.warnings).not.toContain('shared_output_sample_rate_capped:96000->96000');
   });
 
   it('keeps WASAPI shared playback stable across the full sample-rate switch matrix', async () => {

@@ -4,6 +4,8 @@
 
 这份文档写给插件作者。目标不是教插件突破宿主限制，而是教你在 ECHO 的安全边界内做出稳定、轻量、不会拖慢播放的扩展。
 
+如果你正在让 AI 帮你写插件，建议先把 [ForAIReadme](./plugin-sdk/ForAIReadme.md) 发给它。那份文档把插件类型、权限、manifest、运行边界和 AI 常见错误整理成了更适合模型执行的清单。
+
 ## 一句话模型
 
 ECHO 插件是放在用户数据目录 `plugins/` 下的本地文件夹。宿主读取 `echo.plugin.json`，在受控 VM 沙箱里运行 `plugin.js`，按用户确认的权限暴露一个有限的全局 `echo` API，并把 `panel.html` 当作 sandbox iframe 显示。
@@ -37,6 +39,310 @@ ECHO 的核心原则是：插件能扩展体验，但不能牺牲播放稳定性
 5. 回到插件页点“刷新”或“重载”。
 6. 启用插件时确认权限。
 7. 出错先看插件页里的日志，再缩小权限和代码。
+
+## 零基础照着做第一个插件
+
+这一节按“完全没写过 ECHO 插件”的用户来写。你只要会新建文件、复制文本、保存文件，就能先跑起来一个插件。
+
+### 你需要准备什么
+
+| 工具 | 用来做什么 |
+| --- | --- |
+| ECHO NEXT | 打开插件页面、创建示例、启用插件、看日志 |
+| 一个文本编辑器 | 记事本也行，VS Code 更舒服 |
+| 一个小音乐库 | 用来测试播放状态、曲库读取、provider 结果 |
+
+不要一上来就改 ECHO 主程序源码。普通插件只需要放进 ECHO 打开的 `plugins/` 目录里。
+
+### 第 1 步：找到插件目录
+
+1. 打开 ECHO NEXT。
+2. 进入 `Plugins` / “插件”页面。
+3. 点击“打开目录”。
+4. 系统会打开一个文件夹，这就是插件目录。
+5. 以后所有插件文件夹都放在这里。
+
+不要自己猜路径。不同系统、便携版、开发版的用户数据目录可能不一样，以 ECHO 打开的目录为准。
+
+### 第 2 步：新建插件文件夹
+
+在刚才打开的插件目录里，新建一个文件夹：
+
+```text
+echo.hello-plugin
+```
+
+文件夹名建议和插件 id 一样。插件 id 只能用小写字母、数字、`.`、`_`、`-`，并且要用小写字母或数字开头。新手直接照这个格式写：
+
+```text
+echo.你的插件名
+```
+
+例如：
+
+```text
+echo.my-tool
+echo.playback-note
+echo.aurora-theme
+```
+
+### 第 3 步：写 `echo.plugin.json`
+
+进入 `echo.hello-plugin` 文件夹，新建文件：
+
+```text
+echo.plugin.json
+```
+
+把下面内容完整复制进去：
+
+```json
+{
+  "id": "echo.hello-plugin",
+  "name": "Hello Plugin",
+  "version": "0.0.1",
+  "apiVersion": 2,
+  "entry": "plugin.js",
+  "permissions": [],
+  "contributes": {
+    "commands": [
+      {
+        "id": "hello",
+        "title": "Hello"
+      }
+    ]
+  }
+}
+```
+
+这个文件告诉 ECHO：
+
+| 字段 | 你现在先这样理解 |
+| --- | --- |
+| `id` | 插件的唯一名字，不能和别的插件重复 |
+| `name` | 插件页面显示给人看的名字 |
+| `version` | 插件版本，先写 `0.0.1` |
+| `apiVersion` | 新插件写 `2` |
+| `entry` | 插件启动时执行哪个 JS 文件 |
+| `permissions` | 插件要什么权限；这个 Hello 插件不需要权限 |
+| `contributes.commands` | 告诉 UI：这个插件有一个叫 `hello` 的命令 |
+
+### 第 4 步：写 `plugin.js`
+
+同一个文件夹里再新建文件：
+
+```text
+plugin.js
+```
+
+把下面内容完整复制进去：
+
+```js
+console.log('hello plugin loaded');
+
+echo.commands.register('hello', { title: 'Hello' }, async () => {
+  await echo.ui.notify('Hello from ECHO plugin');
+  return { ok: true, message: 'Hello from ECHO plugin' };
+});
+```
+
+这段代码做了三件事：
+
+1. 插件启动时写一条日志。
+2. 注册一个叫 `hello` 的命令。
+3. 用户运行命令时，发一个通知，并返回一段 JSON。
+
+注意：`echo.plugin.json` 里的命令 id 和 `plugin.js` 里的命令 id 必须一样。这里都叫 `hello`。
+
+### 第 5 步：确认文件结构
+
+现在你的插件目录应该长这样：
+
+```text
+plugins/
+  echo.hello-plugin/
+    echo.plugin.json
+    plugin.js
+```
+
+如果文件名写成下面这样，ECHO 可能找不到：
+
+```text
+echo.plugin.json.txt
+plugin.js.txt
+Echo.Plugin.Json
+Plugin.JS
+```
+
+Windows 记事本容易把文件保存成 `.txt`。如果你看不到扩展名，先在资源管理器里打开“显示文件扩展名”。
+
+### 第 6 步：回到 ECHO 刷新
+
+1. 回到 ECHO 的插件页面。
+2. 点击“刷新”。
+3. 你应该能看到 `Hello Plugin`。
+4. 如果看不到，先检查文件夹名、`echo.plugin.json` 文件名、JSON 逗号有没有写错。
+
+### 第 7 步：启用插件
+
+1. 点开 `Hello Plugin`。
+2. 点击“启用”。
+3. 这个插件没有权限，所以不需要额外信任危险权限。
+4. 启用后看插件日志，应该有 `hello plugin loaded`。
+
+如果启用时报错，先看插件详情里的日志。ECHO 会把启动错误写在那里。
+
+### 第 8 步：运行命令
+
+插件启用后，在插件详情里找到命令 `Hello`，点击运行。你应该看到：
+
+- 插件通知：`Hello from ECHO plugin`
+- 日志里有命令运行记录。
+
+到这里，第一个插件已经成功了。
+
+### 第 9 步：修改插件后怎么生效
+
+你改了 `plugin.js` 或 `echo.plugin.json` 之后：
+
+1. 保存文件。
+2. 回到插件页面。
+3. 点击这个插件的“重载”。
+4. 如果改了 manifest 但页面没变，点击“刷新”。
+
+不要一边改文件一边期待 ECHO 自动立刻发现。插件系统当前按“刷新/重载”更新。
+
+## 最小主题插件
+
+如果你只是想做主题，不需要写复杂 JS。主题插件主要写 manifest，`plugin.js` 可以只放一行日志。
+
+文件结构：
+
+```text
+plugins/
+  echo.simple-theme/
+    echo.plugin.json
+    plugin.js
+```
+
+`echo.plugin.json`：
+
+```json
+{
+  "id": "echo.simple-theme",
+  "name": "Simple Theme",
+  "version": "0.0.1",
+  "apiVersion": 2,
+  "entry": "plugin.js",
+  "permissions": [],
+  "contributes": {
+    "themePresets": [
+      {
+        "id": "simple-blue",
+        "title": "Simple Blue",
+        "description": "一个最小主题示例。",
+        "basePreset": "classic",
+        "preview": "linear-gradient(135deg, #10243a 0%, #5cc8dc 100%)",
+        "swatches": ["#10243a", "#5cc8dc", "#ffffff"],
+        "light": {
+          "appBg": "#eef8ff",
+          "panel": "#ffffff",
+          "accent": "#257f96",
+          "text": "#234150"
+        },
+        "dark": {
+          "appBg": "#08111f",
+          "panel": "#142234",
+          "accent": "#5cc8dc",
+          "text": "#c8dce8"
+        }
+      }
+    ]
+  }
+}
+```
+
+`plugin.js`：
+
+```js
+console.log('simple theme plugin loaded');
+```
+
+启用插件后，进入 `Settings` / “设置” > “外观”，找到“插件主题”，点击主题卡片。ECHO 会把它导入到“我的主题”，之后你还可以继续微调颜色、透明度、圆角和动效。
+
+主题插件常见错误：
+
+| 错误 | 结果 | 正确写法 |
+| --- | --- | --- |
+| 颜色写 `red` | 会被忽略 | 写 `#ff0000` |
+| 颜色写 `#fff` | 会被忽略 | 写 6 位 `#ffffff` |
+| 写任意 CSS | 不会生效 | 只写结构化字段 |
+| 没有 `light` 也没有 `dark` | 主题会被丢弃 | 至少写一组 |
+| `preview` 里写 `url(...)` | 预览会被丢弃 | 只用纯色或 `linear-gradient(...)` |
+
+## 不知道该做哪种插件时先看这里
+
+| 你想做什么 | 先做成什么插件 | 需要权限吗 |
+| --- | --- | --- |
+| 点一下按钮，弹个提示或保存一点小状态 | 命令插件 | 通常不需要 |
+| 显示当前播放状态 | 命令或面板插件 | `playback:read` |
+| 控制播放、暂停、跳转 | 命令或面板插件 | `playback:control` |
+| 统计曲库里有多少歌缺标签 | 命令插件 | `library:read` |
+| 给歌曲提供候选标签 | Metadata Provider | `library:read` |
+| 给歌曲提供候选歌词 | Lyrics Provider | `library:read` |
+| 给歌曲提供候选封面 | Cover Provider | `library:read` |
+| 接入一个第三方音乐搜索源 | Source Provider | `sources:provide`，可能还要 `network` |
+| 做一个可导入主题 | Theme Preset | 不需要 |
+| 做一个复杂界面 | Panel + Command | 按命令实际用到的 API 申请 |
+
+新手建议顺序：
+
+1. 先做命令插件。
+2. 再做主题插件。
+3. 再做读取曲库的命令。
+4. 再做 provider。
+5. 最后再做面板。
+
+## 让 AI 帮你写插件时怎么说
+
+你可以直接把下面这段发给 AI，然后把你的需求补进去：
+
+```text
+请按 ECHO Next 插件系统写一个本地插件。
+先阅读 docs/ECHO_NEXT_PLUGINS.md 和 docs/plugin-sdk/ForAIReadme.md。
+不要修改 ECHO 主程序源码，只生成插件文件夹内的文件。
+使用 apiVersion: 2。
+权限最小化，不要申请无关权限。
+插件目录名和 id 使用 echo.my-plugin 这种格式。
+需要提供 echo.plugin.json、plugin.js、README.md。
+如果需要面板，再提供 panel.html，并通过 plugin:runCommand 调用命令。
+不要使用 require/import/process/window/document/fetch。
+网络访问必须通过 echo.net，并声明 network 权限。
+我的需求是：在这里写你的需求。
+```
+
+如果 AI 生成了代码，你要检查：
+
+- 它有没有让你改 `src/main/...` 或 `src/renderer/...`。普通插件不应该改这些。
+- 它有没有写 `require`、`import`、`process`、`window`、`document`、`fetch`。
+- 它有没有一次申请很多权限。
+- 它有没有告诉你把文件放进 ECHO 插件页打开的目录。
+- 它有没有写清楚怎么刷新、启用、看日志。
+
+## 常见新手错误
+
+| 现象 | 最可能原因 | 怎么修 |
+| --- | --- | --- |
+| 插件页看不到插件 | 文件夹没放进插件目录，或 `echo.plugin.json` 文件名错 | 点“打开目录”，确认结构 |
+| 插件显示 manifest 错误 | JSON 少逗号、多逗号、引号错 | 用 JSON 校验器检查 |
+| 启用后立刻报错 | `plugin.js` 顶层代码抛错 | 看插件日志，先删到最小代码 |
+| 命令不出现 | manifest 里声明了，但 `plugin.js` 没注册 | `contributes.commands[].id` 和 `echo.commands.register` 保持一致 |
+| 命令点击没反应 | handler 抛错或超时 | 看日志，减少代码，先返回 `{ ok: true }` |
+| 权限不足 | manifest 没写对应权限，或启用时没信任 | 补权限，刷新，再重新启用 |
+| 面板里找不到 `echo` | 面板本来就没有 `echo` | 面板用 `postMessage` 调 `plugin:runCommand` |
+| 网络请求失败 | 用了 `fetch` 或没申请 `network` | 用 `echo.net.fetchJson/fetchText` |
+| 曲库读取很慢 | 一次读太多 | 分页，`pageSize <= 100` |
+| 导出包里带了缓存 | 手动塞了 `plugin-storage.json` | 删除运行缓存再发布 |
 
 插件目录推荐形态：
 
@@ -191,9 +497,65 @@ docs/plugin-sdk/echo-plugin.d.ts -> plugins/echo.my-plugin/echo-plugin.d.ts
 | `contributes.sourceProviders` | 自定义音源 provider |
 | `contributes.lyricsProviders` | 歌词候选 provider |
 | `contributes.coverProviders` | 封面候选 provider |
+| `contributes.themePresets` | 可导入的自定义主题预设 |
 | `contributes.settings` | 插件自己的设置表单 |
 
 注意：manifest 里的贡献点用于展示和声明。真正可运行的命令/provider 仍然要在 `plugin.js` 里注册。
+
+## 主题预设
+
+插件可以通过 `contributes.themePresets` 声明可导入的主题。主题贡献不需要权限，也不需要在 `plugin.js` 里注册逻辑；启用插件后，它会出现在“设置 > 外观”的插件主题区域。用户点击后，ECHO 会把它导入到“我的主题”，之后仍可继续微调、导出或删除。
+
+主题插件只能提供结构化主题参数，不能注入任意 CSS。颜色只接受 `#RRGGBB`，数值会被宿主夹在安全范围内，`preview` 只接受纯色或 `linear-gradient(...)` 预览。每个主题至少要提供 `light` 或 `dark` 其中一组覆盖。
+
+每个插件最多贡献 12 个主题。`light` / `dark` 可覆盖的颜色字段包括 `appBg`、`appBg2`、`appBg3`、`panel`、`panelSoft`、`accent`、`accentStrong`、`secondary`、`heading`、`text`、`muted`、`border`、`onAccent`、`buttonText`、`titlebar`、`sidebar`、`player`、`field`、`row`、`rowHover`、`rowActive`、`chip`、`focus`、`danger`、`success`、`warning`。
+
+可覆盖的数值字段：`panelOpacityPercent` 40-100，`glassPercent` 0-80，`shadowPercent` 0-100，`cornerRadiusPx` 0-28，`panelBlurPx` 0-32，`saturationPercent` 60-140，`motionEnabled` 布尔值，`motionSpeedSeconds` 0.12-8，`motionIntensityPercent` 0-160。
+
+```json
+{
+  "id": "echo.aurora-theme",
+  "name": "Aurora Theme",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entry": "plugin.js",
+  "permissions": [],
+  "contributes": {
+    "themePresets": [
+      {
+        "id": "aurora-glass",
+        "title": "Aurora Glass",
+        "description": "高透明玻璃、冷色背景和暖色强调。",
+        "basePreset": "classic",
+        "preview": "linear-gradient(135deg, #08111f 0%, #183b56 48%, #f0b35b 100%)",
+        "swatches": ["#08111f", "#183b56", "#f0b35b", "#e8f8ff"],
+        "light": {
+          "appBg": "#eef8ff",
+          "panel": "#ffffff",
+          "accent": "#257f96",
+          "text": "#234150",
+          "panelOpacityPercent": 78,
+          "glassPercent": 26,
+          "cornerRadiusPx": 10,
+          "panelBlurPx": 18,
+          "saturationPercent": 108
+        },
+        "dark": {
+          "appBg": "#08111f",
+          "panel": "#142234",
+          "accent": "#5cc8dc",
+          "text": "#c8dce8",
+          "panelOpacityPercent": 72,
+          "glassPercent": 34,
+          "cornerRadiusPx": 10,
+          "panelBlurPx": 22,
+          "motionIntensityPercent": 90
+        }
+      }
+    ]
+  }
+}
+```
 
 ## API 版本选择
 

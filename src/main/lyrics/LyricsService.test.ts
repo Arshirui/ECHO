@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDatabase } from '../database/createDatabase';
 import type { AppSettings } from '../../shared/types/appSettings';
 import type { LibraryTrack } from '../../shared/types/library';
-import type { LyricsSearchCandidate, TrackLyrics } from '../../shared/types/lyrics';
+import type { LyricsQuery, LyricsSearchCandidate, TrackLyrics } from '../../shared/types/lyrics';
 import { defaultChannelBalanceSettings } from '../app/appSettings';
 import { LyricsService } from './LyricsService';
 import type { LyricsProvider, LyricsProviderResult } from './LyricsProvider';
@@ -201,7 +201,7 @@ const createHarness = ({
   utatenKanaProvider?: ConstructorParameters<typeof LyricsService>[6];
 } = {}) => {
   const database = createDatabase(':memory:');
-  const library = { getTrack: vi.fn(() => currentTrack) };
+  const library = { getTrack: vi.fn((trackId: string) => (currentTrack.id === trackId ? currentTrack : null)) };
   const local = localProvider ?? {
     getLyrics: vi.fn(() => null),
     searchCandidates: vi.fn(() => []),
@@ -254,6 +254,58 @@ describe('LyricsService', () => {
     expect(lyrics?.lines[0].text).toBe('Cached');
     expect(local.getLyrics).not.toHaveBeenCalled();
     expect(online.getLyrics).not.toHaveBeenCalled();
+  });
+
+  it('returns cached lyrics before secondary network refresh finishes', async () => {
+    vi.useFakeTimers();
+    const onlineProvider = {
+      getLyrics: vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        return trackLyrics({
+          lines: [{ timeMs: 1000, text: 'Cached', translation: 'Translated cached' }],
+          plainText: 'Cached',
+          syncedText: '[00:01.00]Cached',
+        });
+      }),
+      searchCandidates: vi.fn(async () => []),
+    };
+    const { database, service } = createHarness({ onlineProvider });
+    database
+      .prepare(
+        `INSERT INTO lyrics_cache (
+          id, cache_key, track_id, provider, provider_lyrics_id, title, artist, album,
+          duration_seconds, kind, plain_lyrics, synced_lyrics, lines_json, offset_ms, score,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'cached-fast-return',
+        'lrclib|echo song|echo artist|echo album|120',
+        'track-1',
+        'lrclib',
+        'lrclib-fast',
+        'Echo Song',
+        'Echo Artist',
+        'Echo Album',
+        120,
+        'synced',
+        'Cached',
+        '[00:01.00]Cached',
+        JSON.stringify([{ timeMs: 1000, text: 'Cached' }]),
+        0,
+        0.99,
+        new Date().toISOString(),
+        new Date().toISOString(),
+      );
+
+    const lyrics = await service.getLyricsForTrack('track-1');
+
+    expect(lyrics?.lines[0].text).toBe('Cached');
+    expect(lyrics?.lines[0].translation).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onlineProvider.getLyrics).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(1200);
   });
 
   it('reuses remote browser cached lyrics when the snapshot lacks the remote fingerprint', async () => {
@@ -1042,6 +1094,59 @@ describe('LyricsService', () => {
 
     expect(updated?.offsetMs).toBe(750);
     await expect(service.setLyricsOffset('missing', 750)).resolves.toBeNull();
+  });
+
+  it('keeps lyrics offsets remembered independently per track', async () => {
+    const firstTrack = track('D:\\Music\\Echo Song.flac');
+    const secondTrack: LibraryTrack = {
+      ...track('D:\\Music\\Other Song.flac'),
+      id: 'track-2',
+      title: 'Other Song',
+      artist: 'Other Artist',
+      album: 'Other Album',
+      albumArtist: 'Other Artist',
+    };
+    const tracksById = new Map([
+      [firstTrack.id, firstTrack],
+      [secondTrack.id, secondTrack],
+    ]);
+    const onlineProvider = {
+      getLyrics: vi.fn(async (query: LyricsQuery) =>
+        trackLyrics({
+          id: `lyrics-${query.trackId}`,
+          trackId: query.trackId ?? null,
+          providerLyricsId: `lrclib-${query.trackId}`,
+          title: query.title,
+          artist: query.artist,
+          album: query.album ?? null,
+          durationSeconds: query.durationSeconds ?? null,
+          lines: [{ timeMs: 1000, text: `Line for ${query.trackId}` }],
+          plainText: `Line for ${query.trackId}`,
+          syncedText: `[00:01.00]Line for ${query.trackId}`,
+        }),
+      ),
+      searchCandidates: vi.fn(async () => []),
+    };
+    const { database, library, service } = createHarness({ currentTrack: firstTrack, onlineProvider });
+    library.getTrack.mockImplementation((trackId: string) => tracksById.get(trackId) ?? null);
+
+    await service.getLyricsForTrack('track-1');
+    await service.getLyricsForTrack('track-2');
+    await service.setLyricsOffset('track-1', 750);
+    await service.setLyricsOffset('track-2', -250);
+
+    await expect(service.getLyricsForTrack('track-1')).resolves.toMatchObject({ trackId: 'track-1', offsetMs: 750 });
+    await expect(service.getLyricsForTrack('track-2')).resolves.toMatchObject({ trackId: 'track-2', offsetMs: -250 });
+
+    const rows = database
+      .prepare<unknown[], { track_id: string; offset_ms: number }>(
+        'SELECT track_id, offset_ms FROM lyrics_cache ORDER BY track_id',
+      )
+      .all();
+    expect(rows).toEqual([
+      { track_id: 'track-1', offset_ms: 750 },
+      { track_id: 'track-2', offset_ms: -250 },
+    ]);
   });
 
   it('marks a track as instrumental and returns the cached state without auto matching later', async () => {

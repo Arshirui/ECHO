@@ -3261,32 +3261,46 @@ export const PlaybackQueueProvider = ({ children }: PropsWithChildren): JSX.Elem
     let refreshedRandomQueue: QueueItem[] | null = null;
 
     if (isShuffleEnabledRef.current) {
-      const source = activeItem?.source ?? null;
-      const librarySource = isLibraryRandomSource(source) ? source : libraryShuffleSource;
       let candidates: QueueItem[] = [];
 
-      const libraryShuffleAvailable = Boolean(window.echo?.library?.getTracks);
-      target = await fetchLibraryShuffleTarget(activeItem ?? null);
-      if (!target && !libraryShuffleAvailable && isSongsRandomSortSource(librarySource)) {
-        const refreshedItems = await fetchLibraryRandomQueueRefresh(librarySource, activeItem ?? null, current.length || 100);
-        if (refreshedItems.length > 0) {
-          refreshedRandomQueue = refreshedItems;
-          target = refreshedItems[0] ?? null;
-        }
-      }
-
-      if (!target && !libraryShuffleAvailable) {
+      if (playlistPlaybackStateRef.current.active) {
         candidates = getShuffleCandidates(current, activeItem ?? null, historyRef.current);
         target = pickRandom(candidates);
-      }
 
-      if (!target && !libraryShuffleAvailable && navigationRepeatMode === 'all') {
-        candidates = activeItem ? current.filter((item) => item.queueId !== activeItem.queueId) : current;
-        target = pickRandom(candidates);
-      }
+        if (!target && navigationRepeatMode === 'all') {
+          candidates = activeItem ? current.filter((item) => item.queueId !== activeItem.queueId) : current;
+          target = pickRandom(candidates);
+        }
 
-      if (!target && !libraryShuffleAvailable && navigationRepeatMode === 'all') {
-        target = activeItem ?? current[0] ?? null;
+        if (!target && navigationRepeatMode === 'all') {
+          target = activeItem ?? current[0] ?? null;
+        }
+      } else {
+        const source = activeItem?.source ?? null;
+        const librarySource = isLibraryRandomSource(source) ? source : libraryShuffleSource;
+        const libraryShuffleAvailable = Boolean(window.echo?.library?.getTracks);
+        target = await fetchLibraryShuffleTarget(activeItem ?? null);
+        if (!target && !libraryShuffleAvailable && isSongsRandomSortSource(librarySource)) {
+          const refreshedItems = await fetchLibraryRandomQueueRefresh(librarySource, activeItem ?? null, current.length || 100);
+          if (refreshedItems.length > 0) {
+            refreshedRandomQueue = refreshedItems;
+            target = refreshedItems[0] ?? null;
+          }
+        }
+
+        if (!target && !libraryShuffleAvailable) {
+          candidates = getShuffleCandidates(current, activeItem ?? null, historyRef.current);
+          target = pickRandom(candidates);
+        }
+
+        if (!target && !libraryShuffleAvailable && navigationRepeatMode === 'all') {
+          candidates = activeItem ? current.filter((item) => item.queueId !== activeItem.queueId) : current;
+          target = pickRandom(candidates);
+        }
+
+        if (!target && !libraryShuffleAvailable && navigationRepeatMode === 'all') {
+          target = activeItem ?? current[0] ?? null;
+        }
       }
     } else if (currentIndex >= 0 && currentIndex < current.length - 1) {
       target = current[currentIndex + 1] ?? null;

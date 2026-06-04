@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SettingsPage } from './SettingsPage';
 import type { AppSettings } from '../../shared/types/appSettings';
+import type { PluginSummary } from '../../shared/types/plugins';
 import { defaultSidebarRouteOrder } from '../../shared/types/sidebar';
 import type { DownloadSettings } from '../../shared/types/downloads';
 import {
@@ -168,6 +169,7 @@ const startReplayGainAnalysisMock = vi.fn();
 const getReplayGainAnalysisStatusMock = vi.fn();
 const openPluginDirectoryMock = vi.fn();
 const createPluginExampleMock = vi.fn();
+const listPluginsMock = vi.fn();
 const hqPlayerGetSettingsMock = vi.fn();
 const hqPlayerSetSettingsMock = vi.fn();
 const hqPlayerGetStatusMock = vi.fn();
@@ -329,6 +331,7 @@ vi.mock('../utils/echoBridge', () => ({
     chooseOutputDirectory: chooseDownloadOutputDirectoryMock,
   }),
   getPluginsBridge: () => ({
+    list: listPluginsMock,
     openDirectory: openPluginDirectoryMock,
     createExample: createPluginExampleMock,
   }),
@@ -417,6 +420,10 @@ vi.mock('../components/settings/RemoteSourcesPanel', () => ({
 }));
 
 vi.mock('../stores/PlaybackQueueProvider', () => ({
+  useOptionalPlaybackQueue: () => ({
+    automixEnabled: false,
+    setAutomixEnabled: vi.fn(),
+  }),
   usePlaybackQueue: () => ({
     automixEnabled: false,
     setAutomixEnabled: vi.fn(),
@@ -460,6 +467,7 @@ beforeEach(() => {
     totalSizeBytes: 0,
     items: [],
   });
+  listPluginsMock.mockResolvedValue({ directory: 'D:\\Echo\\plugins', plugins: [] });
   getUpdateStatusMock.mockResolvedValue(null);
   getDatabaseProtectionStatusMock.mockResolvedValue(healthyDatabaseProtectionStatus);
   createDatabaseSnapshotMock.mockResolvedValue(healthyDatabaseProtectionStatus);
@@ -662,8 +670,104 @@ const clickSettingsNav = (labelPattern: string): void => {
   fireEvent.click(within(nav).getByRole('button', { name: new RegExp(labelPattern) }));
 };
 
+const expandThemePresetGrid = (): void => {
+  const summary = document.querySelector('.settings-theme-preset-summary') as HTMLButtonElement | null;
+  if (summary && summary.getAttribute('aria-expanded') !== 'true') {
+    fireEvent.click(summary);
+  }
+};
+
 const getShortcutScope = (row: HTMLElement, scope: 'local' | 'global'): HTMLElement =>
   within(row).getByRole('group', { name: `settings.shortcuts.scope.${scope}` });
+
+const createThemePluginSummary = (): PluginSummary => ({
+  id: 'echo.aurora-theme-pack-with-very-long-plugin-id-for-custom-theme',
+  name: 'Aurora Theme',
+  version: '0.1.0',
+  apiVersion: 2,
+  compatibility: { isCompatible: true, reason: null, minEchoVersion: null },
+  packageInfo: { origin: null, importedAt: null, packageVersion: null, checksum: null },
+  health: { lastStartedAt: '2026-06-02T00:00:00.000Z', lastApiCallAt: null, lastErrorAt: null, errorCount: 0, disabledByHost: false },
+  directory: 'D:\\Echo\\plugins\\echo.aurora-theme',
+  entry: 'plugin.js',
+  panel: null,
+  permissions: [],
+  trustedPermissions: [],
+  enabled: true,
+  status: 'running',
+  error: null,
+  disabledByHost: false,
+  activity: {
+    lastStartedAt: '2026-06-02T00:00:00.000Z',
+    lastStoppedAt: null,
+    lastCommandAt: null,
+    lastEventAt: null,
+    lastNetworkAt: null,
+    lastProviderCallAt: null,
+    lastStorageWriteAt: null,
+    lastSettingsWriteAt: null,
+    lastErrorAt: null,
+    commandRunCount: 0,
+    eventDispatchCount: 0,
+    networkCallCount: 0,
+    providerCallCount: 0,
+    storageWriteCount: 0,
+    settingsWriteCount: 0,
+    errorCount: 0,
+  },
+  security: {
+    requestedPermissionCount: 0,
+    trustedPermissionCount: 0,
+    untrustedPermissions: [],
+    highRiskPermissions: [],
+    reservedPermissions: [],
+    limitedPermissions: [],
+    hasEntry: true,
+    hasPanel: false,
+    sandboxedPanel: true,
+    commandCount: 0,
+    metadataProviderCount: 0,
+    sourceProviderCount: 0,
+    lyricsProviderCount: 0,
+    coverProviderCount: 0,
+    themePresetCount: 1,
+    settingCount: 0,
+    networkEnabled: false,
+  },
+  contributes: {
+    themePresets: [
+      {
+        id: 'aurora-glass',
+        title: 'Aurora Glass',
+        description: 'Plugin theme',
+        basePreset: 'classic',
+        preview: 'linear-gradient(135deg, #08111f 0%, #257f96 100%)',
+        swatches: ['#08111f', '#257f96', '#f0b35b'],
+        light: {
+          appBg: '#eef8ff',
+          panel: '#ffffff',
+          accent: '#257f96',
+          text: '#234150',
+          glassPercent: 26,
+          panelBlurPx: 18,
+        },
+        dark: {
+          appBg: '#08111f',
+          panel: '#142234',
+          accent: '#5cc8dc',
+          text: '#c8dce8',
+          motionIntensityPercent: 90,
+        },
+      },
+    ],
+  },
+  commands: [],
+  metadataProviders: [],
+  sourceProviders: [],
+  lyricsProviders: [],
+  coverProviders: [],
+  settingsValues: {},
+});
 
 afterEach(() => {
   cleanup();
@@ -1539,12 +1643,38 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
-    const presetButton = screen.getByText('settings.appearance.themePreset.darkSideMoon').closest('button') as HTMLButtonElement;
+    expandThemePresetGrid();
+    const presetButton = (await screen.findByText('settings.appearance.themePreset.darkSideMoon')).closest('button') as HTMLButtonElement;
     fireEvent.click(presetButton);
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'darkSideMoon' }));
     expect(presetButton.className).toContain('active');
     expect(document.documentElement.dataset.themePreset).toBe('darkSideMoon');
+  });
+
+  it('locks the FINAL theme preset until finalaudio is entered in settings search', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+
+    expect(screen.queryByText('settings.appearance.themePreset.FINAL')).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText('settings.header.searchPlaceholder'), { target: { value: 'finalaudio' } });
+
+    const presetButton = (await screen.findByText('settings.appearance.themePreset.FINAL')).closest('button') as HTMLButtonElement;
+    expect(window.localStorage.getItem('echo-next:settings:final-theme-unlocked')).toBe('true');
+
+    fireEvent.click(presetButton);
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'FINAL' }));
+    expect(document.documentElement.dataset.themePreset).toBe('FINAL');
   });
 
   it('creates a custom theme, saves a color, and clears it when a built-in preset is selected', async () => {
@@ -1594,10 +1724,54 @@ describe('SettingsPage', () => {
       ),
     );
 
-    const presetButton = screen.getByText('settings.appearance.themePreset.darkSideMoon').closest('button') as HTMLButtonElement;
+    expandThemePresetGrid();
+    const presetButton = (await screen.findByText('settings.appearance.themePreset.darkSideMoon')).closest('button') as HTMLButtonElement;
     fireEvent.click(presetButton);
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'darkSideMoon', appearanceThemeCustomId: null }));
+  });
+
+  it('imports and applies an enabled plugin theme preset as a custom theme', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    let currentSettings: AppSettings = { ...settings, appearanceThemePreset: 'classic', appearanceCustomThemes: [], appearanceThemeCustomId: null };
+    listPluginsMock.mockResolvedValue({ directory: 'D:\\Echo\\plugins', plugins: [createThemePluginSummary()] });
+    getSettingsMock.mockResolvedValue(currentSettings);
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => {
+      currentSettings = { ...currentSettings, ...patch };
+      return currentSettings;
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    const pluginThemeButton = (await screen.findByText('Aurora Glass')).closest('button') as HTMLButtonElement;
+    fireEvent.click(pluginThemeButton);
+
+    let importedThemeId = '';
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearanceThemePreset: 'classic',
+          appearanceThemeCustomId: expect.stringMatching(/^plugin:[a-z0-9]{7,8}:aurora-glass$/),
+          appearanceCustomThemes: expect.arrayContaining([
+            expect.objectContaining({
+              id: expect.stringMatching(/^plugin:[a-z0-9]{7,8}:aurora-glass$/),
+              name: 'Aurora Glass · Aurora Theme',
+              basePreset: 'classic',
+              light: expect.objectContaining({ accent: '#257f96', glassPercent: 26 }),
+              dark: expect.objectContaining({ accent: '#5cc8dc', motionIntensityPercent: 90 }),
+            }),
+          ]),
+        }),
+      ),
+    );
+    const importPatch = setSettingsMock.mock.calls.find(([patch]) => (patch as Partial<AppSettings>).appearanceThemeCustomId)?.[0] as Partial<AppSettings>;
+    importedThemeId = importPatch.appearanceThemeCustomId ?? '';
+    expect(importedThemeId.length).toBeLessThanOrEqual(80);
+    expect(document.documentElement.dataset.themeCustomId).toBe(importedThemeId);
   });
 
   it('keeps advanced theme customization fields folded by default', async () => {
@@ -2529,6 +2703,66 @@ describe('SettingsPage', () => {
     expect(screen.getByText('settings.appearance.wallpaper.brightness')).toBeTruthy();
     expect(screen.getByText('settings.appearance.wallpaper.uiOpacity')).toBeTruthy();
     expect(screen.getByText('settings.appearance.wallpaper.unifiedOpacity')).toBeTruthy();
+  });
+
+  it('saves a portrait app wallpaper separately from the landscape background', async () => {
+    const wallpaperPath = 'D:\\Echo\\app-wallpapers\\portrait.webp';
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    chooseAppWallpaperMock.mockResolvedValue(wallpaperPath);
+    setSettingsMock.mockResolvedValue({
+      ...settings,
+      appPortraitWallpaperPath: wallpaperPath,
+      appPortraitWallpaperMediaType: 'image',
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.portraitChoose/ }));
+
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith({
+        appPortraitWallpaperPath: wallpaperPath,
+        appPortraitWallpaperMediaType: 'image',
+      }),
+    );
+    expect(await screen.findByText('settings.appearance.wallpaper.portraitPath')).toBeTruthy();
+    expect(screen.queryByText('settings.appearance.wallpaper.landscapePath')).toBeNull();
+  });
+
+  it('enables video wallpaper controls after choosing a portrait video background', async () => {
+    const wallpaperPath = 'D:\\Echo\\app-wallpapers\\portrait-motion.webm';
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue(settings);
+    chooseAppWallpaperMock.mockResolvedValue(wallpaperPath);
+    setSettingsMock.mockResolvedValue({
+      ...settings,
+      appPortraitWallpaperPath: wallpaperPath,
+      appPortraitWallpaperMediaType: 'video',
+      appVideoWallpaperPauseMode: 'never',
+    });
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.portraitChoose/ }));
+
+    await waitFor(() =>
+      expect(setSettingsMock).toHaveBeenCalledWith({
+        appPortraitWallpaperPath: wallpaperPath,
+        appPortraitWallpaperMediaType: 'video',
+        appVideoWallpaperPauseMode: 'never',
+      }),
+    );
+    expect(await screen.findByText('settings.appearance.wallpaper.videoStatus')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /settings\.appearance\.wallpaper\.videoPause\.never/ })).toBeTruthy();
   });
 
   it('shows video wallpaper performance mode after choosing a local video background', async () => {

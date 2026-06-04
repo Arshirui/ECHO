@@ -133,6 +133,30 @@ describe('PlayerStatusChips', () => {
     expect(screen.queryByText('AIRPLAY')).toBeNull();
   });
 
+  it('surfaces unusual Windows audio default format warnings', () => {
+    render(
+      <PlayerStatusChips
+        status={{ sampleRateMismatch: false, warnings: ['windows_audio_default_format_unusual:96000'] } as never}
+        state="playing"
+        track={track()}
+      />,
+    );
+
+    expect(screen.getByText('Windows Rate High')).toBeTruthy();
+  });
+
+  it('shows a FIR chip when Room Correction is active', () => {
+    render(
+      <PlayerStatusChips
+        status={{ sampleRateMismatch: false, roomCorrectionEnabled: true } as never}
+        state="playing"
+        track={track()}
+      />,
+    );
+
+    expect(screen.getByText('FIR')).toBeTruthy();
+  });
+
   it('shows an Automix chip only when the engine has an active transition plan', () => {
     const { rerender } = render(
       <PlayerStatusChips

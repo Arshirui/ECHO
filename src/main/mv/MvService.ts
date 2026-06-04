@@ -21,6 +21,7 @@ import type {
   TrackVideo,
 } from '../../shared/types/mv';
 import { isBrowserPlayableVideo, isSupportedVideoExtension, mimeTypeForVideoPath } from '../../shared/constants/videoExtensions';
+import { clampMvOffsetMs } from '../../shared/constants/mvOffset';
 import { LocalMvProvider } from './LocalMvProvider';
 import { createOnlineMvProviders, type MainMvOnlineProvider, type ResolvedMvStreamVariant } from './OnlineMvProviders';
 
@@ -107,7 +108,6 @@ type EphemeralMvStreamEntry = {
 };
 
 const nowIso = (): string => new Date().toISOString();
-const clampOffset = (value: number): number => Math.max(-10000, Math.min(10000, Math.round(value)));
 const ephemeralMvStreamTtlMs = 15 * 60 * 1000;
 const createMvInAppUnavailableError = (): Error => new Error('此 MV 暂时无法在应用内播放，可外部打开。');
 
@@ -1281,7 +1281,7 @@ export class MvService {
     const timestamp = nowIso();
     this.database
       .prepare('UPDATE track_videos SET offset_ms = ?, updated_at = ? WHERE id = ? AND track_id = ?')
-      .run(clampOffset(offsetMs), timestamp, selected.id, trackId);
+      .run(clampMvOffsetMs(offsetMs), timestamp, selected.id, trackId);
 
     return this.getSelectedVideo(trackId);
   }
@@ -2148,7 +2148,7 @@ export class MvService {
       selectedQualityId: provider === 'local' ? null : (row.selected_quality_id ?? 'auto'),
       qualityLabel: selectedStream?.label ?? (useRowSnapshot ? row.quality_label : null),
       fps: selectedStream?.fps ?? (useRowSnapshot ? row.fps : null),
-      offsetMs: clampOffset(Number(row.offset_ms ?? 0)),
+      offsetMs: clampMvOffsetMs(Number(row.offset_ms ?? 0)),
       score: Number(row.score ?? 0),
       selected: row.selected === 1,
       playableInApp: localPlayable || streamPlayable,

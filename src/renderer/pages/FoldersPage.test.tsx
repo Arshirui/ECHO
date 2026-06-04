@@ -5,7 +5,7 @@ import type { LibraryFolderNode, LibraryFolderOverview, LibraryPage, LibraryScan
 import { I18nProvider } from '../i18n/I18nProvider';
 import { PlaybackQueueProvider } from '../stores/PlaybackQueueProvider';
 import { rememberLibraryScanStatus, resetLibraryScanSessionForTests } from '../stores/libraryScanSession';
-import { FoldersPage } from './FoldersPage';
+import { __resetFoldersPageSessionForTests, FoldersPage } from './FoldersPage';
 import type { RemoteDirectoryItem, RemoteSource } from '../../shared/types/remoteSources';
 
 vi.mock('../components/library/TrackList', () => ({
@@ -216,6 +216,7 @@ let remoteSourcesMock: {
 
 beforeEach(() => {
   resetLibraryScanSessionForTests();
+  __resetFoldersPageSessionForTests();
 
   libraryMock = {
     getFolderOverviews: vi.fn().mockResolvedValue([overview()]),
@@ -305,6 +306,7 @@ afterEach(() => {
   window.localStorage.clear();
   vi.restoreAllMocks();
   resetLibraryScanSessionForTests();
+  __resetFoldersPageSessionForTests();
 });
 
 describe('FoldersPage', () => {
@@ -320,6 +322,43 @@ describe('FoldersPage', () => {
 
     await waitFor(() => expect(libraryMock.getFolderChildren).toHaveBeenCalledWith({ folderId: 'folder-1', parentPath: 'D:\\Music' }));
     expect(await screen.findByText('Rock')).toBeTruthy();
+  });
+
+  it('keeps expanded local subfolders when the folders page remounts', async () => {
+    const firstRender = renderFoldersPage();
+
+    await screen.findByRole('heading', { name: 'Folders' });
+    fireEvent.click(screen.getByRole('button', { name: /Music/i }).querySelector('.folder-expand-hit')!);
+
+    await screen.findByText('Rock');
+    await waitFor(() => expect(libraryMock.getFolderChildren).toHaveBeenCalledWith({ folderId: 'folder-1', parentPath: 'D:\\Music' }));
+
+    firstRender.unmount();
+    libraryMock.getFolderChildren.mockClear();
+
+    renderFoldersPage();
+
+    await screen.findByRole('heading', { name: 'Folders' });
+    expect(await screen.findByText('Rock')).toBeTruthy();
+    expect(libraryMock.getFolderChildren).not.toHaveBeenCalled();
+  });
+
+  it('ignores Escape folder-up navigation while the folders page is hidden', async () => {
+    const { container } = renderFoldersPage();
+
+    await screen.findByRole('heading', { name: 'Folders' });
+    fireEvent.click(screen.getByRole('button', { name: /Music/i }).querySelector('.folder-expand-hit')!);
+
+    const rockButton = (await screen.findByText('Rock')).closest('button');
+    expect(rockButton).toBeTruthy();
+    fireEvent.click(rockButton!);
+    expect(rockButton?.getAttribute('data-active')).toBe('true');
+
+    container.querySelector('.folders-workbench')?.setAttribute('hidden', '');
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(rockButton?.getAttribute('data-active')).toBe('true');
   });
 
   it('loads scoped tracks for the selected folder and recursive toggle', async () => {
@@ -374,6 +413,39 @@ describe('FoldersPage', () => {
 
     expect(firstRow?.getAttribute('data-selected')).toBeNull();
     expect(secondRow?.getAttribute('data-selected')).toBe('true');
+  });
+
+  it('selects all available folder tracks with Ctrl+A', async () => {
+    libraryMock.getFolderTracks.mockResolvedValue(
+      page([
+        track({ id: 'track-1', title: 'Root Song' }),
+        track({ id: 'track-2', title: 'Second Song', path: 'D:\\Music\\Second.flac' }),
+        track({ id: 'track-3', title: 'Missing Song', path: 'D:\\Music\\Missing.flac', unavailable: true }),
+      ]),
+    );
+
+    renderFoldersPage();
+
+    await screen.findByText('Root Song');
+
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+
+    await waitFor(() => expect(screen.getByText('Root Song').closest('.track-row')?.getAttribute('data-selected')).toBe('true'));
+    expect(screen.getByText('Second Song').closest('.track-row')?.getAttribute('data-selected')).toBe('true');
+    expect(screen.getByText('Missing Song').closest('.track-row')?.getAttribute('data-selected')).toBeNull();
+    expect(libraryMock.getFolderTracks).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        folderId: 'folder-1',
+        path: 'D:\\Music',
+        recursive: true,
+        pageSize: 500,
+      }),
+    );
+
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+
+    await waitFor(() => expect(screen.getByText('Root Song').closest('.track-row')?.getAttribute('data-selected')).toBeNull());
+    expect(screen.getByText('Second Song').closest('.track-row')?.getAttribute('data-selected')).toBeNull();
   });
 
   it('remembers local root folder order after dragging folders', async () => {

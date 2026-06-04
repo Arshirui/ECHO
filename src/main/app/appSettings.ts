@@ -66,7 +66,7 @@ const defaultDesktopLyricsStrokeColor = '#111827';
 const defaultDesktopLyricsFontFamily = 'Microsoft YaHei';
 const defaultLyricsMiniPlayerColor = '#232120';
 const mvNetworkProviders: NetworkMvProviderId[] = ['bilibili', 'youtube'];
-const lyricsProviders: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo', 'musixmatch', 'genius', 'manual'];
+const lyricsProviders: LyricsProviderId[] = ['local', 'lrclib', 'amll-ttml', 'netease', 'qqmusic', 'kugou', 'kuwo', 'musixmatch', 'genius', 'manual'];
 const legacyDefaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic'];
 const defaultLyricsProviderOrder: LyricsProviderId[] = ['local', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo'];
 export const defaultNetworkProxyBypassRules = '<local>;localhost;127.0.0.1;::1;*.local;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*';
@@ -119,6 +119,7 @@ const appThemePresets: AppThemePreset[] = [
   'matsuriLantern',
   'ginzaNoir',
   'frostJazz',
+  'FINAL',
 ];
 const themeOverrideColorKeys: Array<keyof Pick<
   AppThemeToneOverride,
@@ -406,7 +407,9 @@ export const defaultSettings: AppSettings = {
   rememberWindowSizeEnabled: true,
   rememberedWindowSize: null,
   appCustomWallpaperPath: null,
+  appPortraitWallpaperPath: null,
   appWallpaperMediaType: 'image',
+  appPortraitWallpaperMediaType: 'image',
   appWallpaperScalePercent: 100,
   appWallpaperBlurPx: 0,
   appWallpaperBrightnessPercent: 100,
@@ -442,7 +445,7 @@ export const defaultSettings: AppSettings = {
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
-  lyricsOffsetControlsEnabled: false,
+  lyricsOffsetControlsEnabled: true,
   lyricsSmartAlignmentEnabled: true,
   lyricsEnabled: true,
   lyricsHeaderHidden: false,
@@ -1442,7 +1445,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const appWallpaperBrightnessPercent = Number(settings.appWallpaperBrightnessPercent);
   const appWallpaperUiOpacityPercent = Number(settings.appWallpaperUiOpacityPercent);
   const appCustomWallpaperPath = normalizeAppWallpaperPath(settings.appCustomWallpaperPath);
+  const appPortraitWallpaperPath = normalizeAppWallpaperPath(settings.appPortraitWallpaperPath);
   const appWallpaperMediaType = normalizeAppWallpaperMediaType(appCustomWallpaperPath);
+  const appPortraitWallpaperMediaType = normalizeAppWallpaperMediaType(appPortraitWallpaperPath);
   const networkProxyUrl = normalizeNetworkProxyUrl(settings.networkProxyUrl);
   const networkProxyPacUrl = normalizeNetworkProxyPacUrl(settings.networkProxyPacUrl);
   const networkProxyMode = normalizeNetworkProxyMode(settings.networkProxyMode, networkProxyUrl, networkProxyPacUrl);
@@ -1573,7 +1578,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     rememberWindowSizeEnabled: settings.rememberWindowSizeEnabled !== false,
     rememberedWindowSize: normalizeRememberedWindowSize(settings.rememberedWindowSize),
     appCustomWallpaperPath,
+    appPortraitWallpaperPath,
     appWallpaperMediaType,
+    appPortraitWallpaperMediaType,
     appWallpaperScalePercent: Number.isFinite(appWallpaperScalePercent)
       ? Math.round(clamp(appWallpaperScalePercent, 100, 220))
       : defaultSettings.appWallpaperScalePercent,
@@ -1632,7 +1639,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       ? Math.round(clamp(lyricsGlobalSyncOffsetMs, -1000, 1000))
       : defaultSettings.lyricsGlobalSyncOffsetMs,
     lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
-    lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
+    lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled !== false,
     lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled !== false,
     lyricsEnabled: settings.lyricsEnabled !== false,
     lyricsHeaderHidden: settings.lyricsHeaderHidden === true,

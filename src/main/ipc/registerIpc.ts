@@ -27,10 +27,11 @@ import {
   importEchoUserDataBackup,
   refreshDataBackupScheduler,
   runDataBackupNow,
+  subscribeDataBackupProgress,
 } from '../app/dataBackup';
 import { exportEchoDataPackage } from '../app/dataPackage';
 import { getTaskbarPlaybackStatus, refreshTaskbarPlaybackIntegration } from '../app/taskbarPlaybackIntegration';
-import { ensureTray } from '../app/tray';
+import { ensureTray, requestAppQuit } from '../app/tray';
 import { ensureCoverCacheDirectory } from '../library/CoverCacheManager';
 import { getLibraryService } from '../library/LibraryService';
 import { setDiscordPresenceEnabled } from '../integrations/discord/getDiscordPresenceService';
@@ -387,6 +388,10 @@ export const registerIpc = (): void => {
     ipcMain.handle(IpcChannels.AppWindowClose, (event: IpcMainInvokeEvent): void => {
       BrowserWindow.fromWebContents(event.sender)?.close();
     });
+    ipcMain.handle(IpcChannels.AppQuit, (): void => {
+      requestAppQuit();
+      app.quit();
+    });
     ipcMain.handle(IpcChannels.AppGetSystemUserName, (): string | null => getSystemUserName());
     ipcMain.handle(IpcChannels.AppGetSettings, (): AppSettings => getAppSettings());
     ipcMain.handle(IpcChannels.AppSetSettings, (_event: IpcMainInvokeEvent, patch: Partial<AppSettings>): Promise<AppSettings> =>
@@ -462,6 +467,13 @@ export const registerIpc = (): void => {
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   ipcMain.handle(IpcChannels.AppGetDataBackupStatus, (): DataBackupStatus => getDataBackupStatus());
+  subscribeDataBackupProgress((progress) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(IpcChannels.AppDataBackupProgress, progress);
+      }
+    }
+  });
   ipcMain.handle(IpcChannels.AppRunDataBackupNow, (): Promise<DataBackupExportResult> => runDataBackupNow('manual'));
   ipcMain.handle(IpcChannels.AppImportDataBackup, async (): Promise<DataBackupImportResult | null> => {
     const result = await dialog.showOpenDialog({

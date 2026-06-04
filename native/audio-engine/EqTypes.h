@@ -7,7 +7,7 @@
 
 namespace echo
 {
-constexpr int eqBandCount = 10;
+constexpr int eqBandCount = 31;
 constexpr float eqMinGainDb = -12.0f;
 constexpr float eqMaxGainDb = 12.0f;
 constexpr float eqMinPreampDb = -12.0f;
@@ -22,6 +22,9 @@ enum class EqFilterType : int
     Peaking = 0,
     LowShelf = 1,
     HighShelf = 2,
+    LowPass = 3,
+    HighPass = 4,
+    Notch = 5,
 };
 
 using EqGainArray = std::array<float, eqBandCount>;
@@ -31,42 +34,51 @@ using EqFilterTypeArray = std::array<EqFilterType, eqBandCount>;
 using EqBandEnabledArray = std::array<bool, eqBandCount>;
 
 inline constexpr EqFrequencyArray eqFrequenciesHz {
-    31.0f,
-    62.0f,
+    20.0f,
+    25.0f,
+    31.5f,
+    40.0f,
+    50.0f,
+    63.0f,
+    80.0f,
+    100.0f,
     125.0f,
+    160.0f,
+    200.0f,
     250.0f,
+    315.0f,
+    400.0f,
     500.0f,
+    630.0f,
+    800.0f,
     1000.0f,
+    1250.0f,
+    1600.0f,
     2000.0f,
+    2500.0f,
+    3150.0f,
     4000.0f,
+    5000.0f,
+    6300.0f,
     8000.0f,
+    10000.0f,
+    12500.0f,
     16000.0f,
+    20000.0f,
 };
 
 inline constexpr EqQArray eqDefaultQ {
-    1.0f,
-    1.0f,
-    1.0f,
-    1.0f,
-    1.0f,
-    1.0f,
-    1.0f,
-    1.0f,
-    1.0f,
-    1.0f,
+    1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+    1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+    1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+    1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
 };
 
 inline constexpr EqBandEnabledArray eqDefaultBandEnabled {
-    true,
-    true,
-    true,
-    true,
-    true,
-    true,
-    true,
-    true,
-    true,
-    true,
+    true, true, true, true, true, true, true, true,
+    true, true, true, true, true, true, true, true,
+    true, true, true, true, true, true, true, true,
+    true, true, true, true, true, true, true,
 };
 
 struct EqBandState
@@ -165,6 +177,12 @@ inline EqFilterType normalizeEqFilterType(int value)
             return EqFilterType::LowShelf;
         case EqFilterType::HighShelf:
             return EqFilterType::HighShelf;
+        case EqFilterType::LowPass:
+            return EqFilterType::LowPass;
+        case EqFilterType::HighPass:
+            return EqFilterType::HighPass;
+        case EqFilterType::Notch:
+            return EqFilterType::Notch;
         case EqFilterType::Peaking:
         default:
             return EqFilterType::Peaking;

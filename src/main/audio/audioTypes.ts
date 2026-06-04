@@ -156,6 +156,8 @@ export type NativeOutputTelemetry = {
   bufferedFrames: number | null;
   underrunCallbacks: number;
   underrunFrames: number;
+  dspClippingRisk?: boolean;
+  dspLimiterProtecting?: boolean;
   reportedAtMs?: number | null;
   nativePositionStalenessMs?: number | null;
 };

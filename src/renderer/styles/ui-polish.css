@@ -626,6 +626,17 @@ html[data-theme="dark"] .sidebar-folder:hover {
   background: var(--echo-polish-row-bg-active);
 }
 
+.track-row[data-selected="true"],
+.track-row[data-selected="true"]:hover {
+  border-color: var(--theme-accent-border);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--theme-accent-bg) 86%, transparent), color-mix(in srgb, var(--theme-accent-bg) 42%, transparent)),
+    var(--theme-list-row-bg-active);
+  box-shadow:
+    inset 3px 0 0 var(--theme-accent-text),
+    var(--echo-polish-shadow-row);
+}
+
 .track-cover,
 .streaming-cover,
 .playlist-cover,

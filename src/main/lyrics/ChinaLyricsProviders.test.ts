@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KugouLyricsProvider } from './KugouLyricsProvider';
 import { KuwoLyricsProvider } from './KuwoLyricsProvider';
+import { AmllTtmlLyricsProvider } from './AmllTtmlLyricsProvider';
 import { NeteaseLyricsProvider } from './NeteaseLyricsProvider';
 import { QQMusicLyricsProvider } from './QQMusicLyricsProvider';
 import { buildNormalizedLyricsQuery } from './lyricsQueryBuilder';
@@ -14,9 +15,14 @@ const query: LyricsQuery = {
   durationSeconds: 120,
 };
 
+const normalizedQuery = buildNormalizedLyricsQuery(query);
+
 const request = {
   query,
-  normalized: buildNormalizedLyricsQuery(query),
+  normalized: {
+    ...normalizedQuery,
+    searchVariants: normalizedQuery.searchVariants.slice(0, 1),
+  },
   timeoutMs: 4500,
 };
 
@@ -26,11 +32,182 @@ const mockJsonResponse = (value: unknown): Response =>
     headers: { 'Content-Type': 'application/json' },
   });
 
+const mockTextResponse = (value: string, status = 200): Response =>
+  new Response(value, {
+    status,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  });
+
+const amllTtml = [
+  '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:amll="http://www.example.com/ns/amll" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">',
+  '<head><metadata>',
+  '<amll:meta key="musicName" value="Echo Song"/>',
+  '<amll:meta key="artists" value="Echo Artist"/>',
+  '<amll:meta key="album" value="Echo Album"/>',
+  '<amll:meta key="ncmMusicId" value="101126"/>',
+  '</metadata></head>',
+  '<body dur="0:02.000"><div>',
+  '<p begin="0.000" end="2.000"><span begin="0.000" end="1.000">Echo</span><span begin="1.000" end="2.000">line</span></p>',
+  '</div></body>',
+  '</tt>',
+].join('');
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe('China lyrics providers', () => {
+  it('maps AMLL TTML search results through a NetEase id', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          result: {
+            songs: [
+              {
+                id: 101126,
+                name: 'Echo Song',
+                duration: 2000,
+                artists: [{ name: 'Echo Artist' }],
+                album: { name: 'Echo Album' },
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(mockTextResponse(amllTtml));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const [candidate] = await new AmllTtmlLyricsProvider().search(request);
+
+    expect(candidate).toMatchObject({
+      provider: 'amll-ttml',
+      providerLyricsId: 'amll-ttml:ncm:101126',
+      title: 'Echo Song',
+      artist: 'Echo Artist',
+      album: 'Echo Album',
+      durationSeconds: 2,
+      syncedLyrics: amllTtml,
+      sourceLabel: 'AMLL TTML',
+    });
+    expect(candidate.matchReasons).toContain('amll_ttml_provider');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/ncm-lyrics/101126.ttml');
+  });
+
+  it('uses a streaming NetEase source id directly for AMLL TTML lyrics', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(mockTextResponse(amllTtml));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const streamingQuery: LyricsQuery = {
+      ...query,
+      trackId: 'streaming:netease:101126',
+      mediaType: 'streaming',
+      sourceId: '101126',
+      stableKey: 'streaming:netease:101126',
+    };
+    const [candidate] = await new AmllTtmlLyricsProvider().search({
+      query: streamingQuery,
+      normalized: buildNormalizedLyricsQuery(streamingQuery),
+      timeoutMs: 4500,
+    });
+
+    expect(candidate).toMatchObject({
+      provider: 'amll-ttml',
+      providerLyricsId: 'amll-ttml:ncm:101126',
+      title: 'Echo Song',
+      syncedLyrics: amllTtml,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/ncm-lyrics/101126.ttml');
+  });
+
+  it('does not treat non-NetEase numeric streaming source ids as AMLL TTML ids', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(mockJsonResponse({ result: { songs: [] } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const streamingQuery: LyricsQuery = {
+      ...query,
+      trackId: 'streaming:qqmusic:101126',
+      mediaType: 'streaming',
+      sourceId: '101126',
+      stableKey: 'streaming:qqmusic:101126',
+    };
+    const normalizedStreamingQuery = buildNormalizedLyricsQuery(streamingQuery);
+    const results = await new AmllTtmlLyricsProvider().search({
+      query: streamingQuery,
+      normalized: {
+        ...normalizedStreamingQuery,
+        searchVariants: normalizedStreamingQuery.searchVariants.slice(0, 1),
+      },
+      timeoutMs: 4500,
+    });
+
+    expect(results).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('music.163.com/api/search');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('music.163.com/api/cloudsearch');
+  });
+
+  it('falls back to another AMLL TTML mirror when the first mirror misses', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          result: {
+            songs: [
+              {
+                id: 101126,
+                name: 'Echo Song',
+                duration: 2000,
+                artists: [{ name: 'Echo Artist' }],
+                album: { name: 'Echo Album' },
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(mockTextResponse('missing', 404))
+      .mockResolvedValueOnce(mockTextResponse(amllTtml));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const [candidate] = await new AmllTtmlLyricsProvider().search(request);
+
+    expect(candidate.provider).toBe('amll-ttml');
+    expect(String(fetchMock.mock.calls[2][0])).toContain('amll-ttml-db.stevexmh.net/ncm/101126');
+  });
+
+  it('falls back to NetEase cloudsearch for AMLL TTML song ids', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockJsonResponse({ code: 405, message: 'busy' }))
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          result: {
+            songs: [
+              {
+                id: 101126,
+                name: 'Echo Song',
+                dt: 2000,
+                ar: [{ name: 'Echo Artist' }],
+                al: { name: 'Echo Album' },
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(mockTextResponse(amllTtml));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const [candidate] = await new AmllTtmlLyricsProvider().search(request);
+
+    expect(candidate).toMatchObject({
+      provider: 'amll-ttml',
+      providerLyricsId: 'amll-ttml:ncm:101126',
+      durationSeconds: 2,
+    });
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/api/cloudsearch/pc');
+  });
+
   it('maps NetEase search and lyric responses', async () => {
     const fetchMock = vi
       .fn()
@@ -77,6 +254,91 @@ describe('China lyrics providers', () => {
     });
     expect(String(fetchMock.mock.calls[1][0])).toContain('yv=1');
     expect(String(fetchMock.mock.calls[1][0])).toContain('rv=1');
+  });
+
+  it('stops NetEase automatic matching after the first searchable variant with lyrics', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          result: {
+            songs: [
+              {
+                id: 123,
+                name: 'Echo Song',
+                duration: 120000,
+                artists: [{ name: 'Echo Artist' }],
+                album: { name: 'Echo Album' },
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          lrc: { lyric: '[00:01.00]Fast line' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const variantQuery: LyricsQuery = {
+      ...query,
+      title: 'Echo Song (Acoustic)',
+    };
+    const normalized = buildNormalizedLyricsQuery(variantQuery);
+    const [candidate] = await new NeteaseLyricsProvider().search({
+      query: variantQuery,
+      normalized,
+      timeoutMs: 4500,
+      collectAllCandidates: false,
+    });
+
+    expect(candidate).toMatchObject({
+      provider: 'netease',
+      providerLyricsId: 'netease:123',
+      syncedLyrics: '[00:01.00]Fast line',
+    });
+    expect(normalized.searchVariants.length).toBeGreaterThan(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to NetEase cloudsearch when legacy search is throttled', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockJsonResponse({ code: 405, message: 'busy' }))
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          result: {
+            songs: [
+              {
+                id: 123,
+                name: 'Echo Song',
+                dt: 120000,
+                ar: [{ name: 'Echo Artist' }],
+                al: { name: 'Echo Album' },
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        mockJsonResponse({
+          lrc: { lyric: '[00:01.00]Line' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const [candidate] = await new NeteaseLyricsProvider().search(request);
+
+    expect(candidate).toMatchObject({
+      provider: 'netease',
+      providerLyricsId: 'netease:123',
+      artist: 'Echo Artist',
+      album: 'Echo Album',
+      durationSeconds: 120,
+      syncedLyrics: '[00:01.00]Line',
+    });
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/api/cloudsearch/pc');
   });
 
   it('maps NetEase nolyric responses to instrumental results', async () => {

@@ -657,6 +657,13 @@
   gap: 12px 18px;
 }
 
+.artist-overview-track-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
 .artist-overview-track-card {
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr) auto 34px;

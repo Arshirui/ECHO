@@ -380,6 +380,25 @@ describe('ArtistDetailView', () => {
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
   });
 
+  it('reveals every loaded overview track from the expand all button', async () => {
+    mockTracks = Array.from({ length: 14 }, (_, index) => track(String(index + 1)));
+    mockTotal = 14;
+    installLibrary();
+
+    renderDetail(artist({ trackCount: 14 }));
+
+    expect(await screen.findByText('Track 6')).toBeTruthy();
+    expect(screen.queryByText('Track 14')).toBeNull();
+    expect(screen.getByText('6 of 14 tracks')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
+
+    expect(await screen.findByText('Track 14')).toBeTruthy();
+    expect(screen.getByText('14 of 14 tracks')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Expand all' })).toBeNull();
+  });
+
   it('returns from the artist detail after Escape plays the back animation', async () => {
     installLibrary();
     const onBack = vi.fn();

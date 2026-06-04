@@ -9,6 +9,9 @@ import type {
   EqBand,
   EqFilterType,
   EqPreset,
+  EqPresetImportMetadata,
+  EqPresetImportPreviewResult,
+  EqPresetImportResult,
   EqProfile,
   EqProfileBinding,
   EqProfileBindingInfo,
@@ -21,8 +24,11 @@ import type {
   EqSetBandGainRequest,
   EqSetBandQRequest,
   EqState,
+  RoomCorrectionState,
 } from '../../shared/types/eq';
 import {
+  dspHeadroomMaxDb,
+  dspHeadroomMinDb,
   eqBandCount,
   eqFilterTypes,
   eqFrequenciesHz,
@@ -35,6 +41,7 @@ import {
   eqMinPreampDb,
   eqMinQ,
 } from '../../shared/types/eq';
+import { formatEqualizerApoGraphicEqPreset, formatEqualizerApoPreset, parseEqualizerApoPreset } from '../../shared/utils/equalizerApoPreset';
 import type {
   StreamingFavoriteCollectionDeleteResult,
   StreamingFavoriteCollectionRenameResult,
@@ -64,6 +71,7 @@ const browserEqStorageKey = 'echo-next.browser-eq';
 type BrowserEqStorage = {
   state: EqState;
   channelBalance: ChannelBalanceState;
+  roomCorrection: RoomCorrectionState;
   userPresets: EqPreset[];
   profiles: EqProfile[];
 };
@@ -75,6 +83,7 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 const nowIso = (): string => new Date().toISOString();
 
 const filterTypes = new Set<EqFilterType>(eqFilterTypes);
+const legacyEqBandCount = 10;
 
 const normalizeFilterType = (value: unknown): EqFilterType => (filterTypes.has(value as EqFilterType) ? value as EqFilterType : 'peaking');
 
@@ -87,21 +96,46 @@ const createBands = (gains: number[] = []): EqBand[] =>
     enabled: true,
   }));
 
+const createParametricBands = (overrides: Record<number, Partial<EqBand>>): EqBand[] =>
+  createBands().map((band, index) => ({
+    ...band,
+    ...(overrides[index] ?? {}),
+    frequencyHz: clamp(Number(overrides[index]?.frequencyHz ?? band.frequencyHz), eqMinFrequencyHz, eqMaxFrequencyHz),
+    gainDb: clamp(Number(overrides[index]?.gainDb ?? band.gainDb), eqMinGainDb, eqMaxGainDb),
+    q: clamp(Number(overrides[index]?.q ?? band.q), eqMinQ, eqMaxQ),
+    filterType: normalizeFilterType(overrides[index]?.filterType ?? band.filterType),
+    enabled: overrides[index]?.enabled ?? band.enabled,
+  }));
+
 const browserBuiltInPresets: EqPreset[] = [
-  { id: 'flat', name: 'Flat', preampDb: 0, bands: createBands(), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'bass-boost', name: 'Bass Boost', preampDb: -8, bands: createBands([7.5, 6.8, 5, 2.3, 0.5, -0.4, -1, -1.6, -2.2, -2.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'vocal-clear', name: 'Vocal Clear', preampDb: -6, bands: createBands([-6, -5, -3, 0.5, 2.8, 4.5, 3.8, 2, -0.8, -2.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'treble-sparkle', name: 'Treble Sparkle', preampDb: -7, bands: createBands([-3, -2.5, -1.8, -0.8, 0, 0.8, 2.8, 4.8, 6.2, 5.5]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'rock', name: 'Rock', preampDb: -6, bands: createBands([5.5, 4.6, 1.8, -2, -3, -0.6, 2.2, 4.5, 3.8, 2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
-  { id: 'harman-target', name: 'Harman Target', preampDb: -6, bands: createBands([6, 5.8, 4.5, 2, 0.5, 0, 2.5, 3.5, 2, 0.5]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'flat', name: '原音如初', preampDb: 0, bands: createBands(), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'bass-boost', name: '深海低频', preampDb: -8, bands: createBands([4.8, 5.5, 6.4, 7.2, 7.5, 7.2, 6.6, 5.5, 4.1, 2.8, 1.5, 0.6, 0, -0.3, -0.6, -0.8, -1, -1.1, -1.2, -1.4, -1.5, -1.6, -1.8, -2, -2.2, -2.4, -2.6, -2.8, -3, -3.2, -3.4]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'vocal-clear', name: '人声如绸', preampDb: -6, bands: createBands([-6.5, -6.2, -5.8, -5.2, -4.7, -4.2, -3.5, -2.8, -2, -1.2, -0.4, 0.5, 1.4, 2.3, 3.2, 4.1, 4.8, 5.2, 5, 4.5, 3.8, 3, 2.1, 1.2, 0.2, -0.8, -1.6, -2.2, -2.8, -3.2, -3.6]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'treble-sparkle', name: '银砂高频', preampDb: -7, bands: createBands([-3.2, -3, -2.8, -2.5, -2.2, -1.8, -1.4, -1, -0.7, -0.4, -0.2, 0, 0.3, 0.5, 0.8, 1.1, 1.5, 2, 2.6, 3.2, 3.8, 4.4, 5, 5.6, 6.1, 6.4, 6.2, 5.8, 5.2, 4.6, 3.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'rock', name: '黑曜摇滚', preampDb: -6, bands: createBands([4.2, 4.8, 5.3, 5.5, 5.2, 4.6, 3.8, 2.6, 1.2, -0.5, -1.8, -2.7, -3.2, -3, -2.3, -1.4, -0.4, 0.8, 1.8, 2.8, 3.6, 4.4, 4.9, 4.7, 4.2, 3.6, 3, 2.4, 2, 1.6, 1.2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'harman-target', name: '暖场哈曼', preampDb: -6, bands: createBands([5.5, 5.9, 6.2, 6.1, 5.7, 5.2, 4.6, 3.8, 3, 2.2, 1.4, 0.8, 0.4, 0.1, 0, -0.1, 0.2, 0.6, 1.1, 1.8, 2.5, 3.1, 3.6, 3.8, 3.5, 3, 2.4, 1.8, 1.2, 0.7, 0.3]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'city-pop', name: '霓虹夜航', preampDb: -6, bands: createBands([3, 3.4, 3.6, 3.4, 3, 2.4, 1.5, 0.5, -0.5, -1.2, -1.8, -2, -1.8, -1.3, -0.6, 0.2, 1, 1.8, 2.6, 3.5, 4.3, 4.9, 5.2, 5, 4.5, 3.8, 3.2, 2.7, 2.2, 1.6, 1]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'acoustic-silk', name: '弦木柔光', preampDb: -4, bands: createBands([1.8, 2, 2.2, 2.1, 1.9, 1.6, 1.2, 0.8, 0.3, 0, -0.2, 0, 0.4, 0.9, 1.4, 1.8, 2.1, 2.3, 2.1, 1.8, 1.5, 1.1, 0.8, 0.4, 0, -0.6, -1.2, -1.8, -2.3, -2.8, -3]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'piano-room', name: '琴房微光', preampDb: -5, bands: createBands([0.8, 1, 1.2, 1.4, 1.5, 1.4, 1.2, 0.8, 0.3, -0.2, -0.6, -0.8, -0.6, -0.2, 0.4, 1, 1.6, 2.2, 2.8, 3.3, 3.8, 4.1, 4, 3.5, 2.8, 2.1, 1.3, 0.4, -0.4, -1.1, -1.8]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'lofi-dusk', name: '雨窗低保真', preampDb: -4, bands: createBands([3, 3.2, 3.3, 3.1, 2.8, 2.4, 1.8, 1.2, 0.6, 0.1, -0.4, -0.8, -1, -1.2, -1.2, -1, -0.8, -0.6, -0.5, -0.6, -0.8, -1.2, -1.8, -2.6, -3.5, -4.4, -5.2, -5.8, -6.3, -6.8, -7]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'cinema-orchestra', name: '银幕纵深', preampDb: -7, bands: createBands([5, 5.5, 5.9, 6.2, 6, 5.6, 5, 4.2, 3.2, 2.1, 1, 0.2, -0.3, -0.5, -0.4, 0, 0.6, 1.4, 2.3, 3.2, 4, 4.7, 5.2, 5.5, 5.4, 5, 4.5, 3.8, 3, 2.1, 1.2]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'live-house', name: '小馆现场', preampDb: -6, bands: createBands([4, 4.5, 4.8, 4.6, 4, 3.2, 2.2, 1.1, -0.2, -1.4, -2.4, -3, -3.2, -2.8, -2, -1, 0.2, 1.4, 2.6, 3.8, 4.8, 5.4, 5.6, 5.2, 4.6, 3.8, 3, 2.3, 1.8, 1.2, 0.7]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'female-vocal-air', name: '清露女声', preampDb: -6, bands: createBands([-5, -4.8, -4.5, -4.1, -3.6, -3, -2.3, -1.6, -0.8, 0, 0.8, 1.8, 2.8, 3.8, 4.8, 5.5, 5.8, 5.6, 5, 4.3, 3.6, 3.1, 3, 3.2, 3.6, 4, 4.2, 3.8, 3, 2, 1]), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'sub-cleanup', name: '潜波净化', preampDb: -2, bands: createParametricBands({ 0: { frequencyHz: 28, q: 0.7, filterType: 'highPass' }, 1: { frequencyHz: 70, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' }, 3: { frequencyHz: 240, gainDb: -2.5, q: 1.1 } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'vocal-de-ess', name: '雪绒去齿', preampDb: -3, bands: createParametricBands({ 2: { frequencyHz: 180, gainDb: -1.5 }, 6: { frequencyHz: 3200, gainDb: 1.5, q: 0.9 }, 8: { frequencyHz: 7200, gainDb: -4.5, q: 4.2 }, 9: { frequencyHz: 18000, q: 0.7, filterType: 'lowPass' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'headphone-notch', name: '耳峰细修', preampDb: -3, bands: createParametricBands({ 0: { frequencyHz: 35, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' }, 5: { frequencyHz: 2800, gainDb: -2, q: 1.4 }, 7: { frequencyHz: 6200, q: 7.5, filterType: 'notch' }, 8: { frequencyHz: 9000, gainDb: -2.5, q: 2.2 } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'subsonic-filter', name: '暗涌滤波', preampDb: -2, bands: createParametricBands({ 0: { frequencyHz: 24, q: 0.7, filterType: 'highPass' }, 1: { frequencyHz: 80, gainDb: 0.8, q: 0.7, filterType: 'lowShelf' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'sibilance-tamer', name: '齿音柔化', preampDb: -4, bands: createParametricBands({ 2: { frequencyHz: 180, gainDb: -1.2 }, 7: { frequencyHz: 5600, gainDb: -2.8, q: 3.5 }, 8: { frequencyHz: 8200, q: 6, filterType: 'notch' }, 9: { frequencyHz: 12500, gainDb: -1, q: 0.8, filterType: 'highShelf' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
+  { id: 'bluetooth-speaker-cleanup', name: '蓝牙清场', preampDb: -3, bands: createParametricBands({ 0: { frequencyHz: 55, q: 0.7, filterType: 'highPass' }, 1: { frequencyHz: 120, gainDb: -2, q: 0.8, filterType: 'lowShelf' }, 3: { frequencyHz: 420, gainDb: -2, q: 1.2 }, 7: { frequencyHz: 8500, gainDb: 2, q: 0.8, filterType: 'highShelf' }, 9: { frequencyHz: 18000, q: 0.7, filterType: 'lowPass' } }), createdAt: 'built-in', updatedAt: 'built-in', readonly: true },
 ];
 
 const defaultBrowserEqState = (): EqState => ({
   enabled: false,
   preampDb: 0,
+  dspHeadroomDb: 0,
   bands: createBands(),
   presetId: 'flat',
-  presetName: 'Flat',
+  presetName: '原音如初',
   clippingRisk: false,
 });
 
@@ -116,6 +150,20 @@ const defaultBrowserChannelBalance = (): ChannelBalanceState => ({
   invertRight: false,
   constantPower: true,
   clippingRisk: false,
+});
+
+const defaultBrowserRoomCorrection = (): RoomCorrectionState => ({
+  enabled: false,
+  status: 'empty',
+  irId: null,
+  irName: null,
+  channelMode: 'none',
+  sampleRate: null,
+  tapCount: 0,
+  trimDb: 0,
+  latencySamples: 0,
+  clippingRisk: false,
+  error: null,
 });
 
 const cloneBands = (bands: EqBand[]): EqBand[] => bands.map((band) => ({ ...band }));
@@ -152,11 +200,12 @@ const uniquePresetId = (name: string, existingIds: Set<string>): string => {
 };
 
 const normalizeBands = (bands: unknown, fallback = createBands()): EqBand[] => {
-  if (!Array.isArray(bands) || bands.length !== eqBandCount) {
+  if (!Array.isArray(bands) || (bands.length !== eqBandCount && bands.length !== legacyEqBandCount)) {
     return cloneBands(fallback);
   }
 
-  return bands.map((value, index) => {
+  return Array.from({ length: eqBandCount }, (_, index) => {
+    const value = bands[index] ?? fallback[index] ?? null;
     const input = value as Partial<EqBand> | null;
     const frequencyHz = Number(input?.frequencyHz ?? eqFrequenciesHz[index]);
     const gainDb = Number(input?.gainDb ?? 0);
@@ -179,13 +228,15 @@ const normalizeState = (value: unknown): EqState => {
 
   const input = value as Partial<EqState>;
   const preampDb = Number(input.preampDb ?? 0);
+  const dspHeadroomDb = Number(input.dspHeadroomDb ?? 0);
 
   return {
     enabled: Boolean(input.enabled),
     preampDb: Number.isFinite(preampDb) ? clamp(preampDb, eqMinPreampDb, eqMaxPreampDb) : 0,
+    dspHeadroomDb: Number.isFinite(dspHeadroomDb) ? clamp(dspHeadroomDb, dspHeadroomMinDb, dspHeadroomMaxDb) : 0,
     bands: normalizeBands(input.bands),
     presetId: typeof input.presetId === 'string' && input.presetId ? input.presetId : 'flat',
-    presetName: typeof input.presetName === 'string' && input.presetName ? input.presetName : 'Flat',
+    presetName: typeof input.presetName === 'string' && input.presetName ? input.presetName : '原音如初',
     clippingRisk: Boolean(input.clippingRisk),
   };
 };
@@ -319,6 +370,7 @@ class BrowserEqBridge implements EqBridgeApi {
   private storage: BrowserEqStorage = {
     state: defaultBrowserEqState(),
     channelBalance: defaultBrowserChannelBalance(),
+    roomCorrection: defaultBrowserRoomCorrection(),
     userPresets: [],
     profiles: [],
   };
@@ -428,6 +480,18 @@ class BrowserEqBridge implements EqBridgeApi {
     return this.getState();
   }
 
+  async setDspHeadroom(headroomDb: number): Promise<EqState> {
+    const rawHeadroomDb = Number(headroomDb);
+    if (!Number.isFinite(rawHeadroomDb)) {
+      throw new Error('invalid_dsp_headroom');
+    }
+
+    const safeHeadroomDb = clamp(rawHeadroomDb, dspHeadroomMinDb, dspHeadroomMaxDb);
+    this.storage.state = { ...this.storage.state, dspHeadroomDb: safeHeadroomDb };
+    this.writeStorage();
+    return this.getState();
+  }
+
   async setPreset(presetId: string): Promise<EqState> {
     const preset = this.allPresets().find((item) => item.id === presetId);
 
@@ -438,6 +502,7 @@ class BrowserEqBridge implements EqBridgeApi {
     this.storage.state = {
       enabled: this.storage.state.enabled,
       preampDb: preset.preampDb,
+      dspHeadroomDb: this.storage.state.dspHeadroomDb,
       bands: cloneBands(preset.bands),
       presetId: preset.id,
       presetName: preset.name,
@@ -530,14 +595,70 @@ class BrowserEqBridge implements EqBridgeApi {
     return fileName;
   }
 
-  async importPreset(): Promise<EqPreset | null> {
+  async exportApoPreset(request: EqSavePresetRequest): Promise<string | null> {
+    const normalized = normalizePreset({
+      id: request.id ?? sanitizePresetId(request.name),
+      name: request.name,
+      preampDb: request.preampDb,
+      bands: request.bands,
+      readonly: false,
+    });
+
+    if (!normalized) {
+      throw new Error('invalid_eq_preset');
+    }
+
+    const fileName = `${sanitizePresetId(normalized.name) || 'echo-next-eq-preset'}.txt`;
+    const blob = new Blob([formatEqualizerApoPreset({
+      name: normalized.name,
+      preampDb: normalized.preampDb,
+      bands: normalized.bands,
+    })], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    return fileName;
+  }
+
+  async exportApoGraphicEqPreset(request: EqSavePresetRequest): Promise<string | null> {
+    const normalized = normalizePreset({
+      id: request.id ?? sanitizePresetId(request.name),
+      name: request.name,
+      preampDb: request.preampDb,
+      bands: request.bands,
+      readonly: false,
+    });
+
+    if (!normalized) {
+      throw new Error('invalid_eq_preset');
+    }
+
+    const fileName = `${sanitizePresetId(normalized.name) || 'echo-next-eq-preset'}-graphic-eq.txt`;
+    const blob = new Blob([formatEqualizerApoGraphicEqPreset({
+      name: normalized.name,
+      preampDb: normalized.preampDb,
+      bands: normalized.bands,
+    })], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    return fileName;
+  }
+
+  async previewImportPreset(): Promise<EqPresetImportPreviewResult | null> {
     if (typeof document === 'undefined') {
       return null;
     }
 
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'application/json,.json';
+    input.accept = 'application/json,.json,.txt,.cfg,.apo';
 
     const file = await new Promise<File | null>((resolve) => {
       input.onchange = () => resolve(input.files?.[0] ?? null);
@@ -548,22 +669,83 @@ class BrowserEqBridge implements EqBridgeApi {
       return null;
     }
 
-    const parsed = JSON.parse(await file.text()) as unknown;
-    const payload = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as { preset?: Partial<EqSavePresetRequest>; name?: unknown; preampDb?: unknown; bands?: unknown }
-      : null;
-    const candidate = payload?.preset && typeof payload.preset === 'object' ? payload.preset : payload;
+    const rawContent = await file.text();
+    const trimmed = rawContent.trimStart();
+    const candidate: EqSavePresetRequest & { metadata: EqPresetImportMetadata } = trimmed.startsWith('{')
+      ? (() => {
+        const parsed = JSON.parse(rawContent) as unknown;
+        const payload = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? parsed as { preset?: Partial<EqSavePresetRequest>; name?: unknown; preampDb?: unknown; bands?: unknown }
+          : null;
+        const jsonCandidate = payload?.preset && typeof payload.preset === 'object' ? payload.preset : payload;
+        if (!jsonCandidate || typeof jsonCandidate.name !== 'string') {
+          throw new Error('invalid_eq_preset_import');
+        }
+        return {
+          name: jsonCandidate.name,
+          preampDb: Number(jsonCandidate.preampDb ?? 0),
+          bands: jsonCandidate.bands as EqSavePresetRequest['bands'],
+          metadata: {
+            source: 'echo-json',
+            importedFilterCount: Array.isArray(jsonCandidate.bands) ? jsonCandidate.bands.length : 0,
+            skippedFilterCount: 0,
+            graphicEqPointCount: 0,
+            includedFileCount: 0,
+            skippedIncludeCount: 0,
+            unsupportedDirectiveCount: 0,
+            unsupportedDirectiveSummary: {},
+            channelScopedFilterCount: 0,
+            bandwidthFilterCount: 0,
+            warnings: [],
+          },
+        };
+      })()
+      : (() => {
+        const equalizerApoPreset = parseEqualizerApoPreset(rawContent, { name: file.name.replace(/\.[^.]+$/, '') || 'Equalizer APO Import' });
+        return {
+          name: equalizerApoPreset.name,
+          preampDb: equalizerApoPreset.preampDb,
+          bands: equalizerApoPreset.bands,
+          metadata: {
+            source: 'equalizer-apo',
+            importedFilterCount: equalizerApoPreset.importedFilterCount,
+            skippedFilterCount: equalizerApoPreset.skippedFilterCount,
+            graphicEqPointCount: equalizerApoPreset.graphicEqPointCount,
+            includedFileCount: 0,
+            skippedIncludeCount: 0,
+            unsupportedDirectiveCount: equalizerApoPreset.unsupportedDirectiveCount,
+            unsupportedDirectiveSummary: equalizerApoPreset.unsupportedDirectiveSummary,
+            channelScopedFilterCount: equalizerApoPreset.channelScopedFilterCount,
+            bandwidthFilterCount: equalizerApoPreset.bandwidthFilterCount,
+            warnings: equalizerApoPreset.warnings,
+          },
+        };
+      })();
 
-    if (!candidate || typeof candidate.name !== 'string') {
-      throw new Error('invalid_eq_preset_import');
+    return {
+      request: {
+        id: uniquePresetId(candidate.name, new Set(this.allPresets().map((preset) => preset.id))),
+        name: candidate.name,
+        preampDb: Number(candidate.preampDb ?? 0),
+        bands: candidate.bands,
+      },
+      metadata: candidate.metadata,
+      fileName: file.name,
+    };
+  }
+
+  async importPreset(): Promise<EqPresetImportResult | null> {
+    const preview = await this.previewImportPreset();
+    if (!preview) {
+      return null;
     }
 
-    return this.savePreset({
-      id: uniquePresetId(candidate.name, new Set(this.allPresets().map((preset) => preset.id))),
-      name: candidate.name,
-      preampDb: Number(candidate.preampDb ?? 0),
-      bands: candidate.bands as EqSavePresetRequest['bands'],
-    });
+    const preset = await this.savePreset(preview.request);
+
+    return {
+      preset,
+      metadata: preview.metadata,
+    };
   }
 
   async deletePreset(presetId: string): Promise<EqPreset[]> {
@@ -685,6 +867,51 @@ class BrowserEqBridge implements EqBridgeApi {
     return this.getChannelBalanceState();
   }
 
+  async getRoomCorrectionState(): Promise<RoomCorrectionState> {
+    return { ...this.storage.roomCorrection };
+  }
+
+  async importRoomCorrectionIr(): Promise<RoomCorrectionState | null> {
+    this.storage.roomCorrection = {
+      ...this.storage.roomCorrection,
+      enabled: this.storage.roomCorrection.enabled,
+      status: this.storage.roomCorrection.enabled ? 'active' : 'loaded',
+      irId: `browser-ir-${Date.now()}`,
+      irName: 'Browser IR',
+      channelMode: 'mono',
+      sampleRate: 44100,
+      tapCount: 1,
+      error: null,
+    };
+    this.writeStorage();
+    return this.getRoomCorrectionState();
+  }
+
+  async setRoomCorrectionEnabled(enabled: boolean): Promise<RoomCorrectionState> {
+    const hasIr = Boolean(this.storage.roomCorrection.irId);
+    this.storage.roomCorrection = {
+      ...this.storage.roomCorrection,
+      enabled: enabled === true && hasIr,
+      status: !hasIr ? 'empty' : enabled === true ? 'active' : 'loaded',
+      error: !hasIr && enabled === true ? 'missing_ir' : null,
+    };
+    this.writeStorage();
+    return this.getRoomCorrectionState();
+  }
+
+  async setRoomCorrectionTrim(trimDb: number): Promise<RoomCorrectionState> {
+    const safeTrimDb = Number.isFinite(trimDb) ? clamp(trimDb, -24, 6) : 0;
+    this.storage.roomCorrection = { ...this.storage.roomCorrection, trimDb: safeTrimDb };
+    this.writeStorage();
+    return this.getRoomCorrectionState();
+  }
+
+  async clearRoomCorrection(): Promise<RoomCorrectionState> {
+    this.storage.roomCorrection = defaultBrowserRoomCorrection();
+    this.writeStorage();
+    return this.getRoomCorrectionState();
+  }
+
   private allPresets(): EqPreset[] {
     return [...browserBuiltInPresets, ...this.storage.userPresets];
   }
@@ -705,6 +932,7 @@ class BrowserEqBridge implements EqBridgeApi {
       return {
         state: normalizeState(parsed.state),
         channelBalance: normalizeChannelBalance(parsed.channelBalance ?? {}, defaultBrowserChannelBalance()),
+        roomCorrection: { ...defaultBrowserRoomCorrection(), ...(parsed.roomCorrection ?? {}) },
         userPresets: Array.isArray(parsed.userPresets)
           ? parsed.userPresets.map(normalizePreset).filter((preset): preset is EqPreset => Boolean(preset && !preset.readonly))
           : [],

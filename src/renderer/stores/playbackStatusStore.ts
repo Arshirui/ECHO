@@ -33,6 +33,7 @@ const idlePollingIntervalMs = 2000;
 const trackSwitchVisualIntentGuardMs = 2500;
 const trackSwitchPositionGuardMs = 15_000;
 const trackSwitchVisualIntentPositionToleranceMs = 1500;
+const seekIntentSettleToleranceMs = 250;
 const nonActionableAudioStatusErrorPatterns = [
   /\beq_control_(?:closed|disconnected)\b/u,
   /\beq_control_sync_skipped\b/u,
@@ -120,6 +121,19 @@ const playbackPositionMatchesIntent = (status: AudioStatus | PlaybackStatus, int
     ? Math.abs(statusPositionMs(status) - playbackExpectedPositionMs(status, intent, now)) <= trackSwitchVisualIntentPositionToleranceMs
     : statusPositionMs(status) <= playbackExpectedPositionMs(status, intent, now) + trackSwitchVisualIntentPositionToleranceMs;
 
+const seekIntentHasSettled = (status: AudioStatus | PlaybackStatus, intent: PlaybackVisualIntent, now = Date.now()): boolean => {
+  if (intent.type !== 'seek' || !playbackMatchesIntent(status, intent)) {
+    return false;
+  }
+
+  const positionMs = statusPositionMs(status);
+  if (status.state === 'playing') {
+    return positionMs >= intent.expectedPositionMs && Math.abs(positionMs - playbackExpectedPositionMs(status, intent, now)) <= seekIntentSettleToleranceMs;
+  }
+
+  return Math.abs(positionMs - intent.expectedPositionMs) <= seekIntentSettleToleranceMs;
+};
+
 const isStaleStatusForVisualIntent = (status: AudioStatus | PlaybackStatus, intent: PlaybackVisualIntent | null): boolean => {
   if (!intent || !playbackHasIdentity(status)) {
     return false;
@@ -178,8 +192,7 @@ const shouldClearVisualIntentForPatch = (
     shouldApplyAudioStatus &&
     patch.audioStatus &&
     intent.type === 'seek' &&
-    playbackMatchesIntent(patch.audioStatus, intent) &&
-    playbackPositionMatchesIntent(patch.audioStatus, intent)
+    seekIntentHasSettled(patch.audioStatus, intent)
   ) {
     return true;
   }
@@ -188,8 +201,7 @@ const shouldClearVisualIntentForPatch = (
     shouldApplyPlaybackStatus &&
     patch.playbackStatus &&
     intent.type === 'seek' &&
-    playbackMatchesIntent(patch.playbackStatus, intent) &&
-    playbackPositionMatchesIntent(patch.playbackStatus, intent)
+    seekIntentHasSettled(patch.playbackStatus, intent)
   ) {
     return true;
   }

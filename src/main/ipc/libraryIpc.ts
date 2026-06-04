@@ -1415,6 +1415,18 @@ const getAlbumCoverImage = (albumId: unknown): { image: Electron.NativeImage; su
   };
 };
 
+const getAlbumOriginalCoverImage = (albumId: unknown): Electron.NativeImage | null => {
+  const album = getExistingAlbum(albumId);
+  const asset = album.coverId ? getLibraryService().resolveCoverAsset(album.coverId, 'original') : null;
+
+  if (!asset?.filePath || !existsSync(asset.filePath)) {
+    return null;
+  }
+
+  const image = nativeImage.createFromPath(asset.filePath);
+  return image.isEmpty() ? null : image;
+};
+
 const safeExportFileName = (name: string): string => {
   const cleaned = Array.from(name, (character) =>
     /[<>:"/\\|?*]/u.test(character) || character.charCodeAt(0) <= 0x1f ? ' ' : character,
@@ -2105,12 +2117,12 @@ export const registerLibraryIpc = (): void => {
     clipboard.writeText(`${album.title} - ${album.albumArtist}`);
   });
   ipcMain.handle(IpcChannels.LibraryCopyAlbumCover, (_event, albumId: unknown): boolean => {
-    const cover = getAlbumCoverImage(albumId);
-    if (!cover) {
+    const image = getAlbumOriginalCoverImage(albumId);
+    if (!image) {
       return false;
     }
 
-    clipboard.writeImage(cover.image);
+    clipboard.writeImage(image);
     return true;
   });
   ipcMain.handle(IpcChannels.LibrarySaveAlbumCover, async (_event, albumId: unknown): Promise<string | null> => {

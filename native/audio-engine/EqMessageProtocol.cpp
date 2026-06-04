@@ -43,6 +43,15 @@ EqFilterType parseEqFilterType(const std::string& value, EqFilterType fallback)
     if (value == "highShelf")
         return EqFilterType::HighShelf;
 
+    if (value == "lowPass")
+        return EqFilterType::LowPass;
+
+    if (value == "highPass")
+        return EqFilterType::HighPass;
+
+    if (value == "notch")
+        return EqFilterType::Notch;
+
     if (value == "peaking")
         return EqFilterType::Peaking;
 
@@ -51,7 +60,8 @@ EqFilterType parseEqFilterType(const std::string& value, EqFilterType fallback)
 
 bool isEqFilterTypeText(const std::string& value)
 {
-    return value == "peaking" || value == "lowShelf" || value == "highShelf";
+    return value == "peaking" || value == "lowShelf" || value == "highShelf"
+        || value == "lowPass" || value == "highPass" || value == "notch";
 }
 
 std::string eqFilterTypeText(EqFilterType value)
@@ -60,6 +70,9 @@ std::string eqFilterTypeText(EqFilterType value)
     {
         case EqFilterType::LowShelf: return "lowShelf";
         case EqFilterType::HighShelf: return "highShelf";
+        case EqFilterType::LowPass: return "lowPass";
+        case EqFilterType::HighPass: return "highPass";
+        case EqFilterType::Notch: return "notch";
         case EqFilterType::Peaking:
         default: return "peaking";
     }
@@ -159,10 +172,43 @@ std::string EqMessageProtocol::createChannelBalanceStateMessage(const ChannelBal
     return output.str();
 }
 
+std::string EqMessageProtocol::createRoomCorrectionStateMessage(const ConvolutionProcessor& processor)
+{
+    const auto state = processor.getState();
+    std::ostringstream output;
+    output << "{\"type\":\"roomCorrection:state\","
+           << "\"ok\":true,"
+           << "\"enabled\":" << boolText(state.enabled) << ','
+           << "\"status\":\"" << juce::JSON::escapeString(state.status).toStdString() << "\","
+           << "\"irId\":\"" << juce::JSON::escapeString(state.irId).toStdString() << "\","
+           << "\"irName\":\"" << juce::JSON::escapeString(state.irName).toStdString() << "\","
+           << "\"channelMode\":\"" << juce::JSON::escapeString(state.channelMode).toStdString() << "\","
+           << "\"sampleRate\":" << state.sampleRate << ','
+           << "\"tapCount\":" << state.tapCount << ','
+           << "\"trimDb\":" << state.trimDb << ','
+           << "\"latencySamples\":" << state.latencySamples << ','
+           << "\"clippingRisk\":" << boolText(state.clippingRisk) << ','
+           << "\"error\":\"" << juce::JSON::escapeString(state.error).toStdString() << "\""
+           << "}";
+    return output.str();
+}
+
+std::string EqMessageProtocol::createDspStateMessage(const DspHeadroomProcessor& processor)
+{
+    std::ostringstream output;
+    output << "{\"type\":\"dsp:state\","
+           << "\"ok\":true,"
+           << "\"headroomDb\":" << processor.getHeadroomDb()
+           << "}";
+    return output.str();
+}
+
 std::string EqMessageProtocol::handleJsonLine(
     const std::string& line,
     EqProcessor& processor,
-    ChannelBalanceProcessor& channelBalanceProcessor)
+    ChannelBalanceProcessor& channelBalanceProcessor,
+    ConvolutionProcessor& convolutionProcessor,
+    DspHeadroomProcessor& headroomProcessor)
 {
     const auto parsed = juce::JSON::parse(juce::String::fromUTF8(line.data(), static_cast<int>(line.size())));
     const auto* object = parsed.getDynamicObject();
@@ -177,6 +223,50 @@ std::string EqMessageProtocol::handleJsonLine(
 
     if (type == "channelBalance.getState" || type == "channelBalance:get-state")
         return createChannelBalanceStateMessage(channelBalanceProcessor);
+
+    if (type == "roomCorrection.getState" || type == "roomCorrection:get-state")
+        return createRoomCorrectionStateMessage(convolutionProcessor);
+
+    if (type == "dsp.getState" || type == "dsp:get-state")
+        return createDspStateMessage(headroomProcessor);
+
+    if (type == "dsp.setHeadroom" || type == "dsp:set-headroom")
+    {
+        headroomProcessor.setHeadroomDb(getNumber(*object, "headroomDb", 0.0f));
+        return createDspStateMessage(headroomProcessor);
+    }
+
+    if (type == "roomCorrection.setEnabled" || type == "roomCorrection:set-enabled")
+    {
+        convolutionProcessor.setEnabled(getBool(*object, "enabled", false));
+        return createRoomCorrectionStateMessage(convolutionProcessor);
+    }
+
+    if (type == "roomCorrection.setTrim" || type == "roomCorrection:set-trim")
+    {
+        convolutionProcessor.setTrimDb(getNumber(*object, "trimDb", 0.0f));
+        return createRoomCorrectionStateMessage(convolutionProcessor);
+    }
+
+    if (type == "roomCorrection.loadIr" || type == "roomCorrection:load-ir")
+    {
+        const auto path = getString(*object, "path");
+        const auto id = getString(*object, "irId");
+        const auto name = getString(*object, "irName");
+        if (path.empty())
+            return createErrorMessage(type, "missing_ir_path");
+
+        if (! convolutionProcessor.loadImpulseResponse(path, id, name.empty() ? "Room correction IR" : name))
+            return createRoomCorrectionStateMessage(convolutionProcessor);
+
+        return createRoomCorrectionStateMessage(convolutionProcessor);
+    }
+
+    if (type == "roomCorrection.clear" || type == "roomCorrection:clear")
+    {
+        convolutionProcessor.clearImpulseResponse();
+        return createRoomCorrectionStateMessage(convolutionProcessor);
+    }
 
     if (type == "channelBalance.setState" || type == "channelBalance:set-state")
     {
@@ -274,14 +364,23 @@ std::string EqMessageProtocol::handleJsonLine(
         const auto bands = object->getProperty("bands");
         const auto* bandArray = bands.getArray();
 
-        if (bandArray == nullptr || bandArray->size() != eqBandCount)
+        constexpr int legacyEqBandCount = 10;
+        if (bandArray == nullptr || (bandArray->size() != eqBandCount && bandArray->size() != legacyEqBandCount))
             return createErrorMessage(type, "invalid_preset_bands");
 
         for (int index = 0; index < eqBandCount; ++index)
         {
-            const auto* bandObject = bandArray->getReference(index).getDynamicObject();
+            const auto* bandObject = index < bandArray->size() ? bandArray->getReference(index).getDynamicObject() : nullptr;
+
             if (bandObject == nullptr)
-                return createErrorMessage(type, "invalid_preset_band");
+            {
+                processor.setBandFrequencyHz(index, eqFrequenciesHz[static_cast<size_t>(index)]);
+                processor.setBandGainDb(index, 0.0f);
+                processor.setBandQ(index, 1.0f);
+                processor.setBandFilterType(index, EqFilterType::Peaking);
+                processor.setBandEnabled(index, true);
+                continue;
+            }
 
             processor.setBandFrequencyHz(index, getNumber(*bandObject, "frequencyHz", eqFrequenciesHz[static_cast<size_t>(index)]));
             processor.setBandGainDb(index, getNumber(*bandObject, "gainDb", 0.0f));
@@ -297,6 +396,26 @@ std::string EqMessageProtocol::handleJsonLine(
     }
 
     return createErrorMessage(type.empty() ? "unknown" : type, "unsupported_eq_command");
+}
+
+std::string EqMessageProtocol::handleJsonLine(
+    const std::string& line,
+    EqProcessor& processor,
+    ChannelBalanceProcessor& channelBalanceProcessor,
+    ConvolutionProcessor& convolutionProcessor)
+{
+    DspHeadroomProcessor headroomProcessor;
+    return handleJsonLine(line, processor, channelBalanceProcessor, convolutionProcessor, headroomProcessor);
+}
+
+std::string EqMessageProtocol::handleJsonLine(
+    const std::string& line,
+    EqProcessor& processor,
+    ChannelBalanceProcessor& channelBalanceProcessor)
+{
+    ConvolutionProcessor convolutionProcessor;
+    DspHeadroomProcessor headroomProcessor;
+    return handleJsonLine(line, processor, channelBalanceProcessor, convolutionProcessor, headroomProcessor);
 }
 
 std::string EqMessageProtocol::createErrorMessage(const std::string& requestType, const std::string& message)

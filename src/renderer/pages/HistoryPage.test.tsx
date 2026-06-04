@@ -171,6 +171,7 @@ describe('HistoryPage', () => {
           hasMore: false,
           items: [historyEntry('cached', { title: 'Cached History Track' })],
           page: 1,
+          recentItems: [historyEntry('recent-cached', { title: 'Cached Recent Track' })],
           search: '',
           stats: null,
           summary: historySummary(),
@@ -187,6 +188,7 @@ describe('HistoryPage', () => {
     renderHistoryPage();
 
     expect(screen.getByText('Cached History Track')).toBeTruthy();
+    expect(screen.getByText('Cached Recent Track')).toBeTruthy();
   });
 
   it('persists the first history page after refresh', async () => {
@@ -196,13 +198,37 @@ describe('HistoryPage', () => {
 
     renderHistoryPage();
 
-    await screen.findByText('History cached-before-stats');
+    await screen.findAllByText('History cached-before-stats');
     await waitFor(() => {
       const cached = JSON.parse(window.localStorage.getItem('echo-next.history-page-cache.v1') ?? '{}') as {
-        data?: { items?: Array<{ title?: string }> };
+        data?: { items?: Array<{ title?: string }>; recentItems?: Array<{ title?: string }> };
       };
       expect(cached.data?.items?.[0]?.title).toBe('History cached-before-stats');
+      expect(cached.data?.recentItems?.[0]?.title).toBe('History cached-before-stats');
     });
+  });
+
+  it('loads a compact recently played list sorted by recency', async () => {
+    const entries = [
+      historyEntry('popular-old', { playCount: 8, startedAt: '2026-05-20T09:00:00.000Z' }),
+      historyEntry('fresh-now', { playCount: 1, startedAt: '2026-05-25T11:00:00.000Z' }),
+    ];
+    const getPlaybackHistory = vi.fn((query?: { sort?: string }) =>
+      Promise.resolve(query?.sort === 'recent'
+        ? historyPage([entries[1], entries[0]])
+        : historyPage([entries[0], entries[1]])),
+    );
+    const library = installLibraryMock({ getPlaybackHistory });
+
+    renderHistoryPage();
+
+    expect(await screen.findByText('Recently played')).toBeTruthy();
+    expect((await screen.findAllByText('History fresh-now')).length).toBeGreaterThan(0);
+    expect(library.getPlaybackHistory).toHaveBeenCalledWith(expect.objectContaining({
+      page: 1,
+      pageSize: 8,
+      sort: 'recent',
+    }));
   });
 
   it('restores the stats dashboard after the first history page renders', async () => {
@@ -212,10 +238,34 @@ describe('HistoryPage', () => {
 
     renderHistoryPage();
 
-    await screen.findByText('History pretty');
+    await screen.findAllByText('History pretty');
     await waitFor(() => expect(library.getPlaybackStatsDashboard).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('播放统计仪表盘')).toBeTruthy();
     expect(screen.getByText('Top History Song')).toBeTruthy();
+  });
+
+  it('defers the stats dashboard refresh while playback is active', async () => {
+    const library = installLibraryMock({
+      getPlaybackHistory: vi.fn().mockResolvedValue(historyPage([historyEntry('active-playback')])),
+      getPlaybackStatsDashboard: vi.fn().mockResolvedValue(stats()),
+    });
+    const getAudioStatus = vi.fn().mockResolvedValue({ state: 'playing' });
+    const getPlaybackStatus = vi.fn().mockResolvedValue({ state: 'playing' });
+    Object.defineProperty(window, 'echo', {
+      configurable: true,
+      value: {
+        audio: { getStatus: getAudioStatus },
+        library,
+        playback: { getStatus: getPlaybackStatus },
+      },
+    });
+
+    renderHistoryPage();
+
+    await screen.findAllByText('History active-playback');
+    await waitFor(() => expect(getAudioStatus).toHaveBeenCalled());
+    expect(getPlaybackStatus).toHaveBeenCalled();
+    expect(library.getPlaybackStatsDashboard).not.toHaveBeenCalled();
   });
 
   it('refreshes invalid history entries without clearing the whole history', async () => {
@@ -237,7 +287,7 @@ describe('HistoryPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Refresh invalid songs/i }));
 
     await waitFor(() => expect(library.refreshInvalidPlaybackHistory).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(library.getPlaybackHistory).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(library.getPlaybackHistory).toHaveBeenCalledTimes(4));
     expect(library.clearPlaybackHistory).not.toHaveBeenCalled();
     expect(await screen.findByText('Removed 1 invalid history songs.')).toBeTruthy();
   });
@@ -250,14 +300,20 @@ describe('HistoryPage', () => {
       }),
     );
     const library = installLibraryMock({
-      getPlaybackHistory: vi.fn()
-        .mockResolvedValueOnce(historyPage(entries.slice(0, 10), { hasMore: true, page: 1, total: 12 }))
-        .mockResolvedValueOnce(historyPage(entries.slice(10), { hasMore: false, page: 2, total: 12 })),
+      getPlaybackHistory: vi.fn((query?: { page?: number; sort?: string }) => {
+        if (query?.sort === 'recent') {
+          return Promise.resolve(historyPage(entries.slice(0, 8), { hasMore: true, page: 1, total: 12 }));
+        }
+        if (query?.page === 2) {
+          return Promise.resolve(historyPage(entries.slice(10), { hasMore: false, page: 2, total: 12 }));
+        }
+        return Promise.resolve(historyPage(entries.slice(0, 10), { hasMore: true, page: 1, total: 12 }));
+      }),
     });
 
     renderHistoryPage();
 
-    await screen.findByText('History rank-0');
+    await screen.findAllByText('History rank-0');
     expect(screen.queryByText('History rank-10')).toBeNull();
     expect(screen.getAllByRole('listitem')).toHaveLength(10);
     expect(screen.queryByRole('button', { name: /Play History/i })).toBeNull();
@@ -280,12 +336,12 @@ describe('HistoryPage', () => {
 
     renderHistoryPage();
 
-    await screen.findByText('History delete-me');
+    await screen.findAllByText('History delete-me');
     fireEvent.click(screen.getByRole('button', { name: '从历史移除 History delete-me' }));
 
     await waitFor(() => expect(library.deletePlaybackHistoryEntry).toHaveBeenCalledWith('delete-me'));
     expect(screen.queryByText('History delete-me')).toBeNull();
-    expect(screen.getByText('History keep')).toBeTruthy();
+    expect(screen.getAllByText('History keep').length).toBeGreaterThan(0);
     expect(playbackQueueMock.playTrack).not.toHaveBeenCalled();
     expect(playbackQueueMock.appendToQueue).not.toHaveBeenCalled();
   });

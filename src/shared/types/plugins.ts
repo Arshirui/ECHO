@@ -1,4 +1,5 @@
 import type { LibraryPage, LibraryPageQuery, LibraryTrack } from './library';
+import type { AppThemePreset, AppThemeToneOverride } from './appSettings';
 
 export const pluginApiVersion = 2;
 
@@ -129,6 +130,17 @@ export type PluginCoverProviderContribution = {
   description?: string;
 };
 
+export type PluginThemePresetContribution = {
+  id: string;
+  title: string;
+  description?: string;
+  basePreset: AppThemePreset;
+  light?: AppThemeToneOverride;
+  dark?: AppThemeToneOverride;
+  preview?: string;
+  swatches?: string[];
+};
+
 export type PluginSettingType = 'string' | 'select' | 'boolean' | 'number' | 'secret';
 
 export type PluginSettingOption = {
@@ -156,6 +168,7 @@ export type PluginManifestContributes = {
   sourceProviders?: PluginSourceProviderContribution[];
   lyricsProviders?: PluginLyricsProviderContribution[];
   coverProviders?: PluginCoverProviderContribution[];
+  themePresets?: PluginThemePresetContribution[];
   settings?: PluginSettingContribution[];
 };
 
@@ -497,6 +510,7 @@ export type PluginSecuritySummary = {
   sourceProviderCount: number;
   lyricsProviderCount: number;
   coverProviderCount: number;
+  themePresetCount: number;
   settingCount: number;
   networkEnabled: boolean;
 };
@@ -570,7 +584,7 @@ export type PluginRunCommandRequest = {
   args?: unknown[];
 };
 
-export type PluginCreateExampleKind = 'playback-panel' | 'command-tool' | 'library-script' | 'source-provider';
+export type PluginCreateExampleKind = 'playback-panel' | 'command-tool' | 'library-script' | 'source-provider' | 'theme-preset';
 
 export type PluginCreateExampleResult = {
   pluginId: string;

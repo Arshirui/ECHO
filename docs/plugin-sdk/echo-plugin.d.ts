@@ -229,6 +229,87 @@ type EchoPluginCommandOptions = {
   description?: string;
 };
 
+type EchoPluginThemeBasePreset =
+  | 'classic'
+  | 'echoTwilight'
+  | 'sakuraMilk'
+  | 'peachSoda'
+  | 'mintCandy'
+  | 'berryDream'
+  | 'matchaCream'
+  | 'lemonMochi'
+  | 'cottonCloud'
+  | 'melonCream'
+  | 'seaSaltJelly'
+  | 'caramelPudding'
+  | 'neonCandy'
+  | 'nyanCat'
+  | 'childrenDoodle'
+  | 'wisteriaBubble'
+  | 'strawberryCookie'
+  | 'graphiteAurora'
+  | 'amberNoir'
+  | 'oceanStudio'
+  | 'rosewoodVinyl'
+  | 'darkSideMoon'
+  | 'shibuyaNight'
+  | 'kyotoKurenai'
+  | 'ukiyoIndigo'
+  | 'fujiSnow'
+  | 'matsuriLantern'
+  | 'ginzaNoir'
+  | 'frostJazz'
+  | 'FINAL';
+
+type EchoPluginThemeToneOverride = {
+  appBg?: string;
+  appBg2?: string;
+  appBg3?: string;
+  panel?: string;
+  panelSoft?: string;
+  accent?: string;
+  accentStrong?: string;
+  secondary?: string;
+  heading?: string;
+  text?: string;
+  muted?: string;
+  border?: string;
+  onAccent?: string;
+  buttonText?: string;
+  titlebar?: string;
+  sidebar?: string;
+  player?: string;
+  field?: string;
+  row?: string;
+  rowHover?: string;
+  rowActive?: string;
+  chip?: string;
+  focus?: string;
+  danger?: string;
+  success?: string;
+  warning?: string;
+  panelOpacityPercent?: number;
+  glassPercent?: number;
+  shadowPercent?: number;
+  cornerRadiusPx?: number;
+  panelBlurPx?: number;
+  saturationPercent?: number;
+  motionEnabled?: boolean;
+  motionSpeedSeconds?: number;
+  motionIntensityPercent?: number;
+};
+
+type EchoPluginThemePresetContribution = {
+  id: string;
+  title: string;
+  description?: string;
+  basePreset: EchoPluginThemeBasePreset;
+  light?: EchoPluginThemeToneOverride;
+  dark?: EchoPluginThemeToneOverride;
+  preview?: string;
+  swatches?: string[];
+};
+
 /**
  * ECHO Next plugin API v1/v2.
  *
@@ -239,6 +320,7 @@ type EchoPluginCommandOptions = {
  * - async event handlers that exceed 2 seconds are logged as timeouts
  * - metadata providers return candidates only; the host decides whether and how to apply them
  * - source providers return bounded track candidates; playback must resolve to explicit http/https audio URLs
+ * - theme presets are declared in echo.plugin.json contributes.themePresets; plugins do not inject arbitrary CSS
  * - apiVersion 2 network access must go through echo.net and requires the network permission
  * - apiVersion 2 settings are plugin-owned; apiVersion 1 settings keep the legacy app-settings bridge
  * - plugins do not get Node, Electron, SQLite, app DOM, decoder, DSP, or output access

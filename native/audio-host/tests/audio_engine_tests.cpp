@@ -1,4 +1,5 @@
 #include "../../audio-engine/ChannelBalanceProcessor.h"
+#include "../../audio-engine/DspChain.h"
 #include "../../audio-engine/EqMessageProtocol.h"
 #include "../../audio-engine/EqProcessor.h"
 
@@ -83,6 +84,167 @@ void requireFinite(const juce::AudioBuffer<float>& buffer, const std::string& me
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
             require(std::isfinite(data[sample]), message);
     }
+}
+
+void testConvolutionIdentityIsTransparent()
+{
+    echo::ConvolutionProcessor processor;
+    processor.prepare(48000.0, 64, 2);
+    require(processor.loadImpulseResponseForTests({ { 1.0f } }, 48000.0, "identity", "Identity"), "identity IR loads");
+    processor.setEnabled(true);
+
+    auto buffer = makeBuffer(2, 64);
+    auto dry = buffer;
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    require(processor.isEnabled(), "convolution reports enabled");
+    requireBuffersClose(buffer, dry, nearTolerance, "identity convolution must be transparent");
+}
+
+void testConvolutionDelayImpulse()
+{
+    echo::ConvolutionProcessor processor;
+    processor.prepare(48000.0, 8, 1);
+    require(processor.loadImpulseResponseForTests({ { 0.0f, 1.0f } }, 48000.0, "delay", "Delay"), "delay IR loads");
+    processor.setEnabled(true);
+
+    juce::AudioBuffer<float> buffer(1, 4);
+    buffer.clear();
+    buffer.setSample(0, 0, 0.5f);
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    require(std::abs(buffer.getSample(0, 0)) <= nearTolerance, "delay sample 0");
+    require(std::abs(buffer.getSample(0, 1) - 0.5f) <= nearTolerance, "delay sample 1");
+    requireFinite(buffer, "delay convolution finite");
+}
+
+void testConvolutionStereoMapping()
+{
+    echo::ConvolutionProcessor processor;
+    processor.prepare(44100.0, 8, 2);
+    require(processor.loadImpulseResponseForTests({ { 1.0f }, { 0.5f } }, 44100.0, "stereo", "Stereo"), "stereo IR loads");
+    processor.setEnabled(true);
+
+    juce::AudioBuffer<float> buffer(2, 4);
+    for (int sample = 0; sample < 4; ++sample)
+    {
+        buffer.setSample(0, sample, 0.25f);
+        buffer.setSample(1, sample, 0.25f);
+    }
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    require(std::abs(buffer.getSample(0, 0) - 0.25f) <= nearTolerance, "left stereo FIR");
+    require(std::abs(buffer.getSample(1, 0) - 0.125f) <= nearTolerance, "right stereo FIR");
+}
+
+void testConvolutionRejectsLongImpulseAndClipsSafely()
+{
+    echo::ConvolutionProcessor processor;
+    processor.prepare(48000.0, 16, 1);
+    require(! processor.loadImpulseResponseForTests({ std::vector<float>(static_cast<size_t>(echo::roomCorrectionMaxTaps + 1), 1.0f) }, 48000.0, "long", "Long"), "long IR rejected");
+    require(processor.loadImpulseResponseForTests({ { 8.0f } }, 48000.0, "hot", "Hot"), "hot IR loads");
+    processor.setEnabled(true);
+
+    juce::AudioBuffer<float> buffer(1, 4);
+    buffer.clear();
+    buffer.setSample(0, 0, 0.5f);
+    processor.processBlock(buffer, 0, buffer.getNumSamples());
+
+    requireFinite(buffer, "hot convolution finite");
+    require(processor.hasClippingRisk(), "hot convolution reports clipping risk");
+    require(std::abs(buffer.getSample(0, 0)) <= 1.0f, "hot convolution limited");
+}
+
+void testDspChainBypassPreservesDryBuffer()
+{
+    echo::EqProcessor eqProcessor;
+    echo::ConvolutionProcessor convolutionProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    echo::DspHeadroomProcessor headroomProcessor;
+    echo::DspChain dspChain(eqProcessor, convolutionProcessor, channelBalanceProcessor, headroomProcessor);
+    dspChain.prepare(48000.0, 128, 2);
+
+    auto buffer = makeBuffer(2, 128);
+    auto dry = makeBuffer(2, 128);
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        auto* samples = buffer.getWritePointer(channel);
+        auto* drySamples = dry.getWritePointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            const float value = channel == 0
+                ? static_cast<float>(sample) / 127.0f
+                : -static_cast<float>(sample) / 127.0f;
+            samples[sample] = value;
+            drySamples[sample] = value;
+        }
+    }
+
+    require(! dspChain.isActive(), "inactive DSP chain must report bypass");
+    dspChain.processBlock(buffer, 0, buffer.getNumSamples());
+    requireBuffersClose(buffer, dry, strictTolerance, "inactive DSP chain must not touch native playback samples");
+    require(! dspChain.hasClippingRisk(), "inactive DSP chain must not report clipping risk");
+    require(! dspChain.isSafetyLimiterProtecting(), "inactive DSP chain must not report limiter protection");
+}
+
+void testDspChainLimiterProtectsActiveOutput()
+{
+    echo::EqProcessor eqProcessor;
+    echo::ConvolutionProcessor convolutionProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    echo::DspHeadroomProcessor headroomProcessor;
+    echo::DspChain dspChain(eqProcessor, convolutionProcessor, channelBalanceProcessor, headroomProcessor);
+    dspChain.prepare(48000.0, 128, 2);
+    eqProcessor.setEnabled(true);
+
+    auto buffer = makeBuffer(2, 128);
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        auto* samples = buffer.getWritePointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            samples[sample] = sample % 2 == 0 ? 2.0f : -2.0f;
+    }
+
+    require(dspChain.isActive(), "enabled EQ must activate DSP chain");
+    dspChain.processBlock(buffer, 0, buffer.getNumSamples());
+    require(dspChain.hasClippingRisk(), "active DSP chain must report clipping risk after limiting hot output");
+    require(dspChain.isSafetyLimiterProtecting(), "active DSP chain must expose safety limiter protection");
+
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        const auto* samples = buffer.getReadPointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            require(std::abs(samples[sample]) <= 1.0f + nearTolerance, "DSP safety limiter must cap active-chain output");
+    }
+}
+
+void testDspHeadroomOnlyAppliesToActiveDsp()
+{
+    echo::EqProcessor eqProcessor;
+    echo::ConvolutionProcessor convolutionProcessor;
+    echo::ChannelBalanceProcessor channelBalanceProcessor;
+    echo::DspHeadroomProcessor headroomProcessor;
+    echo::DspChain dspChain(eqProcessor, convolutionProcessor, channelBalanceProcessor, headroomProcessor);
+    dspChain.prepare(48000.0, 128, 2);
+    headroomProcessor.setHeadroomDb(-6.0f);
+
+    auto bypassed = makeBuffer(2, 128);
+    bypassed.clear();
+    bypassed.setSample(0, 0, 0.5f);
+    bypassed.setSample(1, 0, -0.5f);
+    dspChain.processBlock(bypassed, 0, bypassed.getNumSamples());
+    require(std::abs(bypassed.getSample(0, 0) - 0.5f) <= strictTolerance, "DSP headroom must not affect native bypass");
+    require(std::abs(bypassed.getSample(1, 0) + 0.5f) <= strictTolerance, "DSP headroom must preserve bypass polarity");
+
+    eqProcessor.setEnabled(true);
+    auto processed = makeBuffer(2, 128);
+    processed.clear();
+    processed.setSample(0, 0, 0.5f);
+    processed.setSample(1, 0, -0.5f);
+    dspChain.processBlock(processed, 0, processed.getNumSamples());
+
+    require(std::abs(processed.getSample(0, 0)) < 0.5f, "DSP headroom must attenuate active DSP output");
+    require(std::abs(processed.getSample(1, 0)) < 0.5f, "DSP headroom must attenuate active DSP output on all channels");
 }
 
 void testDisabledEqIsDry()
@@ -239,6 +401,33 @@ void testPeqBandControlsClampAndBypass()
     auto dry = bypassed;
     processor.processBlock(bypassed, 0, bypassed.getNumSamples());
     requireBuffersClose(bypassed, dry, nearTolerance, "disabled PEQ band must become transparent");
+}
+
+void testPeqAdditionalFilterTypesStayFinite()
+{
+    const std::vector<echo::EqFilterType> filterTypes {
+        echo::EqFilterType::LowPass,
+        echo::EqFilterType::HighPass,
+        echo::EqFilterType::Notch,
+    };
+
+    for (const auto filterType : filterTypes)
+    {
+        echo::EqProcessor processor;
+        processor.prepare(48000.0, 4096, 2);
+        processor.setEnabled(true);
+        processor.setBandFrequencyHz(4, filterType == echo::EqFilterType::HighPass ? 90.0f : 7200.0f);
+        processor.setBandQ(4, filterType == echo::EqFilterType::Notch ? 6.5f : 0.707f);
+        processor.setBandFilterType(4, filterType);
+        processor.setBandGainDb(4, 12.0f);
+
+        auto buffer = makeBuffer(2, 4096);
+        processor.processBlock(buffer, 0, buffer.getNumSamples());
+        requireFinite(buffer, "additional PEQ filter output must stay finite");
+
+        const auto state = processor.getState();
+        require(state.bandFilterTypes[4] == filterType, "additional PEQ filter type must round-trip in processor state");
+    }
 }
 
 void testHostBufferFallbackAttempts()
@@ -910,6 +1099,24 @@ void testProtocolMessages()
         channelBalanceProcessor);
     requireContains(filterResponse, R"("filterType":"highShelf")", "filter type response");
 
+    const auto lowPassResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"eq:set-band-filter-type","band":3,"filterType":"lowPass"})",
+        eqProcessor,
+        channelBalanceProcessor);
+    requireContains(lowPassResponse, R"("filterType":"lowPass")", "low pass filter response");
+
+    const auto highPassResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"eq:set-band-filter-type","band":3,"filterType":"highPass"})",
+        eqProcessor,
+        channelBalanceProcessor);
+    requireContains(highPassResponse, R"("filterType":"highPass")", "high pass filter response");
+
+    const auto notchResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"eq:set-band-filter-type","band":3,"filterType":"notch"})",
+        eqProcessor,
+        channelBalanceProcessor);
+    requireContains(notchResponse, R"("filterType":"notch")", "notch filter response");
+
     const auto bypassResponse = echo::EqMessageProtocol::handleJsonLine(
         R"({"type":"eq:set-band-enabled","band":3,"enabled":false})",
         eqProcessor,
@@ -947,11 +1154,30 @@ void testProtocolMessages()
     requireContains(invalidPresetResponse, "invalid_preset_bands", "invalid preset response");
 
     const auto invalidFilterResponse = echo::EqMessageProtocol::handleJsonLine(
-        R"({"type":"eq:set-band-filter-type","band":1,"filterType":"notch"})",
+        R"({"type":"eq:set-band-filter-type","band":1,"filterType":"allPass"})",
         eqProcessor,
         channelBalanceProcessor);
     requireContains(invalidFilterResponse, R"("type":"eq:error")", "invalid filter response");
     requireContains(invalidFilterResponse, "invalid_filter_type", "invalid filter response");
+
+    echo::ConvolutionProcessor convolutionProcessor;
+    convolutionProcessor.prepare(48000.0, 512, 2);
+    require(convolutionProcessor.loadImpulseResponseForTests({ { 1.0f } }, 48000.0, "proto", "Protocol IR"), "protocol IR loads");
+    const auto roomTrimResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"roomCorrection:set-trim","trimDb":-3.5})",
+        eqProcessor,
+        channelBalanceProcessor,
+        convolutionProcessor);
+    requireContains(roomTrimResponse, R"("type":"roomCorrection:state")", "room correction trim response");
+    requireContains(roomTrimResponse, R"("trimDb":-3.5)", "room correction trim response");
+
+    const auto roomEnableResponse = echo::EqMessageProtocol::handleJsonLine(
+        R"({"type":"roomCorrection:set-enabled","enabled":true})",
+        eqProcessor,
+        channelBalanceProcessor,
+        convolutionProcessor);
+    requireContains(roomEnableResponse, R"("enabled":true)", "room correction enabled response");
+    requireContains(roomEnableResponse, R"("status":"active")", "room correction active response");
 }
 
 } // namespace
@@ -966,6 +1192,14 @@ int main()
         { "EQ limiter protects enabled output", testEqLimiterProtectsEnabledOutput },
         { "coefficient updates stop in steady state", testCoefficientUpdatesStopInSteadyState },
         { "PEQ band controls clamp and bypass", testPeqBandControlsClampAndBypass },
+        { "PEQ additional filter types stay finite", testPeqAdditionalFilterTypesStayFinite },
+        { "FIR convolution identity is transparent", testConvolutionIdentityIsTransparent },
+        { "FIR convolution delay impulse", testConvolutionDelayImpulse },
+        { "FIR convolution stereo mapping", testConvolutionStereoMapping },
+        { "FIR convolution rejects long IR and clips safely", testConvolutionRejectsLongImpulseAndClipsSafely },
+        { "DSP chain bypass preserves dry buffer", testDspChainBypassPreservesDryBuffer },
+        { "DSP chain limiter protects active output", testDspChainLimiterProtectsActiveOutput },
+        { "DSP headroom only applies to active DSP", testDspHeadroomOnlyAppliesToActiveDsp },
         { "host buffer fallback attempts", testHostBufferFallbackAttempts },
         { "host shared backend options", testHostSharedBackendOptions },
         { "host backend names", testHostBackendNames },

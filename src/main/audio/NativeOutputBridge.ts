@@ -497,6 +497,8 @@ export class NativeOutputBridge extends EventEmitter {
     bufferedFrames: null,
     underrunCallbacks: 0,
     underrunFrames: 0,
+    dspClippingRisk: false,
+    dspLimiterProtecting: false,
     reportedAtMs: null,
     nativePositionStalenessMs: null,
   };
@@ -1295,6 +1297,14 @@ export class NativeOutputBridge extends EventEmitter {
           typeof message.underrunFrames === 'number' && Number.isFinite(message.underrunFrames)
             ? Math.max(0, Math.round(message.underrunFrames))
             : this.telemetry.underrunFrames,
+        dspClippingRisk:
+          typeof message.dspClippingRisk === 'boolean'
+            ? message.dspClippingRisk
+            : this.telemetry.dspClippingRisk,
+        dspLimiterProtecting:
+          typeof message.dspLimiterProtecting === 'boolean'
+            ? message.dspLimiterProtecting
+            : this.telemetry.dspLimiterProtecting,
         reportedAtMs,
         nativePositionStalenessMs: 0,
       };

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { eqFrequenciesHz } from '../../shared/types/eq';
 
 describe('renderer EQ bridge fallback', () => {
   beforeEach(() => {
@@ -84,14 +85,79 @@ describe('renderer EQ bridge fallback', () => {
     const imported = await eq?.importPreset();
     const presets = await eq?.listPresets();
 
-    expect(imported).toMatchObject({ id: 'browser-bright-2', name: 'Browser Bright', preampDb: -6 });
+    expect(imported?.preset).toMatchObject({ id: 'browser-bright-2', name: 'Browser Bright', preampDb: -6 });
+    expect(imported?.metadata).toMatchObject({ source: 'echo-json', importedFilterCount: eqFrequenciesHz.length });
     expect(presets?.filter((preset) => preset.name === 'Browser Bright').map((preset) => preset.id)).toEqual(['browser-bright', 'browser-bright-2']);
+    clickSpy.mockRestore();
+  });
+
+  it('reports Equalizer APO import metadata in the browser fallback bridge', async () => {
+    const { getEqBridge } = await import('./echoBridge');
+    const eq = getEqBridge();
+
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function click(this: HTMLInputElement) {
+      Object.defineProperty(this, 'files', {
+        configurable: true,
+        value: [
+          new File([
+            [
+              'Preamp: -6 dB',
+              'Filter 1: ON PK Fc 105 Hz Gain -3 dB Q 1',
+              'Filter 2: ON LS Fc 80 Hz Gain 2 dB Q 0.7',
+            ].join('\n'),
+          ], 'apo-headphones.txt', { type: 'text/plain' }),
+        ],
+      });
+      this.onchange?.(new Event('change'));
+    });
+
+    const imported = await eq?.importPreset();
+
+    expect(imported?.preset).toMatchObject({ id: 'apo-headphones', name: 'apo-headphones', preampDb: -6 });
+    expect(imported?.metadata).toMatchObject({
+      source: 'equalizer-apo',
+      importedFilterCount: 2,
+      skippedFilterCount: 0,
+      graphicEqPointCount: 0,
+    });
+    clickSpy.mockRestore();
+  });
+
+  it('previews Equalizer APO imports without saving them first', async () => {
+    const { getEqBridge } = await import('./echoBridge');
+    const eq = getEqBridge();
+
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function click(this: HTMLInputElement) {
+      Object.defineProperty(this, 'files', {
+        configurable: true,
+        value: [
+          new File([
+            [
+              'Preamp: -5 dB',
+              'Filter 1: ON PK Fc 1000 Hz Gain 2 dB Q 1',
+            ].join('\n'),
+          ], 'preview-apo.txt', { type: 'text/plain' }),
+        ],
+      });
+      this.onchange?.(new Event('change'));
+    });
+
+    const preview = await eq?.previewImportPreset();
+    const presetsBeforeApply = await eq?.listPresets();
+    const saved = await eq?.savePreset(preview!.request);
+    const presetsAfterApply = await eq?.listPresets();
+
+    expect(preview?.request).toMatchObject({ id: 'preview-apo', name: 'preview-apo', preampDb: -5 });
+    expect(preview?.metadata).toMatchObject({ source: 'equalizer-apo', importedFilterCount: 1 });
+    expect(presetsBeforeApply?.some((preset) => preset.id === 'preview-apo')).toBe(false);
+    expect(saved).toMatchObject({ id: 'preview-apo', name: 'preview-apo' });
+    expect(presetsAfterApply?.some((preset) => preset.id === 'preview-apo')).toBe(true);
     clickSpy.mockRestore();
   });
 });
 
 const bandsForImport = () =>
-  [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].map((frequencyHz) => ({
+  eqFrequenciesHz.map((frequencyHz) => ({
     frequencyHz,
     gainDb: 0,
     q: 1,

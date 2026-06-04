@@ -114,6 +114,7 @@ const setSentinelReach = (pageSurface: HTMLElement, sentinel: Element): void => 
 
 beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', undefined);
+  window.localStorage.clear();
   window.localStorage.setItem('echo-next.locale', 'en-US');
 });
 
@@ -164,7 +165,25 @@ describe('ArtistsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Back to artists' }));
 
     expect(navigateSongs).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Detail: BURTON')).toBeNull();
     window.removeEventListener('app:navigate:songs', navigateSongs);
+  });
+
+  it('returns to the album detail route when opened from an album detail artist link', async () => {
+    const targetArtist = artist('target', { name: 'BURTON' });
+    const navigateRoute = vi.fn<(event: Event) => void>();
+    const getArtists = vi.fn().mockResolvedValue(page([targetArtist]));
+    installLibrary(getArtists);
+    window.addEventListener('app:navigate:route', navigateRoute);
+
+    renderArtistsPage();
+    await waitFor(() => expect(getArtists).toHaveBeenCalledTimes(1));
+    window.dispatchEvent(new CustomEvent('app:navigate:artist-detail', { detail: { artist: targetArtist, returnTo: 'albums' } }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to artists' }));
+
+    expect(navigateRoute).toHaveBeenCalledWith(expect.objectContaining({ detail: 'albums' }));
+    expect(screen.queryByText('Detail: BURTON')).toBeNull();
+    window.removeEventListener('app:navigate:route', navigateRoute);
   });
 
   it('returns to home when an artist detail was opened from home', async () => {

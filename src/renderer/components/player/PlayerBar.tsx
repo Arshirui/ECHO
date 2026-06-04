@@ -43,12 +43,15 @@ type PlayerBarProps = {
 };
 
 const progressRenderIntervalMs = 250;
+const lowLoadProgressRenderIntervalMs = 1000;
 const bpmAnalysisStatusPollMs = 1500;
 const playbackSeekedEvent = 'playback:seeked';
 const lyricsViewModeMemoryKey = 'echo:lyrics:view-mode';
 const maxInterpolatedStatusGapSeconds = 1.6;
 const maxStaleStatusRegressionSeconds = 2.5;
+const minVisibleStaleRegressionSeconds = 0.02;
 const seekAnchorMaxAgeSeconds = 3;
+const seekAnchorSettleToleranceSeconds = 0.25;
 const playbackRateChangeDiscontinuitySeconds = 0.35;
 const endedAutoAdvanceGraceSeconds = 5;
 const trackSwitchVisualIntentPositionToleranceMs = 1500;
@@ -659,6 +662,24 @@ export const PlayerBar = ({
     [queue.tracks],
   );
 
+  const shouldAdoptPlaybackIdentity = useCallback(
+    (identity: string | null | undefined): boolean => {
+      const normalizedIdentity = identity?.trim();
+      if (!normalizedIdentity) {
+        return false;
+      }
+
+      const currentQueueTrackId = queue.currentTrackId;
+      if (!currentQueueTrackId) {
+        return true;
+      }
+
+      const currentQueueTrack = queue.tracks.find((track) => track.id === currentQueueTrackId);
+      return currentQueueTrack ? trackMatchesPlaybackIdentity(currentQueueTrack, normalizedIdentity) : true;
+    },
+    [queue.currentTrackId, queue.tracks],
+  );
+
   const applyAudioStatus = useCallback(
     (nextAudioStatus: AudioStatus): boolean => {
       if (shouldIgnoreAudioStatus(nextAudioStatus)) {
@@ -666,7 +687,7 @@ export const PlayerBar = ({
       }
 
       setAudioStatus(nextAudioStatus);
-      if (nextAudioStatus.currentTrackId) {
+      if (nextAudioStatus.currentTrackId && shouldAdoptPlaybackIdentity(nextAudioStatus.currentTrackId)) {
         setQueueCurrentTrackId(resolveQueueTrackIdForPlaybackIdentity(nextAudioStatus.currentTrackId));
       }
       setPlaybackStatus((current) =>
@@ -684,7 +705,7 @@ export const PlayerBar = ({
       setError(formatAudioHostError(nextAudioStatus.error));
       return true;
     },
-    [resolveQueueTrackIdForPlaybackIdentity, setQueueCurrentTrackId, shouldIgnoreAudioStatus],
+    [resolveQueueTrackIdForPlaybackIdentity, setQueueCurrentTrackId, shouldAdoptPlaybackIdentity, shouldIgnoreAudioStatus],
   );
 
   const applySharedPlaybackStatus = useCallback(
@@ -719,13 +740,13 @@ export const PlayerBar = ({
         (snapshotAudioStatus && appliedAudioStatus ? snapshotAudioStatus.currentTrackId : null) ??
         snapshot.playbackStatus?.currentTrackId ??
         null;
-      if (nextTrackId) {
+      if (nextTrackId && shouldAdoptPlaybackIdentity(nextTrackId)) {
         setQueueCurrentTrackId(resolveQueueTrackIdForPlaybackIdentity(nextTrackId));
       }
 
       setError(formatAudioHostError(snapshot.error));
     },
-    [applyAudioStatus, resolveQueueTrackIdForPlaybackIdentity, setQueueCurrentTrackId],
+    [applyAudioStatus, resolveQueueTrackIdForPlaybackIdentity, setQueueCurrentTrackId, shouldAdoptPlaybackIdentity],
   );
 
   const refreshStatus = useCallback(async (): Promise<void> => {
@@ -1410,8 +1431,10 @@ export const PlayerBar = ({
           seekAnchor.positionSeconds + (progressState === 'playing' ? elapsedSeconds * playbackRate : 0),
           durationLimit,
         );
+        const sourceReachedSeekTarget = boundedSourcePosition >= seekAnchor.positionSeconds;
         const isStaleStatusAfterSeek =
-          elapsedSeconds < seekAnchorMaxAgeSeconds && Math.abs(boundedSourcePosition - expectedSeekPosition) > 2;
+          elapsedSeconds < seekAnchorMaxAgeSeconds &&
+          (!sourceReachedSeekTarget || Math.abs(boundedSourcePosition - expectedSeekPosition) > seekAnchorSettleToleranceSeconds);
 
         if (isStaleStatusAfterSeek) {
           nextPositionSeconds = expectedSeekPosition;
@@ -1434,7 +1457,9 @@ export const PlayerBar = ({
         playbackRateChanged && Math.abs(boundedSourcePosition - estimatedPositionSeconds) > playbackRateChangeDiscontinuitySeconds;
       const staleRegressionSeconds = previous.positionSeconds - boundedSourcePosition;
       const canIgnoreStaleRegression =
-        canBridgeSourceLag && staleRegressionSeconds > 0.35 && staleRegressionSeconds <= maxStaleStatusRegressionSeconds;
+        canBridgeSourceLag &&
+        staleRegressionSeconds > minVisibleStaleRegressionSeconds &&
+        staleRegressionSeconds <= maxStaleStatusRegressionSeconds;
       const canIgnoreStaleForwardJump = canBridgeSourceLag && sourceJumpedForward && Math.abs(previous.playbackRate - 1) > 0.001;
 
       if (rateChangeSourceDiscontinuity) {
@@ -1461,10 +1486,11 @@ export const PlayerBar = ({
   }, [durationSeconds, filePath, playbackAudioStatus?.playbackRate, sourcePositionSeconds, state, trackId, visualState]);
 
   useEffect(() => {
-    if (lowLoadPlaybackModeEnabled || visualState !== 'playing' || seekPreviewSeconds !== null) {
+    if (visualState !== 'playing' || seekPreviewSeconds !== null) {
       return;
     }
 
+    const intervalMs = lowLoadPlaybackModeEnabled ? lowLoadProgressRenderIntervalMs : progressRenderIntervalMs;
     const timer = window.setInterval(() => {
       const clock = progressClockRef.current;
       if (clock.state !== 'playing') {
@@ -1474,7 +1500,7 @@ export const PlayerBar = ({
       const durationLimit = clock.durationSeconds > 0 ? clock.durationSeconds : Number.POSITIVE_INFINITY;
       const elapsedSeconds = Math.max(0, (performance.now() - clock.updatedAtMs) / 1000) * clock.playbackRate;
       setRealtimePositionSeconds(Math.min(clock.positionSeconds + elapsedSeconds, durationLimit));
-    }, progressRenderIntervalMs);
+    }, intervalMs);
 
     return () => window.clearInterval(timer);
   }, [lowLoadPlaybackModeEnabled, seekPreviewSeconds, visualState]);

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const AUDIO_COMMAND_TIMEOUT_MS = 15_000;
@@ -116,5 +119,144 @@ describe('audio IPC command timeout fallback', () => {
     expect(setOutput).toHaveBeenCalledWith(expect.objectContaining({ outputMode: 'shared' }));
     expect(reportAudioError).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith('[audioIpc] audio command timed out; returning current status');
+  });
+});
+
+describe('audio IPC EQ preset import', () => {
+  let tempDir: string | null = null;
+  let previousIncludeDir: string | undefined;
+
+  beforeEach(() => {
+    vi.resetModules();
+    previousIncludeDir = process.env.ECHO_APO_INCLUDE_DIR;
+  });
+
+  afterEach(() => {
+    if (previousIncludeDir === undefined) {
+      delete process.env.ECHO_APO_INCLUDE_DIR;
+    } else {
+      process.env.ECHO_APO_INCLUDE_DIR = previousIncludeDir;
+    }
+    if (tempDir) {
+      rmSync(tempDir, { force: true, recursive: true });
+      tempDir = null;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it('imports Equalizer APO configs and expands Windows environment variables in Include paths', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'echo-apo-import-'));
+    process.env.ECHO_APO_INCLUDE_DIR = tempDir;
+    const rootPath = join(tempDir, 'desk.txt');
+    const includePath = join(tempDir, 'child.txt');
+    writeFileSync(rootPath, [
+      'Preamp: -6 dB',
+      'Include: %ECHO_APO_INCLUDE_DIR%\\child.txt',
+    ].join('\n'), 'utf8');
+    writeFileSync(includePath, 'Filter 1: ON PK Fc 1000 Hz Gain -3 dB Q 1.4\n', 'utf8');
+
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const showOpenDialog = vi.fn().mockResolvedValue({ canceled: false, filePaths: [rootPath] });
+    const savePreset = vi.fn((request) => ({
+      ...request,
+      createdAt: 'now',
+      updatedAt: 'now',
+      readonly: false,
+    }));
+    const eqBridge = {
+      getState: vi.fn(),
+      setEnabled: vi.fn(),
+      setBandGain: vi.fn(),
+      setBandFrequency: vi.fn(),
+      setBandQ: vi.fn(),
+      setBandFilterType: vi.fn(),
+      setBandEnabled: vi.fn(),
+      setPreamp: vi.fn(),
+      setDspHeadroom: vi.fn(),
+      setPreset: vi.fn(),
+      reset: vi.fn(),
+      listPresets: vi.fn(() => []),
+      savePreset,
+      deletePreset: vi.fn(),
+      listProfiles: vi.fn(),
+      saveProfile: vi.fn(),
+      applyProfile: vi.fn(),
+      deleteProfile: vi.fn(),
+      bindProfileToOutput: vi.fn(),
+      getProfileBinding: vi.fn(),
+      getChannelBalanceState: vi.fn(),
+      setChannelBalanceState: vi.fn(),
+      resetChannelBalance: vi.fn(),
+      getRoomCorrectionState: vi.fn(),
+      importRoomCorrectionIr: vi.fn(),
+      setRoomCorrectionEnabled: vi.fn(),
+      setRoomCorrectionTrim: vi.fn(),
+      clearRoomCorrection: vi.fn(),
+    };
+    const audioSession = {
+      getStatus: vi.fn(),
+      getDiagnostics: vi.fn(),
+      listDevicesAsync: vi.fn(),
+      on: vi.fn(),
+      setOutput: vi.fn(),
+      forceRestart: vi.fn(),
+      openAsioControlPanel: vi.fn(),
+      stopForWindowsAudioServiceRestart: vi.fn(),
+    };
+
+    vi.doMock('electron', () => ({
+      BrowserWindow: { fromWebContents: vi.fn(), getAllWindows: vi.fn(() => []) },
+      dialog: { showOpenDialog, showSaveDialog: vi.fn() },
+      ipcMain: {
+        handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
+          handlers.set(channel, handler);
+        }),
+      },
+    }));
+    vi.doMock('../audio/AudioSession', () => ({
+      getAudioSession: () => audioSession,
+    }));
+    vi.doMock('../audio/EqBridge', () => ({
+      getEqBridge: () => eqBridge,
+    }));
+    vi.doMock('../audio/WindowsAudioServiceManager', () => ({
+      restartWindowsAudioService: vi.fn(),
+    }));
+    vi.doMock('../diagnostics/CrashReportService', () => ({
+      getCrashReportService: () => ({ reportAudioError: vi.fn() }),
+    }));
+
+    const { IpcChannels } = await import('../../shared/constants/ipcChannels');
+    const { registerAudioIpc } = await import('./audioIpc');
+    registerAudioIpc();
+
+    const result = await handlers.get(IpcChannels.EqImportPreset)?.({});
+
+    expect(showOpenDialog).toHaveBeenCalledWith(expect.objectContaining({
+      filters: expect.arrayContaining([
+        expect.objectContaining({ name: 'Equalizer APO' }),
+      ]),
+    }));
+    expect(savePreset).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'desk',
+      name: 'desk',
+      preampDb: -6,
+      bands: expect.arrayContaining([
+        expect.objectContaining({
+          frequencyHz: 1000,
+          gainDb: -3,
+          q: 1.4,
+          filterType: 'peaking',
+        }),
+      ]),
+    }));
+    expect(result).toMatchObject({
+      preset: { id: 'desk', name: 'desk', preampDb: -6 },
+      metadata: {
+        source: 'equalizer-apo',
+        importedFilterCount: 1,
+        includedFileCount: 1,
+      },
+    });
   });
 });

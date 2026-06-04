@@ -147,6 +147,12 @@ class CrashGuard extends React.Component<CrashGuardProps, CrashGuardState> {
     });
   };
 
+  private quitApp = (): void => {
+    void window.echo?.app.quit().catch((error) => {
+      this.setActionMessage(error instanceof Error ? error.message : String(error));
+    });
+  };
+
   private reloadRenderer = (): void => {
     window.location.reload();
   };
@@ -157,55 +163,49 @@ class CrashGuard extends React.Component<CrashGuardProps, CrashGuardState> {
     }
 
     const diagnosticsAvailable = Boolean(window.echo?.diagnostics);
+    const appControlsAvailable = Boolean(window.echo?.app);
 
     return (
-      <main
-        style={{
-          minHeight: '100vh',
-          display: 'grid',
-          placeItems: 'center',
-          padding: 24,
-          background: 'radial-gradient(circle at 20% 18%, rgba(14, 165, 233, 0.2), transparent 34rem), linear-gradient(135deg, #020617, #172554)',
-          color: '#e5eefb',
-          fontFamily: '"Microsoft YaHei", "Segoe UI", sans-serif',
-        }}
-      >
-        <section
-          style={{
-            width: 'min(820px, 100%)',
-            border: '1px solid rgba(226, 232, 240, 0.2)',
-            borderRadius: 28,
-            padding: 34,
-            background: 'rgba(15, 23, 42, 0.82)',
-            boxShadow: '0 26px 80px rgba(0, 0, 0, 0.34)',
-          }}
-        >
-          <p style={{ margin: '0 0 12px', color: '#93c5fd', fontWeight: 800, letterSpacing: '0.18em' }}>ECHO Crash Guard</p>
-          <h1 style={{ margin: 0, fontSize: 'clamp(32px, 5vw, 52px)', lineHeight: 1, letterSpacing: '-0.05em' }}>
-            界面出错了，但没有直接白屏。
-          </h1>
-          <p style={{ margin: '18px 0 0', maxWidth: 680, color: '#bfdbfe', lineHeight: 1.75 }}>
-            当前窗口已进入崩溃保护页。你可以导出诊断包、打开崩溃报告，或者重启 ECHO。这个保护层只在 UI 崩溃后接管，不会常驻占用播放链路。
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 28 }}>
-            <button type="button" onClick={this.exportDiagnostics} disabled={!diagnosticsAvailable} style={crashGuardPrimaryButtonStyle}>
-              导出崩溃日志
-            </button>
-            <button type="button" onClick={this.openCrashReport} disabled={!diagnosticsAvailable} style={crashGuardButtonStyle}>
-              打开崩溃报告
-            </button>
-            <button type="button" onClick={this.reloadRenderer} style={crashGuardButtonStyle}>
-              重新载入界面
-            </button>
-            <button type="button" onClick={this.restartApp} disabled={!diagnosticsAvailable} style={crashGuardButtonStyle}>
-              重启 ECHO
-            </button>
+      <main style={crashGuardShellStyle}>
+        <section style={crashGuardPanelStyle}>
+          <div style={crashGuardTopStyle}>
+            <p style={crashGuardEyebrowStyle}>ECHO Recovery</p>
+            <span style={crashGuardChipStyle}>UI 保护页</span>
           </div>
-          <p style={{ minHeight: 24, margin: '18px 0 0', color: '#fde68a', wordBreak: 'break-word' }}>
+          <div style={crashGuardBodyStyle}>
+            <aside style={crashGuardRailStyle} aria-hidden="true">
+              <span style={crashGuardRailCodeStyle}>UI</span>
+              <span style={crashGuardRailTextStyle}>已接管</span>
+            </aside>
+            <div style={crashGuardContentStyle}>
+              <h1 style={crashGuardTitleStyle}>界面崩了，但 ECHO 还在。</h1>
+              <p style={crashGuardLeadStyle}>
+                当前窗口进入恢复模式。可以先导出诊断和查看报告，也可以重载界面、重启应用，或者直接关闭 ECHO。
+              </p>
+              <div style={crashGuardActionsStyle}>
+                <button type="button" onClick={this.exportDiagnostics} disabled={!diagnosticsAvailable} style={crashGuardPrimaryButtonStyle}>
+                  导出日志
+                </button>
+                <button type="button" onClick={this.openCrashReport} disabled={!diagnosticsAvailable} style={crashGuardButtonStyle}>
+                  打开报告
+                </button>
+                <button type="button" onClick={this.reloadRenderer} style={crashGuardButtonStyle}>
+                  重载界面
+                </button>
+                <button type="button" onClick={this.restartApp} disabled={!diagnosticsAvailable} style={crashGuardButtonStyle}>
+                  重启 ECHO
+                </button>
+                <button type="button" onClick={this.quitApp} disabled={!appControlsAvailable} style={crashGuardDangerButtonStyle}>
+                  关闭 ECHO
+                </button>
+              </div>
+            </div>
+          </div>
+          <p style={crashGuardStatusStyle}>
             {this.state.actionMessage || (diagnosticsAvailable ? '' : '诊断桥不可用，请手动重启 ECHO。')}
           </p>
-          <details style={{ marginTop: 20, color: '#cbd5e1' }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 800 }}>错误摘要</summary>
+          <details style={crashGuardDetailsStyle}>
+            <summary style={crashGuardSummaryStyle}>错误摘要</summary>
             <pre style={crashGuardPreStyle}>{this.state.error.message}</pre>
             <pre style={crashGuardPreStyle}>{this.state.error.stack ?? 'No stack available.'}</pre>
           </details>
@@ -215,22 +215,158 @@ class CrashGuard extends React.Component<CrashGuardProps, CrashGuardState> {
   }
 }
 
+const crashGuardShellStyle: React.CSSProperties = {
+  minHeight: '100vh',
+  display: 'grid',
+  placeItems: 'center',
+  padding: 24,
+  backgroundColor: '#eef2ef',
+  backgroundImage:
+    'linear-gradient(rgba(16, 24, 40, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(16, 24, 40, 0.045) 1px, transparent 1px)',
+  backgroundSize: '36px 36px',
+  color: '#18212f',
+  fontFamily: '"Microsoft YaHei", "Segoe UI", sans-serif',
+};
+
+const crashGuardPanelStyle: React.CSSProperties = {
+  width: 'min(940px, 100%)',
+  border: '1px solid rgba(24, 33, 47, 0.12)',
+  borderRadius: 8,
+  padding: 28,
+  background: '#fbfcf8',
+  boxShadow: '0 24px 70px rgba(24, 33, 47, 0.18)',
+};
+
+const crashGuardTopStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  paddingBottom: 18,
+  borderBottom: '1px solid rgba(24, 33, 47, 0.1)',
+};
+
+const crashGuardEyebrowStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#176c66',
+  fontSize: 13,
+  fontWeight: 900,
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+};
+
+const crashGuardChipStyle: React.CSSProperties = {
+  border: '1px solid rgba(23, 108, 102, 0.18)',
+  borderRadius: 999,
+  padding: '6px 10px',
+  color: '#176c66',
+  background: '#e7f2ed',
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const crashGuardBodyStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(72px, 112px) minmax(0, 1fr)',
+  gap: 28,
+  marginTop: 26,
+};
+
+const crashGuardRailStyle: React.CSSProperties = {
+  minHeight: 178,
+  display: 'grid',
+  placeItems: 'center',
+  alignContent: 'center',
+  gap: 10,
+  borderRadius: 8,
+  background: '#1d2633',
+  color: '#fff7e3',
+  boxShadow: 'inset 0 -6px 0 #e2aa3b',
+};
+
+const crashGuardRailCodeStyle: React.CSSProperties = {
+  fontSize: 34,
+  fontWeight: 900,
+  lineHeight: 1,
+};
+
+const crashGuardRailTextStyle: React.CSSProperties = {
+  color: '#f0cf8b',
+  fontSize: 13,
+  fontWeight: 800,
+};
+
+const crashGuardContentStyle: React.CSSProperties = {
+  minWidth: 0,
+};
+
+const crashGuardTitleStyle: React.CSSProperties = {
+  margin: 0,
+  color: '#111827',
+  fontSize: 42,
+  lineHeight: 1.16,
+  fontWeight: 900,
+};
+
+const crashGuardLeadStyle: React.CSSProperties = {
+  maxWidth: 660,
+  margin: '16px 0 0',
+  color: '#4b5563',
+  fontSize: 15,
+  lineHeight: 1.8,
+};
+
+const crashGuardActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 10,
+  marginTop: 24,
+};
+
 const crashGuardButtonStyle: React.CSSProperties = {
   minHeight: 44,
-  border: 0,
-  borderRadius: 999,
+  border: '1px solid rgba(24, 33, 47, 0.14)',
+  borderRadius: 8,
   padding: '0 18px',
-  color: '#07111f',
-  background: '#f8fafc',
+  color: '#1f2937',
+  background: '#ffffff',
   font: 'inherit',
   fontWeight: 800,
   cursor: 'pointer',
+  boxShadow: '0 1px 2px rgba(24, 33, 47, 0.08)',
 };
 
 const crashGuardPrimaryButtonStyle: React.CSSProperties = {
   ...crashGuardButtonStyle,
-  color: '#082f49',
-  background: 'linear-gradient(135deg, #7dd3fc, #facc15)',
+  borderColor: '#176c66',
+  color: '#ffffff',
+  background: '#176c66',
+};
+
+const crashGuardDangerButtonStyle: React.CSSProperties = {
+  ...crashGuardButtonStyle,
+  borderColor: '#b42318',
+  color: '#ffffff',
+  background: '#b42318',
+};
+
+const crashGuardStatusStyle: React.CSSProperties = {
+  minHeight: 22,
+  margin: '18px 0 0',
+  color: '#9a3412',
+  fontSize: 14,
+  fontWeight: 700,
+  wordBreak: 'break-word',
+};
+
+const crashGuardDetailsStyle: React.CSSProperties = {
+  marginTop: 18,
+  color: '#374151',
+};
+
+const crashGuardSummaryStyle: React.CSSProperties = {
+  cursor: 'pointer',
+  fontWeight: 900,
 };
 
 const crashGuardPreStyle: React.CSSProperties = {
@@ -238,9 +374,10 @@ const crashGuardPreStyle: React.CSSProperties = {
   overflow: 'auto',
   margin: '14px 0 0',
   padding: 14,
-  borderRadius: 16,
-  background: 'rgba(2, 6, 23, 0.62)',
-  color: '#dbeafe',
+  border: '1px solid rgba(24, 33, 47, 0.1)',
+  borderRadius: 8,
+  background: '#111827',
+  color: '#e5e7eb',
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
 };

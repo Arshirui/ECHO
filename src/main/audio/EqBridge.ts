@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
-import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { basename, dirname, extname, join } from 'node:path';
 import electron from 'electron';
 import type { ChannelBalanceMonoMode, ChannelBalanceState } from '../../shared/types/audio';
 import {
@@ -27,8 +28,13 @@ import type {
   EqSetBandGainRequest,
   EqSetBandQRequest,
   EqState,
+  RoomCorrectionChannelMode,
+  RoomCorrectionState,
+  RoomCorrectionStatus,
 } from '../../shared/types/eq';
 import {
+  dspHeadroomMaxDb,
+  dspHeadroomMinDb,
   eqBandCount,
   eqFilterTypes,
   eqFrequenciesHz,
@@ -40,12 +46,19 @@ import {
   eqMinGainDb,
   eqMinPreampDb,
   eqMinQ,
+  roomCorrectionMaxTrimDb,
+  roomCorrectionMinTrimDb,
 } from '../../shared/types/eq';
 import { defaultChannelBalanceSettings, getAppSettings, setAppSettings } from '../app/appSettings';
 
 type PendingRequest = {
-  resolve: (state: EqState | ChannelBalanceState) => void;
+  expectedState: 'eq' | 'channelBalance' | 'roomCorrection';
+  resolve: (state: EqState | ChannelBalanceState | RoomCorrectionState) => void;
   reject: (error: Error) => void;
+};
+
+type PersistedRoomCorrectionState = RoomCorrectionState & {
+  irPath?: string | null;
 };
 
 const controlPortBase = 45210;
@@ -56,8 +69,58 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 const nowIso = (): string => new Date().toISOString();
 
 const filterTypes = new Set<EqFilterType>(eqFilterTypes);
+const legacyEqBandCount = 10;
 
 const normalizeFilterType = (value: unknown): EqFilterType => (filterTypes.has(value as EqFilterType) ? value as EqFilterType : 'peaking');
+
+const roomCorrectionStatuses = new Set<RoomCorrectionStatus>(['empty', 'loaded', 'active', 'error']);
+const roomCorrectionChannelModes = new Set<RoomCorrectionChannelMode>(['none', 'mono', 'stereo']);
+
+const defaultRoomCorrectionState = (): RoomCorrectionState => ({
+  enabled: false,
+  status: 'empty',
+  irId: null,
+  irName: null,
+  channelMode: 'none',
+  sampleRate: null,
+  tapCount: 0,
+  trimDb: 0,
+  latencySamples: 0,
+  clippingRisk: false,
+  error: null,
+});
+
+const normalizeRoomCorrectionState = (value: unknown, fallback: RoomCorrectionState = defaultRoomCorrectionState()): RoomCorrectionState => {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const rawStatus = typeof input.status === 'string' && roomCorrectionStatuses.has(input.status as RoomCorrectionStatus)
+    ? input.status as RoomCorrectionStatus
+    : fallback.status;
+  const rawChannelMode =
+    typeof input.channelMode === 'string' && roomCorrectionChannelModes.has(input.channelMode as RoomCorrectionChannelMode)
+      ? input.channelMode as RoomCorrectionChannelMode
+      : fallback.channelMode;
+  const tapCount = Number(input.tapCount ?? fallback.tapCount);
+  const sampleRate = Number(input.sampleRate ?? fallback.sampleRate);
+  const latencySamples = Number(input.latencySamples ?? fallback.latencySamples);
+  const trimDb = Number(input.trimDb ?? fallback.trimDb);
+  const irId = typeof input.irId === 'string' && input.irId.trim() ? input.irId.trim() : fallback.irId;
+  const irName = typeof input.irName === 'string' && input.irName.trim() ? input.irName.trim().slice(0, 160) : fallback.irName;
+  const error = typeof input.error === 'string' && input.error.trim() ? input.error.trim().slice(0, 240) : null;
+
+  return {
+    enabled: input.enabled === true,
+    status: error ? 'error' : rawStatus,
+    irId,
+    irName,
+    channelMode: rawChannelMode,
+    sampleRate: Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : null,
+    tapCount: Number.isFinite(tapCount) ? Math.max(0, Math.round(tapCount)) : 0,
+    trimDb: Number.isFinite(trimDb) ? clamp(trimDb, roomCorrectionMinTrimDb, roomCorrectionMaxTrimDb) : fallback.trimDb,
+    latencySamples: Number.isFinite(latencySamples) ? Math.max(0, Math.round(latencySamples)) : 0,
+    clippingRisk: input.clippingRisk === true,
+    error,
+  };
+};
 
 const createBands = (gains: number[] = []): EqBand[] =>
   eqFrequenciesHz.map((frequencyHz, index) => ({
@@ -68,39 +131,122 @@ const createBands = (gains: number[] = []): EqBand[] =>
     enabled: true,
   }));
 
+const createParametricBands = (overrides: Record<number, Partial<EqBand>>): EqBand[] =>
+  createBands().map((band, index) => ({
+    ...band,
+    ...(overrides[index] ?? {}),
+    frequencyHz: clamp(Number(overrides[index]?.frequencyHz ?? band.frequencyHz), eqMinFrequencyHz, eqMaxFrequencyHz),
+    gainDb: clamp(Number(overrides[index]?.gainDb ?? band.gainDb), eqMinGainDb, eqMaxGainDb),
+    q: clamp(Number(overrides[index]?.q ?? band.q), eqMinQ, eqMaxQ),
+    filterType: normalizeFilterType(overrides[index]?.filterType ?? band.filterType),
+    enabled: overrides[index]?.enabled ?? band.enabled,
+  }));
+
 type BuiltInPresetDefinition = {
   id: string;
   name: string;
   preampDb: number;
-  gains: number[];
+  gains?: number[];
+  bands?: EqBand[];
 };
 
 const builtInPresetDefinitions: BuiltInPresetDefinition[] = [
-  { id: 'flat', name: 'Flat', preampDb: 0, gains: [] },
-  { id: 'bass-boost', name: 'Bass Boost', preampDb: -8, gains: [7.5, 6.8, 5, 2.3, 0.5, -0.4, -1, -1.6, -2.2, -2.8] },
-  { id: 'vocal-clear', name: 'Vocal Clear', preampDb: -6, gains: [-6, -5, -3, 0.5, 2.8, 4.5, 3.8, 2, -0.8, -2.8] },
-  { id: 'treble-sparkle', name: 'Treble Sparkle', preampDb: -7, gains: [-3, -2.5, -1.8, -0.8, 0, 0.8, 2.8, 4.8, 6.2, 5.5] },
-  { id: 'loudness', name: 'Loudness', preampDb: -8, gains: [7.5, 6.8, 4.4, 1.2, -1.6, -1.8, 0.6, 2.8, 4.6, 5.2] },
-  { id: 'night', name: 'Night', preampDb: -2, gains: [-6.5, -5.8, -3.6, -1.2, 0, 1.2, 0.6, -1.8, -4.5, -6.5] },
-  { id: 'headphone-warm', name: 'Headphone Warm', preampDb: -6, gains: [5, 5.3, 4, 2, 0.5, -0.4, -1.1, -1.8, -2.6, -3.5] },
-  { id: 'anime-jpop', name: 'Anime / J-Pop', preampDb: -6, gains: [3, 2.3, 0.5, -1.8, -2.2, 1.2, 3.8, 5.5, 4.6, 2.2] },
-  { id: 'rock', name: 'Rock', preampDb: -6, gains: [5.5, 4.6, 1.8, -2, -3, -0.6, 2.2, 4.5, 3.8, 2] },
-  { id: 'classical', name: 'Classical', preampDb: -4, gains: [1.8, 1.4, 0.3, -0.4, -1, -0.5, 1, 2.8, 3.5, 2.2] },
-  { id: 'harman-target', name: 'Harman Target', preampDb: -6, gains: [6, 5.8, 4.5, 2, 0.5, 0, 2.5, 3.5, 2, 0.5] },
-  { id: 'harman-in-ear', name: 'Harman In-Ear', preampDb: -8, gains: [8, 7, 5.5, 2.5, 0, -0.5, 2.5, 4, 3, 1.5] },
-  { id: 'diffuse-field', name: 'Diffuse Field', preampDb: -7, gains: [-5.5, -4.8, -2.8, -0.8, 0.6, 2, 5.5, 6.2, 3.8, 0.8] },
-  { id: 'bk-room-curve', name: 'B&K Room Curve', preampDb: -6, gains: [5.5, 4.8, 3.4, 1.7, 0.5, -0.8, -2, -3.2, -4.4, -5.4] },
-  { id: 'studio-neutral', name: 'Studio Neutral', preampDb: -2, gains: [-1.5, -1.8, -1, -0.2, 0.2, 1.1, 2, 1.6, 0.2, -1.2] },
-  { id: 'classic-smiley', name: 'Classic Smiley', preampDb: -8, gains: [7, 6, 3, -2.8, -4.5, -3.2, 1, 4, 6.2, 7] },
-  { id: 'vinyl-warmth', name: 'Vinyl Warmth', preampDb: -6, gains: [5, 4.4, 2.8, 1, 0, -0.7, -1.6, -2.8, -4, -5.2] },
-  { id: 'broadcast-voice', name: 'Broadcast Voice', preampDb: -6, gains: [-8, -6.5, -3.4, 1.5, 4, 5.5, 4.4, 1.5, -2.5, -5.5] },
+  { id: 'flat', name: '原音如初', preampDb: 0, gains: [] },
+  { id: 'bass-boost', name: '深海低频', preampDb: -8, gains: [4.8, 5.5, 6.4, 7.2, 7.5, 7.2, 6.6, 5.5, 4.1, 2.8, 1.5, 0.6, 0, -0.3, -0.6, -0.8, -1, -1.1, -1.2, -1.4, -1.5, -1.6, -1.8, -2, -2.2, -2.4, -2.6, -2.8, -3, -3.2, -3.4] },
+  { id: 'vocal-clear', name: '人声如绸', preampDb: -6, gains: [-6.5, -6.2, -5.8, -5.2, -4.7, -4.2, -3.5, -2.8, -2, -1.2, -0.4, 0.5, 1.4, 2.3, 3.2, 4.1, 4.8, 5.2, 5, 4.5, 3.8, 3, 2.1, 1.2, 0.2, -0.8, -1.6, -2.2, -2.8, -3.2, -3.6] },
+  { id: 'treble-sparkle', name: '银砂高频', preampDb: -7, gains: [-3.2, -3, -2.8, -2.5, -2.2, -1.8, -1.4, -1, -0.7, -0.4, -0.2, 0, 0.3, 0.5, 0.8, 1.1, 1.5, 2, 2.6, 3.2, 3.8, 4.4, 5, 5.6, 6.1, 6.4, 6.2, 5.8, 5.2, 4.6, 3.8] },
+  { id: 'loudness', name: '暮色响度', preampDb: -8, gains: [5, 5.8, 6.6, 7.2, 7.5, 7.2, 6.5, 5.4, 4, 2.2, 0.6, -0.8, -1.6, -2, -2.2, -2, -1.5, -0.8, 0, 0.7, 1.4, 2.2, 3, 3.8, 4.5, 5, 5.3, 5.2, 4.8, 4.2, 3.5] },
+  { id: 'night', name: '月下轻听', preampDb: -2, gains: [-6.5, -6.3, -6, -5.5, -5, -4.4, -3.7, -3, -2.3, -1.6, -1, -0.5, 0, 0.6, 1, 1.3, 1.4, 1.2, 0.9, 0.3, -0.4, -1.2, -2.2, -3.2, -4.2, -5, -5.8, -6.4, -6.8, -7, -7.2] },
+  { id: 'headphone-warm', name: '绒暖耳机', preampDb: -6, gains: [3.8, 4.4, 5, 5.3, 5.1, 4.7, 4.1, 3.4, 2.7, 2, 1.3, 0.8, 0.4, 0.1, -0.2, -0.5, -0.8, -1, -1.2, -1.4, -1.7, -2, -2.3, -2.6, -2.9, -3.1, -3.3, -3.5, -3.7, -3.8, -4] },
+  { id: 'anime-jpop', name: '樱色电波', preampDb: -6, gains: [2.5, 3, 3.3, 3.2, 2.8, 2.2, 1.4, 0.5, -0.4, -1.2, -1.8, -2.2, -2.4, -2.2, -1.4, -0.4, 0.8, 1.8, 2.8, 3.7, 4.5, 5.2, 5.7, 5.5, 5, 4.3, 3.5, 2.7, 2, 1.3, 0.8] },
+  { id: 'rock', name: '黑曜摇滚', preampDb: -6, gains: [4.2, 4.8, 5.3, 5.5, 5.2, 4.6, 3.8, 2.6, 1.2, -0.5, -1.8, -2.7, -3.2, -3, -2.3, -1.4, -0.4, 0.8, 1.8, 2.8, 3.6, 4.4, 4.9, 4.7, 4.2, 3.6, 3, 2.4, 2, 1.6, 1.2] },
+  { id: 'classical', name: '星厅古典', preampDb: -4, gains: [1.2, 1.4, 1.6, 1.8, 1.7, 1.5, 1.2, 0.9, 0.5, 0.1, -0.3, -0.6, -0.9, -1, -0.9, -0.7, -0.4, 0, 0.5, 1, 1.5, 2.1, 2.6, 3, 3.3, 3.5, 3.4, 3, 2.4, 1.8, 1.2] },
+  { id: 'harman-target', name: '暖场哈曼', preampDb: -6, gains: [5.5, 5.9, 6.2, 6.1, 5.7, 5.2, 4.6, 3.8, 3, 2.2, 1.4, 0.8, 0.4, 0.1, 0, -0.1, 0.2, 0.6, 1.1, 1.8, 2.5, 3.1, 3.6, 3.8, 3.5, 3, 2.4, 1.8, 1.2, 0.7, 0.3] },
+  { id: 'harman-in-ear', name: '入耳晨光', preampDb: -8, gains: [7.2, 7.7, 8, 7.8, 7.2, 6.5, 5.8, 4.8, 3.8, 2.6, 1.4, 0.6, 0.1, -0.2, -0.5, -0.4, 0, 0.7, 1.5, 2.4, 3.2, 4, 4.5, 4.2, 3.7, 3.3, 3, 2.5, 2, 1.4, 0.8] },
+  { id: 'diffuse-field', name: '漫野扩散', preampDb: -7, gains: [-5.8, -5.5, -5.2, -4.8, -4.2, -3.6, -3, -2.4, -1.8, -1.2, -0.6, 0, 0.6, 1.2, 1.8, 2.4, 3.2, 4, 4.8, 5.5, 6.1, 6.3, 6, 5.2, 4.3, 3.4, 2.5, 1.6, 0.8, 0.2, -0.4] },
+  { id: 'bk-room-curve', name: '木厅曲线', preampDb: -6, gains: [5.8, 5.6, 5.4, 5.1, 4.8, 4.5, 4.1, 3.7, 3.2, 2.7, 2.2, 1.6, 1, 0.4, 0, -0.5, -1, -1.5, -2, -2.5, -3, -3.5, -4, -4.5, -5, -5.4, -5.8, -6, -6.2, -6.4, -6.6] },
+  { id: 'studio-neutral', name: '录音室白描', preampDb: -2, gains: [-1.5, -1.6, -1.6, -1.5, -1.4, -1.2, -1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 1.9, 2, 1.8, 1.5, 1.1, 0.7, 0.3, -0.2, -0.7, -1.2] },
+  { id: 'classic-smiley', name: '晨弧微笑', preampDb: -8, gains: [6.2, 6.7, 7, 7.2, 7, 6.5, 5.8, 4.7, 3.2, 1.4, -0.8, -2.5, -3.8, -4.5, -4.6, -4.2, -3.4, -2.2, -0.8, 0.6, 1.8, 3, 4.2, 5.2, 6, 6.5, 6.8, 7, 7, 6.7, 6.2] },
+  { id: 'vinyl-warmth', name: '黑胶余温', preampDb: -6, gains: [4.2, 4.7, 5, 5, 4.7, 4.2, 3.5, 2.8, 2, 1.2, 0.5, 0.1, -0.2, -0.4, -0.6, -0.8, -1, -1.2, -1.5, -1.8, -2.2, -2.6, -3, -3.4, -3.8, -4.2, -4.6, -5, -5.4, -5.8, -6] },
+  { id: 'broadcast-voice', name: '电台近语', preampDb: -6, gains: [-8, -7.6, -7.1, -6.5, -5.8, -5, -4.2, -3.2, -2, -0.5, 1, 2.5, 3.8, 4.8, 5.4, 5.8, 5.6, 5.2, 4.5, 3.6, 2.4, 1.2, 0, -1.4, -2.8, -4, -5.2, -6.2, -7, -7.6, -8] },
+  { id: 'city-pop', name: '霓虹夜航', preampDb: -6, gains: [3, 3.4, 3.6, 3.4, 3, 2.4, 1.5, 0.5, -0.5, -1.2, -1.8, -2, -1.8, -1.3, -0.6, 0.2, 1, 1.8, 2.6, 3.5, 4.3, 4.9, 5.2, 5, 4.5, 3.8, 3.2, 2.7, 2.2, 1.6, 1] },
+  { id: 'acoustic-silk', name: '弦木柔光', preampDb: -4, gains: [1.8, 2, 2.2, 2.1, 1.9, 1.6, 1.2, 0.8, 0.3, 0, -0.2, 0, 0.4, 0.9, 1.4, 1.8, 2.1, 2.3, 2.1, 1.8, 1.5, 1.1, 0.8, 0.4, 0, -0.6, -1.2, -1.8, -2.3, -2.8, -3] },
+  { id: 'piano-room', name: '琴房微光', preampDb: -5, gains: [0.8, 1, 1.2, 1.4, 1.5, 1.4, 1.2, 0.8, 0.3, -0.2, -0.6, -0.8, -0.6, -0.2, 0.4, 1, 1.6, 2.2, 2.8, 3.3, 3.8, 4.1, 4, 3.5, 2.8, 2.1, 1.3, 0.4, -0.4, -1.1, -1.8] },
+  { id: 'lofi-dusk', name: '雨窗低保真', preampDb: -4, gains: [3, 3.2, 3.3, 3.1, 2.8, 2.4, 1.8, 1.2, 0.6, 0.1, -0.4, -0.8, -1, -1.2, -1.2, -1, -0.8, -0.6, -0.5, -0.6, -0.8, -1.2, -1.8, -2.6, -3.5, -4.4, -5.2, -5.8, -6.3, -6.8, -7] },
+  { id: 'cinema-orchestra', name: '银幕纵深', preampDb: -7, gains: [5, 5.5, 5.9, 6.2, 6, 5.6, 5, 4.2, 3.2, 2.1, 1, 0.2, -0.3, -0.5, -0.4, 0, 0.6, 1.4, 2.3, 3.2, 4, 4.7, 5.2, 5.5, 5.4, 5, 4.5, 3.8, 3, 2.1, 1.2] },
+  { id: 'live-house', name: '小馆现场', preampDb: -6, gains: [4, 4.5, 4.8, 4.6, 4, 3.2, 2.2, 1.1, -0.2, -1.4, -2.4, -3, -3.2, -2.8, -2, -1, 0.2, 1.4, 2.6, 3.8, 4.8, 5.4, 5.6, 5.2, 4.6, 3.8, 3, 2.3, 1.8, 1.2, 0.7] },
+  { id: 'female-vocal-air', name: '清露女声', preampDb: -6, gains: [-5, -4.8, -4.5, -4.1, -3.6, -3, -2.3, -1.6, -0.8, 0, 0.8, 1.8, 2.8, 3.8, 4.8, 5.5, 5.8, 5.6, 5, 4.3, 3.6, 3.1, 3, 3.2, 3.6, 4, 4.2, 3.8, 3, 2, 1] },
+  {
+    id: 'sub-cleanup',
+    name: '潜波净化',
+    preampDb: -2,
+    bands: createParametricBands({
+      0: { frequencyHz: 28, gainDb: 0, q: 0.7, filterType: 'highPass' },
+      1: { frequencyHz: 70, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' },
+      3: { frequencyHz: 240, gainDb: -2.5, q: 1.1, filterType: 'peaking' },
+    }),
+  },
+  {
+    id: 'vocal-de-ess',
+    name: '雪绒去齿',
+    preampDb: -3,
+    bands: createParametricBands({
+      2: { frequencyHz: 180, gainDb: -1.5, q: 1.0, filterType: 'peaking' },
+      6: { frequencyHz: 3200, gainDb: 1.5, q: 0.9, filterType: 'peaking' },
+      8: { frequencyHz: 7200, gainDb: -4.5, q: 4.2, filterType: 'peaking' },
+      9: { frequencyHz: 18000, gainDb: 0, q: 0.7, filterType: 'lowPass' },
+    }),
+  },
+  {
+    id: 'headphone-notch',
+    name: '耳峰细修',
+    preampDb: -3,
+    bands: createParametricBands({
+      0: { frequencyHz: 35, gainDb: 1.5, q: 0.8, filterType: 'lowShelf' },
+      5: { frequencyHz: 2800, gainDb: -2, q: 1.4, filterType: 'peaking' },
+      7: { frequencyHz: 6200, gainDb: 0, q: 7.5, filterType: 'notch' },
+      8: { frequencyHz: 9000, gainDb: -2.5, q: 2.2, filterType: 'peaking' },
+    }),
+  },
+  {
+    id: 'subsonic-filter',
+    name: '暗涌滤波',
+    preampDb: -2,
+    bands: createParametricBands({
+      0: { frequencyHz: 24, gainDb: 0, q: 0.7, filterType: 'highPass' },
+      1: { frequencyHz: 80, gainDb: 0.8, q: 0.7, filterType: 'lowShelf' },
+    }),
+  },
+  {
+    id: 'sibilance-tamer',
+    name: '齿音柔化',
+    preampDb: -4,
+    bands: createParametricBands({
+      2: { frequencyHz: 180, gainDb: -1.2, q: 1.0, filterType: 'peaking' },
+      7: { frequencyHz: 5600, gainDb: -2.8, q: 3.5, filterType: 'peaking' },
+      8: { frequencyHz: 8200, gainDb: 0, q: 6.0, filterType: 'notch' },
+      9: { frequencyHz: 12500, gainDb: -1.0, q: 0.8, filterType: 'highShelf' },
+    }),
+  },
+  {
+    id: 'bluetooth-speaker-cleanup',
+    name: '蓝牙清场',
+    preampDb: -3,
+    bands: createParametricBands({
+      0: { frequencyHz: 55, gainDb: 0, q: 0.7, filterType: 'highPass' },
+      1: { frequencyHz: 120, gainDb: -2.0, q: 0.8, filterType: 'lowShelf' },
+      3: { frequencyHz: 420, gainDb: -2.0, q: 1.2, filterType: 'peaking' },
+      7: { frequencyHz: 8500, gainDb: 2.0, q: 0.8, filterType: 'highShelf' },
+      9: { frequencyHz: 18000, gainDb: 0, q: 0.7, filterType: 'lowPass' },
+    }),
+  },
 ];
 
 const builtInPresets: EqPreset[] = builtInPresetDefinitions.map((preset) => ({
   id: preset.id,
   name: preset.name,
   preampDb: preset.preampDb,
-  bands: createBands(preset.gains),
+  bands: preset.bands?.map((band) => ({ ...band })) ?? createBands(preset.gains),
   createdAt: 'built-in',
   updatedAt: 'built-in',
   readonly: true,
@@ -109,9 +255,10 @@ const builtInPresets: EqPreset[] = builtInPresetDefinitions.map((preset) => ({
 const defaultState = (): EqState => ({
   enabled: false,
   preampDb: 0,
+  dspHeadroomDb: 0,
   bands: createBands(),
   presetId: 'flat',
-  presetName: 'Flat',
+  presetName: '原音如初',
   clippingRisk: false,
 });
 
@@ -122,18 +269,20 @@ const normalizeState = (value: unknown): EqState | null => {
 
   const input = value as Partial<EqState>;
   const preampDb = Number(input.preampDb ?? 0);
+  const dspHeadroomDb = Number(input.dspHeadroomDb ?? 0);
   const bands = validateBands(input.bands);
 
-  if (!Number.isFinite(preampDb) || !bands) {
+  if (!Number.isFinite(preampDb) || !Number.isFinite(dspHeadroomDb) || !bands) {
     return null;
   }
 
   return {
     enabled: input.enabled === true,
     preampDb: clamp(preampDb, eqMinPreampDb, eqMaxPreampDb),
+    dspHeadroomDb: clamp(dspHeadroomDb, dspHeadroomMinDb, dspHeadroomMaxDb),
     bands,
     presetId: typeof input.presetId === 'string' && input.presetId.trim() ? input.presetId.trim().slice(0, 64) : 'flat',
-    presetName: typeof input.presetName === 'string' && input.presetName.trim() ? input.presetName.trim().slice(0, 64) : 'Flat',
+    presetName: typeof input.presetName === 'string' && input.presetName.trim() ? input.presetName.trim().slice(0, 64) : '原音如初',
     clippingRisk: false,
   };
 };
@@ -168,6 +317,19 @@ const normalizeChannelBalancePatch = (
   };
 };
 
+const isDefaultChannelBalanceState = (state: ChannelBalanceState): boolean => {
+  const fallback = defaultChannelBalanceState();
+  return state.enabled === fallback.enabled &&
+    state.balance === fallback.balance &&
+    state.leftGainDb === fallback.leftGainDb &&
+    state.rightGainDb === fallback.rightGainDb &&
+    state.swapLeftRight === fallback.swapLeftRight &&
+    state.monoMode === fallback.monoMode &&
+    state.invertLeft === fallback.invertLeft &&
+    state.invertRight === fallback.invertRight &&
+    state.constantPower === fallback.constantPower;
+};
+
 const getUserDataPath = (): string => {
   const app = (electron as unknown as { app?: { getPath: (name: string) => string } }).app;
 
@@ -187,7 +349,7 @@ const sanitizePresetId = (name: string): string =>
     .slice(0, 48) || `preset-${Date.now()}`;
 
 const validateBands = (bands: unknown, fallbackBands?: EqBand[]): EqBand[] | null => {
-  if (!Array.isArray(bands) || bands.length !== eqBandCount) {
+  if (!Array.isArray(bands) || (bands.length !== eqBandCount && bands.length !== legacyEqBandCount)) {
     return null;
   }
 
@@ -342,6 +504,8 @@ const buildProfileBinding = (target: EqProfileBindingTarget): EqProfileBinding =
 export class EqBridge extends EventEmitter {
   private state: EqState = defaultState();
   private channelBalanceState: ChannelBalanceState = defaultChannelBalanceState();
+  private roomCorrectionState: RoomCorrectionState = defaultRoomCorrectionState();
+  private roomCorrectionIrPath: string | null = null;
   private socket: net.Socket | null = null;
   private activeControlPort: number | null = null;
   private nativeSyncTargetEqState: EqState | null = null;
@@ -353,6 +517,8 @@ export class EqBridge extends EventEmitter {
   private readonly presetPath: string;
   private readonly statePath: string;
   private readonly profilePath: string;
+  private readonly roomCorrectionStatePath: string;
+  private readonly roomCorrectionIrDirectory: string;
   private readonly backupDirectory: string;
   private readonly backupMarkerPath: string;
 
@@ -361,6 +527,8 @@ export class EqBridge extends EventEmitter {
     this.presetPath = join(userDataPath, 'eq-presets.json');
     this.statePath = join(userDataPath, 'eq-state.json');
     this.profilePath = join(userDataPath, 'eq-profiles.json');
+    this.roomCorrectionStatePath = join(userDataPath, 'room-correction-state.json');
+    this.roomCorrectionIrDirectory = join(userDataPath, 'room-correction', 'irs');
     this.backupDirectory = join(userDataPath, 'eq-backups');
     this.backupMarkerPath = join(this.backupDirectory, 'phase2-backup.done');
     this.state = this.readPersistedState();
@@ -369,6 +537,7 @@ export class EqBridge extends EventEmitter {
     } catch {
       this.channelBalanceState = defaultChannelBalanceState();
     }
+    this.readPersistedRoomCorrectionState();
     this.on('error', () => undefined);
   }
 
@@ -450,6 +619,10 @@ export class EqBridge extends EventEmitter {
 
   getChannelBalanceState(): ChannelBalanceState {
     return { ...this.channelBalanceState };
+  }
+
+  getRoomCorrectionState(): RoomCorrectionState {
+    return { ...this.roomCorrectionState };
   }
 
   private markStateChanged(): void {
@@ -574,6 +747,20 @@ export class EqBridge extends EventEmitter {
     return this.emitState();
   }
 
+  async setDspHeadroom(headroomDb: number): Promise<EqState> {
+    const rawHeadroomDb = Number(headroomDb);
+    if (!Number.isFinite(rawHeadroomDb)) {
+      throw new Error('invalid_dsp_headroom');
+    }
+
+    const safeHeadroomDb = clamp(rawHeadroomDb, dspHeadroomMinDb, dspHeadroomMaxDb);
+    this.state = { ...this.state, dspHeadroomDb: safeHeadroomDb };
+    this.markStateChanged();
+    this.persistState();
+    await this.sendNative({ type: 'dsp:set-headroom', headroomDb: safeHeadroomDb });
+    return this.emitState();
+  }
+
   async setPreset(presetId: string): Promise<EqState> {
     const preset = this.listPresets().find((item) => item.id === presetId);
 
@@ -584,6 +771,7 @@ export class EqBridge extends EventEmitter {
     this.state = {
       enabled: this.state.enabled,
       preampDb: preset.preampDb,
+      dspHeadroomDb: this.state.dspHeadroomDb,
       bands: preset.bands.map((band) => ({ ...band })),
       presetId: preset.id,
       presetName: preset.name,
@@ -600,6 +788,7 @@ export class EqBridge extends EventEmitter {
     this.state = {
       enabled: this.state.enabled,
       preampDb: flat.preampDb,
+      dspHeadroomDb: this.state.dspHeadroomDb,
       bands: flat.bands.map((band) => ({ ...band })),
       presetId: flat.id,
       presetName: flat.name,
@@ -623,6 +812,83 @@ export class EqBridge extends EventEmitter {
     this.persistChannelBalanceState();
     await this.sendNativeChannelBalance({ type: 'channelBalance.reset' });
     return this.emitChannelBalanceState();
+  }
+
+  async importRoomCorrectionIr(sourcePath: string): Promise<RoomCorrectionState> {
+    if (typeof sourcePath !== 'string' || !sourcePath.trim()) {
+      throw new Error('invalid_room_correction_ir_path');
+    }
+
+    const extension = extname(sourcePath).toLowerCase();
+    if (extension !== '.wav') {
+      throw new Error('unsupported_room_correction_ir_format');
+    }
+
+    if (!existsSync(sourcePath)) {
+      throw new Error('room_correction_ir_not_found');
+    }
+
+    mkdirSync(this.roomCorrectionIrDirectory, { recursive: true });
+    const irId = `ir-${randomUUID()}`;
+    const irName = basename(sourcePath).replace(/\.[^.]+$/u, '').trim().slice(0, 160) || 'Room Correction IR';
+    const targetPath = join(this.roomCorrectionIrDirectory, `${irId}.wav`);
+    copyFileSync(sourcePath, targetPath);
+
+    this.roomCorrectionIrPath = targetPath;
+    this.roomCorrectionState = {
+      ...defaultRoomCorrectionState(),
+      enabled: this.roomCorrectionState.enabled,
+      status: this.roomCorrectionState.enabled ? 'active' : 'loaded',
+      irId,
+      irName,
+      trimDb: this.roomCorrectionState.trimDb,
+    };
+    this.persistRoomCorrectionState();
+
+    const loaded = await this.sendNativeRoomCorrection({
+      type: 'roomCorrection.loadIr',
+      path: targetPath,
+      irId,
+      irName,
+    });
+    if (this.roomCorrectionState.enabled) {
+      await this.sendNativeRoomCorrection({ type: 'roomCorrection.setEnabled', enabled: true });
+    }
+    await this.sendNativeRoomCorrection({ type: 'roomCorrection.setTrim', trimDb: this.roomCorrectionState.trimDb });
+    return loaded.error ? this.emitRoomCorrectionState() : this.getRoomCorrectionState();
+  }
+
+  async setRoomCorrectionEnabled(enabled: boolean): Promise<RoomCorrectionState> {
+    const hasIr = Boolean(this.roomCorrectionState.irId && this.roomCorrectionIrPath);
+    this.roomCorrectionState = {
+      ...this.roomCorrectionState,
+      enabled: enabled === true && hasIr,
+      status: !hasIr ? 'empty' : enabled === true ? 'active' : 'loaded',
+      error: !hasIr && enabled === true ? 'missing_ir' : null,
+    };
+    this.persistRoomCorrectionState();
+    await this.sendNativeRoomCorrection({ type: 'roomCorrection.setEnabled', enabled: this.roomCorrectionState.enabled });
+    return this.emitRoomCorrectionState();
+  }
+
+  async setRoomCorrectionTrim(trimDb: number): Promise<RoomCorrectionState> {
+    const safeTrimDb = clamp(Number(trimDb), roomCorrectionMinTrimDb, roomCorrectionMaxTrimDb);
+    if (!Number.isFinite(safeTrimDb)) {
+      throw new Error('invalid_room_correction_trim');
+    }
+
+    this.roomCorrectionState = { ...this.roomCorrectionState, trimDb: safeTrimDb };
+    this.persistRoomCorrectionState();
+    await this.sendNativeRoomCorrection({ type: 'roomCorrection.setTrim', trimDb: safeTrimDb });
+    return this.emitRoomCorrectionState();
+  }
+
+  async clearRoomCorrection(): Promise<RoomCorrectionState> {
+    this.roomCorrectionIrPath = null;
+    this.roomCorrectionState = defaultRoomCorrectionState();
+    this.persistRoomCorrectionState();
+    await this.sendNativeRoomCorrection({ type: 'roomCorrection.clear' });
+    return this.emitRoomCorrectionState();
   }
 
   savePreset(request: EqSavePresetRequest): EqPreset {
@@ -805,6 +1071,7 @@ export class EqBridge extends EventEmitter {
   async syncStateToNative(): Promise<void> {
     const eqState = this.getState();
     const channelBalanceState = this.getChannelBalanceState();
+    const roomCorrectionState = this.getRoomCorrectionState();
 
     this.nativeSyncTargetEqState = eqState;
     this.nativeSyncTargetRevision = this.stateRevision;
@@ -812,6 +1079,7 @@ export class EqBridge extends EventEmitter {
       await this.enqueueNative(async () => {
         await this.sendNativeNow({ type: 'eq:set-enabled', enabled: eqState.enabled });
         await this.sendNativeNow({ type: 'eq:set-preset', preampDb: eqState.preampDb, bands: eqState.bands });
+        await this.sendNativeNow({ type: 'dsp:set-headroom', headroomDb: eqState.dspHeadroomDb ?? 0 });
       });
     } finally {
       const syncRevision = this.nativeSyncTargetRevision;
@@ -823,7 +1091,30 @@ export class EqBridge extends EventEmitter {
       }
     }
 
-    await this.sendNativeChannelBalance({ type: 'channelBalance.setState', state: channelBalanceState });
+    if (!isDefaultChannelBalanceState(channelBalanceState)) {
+      await this.sendNativeChannelBalance({ type: 'channelBalance.setState', state: channelBalanceState });
+    }
+
+    if (this.roomCorrectionIrPath && existsSync(this.roomCorrectionIrPath) && roomCorrectionState.irId && roomCorrectionState.irName) {
+      await this.sendNativeRoomCorrection({
+        type: 'roomCorrection.loadIr',
+        path: this.roomCorrectionIrPath,
+        irId: roomCorrectionState.irId,
+        irName: roomCorrectionState.irName,
+      });
+      await this.sendNativeRoomCorrection({ type: 'roomCorrection.setTrim', trimDb: roomCorrectionState.trimDb });
+      await this.sendNativeRoomCorrection({ type: 'roomCorrection.setEnabled', enabled: roomCorrectionState.enabled });
+    } else if (roomCorrectionState.irId || roomCorrectionState.enabled || this.roomCorrectionIrPath) {
+      this.roomCorrectionState = {
+        ...defaultRoomCorrectionState(),
+        trimDb: roomCorrectionState.trimDb,
+        error: roomCorrectionState.irId ? 'missing_file' : null,
+        status: roomCorrectionState.irId ? 'error' : 'empty',
+      };
+      this.roomCorrectionIrPath = null;
+      this.persistRoomCorrectionState();
+      this.emitRoomCorrectionState();
+    }
   }
 
   private async sendNative(message: Record<string, unknown>): Promise<EqState> {
@@ -838,7 +1129,7 @@ export class EqBridge extends EventEmitter {
     }
 
     return new Promise<EqState>((resolve, reject) => {
-      this.pending.push({ resolve: (state) => resolve(state as EqState), reject });
+      this.pending.push({ expectedState: 'eq', resolve: (state) => resolve(state as EqState), reject });
       socket.write(`${JSON.stringify(message)}\n`, (error) => {
         if (error) {
           this.rejectPending(error);
@@ -859,7 +1150,28 @@ export class EqBridge extends EventEmitter {
     }
 
     return new Promise<ChannelBalanceState>((resolve, reject) => {
-      this.pending.push({ resolve: (state) => resolve(state as ChannelBalanceState), reject });
+      this.pending.push({ expectedState: 'channelBalance', resolve: (state) => resolve(state as ChannelBalanceState), reject });
+      socket.write(`${JSON.stringify(message)}\n`, (error) => {
+        if (error) {
+          this.rejectPending(error);
+        }
+      });
+    });
+  }
+
+  private async sendNativeRoomCorrection(message: Record<string, unknown>): Promise<RoomCorrectionState> {
+    return this.enqueueNative(() => this.sendNativeRoomCorrectionNow(message));
+  }
+
+  private async sendNativeRoomCorrectionNow(message: Record<string, unknown>): Promise<RoomCorrectionState> {
+    const socket = this.socket;
+
+    if (!socket || socket.destroyed || !socket.writable) {
+      return this.getRoomCorrectionState();
+    }
+
+    return new Promise<RoomCorrectionState>((resolve, reject) => {
+      this.pending.push({ expectedState: 'roomCorrection', resolve: (state) => resolve(state as RoomCorrectionState), reject });
       socket.write(`${JSON.stringify(message)}\n`, (error) => {
         if (error) {
           this.rejectPending(error);
@@ -893,12 +1205,18 @@ export class EqBridge extends EventEmitter {
     const pending = this.pending.shift();
 
     if (!line) {
-      pending?.resolve(this.getState());
+      pending?.resolve(
+        pending.expectedState === 'channelBalance'
+          ? this.getChannelBalanceState()
+          : pending.expectedState === 'roomCorrection'
+            ? this.getRoomCorrectionState()
+            : this.getState(),
+      );
       return;
     }
 
     try {
-      const message = JSON.parse(line) as Partial<EqState & ChannelBalanceState> & { type?: string; message?: string };
+      const message = JSON.parse(line) as Partial<EqState & ChannelBalanceState & RoomCorrectionState> & { type?: string; message?: string; headroomDb?: unknown };
 
       if (message.type === 'eq:error') {
         pending?.reject(new Error(message.message ?? 'eq_native_error'));
@@ -932,7 +1250,28 @@ export class EqBridge extends EventEmitter {
         this.emitChannelBalanceState();
       }
 
-      pending?.resolve(message.type === 'channelBalance:state' ? this.getChannelBalanceState() : this.getState());
+      if (message.type === 'roomCorrection:state') {
+        this.roomCorrectionState = normalizeRoomCorrectionState(message, this.roomCorrectionState);
+        this.persistRoomCorrectionState();
+        this.emitRoomCorrectionState();
+      }
+
+      if (message.type === 'dsp:state') {
+        const dspHeadroomDb = Number(message.headroomDb ?? this.state.dspHeadroomDb);
+        this.state = {
+          ...this.state,
+          dspHeadroomDb: Number.isFinite(dspHeadroomDb) ? clamp(dspHeadroomDb, dspHeadroomMinDb, dspHeadroomMaxDb) : this.state.dspHeadroomDb,
+        };
+        this.emitState();
+      }
+
+      pending?.resolve(
+        pending.expectedState === 'channelBalance'
+          ? this.getChannelBalanceState()
+          : pending.expectedState === 'roomCorrection'
+            ? this.getRoomCorrectionState()
+            : this.getState(),
+      );
     } catch (error) {
       pending?.reject(error instanceof Error ? error : new Error(String(error)));
     }
@@ -950,11 +1289,55 @@ export class EqBridge extends EventEmitter {
     return state;
   }
 
+  private emitRoomCorrectionState(): RoomCorrectionState {
+    const state = this.getRoomCorrectionState();
+    this.emit('roomCorrectionState', state);
+    return state;
+  }
+
   private persistChannelBalanceState(): void {
     try {
       setAppSettings({ channelBalance: this.channelBalanceState });
     } catch {
       // Tests and early startup can run without a ready Electron app path.
+    }
+  }
+
+  private persistRoomCorrectionState(): void {
+    try {
+      mkdirSync(dirname(this.roomCorrectionStatePath), { recursive: true });
+      const persisted: PersistedRoomCorrectionState = {
+        ...this.roomCorrectionState,
+        irPath: this.roomCorrectionIrPath,
+      };
+      writeFileSync(this.roomCorrectionStatePath, `${JSON.stringify(persisted, null, 2)}\n`, 'utf8');
+    } catch {
+      // Tests and early startup can run without a ready Electron app path.
+    }
+  }
+
+  private readPersistedRoomCorrectionState(): void {
+    if (!existsSync(this.roomCorrectionStatePath)) {
+      this.roomCorrectionState = defaultRoomCorrectionState();
+      this.roomCorrectionIrPath = null;
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(readFileSync(this.roomCorrectionStatePath, 'utf8')) as PersistedRoomCorrectionState;
+      this.roomCorrectionState = normalizeRoomCorrectionState(parsed);
+      this.roomCorrectionIrPath = typeof parsed.irPath === 'string' && parsed.irPath.trim() ? parsed.irPath : null;
+      if (this.roomCorrectionIrPath && !existsSync(this.roomCorrectionIrPath)) {
+        this.roomCorrectionState = {
+          ...this.roomCorrectionState,
+          enabled: false,
+          status: 'error',
+          error: 'missing_file',
+        };
+      }
+    } catch {
+      this.roomCorrectionState = defaultRoomCorrectionState();
+      this.roomCorrectionIrPath = null;
     }
   }
 

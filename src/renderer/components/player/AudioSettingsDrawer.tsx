@@ -107,6 +107,7 @@ const audioEngineMeterOpenStorageKey = 'echo-next.audio-engine-meter-open';
 const drawerExitAnimationMs = 320;
 const outputApplyTimeoutMs = 20_000;
 const lowLatencyMaxBufferSizeFrames = 2048;
+const highOutputSampleRateWarningThresholdHz = 192000;
 const latencyProfileOptionDefinitions: Array<{ id: AudioLatencyProfile; labelKey: TranslationKey; detailKey: TranslationKey }> = [
   { id: 'lowLatency', labelKey: 'audioDrawer.latency.lowLatency', detailKey: 'audioDrawer.latency.lowLatencyDetail' },
   { id: 'balanced', labelKey: 'audioDrawer.latency.balanced', detailKey: 'audioDrawer.latency.balancedDetail' },
@@ -229,6 +230,9 @@ const formatRate = (value: number | null | undefined): string => {
 
   return value >= 1000 ? `${Math.round(value / 1000)} kHz` : `${value} Hz`;
 };
+
+const isHighOutputSampleRate = (value: number | null | undefined): boolean =>
+  Number.isFinite(value) && Number(value) >= highOutputSampleRateWarningThresholdHz;
 
 const formatBitrate = (value: number | null | undefined): string | null => {
   if (!value) {
@@ -958,9 +962,17 @@ export const AudioSettingsDrawer = ({
     () => hqPlayerTakeoverEnabled ? 'HQPlayer' : getCurrentOutputName(status, statusDevice?.name ?? defaultSharedDevice?.name, copy),
     [copy, defaultSharedDevice?.name, hqPlayerTakeoverEnabled, status, statusDevice?.name],
   );
+  const currentOutputMode = status?.outputMode ?? outputMode;
+  const currentOutputSampleRate = hqPlayerTakeoverEnabled
+    ? hqPlayerTrack?.sampleRate ?? null
+    : getOutputSampleRate(status, effectiveSharedSampleRate);
+  const showHighOutputSampleRateWarning =
+    !hqPlayerTakeoverEnabled &&
+    (currentOutputMode === 'shared' || currentOutputMode === 'system') &&
+    isHighOutputSampleRate(currentOutputSampleRate);
 
   const currentOutput = useMemo(() => {
-    const currentMode = status?.outputMode ?? outputMode;
+    const currentMode = currentOutputMode;
     const name = currentOutputName;
 
     if (hqPlayerTakeoverEnabled) {
@@ -981,12 +993,12 @@ export const AudioSettingsDrawer = ({
       mode: currentMode,
       modeLabel: formatMode(currentMode, copy),
       backend: getCurrentBackend(status, copy),
-      sampleRate: formatRate(getOutputSampleRate(status, effectiveSharedSampleRate)),
+      sampleRate: formatRate(currentOutputSampleRate),
       bitPerfect: status?.bitPerfectCandidate ? copy.bitPerfectReady : status?.bitPerfectDisabledReason ?? copy.standardPath,
       highlight: shouldHighlightCurrentOutput(currentMode, status?.outputBackend),
       Icon: getDeviceIcon(name, currentMode),
     };
-  }, [copy, currentOutputName, effectiveSharedSampleRate, hqPlayerTakeoverEnabled, hqPlayerTrack?.sampleRate, outputMode, status]);
+  }, [copy, currentOutputMode, currentOutputName, currentOutputSampleRate, hqPlayerTakeoverEnabled, hqPlayerTrack?.sampleRate, status]);
   const currentLatencyProfile = status?.latencyProfile ?? readRememberedAudioOutput().latencyProfile ?? 'lowLatency';
   const supportedLatencyProfile = resolveSupportedLatencyProfile(outputMode, currentLatencyProfile);
   const currentAsioBufferFrames =
@@ -1894,6 +1906,12 @@ export const AudioSettingsDrawer = ({
             </div>
             <em>{t('audioDrawer.device.selected')}</em>
           </div>
+          {showHighOutputSampleRateWarning ? (
+            <p className="audio-current-output-warning" role="alert">
+              <ShieldAlert size={14} aria-hidden="true" />
+              <span>{t('audioDrawer.warning.highOutputSampleRate')}</span>
+            </p>
+          ) : null}
         </section>
 
         <section className="audio-drawer-section">

@@ -14,12 +14,102 @@ import {
   type PluginSettingOption,
   type PluginSettingType,
   type PluginSourceProviderContribution,
+  type PluginThemePresetContribution,
 } from '../../shared/types/plugins';
+import type { AppThemePreset, AppThemeToneOverride } from '../../shared/types/appSettings';
 
 const pluginIdPattern = /^[a-z0-9][a-z0-9._-]{1,63}$/u;
 const safeRelativePathPattern = /^[^<>:"|?*\u0000-\u001f]+$/u;
 const permissionSet = new Set<PluginPermission>(pluginPermissions);
 const settingTypes = new Set<PluginSettingType>(['string', 'select', 'boolean', 'number', 'secret']);
+const themeBasePresets = new Set<AppThemePreset>([
+  'classic',
+  'echoTwilight',
+  'sakuraMilk',
+  'peachSoda',
+  'mintCandy',
+  'berryDream',
+  'matchaCream',
+  'lemonMochi',
+  'cottonCloud',
+  'melonCream',
+  'seaSaltJelly',
+  'caramelPudding',
+  'neonCandy',
+  'nyanCat',
+  'childrenDoodle',
+  'wisteriaBubble',
+  'strawberryCookie',
+  'graphiteAurora',
+  'amberNoir',
+  'oceanStudio',
+  'rosewoodVinyl',
+  'darkSideMoon',
+  'shibuyaNight',
+  'kyotoKurenai',
+  'ukiyoIndigo',
+  'fujiSnow',
+  'matsuriLantern',
+  'ginzaNoir',
+  'frostJazz',
+  'FINAL',
+]);
+const themeToneColorKeys: Array<keyof Pick<
+  AppThemeToneOverride,
+  | 'appBg'
+  | 'appBg2'
+  | 'appBg3'
+  | 'panel'
+  | 'panelSoft'
+  | 'accent'
+  | 'accentStrong'
+  | 'secondary'
+  | 'heading'
+  | 'text'
+  | 'muted'
+  | 'border'
+  | 'onAccent'
+  | 'buttonText'
+  | 'titlebar'
+  | 'sidebar'
+  | 'player'
+  | 'field'
+  | 'row'
+  | 'rowHover'
+  | 'rowActive'
+  | 'chip'
+  | 'focus'
+  | 'danger'
+  | 'success'
+  | 'warning'
+>> = [
+  'appBg',
+  'appBg2',
+  'appBg3',
+  'panel',
+  'panelSoft',
+  'accent',
+  'accentStrong',
+  'secondary',
+  'heading',
+  'text',
+  'muted',
+  'border',
+  'onAccent',
+  'buttonText',
+  'titlebar',
+  'sidebar',
+  'player',
+  'field',
+  'row',
+  'rowHover',
+  'rowActive',
+  'chip',
+  'focus',
+  'danger',
+  'success',
+  'warning',
+];
 
 const asText = (value: unknown, field: string, maxLength = 120): string => {
   if (typeof value !== 'string') {
@@ -282,6 +372,157 @@ const normalizeCoverProvider = (value: unknown): PluginCoverProviderContribution
   }
 };
 
+const normalizeThemeHexColor = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return /^#[0-9a-fA-F]{6}$/u.test(normalized) ? normalized.toLowerCase() : undefined;
+};
+
+const normalizeThemeNumber = (value: unknown, min: number, max: number, decimals = 0): number | undefined => {
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    return undefined;
+  }
+  if (typeof value === 'string' && !value.trim()) {
+    return undefined;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+  const clamped = Math.min(max, Math.max(min, numeric));
+  const factor = 10 ** decimals;
+  return Math.round(clamped * factor) / factor;
+};
+
+const normalizeThemeToneOverride = (value: unknown): AppThemeToneOverride | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const input = value as Partial<AppThemeToneOverride>;
+  const output: AppThemeToneOverride = {};
+  for (const key of themeToneColorKeys) {
+    const color = normalizeThemeHexColor(input[key]);
+    if (color) {
+      output[key] = color;
+    }
+  }
+
+  const panelOpacityPercent = normalizeThemeNumber(input.panelOpacityPercent, 40, 100);
+  const glassPercent = normalizeThemeNumber(input.glassPercent, 0, 80);
+  const shadowPercent = normalizeThemeNumber(input.shadowPercent, 0, 100);
+  const cornerRadiusPx = normalizeThemeNumber(input.cornerRadiusPx, 0, 28);
+  const panelBlurPx = normalizeThemeNumber(input.panelBlurPx, 0, 32);
+  const saturationPercent = normalizeThemeNumber(input.saturationPercent, 60, 140);
+  const motionSpeedSeconds = normalizeThemeNumber(input.motionSpeedSeconds, 0.12, 8, 2);
+  const motionIntensityPercent = normalizeThemeNumber(input.motionIntensityPercent, 0, 160);
+
+  if (panelOpacityPercent !== undefined) {
+    output.panelOpacityPercent = panelOpacityPercent;
+  }
+  if (glassPercent !== undefined) {
+    output.glassPercent = glassPercent;
+  }
+  if (shadowPercent !== undefined) {
+    output.shadowPercent = shadowPercent;
+  }
+  if (cornerRadiusPx !== undefined) {
+    output.cornerRadiusPx = cornerRadiusPx;
+  }
+  if (panelBlurPx !== undefined) {
+    output.panelBlurPx = panelBlurPx;
+  }
+  if (saturationPercent !== undefined) {
+    output.saturationPercent = saturationPercent;
+  }
+  if (typeof input.motionEnabled === 'boolean') {
+    output.motionEnabled = input.motionEnabled;
+  }
+  if (motionSpeedSeconds !== undefined) {
+    output.motionSpeedSeconds = motionSpeedSeconds;
+  }
+  if (motionIntensityPercent !== undefined) {
+    output.motionIntensityPercent = motionIntensityPercent;
+  }
+
+  return Object.keys(output).length > 0 ? output : undefined;
+};
+
+const normalizeThemePreview = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalized = value.replace(/[\r\n;]/gu, '').trim();
+  if (!normalized || normalized.length > 240) {
+    return undefined;
+  }
+  const color = normalizeThemeHexColor(normalized);
+  if (color) {
+    return color;
+  }
+
+  const gradientDirection = '(?:(?:[+-]?\\d+(?:\\.\\d+)?deg)|(?:to\\s+(?:(?:top|bottom)(?:\\s+(?:left|right))?|(?:left|right)(?:\\s+(?:top|bottom))?)))';
+  const gradientStop = '#[0-9a-fA-F]{6}(?:\\s+\\d{1,3}(?:\\.\\d+)?%)?';
+  const gradientPattern = new RegExp(`^linear-gradient\\(\\s*(?:${gradientDirection}\\s*,\\s*)?${gradientStop}(?:\\s*,\\s*${gradientStop}){1,5}\\s*\\)$`, 'u');
+  return gradientPattern.test(normalized) ? normalized.toLowerCase() : undefined;
+};
+
+const normalizeThemeSwatches = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const swatches: string[] = [];
+  for (const item of value) {
+    const color = normalizeThemeHexColor(item);
+    if (color && !swatches.includes(color)) {
+      swatches.push(color);
+    }
+  }
+  return swatches.length > 0 ? swatches.slice(0, 6) : undefined;
+};
+
+const normalizeThemePreset = (value: unknown): PluginThemePresetContribution | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const input = value as Partial<PluginThemePresetContribution>;
+  try {
+    const basePreset = typeof input.basePreset === 'string' && themeBasePresets.has(input.basePreset as AppThemePreset)
+      ? input.basePreset as AppThemePreset
+      : 'classic';
+    const normalized: PluginThemePresetContribution = {
+      id: normalizePluginId(input.id),
+      title: asText(input.title, 'theme preset title', 80),
+      basePreset,
+    };
+    if (typeof input.description === 'string' && input.description.trim()) {
+      normalized.description = input.description.trim().slice(0, 180);
+    }
+    const light = normalizeThemeToneOverride(input.light);
+    const dark = normalizeThemeToneOverride(input.dark);
+    if (light) {
+      normalized.light = light;
+    }
+    if (dark) {
+      normalized.dark = dark;
+    }
+    const preview = normalizeThemePreview(input.preview);
+    const swatches = normalizeThemeSwatches(input.swatches);
+    if (preview) {
+      normalized.preview = preview;
+    }
+    if (swatches) {
+      normalized.swatches = swatches;
+    }
+    return normalized.light || normalized.dark ? normalized : null;
+  } catch {
+    return null;
+  }
+};
+
 const normalizeContributes = (value: unknown): PluginManifestContributes => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -310,6 +551,12 @@ const normalizeContributes = (value: unknown): PluginManifestContributes => {
       ? input.coverProviders
           .map(normalizeCoverProvider)
           .filter((item): item is PluginCoverProviderContribution => Boolean(item))
+      : [],
+    themePresets: Array.isArray(input.themePresets)
+      ? input.themePresets
+          .map(normalizeThemePreset)
+          .filter((item): item is PluginThemePresetContribution => Boolean(item))
+          .slice(0, 12)
       : [],
     settings: Array.isArray(input.settings)
       ? input.settings

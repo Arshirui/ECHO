@@ -51,7 +51,7 @@ import type {
   PlaybackSpeedMode,
 } from '../../shared/types/audio';
 import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
-import { isDownloadFeatureUnlockCode } from '../../shared/constants/featureUnlocks';
+import { isDownloadFeatureUnlockCode, isFinalThemeUnlockCode } from '../../shared/constants/featureUnlocks';
 import { defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
 import {
   defaultSidebarRouteOrder,
@@ -90,9 +90,10 @@ import type { AppCacheInventory, CoverCacheMigrationResult } from '../../shared/
 import type { LastCrashSummary } from '../../shared/types/diagnostics';
 import type { DiscordPresenceStatus } from '../../shared/types/discordPresence';
 import type { DownloadSettings } from '../../shared/types/downloads';
-import type { DataBackupStatus } from '../../shared/types/settingsBackup';
+import type { DataBackupProgress, DataBackupStatus } from '../../shared/types/settingsBackup';
 import type { LastFmStatus } from '../../shared/types/lastfm';
 import type { PlaybackStatus } from '../../shared/types/playback';
+import type { PluginSummary, PluginThemePresetContribution } from '../../shared/types/plugins';
 import type { SmtcDiagnostics } from '../../shared/types/smtc';
 import type { TaskbarPlaybackStatus } from '../../shared/types/taskbarPlayback';
 import type {
@@ -384,6 +385,7 @@ const discogsDeveloperSettingsUrl = 'https://www.discogs.com/settings/developers
 const playbackAdvancedPanelExpandedStorageKey = 'echo:settings:playback:advanced-panel-expanded';
 const integrationsAccountPanelExpandedStorageKey = 'echo:settings:integrations:account-panel-expanded';
 const integrationsCredentialPanelExpandedStorageKey = 'echo:settings:integrations:credential-panel-expanded';
+const finalThemeUnlockedStorageKey = 'echo-next:settings:final-theme-unlocked';
 const integrationCredentialSettingIds = new Set([
   'settings-row-spotify-auth-config',
   'settings-row-tidal-auth-config',
@@ -772,6 +774,16 @@ const buildNetworkProxyModeOptions = (t: (key: TranslationKey, params?: Record<s
   { value: 'manual', label: t('settings.integrations.networkProxy.mode.manual') },
   { value: 'pac', label: 'PAC' },
 ];
+
+const dataBackupProgressPhaseLabels: Record<DataBackupProgress['phase'], TranslationKey> = {
+  preparing: 'settings.general.dataBackup.progress.preparing',
+  snapshot: 'settings.general.dataBackup.progress.snapshot',
+  scanning: 'settings.general.dataBackup.progress.scanning',
+  writing: 'settings.general.dataBackup.progress.writing',
+  finalizing: 'settings.general.dataBackup.progress.finalizing',
+  completed: 'settings.general.dataBackup.progress.completed',
+  failed: 'settings.general.dataBackup.progress.failed',
+};
 
 type SettingSectionProps = {
   id: SettingsNavKey;
@@ -1716,7 +1728,50 @@ const themePresetOptions: Array<{
     preview: 'linear-gradient(135deg, #eaf2fb 0%, #aac2df 48%, #d4c0dc 100%)',
     swatches: ['#eaf2fb', '#245f9e', '#7f3e70'],
   },
+  {
+    preset: 'FINAL',
+    labelKey: 'settings.appearance.themePreset.FINAL',
+    descriptionKey: 'settings.appearance.themePreset.FINAL.description',
+    preview: 'repeating-linear-gradient(90deg, rgb(124 133 136 / 0.22) 0 1px, transparent 1px 22px), linear-gradient(135deg, #f4f5f4 0%, #dde0df 46%, #101214 47%, #30363a 100%)',
+    swatches: ['#f4f5f4', '#30363a', '#7c8588', '#b08a56'],
+  },
 ];
+
+type PluginThemeOption = PluginThemePresetContribution & {
+  pluginId: string;
+  pluginName: string;
+  pluginVersion: string;
+  customThemeId: string;
+};
+
+const pluginThemeStableHash = (value: string): string => {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36).padStart(7, '0').slice(0, 8);
+};
+
+const pluginThemeCustomId = (pluginId: string, themeId: string): string => {
+  const readableThemeId = themeId.replace(/[^a-zA-Z0-9_.:-]/g, '-').slice(0, 40) || 'theme';
+  return `plugin:${pluginThemeStableHash(`${pluginId}:${themeId}`)}:${readableThemeId}`;
+};
+
+const collectPluginThemeOptions = (plugins: PluginSummary[]): PluginThemeOption[] =>
+  plugins.flatMap((plugin) => {
+    if (!plugin.enabled || plugin.disabledByHost || plugin.error) {
+      return [];
+    }
+
+    return (plugin.contributes.themePresets ?? []).map((theme) => ({
+      ...theme,
+      pluginId: plugin.id,
+      pluginName: plugin.name,
+      pluginVersion: plugin.version,
+      customThemeId: pluginThemeCustomId(plugin.id, theme.id),
+    }));
+  });
 
 type ThemeTone = 'light' | 'dark';
 type ThemeColorField = keyof Pick<
@@ -3017,6 +3072,56 @@ const themeEditorDefaults: Record<AppThemePreset, Record<ThemeTone, Partial<Them
       shadowPercent: 100,
     },
   },
+  FINAL: {
+    light: {
+      appBg: '#f4f5f4',
+      appBg2: '#dde0df',
+      appBg3: '#fbfbf8',
+      panel: '#fcfcf9',
+      panelSoft: '#e8eae8',
+      accent: '#30363a',
+      accentStrong: '#121416',
+      secondary: '#7c8588',
+      heading: '#101214',
+      text: '#333638',
+      muted: '#62686a',
+      border: '#81898b',
+      onAccent: '#f8f8f3',
+      buttonText: '#333638',
+      panelOpacityPercent: 82,
+      glassPercent: 12,
+      shadowPercent: 62,
+      cornerRadiusPx: 8,
+      panelBlurPx: 10,
+      saturationPercent: 96,
+      motionSpeedSeconds: 0.18,
+      motionIntensityPercent: 64,
+    },
+    dark: {
+      appBg: '#08090a',
+      appBg2: '#111315',
+      appBg3: '#171819',
+      panel: '#181a1c',
+      panelSoft: '#101214',
+      accent: '#c3c7c3',
+      accentStrong: '#f1f2ee',
+      secondary: '#89969b',
+      heading: '#fbfbf8',
+      text: '#dce1e1',
+      muted: '#aeb7b9',
+      border: '#767f84',
+      onAccent: '#08090a',
+      buttonText: '#dce1e1',
+      panelOpacityPercent: 90,
+      glassPercent: 18,
+      shadowPercent: 92,
+      cornerRadiusPx: 8,
+      panelBlurPx: 12,
+      saturationPercent: 96,
+      motionSpeedSeconds: 0.18,
+      motionIntensityPercent: 64,
+    },
+  },
 };
 
 const coreThemeColorFields: Array<{ field: ThemeColorField; labelKey: TranslationKey; descriptionKey: TranslationKey }> = [
@@ -3186,6 +3291,26 @@ const buildThemeCustomTheme = (
   return theme;
 };
 
+const buildPluginThemeCustomTheme = (pluginTheme: PluginThemeOption, existing?: AppThemeCustomTheme): AppThemeCustomTheme => {
+  const timestamp = new Date().toISOString();
+  const theme: AppThemeCustomTheme = {
+    id: pluginTheme.customThemeId,
+    name: `${pluginTheme.title} · ${pluginTheme.pluginName}`.slice(0, 48),
+    basePreset: pluginTheme.basePreset,
+    createdAt: existing?.createdAt ?? timestamp,
+    updatedAt: timestamp,
+  };
+
+  if (pluginTheme.light) {
+    theme.light = { ...pluginTheme.light };
+  }
+  if (pluginTheme.dark) {
+    theme.dark = { ...pluginTheme.dark };
+  }
+
+  return theme;
+};
+
 const updateThemeCustomThemeTone = (
   themes: AppThemeCustomTheme[],
   themeId: string,
@@ -3305,6 +3430,21 @@ const getUpdateStateLabel = (state: UpdateStatus['state']): TranslationKey => {
       return 'settings.about.updates.state.disabled';
     default:
       return 'settings.about.updates.state.idle';
+  }
+};
+
+const readFinalThemeUnlocked = (): boolean =>
+  readBooleanStoragePreference(finalThemeUnlockedStorageKey, false);
+
+const writeFinalThemeUnlocked = (): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(finalThemeUnlockedStorageKey, 'true');
+  } catch {
+    // Ignore storage failures; the unlock can still work for this session.
   }
 };
 
@@ -3838,6 +3978,8 @@ export const SettingsPage = (): JSX.Element => {
   const [highlightedSettingId, setHighlightedSettingId] = useState<string | null>(null);
   const [mysteriousKeyVisible, setMysteriousKeyVisible] = useState(false);
   const mysteriousKeyUnlockNoticeShownRef = useRef(false);
+  const [finalThemeUnlocked, setFinalThemeUnlocked] = useState(() => readFinalThemeUnlocked());
+  const finalThemeUnlockNoticeShownRef = useRef(false);
   const [status, setStatus] = useState<AudioStatus | null>(null);
   const [audioDiagnosticsCopied, setAudioDiagnosticsCopied] = useState(false);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
@@ -3872,6 +4014,7 @@ export const SettingsPage = (): JSX.Element => {
   const [selectedThemePreset, setSelectedThemePreset] = useState<AppThemePreset>(() => readThemePreset());
   const [themeCustomThemes, setThemeCustomThemes] = useState<AppThemeCustomTheme[]>(() => readThemeCustomThemes());
   const [activeThemeCustomId, setActiveThemeCustomId] = useState<string | null>(() => readThemeCustomId());
+  const [pluginThemeOptions, setPluginThemeOptions] = useState<PluginThemeOption[]>([]);
   const [themeCustomTone, setThemeCustomTone] = useState<ThemeTone>('light');
   const [themeCustomDraft, setThemeCustomDraft] = useState<AppThemeToneOverride>({});
   const [themeCustomAdvancedOpen, setThemeCustomAdvancedOpen] = useState(false);
@@ -3959,6 +4102,7 @@ export const SettingsPage = (): JSX.Element => {
   const [settingsBackupBusy, setSettingsBackupBusy] = useState<'export' | 'import' | 'dataPackage' | null>(null);
   const [settingsBackupMessage, setSettingsBackupMessage] = useState<string | null>(null);
   const [dataBackupStatus, setDataBackupStatus] = useState<DataBackupStatus | null>(null);
+  const [dataBackupProgress, setDataBackupProgress] = useState<DataBackupProgress | null>(null);
   const [dataBackupBusy, setDataBackupBusy] = useState<'choose' | 'run' | 'import' | 'open' | null>(null);
   const [dataBackupMessage, setDataBackupMessage] = useState<string | null>(null);
   const [draggingSidebarRouteId, setDraggingSidebarRouteId] = useState<SidebarRouteId | null>(null);
@@ -4678,6 +4822,7 @@ export const SettingsPage = (): JSX.Element => {
   }, [appSettings?.downloadsFeatureUnlocked, mysteriousKeyVisible, t, windowsIntegrationAvailable]);
 
   const mysteriousKeySearchUnlocked = activeSection === 'general' && normalizeSettingsSearchText(settingsQuery) === 'zimin';
+  const finalThemeSearchUnlocked = isFinalThemeUnlockCode(settingsQuery);
 
   useEffect(() => {
     if (!mysteriousKeySearchUnlocked) {
@@ -4692,6 +4837,28 @@ export const SettingsPage = (): JSX.Element => {
     mysteriousKeyUnlockNoticeShownRef.current = true;
     window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'Mysterious key 已解锁。' }));
   }, [mysteriousKeySearchUnlocked]);
+
+  useEffect(() => {
+    if (!finalThemeSearchUnlocked) {
+      return;
+    }
+
+    if (!finalThemeUnlocked) {
+      writeFinalThemeUnlocked();
+      setFinalThemeUnlocked(true);
+    }
+
+    setSettingsQuery('');
+    setActiveSection('appearance');
+    setAppSettings((current) => (current ? { ...current, appearanceThemePresetsExpanded: true } : current));
+
+    if (finalThemeUnlockNoticeShownRef.current) {
+      return;
+    }
+
+    finalThemeUnlockNoticeShownRef.current = true;
+    window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'FINAL theme unlocked.' }));
+  }, [finalThemeSearchUnlocked, finalThemeUnlocked]);
 
   const settingsSearchResults = useMemo<SettingsSearchResult[]>(() => {
     const query = normalizeSettingsSearchText(settingsQuery);
@@ -4778,6 +4945,7 @@ export const SettingsPage = (): JSX.Element => {
     playbackStatus: segmentPlaybackStatus,
     playbackVisualIntent: sharedPlaybackStatus.playbackVisualIntent,
   });
+  const libraryHeavyRefreshAllowed = segmentVisualState !== 'playing' && segmentVisualState !== 'loading';
   const segmentIsSpotifyTrack = isSpotifyTrack(segmentCurrentTrack);
   const segmentTitle = segmentCurrentTrack?.title ?? titleFromPath(segmentFilePath);
   const segmentArtist = segmentCurrentTrack?.artist ?? segmentCurrentTrack?.albumArtist ?? '';
@@ -5030,13 +5198,17 @@ export const SettingsPage = (): JSX.Element => {
     const app = getAppBridge();
     if (!app?.getDataBackupStatus) {
       setDataBackupStatus(null);
+      setDataBackupProgress(null);
       return;
     }
 
     try {
-      setDataBackupStatus(await app.getDataBackupStatus());
+      const status = await app.getDataBackupStatus();
+      setDataBackupStatus(status);
+      setDataBackupProgress(status.progress);
     } catch {
       setDataBackupStatus(null);
+      setDataBackupProgress(null);
     }
   }, []);
 
@@ -5066,7 +5238,20 @@ export const SettingsPage = (): JSX.Element => {
     }).catch(() => undefined);
     void app?.getVersion().then(setAppVersion).catch(() => undefined);
     void app?.getUpdateStatus?.().then(setUpdateStatus).catch(() => undefined);
-    void app?.getDataBackupStatus?.().then(setDataBackupStatus).catch(() => undefined);
+    void app?.getDataBackupStatus?.().then((status) => {
+      setDataBackupStatus(status);
+      setDataBackupProgress(status.progress);
+    }).catch(() => undefined);
+    const unsubscribeDataBackupProgress = app?.onDataBackupProgress?.((progress) => {
+      setDataBackupProgress(progress);
+      setDataBackupStatus((currentStatus) => currentStatus ? { ...currentStatus, running: progress.running, progress } : currentStatus);
+      if (!progress.running) {
+        void app?.getDataBackupStatus?.().then((status) => {
+          setDataBackupStatus(status);
+          setDataBackupProgress(status.progress);
+        }).catch(() => undefined);
+      }
+    });
     const unsubscribeUpdateStatus = app?.onUpdateStatus?.((status) => {
       setUpdateStatus(status);
       if (status.state === 'downloading' || status.state === 'downloaded') {
@@ -5075,9 +5260,40 @@ export const SettingsPage = (): JSX.Element => {
     });
 
     return () => {
+      unsubscribeDataBackupProgress?.();
       unsubscribeUpdateStatus?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (activeSection !== 'appearance') {
+      return undefined;
+    }
+
+    let disposed = false;
+    const plugins = getPluginsBridge();
+    if (!plugins) {
+      setPluginThemeOptions([]);
+      return undefined;
+    }
+
+    void plugins
+      .list()
+      .then((result) => {
+        if (!disposed) {
+          setPluginThemeOptions(collectPluginThemeOptions(result.plugins));
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setPluginThemeOptions([]);
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [activeSection]);
 
   useEffect(() => {
     if (activeSection !== 'playback' && activeSection !== 'eq') {
@@ -5141,11 +5357,26 @@ export const SettingsPage = (): JSX.Element => {
       return undefined;
     }
 
-    return scheduleSettingsIdleTask(() => {
-      void refreshCacheInventory();
+    let cacheInventoryTimer: number | null = null;
+    const cancelIdleTask = scheduleSettingsIdleTask(() => {
       void refreshDuplicateSummary();
+
+      if (!libraryHeavyRefreshAllowed) {
+        return;
+      }
+
+      cacheInventoryTimer = window.setTimeout(() => {
+        void refreshCacheInventory();
+      }, 900);
     });
-  }, [activeSection, libraryDeferredRefreshReady, refreshCacheInventory, refreshDuplicateSummary]);
+
+    return () => {
+      cancelIdleTask();
+      if (cacheInventoryTimer !== null) {
+        window.clearTimeout(cacheInventoryTimer);
+      }
+    };
+  }, [activeSection, libraryDeferredRefreshReady, libraryHeavyRefreshAllowed, refreshCacheInventory, refreshDuplicateSummary]);
 
   useEffect(() => {
     if (activeSection !== 'library') {
@@ -5223,7 +5454,7 @@ export const SettingsPage = (): JSX.Element => {
   }, [activeSection, deferredAboutReleaseNotes, updateStatus?.releaseNotes]);
 
   useEffect(() => {
-    if (activeSection !== 'library') {
+    if (activeSection !== 'library' || !libraryDeferredRefreshReady || appSettings?.autoFetchArtistImages !== true) {
       return undefined;
     }
 
@@ -5254,18 +5485,21 @@ export const SettingsPage = (): JSX.Element => {
       }
     };
 
-    void refreshSummary();
-    timer = window.setInterval(() => {
+    const cancelInitialRefresh = scheduleSettingsIdleTask(() => {
       void refreshSummary();
-    }, 750);
+      timer = window.setInterval(() => {
+        void refreshSummary();
+      }, 3000);
+    });
 
     return () => {
       disposed = true;
+      cancelInitialRefresh();
       if (timer !== null) {
         window.clearInterval(timer);
       }
     };
-  }, [activeSection]);
+  }, [activeSection, appSettings?.autoFetchArtistImages, libraryDeferredRefreshReady]);
 
   useEffect(() => {
     if (activeSection === 'appearance') {
@@ -6023,6 +6257,10 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemePresetChange = (appearanceThemePreset: AppThemePreset): void => {
+    if (appearanceThemePreset === 'FINAL' && !finalThemeUnlocked) {
+      return;
+    }
+
     const nextCustomId = activeThemeCustom ? null : savedThemeCustomId;
     skipNextThemePreviewRef.current = true;
     updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, appearanceThemePreset, savedThemePresetOverrides, {
@@ -6047,6 +6285,10 @@ export const SettingsPage = (): JSX.Element => {
   const themeCustomValues = mergeThemeToneValues(selectedThemePreset, themeCustomTone, themeCustomDraft);
   const themeCustomWarnings = getThemeContrastWarnings(themeCustomValues);
   const selectedThemePresetOption = themePresetOptions.find((option) => option.preset === selectedThemePreset) ?? themePresetOptions[0];
+  const visibleThemePresetOptions = useMemo(
+    () => finalThemeUnlocked ? themePresetOptions : themePresetOptions.filter((option) => option.preset !== 'FINAL'),
+    [finalThemeUnlocked],
+  );
   const themePresetsExpanded = appSettings?.appearanceThemePresetsExpanded === true;
   const themeCustomGradientPreview = `linear-gradient(135deg, ${themeCustomValues.appBg} 0%, ${themeCustomValues.appBg2} 52%, ${themeCustomValues.appBg3} 100%)`;
 
@@ -6120,11 +6362,6 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomSave = (): void => {
-    if (themeCustomWarnings.length > 0) {
-      setThemeCustomMessage(t('settings.appearance.themeCustom.message.lowContrast'));
-      return;
-    }
-
     const currentTheme = activeThemeCustom;
     const nextThemes = currentTheme
       ? updateThemeCustomThemeTone(savedThemeCustomThemes, currentTheme.id, themeCustomTone, themeCustomDraft)
@@ -6247,6 +6484,39 @@ export const SettingsPage = (): JSX.Element => {
         .catch(() => setThemeCustomMessage(t('settings.appearance.themeCustom.message.importFailed')));
     };
     input.click();
+  };
+
+  const handlePluginThemeApply = (pluginTheme: PluginThemeOption): void => {
+    const existingTheme = savedThemeCustomThemes.find((theme) => theme.id === pluginTheme.customThemeId);
+    const importedTheme = buildPluginThemeCustomTheme(pluginTheme, existingTheme);
+    const nextThemes = normalizeThemeCustomThemes([...savedThemeCustomThemes.filter((theme) => theme.id !== importedTheme.id), importedTheme]);
+
+    skipNextThemePreviewRef.current = true;
+    updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, importedTheme.basePreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: importedTheme.id,
+      customThemes: nextThemes,
+    });
+    setThemeCustomThemes(nextThemes);
+    setActiveThemeCustomId(importedTheme.id);
+    setSelectedThemePreset(importedTheme.basePreset);
+    setThemeCustomDraft(importedTheme[themeCustomTone] ?? {});
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset: importedTheme.basePreset,
+            appearanceCustomThemes: nextThemes,
+            appearanceThemeCustomId: importedTheme.id,
+          }
+        : current,
+    );
+    patchAppSettings({
+      appearanceThemePreset: importedTheme.basePreset,
+      appearanceCustomThemes: nextThemes,
+      appearanceThemeCustomId: importedTheme.id,
+    });
+    setThemeCustomMessage(`已应用插件主题：${pluginTheme.title}`);
   };
 
   const handleThemeCustomCreate = (): void => {
@@ -7100,6 +7370,36 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleAppWallpaperClear = (): void => {
     patchAppSettings({ appCustomWallpaperPath: null, appWallpaperMediaType: 'image' });
+  };
+
+  const handleAppPortraitWallpaperChoose = async (): Promise<void> => {
+    const app = getAppBridge();
+
+    if (!app?.chooseAppWallpaper) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to choose app wallpaper.');
+      return;
+    }
+
+    try {
+      const wallpaperPath = await app.chooseAppWallpaper();
+      if (!wallpaperPath) {
+        return;
+      }
+
+      const mediaType = inferAppWallpaperMediaType(wallpaperPath);
+      patchAppSettings({
+        appPortraitWallpaperPath: wallpaperPath,
+        appPortraitWallpaperMediaType: mediaType,
+        ...(mediaType === 'video' ? { appVideoWallpaperPauseMode: 'never' } : {}),
+      });
+      setError(null);
+    } catch (wallpaperError) {
+      setError(wallpaperError instanceof Error ? wallpaperError.message : String(wallpaperError));
+    }
+  };
+
+  const handleAppPortraitWallpaperClear = (): void => {
+    patchAppSettings({ appPortraitWallpaperPath: null, appPortraitWallpaperMediaType: 'image' });
   };
 
   const handleDiscordPresenceToggle = async (): Promise<void> => {
@@ -9156,7 +9456,27 @@ export const SettingsPage = (): JSX.Element => {
   const dataBackupDirectory = dataBackupStatus?.directory ?? appSettings?.autoDataBackupDirectory ?? null;
   const dataBackupEnabled = appSettings?.autoDataBackupEnabled === true;
   const dataBackupIntervalDays = appSettings?.autoDataBackupIntervalDays ?? dataBackupStatus?.intervalDays ?? 7;
-  const dataBackupRunning = dataBackupBusy !== null || dataBackupStatus?.running === true;
+  const activeDataBackupProgress = dataBackupProgress?.running === true ? dataBackupProgress : dataBackupStatus?.progress?.running === true ? dataBackupStatus.progress : null;
+  const dataBackupRunning = dataBackupBusy !== null || dataBackupStatus?.running === true || activeDataBackupProgress?.running === true;
+  const dataBackupProgressPercent = typeof activeDataBackupProgress?.percent === 'number'
+    ? Math.max(0, Math.min(100, Math.round(activeDataBackupProgress.percent)))
+    : null;
+  const dataBackupProgressPhaseLabel = activeDataBackupProgress
+    ? t(dataBackupProgressPhaseLabels[activeDataBackupProgress.phase])
+    : null;
+  const dataBackupProgressEntryLabel = activeDataBackupProgress?.currentEntry
+    ? activeDataBackupProgress.currentEntry
+    : t('settings.general.dataBackup.progress.waiting');
+  const dataBackupProgressCountLabel = activeDataBackupProgress
+    ? activeDataBackupProgress.totalEntries
+      ? `${activeDataBackupProgress.processedEntries}/${activeDataBackupProgress.totalEntries}`
+      : `${activeDataBackupProgress.processedEntries}`
+    : '';
+  const dataBackupProgressBytesLabel = activeDataBackupProgress
+    ? activeDataBackupProgress.totalBytes && activeDataBackupProgress.totalBytes > 0
+      ? `${formatUpdateBytes(activeDataBackupProgress.processedBytes)} / ${formatUpdateBytes(activeDataBackupProgress.totalBytes)}`
+      : formatUpdateBytes(activeDataBackupProgress.processedBytes)
+    : '';
   const dataBackupLastLabel = dataBackupStatus?.lastBackupAt
     ? dataBackupStatus.lastBackupPath
       ? t('settings.general.dataBackup.meta.atPath', {
@@ -9778,6 +10098,32 @@ export const SettingsPage = (): JSX.Element => {
                       <strong>{dataBackupNextLabel}</strong>
                     </span>
                   </div>
+                  {activeDataBackupProgress ? (
+                    <div className="settings-data-backup-progress" role="status" aria-live="polite">
+                      <div className="settings-data-backup-progress-head">
+                        <strong>{dataBackupProgressPhaseLabel}</strong>
+                        <span>{dataBackupProgressPercent !== null ? `${dataBackupProgressPercent}%` : t('settings.general.dataBackup.progress.measuring')}</span>
+                      </div>
+                      <div
+                        className="settings-data-backup-progress-track"
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={dataBackupProgressPercent ?? undefined}
+                        aria-label={dataBackupProgressPhaseLabel ?? t('settings.general.dataBackup.title')}
+                        data-indeterminate={dataBackupProgressPercent === null ? 'true' : undefined}
+                      >
+                        <span style={{ width: `${dataBackupProgressPercent ?? 36}%` }} />
+                      </div>
+                      <div className="settings-data-backup-progress-detail">
+                        <span title={dataBackupProgressEntryLabel}>{dataBackupProgressEntryLabel}</span>
+                        <em>
+                          {dataBackupProgressCountLabel}
+                          {dataBackupProgressBytesLabel ? ` - ${dataBackupProgressBytesLabel}` : ''}
+                        </em>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="settings-data-backup-actions">
                     <button className="settings-action-button" type="button" disabled={dataBackupRunning} onClick={() => void handleChooseDataBackupDirectory()}>
                       <FolderOpen size={15} />
@@ -11574,7 +11920,7 @@ export const SettingsPage = (): JSX.Element => {
                   </button>
                   {themePresetsExpanded ? (
                     <div className="settings-theme-preset-grid">
-                      {themePresetOptions.map((option) => {
+                      {visibleThemePresetOptions.map((option) => {
                         const activePreset = selectedThemePreset;
                         const isActive = activePreset === option.preset;
 
@@ -11684,6 +12030,40 @@ export const SettingsPage = (): JSX.Element => {
                         <p className="settings-theme-custom-empty">{t('settings.appearance.themeCustom.myThemes.empty')}</p>
                       )}
                     </div>
+                    {pluginThemeOptions.length > 0 ? (
+                      <div className="settings-theme-plugin-presets">
+                        <div className="settings-theme-custom-section-title">
+                          <strong>插件主题</strong>
+                          <span>已启用插件贡献的主题会导入到“我的主题”，之后仍可继续微调。</span>
+                        </div>
+                        <div className="settings-theme-custom-theme-list">
+                          {pluginThemeOptions.map((theme) => {
+                            const installed = savedThemeCustomThemes.some((item) => item.id === theme.customThemeId);
+                            const active = savedThemeCustomId === theme.customThemeId;
+                            const preview = theme.preview ?? `linear-gradient(135deg, ${theme.swatches?.[0] ?? '#f6f6f7'} 0%, ${theme.swatches?.[1] ?? '#4b55e8'} 52%, ${theme.swatches?.[2] ?? '#727987'} 100%)`;
+
+                            return (
+                              <button
+                                className={`settings-theme-custom-theme-card settings-theme-plugin-card${active ? ' active' : ''}`}
+                                key={`${theme.pluginId}:${theme.id}`}
+                                type="button"
+                                onClick={() => handlePluginThemeApply(theme)}
+                              >
+                                <span>
+                                  <strong>{theme.title}</strong>
+                                  <em>{theme.pluginName} v{theme.pluginVersion} · {installed ? '更新并应用' : '导入并应用'}</em>
+                                </span>
+                                <span className="settings-theme-plugin-preview" aria-hidden="true" style={{ background: preview } as CSSProperties}>
+                                  {(theme.swatches ?? []).slice(0, 4).map((swatch) => (
+                                    <i key={swatch} style={{ background: swatch } as CSSProperties} />
+                                  ))}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="settings-theme-custom-copy-actions">
                       <button className="settings-action-button" type="button" onClick={() => handleThemeCustomCopyTone('light', 'dark')}>
                         {t('settings.appearance.themeCustom.action.copyLightToDark')}
@@ -11942,7 +12322,7 @@ export const SettingsPage = (): JSX.Element => {
                       <Palette size={15} />
                       {t('settings.appearance.themeCustom.action.autoFix')}
                     </button>
-                    <button className="settings-action-button" type="button" onClick={handleThemeCustomSave} disabled={themeCustomWarnings.length > 0}>
+                    <button className="settings-action-button" type="button" onClick={handleThemeCustomSave}>
                       <Save size={15} />
                       {t('settings.appearance.themeCustom.action.save')}
                     </button>
@@ -11990,22 +12370,43 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('settings.appearance.wallpaper.title')}
                 description={t('settings.appearance.wallpaper.description')}
               >
-                {appSettings?.appCustomWallpaperPath ? (
+                {appSettings?.appCustomWallpaperPath || appSettings?.appPortraitWallpaperPath ? (
                   <div className="settings-cache-panel settings-cache-panel--app-wallpaper">
                     <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
                       <button className="settings-action-button" type="button" disabled={!appSettings} onClick={() => void handleAppWallpaperChoose()}>
                         <FolderOpen size={15} />
                         {t('settings.appearance.wallpaper.choose')}
                       </button>
-                      <button className="settings-danger-button" type="button" onClick={handleAppWallpaperClear}>
-                        <Trash2 size={15} />
-                        {t('settings.appearance.wallpaper.clear')}
+                      <button className="settings-action-button" type="button" disabled={!appSettings} onClick={() => void handleAppPortraitWallpaperChoose()}>
+                        <FolderOpen size={15} />
+                        {t('settings.appearance.wallpaper.portraitChoose')}
                       </button>
+                      {appSettings.appCustomWallpaperPath ? (
+                        <button className="settings-danger-button" type="button" onClick={handleAppWallpaperClear}>
+                          <Trash2 size={15} />
+                          {t('settings.appearance.wallpaper.clear')}
+                        </button>
+                      ) : null}
+                      {appSettings.appPortraitWallpaperPath ? (
+                        <button className="settings-danger-button" type="button" onClick={handleAppPortraitWallpaperClear}>
+                          <Trash2 size={15} />
+                          {t('settings.appearance.wallpaper.portraitClear')}
+                        </button>
+                      ) : null}
                     </div>
-                    <p className="settings-wallpaper-path" title={appSettings.appCustomWallpaperPath}>
-                      {appSettings.appCustomWallpaperPath}
-                    </p>
-                    {appSettings.appWallpaperMediaType === 'video' ? (
+                    {appSettings.appCustomWallpaperPath ? (
+                      <p className="settings-wallpaper-path" title={appSettings.appCustomWallpaperPath}>
+                        <span>{t('settings.appearance.wallpaper.landscapePath')}</span>
+                        {appSettings.appCustomWallpaperPath}
+                      </p>
+                    ) : null}
+                    {appSettings.appPortraitWallpaperPath ? (
+                      <p className="settings-wallpaper-path" title={appSettings.appPortraitWallpaperPath}>
+                        <span>{t('settings.appearance.wallpaper.portraitPath')}</span>
+                        {appSettings.appPortraitWallpaperPath}
+                      </p>
+                    ) : null}
+                    {appSettings.appWallpaperMediaType === 'video' || appSettings.appPortraitWallpaperMediaType === 'video' ? (
                       <div className="settings-chip-row settings-chip-row--left">
                         <StatusText tone="good">{t('settings.appearance.wallpaper.videoStatus')}</StatusText>
                         {appVideoWallpaperPauseModes.map((mode) => (
@@ -12094,6 +12495,10 @@ export const SettingsPage = (): JSX.Element => {
                       <FolderOpen size={15} />
                       {t('settings.appearance.wallpaper.choose')}
                     </button>
+                    <button className="settings-action-button" type="button" disabled={!appSettings} onClick={() => void handleAppPortraitWallpaperChoose()}>
+                      <FolderOpen size={15} />
+                      {t('settings.appearance.wallpaper.portraitChoose')}
+                    </button>
                   </div>
                 )}
               </SettingRow>
@@ -12158,7 +12563,7 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={Download} id="library" title={t('settings.nav.library.label')}>
               <div id="settings-row-library-folders" data-search-highlight={highlightedSettingId === 'settings-row-library-folders' ? 'true' : undefined}>
-                <LibraryFoldersPanel />
+                <LibraryFoldersPanel autoRefresh={libraryDeferredRefreshReady} pollScanStatuses={false} />
               </div>
               <SettingRow
                 id="settings-row-live-library-updates"

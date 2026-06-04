@@ -9,12 +9,14 @@ dist/
 # Local Codex workspace state
 /.codex/
 /.codex-run/
-/.codex-temp/
 /.codex-pet-runs/
+/.codex-screenshots/
+/.codex-temp/
 /.codex-tmp/
 /.codex-backups/
 
 # Native/Electron build outputs
+electron-app/build/
 native/**/build/
 native/**/cmake-build-*/
 CMakeFiles/
@@ -45,3 +47,8 @@ dist-packaged*/
 # One-off generated review/debug artifacts
 /tmp-theme-preset-grid-fix.png
 /echo-page-astrbot-layering.patch
+/tmp-*
+/*.patch
+
+# Local runtime state
+/room-correction-state.json

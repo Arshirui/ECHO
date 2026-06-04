@@ -13,6 +13,7 @@ import type { TaskbarPlaybackStatus } from '../shared/types/taskbarPlayback';
 import type {
   DataBackupExportResult,
   DataBackupImportResult,
+  DataBackupProgress,
   DataBackupStatus,
   DataPackageExportResult,
   SettingsImportResult,
@@ -24,6 +25,8 @@ import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, Conne
 import type {
   EqBindProfileRequest,
   EqPreset,
+  EqPresetImportPreviewResult,
+  EqPresetImportResult,
   EqProfile,
   EqProfileBindingInfo,
   EqProfileBindingTarget,
@@ -35,6 +38,7 @@ import type {
   EqSetBandGainRequest,
   EqSetBandQRequest,
   EqState,
+  RoomCorrectionState,
 } from '../shared/types/eq';
 import type { GlobalShortcutAction, GlobalShortcutValidationResult } from '../shared/types/globalShortcuts';
 import type { DesktopLyricsState, DesktopLyricsStylePatch } from '../shared/types/desktopLyrics';
@@ -282,6 +286,7 @@ export type EchoApi = {
     isFullscreen: () => Promise<boolean>;
     onFullscreenChange: (handler: (isFullscreen: boolean) => void) => () => void;
     close: () => Promise<void>;
+    quit: () => Promise<void>;
     getSystemUserName: () => Promise<string | null>;
     getSettings: () => Promise<AppSettings>;
     setSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
@@ -292,6 +297,7 @@ export type EchoApi = {
     exportDataPackage: () => Promise<DataPackageExportResult | null>;
     chooseDataBackupDirectory: () => Promise<string | null>;
     getDataBackupStatus: () => Promise<DataBackupStatus>;
+    onDataBackupProgress: (handler: (progress: DataBackupProgress) => void) => () => void;
     runDataBackupNow: () => Promise<DataBackupExportResult>;
     importDataBackup: () => Promise<DataBackupImportResult | null>;
     openDataBackupDirectory: () => Promise<void>;
@@ -773,12 +779,16 @@ export type EchoApi = {
     setBandFilterType: (request: EqSetBandFilterTypeRequest) => Promise<EqState>;
     setBandEnabled: (request: EqSetBandEnabledRequest) => Promise<EqState>;
     setPreamp: (preampDb: number) => Promise<EqState>;
+    setDspHeadroom: (headroomDb: number) => Promise<EqState>;
     setPreset: (presetId: string) => Promise<EqState>;
     reset: () => Promise<EqState>;
     listPresets: () => Promise<EqPreset[]>;
     savePreset: (request: EqSavePresetRequest) => Promise<EqPreset>;
     exportPreset: (request: EqSavePresetRequest) => Promise<string | null>;
-    importPreset: () => Promise<EqPreset | null>;
+    exportApoPreset: (request: EqSavePresetRequest) => Promise<string | null>;
+    exportApoGraphicEqPreset: (request: EqSavePresetRequest) => Promise<string | null>;
+    previewImportPreset: () => Promise<EqPresetImportPreviewResult | null>;
+    importPreset: () => Promise<EqPresetImportResult | null>;
     deletePreset: (presetId: string) => Promise<EqPreset[]>;
     listProfiles: () => Promise<EqProfile[]>;
     saveProfile: (request: EqSaveProfileRequest) => Promise<EqProfile>;
@@ -789,6 +799,11 @@ export type EchoApi = {
     getChannelBalanceState: () => Promise<ChannelBalanceState>;
     setChannelBalanceState: (patch: Partial<ChannelBalanceState>) => Promise<ChannelBalanceState>;
     resetChannelBalance: () => Promise<ChannelBalanceState>;
+    getRoomCorrectionState: () => Promise<RoomCorrectionState>;
+    importRoomCorrectionIr: () => Promise<RoomCorrectionState | null>;
+    setRoomCorrectionEnabled: (enabled: boolean) => Promise<RoomCorrectionState>;
+    setRoomCorrectionTrim: (trimDb: number) => Promise<RoomCorrectionState>;
+    clearRoomCorrection: () => Promise<RoomCorrectionState>;
   };
 };
 

@@ -18,6 +18,7 @@ export type LyricsKind = 'empty' | 'plain' | 'synced' | 'instrumental';
 export type LyricsProviderId =
   | 'local'
   | 'lrclib'
+  | 'amll-ttml'
   | 'netease'
   | 'qqmusic'
   | 'kugou'

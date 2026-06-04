@@ -39,6 +39,7 @@ const security: PluginSummary['security'] = {
   sourceProviderCount: 0,
   lyricsProviderCount: 0,
   coverProviderCount: 0,
+  themePresetCount: 0,
   settingCount: 0,
   networkEnabled: false,
 };

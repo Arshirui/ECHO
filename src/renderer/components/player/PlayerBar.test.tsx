@@ -113,6 +113,20 @@ const dlnaConnectStatus = (track: LibraryTrack, state: ConnectSessionStatus['sta
   updatedAt: '2026-05-27T07:30:00.000Z',
 });
 
+const subscribeAudioStatusHandlers = (handlers: Array<(status: AudioStatus) => void>) => (handler: (status: AudioStatus) => void): (() => void) => {
+  handlers.push(handler);
+  return () => {
+    const index = handlers.indexOf(handler);
+    if (index >= 0) {
+      handlers.splice(index, 1);
+    }
+  };
+};
+
+const emitAudioStatus = (handlers: Array<(status: AudioStatus) => void>, status: AudioStatus): void => {
+  handlers.forEach((handler) => handler(status));
+};
+
 const QueueSeed = ({ tracks }: { tracks: LibraryTrack[] }): JSX.Element => {
   const { setCurrentTrackId, replaceQueue } = usePlaybackQueue();
 
@@ -160,8 +174,15 @@ const ManualVisibleTrackSeed = ({
 
 afterEach(() => {
   cleanup();
+  setPlaybackStatusSnapshot({
+    audioStatus: null,
+    playbackStatus: null,
+    playbackVisualIntent: null,
+    error: null,
+  });
   window.echo = undefined as unknown as typeof window.echo;
   window.sessionStorage.clear();
+  window.localStorage.clear();
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
@@ -641,7 +662,7 @@ describe('PlayerBar', () => {
   it('keeps the transport in playing view while a track switch is pending', async () => {
     const firstTrack = makeTrack(1);
     const secondTrack = makeTrack(2);
-    let audioStatusHandler: ((status: AudioStatus) => void) | null = null;
+    const audioStatusHandlers: Array<(status: AudioStatus) => void> = [];
     let resolveSecondPlay: (() => void) | null = null;
     const playLocalFile = vi.fn().mockImplementation(({ filePath, trackId }: { filePath: string; trackId?: string }) =>
       new Promise((resolve) => {
@@ -674,10 +695,7 @@ describe('PlayerBar', () => {
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue(audioStatus(firstTrack)),
-        onStatus: vi.fn((handler) => {
-          audioStatusHandler = handler;
-          return () => undefined;
-        }),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(audioStatusHandlers)),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
       },
@@ -697,7 +715,7 @@ describe('PlayerBar', () => {
 
     await screen.findByRole('button', { name: 'Pause' });
     act(() => {
-      audioStatusHandler?.({
+      emitAudioStatus(audioStatusHandlers, {
         ...audioStatus(firstTrack),
         positionSeconds: 16,
       });
@@ -711,7 +729,7 @@ describe('PlayerBar', () => {
     expect(Number((screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement).value)).toBe(0);
 
     act(() => {
-      audioStatusHandler?.({
+      emitAudioStatus(audioStatusHandlers, {
         ...audioStatus(secondTrack),
         positionSeconds: 17,
       });
@@ -720,7 +738,7 @@ describe('PlayerBar', () => {
     expect(Number((screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement).value)).toBe(0);
 
     act(() => {
-      audioStatusHandler?.({
+      emitAudioStatus(audioStatusHandlers, {
         ...audioStatus(firstTrack),
         state: 'paused',
       });
@@ -737,7 +755,7 @@ describe('PlayerBar', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy());
 
     act(() => {
-      audioStatusHandler?.({
+      emitAudioStatus(audioStatusHandlers, {
         ...audioStatus(secondTrack),
         positionSeconds: 17,
       });
@@ -2495,12 +2513,7 @@ describe('PlayerBar', () => {
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue({ ...audioStatus(track), positionSeconds: 12 }),
-        onStatus: vi.fn((handler) => {
-          statusHandlers[0] = handler;
-          return () => {
-            statusHandlers.length = 0;
-          };
-        }),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
       },
@@ -2548,7 +2561,7 @@ describe('PlayerBar', () => {
     await waitFor(() => expect(Number(slider.value)).toBeGreaterThanOrEqual(12));
 
     act(() => {
-      statusHandlers[0]?.({ ...audioStatus(track), positionSeconds: 10.6 });
+      emitAudioStatus(statusHandlers, { ...audioStatus(track), positionSeconds: 10.6 });
     });
 
     expect(Number(slider.value)).toBeGreaterThanOrEqual(12);
@@ -2578,12 +2591,7 @@ describe('PlayerBar', () => {
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue(initialStatus),
-        onStatus: vi.fn((handler) => {
-          statusHandlers[0] = handler;
-          return () => {
-            statusHandlers.length = 0;
-          };
-        }),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
       },
@@ -2632,7 +2640,7 @@ describe('PlayerBar', () => {
 
     performanceNow.mockReturnValue(900);
     act(() => {
-      statusHandlers[0]?.({ ...audioStatus(track), playbackRate: 2, positionSeconds: 12.2 });
+      emitAudioStatus(statusHandlers, { ...audioStatus(track), playbackRate: 2, positionSeconds: 12.2 });
     });
 
     expect(Number(slider.value)).toBeGreaterThanOrEqual(13.7);
@@ -2662,12 +2670,7 @@ describe('PlayerBar', () => {
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue(initialStatus),
-        onStatus: vi.fn((handler) => {
-          statusHandlers[0] = handler;
-          return () => {
-            statusHandlers.length = 0;
-          };
-        }),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
       },
@@ -2716,7 +2719,7 @@ describe('PlayerBar', () => {
 
     performanceNow.mockReturnValue(500);
     act(() => {
-      statusHandlers[0]?.({ ...audioStatus(track), playbackRate: 1.5, positionSeconds: 60 });
+      emitAudioStatus(statusHandlers, { ...audioStatus(track), playbackRate: 1.5, positionSeconds: 60 });
     });
 
     expect(Number(slider.value)).toBeLessThan(14);
@@ -2747,12 +2750,7 @@ describe('PlayerBar', () => {
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue(initialStatus),
-        onStatus: vi.fn((handler) => {
-          statusHandlers[0] = handler;
-          return () => {
-            statusHandlers.length = 0;
-          };
-        }),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
       },
@@ -2801,7 +2799,7 @@ describe('PlayerBar', () => {
 
     performanceNow.mockReturnValue(500);
     act(() => {
-      statusHandlers[0]?.({ ...audioStatus(track), playbackRate: 0.5, positionSeconds: 60 });
+      emitAudioStatus(statusHandlers, { ...audioStatus(track), playbackRate: 0.5, positionSeconds: 60 });
     });
 
     expect(Number(slider.value)).toBeLessThan(13);
@@ -2831,12 +2829,7 @@ describe('PlayerBar', () => {
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue({ ...audioStatus(track), playbackRate: 1, positionSeconds: 12 }),
-        onStatus: vi.fn((handler) => {
-          statusHandlers[0] = handler;
-          return () => {
-            statusHandlers.length = 0;
-          };
-        }),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
       },
@@ -2885,7 +2878,7 @@ describe('PlayerBar', () => {
 
     performanceNow.mockReturnValue(2000);
     act(() => {
-      statusHandlers[0]?.({ ...audioStatus(track), playbackRate: 2, positionSeconds: 12.4 });
+      emitAudioStatus(statusHandlers, { ...audioStatus(track), playbackRate: 2, positionSeconds: 12.4 });
     });
 
     expect(Number(slider.value)).toBeGreaterThanOrEqual(13.9);
@@ -2981,6 +2974,105 @@ describe('PlayerBar', () => {
     expect((seekedHandler.mock.calls[0][0] as CustomEvent).detail.positionSeconds).toBe(21);
 
     window.removeEventListener('playback:seeked', seekedHandler);
+  });
+
+  it('keeps the visible progress anchored when status hovers just behind a seek target', async () => {
+    const performanceNow = vi.spyOn(performance, 'now').mockReturnValue(0);
+    const track = makeTrack(1);
+    const statusHandlers: Array<(status: AudioStatus) => void> = [];
+    let playbackPositionMs = 12_000;
+    let audioPositionSeconds = 12;
+    const seek = vi.fn().mockImplementation(async () => {
+      playbackPositionMs = 59_800;
+      audioPositionSeconds = 59.8;
+      return {
+        state: 'playing',
+        currentTrackId: track.id,
+        positionMs: playbackPositionMs,
+        durationMs: track.duration * 1000,
+        filePath: track.path,
+      };
+    });
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockImplementation(() => Promise.resolve({
+          state: 'playing',
+          currentTrackId: track.id,
+          positionMs: playbackPositionMs,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        })),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek,
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockImplementation(() => Promise.resolve({
+          ...audioStatus(track),
+          positionSeconds: audioPositionSeconds,
+        })),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      eq: {
+        getState: vi.fn().mockResolvedValue(eqState()),
+        setEnabled: vi.fn().mockResolvedValue(eqState()),
+        setBandGain: vi.fn().mockResolvedValue(eqState()),
+        setPreamp: vi.fn().mockResolvedValue(eqState()),
+        setPreset: vi.fn().mockResolvedValue(eqState()),
+        reset: vi.fn().mockResolvedValue(eqState()),
+        listPresets: vi.fn().mockResolvedValue([]),
+        savePreset: vi.fn(),
+        deletePreset: vi.fn().mockResolvedValue([]),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({}),
+      },
+      library: {
+        getTracks: vi.fn(),
+        getAlbums: vi.fn(),
+        getAlbumTracks: vi.fn(),
+        getSummary: vi.fn(),
+        chooseFolder: vi.fn(),
+        addFolder: vi.fn(),
+        getFolders: vi.fn(),
+        removeFolder: vi.fn(),
+        scanFolder: vi.fn(),
+        getScanStatus: vi.fn(),
+        cancelScan: vi.fn(),
+        getDiagnostics: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Song 1');
+    const slider = screen.getByRole('slider', { name: 'Seek position' }) as HTMLInputElement;
+    await waitFor(() => expect(Number(slider.value)).toBeGreaterThanOrEqual(12));
+
+    fireEvent.change(slider, { target: { value: '60' } });
+    fireEvent.pointerUp(slider);
+
+    await waitFor(() => expect(seek).toHaveBeenCalledWith(60));
+    await waitFor(() => expect(Number(slider.value)).toBeGreaterThanOrEqual(60));
+    expect(screen.queryByText('0:59')).toBeNull();
+
+    performanceNow.mockReturnValue(600);
+    act(() => {
+      emitAudioStatus(statusHandlers, { ...audioStatus(track), positionSeconds: 59.85 });
+    });
+
+    expect(Number(slider.value)).toBeGreaterThanOrEqual(60);
+    expect(screen.queryByText('0:59')).toBeNull();
   });
 
   it('starts a download job from the player for the current streaming track', async () => {
@@ -3150,12 +3242,7 @@ describe('PlayerBar', () => {
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue(audioStatus(firstTrack)),
-        onStatus: vi.fn((handler) => {
-          statusHandlers[0] = handler;
-          return () => {
-            statusHandlers.length = 0;
-          };
-        }),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
       },
@@ -3199,8 +3286,8 @@ describe('PlayerBar', () => {
     );
 
     await screen.findByText('Song 1');
-    expect(statusHandlers[0]).toBeTruthy();
-    statusHandlers[0]?.({
+    expect(statusHandlers).not.toHaveLength(0);
+    emitAudioStatus(statusHandlers, {
       ...audioStatus(firstTrack),
       state: 'ended',
       positionSeconds: firstTrack.duration,
@@ -3209,7 +3296,7 @@ describe('PlayerBar', () => {
     await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: secondTrack.id })));
     await screen.findByText('Song 2');
 
-    statusHandlers[0]?.({
+    emitAudioStatus(statusHandlers, {
       ...audioStatus(firstTrack),
       state: 'ended',
       positionSeconds: firstTrack.duration,
@@ -3217,7 +3304,7 @@ describe('PlayerBar', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(playLocalFile).not.toHaveBeenCalledWith(expect.objectContaining({ trackId: thirdTrack.id }));
 
-    statusHandlers[0]?.(audioStatus(secondTrack));
+    emitAudioStatus(statusHandlers, audioStatus(secondTrack));
     expect(screen.getByText('Song 2')).toBeTruthy();
   });
 
@@ -3440,12 +3527,7 @@ describe('PlayerBar', () => {
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue(audioStatus(firstTrack)),
-        onStatus: vi.fn((handler) => {
-          statusHandlers[0] = handler;
-          return () => {
-            statusHandlers.length = 0;
-          };
-        }),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
       },
@@ -3489,8 +3571,8 @@ describe('PlayerBar', () => {
     );
 
     await screen.findByText('Song 1');
-    expect(statusHandlers[0]).toBeTruthy();
-    statusHandlers[0]?.({
+    expect(statusHandlers).not.toHaveLength(0);
+    emitAudioStatus(statusHandlers, {
       ...audioStatus(firstTrack),
       state: 'ended',
       positionSeconds: 42,
@@ -3531,12 +3613,7 @@ describe('PlayerBar', () => {
       },
       audio: {
         getStatus: vi.fn().mockResolvedValue(audioStatus(firstTrack)),
-        onStatus: vi.fn((handler) => {
-          statusHandlers[0] = handler;
-          return () => {
-            statusHandlers.length = 0;
-          };
-        }),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
         listDevices: vi.fn(),
         setOutput: vi.fn(),
       },
@@ -3585,7 +3662,7 @@ describe('PlayerBar', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(playLocalFile).not.toHaveBeenCalled();
 
-    statusHandlers[0]?.({
+    emitAudioStatus(statusHandlers, {
       ...audioStatus(firstTrack),
       state: 'ended',
       positionSeconds: firstTrack.duration,

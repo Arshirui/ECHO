@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, DragEvent } from 'react';
+import type { CSSProperties, DragEvent, SetStateAction } from 'react';
 import {
   ChevronRight,
   Folder,
@@ -215,6 +215,33 @@ const validFolderSortValues = new Set<LibrarySort>(sortOptions.map((option) => o
 const remoteIndexedRefreshMinIntervalMs = 15_000;
 const targetKey = (folderId: string, path: string): string => `${folderId}::${path}`;
 const remoteTreeKey = (sourceId: string, path: string): string => `${sourceId}::${normalizeRemoteFolderPath(path)}`;
+
+const parseTargetKey = (key: string): { folderId: string; path: string } | null => {
+  const separatorIndex = key.indexOf('::');
+  if (separatorIndex <= 0) {
+    return null;
+  }
+
+  return {
+    folderId: key.slice(0, separatorIndex),
+    path: key.slice(separatorIndex + 2),
+  };
+};
+
+let localFolderTreeSession: {
+  childrenByParent: Record<string, LibraryFolderNode[]>;
+  expanded: Record<string, boolean>;
+} = {
+  childrenByParent: {},
+  expanded: {},
+};
+
+export const __resetFoldersPageSessionForTests = (): void => {
+  localFolderTreeSession = {
+    childrenByParent: {},
+    expanded: {},
+  };
+};
 
 const mergeTracksById = (tracks: LibraryTrack[], updates: LibraryTrack[]): LibraryTrack[] => {
   if (updates.length === 0) {
@@ -532,8 +559,10 @@ export const FoldersPage = (): JSX.Element => {
   const [mode, setMode] = useState<FolderMode>('local');
   const [overviews, setOverviews] = useState<LibraryFolderOverview[]>([]);
   const [folderRootOrderIds, setFolderRootOrderIds] = useState<string[]>(() => readFolderRootOrderMemory());
-  const [childrenByParent, setChildrenByParent] = useState<Record<string, LibraryFolderNode[]>>({});
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [childrenByParent, setChildrenByParentState] = useState<Record<string, LibraryFolderNode[]>>(
+    () => localFolderTreeSession.childrenByParent,
+  );
+  const [expanded, setExpandedState] = useState<Record<string, boolean>>(() => localFolderTreeSession.expanded);
   const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<FolderTarget | null>(null);
   const [tracks, setTracks] = useState<LibraryTrack[]>([]);
@@ -592,7 +621,22 @@ export const FoldersPage = (): JSX.Element => {
   });
   const remoteVisibleHydrationInFlightRef = useRef<Set<string>>(new Set());
   const tagEditorCloseTimerRef = useRef<number | null>(null);
+  const workbenchRef = useRef<HTMLDivElement | null>(null);
   const { currentTrackId, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeTrackFromQueue } = usePlaybackQueue();
+  const setChildrenByParent = useCallback((value: SetStateAction<Record<string, LibraryFolderNode[]>>): void => {
+    setChildrenByParentState((current) => {
+      const next = typeof value === 'function' ? value(current) : value;
+      localFolderTreeSession.childrenByParent = next;
+      return next;
+    });
+  }, []);
+  const setExpanded = useCallback((value: SetStateAction<Record<string, boolean>>): void => {
+    setExpandedState((current) => {
+      const next = typeof value === 'function' ? value(current) : value;
+      localFolderTreeSession.expanded = next;
+      return next;
+    });
+  }, []);
   const orderedOverviews = useMemo(() => orderFolderOverviews(overviews, folderRootOrderIds), [folderRootOrderIds, overviews]);
   const canReorderFolderRoots = mode === 'local' && orderedOverviews.length > 1;
 
@@ -1028,6 +1072,19 @@ export const FoldersPage = (): JSX.Element => {
     [expanded, loadChildren],
   );
 
+  useEffect(() => {
+    for (const [key, isExpanded] of Object.entries(expanded)) {
+      if (!isExpanded || childrenByParent[key] || loadingChildren[key]) {
+        continue;
+      }
+
+      const target = parseTargetKey(key);
+      if (target) {
+        void loadChildren(target.folderId, target.path);
+      }
+    }
+  }, [childrenByParent, expanded, loadChildren, loadingChildren]);
+
   const loadTracks = useCallback(
     async (nextPage: number, loadMode: 'replace' | 'append'): Promise<void> => {
       const library = window.echo?.library;
@@ -1204,6 +1261,67 @@ export const FoldersPage = (): JSX.Element => {
     },
     [mode, recursive, remoteApi, remoteTracks, search, selected, selectedRemote],
   );
+
+  const handleSelectAllTracks = useCallback(async (): Promise<void> => {
+    if ((mode === 'local' && !selected) || (mode === 'remote' && !selectedRemote)) {
+      return;
+    }
+
+    const activeSelectableTracks = activeTracks.filter((track) => !track.unavailable);
+    if (activeSelectableTracks.length > 0 && activeSelectableTracks.every((track) => selectedTrackIds[track.id] === true)) {
+      setSelectedTrackIds({});
+      return;
+    }
+
+    setIsBulkLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const result = await fetchBulkTracks(sort);
+      const selectableTracks = result.items.filter((track) => !track.unavailable);
+
+      if (mode === 'remote') {
+        setRemoteCachedTracks(result.items);
+        setRemotePage(Math.max(1, Math.ceil(result.items.length / pageSize)));
+        setRemoteHasMore(result.total > result.items.length);
+      } else {
+        setTracks(result.items);
+        setPage(Math.max(1, Math.ceil(result.items.length / pageSize)));
+        setHasMore(result.total > result.items.length);
+      }
+
+      setSelectedTrackIds(Object.fromEntries(selectableTracks.map((track) => [track.id, true])));
+    } catch (selectError) {
+      setError(formatFolderError(selectError, t));
+    } finally {
+      setIsBulkLoading(false);
+    }
+  }, [activeTracks, fetchBulkTracks, mode, selected, selectedRemote, selectedTrackIds, sort, t]);
+
+  useEffect(() => {
+    const handleSelectAllKeyDown = (event: KeyboardEvent): void => {
+      const isSelectAllShortcut = (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLocaleLowerCase() === 'a';
+      if (!isSelectAllShortcut || event.defaultPrevented || shouldIgnoreEscapeTarget(event.target)) {
+        return;
+      }
+
+      if (trackMenu || osuTimingTrack || editingTrack || isTagEditorOpen || isBulkLoading) {
+        return;
+      }
+
+      const hasFolderSelection = mode === 'remote' ? Boolean(selectedRemote) : Boolean(selected);
+      if (!hasFolderSelection || activeTracks.length === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleSelectAllTracks();
+    };
+
+    window.addEventListener('keydown', handleSelectAllKeyDown);
+    return () => window.removeEventListener('keydown', handleSelectAllKeyDown);
+  }, [activeTracks.length, editingTrack, handleSelectAllTracks, isBulkLoading, isTagEditorOpen, mode, osuTimingTrack, selected, selectedRemote, trackMenu]);
 
   const runBulkAction = useCallback(
     async (action: 'play' | 'shuffle' | 'append'): Promise<void> => {
@@ -1479,6 +1597,10 @@ export const FoldersPage = (): JSX.Element => {
   useEffect(() => {
     const handleEscapeNavigation = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented || shouldIgnoreEscapeTarget(event.target)) {
+        return;
+      }
+
+      if (!workbenchRef.current || workbenchRef.current.closest('[hidden]')) {
         return;
       }
 
@@ -2027,7 +2149,7 @@ export const FoldersPage = (): JSX.Element => {
   };
 
   return (
-    <div className="folders-workbench">
+    <div className="folders-workbench" ref={workbenchRef}>
       <aside className="folders-sidebar">
         <div className="folders-pane-header">
           <div>

@@ -233,13 +233,14 @@ const computeChannelBalanceGainDb = (state: ChannelBalanceState): number => {
   return Math.max(0, left, right);
 };
 
-export const computeDspEstimatedGainDb = (eqState: EqState, channelBalanceState: ChannelBalanceState): number => {
+export const computeDspEstimatedGainDb = (eqState: EqState, channelBalanceState: ChannelBalanceState, dspModuleActive = eqState.enabled || channelBalanceState.enabled): number => {
   const eqGainDb = eqState.enabled
     ? eqState.preampDb + Math.max(0, ...eqState.bands.map((band) => (band.enabled === false ? 0 : band.gainDb)))
     : 0;
   const channelGainDb = channelBalanceState.enabled ? computeChannelBalanceGainDb(channelBalanceState) : 0;
+  const headroomDb = dspModuleActive ? (eqState.dspHeadroomDb ?? 0) : 0;
 
-  return Math.round((eqGainDb + channelGainDb) * 10) / 10;
+  return Math.round((eqGainDb + channelGainDb + headroomDb) * 10) / 10;
 };
 
 const addDb = (value: number | null, gainDb: number): number | null =>
@@ -249,8 +250,9 @@ export const createAudioLevelTelemetry = (
   snapshot: PcmLevelSnapshot,
   eqState: EqState,
   channelBalanceState: ChannelBalanceState,
+  dspModuleActive?: boolean,
 ): AudioLevelEstimate => {
-  const estimatedGainDb = computeDspEstimatedGainDb(eqState, channelBalanceState);
+  const estimatedGainDb = computeDspEstimatedGainDb(eqState, channelBalanceState, dspModuleActive);
   const estimatedOutputPeakDb = addDb(snapshot.inputPeakDb, estimatedGainDb);
   const estimatedOutputRmsDb = addDb(snapshot.inputRmsDb, estimatedGainDb);
 

@@ -19,6 +19,16 @@ describe('plugin manifest validation', () => {
         sourceProviders: [{ id: 'Direct_Url', title: 'Direct URL', description: 'User custom URL' }],
         lyricsProviders: [{ id: 'Lyrics_Online', title: 'Lyrics Online' }],
         coverProviders: [{ id: 'Cover_Online', title: 'Cover Online' }],
+        themePresets: [{
+          id: 'Aurora_Glass',
+          title: 'Aurora Glass',
+          description: 'Plugin theme',
+          basePreset: 'classic',
+          light: { appBg: '#FFFFFF', accent: '#257F96', panelOpacityPercent: 120, motionSpeedSeconds: 20 },
+          dark: { appBg: '#08111F', text: '#DDEEFF', glassPercent: 34 },
+          preview: 'linear-gradient(135deg, #08111f 0%, #257f96 100%)',
+          swatches: ['#08111F', '#257F96', 'bad'],
+        }],
         settings: [{ id: 'Mode', title: 'Mode', type: 'select', options: [{ label: 'A', value: 'a' }], defaultValue: 'a' }],
       },
     }, 'echo.tools');
@@ -36,7 +46,53 @@ describe('plugin manifest validation', () => {
     expect(manifest.contributes?.sourceProviders?.[0]).toMatchObject({ id: 'direct_url', title: 'Direct URL' });
     expect(manifest.contributes?.lyricsProviders?.[0]).toMatchObject({ id: 'lyrics_online', title: 'Lyrics Online' });
     expect(manifest.contributes?.coverProviders?.[0]).toMatchObject({ id: 'cover_online', title: 'Cover Online' });
+    expect(manifest.contributes?.themePresets?.[0]).toMatchObject({
+      id: 'aurora_glass',
+      title: 'Aurora Glass',
+      basePreset: 'classic',
+      light: { appBg: '#ffffff', accent: '#257f96', panelOpacityPercent: 100, motionSpeedSeconds: 8 },
+      dark: { appBg: '#08111f', text: '#ddeeff', glassPercent: 34 },
+      preview: 'linear-gradient(135deg, #08111f 0%, #257f96 100%)',
+      swatches: ['#08111f', '#257f96'],
+    });
     expect(manifest.contributes?.settings?.[0]).toMatchObject({ id: 'mode', title: 'Mode', type: 'select', defaultValue: 'a' });
+  });
+
+  it('keeps theme preset previews structured and drops empty theme presets', () => {
+    const manifest = normalizePluginManifest({
+      id: 'echo.theme-safety',
+      name: 'Theme Safety',
+      version: '1.0.0',
+      apiVersion: 2,
+      entry: 'plugin.js',
+      permissions: [],
+      contributes: {
+        themePresets: [
+          {
+            id: 'Unsafe_Preview',
+            title: 'Unsafe Preview',
+            basePreset: 'unknown',
+            light: { panel: '#ffffff', glassPercent: '', shadowPercent: true },
+            preview: 'linear-gradient(90deg, #111111 0%, #222222 100%), url(https://example.invalid/pixel.png)',
+          },
+          {
+            id: 'No_Tone',
+            title: 'No Tone',
+            basePreset: 'classic',
+            preview: '#ffffff',
+          },
+        ],
+      },
+    });
+
+    expect(manifest.contributes?.themePresets).toHaveLength(1);
+    expect(manifest.contributes?.themePresets?.[0]).toMatchObject({
+      id: 'unsafe_preview',
+      title: 'Unsafe Preview',
+      basePreset: 'classic',
+      light: { panel: '#ffffff' },
+    });
+    expect(manifest.contributes?.themePresets?.[0]?.preview).toBeUndefined();
   });
 
   it('rejects paths outside the plugin folder and unsupported entry types', () => {

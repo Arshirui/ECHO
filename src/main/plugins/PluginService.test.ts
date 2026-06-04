@@ -143,6 +143,25 @@ describe('PluginService', () => {
     });
   });
 
+  it('creates a theme preset example with declarative theme contributions', () => {
+    const created = service.createExample('theme-preset');
+    const summary = service.list().plugins[0];
+
+    expect(created.pluginId).toBe('echo.theme-preset');
+    expect(summary).toMatchObject({
+      id: 'echo.theme-preset',
+      enabled: false,
+      status: 'disabled',
+      permissions: [],
+    });
+    expect(summary.security.themePresetCount).toBe(1);
+    expect(summary.contributes.themePresets?.[0]).toMatchObject({
+      id: 'aurora-glass',
+      title: 'Aurora Glass',
+      basePreset: 'classic',
+    });
+  });
+
   it('requires explicit permission trust before enabling a plugin', () => {
     service.createExample('playback-panel');
 

@@ -252,6 +252,12 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.DiagnosticsOpenAudioCrashReport);
   });
 
+  it('exposes app quit through IPC', async () => {
+    await exposedApi!.app.quit();
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppQuit);
+  });
+
   it('exposes performance stall reporting through IPC', async () => {
     const payload = {
       source: 'renderer' as const,

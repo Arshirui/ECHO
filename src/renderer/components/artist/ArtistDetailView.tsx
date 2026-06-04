@@ -602,10 +602,11 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
     setStreamingAlbumDetailError(null);
     setResolvingStreamingTrackKey(null);
   }, []);
-  const { isReturning, returnBack } = useAnimatedBackNavigation(onBack, !selectedAlbum && !selectedStreamingAlbum);
+  const { isReturning, returnBack } = useAnimatedBackNavigation(onBack, !selectedAlbum && !selectedStreamingAlbum, { rootRef: detailRootRef });
   const { isReturning: isStreamingAlbumReturning, returnBack: returnBackFromStreamingAlbum } = useAnimatedBackNavigation(
     handleBackFromStreamingAlbum,
     Boolean(selectedStreamingAlbum),
+    { rootRef: detailRootRef },
   );
   const source = useMemo(() => ({ type: 'artist' as const, label: artist.name, artistId: artist.id }), [artist.id, artist.name]);
   const displayArtist = verifiedArtist?.id === artist.id ? verifiedArtist : artist;
@@ -1045,6 +1046,9 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
   const handleLoadMoreOverviewTracks = useCallback((): void => {
     setOverviewTrackVisibleCount((current) => Math.min(current + overviewTrackLoadStep, loadedTracks.length));
   }, [loadedTracks.length]);
+  const handleExpandAllOverviewTracks = useCallback((): void => {
+    setOverviewTrackVisibleCount(loadedTracks.length);
+  }, [loadedTracks.length]);
 
   const handleSelectAlbum = useCallback((album: LibraryAlbum): void => {
     detailScrollTopRef.current = readPageScrollTop(detailRootRef.current);
@@ -1244,7 +1248,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
       : selectedStreamingAlbum.coverThumb ?? null;
 
     return (
-      <div className={`album-detail-page artist-streaming-album-detail ${isStreamingAlbumReturning ? 'is-returning' : ''}`}>
+      <div className={`album-detail-page artist-streaming-album-detail ${isStreamingAlbumReturning ? 'is-returning' : ''}`} ref={detailRootRef}>
         <button className="album-back-button" type="button" onClick={returnBackFromStreamingAlbum}>
           <ArrowLeft size={17} />
           流媒体专辑
@@ -1331,7 +1335,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
 
   if (!isVerifyingArtist && !verifiedArtist) {
     return (
-      <div className={`artist-detail-page ${isReturning ? 'is-returning' : ''}`}>
+      <div className={`artist-detail-page ${isReturning ? 'is-returning' : ''}`} ref={detailRootRef}>
         <button className="artist-detail-back" type="button" onClick={returnBack}>
           <ArrowLeft size={17} />
           {t('artistDetail.action.back')}
@@ -1507,9 +1511,14 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
                   })}
                 </div>
                 {hasMoreOverviewTracks ? (
-                  <button className="artist-load-more artist-overview-track-load-more" type="button" onClick={handleLoadMoreOverviewTracks}>
-                    {t('albumDetail.tracks.loadMore')}
-                  </button>
+                  <div className="artist-overview-track-actions">
+                    <button className="artist-load-more artist-overview-track-load-more" type="button" onClick={handleLoadMoreOverviewTracks}>
+                      {t('albumDetail.tracks.loadMore')}
+                    </button>
+                    <button className="artist-load-more artist-overview-track-expand-all" type="button" onClick={handleExpandAllOverviewTracks}>
+                      {t('artistDetail.tracks.expandAll')}
+                    </button>
+                  </div>
                 ) : null}
               </>
             ) : (

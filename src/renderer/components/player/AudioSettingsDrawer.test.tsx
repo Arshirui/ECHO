@@ -63,6 +63,7 @@ const testTranslations: Record<string, string> = {
   'audioDrawer.signal.dsdDopStandby': 'DSD DoP not used',
   'audioDrawer.device.systemAudio': 'Windows Direct Output',
   'audioDrawer.device.systemAudioDescription': 'Default Windows audio path for headphones, Bluetooth, and computer speakers',
+  'audioDrawer.warning.highOutputSampleRate': '当前音频设备采样率过高，可能导致播放速度异常，建议改为 48 kHz。',
   'audioProfessional.action.hideDetails': 'Hide professional details',
   'audioProfessional.action.refresh': 'Refresh status',
   'audioProfessional.action.showDetails': 'Show professional details',
@@ -779,6 +780,42 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
 
     expect(document.querySelector('.audio-current-output-card--gold')).toBeTruthy();
     expect(document.querySelector('.audio-current-output-card--asio')).toBeNull();
+  });
+
+  it('warns when the current shared output sample rate is 192 kHz or higher', () => {
+    const warningText = '当前音频设备采样率过高，可能导致播放速度异常，建议改为 48 kHz。';
+
+    renderDrawer({
+      ...baseStatus,
+      outputMode: 'shared',
+      sharedDeviceSampleRate: 384000,
+      actualDeviceSampleRate: 384000,
+      requestedOutputSampleRate: 384000,
+    });
+
+    expect(screen.getByRole('alert').textContent).toBe(warningText);
+
+    cleanup();
+    renderDrawer({
+      ...baseStatus,
+      outputMode: 'shared',
+      sharedDeviceSampleRate: 192000,
+      actualDeviceSampleRate: 192000,
+      requestedOutputSampleRate: 192000,
+    });
+
+    expect(screen.getByRole('alert').textContent).toBe(warningText);
+
+    cleanup();
+    renderDrawer({
+      ...baseStatus,
+      outputMode: 'shared',
+      sharedDeviceSampleRate: 176400,
+      actualDeviceSampleRate: 176400,
+      requestedOutputSampleRate: 176400,
+    });
+
+    expect(screen.queryByText(warningText)).toBeNull();
   });
 
   it('shows ASIO buffer controls only in ASIO mode', () => {

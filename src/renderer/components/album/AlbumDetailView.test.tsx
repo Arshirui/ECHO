@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AlbumOnlineInfo, LibraryAlbum, LibraryArtist, LibraryTrack } from '../../../shared/types/library';
+import type { AlbumOnlineInfo, LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
 import { AlbumDetailView } from './AlbumDetailView';
 
 const queueMock = {
@@ -23,6 +23,12 @@ vi.mock('../../i18n/I18nProvider', () => {
     'albumDetail.action.addToQueue': 'Add to queue',
     'albumDetail.action.more': 'More album actions',
     'albumDetail.action.showInFolder': 'Show in folder',
+    'albumDetail.tracks.status.addedToPlaylist': 'Added to {playlist}.',
+    'albumMenu.action.addToPlaylist': 'Add to playlist...',
+    'albumMenu.playlistSubmenu.aria': 'Choose playlist',
+    'albumMenu.playlistSubmenu.empty': 'No local playlists',
+    'albumMenu.playlistSubmenu.itemCount': '{count} tracks',
+    'albumMenu.playlistSubmenu.loading': 'Loading playlists...',
     'albumDetail.action.openSource': 'Open source',
     'albumDetail.aria.openArtist': 'Open artist {artist}',
     'albumDetail.online.match': 'MusicBrainz match',
@@ -43,6 +49,7 @@ vi.mock('../../i18n/I18nProvider', () => {
     'albumDetail.related.heading': 'My Library',
     'albumDetail.related.thisAlbum': 'This album',
     'albumDetail.status.addedToQueue': 'Added {count} tracks to queue.',
+    'albumDetail.status.copiedCover': 'Original cover copied',
     'albumDetail.tab.credits': 'Credits',
     'albumDetail.tab.information': 'Information',
     'albumDetail.tab.releases': 'Versions',
@@ -127,6 +134,22 @@ const artist = (): LibraryArtist => ({
   avatarUrl: null,
   avatarThumbUrl: null,
   avatarStatus: null,
+});
+
+const playlist = (overrides: Partial<LibraryPlaylist> = {}): LibraryPlaylist => ({
+  id: 'playlist-1',
+  name: 'Road Mix',
+  description: null,
+  kind: 'manual',
+  sourceProvider: 'local',
+  sourcePlaylistId: null,
+  coverId: null,
+  coverThumb: null,
+  sortMode: 'manual',
+  itemCount: 0,
+  createdAt: '2026-06-02T00:00:00.000Z',
+  updatedAt: '2026-06-02T00:00:00.000Z',
+  ...overrides,
 });
 
 const onlineInfo = (): AlbumOnlineInfo => ({
@@ -304,6 +327,8 @@ const installLibrary = (): {
   getAlbumOnlineInfo: ReturnType<typeof vi.fn>;
   getArtists: ReturnType<typeof vi.fn>;
   getArtistAlbums: ReturnType<typeof vi.fn>;
+  addTracksToPlaylist: ReturnType<typeof vi.fn>;
+  copyAlbumCover: ReturnType<typeof vi.fn>;
 } => {
   const getAlbumOnlineInfo = vi.fn((_albumId: string, options?: { provider?: 'all' | 'musicbrainz' | 'wikipedia' }) =>
     Promise.resolve(onlineInfoForProvider(options?.provider)),
@@ -322,6 +347,8 @@ const installLibrary = (): {
     total: 2,
     hasMore: false,
   });
+  const addTracksToPlaylist = vi.fn().mockResolvedValue([]);
+  const copyAlbumCover = vi.fn().mockResolvedValue(true);
   window.echo = {
     app: {
       openExternalUrl: vi.fn().mockResolvedValue(undefined),
@@ -338,11 +365,16 @@ const installLibrary = (): {
       getAlbumOnlineInfo,
       getArtists,
       getArtistAlbums,
+      getPlaylists: vi.fn().mockResolvedValue([playlist()]),
+      createPlaylist: vi.fn().mockResolvedValue(playlist()),
+      addTrackToPlaylist: vi.fn().mockResolvedValue({ id: 'playlist-item-1' }),
+      addTracksToPlaylist,
+      copyAlbumCover,
       getLikedAlbumIds: vi.fn().mockResolvedValue({}),
       openTrackInFolder: vi.fn().mockResolvedValue(undefined),
     },
   } as unknown as Window['echo'];
-  return { getAlbumOnlineInfo, getArtists, getArtistAlbums };
+  return { getAlbumOnlineInfo, getArtists, getArtistAlbums, addTracksToPlaylist, copyAlbumCover };
 };
 
 afterEach(() => {
@@ -502,6 +534,20 @@ describe('AlbumDetailView', () => {
     expect((container.querySelector('.album-detail-cover img') as HTMLImageElement | null)?.getAttribute('src')).toBe('echo-cover://original/cover%201');
   });
 
+  it('copies the original album artwork from the detail cover context menu', async () => {
+    const { copyAlbumCover } = installLibrary();
+
+    const { container } = render(<AlbumDetailView album={album({
+      coverId: 'cover 1',
+      coverThumb: 'echo-cover://album/cover%201',
+    })} onBack={vi.fn()} />);
+
+    fireEvent.contextMenu(container.querySelector('.album-detail-cover')!);
+
+    await waitFor(() => expect(copyAlbumCover).toHaveBeenCalledWith('album-1'));
+    expect(screen.getByText('Original cover copied')).toBeTruthy();
+  });
+
   it('opens information links through the system browser bridge', async () => {
     installLibrary();
 
@@ -525,6 +571,21 @@ describe('AlbumDetailView', () => {
 
     await waitFor(() => expect(queueMock.appendTracksToQueue).toHaveBeenCalledWith(mockAlbumTracks, { type: 'album', label: 'Mock Album', albumId: 'album-1' }));
     expect(screen.getByText('Added 2 tracks to queue.')).toBeTruthy();
+  });
+
+  it('adds the album tracks to a playlist from the hero more menu', async () => {
+    mockAlbumTracks = [track({ id: 'track-1', title: 'First Track' }), track({ id: 'track-2', title: 'Second Track' })];
+    const { addTracksToPlaylist } = installLibrary();
+
+    render(<AlbumDetailView album={album()} onBack={vi.fn()} />);
+
+    await screen.findByText('Mock album tracks');
+    fireEvent.click(screen.getByRole('button', { name: 'More album actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add to playlist...' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Road Mix/ }));
+
+    await waitFor(() => expect(addTracksToPlaylist).toHaveBeenCalledWith('playlist-1', ['track-1', 'track-2']));
+    expect(screen.getByText('Added to Road Mix.')).toBeTruthy();
   });
 
   it('shows the first album track in its folder from the hero more menu', async () => {
@@ -551,6 +612,7 @@ describe('AlbumDetailView', () => {
     await waitFor(() => expect(getArtists).toHaveBeenCalledWith({ page: 1, pageSize: 50, search: 'Echo Unit', sort: 'default' }));
     expect(navigate).toHaveBeenCalledTimes(1);
     expect((navigate.mock.calls[0]?.[0] as CustomEvent).detail.artist.id).toBe('artist-1');
+    expect((navigate.mock.calls[0]?.[0] as CustomEvent).detail.returnTo).toBe('albums');
 
     window.removeEventListener('app:navigate:artist-detail', navigate);
   });

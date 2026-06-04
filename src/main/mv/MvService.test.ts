@@ -382,6 +382,16 @@ describe('MvService', () => {
     expect(service.getVideoCandidates(track.id).find((video) => video.id === second.id)?.offsetMs).toBe(750);
   });
 
+  it('clamps saved MV offsets to the wide synchronization range', () => {
+    const { root, service, track } = createHarness();
+    const videoPath = join(root, 'Echo Song.mp4');
+    writeFileSync(videoPath, 'video');
+    service.bindLocalVideo(track.id, videoPath);
+
+    expect(service.setVideoOffset(track.id, 700000)?.offsetMs).toBe(600000);
+    expect(service.setVideoOffset(track.id, -700000)?.offsetMs).toBe(-600000);
+  });
+
   it('automatically searches and applies a network MV candidate at 70 percent or higher when enabled', async () => {
     const candidate: MvMatchCandidate = {
       id: 'bilibili:BV1auto',

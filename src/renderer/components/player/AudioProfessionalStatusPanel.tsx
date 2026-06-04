@@ -26,6 +26,12 @@ type ProfessionalStatusBadge = {
   tone: 'good' | 'warning' | 'danger' | 'neutral';
 };
 
+type SignalPathNode = {
+  eyebrow: string;
+  label: string;
+  tone: 'good' | 'warning' | 'danger' | 'muted';
+};
+
 const trimTrailingZero = (value: string): string => value.replace(/\.0$/u, '');
 
 const normalizeReason = (value: string | null | undefined, fallback: string): string =>
@@ -35,11 +41,17 @@ const formatIssueReason = (
   value: string,
   fallback: string,
   formatSharedMixRateTooHigh: (decoderRate: number, deviceRate: number) => string,
+  formatWindowsAudioDefaultFormatUnusual: (deviceRate: number) => string,
 ): string => {
   const sharedMixRateMatch = /^shared_output_mix_rate_too_high:(\d+)->(\d+)$/u.exec(value);
+  const windowsAudioDefaultFormatMatch = /^windows_audio_default_format_unusual:(\d+)$/u.exec(value);
 
   if (sharedMixRateMatch) {
     return formatSharedMixRateTooHigh(Number(sharedMixRateMatch[1]), Number(sharedMixRateMatch[2]));
+  }
+
+  if (windowsAudioDefaultFormatMatch) {
+    return formatWindowsAudioDefaultFormatUnusual(Number(windowsAudioDefaultFormatMatch[1]));
   }
 
   return normalizeReason(value, fallback);
@@ -98,18 +110,88 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
   const playbackSummary = status
     ? `${status.outputMode} / ${formatRate(status.actualDeviceSampleRate ?? status.requestedOutputSampleRate, unknown)} / ${bitPerfectText}`
     : t('audioProfessional.summary.pending');
+  const dspHeadroomActive = Boolean(status?.dspActive && Math.abs(status.dspHeadroomDb ?? 0) > 0.05);
+  const dspModules = [
+    dspHeadroomActive ? `${t('audioProfessional.signal.headroom')} ${formatDb(status?.dspHeadroomDb, unknown)}` : null,
+    status?.eqEnabled ? t('audioProfessional.row.eq') : null,
+    status?.roomCorrectionEnabled ? t('audioProfessional.signal.fir') : null,
+    status?.channelBalanceEnabled ? t('audioProfessional.row.channelBalance') : null,
+    status?.replayGainEnabled ? t('audioProfessional.row.replayGain') : null,
+    status?.dspLimiterProtecting ? t('audioProfessional.badge.protect') : null,
+  ].filter((module): module is string => Boolean(module));
+  const signalPathText = status
+    ? dspModules.length
+      ? t('audioProfessional.value.dspPath', { modules: dspModules.join(' -> ') })
+      : t('audioProfessional.value.nativePath')
+    : unknown;
+  const signalPathNodes: SignalPathNode[] = [
+    {
+      eyebrow: t('audioProfessional.signal.source'),
+      label: status?.codec ?? formatRate(status?.fileSampleRate, unknown),
+      tone: status ? 'good' : 'muted',
+    },
+    {
+      eyebrow: t('audioProfessional.signal.decode'),
+      label: status?.activeDecodeBackendImpl ?? status?.outputBackend ?? unknown,
+      tone: status ? 'good' : 'muted',
+    },
+    {
+      eyebrow: dspModules.length ? t('audioProfessional.signal.dsp') : t('audioProfessional.signal.native'),
+      label: signalPathText,
+      tone: status?.dspLimiterProtecting ? 'danger' : dspModules.length ? 'warning' : status ? 'good' : 'muted',
+    },
+    {
+      eyebrow: t('audioProfessional.signal.output'),
+      label: status?.outputDeviceName ?? status?.outputMode ?? t('audioProfessional.value.systemDefault'),
+      tone: status?.sampleRateMismatch ? 'danger' : status ? 'good' : 'muted',
+    },
+  ];
+  const protectLimiterText = status?.dspLimiterProtecting
+    ? enabled
+    : status?.dspClippingRisk
+      ? t('audioProfessional.value.pending')
+      : disabled;
 
   const issueReasons = useMemo(() => (
     [status?.error, ...(status?.warnings ?? [])]
       .filter((reason): reason is string => Boolean(reason?.trim()))
-      .map((reason) => formatIssueReason(
-        reason,
-        unknown,
-        (decoderRate, deviceRate) => t('audioProfessional.issue.sharedMixRateTooHigh', {
-          decoderRate: formatRate(decoderRate, unknown),
-          deviceRate: formatRate(deviceRate, unknown),
-        }),
-      ))
+      .map((reason) => {
+        if (reason === 'room_correction_bit_perfect_disabled') {
+          return t('audioProfessional.issue.roomCorrectionBitPerfectDisabled');
+        }
+
+        if (reason === 'room_correction_clipping_risk') {
+          return t('audioProfessional.issue.roomCorrectionClippingRisk');
+        }
+
+        if (reason === 'dsp_limiter_protecting') {
+          return t('audioProfessional.issue.dspLimiterProtecting');
+        }
+
+        if (reason === 'dsp_clipping_risk') {
+          return t('audioProfessional.issue.dspClippingRisk');
+        }
+
+        if (reason === 'audio_level_clipping_risk') {
+          return t('audioProfessional.issue.audioLevelClippingRisk');
+        }
+
+        if (reason === 'audio_level_clipped') {
+          return t('audioProfessional.issue.audioLevelClipped');
+        }
+
+        return formatIssueReason(
+          reason,
+          unknown,
+          (decoderRate, deviceRate) => t('audioProfessional.issue.sharedMixRateTooHigh', {
+            decoderRate: formatRate(decoderRate, unknown),
+            deviceRate: formatRate(deviceRate, unknown),
+          }),
+          (deviceRate) => t('audioProfessional.issue.windowsDefaultFormatUnusual', {
+            deviceRate: formatRate(deviceRate, unknown),
+          }),
+        );
+      })
   ), [status, t, unknown]);
 
   const badges = useMemo<ProfessionalStatusBadge[]>(() => {
@@ -121,8 +203,11 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
     if (status?.resampling) {
       nextBadges.push({ label: t('audioProfessional.badge.resampling'), tone: 'warning' });
     }
-    if (status?.dspActive || status?.eqEnabled || status?.channelBalanceEnabled) {
+    if (status?.dspActive || status?.eqEnabled || status?.roomCorrectionEnabled || status?.channelBalanceEnabled) {
       nextBadges.push({ label: t('audioProfessional.badge.dsp'), tone: 'warning' });
+    }
+    if (status?.dspLimiterProtecting) {
+      nextBadges.push({ label: t('audioProfessional.badge.protect'), tone: 'warning' });
     }
     if (status?.replayGainEnabled) {
       nextBadges.push({ label: t('audioProfessional.badge.replayGain'), tone: 'neutral' });
@@ -170,11 +255,14 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
       title: t('audioProfessional.group.directDsp'),
       icon: SlidersHorizontal,
       rows: [
+        { label: t('audioProfessional.row.signalPath'), value: signalPathText, tone: dspModules.length ? 'warning' : 'good' },
         { label: t('audioProfessional.row.bitPerfect'), value: bitPerfectText, tone: status?.bitPerfectCandidate ? 'good' : 'muted' },
         { label: t('audioProfessional.row.resampling'), value: status?.resampling ? yes : no, tone: status?.resampling ? 'warning' : 'good' },
         { label: t('audioProfessional.row.sampleRateMismatch'), value: status?.sampleRateMismatch ? yes : no, tone: status?.sampleRateMismatch ? 'danger' : 'good' },
         { label: t('audioProfessional.row.eq'), value: status?.eqEnabled ? enabled : disabled, tone: status?.eqEnabled ? 'warning' : 'muted' },
+        { label: t('audioProfessional.row.roomCorrection'), value: status?.roomCorrectionEnabled ? enabled : disabled, tone: status?.roomCorrectionEnabled ? 'warning' : 'muted' },
         { label: t('audioProfessional.row.channelBalance'), value: status?.channelBalanceEnabled ? enabled : disabled, tone: status?.channelBalanceEnabled ? 'warning' : 'muted' },
+        { label: t('audioProfessional.row.protectLimiter'), value: protectLimiterText, tone: status?.dspLimiterProtecting ? 'danger' : status?.dspClippingRisk ? 'warning' : 'muted' },
         { label: t('audioProfessional.row.replayGain'), value: status?.replayGainEnabled ? `${status.replayGainMode ?? 'track'} / ${formatDb(status.replayGainAppliedDb, '0.00 dB')}` : disabled },
         { label: t('audioProfessional.row.clippingProtection'), value: status?.replayGainPreventedClipping || status?.clippingRisk ? enabled : disabled, tone: status?.clippingRisk ? 'danger' : 'muted' },
       ],
@@ -195,7 +283,7 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
         { label: t('audioProfessional.row.error'), value: status?.error ?? unknown, tone: status?.error ? 'danger' : 'muted' },
       ],
     },
-  ], [bitPerfectText, disabled, enabled, no, status, t, unknown, yes]);
+  ], [bitPerfectText, disabled, dspModules.length, enabled, no, protectLimiterText, signalPathText, status, t, unknown, yes]);
 
   const visibleSections = detailsOpen ? sections : [];
   const panelStateIcon = status?.error ? AlertTriangle : status?.bitPerfectCandidate ? CheckCircle2 : Zap;
@@ -220,6 +308,15 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
           ))}
         </div>
       ) : null}
+
+      <div className="audio-professional-status__signal" aria-label={t('audioProfessional.row.signalPath')}>
+        {signalPathNodes.map((node, index) => (
+          <span data-tone={node.tone} key={`${node.eyebrow}-${index}`}>
+            <em>{node.eyebrow}</em>
+            <strong title={node.label}>{node.label}</strong>
+          </span>
+        ))}
+      </div>
 
       {issueReasons.length ? (
         <p className="audio-professional-status__issue" data-tone={status?.error ? 'danger' : 'warning'}>

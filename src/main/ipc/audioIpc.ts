@@ -1,7 +1,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, extname, isAbsolute, join, normalize } from 'node:path';
 import { BrowserWindow, dialog, ipcMain } from 'electron';
+import type { OpenDialogOptions } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import { normalizeAudioOutputModeForPlatform, normalizeAudioSharedBackendForPlatform } from '../../shared/utils/audioPlatformCapabilities';
+import { expandEqualizerApoIncludes, formatEqualizerApoGraphicEqPreset, formatEqualizerApoPreset, parseEqualizerApoPreset } from '../../shared/utils/equalizerApoPreset';
 import type {
   AudioDiagnostics,
   AudioDeviceInfo,
@@ -18,6 +21,9 @@ import type {
 import type {
   EqBindProfileRequest,
   EqPreset,
+  EqPresetImportMetadata,
+  EqPresetImportPreviewResult,
+  EqPresetImportResult,
   EqProfileBindingTarget,
   EqSavePresetRequest,
   EqSaveProfileRequest,
@@ -27,6 +33,7 @@ import type {
   EqSetBandGainRequest,
   EqSetBandQRequest,
   EqState,
+  RoomCorrectionState,
 } from '../../shared/types/eq';
 import { getAudioSession } from '../audio/AudioSession';
 import { exportAudioFile } from '../audio/AudioExportService';
@@ -70,6 +77,111 @@ const uniqueImportedPresetId = (name: string, existingIds: Set<string>): string 
   return candidate;
 };
 
+const defaultImportedPresetName = (filePath: string): string => {
+  const extension = extname(filePath);
+  const fileName = basename(filePath, extension).trim();
+  return fileName || 'Imported EQ Preset';
+};
+
+const expandWindowsEnvironmentVariables = (input: string): string =>
+  input.replace(/%([^%]+)%/g, (match, name: string) => {
+    const value = process.env[name] ?? process.env[name.toUpperCase()] ?? process.env[name.toLowerCase()];
+    return value && value.trim() ? value : match;
+  });
+
+type ParsedEqPresetImport = EqSavePresetRequest & {
+  metadata: EqPresetImportMetadata;
+};
+
+const parseEchoEqPresetImport = (rawContent: string): ParsedEqPresetImport | null => {
+  const parsed = JSON.parse(rawContent) as unknown;
+  const payload = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? parsed as { preset?: Partial<EqSavePresetRequest>; name?: unknown; preampDb?: unknown; bands?: unknown }
+    : null;
+  const candidate = payload?.preset && typeof payload.preset === 'object' ? payload.preset : payload;
+
+  if (!candidate || typeof candidate.name !== 'string') {
+    return null;
+  }
+
+  return {
+    name: candidate.name,
+    preampDb: Number(candidate.preampDb ?? 0),
+    bands: candidate.bands as EqSavePresetRequest['bands'],
+    metadata: {
+      source: 'echo-json',
+      importedFilterCount: Array.isArray(candidate.bands) ? candidate.bands.length : 0,
+      skippedFilterCount: 0,
+      graphicEqPointCount: 0,
+      includedFileCount: 0,
+      skippedIncludeCount: 0,
+      unsupportedDirectiveCount: 0,
+      unsupportedDirectiveSummary: {},
+      channelScopedFilterCount: 0,
+      bandwidthFilterCount: 0,
+      warnings: [],
+    },
+  };
+};
+
+const parseImportedEqPreset = (rawContent: string, filePath: string): ParsedEqPresetImport => {
+  const trimmed = rawContent.trimStart();
+
+  if (trimmed.startsWith('{')) {
+    const echoPreset = parseEchoEqPresetImport(rawContent);
+    if (!echoPreset) {
+      throw new Error('invalid_eq_preset_import');
+    }
+
+    return echoPreset;
+  }
+
+  const sourcePath = normalize(filePath);
+  const expandedApoPreset = expandEqualizerApoIncludes(rawContent, (includePath, context) => {
+    const parentPath = context.sourcePath ?? sourcePath;
+    const expandedIncludePath = expandWindowsEnvironmentVariables(includePath);
+    const includeFilePath = normalize(isAbsolute(expandedIncludePath) ? expandedIncludePath : join(dirname(parentPath), expandedIncludePath));
+    return {
+      content: readFileSync(includeFilePath, 'utf8'),
+      sourcePath: includeFilePath,
+    };
+  }, { sourcePath });
+  const equalizerApoPreset = parseEqualizerApoPreset(expandedApoPreset.content, { name: defaultImportedPresetName(filePath) });
+  return {
+    name: equalizerApoPreset.name,
+    preampDb: equalizerApoPreset.preampDb,
+    bands: equalizerApoPreset.bands,
+    metadata: {
+      source: 'equalizer-apo',
+      importedFilterCount: equalizerApoPreset.importedFilterCount,
+      skippedFilterCount: equalizerApoPreset.skippedFilterCount,
+      graphicEqPointCount: equalizerApoPreset.graphicEqPointCount,
+      includedFileCount: expandedApoPreset.includedFileCount,
+      skippedIncludeCount: expandedApoPreset.skippedIncludeCount,
+      unsupportedDirectiveCount: equalizerApoPreset.unsupportedDirectiveCount,
+      unsupportedDirectiveSummary: equalizerApoPreset.unsupportedDirectiveSummary,
+      channelScopedFilterCount: equalizerApoPreset.channelScopedFilterCount,
+      bandwidthFilterCount: equalizerApoPreset.bandwidthFilterCount,
+      warnings: [...expandedApoPreset.warnings, ...equalizerApoPreset.warnings],
+    },
+  };
+};
+
+const createEqPresetImportPreview = (filePath: string): EqPresetImportPreviewResult => {
+  const candidate = parseImportedEqPreset(readFileSync(filePath, 'utf8'), filePath);
+  const eqBridge = getEqBridge();
+  return {
+    request: {
+      id: uniqueImportedPresetId(candidate.name, new Set(eqBridge.listPresets().map((preset) => preset.id))),
+      name: candidate.name,
+      preampDb: Number(candidate.preampDb ?? 0),
+      bands: candidate.bands,
+    },
+    metadata: candidate.metadata,
+    fileName: basename(filePath),
+  };
+};
+
 const exportEqPreset = async (request: EqSavePresetRequest): Promise<string | null> => {
   const savedName = typeof request.name === 'string' && request.name.trim() ? request.name.trim() : 'ECHO Next EQ Preset';
   const result = await dialog.showSaveDialog({
@@ -103,10 +215,46 @@ const exportEqPreset = async (request: EqSavePresetRequest): Promise<string | nu
   return result.filePath;
 };
 
-const importEqPreset = async (): Promise<EqPreset | null> => {
+const exportEqualizerApoPreset = async (request: EqSavePresetRequest): Promise<string | null> => {
+  const savedName = typeof request.name === 'string' && request.name.trim() ? request.name.trim() : 'ECHO Next EQ Preset';
+  const result = await dialog.showSaveDialog({
+    title: 'Export Equalizer APO Preset',
+    defaultPath: `${safeExportFileName(savedName)}.txt`,
+    filters: [{ name: 'Equalizer APO config', extensions: ['txt', 'cfg'] }],
+  });
+
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  writeFileSync(result.filePath, formatEqualizerApoPreset(request), 'utf8');
+  return result.filePath;
+};
+
+const exportEqualizerApoGraphicEqPreset = async (request: EqSavePresetRequest): Promise<string | null> => {
+  const savedName = typeof request.name === 'string' && request.name.trim() ? request.name.trim() : 'ECHO Next EQ Preset';
+  const result = await dialog.showSaveDialog({
+    title: 'Export Equalizer APO GraphicEQ',
+    defaultPath: `${safeExportFileName(savedName)} GraphicEQ.txt`,
+    filters: [{ name: 'Equalizer APO GraphicEQ', extensions: ['txt', 'cfg'] }],
+  });
+
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  writeFileSync(result.filePath, formatEqualizerApoGraphicEqPreset(request), 'utf8');
+  return result.filePath;
+};
+
+const previewImportEqPreset = async (): Promise<EqPresetImportPreviewResult | null> => {
   const result = await dialog.showOpenDialog({
     title: 'Import EQ Preset',
-    filters: [{ name: 'ECHO Next EQ Preset', extensions: ['json'] }],
+    filters: [
+      { name: 'EQ Preset / Equalizer APO', extensions: ['json', 'txt', 'cfg', 'apo'] },
+      { name: 'ECHO Next EQ Preset', extensions: ['json'] },
+      { name: 'Equalizer APO', extensions: ['txt', 'cfg', 'apo'] },
+    ],
     properties: ['openFile'],
   });
 
@@ -114,24 +262,37 @@ const importEqPreset = async (): Promise<EqPreset | null> => {
     return null;
   }
 
-  const parsed = JSON.parse(readFileSync(result.filePaths[0], 'utf8')) as unknown;
-  const payload = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-    ? parsed as { preset?: Partial<EqSavePresetRequest>; name?: unknown; preampDb?: unknown; bands?: unknown }
-    : null;
-  const candidate = payload?.preset && typeof payload.preset === 'object' ? payload.preset : payload;
+  return createEqPresetImportPreview(result.filePaths[0]);
+};
 
-  if (!candidate || typeof candidate.name !== 'string') {
-    throw new Error('invalid_eq_preset_import');
+const importEqPreset = async (): Promise<EqPresetImportResult | null> => {
+  const preview = await previewImportEqPreset();
+  if (!preview) {
+    return null;
   }
-
   const eqBridge = getEqBridge();
 
-  return eqBridge.savePreset({
-    id: uniqueImportedPresetId(candidate.name, new Set(eqBridge.listPresets().map((preset) => preset.id))),
-    name: candidate.name,
-    preampDb: Number(candidate.preampDb ?? 0),
-    bands: candidate.bands as EqSavePresetRequest['bands'],
-  });
+  const preset = eqBridge.savePreset(preview.request);
+
+  return {
+    preset,
+    metadata: preview.metadata,
+  };
+};
+
+const importRoomCorrectionIr = async (window: BrowserWindow | null): Promise<RoomCorrectionState | null> => {
+  const options: OpenDialogOptions = {
+    title: 'Import Room Correction IR',
+    filters: [{ name: 'WAV impulse response', extensions: ['wav'] }],
+    properties: ['openFile'],
+  };
+  const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+
+  if (result.canceled || !result.filePaths[0]) {
+    return null;
+  }
+
+  return getEqBridge().importRoomCorrectionIr(result.filePaths[0]);
 };
 
 const normalizeOutputSettings = (value: unknown): AudioOutputSettings => {
@@ -524,6 +685,9 @@ export const registerAudioIpc = (): void => {
   ipcMain.handle(IpcChannels.EqSetPreamp, async (_event, preampDb: unknown): Promise<EqState> =>
     getEqBridge().setPreamp(Number(preampDb)),
   );
+  ipcMain.handle(IpcChannels.EqSetDspHeadroom, async (_event, headroomDb: unknown): Promise<EqState> =>
+    getEqBridge().setDspHeadroom(Number(headroomDb)),
+  );
   ipcMain.handle(IpcChannels.EqSetPreset, async (_event, presetId: unknown): Promise<EqState> =>
     getEqBridge().setPreset(String(presetId)),
   );
@@ -531,6 +695,9 @@ export const registerAudioIpc = (): void => {
   ipcMain.handle(IpcChannels.EqListPresets, () => getEqBridge().listPresets());
   ipcMain.handle(IpcChannels.EqSavePreset, (_event, request: EqSavePresetRequest) => getEqBridge().savePreset(request));
   ipcMain.handle(IpcChannels.EqExportPreset, (_event, request: EqSavePresetRequest) => exportEqPreset(request));
+  ipcMain.handle(IpcChannels.EqExportApoPreset, (_event, request: EqSavePresetRequest) => exportEqualizerApoPreset(request));
+  ipcMain.handle(IpcChannels.EqExportApoGraphicEqPreset, (_event, request: EqSavePresetRequest) => exportEqualizerApoGraphicEqPreset(request));
+  ipcMain.handle(IpcChannels.EqPreviewImportPreset, () => previewImportEqPreset());
   ipcMain.handle(IpcChannels.EqImportPreset, () => importEqPreset());
   ipcMain.handle(IpcChannels.EqDeletePreset, (_event, presetId: unknown) => getEqBridge().deletePreset(String(presetId)));
   ipcMain.handle(IpcChannels.EqListProfiles, () => getEqBridge().listProfiles());
@@ -544,4 +711,15 @@ export const registerAudioIpc = (): void => {
     getEqBridge().setChannelBalanceState(patch),
   );
   ipcMain.handle(IpcChannels.ChannelBalanceReset, async (): Promise<ChannelBalanceState> => getEqBridge().resetChannelBalance());
+  ipcMain.handle(IpcChannels.RoomCorrectionGetState, (): RoomCorrectionState => getEqBridge().getRoomCorrectionState());
+  ipcMain.handle(IpcChannels.RoomCorrectionImportIr, (event): Promise<RoomCorrectionState | null> =>
+    importRoomCorrectionIr(BrowserWindow.fromWebContents(event.sender)),
+  );
+  ipcMain.handle(IpcChannels.RoomCorrectionSetEnabled, async (_event, enabled: unknown): Promise<RoomCorrectionState> =>
+    getEqBridge().setRoomCorrectionEnabled(Boolean(enabled)),
+  );
+  ipcMain.handle(IpcChannels.RoomCorrectionSetTrim, async (_event, trimDb: unknown): Promise<RoomCorrectionState> =>
+    getEqBridge().setRoomCorrectionTrim(Number(trimDb)),
+  );
+  ipcMain.handle(IpcChannels.RoomCorrectionClear, async (): Promise<RoomCorrectionState> => getEqBridge().clearRoomCorrection());
 };

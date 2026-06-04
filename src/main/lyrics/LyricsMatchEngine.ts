@@ -85,6 +85,9 @@ const sanitizeQueryForProvider = (query: LyricsQuery, provider: LyricsProvider):
     ? query
     : {
         trackId: query.trackId,
+        mediaType: query.mediaType,
+        sourceId: query.sourceId,
+        stableKey: query.stableKey,
         title: query.title,
         artist: query.artist,
         album: query.album ?? null,
@@ -167,12 +170,28 @@ export class LyricsMatchEngine {
     const pending = new Map<LyricsProviderId, Promise<MatchedLyricsCandidate[]>>();
     const collected: MatchedLyricsCandidate[] = [...localCollected];
     let accepted: MatchedLyricsCandidate | null = null;
-
-    for (const provider of networkProviders) {
-      pending.set(provider.id, this.searchProvider(provider, query, normalized, settings, totalController.signal));
-    }
+    const primaryNeteaseProvider = !settings.collectAllCandidates
+      ? networkProviders.find((provider) => provider.id === 'netease')
+      : undefined;
+    const remainingNetworkProviders = primaryNeteaseProvider
+      ? networkProviders.filter((provider) => provider.id !== primaryNeteaseProvider.id)
+      : networkProviders;
 
     try {
+      if (primaryNeteaseProvider && !totalController.signal.aborted) {
+        const neteaseCandidates = await this.searchProvider(primaryNeteaseProvider, query, normalized, settings, totalController.signal);
+        collected.push(...neteaseCandidates);
+        const sorted = sortLyricsCandidates(normalized.durationSeconds, dedupeLyricsCandidates(collected));
+        accepted = sorted.find((candidate) => candidate.provider === 'netease' && isAutoAcceptCandidate(candidate)) ?? null;
+        if (accepted) {
+          return { normalized, accepted, candidates: sorted };
+        }
+      }
+
+      for (const provider of remainingNetworkProviders) {
+        pending.set(provider.id, this.searchProvider(provider, query, normalized, settings, totalController.signal));
+      }
+
       while (pending.size && !totalController.signal.aborted) {
         const next = await Promise.race(
           Array.from(pending.entries()).map(async ([id, promise]) => ({

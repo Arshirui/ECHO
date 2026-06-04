@@ -1011,6 +1011,34 @@ describe('library IPC', () => {
     expect(writeImageMock).toHaveBeenCalledWith(coverImage);
   });
 
+  it('copies the original album cover image to the clipboard', () => {
+    const service = installLibraryService();
+    const root = makeTempRoot();
+    const coverPath = join(root, 'album-original.png');
+    const coverImage = { isEmpty: () => false as false };
+    writeFileSync(coverPath, 'cover');
+    service.getAlbum.mockReturnValue({
+      id: 'album-1',
+      albumKey: 'suara/music/2010',
+      title: 'Music',
+      albumArtist: 'Suara',
+      year: 2010,
+      trackCount: 1,
+      duration: 123,
+      coverId: 'cover-1',
+      coverThumb: 'echo-cover://album/cover-1',
+    });
+    service.resolveCoverAsset.mockReturnValue({ filePath: coverPath, mimeType: 'image/png' });
+    createFromPathMock.mockReturnValue(coverImage);
+
+    const result = handlers[IpcChannels.LibraryCopyAlbumCover]!(null, 'album-1');
+
+    expect(result).toBe(true);
+    expect(service.resolveCoverAsset).toHaveBeenCalledWith('cover-1', 'original');
+    expect(createFromPathMock).toHaveBeenCalledWith(coverPath);
+    expect(writeImageMock).toHaveBeenCalledWith(coverImage);
+  });
+
   it('saves a generated song card as png', async () => {
     const root = makeTempRoot();
     const outputPath = join(root, 'card.png');

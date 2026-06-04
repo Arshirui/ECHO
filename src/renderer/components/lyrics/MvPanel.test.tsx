@@ -1182,6 +1182,22 @@ describe('MvPanel', () => {
     await waitFor(() => expect(video.currentTime).toBeCloseTo(42.75, 3));
   });
 
+  it('applies the MV start offset immediately even when continuous follow is disabled', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const { container } = renderPanel(makeVideo({ offsetMs: 40000 }), true, { ...defaultMvSettings, restartAudioOnLoad: false }, 0);
+
+    const video = await waitFor(() => {
+      const element = container.querySelector('video') as HTMLVideoElement | null;
+      expect(element).toBeTruthy();
+      return element!;
+    });
+
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(40, 3));
+  });
+
   it('does not render MV offset controls on the lyrics page', async () => {
     const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: true }, 10);
 
@@ -1363,8 +1379,8 @@ describe('MvPanel', () => {
     await waitFor(() => expect(video.currentTime).toBeCloseTo(40, 3));
   });
 
-  it('does not adjust video time when MV progress following is disabled', async () => {
-    const { container } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: false }, 30);
+  it('does not continuously adjust video time when MV progress following is disabled', async () => {
+    const { container, rerender } = renderPanel(makeVideo(), true, { ...defaultMvSettings, restartAudioOnLoad: false }, 30);
     const video = await waitFor(() => {
       const element = container.querySelector('video') as HTMLVideoElement | null;
       expect(element).toBeTruthy();
@@ -1375,7 +1391,20 @@ describe('MvPanel', () => {
     video.currentTime = 0;
     video.dispatchEvent(new Event('loadedmetadata'));
 
-    expect(video.currentTime).toBe(0);
+    await waitFor(() => expect(video.currentTime).toBeCloseTo(30, 1));
+    video.currentTime = 31;
+    rerender(
+      <MvPanel
+        trackId="track-1"
+        title="Test Song"
+        artist="Test Artist"
+        coverUrl="echo-cover://thumb/test"
+        isAudioPlaying
+        audioClock={makeAudioClock(45)}
+      />,
+    );
+
+    expect(video.currentTime).toBeCloseTo(31, 3);
     expect(window.echo.playback.seek).not.toHaveBeenCalled();
   });
 

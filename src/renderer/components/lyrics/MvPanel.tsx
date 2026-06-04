@@ -5,6 +5,7 @@ import type { AudioPlaybackState } from '../../../shared/types/audio';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type { MvMatchCandidate, MvSettings, MvTrackSnapshotSearchRequest, TrackVideo } from '../../../shared/types/mv';
 import type { StreamingMvItem, StreamingProviderName } from '../../../shared/types/streaming';
+import { clampMvOffsetMs } from '../../../shared/constants/mvOffset';
 import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
 import { sampleVideoElement } from './lyricsReadableColor';
@@ -289,8 +290,6 @@ const estimateAudioClockPositionSeconds = (clock: MvAudioClock, nowMs = performa
     ? Math.min(positionSeconds, normalizedClock.durationSeconds)
     : positionSeconds;
 };
-
-const clampOffset = (value: number): number => Math.max(-10000, Math.min(10000, Math.round(value)));
 
 const targetVideoTimeForAudio = (video: HTMLVideoElement, audioClock: MvAudioClock, offsetMs = 0): number => {
   const position = normalizeAudioPosition(estimateAudioClockPositionSeconds(audioClock));
@@ -1046,7 +1045,7 @@ export const MvPanel = ({
   }, [loadSelected, loadSettings]);
 
   const isMvEnabled = settings.enabled !== false;
-  const selectedMvOffsetMs = clampOffset(Number(selectedVideo?.offsetMs ?? 0));
+  const selectedMvOffsetMs = clampMvOffsetMs(Number(selectedVideo?.offsetMs ?? 0));
   const videoMediaUrl = isMvEnabled && selectedVideo?.playableInApp && selectedVideo.mediaUrl && !videoError ? selectedVideo.mediaUrl : null;
   const showVideo = Boolean(videoMediaUrl);
   const youtubeEmbedUrl = youtubeEmbedUrlFromVideo(selectedVideo, { autoplay: isAudioPlaying, controls: false });
@@ -1248,7 +1247,7 @@ export const MvPanel = ({
   const syncVideoElementToAudio = useCallback((video: HTMLVideoElement | null, options: { force?: boolean; bypassCooldown?: boolean; recordCooldown?: boolean } = {}): boolean => {
     const directBilibiliStreamingVideo = isDirectBilibiliStreamingVideo(selectedVideo, streamingTarget);
     const followMusicProgress = shouldFollowMusicProgress(settingsRef.current, selectedVideo, streamingTarget);
-    if (!followMusicProgress || !video || videoSeekingRef.current) {
+    if (!video || videoSeekingRef.current || (!followMusicProgress && !options.force)) {
       return false;
     }
 

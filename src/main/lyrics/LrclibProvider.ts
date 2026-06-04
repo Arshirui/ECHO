@@ -274,6 +274,10 @@ export class LrclibProvider implements LyricsProvider {
       for (const record of json.map(mapRecord).filter((item): item is LrclibRecord => Boolean(item))) {
         pushRecord(record, 'search');
       }
+
+      if (results.length > 0 && !request.collectAllCandidates) {
+        return results;
+      }
     }
 
     return results;

@@ -212,7 +212,7 @@ const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsRestartOnApplyEnabled: false,
   lyricsGlobalSyncOffsetMs: 0,
   lyricsTimelineCorrectionEnabled: true,
-  lyricsOffsetControlsEnabled: false,
+  lyricsOffsetControlsEnabled: true,
   lyricsSmartAlignmentEnabled: true,
   lyricsSecondaryFontSizePx: 22,
   lyricsLineSpacingPercent: 110,
@@ -467,6 +467,22 @@ const riskLabel = (risk: LyricsSearchCandidate["risk"]): string => {
   return "需确认";
 };
 
+type LyricsCandidateDisplayKind = "instrumental" | "synced" | "plain" | "lyrics";
+
+const lyricsCandidateDisplayKind = (candidate: LyricsSearchCandidate): LyricsCandidateDisplayKind => {
+  if (candidate.instrumental) return "instrumental";
+  if (candidate.hasSynced) return "synced";
+  if (candidate.hasPlain) return "plain";
+  return "lyrics";
+};
+
+const lyricsCandidateDisplayLabel = (kind: LyricsCandidateDisplayKind): string => {
+  if (kind === "instrumental") return "Instrumental";
+  if (kind === "synced") return "Synced";
+  if (kind === "plain") return "Plain";
+  return "Lyrics";
+};
+
 const reasonLabels: Record<string, string> = {
   title_exact: "标题一致",
   title_similar: "标题接近",
@@ -486,6 +502,8 @@ const reasonLabels: Record<string, string> = {
   local_sidecar_priority: "本地歌词",
   auto_accept: "自动采用",
   rejected_by_user: "已拒绝",
+  amll_ttml_provider: "AMLL TTML",
+  netease_id: "NetEase ID",
   netease_provider: "NetEase",
   qqmusic_provider: "QQ 音乐",
   kugou_provider: "酷狗",
@@ -501,13 +519,14 @@ const visibleReasons = (candidate: LyricsSearchCandidate): string[] =>
 const sourceFilterKey = (candidate: LyricsSearchCandidate): LyricsProviderId =>
   candidate.provider;
 
-const searchableLyricsProviderIds: LyricsProviderId[] = ["local", "lrclib", "netease", "qqmusic", "kugou", "kuwo"];
+const searchableLyricsProviderIds: LyricsProviderId[] = ["local", "lrclib", "amll-ttml", "netease", "qqmusic", "kugou", "kuwo"];
 const searchableLyricsProviderSet = new Set<string>(searchableLyricsProviderIds);
 const isCandidateSourceFilter = (value: string | null): value is CandidateSourceFilter =>
   value === "all" || searchableLyricsProviderSet.has(value ?? "");
 const lyricsProviderLabels: Partial<Record<LyricsProviderId, string>> = {
   local: "本地",
   lrclib: "LRCLIB",
+  "amll-ttml": "AMLL TTML",
   netease: "NetEase",
   qqmusic: "QQ 音乐",
   kugou: "酷狗",
@@ -518,13 +537,14 @@ const lyricsProviderLabels: Partial<Record<LyricsProviderId, string>> = {
 const lyricsProviderSortOrder = new Map<LyricsProviderId, number>([
   ["local", 0],
   ["lrclib", 1],
-  ["netease", 2],
-  ["qqmusic", 3],
-  ["kugou", 4],
-  ["kuwo", 5],
-  ["musixmatch", 6],
-  ["genius", 7],
-  ["manual", 8],
+  ["amll-ttml", 2],
+  ["netease", 3],
+  ["qqmusic", 4],
+  ["kugou", 5],
+  ["kuwo", 6],
+  ["musixmatch", 7],
+  ["genius", 8],
+  ["manual", 9],
 ]);
 
 const mergeLyricsCandidates = (
@@ -979,7 +999,7 @@ const selectLyricsDisplaySettings = (
   lyricsRestartOnApplyEnabled: settings.lyricsRestartOnApplyEnabled === true,
   lyricsGlobalSyncOffsetMs: settings.lyricsGlobalSyncOffsetMs,
   lyricsTimelineCorrectionEnabled: settings.lyricsTimelineCorrectionEnabled !== false,
-  lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled === true,
+  lyricsOffsetControlsEnabled: settings.lyricsOffsetControlsEnabled !== false,
   lyricsSmartAlignmentEnabled: settings.lyricsSmartAlignmentEnabled !== false,
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackLyricsDisplaySettings.lyricsSecondaryFontSizePx,
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackLyricsDisplaySettings.lyricsLineSpacingPercent,
@@ -2599,6 +2619,8 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
         window.dispatchEvent(new Event("app:navigate:lyrics-back"));
       }
     };
@@ -3784,8 +3806,8 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       : currentOffsetMs;
 
     return (
-      <section className="lyrics-offset-controls" aria-label="Lyrics sync">
-        <span className="lyrics-offset-label">Lyrics offset</span>
+      <section className="lyrics-offset-controls" aria-label="歌词延迟">
+        <span className="lyrics-offset-label">本歌曲延迟</span>
         <span className="lyrics-offset-value">{formatOffset(currentOffsetMs)}</span>
         <div className="lyrics-offset-buttons">
           <button
@@ -3805,7 +3827,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
                 type="button"
                 key={step}
                 disabled={isLyricsOffsetSaving || nextOffsetMs === currentOffsetMs}
-                title={step > 0 ? `Lyrics earlier ${step}ms` : `Lyrics later ${Math.abs(step)}ms`}
+                title={step > 0 ? `歌词提前 ${step}ms` : `歌词延后 ${Math.abs(step)}ms`}
                 onClick={() => void handleLyricsOffsetChange(nextOffsetMs)}
               >
                 {isForward ? <FastForward size={14} /> : <Rewind size={14} />}
@@ -3816,14 +3838,14 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
           <button
             type="button"
             disabled={isLyricsOffsetSaving || currentOffsetMs === 0}
-            title="Reset lyrics offset"
+            title="重置本歌曲歌词延迟"
             onClick={() => void handleLyricsOffsetChange(0)}
           >
             <RotateCcw size={14} />
             <span>0ms</span>
           </button>
         </div>
-        <p>This offset is saved for the current track and reused next time.</p>
+        <p>只保存到当前歌曲；切到下一首会使用下一首自己的延迟。</p>
       </section>
     );
   }, [
@@ -4106,50 +4128,48 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
               ))}
             </div>
             <div className="lyrics-candidate-list">
-              {visibleCandidates.map((candidate) => (
-                <button
-                  className="lyrics-candidate"
-                  type="button"
-                  key={candidate.id}
-                  disabled={Boolean(applyingCandidateId)}
-                  onClick={() => void handleApplyCandidate(candidate.id)}
-                >
-                  <span>
-                    <strong>{candidate.title}</strong>
-                    <em>
-                      {candidate.artist}
-                      {candidate.album ? ` / ${candidate.album}` : ""} /{" "}
-                      {formatDuration(candidate.durationSeconds)}
-                    </em>
-                  </span>
-                  <span className="lyrics-candidate-badges">
-                    <small
-                      className={`lyrics-risk-badge lyrics-risk-badge--${candidate.risk ?? "high"}`}
-                    >
-                      {riskLabel(candidate.risk)}
-                    </small>
-                    <small>
-                      {candidate.hasSynced
-                        ? "Synced"
-                        : candidate.hasPlain
-                          ? "Plain"
-                          : candidate.instrumental
-                            ? "Instrumental"
-                            : "Lyrics"}
-                    </small>
-                    <small>{candidate.sourceLabel}</small>
-                    <small>{formatScore(candidate.score)}</small>
-                    {visibleReasons(candidate).map((reason) => (
-                      <small className="lyrics-reason-badge" key={reason}>
-                        {reason}
+              {visibleCandidates.map((candidate) => {
+                const candidateKind = lyricsCandidateDisplayKind(candidate);
+                return (
+                  <button
+                    className={`lyrics-candidate lyrics-candidate--${candidateKind}`}
+                    type="button"
+                    key={candidate.id}
+                    data-lyrics-kind={candidateKind}
+                    disabled={Boolean(applyingCandidateId)}
+                    onClick={() => void handleApplyCandidate(candidate.id)}
+                  >
+                    <span>
+                      <strong>{candidate.title}</strong>
+                      <em>
+                        {candidate.artist}
+                        {candidate.album ? ` / ${candidate.album}` : ""} /{" "}
+                        {formatDuration(candidate.durationSeconds)}
+                      </em>
+                    </span>
+                    <span className="lyrics-candidate-badges">
+                      <small
+                        className={`lyrics-risk-badge lyrics-risk-badge--${candidate.risk ?? "high"}`}
+                      >
+                        {riskLabel(candidate.risk)}
                       </small>
-                    ))}
-                    {applyingCandidateId === candidate.id ? (
-                      <small>Applying</small>
-                    ) : null}
-                  </span>
-                </button>
-              ))}
+                      <small className={`lyrics-kind-badge lyrics-kind-badge--${candidateKind}`}>
+                        {lyricsCandidateDisplayLabel(candidateKind)}
+                      </small>
+                      <small>{candidate.sourceLabel}</small>
+                      <small>{formatScore(candidate.score)}</small>
+                      {visibleReasons(candidate).map((reason) => (
+                        <small className="lyrics-reason-badge" key={reason}>
+                          {reason}
+                        </small>
+                      ))}
+                      {applyingCandidateId === candidate.id ? (
+                        <small>Applying</small>
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </>
         ) : null}
