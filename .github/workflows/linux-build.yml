@@ -5,7 +5,7 @@ on:
 
 jobs:
   linux-x64:
-    name: Linux x64 AppImage and deb
+    name: Linux x64 AppImage
     runs-on: ubuntu-24.04
     timeout-minutes: 90
 
@@ -13,49 +13,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: cachix/install-nix-action@v27
         with:
-          node-version: 20
-          cache: npm
+          nix_path: nixpkgs=channel:nixos-unstable
 
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake \
-            g++ \
-            pkg-config \
-            fakeroot \
-            dpkg \
-            rpm \
-            binutils \
-            ffmpeg \
-            libasound2-dev \
-            libfreetype-dev \
-            libfontconfig1-dev \
-            libx11-dev \
-            libxcomposite-dev \
-            libxcursor-dev \
-            libxext-dev \
-            libxinerama-dev \
-            libxrandr-dev \
-            libxrender-dev \
-            libgtk-3-0 \
-            libnss3 \
-            libxss1 \
-            libxtst6 \
-            libdrm2 \
-            libgbm1
+      # Linux dependencies preparing finished by nix
 
       - name: Install Node dependencies
-        run: npm ci
+        run: nix develop --command npm ci
 
-      - name: Prepare Linux ffmpeg
-        run: node scripts/prepare-linux-ffmpeg.mjs
+      # Prepare Linux ffmpeg finished by nix shellHook
 
       - name: Build Linux packages
-        run: npm run build:linux
+        run: nix develop --command npm run build:linux
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -63,7 +33,6 @@ jobs:
           name: echo-next-linux-x64
           path: |
             dist/*.AppImage
-            dist/*.deb
             dist/linux-unpacked/resources/echo-audio-host
             dist/linux-unpacked/resources/tools/ffmpeg
           if-no-files-found: error

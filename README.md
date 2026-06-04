@@ -40,7 +40,10 @@ npm run build:linux
 - **yt-dlp**（可选）：放入 `electron-app/tools-linux/yt-dlp` 并 `chmod +x`
 
 ## TODO
-- 完成 TODO
+- 修复托盘图标透明问题
+- 自动配置 yt-dlp
+- 使用 nix 打包
+- 待补充
 
 ## 相关文档(由原仓库提供 仅供参考)
 
