@@ -85,7 +85,9 @@
               fi
               # Copy ffmpeg from buildInputs
               cp --force ${pkgs.ffmpeg}/bin/ffmpeg electron-app/tools-linux/ffmpeg 2>/dev/null || true
+              cp --force ${pkgs.yt-dlp}/bin/ffmpeg electron-app/tools-linux/yt-dlp 2>/dev/null || true
               chmod +x electron-app/tools-linux/ffmpeg
+              chmod +x electron-app/tools-linux/yt-dlp
               # Get medadata and sha256 of ffmpeg
               FFMPEG_VERSION=$(./electron-app/tools-linux/ffmpeg -hide_banner -version | head --lines=1)
               FFMPEG_SHA256=$(sha256sum ./electron-app/tools-linux/ffmpeg | cut -d ' ' -f1)

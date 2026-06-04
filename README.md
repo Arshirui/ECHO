@@ -13,7 +13,7 @@
 ```bash
 # 1. 克隆仓库
 git clone https://github.com/Arshirui/ECHO
-cd echo
+cd ECHO
 
 # 2. 进入 Nix 开发环境
 nix develop
@@ -35,13 +35,8 @@ npm run build:linux
 - FFmpeg（由 shellHook 在进入 nix develop 时自动复制到 `electron-app/tools-linux/` 并计算和填入 sha256）
 - patchelf（自动修复 fpm/sharp 库链接）
 
-### 额外手动步骤
-
-- **yt-dlp**（可选）：放入 `electron-app/tools-linux/yt-dlp` 并 `chmod +x`
-
 ## TODO
 - 修复托盘图标透明问题
-- 自动配置 yt-dlp
 - 使用 nix 打包
 - 待补充
 
