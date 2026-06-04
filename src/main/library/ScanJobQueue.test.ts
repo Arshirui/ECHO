@@ -313,6 +313,19 @@ class FakeMetadataReader implements MetadataReader {
   }
 }
 
+class ConcurrentMetadataReader implements MetadataReader {
+  activeReads = 0;
+  maxActiveReads = 0;
+
+  async read(): Promise<MetadataResult> {
+    this.activeReads += 1;
+    this.maxActiveReads = Math.max(this.maxActiveReads, this.activeReads);
+    await new Promise((resolve) => setImmediate(resolve));
+    this.activeReads -= 1;
+    return metadataResult();
+  }
+}
+
 class ThrowingMetadataReader implements MetadataReader {
   readonly paths: string[] = [];
 
@@ -799,6 +812,35 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
 
     expect(onScanSettled).toHaveBeenCalledTimes(1);
     expect(onScanSettled).toHaveBeenCalledWith(expect.objectContaining({ id: job.id, status: 'completed' }));
+  });
+
+  it('reduces metadata read concurrency while scan pressure should stay low', async () => {
+    const root = makeTempRoot();
+    const files = makeFiles(root, 4);
+    const metadataReader = new ConcurrentMetadataReader();
+    const store = new FakeStore();
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner(files),
+      metadataReader,
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      {
+        coverCacheDir: join(root, 'custom-cache'),
+        metadataConcurrency: 4,
+        shouldReduceScanPressure: () => true,
+      },
+    );
+
+    const job = queue.scanFolder(baseFolder(root));
+    try {
+      await queue.waitForIdle(job.id);
+    } finally {
+      queue.dispose();
+    }
+
+    expect(store.getScanJob()).toMatchObject({ status: 'completed', processedFiles: 4 });
+    expect(metadataReader.maxActiveReads).toBe(1);
   });
 
   it('creates a recovery snapshot after a successful scan writes library changes', async () => {

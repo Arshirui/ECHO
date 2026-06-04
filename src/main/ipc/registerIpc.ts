@@ -39,6 +39,7 @@ import { getLastFmService } from '../integrations/lastfm/getLastFmService';
 import { applyNetworkProxySettings, testNetworkProxyConnection } from '../network/proxySettings';
 import { markStartupStage } from '../diagnostics/StartupDiagnostics';
 import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
+import { installIpcPerformanceDiagnostics } from '../diagnostics/IpcPerformanceDiagnostics';
 import { registerAudioIpc } from './audioIpc';
 import { registerAccountIpc } from './accountIpc';
 import { registerConnectIpc } from './connectIpc';
@@ -349,6 +350,8 @@ const preserveCurrentDataBackupTarget = (settings: AppSettings, currentSettings:
 });
 
 export const registerIpc = (): void => {
+  installIpcPerformanceDiagnostics(ipcMain);
+
   registerIpcStartupStep('app-core', () => {
     ipcMain.handle(IpcChannels.AppGetVersion, () => `v${app.getVersion()}`);
     ipcMain.handle(IpcChannels.AppWindowMinimize, (event: IpcMainInvokeEvent): void => {

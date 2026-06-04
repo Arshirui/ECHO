@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, relative, resolve } from 'node:path';
-import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
+import { setImmediate as yieldToMainLoop, setTimeout as delay } from 'node:timers/promises';
 import { SCANNABLE_AUDIO_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import type { AlbumMergeStrategy, AlbumService } from './AlbumService';
 import type { LibraryStore } from './LibraryStore';
@@ -91,6 +91,7 @@ const largeScanWriteBatchSize = 128;
 const normalScanWriteBatchSize = 512;
 const scanFileSystemOperationTimeoutMs = 10_000;
 const scanDiscoveryYieldEveryEntries = 32;
+const scanPressureYieldDelayMs = 8;
 const maxStoredScanErrors = 200;
 const scanErrorSummaryThreshold = 20;
 const maxScanErrorMessageLength = 512;
@@ -477,6 +478,7 @@ export class ScanJobQueue {
       const identityUpdateItems: IdentityUpdateItem[] = [];
       const cacheStatesByPath = this.store.getTrackCacheStatesByFolder(folder.id);
       let checkedFiles = 0;
+      const cacheYieldFileDelta = reducedScanPressure ? 64 : cacheCheckYieldFileDelta;
 
       for (const file of files) {
         this.throwIfCancelled(jobId);
@@ -502,8 +504,8 @@ export class ScanJobQueue {
               processedFiles,
               skippedFiles,
             });
-            if (checkedFiles % cacheCheckYieldFileDelta === 0) {
-              await yieldToMainLoop();
+            if (checkedFiles % cacheYieldFileDelta === 0) {
+              await this.yieldForScanPressure(reducedScanPressure);
             }
             continue;
           }
@@ -529,8 +531,8 @@ export class ScanJobQueue {
           file,
           existingTrackId: existing?.id ?? null,
         });
-        if (checkedFiles % cacheCheckYieldFileDelta === 0) {
-          await yieldToMainLoop();
+        if (checkedFiles % cacheYieldFileDelta === 0) {
+          await this.yieldForScanPressure(reducedScanPressure);
         }
       }
 
@@ -600,7 +602,7 @@ export class ScanJobQueue {
             coverCount,
             errors,
           });
-          await yieldToMainLoop();
+          await this.yieldForScanPressure(reducedScanPressure);
         }),
       );
 
@@ -653,14 +655,14 @@ export class ScanJobQueue {
             coverCount,
             errors,
           });
-          await yieldToMainLoop();
+          await this.yieldForScanPressure(reducedScanPressure);
         }),
       );
 
       await this.processWithConcurrency(identityUpdateItems, metadataConcurrency, async (item) => {
         this.throwIfCancelled(jobId);
         item.identity = this.observeFileIdentity(this.resolvePhysicalAudioPath(item.file.path));
-        await yieldToMainLoop();
+        await this.yieldForScanPressure(reducedScanPressure);
       });
 
       this.throwIfCancelled(jobId);
@@ -688,7 +690,7 @@ export class ScanJobQueue {
           updatedAt: timestamp,
           ...this.toTrackIdentityWrite(item.identity),
         });
-        await yieldToMainLoop();
+        await this.yieldForScanPressure(reducedScanPressure);
       });
 
       this.throwIfCancelled(jobId);
@@ -790,7 +792,7 @@ export class ScanJobQueue {
             coverCount,
             errors,
           });
-          await yieldToMainLoop();
+          await this.yieldForScanPressure(reducedScanPressure);
         }
       });
 
@@ -1428,6 +1430,13 @@ export class ScanJobQueue {
       return (await option()) === true;
     } catch {
       return false;
+    }
+  }
+
+  private async yieldForScanPressure(initialReducedScanPressure = false): Promise<void> {
+    await yieldToMainLoop();
+    if (initialReducedScanPressure || (await this.resolveBooleanOption(this.shouldReduceScanPressure))) {
+      await delay(scanPressureYieldDelayMs);
     }
   }
 

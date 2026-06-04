@@ -371,6 +371,9 @@ const inferPerformanceStallCause = (
   const lastBackgroundTask = trimmedString(playbackSnapshot.lastBackgroundTask);
   const lastBackgroundTaskDurationMs = finiteNumber(playbackSnapshot.lastBackgroundTaskDurationMs);
   const lastBackgroundTaskAgeMs = finiteNumber(playbackSnapshot.lastBackgroundTaskAgeMs);
+  const lastSlowIpcChannel = trimmedString(playbackSnapshot.lastSlowIpcChannel);
+  const lastSlowIpcDurationMs = finiteNumber(playbackSnapshot.lastSlowIpcDurationMs);
+  const lastSlowIpcAgeMs = finiteNumber(playbackSnapshot.lastSlowIpcAgeMs);
   const activePlaybackElapsedMs = finiteNumber(playbackSnapshot.elapsedMs);
   const lastPlaybackPhaseMs = finiteNumber(playbackSnapshot.lastCompletedDurationMs);
   const lastInputType = trimmedString(payload.details?.lastInputType);
@@ -416,6 +419,15 @@ const inferPerformanceStallCause = (
       confidence: 'medium',
       why: `${lastBackgroundTask} recently took ${lastBackgroundTaskDurationMs.toFixed(0)}ms`,
       actionHint: 'Inspect this startup or IPC step first; defer it or move heavy work off the main thread.',
+    };
+  }
+
+  if (payload.source === 'main' && lastSlowIpcChannel && lastSlowIpcDurationMs !== null && lastSlowIpcAgeMs !== null && lastSlowIpcAgeMs <= 5_000) {
+    return {
+      probableCause: 'slow_ipc_handler',
+      confidence: 'high',
+      why: `IPC "${lastSlowIpcChannel}" recently took ${lastSlowIpcDurationMs.toFixed(0)}ms`,
+      actionHint: 'Inspect this IPC handler first; split synchronous work, cache the result, or defer non-critical work during playback.',
     };
   }
 
@@ -530,6 +542,10 @@ export const recordPerformanceStall = (
   appendOptionalLine(lines, 'lastBackgroundTask', playbackSnapshot.lastBackgroundTask);
   appendOptionalValueLine(lines, 'lastBackgroundTaskMs', playbackSnapshot.lastBackgroundTaskDurationMs);
   appendOptionalValueLine(lines, 'lastBackgroundTaskAgeMs', playbackSnapshot.lastBackgroundTaskAgeMs);
+  appendOptionalLine(lines, 'lastSlowIpcChannel', playbackSnapshot.lastSlowIpcChannel);
+  appendOptionalValueLine(lines, 'lastSlowIpcMs', playbackSnapshot.lastSlowIpcDurationMs);
+  appendOptionalValueLine(lines, 'lastSlowIpcAgeMs', playbackSnapshot.lastSlowIpcAgeMs);
+  appendOptionalValueLine(lines, 'lastSlowIpcFailed', playbackSnapshot.lastSlowIpcFailed);
   appendOptionalLine(lines, 'lastPlaybackOperation', playbackSnapshot.lastCompletedOperation);
   appendOptionalLine(lines, 'lastPlaybackPhase', playbackSnapshot.lastCompletedPhase);
   appendOptionalValueLine(lines, 'lastPlaybackPhaseMs', playbackSnapshot.lastCompletedDurationMs);
