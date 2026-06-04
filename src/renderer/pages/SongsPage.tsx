@@ -61,6 +61,7 @@ const sortOptions: Array<{ value: LibrarySort; labelKey: TranslationKey }> = [
   { value: 'frequent', labelKey: 'songs.sort.frequent' },
   { value: 'random', labelKey: 'songs.sort.random' },
   { value: 'artist', labelKey: 'songs.sort.artist' },
+  { value: 'artistAlbum', labelKey: 'songs.sort.artistAlbum' },
   { value: 'album', labelKey: 'songs.sort.album' },
   { value: 'recent', labelKey: 'songs.sort.recent' },
 ];

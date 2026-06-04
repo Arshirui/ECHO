@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <atomic>
+#include <vector>
 
 namespace echo
 {
@@ -10,6 +11,8 @@ constexpr float channelBalanceMinBalance = -1.0f;
 constexpr float channelBalanceMaxBalance = 1.0f;
 constexpr float channelBalanceMinGainDb = -12.0f;
 constexpr float channelBalanceMaxGainDb = 6.0f;
+constexpr float channelBalanceMinDelayMs = 0.0f;
+constexpr float channelBalanceMaxDelayMs = 10.0f;
 
 enum class ChannelBalanceMonoMode
 {
@@ -25,6 +28,8 @@ struct ChannelBalanceState
     float balance = 0.0f;
     float leftGainDb = 0.0f;
     float rightGainDb = 0.0f;
+    float leftDelayMs = 0.0f;
+    float rightDelayMs = 0.0f;
     bool swapLeftRight = false;
     ChannelBalanceMonoMode monoMode = ChannelBalanceMonoMode::Off;
     bool invertLeft = false;
@@ -34,6 +39,7 @@ struct ChannelBalanceState
 
 float clampChannelBalance(float value);
 float clampChannelGainDb(float value);
+float clampChannelDelayMs(float value);
 
 class ChannelBalanceProcessor
 {
@@ -58,6 +64,8 @@ private:
         float balance = 0.0f;
         float leftGainDb = 0.0f;
         float rightGainDb = 0.0f;
+        float leftDelayMs = 0.0f;
+        float rightDelayMs = 0.0f;
         bool swapLeftRight = false;
         ChannelBalanceMonoMode monoMode = ChannelBalanceMonoMode::Off;
         bool invertLeft = false;
@@ -69,16 +77,23 @@ private:
     TargetSnapshot readTargetSnapshot() const;
     void updateSwitchTargets(const TargetSnapshot& target);
     static void calculateBalanceGains(float balance, bool constantPower, float& leftGain, float& rightGain);
+    float readDelaySample(int channel, float delayMs) const;
+    void pushDelaySample(int channel, float sample);
 
     double currentSampleRate = 44100.0;
     int preparedChannels = 0;
     int preparedBlockSize = 0;
+    int delayBufferLength = 1;
+    int delayWriteIndex = 0;
+    std::vector<std::vector<float>> delayHistory;
     int parameterSmoothingSamples = 1;
     int switchSmoothingSamples = 1;
 
     float smoothedBalance = 0.0f;
     float smoothedLeftGainDb = 0.0f;
     float smoothedRightGainDb = 0.0f;
+    float smoothedLeftDelayMs = 0.0f;
+    float smoothedRightDelayMs = 0.0f;
     float enabledMix = 0.0f;
     float swapMix = 0.0f;
     float monoMix = 0.0f;
@@ -89,6 +104,8 @@ private:
     float balanceStep = 0.0f;
     float leftGainStepDb = 0.0f;
     float rightGainStepDb = 0.0f;
+    float leftDelayStepMs = 0.0f;
+    float rightDelayStepMs = 0.0f;
     float enabledStep = 0.0f;
     float swapStep = 0.0f;
     float monoStep = 0.0f;
@@ -104,6 +121,8 @@ private:
     std::atomic<float> atomicBalance { 0.0f };
     std::atomic<float> atomicLeftGainDb { 0.0f };
     std::atomic<float> atomicRightGainDb { 0.0f };
+    std::atomic<float> atomicLeftDelayMs { 0.0f };
+    std::atomic<float> atomicRightDelayMs { 0.0f };
     std::atomic<bool> targetSwapLeftRight { false };
     std::atomic<int> atomicMonoMode { static_cast<int>(ChannelBalanceMonoMode::Off) };
     std::atomic<bool> targetInvertLeft { false };

@@ -2,7 +2,9 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from 're
 import { Activity, AudioWaveform, Copy, Gauge, Headphones, Plus, RadioTower, Redo2, RotateCcw, Save, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Undo2, Waves } from 'lucide-react';
 import type { AudioStatus, ChannelBalanceMonoMode, ChannelBalanceState } from '../../../shared/types/audio';
 import {
+  channelBalanceMaxDelayMs,
   channelBalanceMaxGainDb,
+  channelBalanceMinDelayMs,
   channelBalanceMinGainDb,
 } from '../../../shared/types/audio';
 import type { EqBand, EqFilterType, EqPreset, EqPresetImportMetadata, EqPresetImportPreviewResult, EqProfile, EqProfileBindingInfo, EqProfileBindingTarget, EqState, RoomCorrectionState } from '../../../shared/types/eq';
@@ -210,6 +212,8 @@ const fallbackChannelBalanceState: ChannelBalanceState = {
   balance: 0,
   leftGainDb: 0,
   rightGainDb: 0,
+  leftDelayMs: 0,
+  rightDelayMs: 0,
   swapLeftRight: false,
   monoMode: 'off',
   invertLeft: false,
@@ -300,6 +304,33 @@ const formatLevelDb = (value: number | null | undefined): string => {
 
   return formatDb(value);
 };
+
+const formatDelayMs = (value: number | null | undefined): string => {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '--';
+  }
+
+  return `${value.toFixed(2)} ms`;
+};
+
+const parseOptionalNumber = (value: string): number | null => {
+  if (!value.trim()) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const roundCalibrationDelayMs = (value: number): number =>
+  Math.round(Math.max(channelBalanceMinDelayMs, Math.min(channelBalanceMaxDelayMs, value)) * 100) / 100;
+
+const roundCalibrationGainDb = (value: number): number =>
+  Math.round(Math.max(channelBalanceMinGainDb, Math.min(channelBalanceMaxGainDb, value)) * 10) / 10;
+
+const speedOfSoundCmPerMs = 34.3;
+const spatialDelayNudgeMs = 0.05;
+const spatialGainNudgeDb = 0.2;
 
 const estimateSlotOutputPeak = (slot: EqSnapshot, inputPeakDb: number | null | undefined): number | null => {
   if (inputPeakDb === null || inputPeakDb === undefined || !Number.isFinite(inputPeakDb)) {
@@ -427,6 +458,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const [redoStack, setRedoStack] = useState<EqSnapshot[]>([]);
   const [loudnessMatchedAb, setLoudnessMatchedAb] = useState(false);
   const [calibrationMode, setCalibrationMode] = useState(false);
+  const [calibrationLeftDistanceCm, setCalibrationLeftDistanceCm] = useState('');
+  const [calibrationRightDistanceCm, setCalibrationRightDistanceCm] = useState('');
+  const [calibrationLeftSplDb, setCalibrationLeftSplDb] = useState('');
+  const [calibrationRightSplDb, setCalibrationRightSplDb] = useState('');
   const [eqUiMode, setEqUiMode] = useState<EqUiMode>(readEqUiMode);
   const [spectrumAnalyzerEnabled, setSpectrumAnalyzerEnabled] = useState(readEqAnalyzerEnabled);
   const [analyzerMode, setAnalyzerMode] = useState<EqAnalyzerMode>(readEqAnalyzerMode);
@@ -2030,6 +2065,29 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   };
 
   const { leftDb: leftTotalDb, rightDb: rightTotalDb } = computeEffectiveChannelGains(channelBalance);
+  const leftDelayMs = channelBalance.leftDelayMs ?? 0;
+  const rightDelayMs = channelBalance.rightDelayMs ?? 0;
+  const measuredLeftDistanceCm = parseOptionalNumber(calibrationLeftDistanceCm);
+  const measuredRightDistanceCm = parseOptionalNumber(calibrationRightDistanceCm);
+  const measuredLeftSplDb = parseOptionalNumber(calibrationLeftSplDb);
+  const measuredRightSplDb = parseOptionalNumber(calibrationRightSplDb);
+  const hasDistanceMeasurement = measuredLeftDistanceCm !== null && measuredRightDistanceCm !== null && measuredLeftDistanceCm > 0 && measuredRightDistanceCm > 0;
+  const hasSplMeasurement = measuredLeftSplDb !== null && measuredRightSplDb !== null;
+  const distanceDifferenceCm = hasDistanceMeasurement ? measuredRightDistanceCm - measuredLeftDistanceCm : 0;
+  const calculatedLeftDelayMs = hasDistanceMeasurement
+    ? (distanceDifferenceCm > 0 ? roundCalibrationDelayMs(distanceDifferenceCm / speedOfSoundCmPerMs) : 0)
+    : leftDelayMs;
+  const calculatedRightDelayMs = hasDistanceMeasurement
+    ? (distanceDifferenceCm < 0 ? roundCalibrationDelayMs(Math.abs(distanceDifferenceCm) / speedOfSoundCmPerMs) : 0)
+    : rightDelayMs;
+  const splDifferenceDb = hasSplMeasurement ? measuredLeftSplDb - measuredRightSplDb : 0;
+  const calculatedLeftGainDb = hasSplMeasurement
+    ? (splDifferenceDb > 0 ? roundCalibrationGainDb(-splDifferenceDb) : 0)
+    : channelBalance.leftGainDb;
+  const calculatedRightGainDb = hasSplMeasurement
+    ? (splDifferenceDb < 0 ? roundCalibrationGainDb(splDifferenceDb) : 0)
+    : channelBalance.rightGainDb;
+  const calibrationReady = hasDistanceMeasurement || hasSplMeasurement;
   const channelBalanceRisk = leftTotalDb > 0 || rightTotalDb > 0 || Boolean(channelBalance.clippingRisk);
   const activeDspSourceLabels = [
     state.enabled ? t('settings.eq.bitPerfect.sourceEq') : null,
@@ -2070,6 +2128,50 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
   const balanceReadout = channelBalance.balance === 0
     ? t('settings.eq.channel.center')
     : `${channelBalance.balance < 0 ? 'L' : 'R'} ${Math.round(Math.abs(channelBalance.balance) * 100)}%`;
+
+  const applySpatialCalibrationMeasurements = (): void => {
+    if (!calibrationReady) {
+      return;
+    }
+
+    patchChannelBalance({
+      enabled: true,
+      balance: hasSplMeasurement ? 0 : channelBalance.balance,
+      leftGainDb: calculatedLeftGainDb,
+      rightGainDb: calculatedRightGainDb,
+      leftDelayMs: calculatedLeftDelayMs,
+      rightDelayMs: calculatedRightDelayMs,
+      monoMode: 'off',
+      swapLeftRight: false,
+      invertLeft: false,
+      invertRight: false,
+    });
+  };
+
+  const resetSpatialCalibrationMeasurements = (): void => {
+    setCalibrationLeftDistanceCm('');
+    setCalibrationRightDistanceCm('');
+    setCalibrationLeftSplDb('');
+    setCalibrationRightSplDb('');
+  };
+
+  const nudgeSpatialDelay = (side: 'left' | 'right'): void => {
+    patchChannelBalance({
+      enabled: true,
+      monoMode: 'off',
+      leftDelayMs: side === 'left' ? roundCalibrationDelayMs(leftDelayMs + spatialDelayNudgeMs) : leftDelayMs,
+      rightDelayMs: side === 'right' ? roundCalibrationDelayMs(rightDelayMs + spatialDelayNudgeMs) : rightDelayMs,
+    });
+  };
+
+  const nudgeSpatialGain = (side: 'left' | 'right'): void => {
+    patchChannelBalance({
+      enabled: true,
+      monoMode: 'off',
+      leftGainDb: side === 'left' ? roundCalibrationGainDb(channelBalance.leftGainDb - spatialGainNudgeDb) : channelBalance.leftGainDb,
+      rightGainDb: side === 'right' ? roundCalibrationGainDb(channelBalance.rightGainDb - spatialGainNudgeDb) : channelBalance.rightGainDb,
+    });
+  };
 
   return (
     <section className="eq-panel" aria-label="ECHO Next EQ panel" data-enabled={state.enabled} data-mode={eqUiMode}>
@@ -3041,6 +3143,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
             <strong>{formatDb(Math.max(leftTotalDb, rightTotalDb))}</strong>
           </span>
           <span>
+            <em>{t('settings.eq.channel.group.timing')}</em>
+            <strong>{`${formatDelayMs(leftDelayMs)} / ${formatDelayMs(rightDelayMs)}`}</strong>
+          </span>
+          <span>
             <em>{t('settings.eq.channel.dsp')}</em>
             <strong>{channelBalance.enabled ? t('settings.eq.channel.active') : t('settings.eq.channel.bypassed')}</strong>
           </span>
@@ -3106,6 +3212,37 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                   {t('settings.eq.action.resetTrimsOnly')}
                 </button>
               </div>
+              <div className="channel-trim-lane channel-delay-lane">
+                <label>
+                  <span>{t('settings.eq.channel.leftDelay')}</span>
+                  <input
+                    aria-label={t('settings.eq.channel.leftDelay')}
+                    type="range"
+                    min={channelBalanceMinDelayMs}
+                    max={channelBalanceMaxDelayMs}
+                    step="0.01"
+                    value={leftDelayMs}
+                    onChange={(event) => patchChannelBalance({ leftDelayMs: Number(event.currentTarget.value) })}
+                  />
+                  <strong>{formatDelayMs(leftDelayMs)}</strong>
+                </label>
+                <label>
+                  <span>{t('settings.eq.channel.rightDelay')}</span>
+                  <input
+                    aria-label={t('settings.eq.channel.rightDelay')}
+                    type="range"
+                    min={channelBalanceMinDelayMs}
+                    max={channelBalanceMaxDelayMs}
+                    step="0.01"
+                    value={rightDelayMs}
+                    onChange={(event) => patchChannelBalance({ rightDelayMs: Number(event.currentTarget.value) })}
+                  />
+                  <strong>{formatDelayMs(rightDelayMs)}</strong>
+                </label>
+                <button className="eq-soft-button" type="button" onClick={() => patchChannelBalance({ leftDelayMs: 0, rightDelayMs: 0 })}>
+                  {t('settings.eq.action.resetDelaysOnly')}
+                </button>
+              </div>
             </div>
             {calibrationMode ? (
               <div className="channel-calibration-readout">
@@ -3120,6 +3257,10 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
                 <span>
                   <em>{t('settings.eq.level.headroom')}</em>
                   <strong>{formatLevelDb(audioLevels?.headroomDb)}</strong>
+                </span>
+                <span>
+                  <em>{t('settings.eq.channel.group.timing')}</em>
+                  <strong>{`L ${formatDelayMs(leftDelayMs)} / R ${formatDelayMs(rightDelayMs)}`}</strong>
                 </span>
               </div>
             ) : null}
@@ -3181,6 +3322,112 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh }: EqPanelProps): JS
               </button>
               <button className="eq-soft-button" data-active={channelBalance.constantPower} type="button" onClick={() => patchChannelBalance({ constantPower: !channelBalance.constantPower })}>
                 {t('settings.eq.channel.constantPower')}
+              </button>
+            </div>
+          </section>
+
+          <section className="channel-tool-group channel-calibration-wizard">
+            <header>
+              <span>{t('settings.eq.channel.wizard.title')}</span>
+              <strong>{calibrationReady ? t('settings.eq.channel.wizard.ready') : t('settings.eq.channel.wizard.empty')}</strong>
+            </header>
+            <div className="channel-wizard-monitor" role="group" aria-label={t('settings.eq.channel.wizard.monitor')}>
+              <button className="eq-soft-button" type="button" onClick={() => applyMonitorTool('mono')}>
+                {t('settings.eq.channel.wizard.previewCenter')}
+              </button>
+              <button className="eq-soft-button" type="button" onClick={() => applyMonitorTool('left')}>
+                {t('settings.eq.channel.wizard.previewLeft')}
+              </button>
+              <button className="eq-soft-button" type="button" onClick={() => applyMonitorTool('right')}>
+                {t('settings.eq.channel.wizard.previewRight')}
+              </button>
+            </div>
+            <div className="channel-wizard-nudges" role="group" aria-label={t('settings.eq.channel.wizard.nudge')}>
+              <button className="eq-soft-button" type="button" onClick={() => nudgeSpatialDelay('left')}>
+                {t('settings.eq.channel.wizard.imageLeft')}
+              </button>
+              <button className="eq-soft-button" type="button" onClick={() => nudgeSpatialDelay('right')}>
+                {t('settings.eq.channel.wizard.imageRight')}
+              </button>
+              <button className="eq-soft-button" type="button" onClick={() => nudgeSpatialGain('left')}>
+                {t('settings.eq.channel.wizard.leftLouder')}
+              </button>
+              <button className="eq-soft-button" type="button" onClick={() => nudgeSpatialGain('right')}>
+                {t('settings.eq.channel.wizard.rightLouder')}
+              </button>
+            </div>
+            <div className="channel-wizard-fields">
+              <label>
+                <span>{t('settings.eq.channel.wizard.leftDistance')}</span>
+                <input
+                  aria-label={t('settings.eq.channel.wizard.leftDistance')}
+                  inputMode="decimal"
+                  min="1"
+                  type="number"
+                  value={calibrationLeftDistanceCm}
+                  onChange={(event) => setCalibrationLeftDistanceCm(event.currentTarget.value)}
+                />
+                <em>cm</em>
+              </label>
+              <label>
+                <span>{t('settings.eq.channel.wizard.rightDistance')}</span>
+                <input
+                  aria-label={t('settings.eq.channel.wizard.rightDistance')}
+                  inputMode="decimal"
+                  min="1"
+                  type="number"
+                  value={calibrationRightDistanceCm}
+                  onChange={(event) => setCalibrationRightDistanceCm(event.currentTarget.value)}
+                />
+                <em>cm</em>
+              </label>
+              <label>
+                <span>{t('settings.eq.channel.wizard.leftSpl')}</span>
+                <input
+                  aria-label={t('settings.eq.channel.wizard.leftSpl')}
+                  inputMode="decimal"
+                  type="number"
+                  value={calibrationLeftSplDb}
+                  onChange={(event) => setCalibrationLeftSplDb(event.currentTarget.value)}
+                />
+                <em>dB</em>
+              </label>
+              <label>
+                <span>{t('settings.eq.channel.wizard.rightSpl')}</span>
+                <input
+                  aria-label={t('settings.eq.channel.wizard.rightSpl')}
+                  inputMode="decimal"
+                  type="number"
+                  value={calibrationRightSplDb}
+                  onChange={(event) => setCalibrationRightSplDb(event.currentTarget.value)}
+                />
+                <em>dB</em>
+              </label>
+            </div>
+            <div className="channel-calibration-readout channel-wizard-readout">
+              <span>
+                <em>{t('settings.eq.channel.leftDelay')}</em>
+                <strong>{formatDelayMs(calculatedLeftDelayMs)}</strong>
+              </span>
+              <span>
+                <em>{t('settings.eq.channel.rightDelay')}</em>
+                <strong>{formatDelayMs(calculatedRightDelayMs)}</strong>
+              </span>
+              <span>
+                <em>{t('settings.eq.channel.leftGain')}</em>
+                <strong>{formatDb(calculatedLeftGainDb)}</strong>
+              </span>
+              <span>
+                <em>{t('settings.eq.channel.rightGain')}</em>
+                <strong>{formatDb(calculatedRightGainDb)}</strong>
+              </span>
+            </div>
+            <div className="channel-wizard-actions">
+              <button className="eq-soft-button" type="button" disabled={!calibrationReady} onClick={applySpatialCalibrationMeasurements}>
+                {t('settings.eq.channel.wizard.apply')}
+              </button>
+              <button className="eq-soft-button" type="button" disabled={!calibrationReady} onClick={resetSpatialCalibrationMeasurements}>
+                {t('settings.eq.channel.wizard.clear')}
               </button>
             </div>
           </section>

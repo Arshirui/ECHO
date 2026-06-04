@@ -4373,9 +4373,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
             positionUpdatedAtMs={seekPreviewSeconds === null ? mvAudioClock.updatedAtMs : performance.now()}
             wordHighlightEnabled={lyricsDisplaySettings.lyricsWordHighlightEnabled !== false && lyricsDisplaySettings.lowLoadPlaybackModeEnabled !== true}
             highFrequencyUpdatesEnabled={lyricsDisplaySettings.lowLoadPlaybackModeEnabled !== true}
-            showRomanization={lyricsDisplaySettings.lyricsRomanizationEnabled}
+            showRomanization={isLyricsDisplaySettingsReady && lyricsDisplaySettings.lyricsRomanizationEnabled}
             preferKanaPronunciation={lyricsDisplaySettings.lyricsUtatenKanaEnabled === true}
-            showTranslation={lyricsDisplaySettings.lyricsTranslationEnabled}
+            showTranslation={isLyricsDisplaySettingsReady && lyricsDisplaySettings.lyricsTranslationEnabled}
             onContextMenu={handleLyricsContextMenu}
             onSeek={(timeMs) => void handleLyricSeek(timeMs)}
           />

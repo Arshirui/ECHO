@@ -1,8 +1,10 @@
 import type { ChannelBalanceMonoMode, ChannelBalanceState } from '../../shared/types/audio';
 import {
   channelBalanceMaxBalance,
+  channelBalanceMaxDelayMs,
   channelBalanceMaxGainDb,
   channelBalanceMinBalance,
+  channelBalanceMinDelayMs,
   channelBalanceMinGainDb,
 } from '../../shared/types/audio';
 import type {
@@ -144,6 +146,8 @@ const defaultBrowserChannelBalance = (): ChannelBalanceState => ({
   balance: 0,
   leftGainDb: 0,
   rightGainDb: 0,
+  leftDelayMs: 0,
+  rightDelayMs: 0,
   swapLeftRight: false,
   monoMode: 'off',
   invertLeft: false,
@@ -245,6 +249,8 @@ const normalizeChannelBalance = (patch: Partial<ChannelBalanceState>, fallback =
   const balance = Number(patch.balance ?? fallback.balance);
   const leftGainDb = Number(patch.leftGainDb ?? fallback.leftGainDb);
   const rightGainDb = Number(patch.rightGainDb ?? fallback.rightGainDb);
+  const leftDelayMs = Number(patch.leftDelayMs ?? fallback.leftDelayMs ?? 0);
+  const rightDelayMs = Number(patch.rightDelayMs ?? fallback.rightDelayMs ?? 0);
   const monoModes = new Set<ChannelBalanceMonoMode>(['off', 'sum', 'left', 'right']);
 
   return {
@@ -252,6 +258,8 @@ const normalizeChannelBalance = (patch: Partial<ChannelBalanceState>, fallback =
     balance: Number.isFinite(balance) ? clamp(balance, channelBalanceMinBalance, channelBalanceMaxBalance) : fallback.balance,
     leftGainDb: Number.isFinite(leftGainDb) ? clamp(leftGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : fallback.leftGainDb,
     rightGainDb: Number.isFinite(rightGainDb) ? clamp(rightGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : fallback.rightGainDb,
+    leftDelayMs: Number.isFinite(leftDelayMs) ? clamp(leftDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : fallback.leftDelayMs ?? 0,
+    rightDelayMs: Number.isFinite(rightDelayMs) ? clamp(rightDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : fallback.rightDelayMs ?? 0,
     swapLeftRight: typeof patch.swapLeftRight === 'boolean' ? patch.swapLeftRight : fallback.swapLeftRight,
     monoMode: typeof patch.monoMode === 'string' && monoModes.has(patch.monoMode) ? patch.monoMode : fallback.monoMode,
     invertLeft: typeof patch.invertLeft === 'boolean' ? patch.invertLeft : fallback.invertLeft,

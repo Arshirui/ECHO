@@ -531,6 +531,8 @@ describe('EqBridge protocol validation', () => {
       balance: 5,
       leftGainDb: -80,
       rightGainDb: 12,
+      leftDelayMs: -2,
+      rightDelayMs: 99,
       monoMode: 'sum',
       constantPower: false,
     });
@@ -540,6 +542,8 @@ describe('EqBridge protocol validation', () => {
       balance: 1,
       leftGainDb: -12,
       rightGainDb: 6,
+      leftDelayMs: 0,
+      rightDelayMs: 10,
       monoMode: 'sum',
       constantPower: false,
     });
@@ -562,6 +566,8 @@ describe('EqBridge protocol validation', () => {
       balance: 0,
       leftGainDb: 0,
       rightGainDb: 0,
+      leftDelayMs: 0,
+      rightDelayMs: 0,
       swapLeftRight: false,
       monoMode: 'off',
       invertLeft: false,

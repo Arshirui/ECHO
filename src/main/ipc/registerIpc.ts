@@ -196,7 +196,7 @@ const normalizeCoverCacheRequest = (value: unknown): SetCoverCacheDirectoryReque
   };
 };
 
-const getAppCacheInventory = (): AppCacheInventory => collectAppCacheInventory(app.getPath('userData'));
+const getAppCacheInventory = (): Promise<AppCacheInventory> => collectAppCacheInventory(app.getPath('userData'));
 
 const isWindowMaximizedForChrome = (window: BrowserWindow | null): boolean =>
   Boolean(window && (window.isMaximized() || window.isFullScreen()));
@@ -568,7 +568,7 @@ export const registerIpc = (): void => {
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   ipcMain.handle(IpcChannels.AppGetDefaultCacheDirectory, (): string => getLibraryService().getDefaultCoverCacheDir());
-  ipcMain.handle(IpcChannels.AppGetCacheInventory, (): AppCacheInventory => getAppCacheInventory());
+  ipcMain.handle(IpcChannels.AppGetCacheInventory, (): Promise<AppCacheInventory> => getAppCacheInventory());
   ipcMain.handle(IpcChannels.AppGetUpdateStatus, (): UpdateStatus => getUpdateStatus());
   ipcMain.handle(IpcChannels.AppCheckForUpdates, (): Promise<UpdateStatus> => checkForUpdates());
   ipcMain.handle(IpcChannels.AppOpenRepository, async (): Promise<void> => {

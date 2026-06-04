@@ -133,7 +133,7 @@ export class NetworkMetadataService {
       const providers = this.providers.filter((provider) => !providerNames?.length || providerNames.includes(provider.name));
       this.database.prepare("UPDATE tracks SET network_metadata_status = 'pending', updated_at = ? WHERE id = ?").run(new Date().toISOString(), trackId);
 
-      for (const provider of providers) {
+      const tasks = providers.map((provider) => async () => {
         try {
           const candidates = await provider.findMetadata(track);
           for (const candidate of candidates) {
@@ -154,7 +154,8 @@ export class NetworkMetadataService {
           errors.push(`${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
           this.database.prepare("UPDATE tracks SET network_metadata_status = 'error', updated_at = ? WHERE id = ?").run(new Date().toISOString(), trackId);
         }
-      }
+      });
+      await runWithConcurrency(tasks, Math.min(4, providers.length));
 
       const metadata = this.store.listTrackMetadataCandidates(trackId);
       const covers = this.store.listTrackCoverCandidates(trackId);

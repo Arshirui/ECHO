@@ -644,6 +644,7 @@ export type LibrarySort =
   | 'random'
   | 'title'
   | 'artist'
+  | 'artistAlbum'
   | 'album'
   | 'recent';
 
@@ -1099,6 +1100,36 @@ export type ReplayGainAnalysisJobStatus = {
 export type ReplayGainAnalysisStartOptions = {
   limit?: number;
   trackIds?: string[];
+  force?: boolean;
+};
+
+export type LyricsBackfillMode = 'quick' | 'complete';
+
+export type LyricsBackfillJobStatus = {
+  id: string;
+  mode: LyricsBackfillMode;
+  status: 'queued' | 'running' | 'completed' | 'cancelled' | 'failed';
+  phase: 'queued' | 'collecting' | 'matching' | 'finished';
+  autoAcceptScore?: number;
+  playbackThrottled?: boolean;
+  totalTracks: number;
+  scannedTracks: number;
+  processedTracks: number;
+  matchedTracks: number;
+  alreadyCachedTracks: number;
+  notFoundTracks: number;
+  errorCount: number;
+  currentTrackTitle: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  errors: string[];
+};
+
+export type LyricsBackfillStartOptions = {
+  mode?: LyricsBackfillMode;
+  limit?: number;
+  concurrency?: number;
+  autoAcceptScore?: number;
   force?: boolean;
 };
 

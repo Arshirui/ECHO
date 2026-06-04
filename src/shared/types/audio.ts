@@ -58,6 +58,8 @@ export type ChannelBalanceState = {
   balance: number;
   leftGainDb: number;
   rightGainDb: number;
+  leftDelayMs?: number;
+  rightDelayMs?: number;
   swapLeftRight: boolean;
   monoMode: ChannelBalanceMonoMode;
   invertLeft: boolean;
@@ -88,6 +90,8 @@ export const channelBalanceMinBalance = -1;
 export const channelBalanceMaxBalance = 1;
 export const channelBalanceMinGainDb = -12;
 export const channelBalanceMaxGainDb = 6;
+export const channelBalanceMinDelayMs = 0;
+export const channelBalanceMaxDelayMs = 10;
 
 export type AudioDeviceInfo = {
   id: string;

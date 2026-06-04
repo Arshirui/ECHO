@@ -594,6 +594,8 @@ export class RemoteLibraryStore {
     switch (sort) {
       case 'artist':
         return 'ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE, remote_path COLLATE NOCASE';
+      case 'artistAlbum':
+        return 'ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, COALESCE(disc_no, 0), COALESCE(track_no, 999999), title COLLATE NOCASE, remote_path COLLATE NOCASE';
       case 'album':
         return 'ORDER BY album COLLATE NOCASE, COALESCE(disc_no, 0), COALESCE(track_no, 999999), title COLLATE NOCASE, remote_path COLLATE NOCASE';
       case 'recent':

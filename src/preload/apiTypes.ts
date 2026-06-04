@@ -112,6 +112,8 @@ import type {
   BpmAnalysisStartOptions,
   ReplayGainAnalysisJobStatus,
   ReplayGainAnalysisStartOptions,
+  LyricsBackfillJobStatus,
+  LyricsBackfillStartOptions,
   LyricsBackgroundCoverResult,
   NetworkApplyOptions,
   NetworkApplyResult,
@@ -497,6 +499,10 @@ export type EchoApi = {
     getBpmAnalysisStatus: (jobId: string) => Promise<BpmAnalysisJobStatus>;
     startReplayGainAnalysis: (options?: ReplayGainAnalysisStartOptions) => Promise<ReplayGainAnalysisJobStatus>;
     getReplayGainAnalysisStatus: (jobId: string) => Promise<ReplayGainAnalysisJobStatus>;
+    startLyricsBackfill: (options?: LyricsBackfillStartOptions) => Promise<LyricsBackfillJobStatus>;
+    getLyricsBackfillStatus: (jobId: string) => Promise<LyricsBackfillJobStatus>;
+    getCurrentLyricsBackfillStatus: () => Promise<LyricsBackfillJobStatus | null>;
+    cancelLyricsBackfill: (jobId: string) => Promise<LyricsBackfillJobStatus>;
   };
   libraryLab: {
     setWatcherEnabled: (enabled: boolean) => Promise<LibraryLabState>;

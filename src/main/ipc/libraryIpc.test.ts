@@ -1338,13 +1338,15 @@ describe('library IPC', () => {
     expect(service.deleteTracks).not.toHaveBeenCalled();
   });
 
-  it('accepts file modified sorting for songs and albums', async () => {
+  it('accepts file modified and artist-album sorting for songs and albums', async () => {
     const service = installLibraryService();
 
     await handlers[IpcChannels.LibraryGetTracks]!(null, { page: 1, pageSize: 50, sort: 'fileModifiedDesc', extra: true });
+    await handlers[IpcChannels.LibraryGetTracks]!(null, { page: 1, pageSize: 50, sort: 'artistAlbum', extra: true });
     await handlers[IpcChannels.LibraryGetAlbums]!(null, { page: 1, pageSize: 50, sort: 'fileModifiedAsc', extra: true });
 
     expect(service.getTracks).toHaveBeenCalledWith({ page: 1, pageSize: 50, sort: 'fileModifiedDesc' });
+    expect(service.getTracks).toHaveBeenCalledWith({ page: 1, pageSize: 50, sort: 'artistAlbum' });
     expect(service.getAlbums).toHaveBeenCalledWith({ page: 1, pageSize: 50, sort: 'fileModifiedAsc' });
   });
 

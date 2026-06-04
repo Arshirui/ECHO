@@ -48,6 +48,7 @@ const sortValues = new Set<LibrarySort>([
   'random',
   'title',
   'artist',
+  'artistAlbum',
   'album',
   'recent',
 ]);

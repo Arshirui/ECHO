@@ -296,6 +296,17 @@ beforeEach(() => {
     configurable: true,
     value: {
       library: libraryMock,
+      playback: {
+        playLocalFile: vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+          Promise.resolve({
+            state: 'playing',
+            currentTrackId: request.trackId,
+            positionMs: 0,
+            durationMs: 120000,
+            filePath: request.filePath,
+          }),
+        ),
+      },
       remoteSources: remoteSourcesMock,
     },
   });
@@ -384,6 +395,69 @@ describe('FoldersPage', () => {
           folderId: 'folder-1',
           path: 'D:\\Music',
           recursive: false,
+        }),
+      ),
+    );
+  });
+
+  it('plays the selected folder in folder order instead of random sort', async () => {
+    window.localStorage.setItem('echo-next.folders.sort', 'random');
+    libraryMock.getFolderTracks.mockResolvedValue(
+      page([
+        track({ id: 'track-1', title: 'First Folder Song' }),
+        track({ id: 'track-2', title: 'Second Folder Song', path: 'D:\\Music\\Second.flac' }),
+      ]),
+    );
+
+    renderFoldersPage();
+
+    await screen.findByText('First Folder Song');
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+
+    await waitFor(() =>
+      expect(libraryMock.getFolderTracks).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          folderId: 'folder-1',
+          path: 'D:\\Music',
+          recursive: true,
+          page: 1,
+          pageSize: 500,
+          sort: 'default',
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(window.echo?.playback?.playLocalFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackId: 'track-1',
+          filePath: 'D:\\Music\\Root.flac',
+        }),
+      ),
+    );
+  });
+
+  it('randomizes playback from the selected folder only', async () => {
+    libraryMock.getFolderTracks.mockResolvedValue(
+      page([
+        track({ id: 'track-1', title: 'First Folder Song' }),
+        track({ id: 'track-2', title: 'Second Folder Song', path: 'D:\\Music\\Second.flac' }),
+      ]),
+    );
+
+    renderFoldersPage();
+
+    await screen.findByText('First Folder Song');
+    fireEvent.click(screen.getByRole('button', { name: 'Random' }));
+
+    await waitFor(() =>
+      expect(libraryMock.getFolderTracks).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          folderId: 'folder-1',
+          path: 'D:\\Music',
+          recursive: true,
+          page: 1,
+          pageSize: 500,
+          sort: 'random',
         }),
       ),
     );

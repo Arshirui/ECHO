@@ -272,6 +272,7 @@ export type AppSettings = {
   lyricsDeepSearchEnabled: boolean;
   lyricsAutoSearch: boolean;
   lyricsAutoAcceptScore: number;
+  lyricsBackfillAutoAcceptScore?: number;
   lyricsRestartOnApplyEnabled?: boolean;
   lyricsDefaultOffsetMs: number;
   lyricsGlobalSyncOffsetMs: number;

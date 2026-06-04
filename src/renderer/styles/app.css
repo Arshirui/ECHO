@@ -10926,6 +10926,21 @@ html[data-theme="dark"] .settings-lyrics-panel .lyrics-source-filters button[dat
   max-width: 100%;
 }
 
+.settings-inline-control {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 10px;
+  color: var(--echo-heading-text);
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.settings-inline-control .settings-range-field {
+  min-width: min(260px, 60vw);
+}
+
 .settings-number-field {
   display: inline-grid;
   min-width: 130px;

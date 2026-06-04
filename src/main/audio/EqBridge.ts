@@ -7,8 +7,10 @@ import electron from 'electron';
 import type { ChannelBalanceMonoMode, ChannelBalanceState } from '../../shared/types/audio';
 import {
   channelBalanceMaxBalance,
+  channelBalanceMaxDelayMs,
   channelBalanceMaxGainDb,
   channelBalanceMinBalance,
+  channelBalanceMinDelayMs,
   channelBalanceMinGainDb,
 } from '../../shared/types/audio';
 import type {
@@ -301,6 +303,8 @@ const normalizeChannelBalancePatch = (
   const balance = Number(patch.balance ?? fallback.balance);
   const leftGainDb = Number(patch.leftGainDb ?? fallback.leftGainDb);
   const rightGainDb = Number(patch.rightGainDb ?? fallback.rightGainDb);
+  const leftDelayMs = Number(patch.leftDelayMs ?? fallback.leftDelayMs ?? 0);
+  const rightDelayMs = Number(patch.rightDelayMs ?? fallback.rightDelayMs ?? 0);
   const monoMode = typeof patch.monoMode === 'string' && monoModes.has(patch.monoMode) ? patch.monoMode : fallback.monoMode;
 
   return {
@@ -308,6 +312,8 @@ const normalizeChannelBalancePatch = (
     balance: Number.isFinite(balance) ? clamp(balance, channelBalanceMinBalance, channelBalanceMaxBalance) : fallback.balance,
     leftGainDb: Number.isFinite(leftGainDb) ? clamp(leftGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : fallback.leftGainDb,
     rightGainDb: Number.isFinite(rightGainDb) ? clamp(rightGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : fallback.rightGainDb,
+    leftDelayMs: Number.isFinite(leftDelayMs) ? clamp(leftDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : fallback.leftDelayMs ?? 0,
+    rightDelayMs: Number.isFinite(rightDelayMs) ? clamp(rightDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : fallback.rightDelayMs ?? 0,
     swapLeftRight: typeof patch.swapLeftRight === 'boolean' ? patch.swapLeftRight : fallback.swapLeftRight,
     monoMode,
     invertLeft: typeof patch.invertLeft === 'boolean' ? patch.invertLeft : fallback.invertLeft,
@@ -323,6 +329,8 @@ const isDefaultChannelBalanceState = (state: ChannelBalanceState): boolean => {
     state.balance === fallback.balance &&
     state.leftGainDb === fallback.leftGainDb &&
     state.rightGainDb === fallback.rightGainDb &&
+    (state.leftDelayMs ?? 0) === (fallback.leftDelayMs ?? 0) &&
+    (state.rightDelayMs ?? 0) === (fallback.rightDelayMs ?? 0) &&
     state.swapLeftRight === fallback.swapLeftRight &&
     state.monoMode === fallback.monoMode &&
     state.invertLeft === fallback.invertLeft &&

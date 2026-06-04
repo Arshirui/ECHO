@@ -44,6 +44,7 @@ import { ArtistEventsService } from './online/ArtistEventsService';
 import { ArtistOnlineInfoService, emptyArtistOnlineInfo } from './online/ArtistOnlineInfoService';
 import { BpmAnalysisJobQueue } from './audioAnalysis/BpmAnalysisJobQueue';
 import { ReplayGainAnalysisJobQueue } from './audioAnalysis/ReplayGainAnalysisJobQueue';
+import { LyricsBackfillJobPersistence, LyricsBackfillJobQueue } from './LyricsBackfillJobQueue';
 import { ArtistImageCacheService } from './artistImages/ArtistImageCacheService';
 import { fetchWithNetworkProxy } from '../network/networkFetch';
 import type { ArtistImageLookupInput, ArtistImageProvider } from './artistImages/ArtistImageTypes';
@@ -109,6 +110,8 @@ import type {
   BpmAnalysisStartOptions,
   ReplayGainAnalysisJobStatus,
   ReplayGainAnalysisStartOptions,
+  LyricsBackfillJobStatus,
+  LyricsBackfillStartOptions,
   ArtistImageCacheClearResult,
   ArtistImageCacheEntry,
   ArtistImageCacheSummary,
@@ -224,6 +227,7 @@ export class LibraryService {
   private searchIndexBackfillRunning = false;
   private searchIndexBackfillAllowDuringPlayback = false;
   private artistImagePlaybackStatusUnsubscribe: (() => void) | null = null;
+  private readonly lyricsBackfillJobQueue: LyricsBackfillJobQueue;
   private closed = false;
 
   constructor(
@@ -248,6 +252,10 @@ export class LibraryService {
   ) {
     this.moveCandidateService = new LibraryMoveCandidateService(this.database);
     this.moveRepairService = new LibraryMoveRepairService(this.database, this.moveCandidateService);
+    this.lyricsBackfillJobQueue = new LyricsBackfillJobQueue((query) => this.store.getTracks(query), {
+      persistence: new LyricsBackfillJobPersistence(this.database),
+    });
+    this.lyricsBackfillJobQueue.resumeLastIncompleteJob();
     this.bindArtistImagePlaybackDeferral();
     this.artistImageStartupTimer = setTimeout(() => {
       this.artistImageStartupTimer = null;
@@ -1916,6 +1924,22 @@ export class LibraryService {
     return this.replayGainAnalysisJobQueue.getStatus(jobId);
   }
 
+  startLyricsBackfill(options: LyricsBackfillStartOptions = {}): LyricsBackfillJobStatus {
+    return this.lyricsBackfillJobQueue.start(options);
+  }
+
+  getLyricsBackfillStatus(jobId: string): LyricsBackfillJobStatus {
+    return this.lyricsBackfillJobQueue.getStatus(jobId);
+  }
+
+  getCurrentLyricsBackfillStatus(): LyricsBackfillJobStatus | null {
+    return this.lyricsBackfillJobQueue.getCurrentStatus();
+  }
+
+  cancelLyricsBackfill(jobId: string): LyricsBackfillJobStatus {
+    return this.lyricsBackfillJobQueue.cancel(jobId);
+  }
+
   getDefaultCoverCacheDir(): string {
     return getDefaultCoverCacheDir(this.databasePath);
   }
@@ -1935,6 +1959,7 @@ export class LibraryService {
 
   close(): void {
     this.closed = true;
+    this.lyricsBackfillJobQueue.dispose();
     this.watcherService?.stop();
     this.artistImagePlaybackStatusUnsubscribe?.();
     this.artistImagePlaybackStatusUnsubscribe = null;
@@ -2731,6 +2756,9 @@ const supportedImageMimeType = (value: string | null | undefined): string | null
   return normalized === 'image/jpeg' || normalized === 'image/png' || normalized === 'image/webp' ? normalized : null;
 };
 
+const coverDownloadTimeoutMs = 6000;
+const maxNetworkCoverBytes = 12 * 1024 * 1024;
+
 const mimeTypeForImageUrl = (url: string): string => {
   const path = new URL(url).pathname;
   return mimeTypeForImagePath(path);
@@ -2746,8 +2774,11 @@ const readCoverImageFromUrl = async (url: string, mimeTypeHint: string | null): 
   }
 
   let response: Response;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), coverDownloadTimeoutMs);
   try {
     response = await fetchWithNetworkProxy(coverUrl, {
+      signal: controller.signal,
       headers: {
         Accept: 'image/avif,image/webp,image/png,image/jpeg,*/*',
         Referer: referer,
@@ -2756,17 +2787,36 @@ const readCoverImageFromUrl = async (url: string, mimeTypeHint: string | null): 
       },
     });
   } catch (error) {
+    clearTimeout(timeoutId);
     throw new Error(`封面下载失败，但标签信息仍可应用。${error instanceof Error ? ` ${error.message}` : ''}`);
   }
 
   if (!response.ok) {
+    clearTimeout(timeoutId);
     throw new Error('封面下载失败，但标签信息仍可应用。');
+  }
+
+  const contentLength = Number(response.headers.get('content-length') ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > maxNetworkCoverBytes) {
+    clearTimeout(timeoutId);
+    throw new Error('Network cover is too large; metadata can still be applied.');
   }
 
   const contentType = response.headers.get('content-type');
   const mimeType = supportedImageMimeType(mimeTypeHint) ?? supportedImageMimeType(contentType) ?? mimeTypeForImageUrl(coverUrl);
+  let data: Uint8Array;
+  try {
+    data = new Uint8Array(await response.arrayBuffer());
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (data.byteLength > maxNetworkCoverBytes) {
+    throw new Error('Network cover is too large; metadata can still be applied.');
+  }
+
   return {
-    data: new Uint8Array(await response.arrayBuffer()),
+    data,
     mimeType,
   };
 };

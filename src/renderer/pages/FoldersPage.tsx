@@ -622,7 +622,7 @@ export const FoldersPage = (): JSX.Element => {
   const remoteVisibleHydrationInFlightRef = useRef<Set<string>>(new Set());
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const workbenchRef = useRef<HTMLDivElement | null>(null);
-  const { currentTrackId, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeTrackFromQueue } = usePlaybackQueue();
+  const { currentTrackId, isShuffleEnabled, playTrack, appendToQueue, appendTracksToQueue, playTrackNext, removeTrackFromQueue, toggleShuffle } = usePlaybackQueue();
   const setChildrenByParent = useCallback((value: SetStateAction<Record<string, LibraryFolderNode[]>>): void => {
     setChildrenByParentState((current) => {
       const next = typeof value === 'function' ? value(current) : value;
@@ -715,9 +715,11 @@ export const FoldersPage = (): JSX.Element => {
             folderId: selected.folderId,
             path: selected.path,
             recursive,
+            search: search || undefined,
+            sort,
           }
         : null,
-    [recursive, selected, t],
+    [recursive, search, selected, sort, t],
   );
   const remoteSource = useMemo(
     () =>
@@ -1325,7 +1327,12 @@ export const FoldersPage = (): JSX.Element => {
 
   const runBulkAction = useCallback(
     async (action: 'play' | 'shuffle' | 'append'): Promise<void> => {
-      const queueSource = mode === 'remote' ? remoteSource : folderSource;
+      const sortMode = action === 'shuffle' ? 'random' : sort === 'random' && action === 'play' ? 'default' : sort;
+      const queueSource = mode === 'remote'
+        ? remoteSource
+        : folderSource
+          ? { ...folderSource, search: search || undefined, sort: sortMode }
+          : null;
       if (!queueSource || (mode === 'local' && !selected) || (mode === 'remote' && !selectedRemote)) {
         return;
       }
@@ -1335,7 +1342,7 @@ export const FoldersPage = (): JSX.Element => {
       setMessage(null);
 
       try {
-        const result = await fetchBulkTracks(action === 'shuffle' ? 'random' : sort);
+        const result = await fetchBulkTracks(sortMode);
         if (result.items.length === 0) {
           setMessage(t('folders.message.noPlayableTracks'));
           return;
@@ -1344,6 +1351,9 @@ export const FoldersPage = (): JSX.Element => {
         if (action === 'append') {
           appendTracksToQueue(result.items, queueSource);
         } else {
+          if (isShuffleEnabled) {
+            toggleShuffle();
+          }
           if (mode === 'remote') {
             setRemoteLoadingTrackId(result.items[0].id);
           }
@@ -1367,7 +1377,7 @@ export const FoldersPage = (): JSX.Element => {
         setIsBulkLoading(false);
       }
     },
-    [appendTracksToQueue, fetchBulkTracks, folderSource, mode, playTrack, remoteSource, selected, selectedRemote, sort, t],
+    [appendTracksToQueue, fetchBulkTracks, folderSource, isShuffleEnabled, mode, playTrack, remoteSource, search, selected, selectedRemote, sort, t, toggleShuffle],
   );
 
   const handleChooseFolder = useCallback(async (): Promise<void> => {

@@ -1746,6 +1746,7 @@ export type TranslationKey =
   | 'songs.search.placeholder'
   | 'songs.sort.album'
   | 'songs.sort.artist'
+  | 'songs.sort.artistAlbum'
   | 'songs.sort.createdAsc'
   | 'songs.sort.createdDesc'
   | 'songs.sort.default'
@@ -2385,6 +2386,7 @@ export type TranslationKey =
   | 'settings.eq.action.resetBand'
   | 'settings.eq.action.resetAllGains'
   | 'settings.eq.action.resetChannelBalance'
+  | 'settings.eq.action.resetDelaysOnly'
   | 'settings.eq.action.resetEq'
   | 'settings.eq.action.resetFrequencies'
   | 'settings.eq.action.resetMonitorTools'
@@ -2489,8 +2491,10 @@ export type TranslationKey =
   | 'settings.eq.channel.group.gainTrim'
   | 'settings.eq.channel.group.monitorTools'
   | 'settings.eq.channel.group.phaseTools'
+  | 'settings.eq.channel.group.timing'
   | 'settings.eq.channel.invertLeft'
   | 'settings.eq.channel.invertRight'
+  | 'settings.eq.channel.leftDelay'
   | 'settings.eq.channel.leftGain'
   | 'settings.eq.channel.leftTotal'
   | 'settings.eq.channel.mono.left'
@@ -2504,10 +2508,29 @@ export type TranslationKey =
   | 'settings.eq.channel.quick.rightSolo'
   | 'settings.eq.channel.quick.swapCheck'
   | 'settings.eq.channel.quickTools'
+  | 'settings.eq.channel.rightDelay'
   | 'settings.eq.channel.rightGain'
   | 'settings.eq.channel.rightTotal'
   | 'settings.eq.channel.swap'
   | 'settings.eq.channel.title'
+  | 'settings.eq.channel.wizard.apply'
+  | 'settings.eq.channel.wizard.clear'
+  | 'settings.eq.channel.wizard.empty'
+  | 'settings.eq.channel.wizard.imageLeft'
+  | 'settings.eq.channel.wizard.imageRight'
+  | 'settings.eq.channel.wizard.leftDistance'
+  | 'settings.eq.channel.wizard.leftLouder'
+  | 'settings.eq.channel.wizard.leftSpl'
+  | 'settings.eq.channel.wizard.monitor'
+  | 'settings.eq.channel.wizard.nudge'
+  | 'settings.eq.channel.wizard.previewCenter'
+  | 'settings.eq.channel.wizard.previewLeft'
+  | 'settings.eq.channel.wizard.previewRight'
+  | 'settings.eq.channel.wizard.ready'
+  | 'settings.eq.channel.wizard.rightDistance'
+  | 'settings.eq.channel.wizard.rightLouder'
+  | 'settings.eq.channel.wizard.rightSpl'
+  | 'settings.eq.channel.wizard.title'
   | 'settings.eq.comfort.direct'
   | 'settings.eq.comfort.directDetail'
   | 'settings.eq.comfort.risk'
@@ -4799,6 +4822,7 @@ const zhCN: TranslationMap = {
   'songs.search.placeholder': '搜索曲目 / 艺人 / 专辑...',
   'songs.sort.album': '按专辑',
   'songs.sort.artist': '按艺术家',
+  'songs.sort.artistAlbum': '按艺术家 / 专辑',
   'songs.sort.createdAsc': '创建时间（正序）',
   'songs.sort.createdDesc': '创建时间（倒序）',
   'songs.sort.default': '默认排序',
@@ -5438,6 +5462,7 @@ const zhCN: TranslationMap = {
   'settings.eq.action.resetBand': '重置 {frequency}',
   'settings.eq.action.resetAllGains': '重置全部增益',
   'settings.eq.action.resetChannelBalance': '重置声道平衡',
+  'settings.eq.action.resetDelaysOnly': '重置延迟',
   'settings.eq.action.resetEq': '重置 EQ',
   'settings.eq.action.resetFrequencies': '恢复标准频点',
   'settings.eq.action.resetMonitorTools': '重置监听工具',
@@ -5534,7 +5559,7 @@ const zhCN: TranslationMap = {
   'settings.eq.channel.calibrationMode': '校准模式',
   'settings.eq.channel.center': '居中',
   'settings.eq.channel.constantPower': '恒定功率',
-  'settings.eq.channel.description': 'Balance 用于左右偏移；L/R Gain 用于精细校正；Mono Sum 用于单声道检查；Invert 用于相位检查。',
+  'settings.eq.channel.description': 'Balance 用于左右偏移；L/R Gain 校正响度；L/R Delay 校正到达时间；Mono Sum 和 Invert 用于监听检查。',
   'settings.eq.channel.dsp': 'DSP',
   'settings.eq.channel.effectiveLeft': '左有效增益',
   'settings.eq.channel.effectiveRight': '右有效增益',
@@ -5542,8 +5567,10 @@ const zhCN: TranslationMap = {
   'settings.eq.channel.group.gainTrim': 'Gain Trim',
   'settings.eq.channel.group.monitorTools': '监听工具',
   'settings.eq.channel.group.phaseTools': '相位工具',
+  'settings.eq.channel.group.timing': 'Timing',
   'settings.eq.channel.invertLeft': '左声道反相',
   'settings.eq.channel.invertRight': '右声道反相',
+  'settings.eq.channel.leftDelay': '左延迟',
   'settings.eq.channel.leftGain': '左增益',
   'settings.eq.channel.leftTotal': '左总增益',
   'settings.eq.channel.mono.left': '左',
@@ -5557,10 +5584,29 @@ const zhCN: TranslationMap = {
   'settings.eq.channel.quick.rightSolo': '右声道 Solo',
   'settings.eq.channel.quick.swapCheck': '交换检查',
   'settings.eq.channel.quickTools': '快速监听工具',
+  'settings.eq.channel.rightDelay': '右延迟',
   'settings.eq.channel.rightGain': '右增益',
   'settings.eq.channel.rightTotal': '右总增益',
   'settings.eq.channel.swap': '交换 L/R',
   'settings.eq.channel.title': '声道平衡',
+  'settings.eq.channel.wizard.apply': '应用测量校准',
+  'settings.eq.channel.wizard.clear': '清空测量',
+  'settings.eq.channel.wizard.empty': '等待测量',
+  'settings.eq.channel.wizard.imageLeft': '声像偏左',
+  'settings.eq.channel.wizard.imageRight': '声像偏右',
+  'settings.eq.channel.wizard.leftDistance': '左距离',
+  'settings.eq.channel.wizard.leftLouder': '左边更响',
+  'settings.eq.channel.wizard.leftSpl': '左 SPL',
+  'settings.eq.channel.wizard.monitor': '空间校准监听',
+  'settings.eq.channel.wizard.nudge': '空间校准微调',
+  'settings.eq.channel.wizard.previewCenter': '中心检查',
+  'settings.eq.channel.wizard.previewLeft': '左检查',
+  'settings.eq.channel.wizard.previewRight': '右检查',
+  'settings.eq.channel.wizard.ready': '可应用',
+  'settings.eq.channel.wizard.rightDistance': '右距离',
+  'settings.eq.channel.wizard.rightLouder': '右边更响',
+  'settings.eq.channel.wizard.rightSpl': '右 SPL',
+  'settings.eq.channel.wizard.title': '空间校准向导',
   'settings.eq.comfort.direct': '原声直通',
   'settings.eq.comfort.directDetail': 'DSP 关闭时不压低音量、不改动采样，适合放心听原声。',
   'settings.eq.comfort.risk': '需要留意电平',
@@ -7807,6 +7853,7 @@ const zhTW: TranslationMap = {
   'songs.search.placeholder': '搜尋曲目 / 藝人 / 專輯...',
   'songs.sort.album': '按專輯',
   'songs.sort.artist': '按藝人',
+  'songs.sort.artistAlbum': '按藝人 / 專輯',
   'songs.sort.createdAsc': '建立時間（正序）',
   'songs.sort.createdDesc': '建立時間（倒序）',
   'songs.sort.default': '預設排序',
@@ -7973,6 +8020,7 @@ const zhTW: TranslationMap = {
   'settings.eq.action.exportApoPreset': '匯出 APO',
   'settings.eq.action.pasteApoPreset': '貼上 APO',
   'settings.eq.action.resetChannelBalance': '重置聲道平衡',
+  'settings.eq.action.resetDelaysOnly': '重置延遲',
   'settings.eq.action.save': '儲存',
   'settings.eq.action.showAdvanced': 'PEQ 控制台',
   'settings.eq.autoGain.adjustment': 'Auto {value}',
@@ -8035,12 +8083,33 @@ const zhTW: TranslationMap = {
   'settings.eq.channel.active': '啟用',
   'settings.eq.channel.center': '置中',
   'settings.eq.channel.constantPower': '恆定功率',
-  'settings.eq.channel.description': 'Balance 用於左右偏移；L/R Gain 用於精細校正；Mono Sum 用於單聲道檢查；Invert 用於相位檢查。',
+  'settings.eq.channel.description': 'Balance 用於左右偏移；L/R Gain 校正響度；L/R Delay 校正到達時間；Mono Sum 和 Invert 用於監聽檢查。',
+  'settings.eq.channel.group.timing': 'Timing',
   'settings.eq.channel.invertLeft': '左聲道反相',
   'settings.eq.channel.invertRight': '右聲道反相',
+  'settings.eq.channel.leftDelay': '左延遲',
   'settings.eq.channel.mono.off': '關閉',
   'settings.eq.channel.mono.sum': '合併',
+  'settings.eq.channel.rightDelay': '右延遲',
   'settings.eq.channel.title': '聲道平衡',
+  'settings.eq.channel.wizard.apply': '套用測量校準',
+  'settings.eq.channel.wizard.clear': '清空測量',
+  'settings.eq.channel.wizard.empty': '等待測量',
+  'settings.eq.channel.wizard.imageLeft': '聲像偏左',
+  'settings.eq.channel.wizard.imageRight': '聲像偏右',
+  'settings.eq.channel.wizard.leftDistance': '左距離',
+  'settings.eq.channel.wizard.leftLouder': '左邊較響',
+  'settings.eq.channel.wizard.leftSpl': '左 SPL',
+  'settings.eq.channel.wizard.monitor': '空間校準監聽',
+  'settings.eq.channel.wizard.nudge': '空間校準微調',
+  'settings.eq.channel.wizard.previewCenter': '中心檢查',
+  'settings.eq.channel.wizard.previewLeft': '左檢查',
+  'settings.eq.channel.wizard.previewRight': '右檢查',
+  'settings.eq.channel.wizard.ready': '可套用',
+  'settings.eq.channel.wizard.rightDistance': '右距離',
+  'settings.eq.channel.wizard.rightLouder': '右邊較響',
+  'settings.eq.channel.wizard.rightSpl': '右 SPL',
+  'settings.eq.channel.wizard.title': '空間校準嚮導',
   'settings.eq.comfort.direct': '原聲直通',
   'settings.eq.comfort.directDetail': 'DSP 關閉時不壓低音量、不改動取樣，適合放心聽原聲。',
   'settings.eq.comfort.risk': '需要留意電平',
@@ -10636,6 +10705,7 @@ const jaJP: TranslationMap = {
   'songs.search.placeholder': '曲 / アーティスト / アルバムを検索...',
   'songs.sort.album': 'アルバム順',
   'songs.sort.artist': 'アーティスト順',
+  'songs.sort.artistAlbum': 'アーティスト / アルバム順',
   'songs.sort.createdAsc': '作成日時（昇順）',
   'songs.sort.createdDesc': '作成日時（降順）',
   'songs.sort.default': 'デフォルト順',
@@ -10713,6 +10783,7 @@ const jaJP: TranslationMap = {
   'settings.eq.action.holdOriginal': '押して原音を聴く',
   'settings.eq.action.resetBand': '{frequency} をリセット',
   'settings.eq.action.resetChannelBalance': 'チャンネルバランスをリセット',
+  'settings.eq.action.resetDelaysOnly': '遅延をリセット',
   'settings.eq.action.resetEq': 'EQ をリセット',
   'settings.eq.action.save': '保存',
   'settings.eq.band.fallback': 'バンド',
@@ -10729,10 +10800,12 @@ const jaJP: TranslationMap = {
   'settings.eq.channel.bypassed': 'バイパス',
   'settings.eq.channel.center': '中央',
   'settings.eq.channel.constantPower': '定電力',
-  'settings.eq.channel.description': 'Balance は左右の定位補正、L/R Gain は細かな補正、Mono Sum はモノ確認、Invert は位相確認に使います。',
+  'settings.eq.channel.description': 'Balance は左右定位、L/R Gain は音量、L/R Delay は到達時間を補正します。Mono Sum と Invert は確認用です。',
   'settings.eq.channel.dsp': 'DSP',
+  'settings.eq.channel.group.timing': 'Timing',
   'settings.eq.channel.invertLeft': '左を反転',
   'settings.eq.channel.invertRight': '右を反転',
+  'settings.eq.channel.leftDelay': '左遅延',
   'settings.eq.channel.leftGain': '左ゲイン',
   'settings.eq.channel.leftTotal': '左合計',
   'settings.eq.channel.mono.left': '左',
@@ -10740,10 +10813,29 @@ const jaJP: TranslationMap = {
   'settings.eq.channel.mono.right': '右',
   'settings.eq.channel.mono.sum': '合成',
   'settings.eq.channel.monoMode': 'モノモード',
+  'settings.eq.channel.rightDelay': '右遅延',
   'settings.eq.channel.rightGain': '右ゲイン',
   'settings.eq.channel.rightTotal': '右合計',
   'settings.eq.channel.swap': 'L/R 交換',
   'settings.eq.channel.title': 'チャンネルバランス',
+  'settings.eq.channel.wizard.apply': '測定補正を適用',
+  'settings.eq.channel.wizard.clear': '測定をクリア',
+  'settings.eq.channel.wizard.empty': '測定待ち',
+  'settings.eq.channel.wizard.imageLeft': '定位が左寄り',
+  'settings.eq.channel.wizard.imageRight': '定位が右寄り',
+  'settings.eq.channel.wizard.leftDistance': '左距離',
+  'settings.eq.channel.wizard.leftLouder': '左が大きい',
+  'settings.eq.channel.wizard.leftSpl': '左 SPL',
+  'settings.eq.channel.wizard.monitor': '空間補正モニター',
+  'settings.eq.channel.wizard.nudge': '空間補正の微調整',
+  'settings.eq.channel.wizard.previewCenter': '中央確認',
+  'settings.eq.channel.wizard.previewLeft': '左確認',
+  'settings.eq.channel.wizard.previewRight': '右確認',
+  'settings.eq.channel.wizard.ready': '適用可',
+  'settings.eq.channel.wizard.rightDistance': '右距離',
+  'settings.eq.channel.wizard.rightLouder': '右が大きい',
+  'settings.eq.channel.wizard.rightSpl': '右 SPL',
+  'settings.eq.channel.wizard.title': '空間補正ウィザード',
   'settings.eq.curve.aria': 'ドラッグ可能な 31 バンド EQ 周波数特性',
   'settings.eq.curve.dragBand': '{frequency} EQ バンドをドラッグ',
   'settings.eq.filter.highShelf': 'ハイシェルフ',
@@ -13506,6 +13598,7 @@ const enUS: TranslationMap = {
   'songs.search.placeholder': 'Search songs / artists / albums...',
   'songs.sort.album': 'By album',
   'songs.sort.artist': 'By artist',
+  'songs.sort.artistAlbum': 'By artist / album',
   'songs.sort.createdAsc': 'Created time (ascending)',
   'songs.sort.createdDesc': 'Created time (descending)',
   'songs.sort.default': 'Default sort',
@@ -13604,6 +13697,7 @@ const enUS: TranslationMap = {
   'settings.eq.action.resetBand': 'Reset {frequency}',
   'settings.eq.action.resetAllGains': 'Reset all gains',
   'settings.eq.action.resetChannelBalance': 'Reset channel balance',
+  'settings.eq.action.resetDelaysOnly': 'Reset delays',
   'settings.eq.action.resetEq': 'Reset EQ',
   'settings.eq.action.resetFrequencies': 'Standard bands',
   'settings.eq.action.resetMonitorTools': 'Reset monitor tools',
@@ -13700,7 +13794,7 @@ const enUS: TranslationMap = {
   'settings.eq.channel.calibrationMode': 'Calibration mode',
   'settings.eq.channel.center': 'Center',
   'settings.eq.channel.constantPower': 'Constant Power',
-  'settings.eq.channel.description': 'Balance shifts left/right. L/R Gain fine-tunes correction. Mono Sum checks mono. Invert checks phase.',
+  'settings.eq.channel.description': 'Balance shifts left/right. L/R Gain corrects level. L/R Delay aligns arrival time. Mono Sum and Invert are monitor checks.',
   'settings.eq.channel.dsp': 'DSP',
   'settings.eq.channel.effectiveLeft': 'Effective L',
   'settings.eq.channel.effectiveRight': 'Effective R',
@@ -13708,8 +13802,10 @@ const enUS: TranslationMap = {
   'settings.eq.channel.group.gainTrim': 'Gain Trim',
   'settings.eq.channel.group.monitorTools': 'Monitor Tools',
   'settings.eq.channel.group.phaseTools': 'Phase Tools',
+  'settings.eq.channel.group.timing': 'Timing',
   'settings.eq.channel.invertLeft': 'Invert Left',
   'settings.eq.channel.invertRight': 'Invert Right',
+  'settings.eq.channel.leftDelay': 'Left Delay',
   'settings.eq.channel.leftGain': 'Left Gain',
   'settings.eq.channel.leftTotal': 'Left total',
   'settings.eq.channel.mono.left': 'Left',
@@ -13723,10 +13819,29 @@ const enUS: TranslationMap = {
   'settings.eq.channel.quick.rightSolo': 'Right Solo',
   'settings.eq.channel.quick.swapCheck': 'Swap Check',
   'settings.eq.channel.quickTools': 'Quick monitor tools',
+  'settings.eq.channel.rightDelay': 'Right Delay',
   'settings.eq.channel.rightGain': 'Right Gain',
   'settings.eq.channel.rightTotal': 'Right total',
   'settings.eq.channel.swap': 'Swap L/R',
   'settings.eq.channel.title': 'Channel Balance',
+  'settings.eq.channel.wizard.apply': 'Apply measurement',
+  'settings.eq.channel.wizard.clear': 'Clear measurement',
+  'settings.eq.channel.wizard.empty': 'Waiting',
+  'settings.eq.channel.wizard.imageLeft': 'Image pulls left',
+  'settings.eq.channel.wizard.imageRight': 'Image pulls right',
+  'settings.eq.channel.wizard.leftDistance': 'Left distance',
+  'settings.eq.channel.wizard.leftLouder': 'Left is louder',
+  'settings.eq.channel.wizard.leftSpl': 'Left SPL',
+  'settings.eq.channel.wizard.monitor': 'Spatial calibration monitor',
+  'settings.eq.channel.wizard.nudge': 'Spatial calibration nudges',
+  'settings.eq.channel.wizard.previewCenter': 'Center check',
+  'settings.eq.channel.wizard.previewLeft': 'Left check',
+  'settings.eq.channel.wizard.previewRight': 'Right check',
+  'settings.eq.channel.wizard.ready': 'Ready',
+  'settings.eq.channel.wizard.rightDistance': 'Right distance',
+  'settings.eq.channel.wizard.rightLouder': 'Right is louder',
+  'settings.eq.channel.wizard.rightSpl': 'Right SPL',
+  'settings.eq.channel.wizard.title': 'Spatial Calibration Wizard',
   'settings.eq.curve.aria': 'Draggable 31-band EQ frequency response',
   'settings.eq.curve.dragBand': 'Drag {frequency} EQ band',
   'settings.eq.curve.fineEdit': 'Shift fine edit',

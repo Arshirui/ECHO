@@ -47,8 +47,10 @@ import {
 } from '../../shared/types/globalShortcuts';
 import {
   channelBalanceMaxBalance,
+  channelBalanceMaxDelayMs,
   channelBalanceMaxGainDb,
   channelBalanceMinBalance,
+  channelBalanceMinDelayMs,
   channelBalanceMinGainDb,
   type AudioExportFormat,
   type ChannelBalanceMonoMode,
@@ -193,6 +195,7 @@ const librarySorts: LibrarySort[] = [
   'random',
   'title',
   'artist',
+  'artistAlbum',
   'album',
   'recent',
 ];
@@ -301,6 +304,8 @@ export const defaultChannelBalanceSettings: ChannelBalanceState = {
   balance: 0,
   leftGainDb: 0,
   rightGainDb: 0,
+  leftDelayMs: 0,
+  rightDelayMs: 0,
   swapLeftRight: false,
   monoMode: 'off',
   invertLeft: false,
@@ -422,7 +427,7 @@ export const defaultSettings: AppSettings = {
   networkProxyUrl: null,
   networkProxyBypassRules: defaultNetworkProxyBypassRules,
   networkProxyPacUrl: null,
-  networkMetadataEnabled: false,
+  networkMetadataEnabled: true,
   networkMetadataProviders: ['netease-cloud-music', 'qq-music'],
   onlineArtistInfoBandsintownAppId: null,
   onlineArtistInfoTicketmasterApiKey: null,
@@ -441,6 +446,7 @@ export const defaultSettings: AppSettings = {
   lyricsDeepSearchEnabled: true,
   lyricsAutoSearch: true,
   lyricsAutoAcceptScore: 0.5,
+  lyricsBackfillAutoAcceptScore: 0.45,
   lyricsRestartOnApplyEnabled: false,
   lyricsDefaultOffsetMs: 0,
   lyricsGlobalSyncOffsetMs: 0,
@@ -1385,6 +1391,8 @@ export const normalizeChannelBalanceSettings = (value: unknown): ChannelBalanceS
   const balance = Number(input.balance);
   const leftGainDb = Number(input.leftGainDb);
   const rightGainDb = Number(input.rightGainDb);
+  const leftDelayMs = Number(input.leftDelayMs);
+  const rightDelayMs = Number(input.rightDelayMs);
   const monoMode: ChannelBalanceMonoMode =
     input.monoMode === 'sum' || input.monoMode === 'left' || input.monoMode === 'right' || input.monoMode === 'off'
       ? input.monoMode
@@ -1395,6 +1403,8 @@ export const normalizeChannelBalanceSettings = (value: unknown): ChannelBalanceS
     balance: Number.isFinite(balance) ? clamp(balance, channelBalanceMinBalance, channelBalanceMaxBalance) : 0,
     leftGainDb: Number.isFinite(leftGainDb) ? clamp(leftGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : 0,
     rightGainDb: Number.isFinite(rightGainDb) ? clamp(rightGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb) : 0,
+    leftDelayMs: Number.isFinite(leftDelayMs) ? clamp(leftDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : 0,
+    rightDelayMs: Number.isFinite(rightDelayMs) ? clamp(rightDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs) : 0,
     swapLeftRight: input.swapLeftRight === true,
     monoMode,
     invertLeft: input.invertLeft === true,
@@ -1482,6 +1492,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   const desktopLyricsOpacityPercent = Number(settings.desktopLyricsOpacityPercent);
   const lyricsProviderTimeoutMs = Number(settings.lyricsProviderTimeoutMs);
   const lyricsTotalMatchTimeoutMs = Number(settings.lyricsTotalMatchTimeoutMs);
+  const lyricsBackfillAutoAcceptScore = Number(settings.lyricsBackfillAutoAcceptScore);
   const mvProviderOrder = normalizeMvProviderList(settings.mvProviderOrder, defaultSettings.mvProviderOrder);
   const mvAutoApplyThreshold = Number(settings.mvAutoApplyThreshold);
   const mvImmersiveBackgroundScalePercent = Number(settings.mvImmersiveBackgroundScalePercent);
@@ -1601,7 +1612,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     networkProxyUrl,
     networkProxyBypassRules: normalizeNetworkProxyBypassRules(settings.networkProxyBypassRules),
     networkProxyPacUrl,
-    networkMetadataEnabled: settings.networkMetadataEnabled === true,
+    networkMetadataEnabled: settings.networkMetadataEnabled !== false,
     networkMetadataProviders: providers.length ? providers : defaultSettings.networkMetadataProviders,
     onlineArtistInfoBandsintownAppId: normalizeOptionalText(settings.onlineArtistInfoBandsintownAppId),
     onlineArtistInfoTicketmasterApiKey: normalizeOptionalText(settings.onlineArtistInfoTicketmasterApiKey),
@@ -1631,6 +1642,9 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lyricsAutoAcceptScore: Number.isFinite(lyricsAutoAcceptScore)
       ? clamp(lyricsAutoAcceptScore, 0.3, 1)
       : defaultSettings.lyricsAutoAcceptScore,
+    lyricsBackfillAutoAcceptScore: Number.isFinite(lyricsBackfillAutoAcceptScore)
+      ? clamp(lyricsBackfillAutoAcceptScore, 0.3, 0.95)
+      : defaultSettings.lyricsBackfillAutoAcceptScore,
     lyricsRestartOnApplyEnabled: settings.lyricsRestartOnApplyEnabled === true,
     lyricsDefaultOffsetMs: Number.isFinite(lyricsDefaultOffsetMs)
       ? Math.round(clamp(lyricsDefaultOffsetMs, -10000, 10000))

@@ -2271,6 +2271,65 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('getFolderTracks random window excludes recent folder candidates', () => {
+    const root = makeTempRoot();
+    const folder = join(root, 'music');
+    const databasePath = join(root, 'library.sqlite');
+    const coverCacheDir = join(root, 'cover-cache');
+    const database = createDatabase(databasePath);
+    const service = createLibraryService(databasePath, {
+      databaseConnection: {
+        id: 'folder-random-window-test',
+        serviceName: 'library-test',
+        databasePath,
+        database,
+        close: () => database.close(),
+      },
+      coverCacheDir,
+      appSettings: () => ({ ...defaultSettings, coverCacheDir }),
+    });
+    const now = new Date('2024-01-01T00:00:00.000Z').toISOString();
+    const fieldSources = JSON.stringify(baseMetadata().fieldSources);
+    const insertTrack = database.prepare<[string, string, string, string, string, string]>(
+      `INSERT INTO tracks (
+        id, path, folder_id, size_bytes, mtime_ms, title, artist, album, album_artist,
+        duration, field_sources_json, created_at, updated_at
+      ) VALUES (?, ?, 'folder-1', 1, 1, ?, 'Artist', 'Album', 'Artist', 180, ?, ?, ?)`,
+    );
+
+    try {
+      database.prepare<[string, string, string, string, string]>(
+        `INSERT INTO folders (id, path, name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run('folder-1', folder, 'music', now, now);
+
+      for (const [id, title] of [
+        ['track-a', 'A'],
+        ['track-b', 'B'],
+        ['track-c', 'C'],
+      ] as const) {
+        insertTrack.run(id, join(folder, `${id}.flac`), title, fieldSources, now, now);
+      }
+
+      const randomPage = service.getFolderTracks({
+        folderId: 'folder-1',
+        path: folder,
+        recursive: true,
+        page: 1,
+        pageSize: 2,
+        sort: 'random',
+        randomWindow: true,
+        excludeTrackIds: ['track-a'],
+      });
+
+      expect(randomPage.items).toHaveLength(2);
+      expect(randomPage.total).toBe(2);
+      expect(randomPage.items.some((track) => track.id === 'track-a')).toBe(false);
+    } finally {
+      service.close();
+    }
+  });
+
   it('getTracks random window samples across the filtered library', () => {
     const root = makeTempRoot();
     const folder = join(root, 'music');
@@ -2387,6 +2446,62 @@ describe('Library Core', () => {
       expect(folderPage.items.map((track) => track.title)).toEqual(['Coffee', 'Zebra']);
       expect(folderPage.total).toBe(4);
       expect(folderPage.hasMore).toBe(true);
+    } finally {
+      service.close();
+    }
+  });
+
+  it('getTracks sorts by artist then album for translation lookup workflows', () => {
+    const root = makeTempRoot();
+    const folder = join(root, 'music');
+    const databasePath = join(root, 'library.sqlite');
+    const coverCacheDir = join(root, 'cover-cache');
+    const database = createDatabase(databasePath);
+    const service = createLibraryService(databasePath, {
+      databaseConnection: {
+        id: 'artist-album-sort-test',
+        serviceName: 'library-test',
+        databasePath,
+        database,
+        close: () => database.close(),
+      },
+      coverCacheDir,
+      appSettings: () => ({ ...defaultSettings, coverCacheDir }),
+    });
+    const now = new Date('2024-01-01T00:00:00.000Z').toISOString();
+    const fieldSources = JSON.stringify(baseMetadata().fieldSources);
+    const insertTrack = database.prepare<[string, string, string, string, string, string, number, number, string, string, string]>(
+      `INSERT INTO tracks (
+        id, path, folder_id, size_bytes, mtime_ms, title, artist, album, album_artist, track_no, disc_no,
+        duration, field_sources_json, created_at, updated_at
+      ) VALUES (?, ?, 'folder-1', 1, 1, ?, ?, ?, ?, ?, ?, 180, ?, ?, ?)`,
+    );
+
+    try {
+      database.prepare<[string, string, string, string, string]>(
+        `INSERT INTO folders (id, path, name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run('folder-1', folder, 'music', now, now);
+
+      for (const [id, title, artist, album, albumArtist, trackNo, discNo] of [
+        ['track-moe-alpha-2', 'Second', 'Moe', 'Alpha', 'Moe', 2, 1],
+        ['track-moe-beta-1', 'Beta One', 'Moe', 'Beta', 'Moe', 1, 1],
+        ['track-aia-omega-1', 'Omega One', 'Aia', 'Omega', 'Aia', 1, 1],
+        ['track-moe-alpha-1', 'First', 'Moe', 'Alpha', 'Moe', 1, 1],
+      ] as const) {
+        insertTrack.run(id, join(folder, `${id}.flac`), title, artist, album, albumArtist, trackNo, discNo, fieldSources, now, now);
+      }
+
+      const sorted = service.getTracks({ page: 1, pageSize: 10, sort: 'artistAlbum' });
+
+      expect(sorted.items.map((track) => `${track.artist} - ${track.album} - ${track.title}`)).toEqual([
+        'Aia - Omega - Omega One',
+        'Moe - Alpha - First',
+        'Moe - Alpha - Second',
+        'Moe - Beta - Beta One',
+      ]);
+      expect(sorted.total).toBe(4);
+      expect(sorted.hasMore).toBe(false);
     } finally {
       service.close();
     }

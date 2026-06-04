@@ -14,6 +14,7 @@ export type LyricsMatchEngineOptions = {
   coverAutoAcceptScore: number;
   deepSearchEnabled: boolean;
   collectAllCandidates: boolean;
+  preferPrimaryProvider: boolean;
   preferredSecondaryFields: Array<'translation' | 'romanization'>;
   isRejected?: (provider: LyricsProviderId, providerLyricsId: string | null) => boolean;
 };
@@ -38,6 +39,7 @@ const defaultOptions: LyricsMatchEngineOptions = {
   coverAutoAcceptScore: 0.97,
   deepSearchEnabled: true,
   collectAllCandidates: false,
+  preferPrimaryProvider: true,
   preferredSecondaryFields: [],
 };
 
@@ -170,7 +172,7 @@ export class LyricsMatchEngine {
     const pending = new Map<LyricsProviderId, Promise<MatchedLyricsCandidate[]>>();
     const collected: MatchedLyricsCandidate[] = [...localCollected];
     let accepted: MatchedLyricsCandidate | null = null;
-    const primaryNeteaseProvider = !settings.collectAllCandidates
+    const primaryNeteaseProvider = settings.preferPrimaryProvider && !settings.collectAllCandidates
       ? networkProviders.find((provider) => provider.id === 'netease')
       : undefined;
     const remainingNetworkProviders = primaryNeteaseProvider

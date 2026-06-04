@@ -529,6 +529,7 @@ const pluginLibrarySorts = new Set([
   'titleAsc',
   'titleDesc',
   'artist',
+  'artistAlbum',
   'album',
   'recent',
   'durationAsc',

@@ -1,8 +1,10 @@
 import type { AudioLevelTelemetry, ChannelBalanceState } from '../../../shared/types/audio';
 import {
   channelBalanceMaxBalance,
+  channelBalanceMaxDelayMs,
   channelBalanceMaxGainDb,
   channelBalanceMinBalance,
+  channelBalanceMinDelayMs,
   channelBalanceMinGainDb,
 } from '../../../shared/types/audio';
 import type { EqBand, EqFilterType, EqState } from '../../../shared/types/eq';
@@ -501,6 +503,12 @@ export const clampChannelBalancePatch = (patch: Partial<ChannelBalanceState>): P
 
   if (typeof nextPatch.rightGainDb === 'number') {
     nextPatch.rightGainDb = clamp(nextPatch.rightGainDb, channelBalanceMinGainDb, channelBalanceMaxGainDb);
+  }
+  if (typeof nextPatch.leftDelayMs === 'number') {
+    nextPatch.leftDelayMs = clamp(nextPatch.leftDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs);
+  }
+  if (typeof nextPatch.rightDelayMs === 'number') {
+    nextPatch.rightDelayMs = clamp(nextPatch.rightDelayMs, channelBalanceMinDelayMs, channelBalanceMaxDelayMs);
   }
 
   return nextPatch;

@@ -1381,11 +1381,64 @@ describe('EqPanel', () => {
 
     fireEvent.change(await screen.findByLabelText('Balance'), { target: { value: '400' } });
     fireEvent.change(screen.getByLabelText('Left Gain'), { target: { value: '-50' } });
+    fireEvent.change(screen.getByLabelText('Right Delay'), { target: { value: '80' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sum' }));
 
     await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ balance: 1 }));
     await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ leftGainDb: -12 }));
+    await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ rightDelayMs: 10 }));
     await waitFor(() => expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({ monoMode: 'sum' }));
+  });
+
+  it('applies spatial calibration measurements to gain and delay trims', async () => {
+    renderEqPanel();
+    await showAdvancedEqTools();
+
+    fireEvent.change(await screen.findByLabelText('Left distance'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('Right distance'), { target: { value: '134.3' } });
+    fireEvent.change(screen.getByLabelText('Left SPL'), { target: { value: '75' } });
+    fireEvent.change(screen.getByLabelText('Right SPL'), { target: { value: '72' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply measurement' }));
+
+    await waitFor(() =>
+      expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({
+        enabled: true,
+        balance: 0,
+        leftGainDb: -3,
+        rightGainDb: 0,
+        leftDelayMs: 1,
+        rightDelayMs: 0,
+        monoMode: 'off',
+        swapLeftRight: false,
+        invertLeft: false,
+        invertRight: false,
+      }),
+    );
+  });
+
+  it('nudges spatial calibration from listening checks', async () => {
+    renderEqPanel();
+    await showAdvancedEqTools();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Image pulls left' }));
+    await waitFor(() =>
+      expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({
+        enabled: true,
+        monoMode: 'off',
+        leftDelayMs: 0.05,
+        rightDelayMs: 0,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Right is louder' }));
+    await waitFor(() =>
+      expect(window.echo.eq.setChannelBalanceState).toHaveBeenCalledWith({
+        enabled: true,
+        monoMode: 'off',
+        leftGainDb: 0,
+        rightGainDb: -0.2,
+      }),
+    );
   });
 
   it('resets monitor tools without changing balance or gain trim', async () => {

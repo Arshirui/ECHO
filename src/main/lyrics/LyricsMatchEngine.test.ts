@@ -237,6 +237,26 @@ describe('LyricsMatchEngine', () => {
     expect(second.search).not.toHaveBeenCalled();
   });
 
+  it('can race providers in parallel for high-throughput backfill', async () => {
+    const slow = provider('netease', [result({ provider: 'netease', providerLyricsId: 'slow-priority-hit' })], 120);
+    const fast = provider('lrclib', [result({ providerLyricsId: 'fast-accepted-hit' })], 0);
+    const engine = new LyricsMatchEngine([fast, slow]);
+    const startedAt = Date.now();
+
+    const matched = await engine.match(query, {
+      enabledProviders: ['netease', 'lrclib'],
+      deepSearchEnabled: true,
+      preferPrimaryProvider: false,
+      providerTimeoutMs: 500,
+      totalMatchTimeoutMs: 800,
+    });
+
+    expect(Date.now() - startedAt).toBeLessThan(100);
+    expect(matched.accepted?.providerLyricsId).toBe('fast-accepted-hit');
+    expect(fast.search).toHaveBeenCalled();
+    expect(slow.search).toHaveBeenCalled();
+  });
+
   it('does not let LRCLIB preempt a slower accepted NetEase match during deep search', async () => {
     const slow = provider('netease', [result({ provider: 'netease', providerLyricsId: 'slow-priority-hit' })], 120);
     const fast = provider('lrclib', [result({ providerLyricsId: 'fast-accepted-hit', durationSeconds: 112 })], 0);

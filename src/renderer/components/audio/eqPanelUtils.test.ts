@@ -149,12 +149,16 @@ describe('eqPanelUtils', () => {
       balance: 3,
       leftGainDb: -30,
       rightGainDb: 12,
+      leftDelayMs: -1,
+      rightDelayMs: 80,
     };
 
     expect(clampChannelBalancePatch(patch)).toMatchObject({
       balance: 1,
       leftGainDb: -12,
       rightGainDb: 6,
+      leftDelayMs: 0,
+      rightDelayMs: 10,
     });
   });
 

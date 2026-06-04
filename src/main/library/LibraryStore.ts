@@ -1483,7 +1483,7 @@ export class LibraryStore {
     const startedAt = performance.now();
     const folder = this.requireFolder(query.folderId);
     const folderPath = this.resolveFolderScopedPath(folder, query.path);
-    const { page, pageSize, search, sort } = pageFromQuery(query);
+    const { page, pageSize, search, sort, excludeTrackIds, randomWindow } = pageFromQuery(query);
     const searchOptions = this.readSearchOptions();
     const offset = (page - 1) * pageSize;
     const scope = this.folderTrackScope(folder.id, folderPath, query.recursive !== false);
@@ -1495,8 +1495,10 @@ export class LibraryStore {
       likePredicate('COALESCE(tracks.genre, \'\')'),
       likePredicate('tracks.path'),
     ], searchOptions);
-    const whereSql = searchFilter.sql ? `WHERE ${scope.sql} AND ${searchFilter.sql}` : `WHERE ${scope.sql}`;
-    const params = [...scope.params, ...searchFilter.params];
+    const excludeTrackIdsSql = excludeTrackIds.length > 0 ? `tracks.id NOT IN (${excludeTrackIds.map(() => '?').join(', ')})` : '';
+    const whereParts = [scope.sql, searchFilter.sql, excludeTrackIdsSql].filter(Boolean);
+    const whereSql = `WHERE ${whereParts.join(' AND ')}`;
+    const params = [...scope.params, ...searchFilter.params, ...excludeTrackIds];
     const selectSql = `SELECT
         tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, tracks.album_artist,
         tracks.track_no, tracks.disc_no, tracks.year, tracks.genre,
@@ -1511,15 +1513,45 @@ export class LibraryStore {
        ${whereSql}`;
     const orderSql = this.trackOrderSql(sort);
     const totalRow = this.getRow(`SELECT COUNT(*) AS total FROM tracks ${whereSql}`, ...params);
-    const rows = this.allRows(
-      `${selectSql}
+    const total = Number(totalRow?.total ?? 0);
+    const rows =
+      randomWindow && sort === 'random'
+        ? (() => {
+            if (total <= 0) {
+              return [];
+            }
+
+            const sampleSize = Math.min(total, Math.max(pageSize, Math.min(randomWindowMaxRows, pageSize * 3)));
+            const rowNumbers = randomOneBasedRowNumbers(total, sampleSize);
+            if (rowNumbers.length === 0) {
+              return [];
+            }
+
+            return shuffleRows(
+              this.allRows(
+                `WITH folder_tracks AS (
+                  ${selectSql}
+                ),
+                sampled_tracks AS (
+                  SELECT *, ROW_NUMBER() OVER () AS echo_random_row_number
+                  FROM folder_tracks
+                )
+                SELECT *
+                FROM sampled_tracks
+                WHERE echo_random_row_number IN (${rowNumbers.map(() => '?').join(', ')})`,
+                ...params,
+                ...rowNumbers,
+              ),
+            ).slice(0, pageSize);
+          })()
+        : this.allRows(
+            `${selectSql}
        ${orderSql}
        LIMIT ? OFFSET ?`,
-      ...params,
-      pageSize,
-      offset,
-    );
-    const total = Number(totalRow?.total ?? 0);
+            ...params,
+            pageSize,
+            offset,
+          );
 
     try {
       return {
@@ -5197,6 +5229,7 @@ export class LibraryStore {
   private unifiedAlbumOrderSql(sort: string): string {
     switch (sort) {
       case 'artist':
+      case 'artistAlbum':
         return 'ORDER BY album_artist COLLATE NOCASE, title COLLATE NOCASE';
       case 'recent':
       case 'createdDesc':
@@ -5326,6 +5359,7 @@ export class LibraryStore {
       case 'random':
         return `ORDER BY ${prioritySql}RANDOM()`;
       case 'artist':
+      case 'artistAlbum':
       case 'titleAsc':
       case 'default':
       case 'title':
@@ -7913,6 +7947,8 @@ export class LibraryStore {
     switch (sort) {
       case 'artist':
         return 'ORDER BY tracks.artist COLLATE NOCASE, tracks.title COLLATE NOCASE';
+      case 'artistAlbum':
+        return 'ORDER BY tracks.artist COLLATE NOCASE, tracks.album COLLATE NOCASE, COALESCE(tracks.disc_no, 0), COALESCE(tracks.track_no, 999999), tracks.title COLLATE NOCASE';
       case 'album':
         return 'ORDER BY tracks.album COLLATE NOCASE, tracks.title COLLATE NOCASE';
       case 'recent':
@@ -7968,6 +8004,8 @@ export class LibraryStore {
       case 'artistAsc':
       case 'artist':
         return "ORDER BY COALESCE(playlist_items.artist_snapshot, tracks.artist, albums.album_artist, '') COLLATE NOCASE ASC, COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE ASC, playlist_items.position ASC";
+      case 'artistAlbum':
+        return "ORDER BY COALESCE(playlist_items.artist_snapshot, tracks.artist, albums.album_artist, '') COLLATE NOCASE ASC, COALESCE(playlist_items.album_snapshot, tracks.album, albums.title, '') COLLATE NOCASE ASC, COALESCE(playlist_items.title_snapshot, tracks.title, albums.title, '') COLLATE NOCASE ASC, playlist_items.position ASC";
       case 'album':
         return "ORDER BY COALESCE(playlist_items.album_snapshot, tracks.album, albums.title, '') COLLATE NOCASE ASC";
       case 'manual':
@@ -8002,6 +8040,7 @@ export class LibraryStore {
         return 'ORDER BY tracks.mtime_ms DESC, tracks.title COLLATE NOCASE';
       case 'random':
         return 'ORDER BY RANDOM()';
+      case 'artistAlbum':
       case 'default':
       default:
         return 'ORDER BY tracks.album COLLATE NOCASE, COALESCE(tracks.disc_no, 0), COALESCE(tracks.track_no, 0), tracks.title COLLATE NOCASE';
@@ -8011,6 +8050,7 @@ export class LibraryStore {
   private albumOrderSql(sort: string): string {
     switch (sort) {
       case 'artist':
+      case 'artistAlbum':
         return 'ORDER BY albums.album_artist COLLATE NOCASE, albums.title COLLATE NOCASE';
       case 'recent':
       case 'createdDesc':
@@ -8063,6 +8103,7 @@ export class LibraryStore {
         return 'ORDER BY artists.name COLLATE NOCASE DESC';
       case 'random':
         return 'ORDER BY RANDOM()';
+      case 'artistAlbum':
       case 'artist':
       case 'titleAsc':
       case 'default':

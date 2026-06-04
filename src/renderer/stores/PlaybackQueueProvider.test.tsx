@@ -3840,6 +3840,97 @@ describe('PlaybackQueueProvider playback modes', () => {
     });
   });
 
+  it('loads shuffle candidates from the current folder when the current queue came from Folders', async () => {
+    const tracks = [makeTrack(1), makeTrack(2), makeTrack(3)];
+    const getTracks = vi.fn();
+    const getFolderTracks = vi.fn().mockResolvedValue({
+      items: [tracks[1], tracks[2]],
+      page: 1,
+      pageSize: 128,
+      total: 3,
+      hasMore: false,
+    });
+
+    window.echo = {
+      playback: {
+        playLocalFile: vi.fn().mockImplementation((request: { trackId: string; filePath: string }) =>
+          Promise.resolve({
+            state: 'playing',
+            currentTrackId: request.trackId,
+            positionMs: 0,
+            durationMs: 120000,
+            filePath: request.filePath,
+          }),
+        ),
+      },
+      library: {
+        getFolderTracks,
+        getTracks,
+      },
+    } as unknown as Window['echo'];
+
+    const folderSource = {
+      type: 'folder' as const,
+      label: 'Music / Rock',
+      folderId: 'folder-1',
+      path: 'D:\\Music\\Rock',
+      recursive: true,
+      search: 'solo',
+      sort: 'default',
+    };
+
+    const FolderShuffleProbe = (): JSX.Element => {
+      const queue = usePlaybackQueue();
+      const didStartRef = useRef(false);
+
+      useEffect(() => {
+        if (didStartRef.current) {
+          return;
+        }
+
+        didStartRef.current = true;
+        queue.toggleShuffle();
+        void queue.playTrack(tracks[0], {
+          replaceQueueWith: [tracks[0]],
+          source: folderSource,
+        });
+      }, [queue]);
+
+      return (
+        <div>
+          <output aria-label="current-track">{queue.currentTrackId ?? ''}</output>
+          <button type="button" onClick={() => void queue.playNext()}>
+            next
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <FolderShuffleProbe />
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-1'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'next' }));
+
+    await waitFor(() => expect(screen.getByLabelText('current-track').textContent).toBe('track-2'));
+    expect(getFolderTracks).toHaveBeenCalledWith({
+      folderId: 'folder-1',
+      path: 'D:\\Music\\Rock',
+      recursive: true,
+      page: 1,
+      pageSize: 128,
+      search: 'solo',
+      sort: 'random',
+      excludeTrackIds: ['track-1'],
+      randomWindow: true,
+    });
+    expect(getTracks).not.toHaveBeenCalled();
+  });
+
   it('loads shuffle candidates from the full song library when the current queue is manual', async () => {
     const tracks = [makeTrack(1), makeTrack(2)];
     const getTracks = vi.fn().mockResolvedValue({

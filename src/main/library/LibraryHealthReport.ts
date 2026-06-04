@@ -30,6 +30,10 @@ export type LibraryHealthReportDependencies = {
   getRemoteBackgroundGlobalStatus: () => RemoteBackgroundGlobalStatus;
 };
 
+export type AsyncLibraryHealthReportDependencies = Omit<LibraryHealthReportDependencies, 'getCacheInventory'> & {
+  getCacheInventory: () => Promise<AppCacheInventory>;
+};
+
 const emptySummary = (): LibrarySummary => ({
   songCount: 0,
   albumCount: 0,
@@ -138,6 +142,15 @@ const safeError = (error: unknown): string => safeText(error instanceof Error ? 
 const trySection = <T>(label: string, warnings: string[], fallback: T, action: () => T): T => {
   try {
     return action();
+  } catch (error) {
+    warnings.push(`${label}: ${safeError(error)}`);
+    return fallback;
+  }
+};
+
+const trySectionAsync = async <T>(label: string, warnings: string[], fallback: T, action: () => Promise<T>): Promise<T> => {
+  try {
+    return await action();
   } catch (error) {
     warnings.push(`${label}: ${safeError(error)}`);
     return fallback;
@@ -286,6 +299,47 @@ const createRemoteSourcesSection = (
   };
 };
 
+type LibraryHealthReportParts = {
+  generatedAt: string;
+  warnings: string[];
+  summary: LibrarySummary;
+  diagnostics: LibraryDiagnostics;
+  databaseStatus: LibraryDatabaseProtectionStatus | null;
+  quality: LibraryQualityOverviewItem[];
+  labState: LibraryLabState;
+  cacheInventory: AppCacheInventory | null;
+  cacheError: string | null;
+  remoteSources: RemoteSource[];
+  remoteBackground: RemoteBackgroundGlobalStatus | null;
+};
+
+const assembleLibraryHealthReport = ({
+  generatedAt,
+  warnings,
+  summary,
+  diagnostics,
+  databaseStatus,
+  quality,
+  labState,
+  cacheInventory,
+  cacheError,
+  remoteSources,
+  remoteBackground,
+}: LibraryHealthReportParts): LibraryHealthReport => ({
+  generatedAt,
+  summary: {
+    ...summary,
+    warningCount: warnings.length,
+  },
+  database: createDatabaseSection(databaseStatus, diagnostics),
+  scan: createScanSection(diagnostics),
+  quality,
+  cache: createCacheSection(cacheInventory, cacheError),
+  watcher: createWatcherSection(labState),
+  remoteSources: createRemoteSourcesSection(remoteSources, remoteBackground),
+  warnings,
+});
+
 export const createLibraryHealthReport = (dependencies: LibraryHealthReportDependencies): LibraryHealthReport => {
   const warnings: string[] = [];
   const generatedAt = (dependencies.now ?? (() => new Date()))().toISOString();
@@ -311,20 +365,61 @@ export const createLibraryHealthReport = (dependencies: LibraryHealthReportDepen
     dependencies.getRemoteBackgroundGlobalStatus,
   );
 
-  return {
+  return assembleLibraryHealthReport({
     generatedAt,
-    summary: {
-      ...summary,
-      warningCount: warnings.length,
-    },
-    database: createDatabaseSection(databaseStatus, diagnostics),
-    scan: createScanSection(diagnostics),
-    quality,
-    cache: createCacheSection(cacheInventory, cacheError),
-    watcher: createWatcherSection(labState),
-    remoteSources: createRemoteSourcesSection(remoteSources, remoteBackground),
     warnings,
-  };
+    summary,
+    diagnostics,
+    databaseStatus,
+    quality,
+    labState,
+    cacheInventory,
+    cacheError,
+    remoteSources,
+    remoteBackground,
+  });
+};
+
+export const createLibraryHealthReportAsync = async (
+  dependencies: AsyncLibraryHealthReportDependencies,
+): Promise<LibraryHealthReport> => {
+  const warnings: string[] = [];
+  const generatedAt = (dependencies.now ?? (() => new Date()))().toISOString();
+  const summary = trySection('\u66f2\u5e93\u6982\u51b5', warnings, emptySummary(), dependencies.getSummary);
+  const diagnostics = trySection('\u66f2\u5e93\u8bca\u65ad', warnings, emptyDiagnostics(), dependencies.getDiagnostics);
+  const databaseStatus = trySection<LibraryDatabaseProtectionStatus | null>('\u6570\u636e\u5e93\u4fdd\u62a4', warnings, null, dependencies.getDatabaseProtectionStatus);
+  const quality = trySection<LibraryQualityOverviewItem[]>('\u8d44\u6599\u8d28\u91cf', warnings, [], dependencies.getQualityOverview);
+  const labState = trySection('\u5b9e\u65f6\u66f4\u65b0\u66f2\u5e93', warnings, emptyLabState(), dependencies.getLibraryLabState);
+  let cacheError: string | null = null;
+  const cacheInventory = await trySectionAsync<AppCacheInventory | null>('\u7f13\u5b58\u6e05\u5355', warnings, null, async () => {
+    try {
+      return await dependencies.getCacheInventory();
+    } catch (error) {
+      cacheError = safeError(error);
+      throw error;
+    }
+  });
+  const remoteSources = trySection<RemoteSource[]>('\u8fdc\u7a0b\u6e90', warnings, [], dependencies.listRemoteSources);
+  const remoteBackground = trySection<RemoteBackgroundGlobalStatus | null>(
+    '\u8fdc\u7a0b\u540e\u53f0\u4efb\u52a1',
+    warnings,
+    null,
+    dependencies.getRemoteBackgroundGlobalStatus,
+  );
+
+  return assembleLibraryHealthReport({
+    generatedAt,
+    warnings,
+    summary,
+    diagnostics,
+    databaseStatus,
+    quality,
+    labState,
+    cacheInventory,
+    cacheError,
+    remoteSources,
+    remoteBackground,
+  });
 };
 
 const formatBytes = (value: number): string => {

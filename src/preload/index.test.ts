@@ -362,6 +362,124 @@ describe('preload SMTC API', () => {
     });
   });
 
+  it('routes local .ape playback through native shared output even when system audio is remembered', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    const nativeStatus = {
+      state: 'playing',
+      currentTrackId: 'track-ape',
+      positionMs: 0,
+      durationMs: 180_000,
+      filePath: 'D:\\Music\\song.ape',
+    };
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.PlaybackPlayLocalFile) {
+        return Promise.resolve(nativeStatus);
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    const status = await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\song.ape',
+      trackId: 'track-ape',
+      probe: { durationSeconds: 180 },
+    });
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      IpcChannels.PlaybackPlayLocalFile,
+      expect.objectContaining({
+        filePath: 'D:\\Music\\song.ape',
+        output: expect.objectContaining({ outputMode: 'shared' }),
+      }),
+    );
+    expect(ipcRenderer.invoke).not.toHaveBeenCalledWith(IpcChannels.AudioCreateSystemStreamUrl, expect.anything());
+    expect(fakeAudioInstances).toHaveLength(0);
+    expect(status).toBe(nativeStatus);
+  });
+
+  it('routes local .ape media items through native shared output even when system audio is remembered', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    const nativeStatus = {
+      state: 'playing',
+      currentTrackId: 'track-ape',
+      positionMs: 0,
+      durationMs: 180_000,
+      filePath: 'D:\\Music\\song.ape',
+    };
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.PlaybackPlayMediaItem) {
+        return Promise.resolve(nativeStatus);
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    const status = await exposedApi!.playback.playMediaItem({
+      item: {
+        mediaType: 'local',
+        trackId: 'track-ape',
+        path: 'D:\\Music\\song.ape',
+        title: 'APE Song',
+        artist: 'Artist',
+        album: 'Album',
+        duration: 180,
+      },
+    });
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      IpcChannels.PlaybackPlayMediaItem,
+      expect.objectContaining({
+        item: expect.objectContaining({ path: 'D:\\Music\\song.ape' }),
+        output: expect.objectContaining({ outputMode: 'shared' }),
+      }),
+    );
+    expect(ipcRenderer.invoke).not.toHaveBeenCalledWith(IpcChannels.PlaybackResolveMediaItem, expect.anything());
+    expect(ipcRenderer.invoke).not.toHaveBeenCalledWith(IpcChannels.AudioCreateSystemStreamUrl, expect.anything());
+    expect(fakeAudioInstances).toHaveLength(0);
+    expect(status).toBe(nativeStatus);
+  });
+
+  it('preserves explicit native output settings for local .ape playback', async () => {
+    vi.resetModules();
+    exposedApi = null;
+    fakeAudioInstances = [];
+    window.localStorage.setItem('echo-next.audio-output-memory', JSON.stringify({ enabled: true, outputMode: 'system' }));
+    vi.mocked(ipcRenderer.invoke).mockImplementation((channel: string) => {
+      if (channel === IpcChannels.PlaybackPlayLocalFile) {
+        return Promise.resolve({
+          state: 'playing',
+          currentTrackId: 'track-ape-exclusive',
+          positionMs: 0,
+          durationMs: 180_000,
+          filePath: 'D:\\Music\\song.ape',
+        });
+      }
+      return Promise.resolve(null);
+    });
+    await import('./index');
+
+    await exposedApi!.playback.playLocalFile({
+      filePath: 'D:\\Music\\song.ape',
+      trackId: 'track-ape-exclusive',
+      output: { outputMode: 'exclusive' },
+    });
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      IpcChannels.PlaybackPlayLocalFile,
+      expect.objectContaining({
+        output: expect.objectContaining({ outputMode: 'exclusive' }),
+      }),
+    );
+    expect(ipcRenderer.invoke).not.toHaveBeenCalledWith(IpcChannels.AudioCreateSystemStreamUrl, expect.anything());
+    expect(fakeAudioInstances).toHaveLength(0);
+  });
+
   it('does not report a stopped system play request as a fatal HTMLAudio error', async () => {
     vi.resetModules();
     exposedApi = null;

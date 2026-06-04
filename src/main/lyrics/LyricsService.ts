@@ -63,6 +63,17 @@ type LyricsSettings = Pick<
   | 'lyricsTranslationEnabled'
 >;
 
+export type LyricsLookupOptions = {
+  enabledProviders?: LyricsProviderId[];
+  networkEnabled?: boolean;
+  autoSearch?: boolean;
+  deepSearchEnabled?: boolean;
+  providerTimeoutMs?: number;
+  totalMatchTimeoutMs?: number;
+  autoAcceptScore?: number;
+  preferPrimaryProvider?: boolean;
+};
+
 type LibraryLookup = {
   getTrack: (trackId: string) => LibraryTrack | null;
 };
@@ -703,6 +714,17 @@ const settingsForCandidateSearchProvider = (
       }
     : settings;
 
+const settingsWithLookupOptions = (settings: LyricsSettings, options: LyricsLookupOptions = {}): LyricsSettings => ({
+  ...settings,
+  lyricsEnabledProviders: options.enabledProviders?.length ? options.enabledProviders : settings.lyricsEnabledProviders,
+  lyricsNetworkEnabled: options.networkEnabled ?? settings.lyricsNetworkEnabled,
+  lyricsAutoSearch: options.autoSearch ?? settings.lyricsAutoSearch,
+  lyricsDeepSearchEnabled: options.deepSearchEnabled ?? settings.lyricsDeepSearchEnabled,
+  lyricsProviderTimeoutMs: options.providerTimeoutMs ?? settings.lyricsProviderTimeoutMs,
+  lyricsTotalMatchTimeoutMs: options.totalMatchTimeoutMs ?? settings.lyricsTotalMatchTimeoutMs,
+  lyricsAutoAcceptScore: options.autoAcceptScore ?? settings.lyricsAutoAcceptScore,
+});
+
 export class LyricsService {
   private readonly matchEngine: LyricsMatchEngine;
   private readonly secondaryLyricsRefreshMisses = new Set<string>();
@@ -735,22 +757,57 @@ export class LyricsService {
     this.closeDatabase();
   }
 
-  async getLyricsForTrack(trackId: string): Promise<TrackLyrics | null> {
+  hasCachedLyricsForTrack(trackId: string): boolean {
+    const track = this.library.getTrack(trackId);
+    if (!track) {
+      return false;
+    }
+
+    return Boolean(this.findCachedLyricsWithRepair(toQuery(track)));
+  }
+
+  hasCachedLyricsForTrackIds(trackIds: string[]): Set<string> {
+    const ids = [...new Set(trackIds.filter((trackId) => typeof trackId === 'string' && trackId.trim().length > 0))];
+    if (!ids.length) {
+      return new Set();
+    }
+
+    try {
+      const placeholders = ids.map(() => '?').join(', ');
+      const rows = this.database
+        .prepare<unknown[], { track_id: string }>(
+          `SELECT DISTINCT track_id
+           FROM lyrics_cache
+           WHERE track_id IN (${placeholders})`,
+        )
+        .all(...ids);
+      return new Set(rows.map((row) => row.track_id));
+    } catch (error) {
+      if (!isSqliteCorruptionError(error)) {
+        throw error;
+      }
+
+      this.repairLyricsStorage(error);
+      return new Set();
+    }
+  }
+
+  async getLyricsForTrack(trackId: string, options: LyricsLookupOptions = {}): Promise<TrackLyrics | null> {
     const track = this.library.getTrack(trackId);
     if (!track) {
       return null;
     }
 
-    return this.getLyricsForQuery(toQuery(track));
+    return this.getLyricsForQuery(toQuery(track), options);
   }
 
   async getLyricsForSnapshot(request: LyricsTrackSnapshotRequest): Promise<TrackLyrics | null> {
     return this.getLyricsForQuery(toSnapshotQuery(request));
   }
 
-  private async getLyricsForQuery(query: LyricsQuery): Promise<TrackLyrics | null> {
+  private async getLyricsForQuery(query: LyricsQuery, options: LyricsLookupOptions = {}): Promise<TrackLyrics | null> {
     const trackId = query.trackId ?? cacheKeyFor(query, 'cached');
-    const settings = safeSettings(this.readAppSettings);
+    const settings = settingsWithLookupOptions(safeSettings(this.readAppSettings), options);
     const cached = this.findCachedLyricsWithRepair(query);
     if (cached) {
       const enrichedCached = await this.fillCachedRomanization(query, cached);
@@ -769,6 +826,7 @@ export class LyricsService {
         coverAutoAcceptScore: settings.lyricsCoverAutoAcceptScore,
         deepSearchEnabled: settings.lyricsDeepSearchEnabled,
         collectAllCandidates: false,
+        preferPrimaryProvider: options.preferPrimaryProvider ?? true,
         preferredSecondaryFields: preferredSecondaryFields(settings),
         isRejected: (provider, providerLyricsId) => this.hasRejectedProviderLyrics(trackId, provider, providerLyricsId),
       });

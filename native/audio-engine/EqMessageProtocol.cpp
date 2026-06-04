@@ -114,6 +114,8 @@ ChannelBalanceState readChannelBalanceState(const juce::DynamicObject& object, c
     state.balance = clampChannelBalance(getNumber(object, "balance", state.balance));
     state.leftGainDb = clampChannelGainDb(getNumber(object, "leftGainDb", state.leftGainDb));
     state.rightGainDb = clampChannelGainDb(getNumber(object, "rightGainDb", state.rightGainDb));
+    state.leftDelayMs = clampChannelDelayMs(getNumber(object, "leftDelayMs", state.leftDelayMs));
+    state.rightDelayMs = clampChannelDelayMs(getNumber(object, "rightDelayMs", state.rightDelayMs));
     state.swapLeftRight = getBool(object, "swapLeftRight", state.swapLeftRight);
     state.monoMode = parseMonoMode(getString(object, "monoMode"), state.monoMode);
     state.invertLeft = getBool(object, "invertLeft", state.invertLeft);
@@ -162,6 +164,8 @@ std::string EqMessageProtocol::createChannelBalanceStateMessage(const ChannelBal
            << "\"balance\":" << state.balance << ','
            << "\"leftGainDb\":" << state.leftGainDb << ','
            << "\"rightGainDb\":" << state.rightGainDb << ','
+           << "\"leftDelayMs\":" << state.leftDelayMs << ','
+           << "\"rightDelayMs\":" << state.rightDelayMs << ','
            << "\"swapLeftRight\":" << boolText(state.swapLeftRight) << ','
            << "\"monoMode\":\"" << monoModeText(state.monoMode) << "\","
            << "\"invertLeft\":" << boolText(state.invertLeft) << ','
