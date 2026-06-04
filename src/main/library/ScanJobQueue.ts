@@ -373,7 +373,7 @@ export class ScanJobQueue {
         startedAt: new Date().toISOString(),
       });
 
-      const discovery = await this.discoverFiles(jobId, folder, errors, progress);
+      const discovery = await this.discoverFiles(jobId, folder, errors, progress, { suppressDiscoveredTotal: changesOnly });
       const cacheStatesByPath = changesOnly ? this.store.getTrackCacheStatesByFolder(folder.id) : undefined;
       const files = changesOnly && cacheStatesByPath
         ? this.filterAddedFiles(discovery.files, cacheStatesByPath)
@@ -998,6 +998,7 @@ export class ScanJobQueue {
     folder: LibraryFolder,
     errors: string[],
     progress: ScanProgressReporter,
+    options: { suppressDiscoveredTotal?: boolean } = {},
   ): Promise<ScanDiscoveryResult> {
     const files: ScannedAudioFile[] = [];
     const inaccessibleDirectories = new Set<string>();
@@ -1033,11 +1034,13 @@ export class ScanJobQueue {
         }
 
         if (files.length % 100 === 0) {
-          progress.update({
-            phase: 'discovering',
-            totalFiles: files.length,
-            errors,
-          });
+          progress.update(options.suppressDiscoveredTotal === true
+            ? { phase: 'discovering', errors }
+            : {
+                phase: 'discovering',
+                totalFiles: files.length,
+                errors,
+              });
         }
       }
     } catch (error) {

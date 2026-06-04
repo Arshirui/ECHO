@@ -683,14 +683,20 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
 
   it('changes-only scans read added files and mark removed paths without rereading existing paths', async () => {
     const root = makeTempRoot();
-    const [existingFile, newFile, deletedFile] = makeFiles(root, 3);
+    const existingFiles = makeFiles(root, 120);
+    const [existingFile, deletedFile] = existingFiles;
+    const newFile = {
+      path: join(root, 'music', 'new-track.flac'),
+      sizeBytes: 10,
+      mtimeMs: 1,
+    };
     const changedExistingFile = { ...existingFile, sizeBytes: existingFile.sizeBytes + 100 };
     const metadataReader = new FakeMetadataReader();
-    const store = new FakeStore(coverStateMap([existingFile, deletedFile], (item) => coverState(item)));
+    const store = new FakeStore(coverStateMap(existingFiles, (item) => coverState(item)));
 
     const status = await runQueue(
       store,
-      new FakeScanner([changedExistingFile, newFile]),
+      new FakeScanner([changedExistingFile, ...existingFiles.slice(2), newFile]),
       metadataReader,
       new CapturingCoverExtractor(),
       join(root, 'custom-cache'),
@@ -707,6 +713,7 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(store.upsertedTracks.map((track) => track.path)).toEqual([newFile.path]);
     expect(store.missingPaths).toEqual([deletedFile.path]);
     expect(store.getTrackCacheStatesByFolderCalls).toBe(1);
+    expect(Math.max(...store.updates.map((update) => update.totalFiles ?? 0))).toBe(1);
   });
 
   it('adds newly discovered files', async () => {

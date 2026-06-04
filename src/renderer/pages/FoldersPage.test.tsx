@@ -667,6 +667,18 @@ describe('FoldersPage', () => {
     expect(libraryMock.scanFolder).not.toHaveBeenCalled();
   });
 
+  it('warns users that scanning can briefly make the app unresponsive', async () => {
+    act(() => {
+      rememberLibraryScanStatus(scanStatus());
+    });
+
+    renderFoldersPage();
+
+    expect(
+      await screen.findByText(/The app may briefly become unresponsive during scanning; this is normal/i),
+    ).toBeTruthy();
+  });
+
   it('refreshes folder overviews once for each terminal scan job', async () => {
     renderFoldersPage();
 

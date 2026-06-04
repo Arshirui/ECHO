@@ -893,10 +893,10 @@
 .opra-vendor-grid button {
   display: grid;
   min-width: 0;
-  min-height: 144px;
+  min-height: 172px;
   place-items: center;
-  gap: 8px;
-  padding: 16px 12px 14px;
+  gap: 10px;
+  padding: 20px 12px 16px;
   color: #202939;
   border: 1px solid rgba(32, 42, 56, 0.09);
   border-radius: 8px;
@@ -921,19 +921,19 @@
 }
 
 .opra-vendor-grid img {
-  width: min(168px, 86%);
-  height: 64px;
+  width: min(220px, 94%);
+  height: 86px;
   object-fit: contain;
   opacity: 0.96;
 }
 
 .opra-vendor-grid strong {
   display: grid;
-  width: min(168px, 86%);
-  height: 64px;
+  width: min(220px, 94%);
+  height: 86px;
   place-items: center;
   color: #202939;
-  font-size: 32px;
+  font-size: 40px;
   font-weight: 920;
 }
 

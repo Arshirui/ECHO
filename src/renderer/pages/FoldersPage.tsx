@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, SetStateAction } from 'react';
 import {
+  AlertTriangle,
   ChevronRight,
   Folder,
   FolderOpen,
@@ -727,6 +728,7 @@ export const FoldersPage = (): JSX.Element => {
   const selectedScan = selected ? scanStatuses[selected.folderId] ?? selectedOverview?.recentScan ?? null : null;
   const isSelectedScanning = selectedScan ? runningStatuses.has(selectedScan.status) : false;
   const isSelectedRoot = Boolean(selected && selectedOverview && isSameLocalPath(selected.path, selectedOverview.path));
+  const hasRunningLocalScan = mode === 'local' && Object.values(scanStatuses).some((status) => runningStatuses.has(status.status));
   const selectedRemoteSource = useMemo(
     () => remoteSources.find((source) => source.id === selectedRemote?.sourceId) ?? null,
     [remoteSources, selectedRemote],
@@ -2356,6 +2358,13 @@ export const FoldersPage = (): JSX.Element => {
             </button>
           </div>
         </div>
+
+        {hasRunningLocalScan ? (
+          <div className="folders-scan-warning" role="status">
+            <AlertTriangle size={15} />
+            <span>{t('folders.scan.unresponsiveWarning')}</span>
+          </div>
+        ) : null}
 
         <div className="folders-root-list">
           {mode === 'remote' ? (
