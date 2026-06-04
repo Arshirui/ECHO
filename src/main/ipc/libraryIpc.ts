@@ -1734,7 +1734,7 @@ export const registerLibraryIpc = (): void => {
     return writeLibraryHealthReportMarkdown(await createLibraryHealthReportForRenderer(), result.filePath);
   });
   ipcMain.handle(IpcChannels.LibraryRefreshDuplicateTracks, (_event, mode: unknown) =>
-    getLibraryService().refreshDuplicateTracksAsync(normalizeDuplicateMode(mode)),
+    getLibraryService().refreshDuplicateTracksPlaybackSafe(normalizeDuplicateMode(mode)),
   );
   ipcMain.handle(IpcChannels.LibraryGetDuplicateTrackVersions, (_event, trackId: unknown) =>
     getLibraryService().getDuplicateTrackVersions(requireText(trackId, 'trackId')),
@@ -1981,7 +1981,7 @@ export const registerLibraryIpc = (): void => {
     getLibraryService().getAlbumTracks(requireText(albumId, 'albumId'), normalizeQuery(query)),
   );
   ipcMain.handle(IpcChannels.LibraryGetSummary, () => getLibraryService().getSummary());
-  ipcMain.handle(IpcChannels.LibraryRefreshAlbumGrouping, () => getLibraryService().refreshAlbumGrouping());
+  ipcMain.handle(IpcChannels.LibraryRefreshAlbumGrouping, () => getLibraryService().refreshAlbumGroupingPlaybackSafe());
   ipcMain.handle(IpcChannels.LibraryGetDiagnostics, () => getLibraryService().getDiagnostics());
   ipcMain.handle(IpcChannels.LibraryGetMoveCandidates, (_event, options: unknown) =>
     getLibraryService().getMoveCandidates(
@@ -2059,7 +2059,7 @@ export const registerLibraryIpc = (): void => {
     getLibraryService().getPlaybackHistorySummary(normalizePlaybackHistoryQuery(query)),
   );
   ipcMain.handle(IpcChannels.LibraryGetPlaybackStatsDashboard, (_event, query: unknown) =>
-    getLibraryService().getPlaybackStatsDashboard(normalizePlaybackHistoryQuery(query)),
+    getLibraryService().getPlaybackStatsDashboardPlaybackSafe(normalizePlaybackHistoryQuery(query)),
   );
   ipcMain.handle(IpcChannels.LibraryRefreshInvalidPlaybackHistory, () =>
     getLibraryService().refreshInvalidPlaybackHistory(),

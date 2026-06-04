@@ -406,6 +406,14 @@ const installLibraryService = () => {
       hiddenTracks: 0,
       updatedAt: '2026-05-20T00:00:00.000Z',
     })),
+    refreshDuplicateTracksPlaybackSafe: vi.fn((mode = 'strict') => Promise.resolve({
+      mode,
+      totalTracksScanned: 0,
+      duplicateGroups: 0,
+      duplicateMembers: 0,
+      hiddenTracks: 0,
+      updatedAt: '2026-05-20T00:00:00.000Z',
+    })),
     getDuplicateHiddenCounts: vi.fn(() => ({ 'track-1': 1, 'track-2': 0 })),
     getDuplicateIndexSummary: vi.fn((mode = 'strict') => ({
       mode,
@@ -502,6 +510,14 @@ const installLibraryService = () => {
     getAlbumTracks: vi.fn(),
     getSummary: vi.fn(() => ({ songCount: 2, albumCount: 1, artistCount: 2, folderCount: 1, totalDuration: 2, lastScanAt: null })),
     refreshAlbumGrouping: vi.fn(() => ({ songCount: 2, albumCount: 1, artistCount: 2, folderCount: 1, totalDuration: 2, lastScanAt: null })),
+    refreshAlbumGroupingPlaybackSafe: vi.fn(() => Promise.resolve({
+      songCount: 2,
+      albumCount: 1,
+      artistCount: 2,
+      folderCount: 1,
+      totalDuration: 2,
+      lastScanAt: null,
+    })),
     getDiagnostics: vi.fn(() => ({
       foldersCount: 1,
       tracksCount: 2,
@@ -569,6 +585,22 @@ const installLibraryService = () => {
     updateTrackTags: vi.fn(),
     searchNetworkTagCandidates: vi.fn(async () => []),
     recordTrackPlayback: vi.fn(),
+    getPlaybackStatsDashboardPlaybackSafe: vi.fn(() => Promise.resolve({
+      generatedAt: '2026-05-20T00:00:00.000Z',
+      totals: {
+        playCount: 0,
+        completedCount: 0,
+        playedSeconds: 0,
+        uniqueTracks: 0,
+        uniqueArtists: 0,
+      },
+      topTracks: [],
+      topArtists: [],
+      topAlbums: [],
+      formatBreakdown: [],
+      qualityBreakdown: [],
+      dailyActivity: [],
+    })),
     deleteTrack: vi.fn(),
     deleteTracks: vi.fn((trackIds: string[]) => trackIds.length),
     resolveLyricsBackgroundCover: vi.fn(async () => ({
@@ -1132,7 +1164,7 @@ describe('library IPC', () => {
 
     const result = await handlers[IpcChannels.LibraryRefreshAlbumGrouping]!();
 
-    expect(service.refreshAlbumGrouping).toHaveBeenCalledTimes(1);
+    expect(service.refreshAlbumGroupingPlaybackSafe).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ albumCount: 1 });
   });
 
@@ -1159,7 +1191,7 @@ describe('library IPC', () => {
       duplicateMode: 'balanced',
     });
 
-    expect(service.refreshDuplicateTracksAsync).toHaveBeenCalledWith('balanced');
+    expect(service.refreshDuplicateTracksPlaybackSafe).toHaveBeenCalledWith('balanced');
     expect(service.getDuplicateHiddenCounts).toHaveBeenCalledWith(['track-1'], 'aggressive');
     expect(service.getDuplicateIndexSummary).toHaveBeenCalledWith('strict');
     expect(service.getTracks).toHaveBeenCalledWith({

@@ -20,7 +20,11 @@ import {
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
 import { getLibraryDatabaseManager, type LibraryDatabaseConnection } from '../database/LibraryDatabaseManager';
 import { assertDatabaseHealthy } from '../database/health';
-import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
+import {
+  isPlaybackActiveForMainWork,
+  runMainBackgroundTask,
+  runNonCriticalMainWork,
+} from '../diagnostics/MainProcessWorkScheduler';
 import { AlbumService } from './AlbumService';
 import type { AlbumMergeStrategy } from './AlbumService';
 import { getDefaultCoverCacheDir, migrateCoverCache, resolveConfiguredCoverCacheDir, resolveCoverCacheDir } from './CoverCacheManager';
@@ -184,20 +188,28 @@ const broadcastLibraryChanged = (): void => {
 const romanizedSearchPattern = /[a-z]{2,}/iu;
 const playbackHistoryRefreshConcurrency = 16;
 
+const createEmptyPlaybackStatsDashboard = (): PlaybackStatsDashboard => ({
+  generatedAt: new Date().toISOString(),
+  totals: {
+    playCount: 0,
+    completedCount: 0,
+    playedSeconds: 0,
+    uniqueTracks: 0,
+    uniqueArtists: 0,
+  },
+  topTracks: [],
+  topArtists: [],
+  topAlbums: [],
+  formatBreakdown: [],
+  qualityBreakdown: [],
+  dailyActivity: [],
+});
+
 const isExistingFile = async (filePath: string): Promise<boolean> => {
   try {
     return (await statFile(filePath)).isFile();
   } catch {
     return false;
-  }
-};
-
-const runMainBackgroundTask = async <T>(name: string, work: () => Promise<T> | T): Promise<T> => {
-  const clearBackgroundTask = beginMainBackgroundTask(name);
-  try {
-    return await work();
-  } finally {
-    clearBackgroundTask();
   }
 };
 
@@ -210,6 +222,9 @@ export class LibraryService {
   private lastGroupingRefreshAt: string | null = null;
   private groupingRefreshDelayedForPlaybackCount = 0;
   private lastGroupingRefreshError: string | null = null;
+  private readonly duplicateRefreshTimers = new Map<DuplicateTrackMode, NodeJS.Timeout>();
+  private readonly duplicateRefreshRunning = new Set<DuplicateTrackMode>();
+  private readonly playbackStatsDashboardCache = new Map<string, PlaybackStatsDashboard>();
   private artistImageStartupTimer: NodeJS.Timeout | null = null;
   private readonly moveCandidateService: LibraryMoveCandidateService;
   private readonly moveRepairService: LibraryMoveRepairService;
@@ -381,6 +396,17 @@ export class LibraryService {
 
   refreshDuplicateTracksAsync(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackIndexSummary> {
     return this.store.refreshDuplicateTracksAsync(mode);
+  }
+
+  refreshDuplicateTracksPlaybackSafe(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackIndexSummary> {
+    return runNonCriticalMainWork({
+      name: `library:refresh-duplicate-tracks:${mode}`,
+      work: () => this.refreshDuplicateTracksAsync(mode),
+      fallback: () => {
+        this.scheduleDuplicateRefresh(mode);
+        return this.getDuplicateIndexSummary(mode);
+      },
+    });
   }
 
   previewDuplicateTrackCleanup(mode: DuplicateTrackMode = 'strict'): Promise<DuplicateTrackCleanupPreview> {
@@ -1190,7 +1216,18 @@ export class LibraryService {
   }
 
   getPlaybackStatsDashboard(query?: PlaybackHistoryQuery): PlaybackStatsDashboard {
-    return this.store.getPlaybackStatsDashboard(query);
+    const dashboard = this.store.getPlaybackStatsDashboard(query);
+    this.rememberPlaybackStatsDashboard(query, dashboard);
+    return dashboard;
+  }
+
+  async getPlaybackStatsDashboardPlaybackSafe(query?: PlaybackHistoryQuery): Promise<PlaybackStatsDashboard> {
+    const cached = this.playbackStatsDashboardCache.get(this.playbackStatsDashboardCacheKey(query));
+    if (await isPlaybackActiveForMainWork()) {
+      return cached ?? createEmptyPlaybackStatsDashboard();
+    }
+
+    return runMainBackgroundTask('library:get-playback-stats-dashboard', () => this.getPlaybackStatsDashboard(query));
   }
 
   async refreshInvalidPlaybackHistory(): Promise<PlaybackHistoryRefreshResult> {
@@ -1266,6 +1303,22 @@ export class LibraryService {
       this.lastGroupingRefreshError = error instanceof Error ? error.message : String(error);
       throw error;
     }
+  }
+
+  refreshAlbumGroupingPlaybackSafe(): Promise<LibrarySummary> {
+    if (this.hasRunningJobs()) {
+      throw new Error('Cannot refresh album grouping while a library scan is running.');
+    }
+
+    return runNonCriticalMainWork({
+      name: 'library:refresh-album-grouping',
+      work: () => this.refreshAlbumGrouping(),
+      fallback: () => {
+        this.groupingRefreshDelayedForPlaybackCount += 1;
+        this.scheduleGroupingRefresh(3000);
+        return this.store.getSummary();
+      },
+    });
   }
 
   async loadEmbeddedTrackTags(trackId: string): Promise<EmbeddedTrackTagsLoadResult> {
@@ -1961,6 +2014,11 @@ export class LibraryService {
     this.closed = true;
     this.lyricsBackfillJobQueue.dispose();
     this.watcherService?.stop();
+    for (const timer of this.duplicateRefreshTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.duplicateRefreshTimers.clear();
+    this.duplicateRefreshRunning.clear();
     this.artistImagePlaybackStatusUnsubscribe?.();
     this.artistImagePlaybackStatusUnsubscribe = null;
     if (this.artistImageStartupTimer) {
@@ -2016,6 +2074,64 @@ export class LibraryService {
 
   private notifyLibraryChanged(): void {
     broadcastLibraryChanged();
+  }
+
+  private playbackStatsDashboardCacheKey(query?: PlaybackHistoryQuery): string {
+    return JSON.stringify({
+      page: query?.page ?? null,
+      pageSize: query?.pageSize ?? null,
+      search: query?.search ?? null,
+      from: query?.from ?? null,
+      to: query?.to ?? null,
+      completedOnly: query?.completedOnly ?? null,
+      sort: query?.sort ?? null,
+    });
+  }
+
+  private rememberPlaybackStatsDashboard(query: PlaybackHistoryQuery | undefined, dashboard: PlaybackStatsDashboard): void {
+    this.playbackStatsDashboardCache.set(this.playbackStatsDashboardCacheKey(query), dashboard);
+    if (this.playbackStatsDashboardCache.size <= 20) {
+      return;
+    }
+
+    const oldestKey = this.playbackStatsDashboardCache.keys().next().value;
+    if (oldestKey) {
+      this.playbackStatsDashboardCache.delete(oldestKey);
+    }
+  }
+
+  private scheduleDuplicateRefresh(mode: DuplicateTrackMode, delayMs = 5000): void {
+    if (this.closed || this.duplicateRefreshTimers.has(mode) || this.duplicateRefreshRunning.has(mode)) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      this.duplicateRefreshTimers.delete(mode);
+      void this.runScheduledDuplicateRefresh(mode);
+    }, Math.max(0, delayMs));
+    this.duplicateRefreshTimers.set(mode, timer);
+    timer.unref?.();
+  }
+
+  private async runScheduledDuplicateRefresh(mode: DuplicateTrackMode): Promise<void> {
+    if (this.closed || this.duplicateRefreshRunning.has(mode)) {
+      return;
+    }
+
+    if (await shouldDelayGroupingRefreshForAudio()) {
+      this.scheduleDuplicateRefresh(mode, 10_000);
+      return;
+    }
+
+    this.duplicateRefreshRunning.add(mode);
+    try {
+      await runMainBackgroundTask(`library:refresh-duplicate-tracks:${mode}`, () => this.refreshDuplicateTracksAsync(mode));
+      this.notifyLibraryChanged();
+    } catch (error) {
+      console.warn(`[library] Deferred duplicate refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.duplicateRefreshRunning.delete(mode);
+    }
   }
 
   private scheduleSearchIndexBackfill(delayMs = 10_000, options: { allowDuringPlayback?: boolean } = {}): void {
@@ -2413,13 +2529,7 @@ const shouldDelayEmbeddedTagWriteForAudio = async (filePath: string): Promise<bo
 };
 
 const shouldDelayGroupingRefreshForAudio = async (): Promise<boolean> => {
-  try {
-    const { getAudioSession } = await import('../audio/AudioSession');
-    const status = getAudioSession().getStatus();
-    return status.state === 'loading' || status.state === 'playing';
-  } catch {
-    return false;
-  }
+  return isPlaybackActiveForMainWork();
 };
 
 export const createLibraryService = (
