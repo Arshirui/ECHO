@@ -1,3 +1,6 @@
+permissions:
+  contents: write
+
 name: Linux build
 
 on:
@@ -24,8 +27,10 @@ jobs:
 
       # Prepare Linux ffmpeg finished by nix shellHook
 
-      - name: Build Linux packages
+      - name: Build Linux packages # Will publish to GitHub Releases (Draft)
         run: nix develop --command npm run build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
