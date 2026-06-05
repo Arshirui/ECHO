@@ -1065,6 +1065,7 @@ export type TranslationKey =
   | 'folders.prompt.createPlaylist'
   | 'folders.queueSource.recursive'
   | 'folders.scan.progress'
+  | 'folders.scan.patientWarning'
   | 'folders.scan.unresponsiveWarning'
   | 'folders.sidebar.kicker'
   | 'folders.sidebar.title'
@@ -4087,6 +4088,7 @@ const zhCN: TranslationMap = {
   'folders.prompt.createPlaylist': '还没有歌单。输入名称来创建一个：',
   'folders.queueSource.recursive': '{name} 文件夹',
   'folders.scan.progress': '{processed}/{total} 个文件，{errors} 个错误',
+  'folders.scan.patientWarning': '扫描期间未响应为正常现象，请耐心等待！',
   'folders.scan.unresponsiveWarning': '正在扫描曲库。扫描期间软件可能短暂未响应，这是正常现象；请等待或使用取消扫描。',
   'folders.sidebar.kicker': '曲库',
   'folders.sidebar.title': '文件夹',
@@ -7186,6 +7188,7 @@ const zhTW: TranslationMap = {
   'folders.prompt.createPlaylist': '還沒有播放清單。輸入名稱來建立一個：',
   'folders.queueSource.recursive': '{name} 資料夾',
   'folders.scan.progress': '{processed}/{total} 個檔案，{errors} 個錯誤',
+  'folders.scan.patientWarning': '掃描期間未回應是正常現象，請耐心等待！',
   'folders.scan.unresponsiveWarning': '正在掃描曲庫。掃描期間軟體可能短暫未回應，這是正常現象；請等待或使用取消掃描。',
   'folders.sidebar.kicker': '曲庫',
   'folders.sidebar.title': '資料夾',
@@ -10018,6 +10021,7 @@ const jaJP: TranslationMap = {
   'folders.prompt.createPlaylist': 'プレイリストがまだありません。作成する名前を入力してください:',
   'folders.queueSource.recursive': '{name} フォルダー',
   'folders.scan.progress': '{processed}/{total} ファイル、エラー {errors} 件',
+  'folders.scan.patientWarning': 'スキャン中に応答しなくなることがありますが、正常です。しばらくお待ちください。',
   'folders.scan.unresponsiveWarning': 'ライブラリをスキャン中です。スキャン中は一時的に応答しないことがありますが、正常です。待つか、スキャンをキャンセルしてください。',
   'folders.sidebar.kicker': 'ライブラリ',
   'folders.sidebar.title': 'フォルダー',
@@ -12939,6 +12943,7 @@ const enUS: TranslationMap = {
   'folders.prompt.createPlaylist': 'No playlists yet. Enter a name to create one:',
   'folders.queueSource.recursive': '{name} folder',
   'folders.scan.progress': '{processed}/{total} files, {errors} errors',
+  'folders.scan.patientWarning': 'The app may become unresponsive during scanning. This is normal; please wait.',
   'folders.scan.unresponsiveWarning': 'Library scan is running. The app may briefly become unresponsive during scanning; this is normal. Please wait or cancel the scan.',
   'folders.sidebar.kicker': 'Library',
   'folders.sidebar.title': 'Folders',

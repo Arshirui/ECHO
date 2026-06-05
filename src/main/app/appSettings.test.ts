@@ -1309,6 +1309,19 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ audioSoxrFallbackEnabled: 'yes' as never }).audioSoxrFallbackEnabled).toBe(true);
   });
 
+  it('keeps ECHO SRC disabled by default and normalizes safe PCM targets', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).audioEchoSrcMode).toBe('off');
+    expect(normalizeSettings({ audioEchoSrcMode: 'family2x' }).audioEchoSrcMode).toBe('family2x');
+    expect(normalizeSettings({ audioEchoSrcMode: 'family4x' }).audioEchoSrcMode).toBe('family4x');
+    expect(normalizeSettings({ audioEchoSrcMode: 'dsd512' as never }).audioEchoSrcMode).toBe('off');
+    expect(normalizeSettings({}).audioEchoSrcQualityProfile).toBe('transparent');
+    expect(normalizeSettings({ audioEchoSrcQualityProfile: 'balanced' }).audioEchoSrcQualityProfile).toBe('balanced');
+    expect(normalizeSettings({ audioEchoSrcQualityProfile: 'lowLatency' }).audioEchoSrcQualityProfile).toBe('lowLatency');
+    expect(normalizeSettings({ audioEchoSrcQualityProfile: 'linearPhase' as never }).audioEchoSrcQualityProfile).toBe('transparent');
+  });
+
   it('keeps release-exclusive-on-pause experiment disabled until explicitly enabled', async () => {
     const { normalizeSettings } = await import('./appSettings');
 

@@ -10,6 +10,10 @@ export type ChannelBalanceBandId = 'low' | 'mid' | 'high';
 export type SharedStabilityTier = 'standard' | 'recovery' | 'emergency';
 export type AsioCompatibilityProfile = 'asio4all';
 export type AudioResamplerEngine = 'default' | 'soxr';
+export const audioEchoSrcModes = ['off', 'family2x', 'family4x'] as const;
+export type AudioEchoSrcMode = (typeof audioEchoSrcModes)[number];
+export const audioEchoSrcQualityProfiles = ['transparent', 'balanced', 'lowLatency'] as const;
+export type AudioEchoSrcQualityProfile = (typeof audioEchoSrcQualityProfiles)[number];
 export type FfmpegToolchainSource = 'explicit' | 'bundled' | 'dev-bundled' | 'system';
 export type AudioDsdOutputMode = 'pcm' | 'dop';
 export type ActiveDsdOutputMode = 'pcm' | 'dop' | 'native' | null;
@@ -131,6 +135,8 @@ export type AudioOutputSettings = {
   exclusiveInstabilityFallbackEnabled?: boolean;
   defaultDeviceFallbackEnabled?: boolean;
   soxrFallbackEnabled?: boolean;
+  echoSrcMode?: AudioEchoSrcMode;
+  echoSrcQualityProfile?: AudioEchoSrcQualityProfile;
   releaseExclusiveOnPauseExperimentalEnabled?: boolean;
   volume?: number;
   playbackRate?: number;
@@ -190,6 +196,10 @@ export type AudioStatus = {
   soxrAvailable?: boolean;
   resamplerEngine?: AudioResamplerEngine;
   resamplerFallbackActive?: boolean;
+  echoSrcMode?: AudioEchoSrcMode;
+  echoSrcQualityProfile?: AudioEchoSrcQualityProfile;
+  echoSrcTargetSampleRate?: number | null;
+  echoSrcActive?: boolean;
   bitPerfectCandidate: boolean;
   sampleRateMismatch: boolean;
   latencyProfile?: AudioLatencyProfile;
@@ -309,6 +319,10 @@ export type AudioDiagnostics = Pick<
   | 'soxrAvailable'
   | 'resamplerEngine'
   | 'resamplerFallbackActive'
+  | 'echoSrcMode'
+  | 'echoSrcQualityProfile'
+  | 'echoSrcTargetSampleRate'
+  | 'echoSrcActive'
   | 'bitPerfectCandidate'
   | 'sampleRateMismatch'
   | 'latencyProfile'

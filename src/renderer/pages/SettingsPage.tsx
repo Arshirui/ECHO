@@ -5892,6 +5892,8 @@ export const SettingsPage = (): JSX.Element => {
         asioUnavailableFallbackEnabled: appSettings?.audioAsioUnavailableFallbackEnabled === true,
         exclusiveInstabilityFallbackEnabled: appSettings?.audioExclusiveInstabilityFallbackEnabled === true,
         soxrFallbackEnabled: appSettings?.audioSoxrFallbackEnabled !== false,
+        echoSrcMode: appSettings?.audioEchoSrcMode ?? 'off',
+        echoSrcQualityProfile: appSettings?.audioEchoSrcQualityProfile ?? 'transparent',
       };
 
       if (nextDevice) {
@@ -5915,6 +5917,8 @@ export const SettingsPage = (): JSX.Element => {
       appSettings?.audioAsioNativeDsdExperimentalEnabled,
       appSettings?.audioExclusiveInstabilityFallbackEnabled,
       appSettings?.audioSoxrFallbackEnabled,
+      appSettings?.audioEchoSrcMode,
+      appSettings?.audioEchoSrcQualityProfile,
       appSettings?.audioDsdOutputMode,
       appSettings?.audioUseJuceDecode,
       appSettings?.audioUseJuceOutput,

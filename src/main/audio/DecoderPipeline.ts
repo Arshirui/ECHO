@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises';
 import { PassThrough, type Readable } from 'node:stream';
 import readline from 'node:readline';
 import { parseFile } from 'music-metadata';
+import type { AudioEchoSrcQualityProfile } from '../../shared/types/audio';
 import type { AudioProbeResult, AudioResamplerEngine, DecoderRun, PcmAutomixDecodeRequest, PcmDecodeRequest, PcmGaplessDecodeRequest } from './audioTypes';
 import { readTagLibAudioTechnicalMetadata, shouldPreferTagLibForAlacTechnicalFields } from './AlacTechnicalMetadata';
 import { resolveMp4ContainerAudioCodec } from './Mp4AudioCodec';
@@ -284,13 +285,26 @@ const normalizeTempoRatio = (value: unknown): number => {
   return Number.isFinite(ratio) && ratio > 0 ? Math.max(0.5, Math.min(2, ratio)) : 1;
 };
 
-const createAudioFilters = (resamplerEngine: AudioResamplerEngine, tempoRatio: number): string[] => {
+const soxrFilterByQualityProfile: Record<AudioEchoSrcQualityProfile, string> = {
+  transparent: 'aresample=resampler=soxr:precision=28',
+  balanced: 'aresample=resampler=soxr:precision=20',
+  lowLatency: 'aresample=resampler=soxr:precision=16',
+};
+
+const normalizeSoxrQualityProfile = (value: unknown): AudioEchoSrcQualityProfile =>
+  value === 'balanced' || value === 'lowLatency' ? value : 'transparent';
+
+const createAudioFilters = (
+  resamplerEngine: AudioResamplerEngine,
+  tempoRatio: number,
+  qualityProfile: AudioEchoSrcQualityProfile,
+): string[] => {
   const filters: string[] = [];
   if (Math.abs(tempoRatio - 1) >= 0.001) {
     filters.push(`atempo=${tempoRatio.toFixed(6)}`);
   }
   if (resamplerEngine === 'soxr') {
-    filters.push('aresample=resampler=soxr:precision=20');
+    filters.push(soxrFilterByQualityProfile[qualityProfile]);
   }
   return filters;
 };
@@ -457,8 +471,9 @@ export class DecoderPipeline {
     ];
 
     const tempoRatio = normalizeTempoRatio(request.tempoRatio);
+    const resamplerQualityProfile = normalizeSoxrQualityProfile(request.resamplerQualityProfile);
     const createArgs = (resamplerEngine: AudioResamplerEngine): string[] => {
-      const filters = createAudioFilters(resamplerEngine, tempoRatio);
+      const filters = createAudioFilters(resamplerEngine, tempoRatio, resamplerQualityProfile);
       return [
         ...baseArgs,
         ...(filters.length ? ['-af', filters.join(',')] : []),

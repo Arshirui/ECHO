@@ -76,6 +76,10 @@
   margin-top: 1px;
 }
 
+.folders-scan-warning--panel {
+  margin-top: -2px;
+}
+
 .folder-source-switch {
   display: inline-flex;
   overflow: hidden;

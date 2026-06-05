@@ -2,6 +2,8 @@ import type { Readable } from 'node:stream';
 import type {
   AudioDeviceInfo,
   AudioDiagnostics,
+  AudioEchoSrcMode,
+  AudioEchoSrcQualityProfile,
   AsioCompatibilityProfile,
   ActiveDsdOutputMode,
   AudioLatencyProfile,
@@ -19,6 +21,8 @@ import type { AutomixTransitionPlan, AutomixTransitionMode, TrackTransitionAnaly
 export type {
   AudioDeviceInfo,
   AudioDiagnostics,
+  AudioEchoSrcMode,
+  AudioEchoSrcQualityProfile,
   AsioCompatibilityProfile,
   AudioLatencyProfile,
   AudioOutputMode,
@@ -57,6 +61,10 @@ export type SampleRatePlan = {
   dsdTransportSampleRate: number | null;
   outputMode: AudioOutputMode;
   resampling: boolean;
+  echoSrcMode: AudioEchoSrcMode;
+  echoSrcQualityProfile: AudioEchoSrcQualityProfile;
+  echoSrcTargetSampleRate: number | null;
+  echoSrcActive: boolean;
   bitPerfectCandidate: boolean;
   sampleRateMismatch: boolean;
   asioCompatibilityProfile: AsioCompatibilityProfile | null;
@@ -72,6 +80,7 @@ export type PcmDecodeRequest = {
   channels: number;
   decoderOutputSampleRate: number;
   resamplerEngine?: AudioResamplerEngine;
+  resamplerQualityProfile?: AudioEchoSrcQualityProfile;
   allowResamplerFallback?: boolean;
   onResamplerFallback?: (reason: string) => void;
   inputHeaders?: Record<string, string>;

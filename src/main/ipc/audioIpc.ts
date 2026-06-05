@@ -56,6 +56,8 @@ const outputModes = new Set<AudioOutputMode>(['shared', 'exclusive', 'asio', 'sy
 const sharedBackends = new Set<AudioSharedBackend>(['auto', 'windows', 'directsound', 'alsa']);
 const latencyProfiles = new Set<AudioLatencyProfile>(['stable', 'balanced', 'lowLatency']);
 const playbackSpeedModes = new Set<PlaybackSpeedMode>(['nightcore', 'daycore', 'speed']);
+const echoSrcModes = new Set(['off', 'family2x', 'family4x']);
+const echoSrcQualityProfiles = new Set(['transparent', 'balanced', 'lowLatency']);
 const systemAudioOutputBackend = 'system-audio';
 const systemAudioBackendImpl = 'electron-html-audio';
 
@@ -389,6 +391,14 @@ const normalizeOutputSettings = (value: unknown): AudioOutputSettings => {
 
   if (typeof input.soxrFallbackEnabled === 'boolean') {
     output.soxrFallbackEnabled = input.soxrFallbackEnabled;
+  }
+
+  if (typeof input.echoSrcMode === 'string' && echoSrcModes.has(input.echoSrcMode)) {
+    output.echoSrcMode = input.echoSrcMode as AudioOutputSettings['echoSrcMode'];
+  }
+
+  if (typeof input.echoSrcQualityProfile === 'string' && echoSrcQualityProfiles.has(input.echoSrcQualityProfile)) {
+    output.echoSrcQualityProfile = input.echoSrcQualityProfile as AudioOutputSettings['echoSrcQualityProfile'];
   }
 
   if (typeof input.releaseExclusiveOnPauseExperimentalEnabled === 'boolean') {

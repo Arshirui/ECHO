@@ -32,6 +32,8 @@ import {
 import type {
   AudioDeviceInfo,
   AudioDiagnostics,
+  AudioEchoSrcMode,
+  AudioEchoSrcQualityProfile,
   AudioLatencyProfile,
   AudioOutputMode,
   AudioOutputSettings,
@@ -242,6 +244,7 @@ export type AudioSessionDependencies = {
 const fallbackSampleRate = 44100;
 const fallbackSharedMixSampleRate = 48000;
 const maxReliableSharedOutputSampleRate = 96000;
+const maxEchoSrcPcmTargetSampleRate = 192000;
 const recommendedWindowsSharedDefaultSampleRate = 48000;
 const preparedLocalPlaybackTtlMs = 2 * 60 * 1000;
 const preparedLocalPlaybackMaxItems = 50;
@@ -686,6 +689,44 @@ const normalizePlaybackSpeedMode = (value: unknown): PlaybackSpeedMode => {
   return value === 'daycore' || value === 'speed' ? value : 'nightcore';
 };
 
+const normalizeEchoSrcMode = (value: unknown): AudioEchoSrcMode =>
+  value === 'family2x' || value === 'family4x' ? value : 'off';
+
+const normalizeEchoSrcQualityProfile = (value: unknown): AudioEchoSrcQualityProfile =>
+  value === 'balanced' || value === 'lowLatency' ? value : 'transparent';
+
+const detectPcmRateFamilyBase = (sampleRate: number): 44100 | 48000 | null => {
+  const rounded = Math.round(sampleRate);
+  if (rounded > 0 && rounded % 44100 === 0) {
+    return 44100;
+  }
+  if (rounded > 0 && rounded % 48000 === 0) {
+    return 48000;
+  }
+  return null;
+};
+
+const resolveEchoSrcTargetSampleRate = (
+  mode: AudioEchoSrcMode,
+  sourceSampleRate: number,
+): number | null => {
+  if (mode === 'off') {
+    return null;
+  }
+
+  const familyBase = detectPcmRateFamilyBase(sourceSampleRate);
+  if (!familyBase) {
+    return null;
+  }
+
+  const target = familyBase * (mode === 'family4x' ? 4 : 2);
+  if (target > maxEchoSrcPcmTargetSampleRate || sourceSampleRate >= target) {
+    return null;
+  }
+
+  return target;
+};
+
 const hasExplicitDeviceSelection = (settings: AudioOutputSettings): boolean => {
   return Number.isInteger(Number(settings.deviceIndex)) || Boolean(settings.deviceName);
 };
@@ -1107,6 +1148,8 @@ type AudioOutputRestartSnapshot = {
   asioUnavailableFallbackEnabled: boolean;
   defaultDeviceFallbackEnabled: boolean;
   soxrFallbackEnabled: boolean;
+  echoSrcMode: AudioEchoSrcMode;
+  echoSrcQualityProfile: AudioEchoSrcQualityProfile;
   releaseExclusiveOnPauseExperimentalEnabled: boolean;
 };
 
@@ -1133,6 +1176,8 @@ const createOutputRestartSnapshot = (settings: AudioOutputSettings): AudioOutput
     asioUnavailableFallbackEnabled: settings.asioUnavailableFallbackEnabled === true,
     defaultDeviceFallbackEnabled: settings.defaultDeviceFallbackEnabled === true,
     soxrFallbackEnabled: settings.soxrFallbackEnabled !== false,
+    echoSrcMode: normalizeEchoSrcMode(settings.echoSrcMode),
+    echoSrcQualityProfile: normalizeEchoSrcQualityProfile(settings.echoSrcQualityProfile),
     releaseExclusiveOnPauseExperimentalEnabled: settings.releaseExclusiveOnPauseExperimentalEnabled === true,
   };
 };
@@ -1356,6 +1401,8 @@ export class AudioSession extends EventEmitter {
     exclusiveInstabilityFallbackEnabled: false,
     defaultDeviceFallbackEnabled: false,
     soxrFallbackEnabled: true,
+    echoSrcMode: 'off',
+    echoSrcQualityProfile: 'transparent',
     releaseExclusiveOnPauseExperimentalEnabled: false,
     volume: 1,
     playbackRate: 1,
@@ -1718,6 +1765,8 @@ export class AudioSession extends EventEmitter {
         false,
       defaultDeviceFallbackEnabled: settings.defaultDeviceFallbackEnabled ?? this.outputSettings.defaultDeviceFallbackEnabled ?? false,
       soxrFallbackEnabled: settings.soxrFallbackEnabled ?? this.outputSettings.soxrFallbackEnabled ?? true,
+      echoSrcMode: normalizeEchoSrcMode(settings.echoSrcMode ?? this.outputSettings.echoSrcMode),
+      echoSrcQualityProfile: normalizeEchoSrcQualityProfile(settings.echoSrcQualityProfile ?? this.outputSettings.echoSrcQualityProfile),
       releaseExclusiveOnPauseExperimentalEnabled:
         settings.releaseExclusiveOnPauseExperimentalEnabled ??
         this.outputSettings.releaseExclusiveOnPauseExperimentalEnabled ??
@@ -3269,7 +3318,8 @@ export class AudioSession extends EventEmitter {
     const settings = getReplayGainAudioSettings();
     const replayGainCalculation = this.currentReplayGainCalculation;
     const replayGainActive = replayGainCalculation.active && Math.abs(replayGainCalculation.appliedDb) >= 0.001;
-    const dspActive = dspModuleActive || chainedPlaybackActive || replayGainActive;
+    const echoSrcActive = plan?.echoSrcActive === true;
+    const dspActive = dspModuleActive || chainedPlaybackActive || replayGainActive || echoSrcActive;
     const bitPerfectDisabledReason = eqState.enabled
       ? 'eq_enabled'
       : roomCorrectionState.enabled
@@ -3282,7 +3332,9 @@ export class AudioSession extends EventEmitter {
               : 'automix_enabled'
             : replayGainActive
               ? 'replay_gain_enabled'
-              : null;
+              : echoSrcActive
+                ? 'echo_src_enabled'
+                : null;
     const warnings = [...(plan?.warnings ?? [])];
     for (const warning of this.outputWarnings) {
       if (!warnings.includes(warning)) {
@@ -3300,6 +3352,8 @@ export class AudioSession extends EventEmitter {
       warnings.push(gaplessActive ? 'gapless_enabled_bit_perfect_disabled' : 'automix_enabled_bit_perfect_disabled');
     } else if (replayGainActive) {
       warnings.push('replay_gain_bit_perfect_disabled');
+    } else if (echoSrcActive) {
+      warnings.push('echo_src_bit_perfect_disabled');
     }
 
     if (settings.replayGainEnabled === true && (this.currentActiveDsdOutputMode === 'dop' || this.currentActiveDsdOutputMode === 'native')) {
@@ -3438,6 +3492,10 @@ export class AudioSession extends EventEmitter {
       soxrAvailable: ffmpeg?.soxrAvailable ?? false,
       resamplerEngine: this.currentResamplerEngine,
       resamplerFallbackActive: this.currentResamplerFallbackActive,
+      echoSrcMode: plan?.echoSrcMode ?? 'off',
+      echoSrcQualityProfile: plan?.echoSrcQualityProfile ?? normalizeEchoSrcQualityProfile(this.outputSettings.echoSrcQualityProfile),
+      echoSrcTargetSampleRate: plan?.echoSrcTargetSampleRate ?? null,
+      echoSrcActive,
       bitPerfectCandidate: (plan?.bitPerfectCandidate ?? false) && !dspActive,
       sampleRateMismatch: plan?.sampleRateMismatch ?? false,
       eqEnabled: eqState.enabled,
@@ -3649,6 +3707,10 @@ export class AudioSession extends EventEmitter {
       soxrAvailable: status.soxrAvailable,
       resamplerEngine: status.resamplerEngine,
       resamplerFallbackActive: status.resamplerFallbackActive,
+      echoSrcMode: status.echoSrcMode,
+      echoSrcQualityProfile: status.echoSrcQualityProfile,
+      echoSrcTargetSampleRate: status.echoSrcTargetSampleRate,
+      echoSrcActive: status.echoSrcActive,
       bitPerfectCandidate: status.bitPerfectCandidate,
       sampleRateMismatch: status.sampleRateMismatch,
       sharedStabilityTier: status.sharedStabilityTier,
@@ -3798,6 +3860,8 @@ export class AudioSession extends EventEmitter {
         : output?.useJuceDecode ?? baseOutputSettings.useJuceDecode ?? false,
       dsdOutputMode: normalizeDsdOutputMode(output?.dsdOutputMode ?? baseOutputSettings.dsdOutputMode),
       soxrFallbackEnabled: output?.soxrFallbackEnabled ?? baseOutputSettings.soxrFallbackEnabled ?? true,
+      echoSrcMode: normalizeEchoSrcMode(output?.echoSrcMode ?? baseOutputSettings.echoSrcMode),
+      echoSrcQualityProfile: normalizeEchoSrcQualityProfile(output?.echoSrcQualityProfile ?? baseOutputSettings.echoSrcQualityProfile),
       releaseExclusiveOnPauseExperimentalEnabled:
         output?.releaseExclusiveOnPauseExperimentalEnabled ??
         baseOutputSettings.releaseExclusiveOnPauseExperimentalEnabled ??
@@ -3815,6 +3879,10 @@ export class AudioSession extends EventEmitter {
   }
 
   private getRequestedResamplerEngine(plan: SampleRatePlan, outputSettings: AudioOutputSettings): AudioResamplerEngine {
+    if (plan.echoSrcActive) {
+      return 'soxr';
+    }
+
     if (
       plan.outputMode === 'shared' &&
       outputSettings.sharedBackend !== 'directsound' &&
@@ -3846,6 +3914,7 @@ export class AudioSession extends EventEmitter {
       channels,
       decoderOutputSampleRate: plan.decoderOutputSampleRate,
       resamplerEngine,
+      resamplerQualityProfile: plan.echoSrcQualityProfile,
       allowResamplerFallback: outputSettings.soxrFallbackEnabled !== false,
       onResamplerFallback: (warning: string) => {
         this.currentResamplerEngine = 'default';
@@ -4721,6 +4790,16 @@ export class AudioSession extends EventEmitter {
         : 'pcm';
     const sourceOutputSampleRate = asioNativeDsdSampleRate ?? dsdDopTransportSampleRate ?? dsdPcmOutputSampleRate ?? sourceSampleRate;
     const explicitRequestedSampleRate = normalizePositiveInteger(outputSettings.requestedOutputSampleRate);
+    const echoSrcMode = normalizeEchoSrcMode(outputSettings.echoSrcMode);
+    const echoSrcQualityProfile = normalizeEchoSrcQualityProfile(outputSettings.echoSrcQualityProfile);
+    const echoSrcTargetSampleRate =
+      echoSrcMode !== 'off' &&
+      outputMode !== 'shared' &&
+      dsdOutputMode === 'pcm' &&
+      !dsdPcmOutputSampleRate
+        ? resolveEchoSrcTargetSampleRate(echoSrcMode, sourceSampleRate)
+        : null;
+    const echoSrcActive = echoSrcTargetSampleRate !== null && echoSrcTargetSampleRate !== sourceOutputSampleRate;
     const asioCompatibilityRequestedSampleRate =
       asioCompatibilityProfile === 'asio4all'
         ? explicitRequestedSampleRate ??
@@ -4746,6 +4825,7 @@ export class AudioSession extends EventEmitter {
           dsdDopTransportSampleRate ??
           dsdPcmOutputSampleRate ??
           asioCompatibilityRequestedSampleRate ??
+          echoSrcTargetSampleRate ??
           explicitRequestedSampleRate ??
           sourceOutputSampleRate);
     const decoderOutputSampleRate =
@@ -4798,6 +4878,16 @@ export class AudioSession extends EventEmitter {
 
     if (dsdOutputMode === 'pcm' && dsdPcmOutputSampleRate && fileSampleRate !== null && fileSampleRate !== decoderOutputSampleRate) {
       warnings.push(`dsd_source_decoded_to_pcm:${fileSampleRate}->${decoderOutputSampleRate}`);
+    }
+
+    if (echoSrcMode !== 'off' && outputMode === 'shared') {
+      warnings.push('echo_src_bypassed_in_shared_output');
+    } else if (echoSrcMode !== 'off' && dsdOutputMode !== 'pcm') {
+      warnings.push('echo_src_bypassed_for_dsd_direct');
+    } else if (echoSrcMode !== 'off' && dsdPcmOutputSampleRate) {
+      warnings.push('echo_src_bypassed_for_dsd_pcm');
+    } else if (echoSrcMode !== 'off' && echoSrcActive) {
+      warnings.push(`echo_src_active:${sourceSampleRate}->${echoSrcTargetSampleRate}`);
     }
 
     if (
@@ -4874,6 +4964,10 @@ export class AudioSession extends EventEmitter {
       dsdTransportSampleRate: dsdOutputMode === 'dop' ? dsdDopTransportSampleRate : null,
       outputMode,
       resampling,
+      echoSrcMode,
+      echoSrcQualityProfile,
+      echoSrcTargetSampleRate,
+      echoSrcActive,
       bitPerfectCandidate,
       sampleRateMismatch,
       asioCompatibilityProfile,

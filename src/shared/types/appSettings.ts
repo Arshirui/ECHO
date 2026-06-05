@@ -1,4 +1,4 @@
-import type { AudioDsdOutputMode, AudioExportFormat, AudioLatencyProfile, AudioOutputMode, AudioSharedBackend, ChannelBalanceState, PlaybackSpeedMode } from './audio';
+import type { AudioDsdOutputMode, AudioEchoSrcMode, AudioEchoSrcQualityProfile, AudioExportFormat, AudioLatencyProfile, AudioOutputMode, AudioSharedBackend, ChannelBalanceState, PlaybackSpeedMode } from './audio';
 import type { DuplicateTrackMode } from './library';
 import type { LibrarySort } from './library';
 import type { LyricsProviderId } from './lyrics';
@@ -201,6 +201,8 @@ export type AppSettings = {
   audioAsioUnavailableFallbackEnabled?: boolean;
   audioExclusiveInstabilityFallbackEnabled?: boolean;
   audioSoxrFallbackEnabled?: boolean;
+  audioEchoSrcMode?: AudioEchoSrcMode;
+  audioEchoSrcQualityProfile?: AudioEchoSrcQualityProfile;
   audioReleaseExclusiveOnPauseExperimentalEnabled?: boolean;
   audioIssueDiagnosticsWindowEnabled?: boolean;
   albumMergeStrategy: 'standard' | 'sameTitleAndCover';

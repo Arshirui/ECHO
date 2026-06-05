@@ -55,6 +55,8 @@ import {
   channelBalanceMinBalance,
   channelBalanceMinDelayMs,
   channelBalanceMinGainDb,
+  type AudioEchoSrcMode,
+  type AudioEchoSrcQualityProfile,
   type AudioExportFormat,
   type ChannelBalanceMonoMode,
   type ChannelBalanceState,
@@ -381,6 +383,8 @@ export const defaultSettings: AppSettings = {
   audioAsioUnavailableFallbackEnabled: false,
   audioExclusiveInstabilityFallbackEnabled: false,
   audioSoxrFallbackEnabled: true,
+  audioEchoSrcMode: 'off',
+  audioEchoSrcQualityProfile: 'transparent',
   audioReleaseExclusiveOnPauseExperimentalEnabled: false,
   audioIssueDiagnosticsWindowEnabled: false,
   albumMergeStrategy: 'standard',
@@ -1021,6 +1025,12 @@ const normalizeAudioTransportFadeDurationMs = (value: unknown): number => {
 const normalizeAudioExportFormat = (value: unknown): AudioExportFormat =>
   value === 'wav' || value === 'flac' || value === 'ogg' || value === 'mp3' ? value : defaultSettings.audioExportFormat ?? 'mp3';
 
+const normalizeAudioEchoSrcMode = (value: unknown): AudioEchoSrcMode =>
+  value === 'family2x' || value === 'family4x' ? value : 'off';
+
+const normalizeAudioEchoSrcQualityProfile = (value: unknown): AudioEchoSrcQualityProfile =>
+  value === 'balanced' || value === 'lowLatency' ? value : 'transparent';
+
 const normalizeAppearanceFontFamily = (value: unknown, fallback: string): string => {
   return normalizeRequiredText(value, fallback);
 };
@@ -1585,6 +1595,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     audioAsioUnavailableFallbackEnabled: settings.audioAsioUnavailableFallbackEnabled === true,
     audioExclusiveInstabilityFallbackEnabled: settings.audioExclusiveInstabilityFallbackEnabled === true,
     audioSoxrFallbackEnabled: settings.audioSoxrFallbackEnabled !== false,
+    audioEchoSrcMode: normalizeAudioEchoSrcMode(settings.audioEchoSrcMode),
+    audioEchoSrcQualityProfile: normalizeAudioEchoSrcQualityProfile(settings.audioEchoSrcQualityProfile),
     audioReleaseExclusiveOnPauseExperimentalEnabled: settings.audioReleaseExclusiveOnPauseExperimentalEnabled === true,
     audioIssueDiagnosticsWindowEnabled: settings.audioIssueDiagnosticsWindowEnabled === true,
     albumMergeStrategy,

@@ -1448,6 +1448,37 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(bridges[0].startOptions?.requestedOutputSampleRate).toBe(96000);
   });
 
+  it('applies ECHO SRC family 4x to PCM exclusive output as a DSP path', async () => {
+    const { bridges, decoder, session } = createSessionHarness([probe('441.flac', 44100)]);
+
+    const status = await session.playLocalFile({
+      filePath: '441.flac',
+      output: { outputMode: 'exclusive', echoSrcMode: 'family4x' },
+    });
+
+    expect(status.requestedOutputSampleRate).toBe(176400);
+    expect(status.decoderOutputSampleRate).toBe(176400);
+    expect(status.echoSrcMode).toBe('family4x');
+    expect(status.echoSrcQualityProfile).toBe('transparent');
+    expect(status.echoSrcTargetSampleRate).toBe(176400);
+    expect(status.echoSrcActive).toBe(true);
+    expect(status.dspActive).toBe(true);
+    expect(status.bitPerfectCandidate).toBe(false);
+    expect(status.bitPerfectDisabledReason).toBe('echo_src_enabled');
+    expect(status.warnings).toContain('echo_src_active:44100->176400');
+    expect(status.warnings).toContain('echo_src_bit_perfect_disabled');
+    expect(bridges[0].startOptions).toMatchObject({
+      exclusive: true,
+      requestedOutputSampleRate: 176400,
+    });
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({
+      filePath: '441.flac',
+      decoderOutputSampleRate: 176400,
+      resamplerEngine: 'soxr',
+      resamplerQualityProfile: 'transparent',
+    });
+  });
+
   it('switching 48k to 44.1k exclusive reopens at the source rate', async () => {
     const { bridges, decoder, session } = createSessionHarness([probe('48.flac', 48000), probe('441.flac', 44100)]);
 
@@ -1712,6 +1743,39 @@ describe('Audio Core sample-rate regression guard', () => {
     expect(status.sampleRateMismatch).toBe(false);
     expect(status.warnings).toContain('windows_audio_default_format_unusual:96000');
     expect(status.warnings).not.toContain('shared_output_sample_rate_capped:96000->96000');
+  });
+
+  it('bypasses ECHO SRC in shared output instead of forcing the Windows mixer rate', async () => {
+    const sharedDevice: AudioDeviceInfo = {
+      id: 'shared:0',
+      index: 0,
+      name: 'Speakers',
+      outputMode: 'shared',
+      sampleRate: 48000,
+      sharedDeviceSampleRate: 48000,
+      isDefault: true,
+    };
+    const { bridges, decoder, session } = createSessionHarness([probe('song.flac', 44100)], [48000], [sharedDevice]);
+
+    const status = await session.playLocalFile({
+      filePath: 'song.flac',
+      output: { outputMode: 'shared', echoSrcMode: 'family4x' },
+    });
+
+    expect(status.requestedOutputSampleRate).toBe(48000);
+    expect(status.decoderOutputSampleRate).toBe(48000);
+    expect(status.echoSrcMode).toBe('family4x');
+    expect(status.echoSrcQualityProfile).toBe('transparent');
+    expect(status.echoSrcActive).toBe(false);
+    expect(status.warnings).toContain('echo_src_bypassed_in_shared_output');
+    expect(bridges[0].startOptions).toMatchObject({
+      requestedOutputSampleRate: 48000,
+      sharedMixSampleRate: 48000,
+    });
+    expect(decoder.decodeRequests.at(-1)).toMatchObject({
+      filePath: 'song.flac',
+      decoderOutputSampleRate: 48000,
+    });
   });
 
   it('keeps WASAPI shared playback stable across the full sample-rate switch matrix', async () => {
@@ -9322,7 +9386,50 @@ describe('DecoderPipeline ffmpeg resolution', () => {
     });
 
     await expect(run.done).resolves.toBeUndefined();
-    expect(spawnedArgs).toEqual(expect.arrayContaining(['-af', 'aresample=resampler=soxr:precision=20', '-ar', '48000']));
+    expect(spawnedArgs).toEqual(expect.arrayContaining(['-af', 'aresample=resampler=soxr:precision=28', '-ar', '48000']));
+  });
+
+  it('maps SOXR quality profiles to distinct filter precision', async () => {
+    const spawnedArgsByProfile: string[][] = [];
+    const execFileSync = vi.fn((_file: string, args: string[]) =>
+      args.includes('-version')
+        ? 'ffmpeg version 8.1.1-full_build-www.gyan.dev\nconfiguration: --enable-libsoxr\n'
+        : ' .. aresample         A->A       Resample audio data.\n',
+    );
+    const spawn: NonNullable<DecoderPipelineDependencies['spawn']> = (_file, args) => {
+      spawnedArgsByProfile.push(args);
+      const child = Object.assign(new EventEmitter(), {
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        stdin: new PassThrough(),
+        kill: vi.fn(),
+      });
+      queueMicrotask(() => child.emit('exit', 0, null));
+      return child as unknown as ReturnType<NonNullable<DecoderPipelineDependencies['spawn']>>;
+    };
+
+    const decoder = new DecoderPipeline({
+      ffmpegPath: 'test-ffmpeg',
+      execFileSync: execFileSync as unknown as typeof nodeExecFileSync,
+      spawn,
+      requireHealthyFfmpeg: true,
+    });
+
+    for (const profile of ['balanced', 'lowLatency'] as const) {
+      const run = decoder.decodeLocalFile({
+        filePath: `${profile}.flac`,
+        startSeconds: 0,
+        channels: 2,
+        decoderOutputSampleRate: 48000,
+        resamplerEngine: 'soxr',
+        resamplerQualityProfile: profile,
+        allowResamplerFallback: true,
+      });
+      await expect(run.done).resolves.toBeUndefined();
+    }
+
+    expect(spawnedArgsByProfile[0]).toContain('aresample=resampler=soxr:precision=20');
+    expect(spawnedArgsByProfile[1]).toContain('aresample=resampler=soxr:precision=16');
   });
 
   it('falls back to default resampling when SOXR is unavailable and fallback is enabled', async () => {
@@ -9362,7 +9469,7 @@ describe('DecoderPipeline ffmpeg resolution', () => {
     });
 
     await expect(run.done).resolves.toBeUndefined();
-    expect(spawnedArgs).not.toContain('aresample=resampler=soxr:precision=20');
+    expect(spawnedArgs).not.toContain('aresample=resampler=soxr:precision=28');
     expect(fallbacks).toEqual(['soxr_unavailable_fallback_to_default']);
   });
 
@@ -9437,8 +9544,8 @@ describe('DecoderPipeline ffmpeg resolution', () => {
 
     await expect(run.done).resolves.toBeUndefined();
     expect(spawnedArgs).toHaveLength(2);
-    expect(spawnedArgs[0]).toContain('aresample=resampler=soxr:precision=20');
-    expect(spawnedArgs[1]).not.toContain('aresample=resampler=soxr:precision=20');
+    expect(spawnedArgs[0]).toContain('aresample=resampler=soxr:precision=28');
+    expect(spawnedArgs[1]).not.toContain('aresample=resampler=soxr:precision=28');
     expect(fallbacks).toEqual(['soxr_decode_failed_fallback_to_default']);
   });
 
@@ -9483,7 +9590,7 @@ describe('DecoderPipeline ffmpeg resolution', () => {
 
     await expect(run.done).rejects.toThrow('Invalid data found when processing input');
     expect(spawnedArgs).toHaveLength(1);
-    expect(spawnedArgs[0]).toContain('aresample=resampler=soxr:precision=20');
+    expect(spawnedArgs[0]).toContain('aresample=resampler=soxr:precision=28');
     expect(fallbacks).toEqual([]);
   });
 
@@ -9535,7 +9642,7 @@ describe('DecoderPipeline ffmpeg resolution', () => {
 
       await expect(run.done).rejects.toThrow(`kind="${expectedKind}"`);
       expect(spawnedArgs).toHaveLength(1);
-      expect(spawnedArgs[0]).toContain('aresample=resampler=soxr:precision=20');
+      expect(spawnedArgs[0]).toContain('aresample=resampler=soxr:precision=28');
       expect(fallbacks).toEqual([]);
     }
   });

@@ -504,6 +504,7 @@
 }
 
 .dsp-editor-shell[data-module="headroom"],
+.dsp-editor-shell[data-module="src"],
 .dsp-editor-shell[data-module="headphone"],
 .dsp-editor-shell[data-module="room"],
 .dsp-editor-shell[data-module="channel"],
@@ -1230,6 +1231,10 @@
 .dsp-module-panel--headroom {
   width: min(1180px, 100%);
   max-width: 1180px;
+}
+
+.dsp-module-panel--src {
+  width: min(980px, 100%);
 }
 
 .dsp-module-panel--room {

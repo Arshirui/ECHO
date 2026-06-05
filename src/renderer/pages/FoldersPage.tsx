@@ -2637,29 +2637,35 @@ export const FoldersPage = (): JSX.Element => {
               </>
             ) : (
               <>
-            <button type="button" disabled={!selected} onClick={() => void handleOpenSelectedPath()}>
-              <FolderOpen size={16} />
-              {t('folders.action.open')}
-            </button>
-            <button type="button" disabled={!selected || isSelectedScanning} onClick={() => void handleScanSelected()}>
-              <RotateCw size={16} />
-              {t('folders.action.scan')}
-            </button>
-            <button type="button" disabled={!isSelectedRoot || isSelectedScanning} onClick={() => void handleScanSelectedChanges()}>
-              <RefreshCw size={16} />
-              {t('folders.action.scanChanges')}
-            </button>
-            <button type="button" disabled={!isSelectedScanning} onClick={() => void handleCancelScan()}>
-              <XCircle size={16} />
-              {t('folders.action.cancel')}
-            </button>
-            <button className="danger" type="button" disabled={!selectedOverview} onClick={() => void handleRemoveRoot()}>
-              <Trash2 size={16} />
-              {t('folders.action.remove')}
-            </button>
+                <button type="button" disabled={!selected} onClick={() => void handleOpenSelectedPath()}>
+                  <FolderOpen size={16} />
+                  {t('folders.action.open')}
+                </button>
+                <button type="button" disabled={!selected || isSelectedScanning} onClick={() => void handleScanSelected()}>
+                  <RotateCw size={16} />
+                  {t('folders.action.scan')}
+                </button>
+                <button type="button" disabled={!isSelectedRoot || isSelectedScanning} onClick={() => void handleScanSelectedChanges()}>
+                  <RefreshCw size={16} />
+                  {t('folders.action.scanChanges')}
+                </button>
+                <button type="button" disabled={!isSelectedScanning} onClick={() => void handleCancelScan()}>
+                  <XCircle size={16} />
+                  {t('folders.action.cancel')}
+                </button>
+                <button className="danger" type="button" disabled={!selectedOverview} onClick={() => void handleRemoveRoot()}>
+                  <Trash2 size={16} />
+                  {t('folders.action.remove')}
+                </button>
               </>
             )}
           </div>
+          {mode === 'local' ? (
+            <div className="folders-scan-warning folders-scan-warning--panel" role="note">
+              <AlertTriangle size={15} />
+              <span>{t('folders.scan.patientWarning')}</span>
+            </div>
+          ) : null}
         </section>
 
         {mode === 'local' ? (

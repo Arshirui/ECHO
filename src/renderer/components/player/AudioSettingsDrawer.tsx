@@ -538,6 +538,10 @@ const getDirectSignalText = (status: AudioStatus | null, deviceSampleRate: numbe
   }
 
   if (status?.bitPerfectDisabledReason) {
+    if (status.bitPerfectDisabledReason === 'echo_src_enabled') {
+      return 'ECHO SRC';
+    }
+
     return status.bitPerfectDisabledReason.replaceAll('_', ' ');
   }
 
@@ -994,7 +998,11 @@ export const AudioSettingsDrawer = ({
       modeLabel: formatMode(currentMode, copy),
       backend: getCurrentBackend(status, copy),
       sampleRate: formatRate(currentOutputSampleRate),
-      bitPerfect: status?.bitPerfectCandidate ? copy.bitPerfectReady : status?.bitPerfectDisabledReason ?? copy.standardPath,
+      bitPerfect: status?.bitPerfectCandidate
+        ? copy.bitPerfectReady
+        : status?.bitPerfectDisabledReason === 'echo_src_enabled'
+          ? 'ECHO SRC'
+          : status?.bitPerfectDisabledReason ?? copy.standardPath,
       highlight: shouldHighlightCurrentOutput(currentMode, status?.outputBackend),
       Icon: getDeviceIcon(name, currentMode),
     };
