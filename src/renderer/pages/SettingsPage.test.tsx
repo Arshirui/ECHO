@@ -311,10 +311,12 @@ vi.mock('../utils/echoBridge', () => ({
   }),
   getAccountsBridge: () => ({
     getStatuses: vi.fn().mockResolvedValue([]),
+    getStatus: vi.fn((provider) => Promise.resolve({ provider, connected: false })),
     saveCookie: vi.fn(),
     startLogin: vi.fn(),
     clear: vi.fn(),
     check: vi.fn(),
+    setBrowser: vi.fn((provider, browser) => Promise.resolve({ provider, connected: browser !== 'none' })),
     setYouTubeBrowser: vi.fn(),
   }),
   getDiagnosticsBridge: () => ({

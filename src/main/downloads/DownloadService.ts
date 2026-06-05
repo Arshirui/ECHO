@@ -1493,6 +1493,7 @@ export class DownloadService extends EventEmitter {
     const command = this.commandRunner(ytDlpPath, [
       ...this.ytDlpProxyArgs(),
       ...this.headerArgs(this.ytDlpRequestHeaders(job, options?.requestHeaders ?? {})),
+      ...this.ytDlpAccountArgs(job, options?.requestHeaders ?? {}),
       '--dump-json',
       '--no-playlist',
       job.sourceUrl,
@@ -1562,6 +1563,7 @@ export class DownloadService extends EventEmitter {
       '--continue',
       ...this.ytDlpProxyArgs(),
       ...this.headerArgs(this.ytDlpRequestHeaders(job, this.jobOptions.get(jobId)?.requestHeaders ?? {})),
+      ...this.ytDlpAccountArgs(job, this.jobOptions.get(jobId)?.requestHeaders ?? {}),
       '-f',
       'bestaudio/best',
       '--extract-audio',
@@ -2055,6 +2057,20 @@ export class DownloadService extends EventEmitter {
     }
 
     return headers;
+  }
+
+  private ytDlpAccountArgs(job: DownloadJob, requestHeaders: Record<string, string>): string[] {
+    if (job.provider !== 'soundcloud') {
+      return [];
+    }
+
+    const headers = this.ytDlpRequestHeaders(job, requestHeaders);
+    if (hasHeader(headers, 'Cookie')) {
+      return [];
+    }
+
+    const browser = this.getCredentials('soundcloud').browser;
+    return browser && browser !== 'none' ? ['--cookies-from-browser', browser] : [];
   }
 
   private async importAndBind(jobId: string, optionsOverride: { emitProgress?: boolean } = {}): Promise<void> {

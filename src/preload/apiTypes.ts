@@ -19,7 +19,7 @@ import type {
   SettingsImportResult,
 } from '../shared/types/settingsBackup';
 import type { UpdateStatus } from '../shared/types/updates';
-import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
+import type { AccountBrowser, AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { AppCacheInventory, CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus, ConnectStartRequest } from '../shared/types/connect';
 import type {
@@ -770,6 +770,7 @@ export type EchoApi = {
     clear: (provider: AccountProvider) => Promise<AccountStatus>;
     check: (provider: AccountProvider) => Promise<AccountStatus>;
     checkAll: () => Promise<AccountStatus[]>;
+    setBrowser: (provider: AccountProvider, browser: AccountBrowser) => Promise<AccountStatus>;
     setYouTubeBrowser: (browser: YouTubeBrowser) => Promise<AccountStatus>;
     onStatusesChanged: (handler: (statuses: AccountStatus[]) => void) => () => void;
   };

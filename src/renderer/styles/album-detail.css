@@ -1146,6 +1146,16 @@
   text-align: right;
 }
 
+.album-track-disc-heading {
+  min-height: 34px;
+  padding: 18px var(--album-detail-track-content-x) 6px;
+  color: var(--theme-muted-text);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .album-track-row {
   min-height: 56px;
   padding: 0 var(--album-detail-track-content-x);
@@ -1307,6 +1317,7 @@ html[data-theme="dark"] .album-detail-facts span,
 html[data-theme="dark"] .album-detail-meta,
 html[data-theme="dark"] .album-track-toolbar,
 html[data-theme="dark"] .album-track-header,
+html[data-theme="dark"] .album-track-disc-heading,
 html[data-theme="dark"] .album-track-number,
 html[data-theme="dark"] .album-track-duration,
 html[data-theme="dark"] .album-track-copy small,

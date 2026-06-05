@@ -895,11 +895,12 @@ describe('app settings normalization', () => {
     });
   });
 
-  it('keeps Discord Rich Presence disabled by default', async () => {
+  it('keeps Discord Rich Presence enabled by default', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
-    expect(normalizeSettings({}).discordRichPresenceEnabled).toBe(false);
+    expect(normalizeSettings({}).discordRichPresenceEnabled).toBe(true);
     expect(normalizeSettings({ discordRichPresenceEnabled: true }).discordRichPresenceEnabled).toBe(true);
+    expect(normalizeSettings({ discordRichPresenceEnabled: false }).discordRichPresenceEnabled).toBe(false);
     expect(normalizeSettings({ discordRichPresenceEnabled: 'yes' as never }).discordRichPresenceEnabled).toBe(false);
   });
 

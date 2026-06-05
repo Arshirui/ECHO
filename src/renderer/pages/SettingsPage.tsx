@@ -60,7 +60,7 @@ import {
   normalizeSidebarRouteOrder,
   type SidebarRouteId,
 } from '../../shared/types/sidebar';
-import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
+import type { AccountBrowser, AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
 import type {
   ArtistOnlineInfoSource,
   ArtistStreamingAlbumsProvider,
@@ -3646,10 +3646,12 @@ const renderAccountStatusBadge = (
 };
 
 const AccountCookieCard = ({
+  browser,
   busyAction,
   cookieValue,
   error,
   message,
+  onBrowserChange,
   onChangeCookie,
   onCheck,
   onClear,
@@ -3658,10 +3660,12 @@ const AccountCookieCard = ({
   provider,
   status,
 }: {
+  browser?: AccountBrowser;
   busyAction?: AccountBusyAction;
   cookieValue: string;
   error?: string | null;
   message?: string | null;
+  onBrowserChange?: (browser: AccountBrowser) => void;
   onChangeCookie: (value: string) => void;
   onCheck: () => void;
   onClear: () => void;
@@ -3671,6 +3675,7 @@ const AccountCookieCard = ({
   status?: AccountStatus;
 }): JSX.Element => {
   const { t } = useI18n();
+  const browserOptions = buildYouTubeBrowserOptions(t);
   return (
     <article className="settings-account-row" aria-label={accountProviderLabels[provider]}>
       <div className="settings-account-summary">
@@ -3689,6 +3694,18 @@ const AccountCookieCard = ({
           autoComplete="off"
         />
       </label>
+      {provider === 'soundcloud' && browser && onBrowserChange ? (
+        <label className="settings-select-field settings-account-browser-field">
+          <span>{t('settings.integrations.accounts.youtube.browser')}</span>
+          <select value={browser} onChange={(event) => onBrowserChange(event.target.value as AccountBrowser)} disabled={busyAction === 'browser'}>
+            {browserOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <div className="settings-account-actions">
         <button className="settings-action-button" type="button" disabled={busyAction === 'save' || cookieValue.trim().length === 0} onClick={onSave}>
           <Save size={15} />
@@ -4065,6 +4082,7 @@ export const SettingsPage = (): JSX.Element => {
   const [accountErrors, setAccountErrors] = useState<Partial<Record<AccountProvider, string | null>>>({});
   const [accountMessages, setAccountMessages] = useState<Partial<Record<AccountProvider, string | null>>>({});
   const [youtubeBrowser, setYoutubeBrowser] = useState<YouTubeBrowser>('none');
+  const [soundCloudBrowser, setSoundCloudBrowser] = useState<AccountBrowser>('none');
   const [lastFmAuthToken, setLastFmAuthToken] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
@@ -5779,6 +5797,14 @@ export const SettingsPage = (): JSX.Element => {
       setYoutubeBrowser(savedBrowser);
     }
   }, [accountStatusByProvider.youtube?.displayName, t]);
+
+  useEffect(() => {
+    const displayName = accountStatusByProvider.soundcloud?.displayName?.toLowerCase() ?? '';
+    const savedBrowser = buildYouTubeBrowserOptions(t).find((option) => option.value !== 'none' && displayName.includes(option.value))?.value;
+    if (savedBrowser) {
+      setSoundCloudBrowser(savedBrowser);
+    }
+  }, [accountStatusByProvider.soundcloud?.displayName, t]);
 
   useEffect(() => {
     if (statusSelectedDevice && compatibleDevices.some((device) => device.id === statusSelectedDevice.id)) {
@@ -7741,6 +7767,8 @@ export const SettingsPage = (): JSX.Element => {
       updateAccountStatus(await accounts.clear(provider));
       if (provider === 'youtube') {
         setYoutubeBrowser('none');
+      } else if (provider === 'soundcloud') {
+        setSoundCloudBrowser('none');
       }
     } catch (accountError) {
       setAccountErrors((current) => ({ ...current, [provider]: accountError instanceof Error ? accountError.message : String(accountError) }));
@@ -7766,6 +7794,26 @@ export const SettingsPage = (): JSX.Element => {
       setAccountErrors((current) => ({ ...current, youtube: accountError instanceof Error ? accountError.message : String(accountError) }));
     } finally {
       setAccountBusyFor('youtube', null);
+    }
+  };
+
+  const handleSoundCloudBrowserChange = async (browser: AccountBrowser): Promise<void> => {
+    const accounts = getAccountsBridge();
+    setSoundCloudBrowser(browser);
+
+    if (!accounts) {
+      return;
+    }
+
+    try {
+      setAccountBusyFor('soundcloud', 'browser');
+      setAccountErrors((current) => ({ ...current, soundcloud: null }));
+      setAccountMessages((current) => ({ ...current, soundcloud: browser === 'none' ? null : `${browser} browser login state saved.` }));
+      updateAccountStatus(await accounts.setBrowser('soundcloud', browser));
+    } catch (accountError) {
+      setAccountErrors((current) => ({ ...current, soundcloud: accountError instanceof Error ? accountError.message : String(accountError) }));
+    } finally {
+      setAccountBusyFor('soundcloud', null);
     }
   };
 
@@ -7802,6 +7850,37 @@ export const SettingsPage = (): JSX.Element => {
         setAccountErrors((current) => ({ ...current, youtube: accountError instanceof Error ? accountError.message : String(accountError) }));
       } finally {
         setAccountBusyFor('youtube', null);
+      }
+      return;
+    }
+
+    if (provider === 'soundcloud') {
+      if (soundCloudBrowser === 'none' && !accountCookies.soundcloud.trim()) {
+        setAccountErrors((current) => ({ ...current, soundcloud: 'Please select Edge, Chrome, or Firefox, or paste a SoundCloud cookie manually.' }));
+        return;
+      }
+
+      try {
+        setAccountBusyFor('soundcloud', 'login');
+        setAccountErrors((current) => ({ ...current, soundcloud: null }));
+        const status = soundCloudBrowser !== 'none'
+          ? await accounts.setBrowser('soundcloud', soundCloudBrowser)
+          : (accountStatusByProvider.soundcloud ?? await accounts.getStatus('soundcloud'));
+        const result = typeof accounts.startLogin === 'function'
+          ? await accounts.startLogin('soundcloud')
+          : null;
+        if (!result) {
+          await handleOpenExternalUrl('https://soundcloud.com/');
+        }
+        updateAccountStatus(result?.status ?? status);
+        setAccountMessages((current) => ({
+          ...current,
+          soundcloud: result?.message ?? 'Opened SoundCloud in the system browser. ECHO will use the selected browser cookies through yt-dlp.',
+        }));
+      } catch (accountError) {
+        setAccountErrors((current) => ({ ...current, soundcloud: accountError instanceof Error ? accountError.message : String(accountError) }));
+      } finally {
+        setAccountBusyFor('soundcloud', null);
       }
       return;
     }
@@ -11992,10 +12071,12 @@ export const SettingsPage = (): JSX.Element => {
                         key={provider}
                         provider={provider}
                         status={accountStatusByProvider[provider]}
+                        browser={provider === 'soundcloud' ? soundCloudBrowser : undefined}
                         cookieValue={accountCookies[provider]}
                         busyAction={accountBusy[provider]}
                         error={accountErrors[provider]}
                         message={accountMessages[provider]}
+                        onBrowserChange={provider === 'soundcloud' ? (browser) => void handleSoundCloudBrowserChange(browser) : undefined}
                         onChangeCookie={(value) => setAccountCookies((current) => ({ ...current, [provider]: value }))}
                         onSave={() => void handleAccountSaveCookie(provider)}
                         onCheck={() => void handleAccountCheck(provider)}

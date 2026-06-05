@@ -1,4 +1,4 @@
-import type { AccountStatus, YouTubeBrowser } from '../../../shared/types/accounts';
+import type { AccountBrowser, AccountStatus } from '../../../shared/types/accounts';
 import { AccountProviderBase, type StoredAccountRecord } from './AccountProviderBase';
 
 export class YouTubeAccountProvider extends AccountProviderBase {
@@ -17,7 +17,7 @@ export class YouTubeAccountProvider extends AccountProviderBase {
     };
   }
 
-  setBrowser(browser: YouTubeBrowser, record: StoredAccountRecord | null | undefined, now: string): StoredAccountRecord {
+  setBrowser(browser: AccountBrowser, record: StoredAccountRecord | null | undefined, now: string): StoredAccountRecord {
     return {
       ...record,
       browser,

@@ -95,6 +95,16 @@ describe('AccountService', () => {
     expect(status.displayName).toContain('edge');
   });
 
+  it('persists SoundCloud system browser auth state', () => {
+    const { service } = createService();
+
+    const status = service.setAccountBrowser('soundcloud', 'chrome');
+
+    expect(status).toEqual(expect.objectContaining({ provider: 'soundcloud', connected: true }));
+    expect(status.displayName).toContain('chrome');
+    expect(service.getCredentials('soundcloud').browser).toBe('chrome');
+  });
+
   it('checks only accounts with saved login state for startup refreshes', async () => {
     const { service } = createService();
     service.saveCookie('netease', 'MUSIC_U=secret');

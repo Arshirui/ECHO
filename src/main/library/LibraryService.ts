@@ -1692,6 +1692,14 @@ export class LibraryService {
     return this.networkMetadataService.showCandidates(trackId);
   }
 
+  getBestNetworkCoverUrlForTrack(trackId: string): string | null {
+    if (!this.networkMetadataService) {
+      return null;
+    }
+
+    return this.networkMetadataService.getBestCoverUrlForTrack(trackId);
+  }
+
   async searchNetworkTagCandidates(request: NetworkTagCandidateSearchRequest): Promise<NetworkTagCandidate[]> {
     if (!this.networkMetadataService) {
       throw new Error('Network metadata service is unavailable');

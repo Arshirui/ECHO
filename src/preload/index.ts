@@ -2324,6 +2324,7 @@ const echoApi: EchoApi = {
     clear: (provider) => ipcRenderer.invoke(IpcChannels.AccountClear, provider),
     check: (provider) => ipcRenderer.invoke(IpcChannels.AccountCheck, provider),
     checkAll: () => ipcRenderer.invoke(IpcChannels.AccountCheckAll),
+    setBrowser: (provider, browser) => ipcRenderer.invoke(IpcChannels.AccountSetBrowser, provider, browser),
     setYouTubeBrowser: (browser) => ipcRenderer.invoke(IpcChannels.AccountSetYouTubeBrowser, browser),
     onStatusesChanged: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, statuses: unknown): void => {

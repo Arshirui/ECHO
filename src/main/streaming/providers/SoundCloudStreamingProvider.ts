@@ -34,15 +34,25 @@ type YtDlpFormat = Record<string, unknown>;
 
 const accountCookie = (): string | undefined => getAccountService().getCredentials(provider).cookie?.trim() || undefined;
 
+const accountBrowser = (): string | null => {
+  const browser = getAccountService().getCredentials(provider).browser;
+  return browser && browser !== 'none' ? browser : null;
+};
+
 const accountStatus = () => getAccountService().getStatus(provider);
 
-const requireCookie = (): string => {
+const requireAccountArgs = (): string[] => {
   const cookie = accountCookie();
-  if (!cookie) {
-    throw new Error('Please log in to SoundCloud in Settings first. ECHO uses that saved login cookie for SoundCloud search and playback.');
+  if (cookie) {
+    return ['--add-header', `Cookie:${cookie}`];
   }
 
-  return cookie;
+  const browser = accountBrowser();
+  if (browser) {
+    return ['--cookies-from-browser', browser];
+  }
+
+  throw new Error('Please log in to SoundCloud in Settings first. ECHO can use a saved cookie or your selected system browser login.');
 };
 
 const ytDlpPathCandidates = (): string[] => {
@@ -67,11 +77,11 @@ const resolveYtDlpPath = (): string => {
   return ytDlpFileName;
 };
 
-const runYtDlp = (args: string[], cookie: string): Promise<string> =>
+const runYtDlp = (args: string[], accountArgs: string[]): Promise<string> =>
   new Promise((resolveOutput, reject) => {
     execFile(
       resolveYtDlpPath(),
-      ['--no-warnings', '--add-header', `Cookie:${cookie}`, ...args],
+      ['--no-warnings', ...accountArgs, ...args],
       {
         encoding: 'utf8',
         maxBuffer: ytDlpMaxBuffer,
@@ -90,8 +100,8 @@ const runYtDlp = (args: string[], cookie: string): Promise<string> =>
     );
   });
 
-const ytDlpJson = async <T>(args: string[], cookie: string): Promise<T> => {
-  const output = await runYtDlp(['--dump-single-json', ...args], cookie);
+const ytDlpJson = async <T>(args: string[], accountArgs: string[]): Promise<T> => {
+  const output = await runYtDlp(['--dump-single-json', ...args], accountArgs);
   if (!output) {
     throw new Error('SoundCloud extractor returned no metadata.');
   }
@@ -266,13 +276,13 @@ export class SoundCloudStreamingProvider implements StreamingProvider {
       accountAvatarUrl: status.avatarUrl,
       status: status.connected ? (status.error ? 'error' : 'ready') : 'needs_account',
       statusMessage: status.connected
-        ? 'SoundCloud uses your saved login cookie through yt-dlp. No developer API credentials are required.'
+        ? 'SoundCloud uses your saved cookie or selected system browser login through yt-dlp. No developer API credentials are required.'
         : 'Log in to SoundCloud in Settings before using SoundCloud streaming.',
     };
   }
 
   async search(request: StreamingSearchRequest): Promise<StreamingSearchResult> {
-    const cookie = requireCookie();
+    const accountArgs = requireAccountArgs();
     const page = Math.max(1, Math.floor(request.page ?? 1));
     const pageSize = Math.min(50, Math.max(1, Math.floor(request.pageSize ?? 20)));
     const mediaType = request.mediaTypes?.[0] ?? 'track';
@@ -293,7 +303,7 @@ export class SoundCloudStreamingProvider implements StreamingProvider {
     }
 
     const requestedCount = Math.min(100, page * pageSize);
-    const data = await ytDlpJson<unknown>(['--flat-playlist', `scsearch${requestedCount}:${request.query}`], cookie);
+    const data = await ytDlpJson<unknown>(['--flat-playlist', `scsearch${requestedCount}:${request.query}`], accountArgs);
     const allTracks = entriesFromSearch(data)
       .map(trackFromYtDlpEntry)
       .filter((track): track is StreamingTrack => Boolean(track));
@@ -316,8 +326,8 @@ export class SoundCloudStreamingProvider implements StreamingProvider {
   }
 
   async getTrack(input: { providerTrackId: string }): Promise<StreamingTrack> {
-    const cookie = requireCookie();
-    const data = await ytDlpJson<unknown>(['--no-playlist', resolvedTrackUrl(input.providerTrackId)], cookie);
+    const accountArgs = requireAccountArgs();
+    const data = await ytDlpJson<unknown>(['--no-playlist', resolvedTrackUrl(input.providerTrackId)], accountArgs);
     const track = trackFromYtDlpEntry({ ...asRecord(data), url: input.providerTrackId });
     if (!track) {
       throw new Error('SoundCloud track is unavailable.');
@@ -327,7 +337,7 @@ export class SoundCloudStreamingProvider implements StreamingProvider {
   }
 
   async getPlaylist(input: { providerPlaylistId: string; page?: number; pageSize?: number }): Promise<StreamingPlaylistDetail> {
-    const cookie = requireCookie();
+    const accountArgs = requireAccountArgs();
     const page = Math.max(1, Math.floor(input.page ?? 1));
     const pageSize = Math.min(100, Math.max(1, Math.floor(input.pageSize ?? 50)));
     const start = (page - 1) * pageSize + 1;
@@ -341,7 +351,7 @@ export class SoundCloudStreamingProvider implements StreamingProvider {
         String(end),
         resolvedPlaylistUrl(input.providerPlaylistId),
       ],
-      cookie,
+      accountArgs,
     );
     const record = asRecord(data);
     const playlistId = text(record.id) ?? input.providerPlaylistId;
@@ -369,10 +379,10 @@ export class SoundCloudStreamingProvider implements StreamingProvider {
   }
 
   async resolvePlayback(request: StreamingPlaybackRequest): Promise<StreamingPlaybackSource> {
-    const cookie = requireCookie();
+    const accountArgs = requireAccountArgs();
     const metadata = await ytDlpJson<unknown>(
       ['--no-playlist', '-f', 'http_mp3_0_1/http_mp3_1_0/http_mp3_0_0/bestaudio/best', resolvedTrackUrl(request.providerTrackId)],
-      cookie,
+      accountArgs,
     );
     const format = pickPlaybackFormat(metadata);
     const url = text(format?.url);

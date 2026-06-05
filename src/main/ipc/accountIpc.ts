@@ -1,7 +1,7 @@
 import { ipcMain, shell } from 'electron';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AccountLoginStartResult, AccountProvider, AccountStatus } from '../../shared/types/accounts';
-import { getAccountService, isAccountProvider, isYouTubeBrowser } from '../accounts/AccountService';
+import { getAccountService, isAccountBrowser, isAccountProvider, isYouTubeBrowser } from '../accounts/AccountService';
 import { startAccountLoginWindow } from '../accounts/AccountLoginWindow';
 import { getSpotifyAuthService } from '../accounts/SpotifyAuthService';
 import { getTidalAuthService } from '../accounts/TidalAuthService';
@@ -22,6 +22,24 @@ const requireCookie = (value: unknown): string => {
   return value;
 };
 
+const openSystemBrowserAccount = async (provider: Extract<AccountProvider, 'youtube' | 'soundcloud'>): Promise<AccountLoginStartResult> => {
+  const credentials = getAccountService().getCredentials(provider);
+  const browser = credentials.browser;
+  const url = provider === 'youtube' ? 'https://www.youtube.com/' : 'https://soundcloud.com/';
+  const loginUrl = browser === 'edge' && process.platform === 'win32'
+    ? `microsoft-edge:${url}`
+    : url;
+
+  await shell.openExternal(loginUrl).catch(() => undefined);
+  return {
+    status: getAccountService().getStatus(provider),
+    saved: false,
+    message: provider === 'youtube'
+      ? 'Opened YouTube in the system browser. ECHO will not open an Electron login window for YouTube.'
+      : 'Opened SoundCloud in the system browser. ECHO will reuse the selected browser login through yt-dlp.',
+  };
+};
+
 export const registerAccountIpc = (): void => {
   ipcMain.handle(IpcChannels.AccountGetStatuses, (): AccountStatus[] => getAccountService().getStatuses());
   ipcMain.handle(IpcChannels.AccountGetStatus, (_event, provider: unknown): AccountStatus =>
@@ -39,15 +57,10 @@ export const registerAccountIpc = (): void => {
       return getTidalAuthService().startLoginWindow();
     }
     if (accountProvider === 'youtube') {
-      const browser = getAccountService().getCredentials('youtube').browser;
-      const loginUrl = browser === 'edge' && process.platform === 'win32'
-        ? 'microsoft-edge:https://www.youtube.com/'
-        : 'https://www.youtube.com/';
-      return shell.openExternal(loginUrl).catch(() => undefined).then(() => ({
-        status: getAccountService().getStatus('youtube'),
-        saved: false,
-        message: 'Opened YouTube in the system browser. ECHO will not open an Electron login window for YouTube.',
-      }));
+      return openSystemBrowserAccount('youtube');
+    }
+    if (accountProvider === 'soundcloud') {
+      return openSystemBrowserAccount('soundcloud');
     }
 
     return startAccountLoginWindow(accountProvider, getAccountService());
@@ -82,6 +95,17 @@ export const registerAccountIpc = (): void => {
     }
 
     return getAccountService().setYouTubeBrowser(browser);
+  });
+  ipcMain.handle(IpcChannels.AccountSetBrowser, (_event, provider: unknown, browser: unknown): AccountStatus => {
+    const accountProvider = requireProvider(provider);
+    if (accountProvider !== 'youtube' && accountProvider !== 'soundcloud') {
+      throw new Error('provider does not support system browser login');
+    }
+    if (!isAccountBrowser(browser)) {
+      throw new Error('browser must be edge, chrome, firefox, or none');
+    }
+
+    return getAccountService().setAccountBrowser(accountProvider, browser);
   });
   ipcMain.handle(IpcChannels.SpotifyGetAccessToken, (): Promise<string> => getSpotifyAuthService().getAccessToken());
   ipcMain.handle(IpcChannels.SpotifyGetDevices, () => getSpotifyAuthService().getDevices());

@@ -258,6 +258,14 @@ export class NetworkMetadataService {
     };
   }
 
+  getBestCoverUrlForTrack(trackId: string): string | null {
+    return (
+      this.store.listTrackCoverCandidates(trackId).find((candidate) => candidate.coverUrl.trim().startsWith('https://'))?.coverUrl ??
+      this.store.listTrackMetadataCandidates(trackId).find((candidate) => candidate.coverUrl?.trim().startsWith('https://'))?.coverUrl ??
+      null
+    );
+  }
+
   async searchNetworkTagCandidates(request: NetworkTagCandidateSearchRequest): Promise<NetworkTagCandidate[]> {
     return this.queue.run(async () => {
       const track = this.store.getTrackLookup(request.trackId);

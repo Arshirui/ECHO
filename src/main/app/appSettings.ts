@@ -582,7 +582,7 @@ export const defaultSettings: AppSettings = {
   duplicateTracksEnabled: true,
   duplicateTracksMode: 'strict',
   duplicateTracksAutoRebuildAfterScan: false,
-  discordRichPresenceEnabled: false,
+  discordRichPresenceEnabled: true,
   lastFmEnabled: false,
   lastFmUsername: null,
   lastFmSessionKey: null,
@@ -1903,7 +1903,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     duplicateTracksEnabled: settings.duplicateTracksEnabled !== false,
     duplicateTracksMode,
     duplicateTracksAutoRebuildAfterScan: settings.duplicateTracksAutoRebuildAfterScan === true,
-    discordRichPresenceEnabled: settings.discordRichPresenceEnabled === true,
+    discordRichPresenceEnabled:
+      settings.discordRichPresenceEnabled === undefined ? defaultSettings.discordRichPresenceEnabled : settings.discordRichPresenceEnabled === true,
     lastFmEnabled: settings.lastFmEnabled === true,
     lastFmUsername: normalizeOptionalText(settings.lastFmUsername),
     lastFmSessionKey: normalizeOptionalText(settings.lastFmSessionKey),

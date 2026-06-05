@@ -18,7 +18,8 @@ export type AccountCredentials = {
   browser?: 'edge' | 'chrome' | 'firefox' | 'none';
 };
 
-export type YouTubeBrowser = NonNullable<AccountCredentials['browser']>;
+export type AccountBrowser = NonNullable<AccountCredentials['browser']>;
+export type YouTubeBrowser = AccountBrowser;
 
 export type AccountLoginStartResult = {
   status: AccountStatus;
@@ -28,4 +29,5 @@ export type AccountLoginStartResult = {
 
 export const accountProviders: AccountProvider[] = ['netease', 'qqmusic', 'kugou', 'bilibili', 'youtube', 'soundcloud', 'spotify', 'tidal', 'osu'];
 
-export const youtubeBrowsers: YouTubeBrowser[] = ['edge', 'chrome', 'firefox', 'none'];
+export const accountBrowsers: AccountBrowser[] = ['edge', 'chrome', 'firefox', 'none'];
+export const youtubeBrowsers: YouTubeBrowser[] = accountBrowsers;

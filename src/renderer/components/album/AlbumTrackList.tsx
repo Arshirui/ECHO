@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { Heart, Play } from 'lucide-react';
 import type { LibraryPage, LibraryTrack } from '../../../shared/types/library';
@@ -49,6 +49,10 @@ const technicalTags = (track: LibraryTrack): string[] =>
     track.bitrate ? (track.bitrate >= 1000000 ? `${(track.bitrate / 1000000).toFixed(1)}Mbps` : `${Math.round(track.bitrate / 1000)}kbps`) : null,
   ].filter((tag): tag is string => Boolean(tag));
 
+const normalizeDiscNo = (discNo: number | null): number | null => (discNo && Number.isFinite(discNo) && discNo > 0 ? Math.trunc(discNo) : null);
+
+const formatDiscLabel = (discNo: number | null): string => (discNo ? `Disc ${discNo}` : 'Disc ?');
+
 export const AlbumTrackList = ({
   albumId,
   currentTrackId,
@@ -69,6 +73,27 @@ export const AlbumTrackList = ({
   const requestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
   const likedTrackIds = useLikedTrackIds(tracks.map((track) => track.id));
+  const shouldShowDiscHeaders = useMemo(() => {
+    const discNumbers = new Set(tracks.map((track) => normalizeDiscNo(track.discNo)).filter((discNo): discNo is number => discNo !== null));
+    return discNumbers.size > 1 || [...discNumbers].some((discNo) => discNo > 1);
+  }, [tracks]);
+  const trackSections = useMemo(() => {
+    const sections: Array<{ discNo: number | null; tracks: Array<{ index: number; track: LibraryTrack }> }> = [];
+
+    tracks.forEach((track, index) => {
+      const discNo = shouldShowDiscHeaders ? normalizeDiscNo(track.discNo) : null;
+      const current = sections[sections.length - 1];
+
+      if (!current || current.discNo !== discNo) {
+        sections.push({ discNo, tracks: [{ index, track }] });
+        return;
+      }
+
+      current.tracks.push({ index, track });
+    });
+
+    return sections;
+  }, [shouldShowDiscHeaders, tracks]);
 
   const loadTracks = useCallback(
     async (nextPage: number, mode: 'replace' | 'append'): Promise<void> => {
@@ -173,54 +198,59 @@ export const AlbumTrackList = ({
             <span>{t('albumDetail.tracks.column.time')}</span>
           </div>
         ) : null}
-        {tracks.map((track, index) => {
-          const isPlaying = track.id === currentTrackId;
-          const trackNumber = track.trackNo ?? index + 1;
-          const tags = technicalTags(track);
+        {trackSections.map((section) => (
+          <Fragment key={`disc-${section.discNo ?? 'unknown'}-${section.tracks[0]?.track.id ?? 'empty'}`}>
+            {shouldShowDiscHeaders ? <div className="album-track-disc-heading">{formatDiscLabel(section.discNo)}</div> : null}
+            {section.tracks.map(({ index, track }) => {
+              const isPlaying = track.id === currentTrackId;
+              const trackNumber = track.trackNo ?? index + 1;
+              const tags = technicalTags(track);
 
-          return (
-            <button
-              className="album-track-row"
-              data-playing={isPlaying}
-              key={track.id}
-              role="listitem"
-              type="button"
-              onClick={() => void onPlayTrack(track)}
-              onContextMenu={(event) => handleTrackContextMenu(event, track)}
-            >
-              <span className="album-track-number">
-                <span>{trackNumber}</span>
-                <Play className="album-track-row-play" size={13} fill="currentColor" aria-hidden="true" />
-              </span>
-              <span className="album-track-copy">
-                <strong>{track.title}</strong>
-                <small>{track.artist}</small>
-              </span>
-              <span className="album-track-tags" aria-label={t('albumDetail.tracks.formatAria')}>
-                {tags.map((tag) => (
-                  <em key={`${track.id}-${tag}`}>{tag}</em>
-                ))}
-              </span>
-              <span className="album-track-duration">{formatDuration(track.duration)}</span>
-              <span className="album-track-actions">
-                <span
-                  className={`album-track-like ${likedTrackIds[track.id] ? 'is-liked' : ''}`}
-                  role="button"
-                  tabIndex={-1}
-                  aria-label={likedTrackIds[track.id] ? t('albumDetail.tracks.action.unlike', { title: track.title }) : t('albumDetail.tracks.action.like', { title: track.title })}
-                  aria-pressed={likedTrackIds[track.id] === true}
-                  title={likedTrackIds[track.id] ? t('albumDetail.tracks.action.unlikeTitle') : t('albumDetail.tracks.action.likeTitle')}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void onToggleTrackLiked?.(track);
-                  }}
+              return (
+                <button
+                  className="album-track-row"
+                  data-playing={isPlaying}
+                  key={track.id}
+                  role="listitem"
+                  type="button"
+                  onClick={() => void onPlayTrack(track)}
+                  onContextMenu={(event) => handleTrackContextMenu(event, track)}
                 >
-                  <Heart size={14} fill={likedTrackIds[track.id] ? 'currentColor' : 'none'} />
-                </span>
-              </span>
-            </button>
-          );
-        })}
+                  <span className="album-track-number">
+                    <span>{trackNumber}</span>
+                    <Play className="album-track-row-play" size={13} fill="currentColor" aria-hidden="true" />
+                  </span>
+                  <span className="album-track-copy">
+                    <strong>{track.title}</strong>
+                    <small>{track.artist}</small>
+                  </span>
+                  <span className="album-track-tags" aria-label={t('albumDetail.tracks.formatAria')}>
+                    {tags.map((tag) => (
+                      <em key={`${track.id}-${tag}`}>{tag}</em>
+                    ))}
+                  </span>
+                  <span className="album-track-duration">{formatDuration(track.duration)}</span>
+                  <span className="album-track-actions">
+                    <span
+                      className={`album-track-like ${likedTrackIds[track.id] ? 'is-liked' : ''}`}
+                      role="button"
+                      tabIndex={-1}
+                      aria-label={likedTrackIds[track.id] ? t('albumDetail.tracks.action.unlike', { title: track.title }) : t('albumDetail.tracks.action.like', { title: track.title })}
+                      aria-pressed={likedTrackIds[track.id] === true}
+                      title={likedTrackIds[track.id] ? t('albumDetail.tracks.action.unlikeTitle') : t('albumDetail.tracks.action.likeTitle')}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void onToggleTrackLiked?.(track);
+                      }}
+                    >
+                      <Heart size={14} fill={likedTrackIds[track.id] ? 'currentColor' : 'none'} />
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </Fragment>
+        ))}
       </div>
 
       {hasMore ? (

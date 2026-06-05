@@ -110,6 +110,7 @@ export const IpcChannels = {
   AccountClear: 'account:clear',
   AccountCheck: 'account:check',
   AccountCheckAll: 'account:check-all',
+  AccountSetBrowser: 'account:set-browser',
   AccountSetYouTubeBrowser: 'account:set-youtube-browser',
   AccountStatusesChanged: 'account:statuses-changed',
   SpotifyGetAccessToken: 'spotify:get-access-token',
