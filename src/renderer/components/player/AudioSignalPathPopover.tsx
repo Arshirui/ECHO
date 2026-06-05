@@ -63,6 +63,9 @@ const unknown = '等待信号';
 
 const trimTrailingZero = (value: string): string => value.replace(/\.0$/u, '');
 
+const trimFixed = (value: number, fractionDigits: number): string =>
+  value.toFixed(fractionDigits).replace(/\.?0+$/u, '');
+
 const formatRate = (value: number | null | undefined): string | null => {
   if (!value || !Number.isFinite(value)) {
     return null;
@@ -84,6 +87,18 @@ const formatBitDepth = (value: number | null | undefined): string | null =>
   value && Number.isFinite(value) ? `${Math.round(value)} bit` : null;
 
 const formatRoonRate = (value: number | null | undefined): string | null => formatRate(value)?.replace(' kHz', 'kHz') ?? null;
+
+const formatHqPlayerOutputRate = (value: number | null | undefined): string | null => {
+  if (!value || !Number.isFinite(value)) {
+    return null;
+  }
+
+  if (value >= 1_000_000) {
+    return `${trimFixed(value / 1_000_000, 2)}MHz`;
+  }
+
+  return formatRoonRate(value);
+};
 
 const formatEchoSrcQualityProfile = (value: AudioStatus['echoSrcQualityProfile']): string => {
   if (value === 'balanced') {
@@ -259,13 +274,26 @@ const hqPlayerDspLabel = (status: HqPlayerRemotePlaybackStatus | null): string |
 
 const hqPlayerOutputLabel = (status: HqPlayerRemotePlaybackStatus | null): string => {
   const outputFormat = joinSpec([
-    formatRoonRate(status?.activeRate),
+    formatHqPlayerOutputRate(status?.activeRate),
     formatRoonBitDepth(status?.activeBits),
     status?.activeChannels && Number.isFinite(status.activeChannels) ? `${Math.round(status.activeChannels)}ch` : null,
   ], '');
 
   return outputFormat || '由 HQPlayer 决定';
 };
+
+const hasHqPlayerPlaybackDetails = (
+  status: HqPlayerRemotePlaybackStatus | null | undefined,
+): status is HqPlayerRemotePlaybackStatus =>
+  Boolean(status && (
+    status.activeRate
+    || status.activeBits
+    || status.activeChannels
+    || status.activeMode?.trim()
+    || status.activeFilter?.trim()
+    || status.activeShaper?.trim()
+    || status.metadata
+  ));
 
 const outputModeLabel = (mode: AudioStatus['outputMode'] | null | undefined): string => {
   if (mode === 'asio') {
@@ -808,8 +836,11 @@ export const AudioSignalPathPopover = ({
 }: AudioSignalPathPopoverProps): JSX.Element | null => {
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [hqPlayerStatus, setHqPlayerStatus] = useState<HqPlayerStatus | null>(null);
-  const closeTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
   const hqPlayerSignalActive = isHqPlayerSignalPath(connectStatus);
+  const hqPlayerSessionKey = hqPlayerSignalActive
+    ? `${connectStatus.deviceId}:${connectStatus.currentTrackId ?? ''}`
+    : null;
 
   useEffect(() => {
     if (closeTimerRef.current !== null) {
@@ -840,24 +871,47 @@ export const AudioSignalPathPopover = ({
   }, [isOpen, shouldRender]);
 
   useEffect(() => {
-    if (!isOpen || !hqPlayerSignalActive) {
+    setHqPlayerStatus(null);
+  }, [hqPlayerSessionKey]);
+
+  useEffect(() => {
+    if (!hqPlayerSignalActive) {
       setHqPlayerStatus(null);
+      return undefined;
+    }
+
+    if (!isOpen) {
       return undefined;
     }
 
     let cancelled = false;
     const refreshHqPlayerStatus = (): void => {
-      void window.echo?.hqPlayer?.getStatus?.()
+      const getStatus = window.echo?.hqPlayer?.getStatus;
+      if (!getStatus) {
+        return;
+      }
+
+      void getStatus()
         .then((nextStatus) => {
           if (!cancelled) {
-            setHqPlayerStatus(nextStatus);
+            setHqPlayerStatus((previousStatus) => {
+              if (hasHqPlayerPlaybackDetails(nextStatus.playbackStatus)) {
+                return nextStatus;
+              }
+
+              if (previousStatus && hasHqPlayerPlaybackDetails(previousStatus.playbackStatus)) {
+                return {
+                  ...nextStatus,
+                  controlInfo: nextStatus.controlInfo ?? previousStatus.controlInfo,
+                  playbackStatus: previousStatus.playbackStatus,
+                };
+              }
+
+              return nextStatus;
+            });
           }
         })
-        .catch(() => {
-          if (!cancelled) {
-            setHqPlayerStatus(null);
-          }
-        });
+        .catch(() => undefined);
     };
 
     refreshHqPlayerStatus();
@@ -867,7 +921,7 @@ export const AudioSignalPathPopover = ({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [connectStatus?.state, connectStatus?.updatedAt, hqPlayerSignalActive, isOpen]);
+  }, [hqPlayerSessionKey, hqPlayerSignalActive, isOpen]);
 
   if (!shouldRender) {
     return null;

@@ -1627,12 +1627,13 @@ describe('app settings normalization', () => {
     expect(settings.lyricsProviderOrder).toEqual(['local', 'amll-ttml', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo']);
   });
 
-  it('keeps the bottom signal path control opt-in', async () => {
+  it('enables the bottom signal path control by default', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
-    expect(normalizeSettings({}).signalPathControlEnabled).toBe(false);
+    expect(normalizeSettings({}).signalPathControlEnabled).toBe(true);
     expect(normalizeSettings({ signalPathControlEnabled: true }).signalPathControlEnabled).toBe(true);
-    expect(normalizeSettings({ signalPathControlEnabled: 'true' as never }).signalPathControlEnabled).toBe(false);
+    expect(normalizeSettings({ signalPathControlEnabled: false }).signalPathControlEnabled).toBe(false);
+    expect(normalizeSettings({ signalPathControlEnabled: 'true' as never }).signalPathControlEnabled).toBe(true);
   });
 
   it('normalizes channel balance settings for old and malformed settings files', async () => {

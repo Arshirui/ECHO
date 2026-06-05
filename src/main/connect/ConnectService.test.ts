@@ -186,6 +186,16 @@ const createHqPlayerService = (initial: Partial<HqPlayerSettings> = {}) => {
       reason: null,
       message: null,
     }),
+    playPlayback: vi.fn().mockResolvedValue({
+      state: 'sent',
+      reason: null,
+      message: null,
+    }),
+    pausePlayback: vi.fn().mockResolvedValue({
+      state: 'sent',
+      reason: null,
+      message: null,
+    }),
     seekPlayback: vi.fn().mockResolvedValue({
       state: 'sent',
       reason: null,
@@ -258,9 +268,10 @@ describe('ConnectService HQPlayer output device', () => {
         protocol: 'hqplayer',
         state: 'unavailable',
         capabilities: expect.objectContaining({
-          canPlay: false,
-          canPause: false,
-          canStop: false,
+          canPlay: true,
+          canPause: true,
+          canStop: true,
+          canSeek: true,
           canSetVolume: false,
         }),
       }),
@@ -643,6 +654,32 @@ describe('ConnectService HQPlayer output device', () => {
       positionSeconds: 42.6,
     });
     expect(hqPlayer.seekPlayback).toHaveBeenCalledWith(42.6);
+  });
+
+  it('pauses and resumes the active HQPlayer session through HQPlayer control', async () => {
+    const { ConnectService } = await import('./ConnectService');
+    const hqPlayer = createHqPlayerService();
+    const service = new ConnectService(hqPlayer);
+
+    await service.connect({
+      deviceId: hqPlayerConnectDeviceId,
+      track: localTrack,
+      filePath: localTrack.path,
+    });
+
+    await expect(service.pause()).resolves.toMatchObject({
+      deviceId: hqPlayerConnectDeviceId,
+      protocol: 'hqplayer',
+      state: 'paused',
+    });
+    expect(hqPlayer.pausePlayback).toHaveBeenCalledOnce();
+
+    await expect(service.play()).resolves.toMatchObject({
+      deviceId: hqPlayerConnectDeviceId,
+      protocol: 'hqplayer',
+      state: 'playing',
+    });
+    expect(hqPlayer.playPlayback).toHaveBeenCalledOnce();
   });
 
   it('stops HQPlayer playback before disconnecting the active HQPlayer session', async () => {

@@ -271,6 +271,67 @@ describe('PlayerBar', () => {
     expect(localPause).not.toHaveBeenCalled();
   });
 
+  it('pauses the active HQPlayer Connect session even while takeover mode is enabled', async () => {
+    window.localStorage.setItem('echo-next.hqplayer-takeover-enabled', 'true');
+    const track = makeTrack(32, { title: 'HQPlayer Takeover Pause Track' });
+    const playingConnectStatus = hqPlayerConnectStatus(track, 'playing');
+    const pausedConnectStatus = hqPlayerConnectStatus(track, 'paused');
+    const connectPause = vi.fn().mockResolvedValue(pausedConnectStatus);
+    const activateLocalPlayback = vi.fn();
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: track.id,
+          positionMs: 12000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: activateLocalPlayback,
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(playingConnectStatus),
+        play: vi.fn(),
+        pause: connectPause,
+        stop: vi.fn(),
+        seek: vi.fn(),
+        onStatus: vi.fn(() => vi.fn()),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(track)),
+        onStatus: vi.fn(() => vi.fn()),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(track),
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('HQPlayer Takeover Pause Track');
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+
+    await waitFor(() => expect(connectPause).toHaveBeenCalledTimes(1));
+    expect(activateLocalPlayback).not.toHaveBeenCalled();
+    expect(screen.queryByText('HQPlayer 接管中，ECHO 已避免抢占本机音频设备。')).toBeNull();
+  });
+
   it('opens the bottom signal path popover with the current audio chain', async () => {
     const track = makeTrack(33, { title: 'Signal Path Track', codec: 'flac', sampleRate: 96000, bitDepth: 24 });
     const status = {
@@ -379,8 +440,8 @@ describe('PlayerBar', () => {
         activeMode: 'SDM',
         activeFilter: 'sinc-long',
         activeShaper: 'ASDM7EC-super',
-        activeRate: 384000,
-        activeBits: 32,
+        activeRate: 22579200,
+        activeBits: 1,
         activeChannels: 2,
         inputFill: null,
         outputFill: null,
@@ -468,7 +529,7 @@ describe('PlayerBar', () => {
     expect(dialog.textContent).toContain('FLAC 44.1kHz 16bit 2ch');
     await waitFor(() => expect(dialog.textContent).toContain('HQPlayer Desktop'));
     expect(dialog.textContent).toContain('SDM / sinc-long / ASDM7EC-super');
-    expect(dialog.textContent).toContain('HQPlayer 输出 / 384kHz / 32bit / 2ch');
+    expect(dialog.textContent).toContain('HQPlayer 输出 / 22.58MHz / 1bit / 2ch');
     expect(dialog.textContent).not.toContain('等待信号');
   });
 

@@ -5,6 +5,7 @@ import { isHiResAudioSpec } from '../../../shared/utils/audioQuality';
 import { translateFallback, useOptionalI18n } from '../../i18n/I18nProvider';
 
 type PlayerStatusChipsProps = {
+  hqPlayerActiveRate?: number | null;
   status: AudioStatus | null;
   state: string;
   track: LibraryTrack | null;
@@ -26,6 +27,21 @@ const formatSpecRate = (value: number | null | undefined): string | null => {
 
   const khz = value / 1000;
   return `${Number.isInteger(khz) ? Math.round(khz) : khz.toFixed(1)}kHz`;
+};
+
+const trimFixed = (value: number, fractionDigits: number): string =>
+  value.toFixed(fractionDigits).replace(/\.?0+$/u, '');
+
+const formatHqPlayerOutputRate = (value: number | null | undefined): string | null => {
+  if (!value || !Number.isFinite(value)) {
+    return null;
+  }
+
+  if (value >= 1_000_000) {
+    return `${trimFixed(value / 1_000_000, 2)}MHz`;
+  }
+
+  return formatSpecRate(value);
 };
 
 const channelLabel = (channels: number | null | undefined): string | null => {
@@ -160,7 +176,7 @@ const hasWindowsAudioRateWarning = (status: AudioStatus | null): boolean =>
     warning.startsWith('shared_output_mix_rate_too_high:') ||
     warning.startsWith('windows_audio_default_format_unusual:')));
 
-export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsProps): JSX.Element => {
+export const PlayerStatusChips = ({ hqPlayerActiveRate = null, status, state, track }: PlayerStatusChipsProps): JSX.Element => {
   const t = useOptionalI18n()?.t ?? translateFallback;
   const codec = normalizeDisplayCodec(track?.codec ?? status?.codec ?? null);
   const bitDepth = track?.bitDepth ?? status?.bitDepth ?? null;
@@ -175,6 +191,11 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
   const windowsAudioRateWarning = hasWindowsAudioRateWarning(status);
   const isLoadingRemoteTrack = state === 'loading' && track?.mediaType === 'remote' && !isDlnaReceiverTrack(track) && !isAirPlayReceiverTrack(track);
   const streamingLabel = streamingSourceLabel(track);
+  const hqPlayerRate = typeof hqPlayerActiveRate === 'number' && Number.isFinite(hqPlayerActiveRate) && hqPlayerActiveRate > 0
+    ? hqPlayerActiveRate
+    : null;
+  const hqPlayerOutputRateLabel =
+    hqPlayerRate && (!sampleRate || hqPlayerRate > sampleRate + 1) ? formatHqPlayerOutputRate(hqPlayerRate) : null;
   const chips: Chip[] = uniqueChips([
     isLoadingRemoteTrack ? { label: '加载中', className: 'tag-loading' } : null,
     windowsAudioRateWarning
@@ -192,6 +213,8 @@ export const PlayerStatusChips = ({ status, state, track }: PlayerStatusChipsPro
     isDlnaReceiverTrack(track) ? { label: 'DLNA', className: 'tag-dlna' } : null,
     isAirPlayReceiverTrack(track) ? { label: 'AIRPLAY', className: 'tag-airplay' } : null,
     streamingLabel ? { label: streamingLabel, className: 'tag-streaming' } : null,
+    hqPlayerOutputRateLabel ? { label: 'HQPlayer', className: 'tag-hqplayer' } : null,
+    hqPlayerOutputRateLabel ? { label: hqPlayerOutputRateLabel, className: 'tag-hqplayer' } : null,
     codec ? { label: codec, className: codecClassName(codec) } : null,
     isHiResSource({ bitDepth, codec, sampleRate, track }) ? { label: 'Hi-Res', className: 'tag-hires' } : null,
     bitDepth && formattedRate ? { label: `${bitDepth}bit / ${formattedRate}`, className: 'tag-depth' } : null,

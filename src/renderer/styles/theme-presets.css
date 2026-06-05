@@ -4493,6 +4493,9 @@ html:is([data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="
   --lyrics-mini-button-bg: var(--lyrics-mini-player-readable-button-bg, rgb(var(--preset-panel-rgb) / 0.66));
   --lyrics-mini-button-bg-hover: var(--lyrics-mini-player-readable-button-bg-hover, rgb(var(--preset-panel-rgb) / 0.92));
   --lyrics-mini-button-border: var(--lyrics-mini-player-readable-button-border, rgb(var(--preset-border-rgb) / 0.2));
+  --lyrics-mini-play-bg: var(--lyrics-mini-player-readable-play-bg, var(--lyrics-mini-button-bg));
+  --lyrics-mini-play-bg-hover: var(--lyrics-mini-player-readable-play-bg-hover, var(--lyrics-mini-button-bg-hover));
+  --lyrics-mini-play-border: var(--lyrics-mini-player-readable-play-border, var(--lyrics-mini-button-border));
   --lyrics-mini-track-bg: var(--lyrics-mini-player-readable-track-bg, rgb(var(--preset-border-rgb) / 0.18));
   --lyrics-mini-track-border: var(--lyrics-mini-player-readable-track-border, rgb(var(--preset-border-rgb) / 0.16));
   color: var(--lyrics-mini-readable-text);
@@ -4519,19 +4522,23 @@ html:is([data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="
 
 html:is([data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .icon-button:hover,
 html:is([data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .icon-button.is-soft-active {
-  color: var(--theme-accent-text-strong);
-  border-color: var(--theme-accent-border);
-  background: var(--theme-accent-bg);
+  color: var(--lyrics-mini-readable-text);
+  border-color: var(--lyrics-mini-button-border);
+  background: var(--lyrics-mini-button-bg-hover);
 }
 
 html:is([data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .play-button,
 html:is([data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .play-button:hover {
-  color: var(--theme-on-accent);
-  border-color: rgb(var(--preset-accent-rgb) / 0.32);
-  background: linear-gradient(180deg, var(--theme-accent-solid-bg), var(--theme-accent-text-strong));
+  color: var(--lyrics-mini-readable-text);
+  border-color: var(--lyrics-mini-play-border);
+  background: var(--lyrics-mini-play-bg);
   box-shadow:
-    0 10px 24px rgb(var(--preset-accent-rgb) / 0.24),
+    0 10px 24px rgb(var(--preset-shadow-rgb) / 0.18),
     inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+
+html:is([data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .play-button:hover {
+  background: var(--lyrics-mini-play-bg-hover);
 }
 
 html:is([data-theme-custom="true"], [data-theme-preset]:not([data-theme-preset="classic"])) .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .progress-track {
@@ -4549,6 +4556,9 @@ html[data-theme="dark"]:is([data-theme-custom="true"], [data-theme-preset]:not([
   --lyrics-mini-button-bg: var(--lyrics-mini-player-readable-button-bg, rgb(var(--preset-panel-rgb) / 0.72));
   --lyrics-mini-button-bg-hover: var(--lyrics-mini-player-readable-button-bg-hover, rgb(var(--preset-panel-rgb) / 0.94));
   --lyrics-mini-button-border: var(--lyrics-mini-player-readable-button-border, rgb(var(--preset-border-rgb) / 0.22));
+  --lyrics-mini-play-bg: var(--lyrics-mini-player-readable-play-bg, var(--lyrics-mini-button-bg));
+  --lyrics-mini-play-bg-hover: var(--lyrics-mini-player-readable-play-bg-hover, var(--lyrics-mini-button-bg-hover));
+  --lyrics-mini-play-border: var(--lyrics-mini-player-readable-play-border, var(--lyrics-mini-button-border));
   --lyrics-mini-track-bg: var(--lyrics-mini-player-readable-track-bg, rgb(var(--preset-panel-rgb) / 0.78));
   --lyrics-mini-track-border: var(--lyrics-mini-player-readable-track-border, rgb(var(--preset-border-rgb) / 0.18));
   background: var(--lyrics-mini-player-background, rgb(var(--preset-panel-rgb) / 0.92));
@@ -12157,27 +12167,21 @@ html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-
 }
 
 html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar {
-  --lyrics-mini-player-readable-text: rgb(247 248 245);
-  --lyrics-mini-player-readable-muted: rgb(204 211 210);
-  --lyrics-mini-player-readable-shadow: 0 1px 2px rgb(0 0 0 / 0.78);
-  --lyrics-mini-player-readable-button-bg: rgb(255 255 255 / 0.08);
-  --lyrics-mini-player-readable-button-bg-hover: rgb(180 188 188 / 0.2);
-  --lyrics-mini-player-readable-button-border: rgb(218 224 224 / 0.2);
-  --lyrics-mini-player-readable-track-bg: rgb(255 255 255 / 0.14);
-  --lyrics-mini-player-readable-track-border: rgb(218 224 224 / 0.22);
   min-height: 64px;
   height: 64px;
   grid-template-columns: minmax(0, 1fr);
   justify-content: center;
   gap: 0;
   padding: 8px 18px 10px !important;
-  color: var(--lyrics-mini-player-readable-text);
+  color: var(--lyrics-mini-player-readable-text, rgb(247 248 245));
   border: 1px solid rgb(210 216 216 / 0.32) !important;
   border-radius: 8px !important;
-  background:
+  background: var(
+    --lyrics-mini-player-background,
     linear-gradient(90deg, rgb(255 255 255 / 0.08), transparent 24%, rgb(var(--final-lab-gold-rgb) / 0.045)),
     repeating-linear-gradient(110deg, rgb(255 255 255 / 0.045) 0 1px, transparent 1px 10px),
-    rgb(10 11 12 / 0.9) !important;
+    rgb(10 11 12 / 0.9)
+  ) !important;
   box-shadow:
     0 20px 52px rgb(0 0 0 / 0.46),
     0 0 0 1px rgb(0 0 0 / 0.36),
@@ -12204,28 +12208,30 @@ html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-
 html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .icon-button {
   width: 32px;
   height: 32px;
-  color: rgb(247 248 245 / 0.92) !important;
-  border-color: transparent !important;
-  background: transparent !important;
+  color: var(--lyrics-mini-player-readable-text, rgb(247 248 245)) !important;
+  border-color: var(--lyrics-mini-player-readable-button-border, transparent) !important;
+  background: var(--lyrics-mini-player-readable-button-bg, transparent) !important;
   box-shadow: none !important;
 }
 
 html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .icon-button:hover,
 html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .icon-button.is-soft-active {
-  color: #ffffff !important;
-  border-color: rgb(218 224 224 / 0.24) !important;
-  background: rgb(180 188 188 / 0.18) !important;
+  color: var(--lyrics-mini-player-readable-text, #ffffff) !important;
+  border-color: var(--lyrics-mini-player-readable-button-border, rgb(218 224 224 / 0.24)) !important;
+  background: var(--lyrics-mini-player-readable-button-bg-hover, rgb(180 188 188 / 0.18)) !important;
 }
 
 html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .play-button,
 html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .play-button:hover {
   width: 42px;
   height: 42px;
-  color: #08090a !important;
-  border: 1px solid rgb(246 248 245 / 0.68) !important;
-  background:
+  color: var(--lyrics-mini-player-readable-text, #08090a) !important;
+  border: 1px solid var(--lyrics-mini-player-readable-play-border, rgb(246 248 245 / 0.68)) !important;
+  background: var(
+    --lyrics-mini-player-readable-play-bg,
     radial-gradient(circle at 50% 22%, rgb(255 255 255 / 0.46), transparent 35%),
-    linear-gradient(180deg, #f1f2ee 0%, #aeb6b7 54%, #667074 100%) !important;
+    linear-gradient(180deg, #f1f2ee 0%, #aeb6b7 54%, #667074 100%)
+  ) !important;
   box-shadow:
     0 10px 26px rgb(0 0 0 / 0.36),
     0 0 0 4px rgb(180 188 188 / 0.12),
@@ -12236,7 +12242,7 @@ html[data-theme-preset="FINAL"] .app-shell--lyrics-player-drawer .lyrics-player-
   width: 100%;
   grid-template-columns: 42px minmax(170px, 1fr) 42px;
   gap: 10px;
-  color: rgb(232 237 236 / 0.94) !important;
+  color: var(--lyrics-mini-player-readable-muted, rgb(232 237 236 / 0.94)) !important;
   font-size: 12px;
   font-weight: 760;
   text-shadow: var(--lyrics-mini-player-readable-shadow);

@@ -10247,14 +10247,14 @@ export const SettingsPage = (): JSX.Element => {
                 id="settings-row-signal-path-control"
                 highlighted={highlightedSettingId === 'settings-row-signal-path-control'}
                 title="底栏信号路径"
-                description="在底部播放栏显示 Signal Path 入口。默认关闭，歌词页始终隐藏。"
+                description="在底部播放栏显示 Signal Path 入口。默认开启，歌词页始终隐藏。"
               >
                 <ToggleButton
-                  active={appSettings?.signalPathControlEnabled === true}
+                  active={appSettings?.signalPathControlEnabled !== false}
                   disabled={!appSettings}
                   onClick={() =>
                     patchAppSettings({
-                      signalPathControlEnabled: !(appSettings?.signalPathControlEnabled ?? false),
+                      signalPathControlEnabled: !(appSettings?.signalPathControlEnabled ?? true),
                     })
                   }
                 />

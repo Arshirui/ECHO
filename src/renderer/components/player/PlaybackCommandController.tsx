@@ -247,15 +247,6 @@ export const PlaybackCommandController = (): null => {
     const playback = window.echo?.playback;
     const connect = window.echo?.connect;
 
-    if (queue.hqPlayerTakeoverEnabled) {
-      if (visualState === 'playing' || visualState === 'loading') {
-        return;
-      }
-
-      await runPlaybackAction(queue.activateHqPlayerTakeover);
-      return;
-    }
-
     const activeConnectStatus = await getActiveConnectPlaybackStatus();
     if (activeConnectStatus && connect?.play && connect.pause) {
       const nextStatus =
@@ -264,6 +255,15 @@ export const PlaybackCommandController = (): null => {
           : await connect.play();
       applyConnectPlaybackStatus(nextStatus);
       await refreshPlaybackStatus();
+      return;
+    }
+
+    if (queue.hqPlayerTakeoverEnabled) {
+      if (visualState === 'playing' || visualState === 'loading') {
+        return;
+      }
+
+      await runPlaybackAction(queue.activateHqPlayerTakeover);
       return;
     }
 
@@ -288,7 +288,7 @@ export const PlaybackCommandController = (): null => {
       const latestStatus = await playback.getStatus();
       return latestStatus.state === 'playing' || latestStatus.state === 'loading' ? playback.pause() : playback.play();
     });
-  }, [applyConnectPlaybackStatus, isSpotifyCurrentTrack, queue, runPlaybackAction, visualState]);
+  }, [applyConnectPlaybackStatus, isSpotifyCurrentTrack, queue, refreshPlaybackStatus, runPlaybackAction, visualState]);
 
   const handlePrevious = useCallback((): void => {
     void runPlaybackAction(queue.playPrevious);

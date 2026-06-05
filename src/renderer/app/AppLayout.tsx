@@ -263,6 +263,9 @@ const getMiniPlayerReadablePalette = (backgroundRgb: Rgb): Record<string, string
         '--lyrics-mini-player-readable-button-bg': 'rgba(255, 255, 255, 0.10)',
         '--lyrics-mini-player-readable-button-bg-hover': 'rgba(255, 255, 255, 0.18)',
         '--lyrics-mini-player-readable-button-border': 'rgba(255, 255, 255, 0.16)',
+        '--lyrics-mini-player-readable-play-bg': 'rgba(255, 255, 255, 0.20)',
+        '--lyrics-mini-player-readable-play-bg-hover': 'rgba(255, 255, 255, 0.26)',
+        '--lyrics-mini-player-readable-play-border': 'rgba(255, 255, 255, 0.20)',
         '--lyrics-mini-player-readable-track-bg': 'rgba(255, 255, 255, 0.24)',
         '--lyrics-mini-player-readable-track-border': 'rgba(255, 255, 255, 0.16)',
       }
@@ -273,6 +276,9 @@ const getMiniPlayerReadablePalette = (backgroundRgb: Rgb): Record<string, string
         '--lyrics-mini-player-readable-button-bg': 'rgba(17, 24, 39, 0.08)',
         '--lyrics-mini-player-readable-button-bg-hover': 'rgba(17, 24, 39, 0.14)',
         '--lyrics-mini-player-readable-button-border': 'rgba(17, 24, 39, 0.14)',
+        '--lyrics-mini-player-readable-play-bg': 'rgba(17, 24, 39, 0.12)',
+        '--lyrics-mini-player-readable-play-bg-hover': 'rgba(17, 24, 39, 0.18)',
+        '--lyrics-mini-player-readable-play-border': 'rgba(17, 24, 39, 0.18)',
         '--lyrics-mini-player-readable-track-bg': 'rgba(17, 24, 39, 0.18)',
         '--lyrics-mini-player-readable-track-border': 'rgba(17, 24, 39, 0.14)',
       };
@@ -363,7 +369,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [desktopLyricsLocked, setDesktopLyricsLocked] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
   const [audioIssueDiagnosticsWindowEnabled, setAudioIssueDiagnosticsWindowEnabled] = useState(false);
-  const [signalPathControlEnabled, setSignalPathControlEnabled] = useState(false);
+  const [signalPathControlEnabled, setSignalPathControlEnabled] = useState(true);
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
   const [sidebarLayoutSettings, setSidebarLayoutSettings] = useState<SidebarLayoutSettings>(defaultSidebarLayoutSettings);
   const [lyricsMiniPlayerCoverSample, setLyricsMiniPlayerCoverSample] = useState<ReadableColorSample | null>(null);

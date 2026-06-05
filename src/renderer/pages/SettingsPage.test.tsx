@@ -897,8 +897,9 @@ describe('SettingsPage', () => {
 
   it('saves the bottom signal path control from general settings', async () => {
     Element.prototype.scrollIntoView = vi.fn();
-    const nextSettings = { ...settings, signalPathControlEnabled: true };
-    getSettingsMock.mockResolvedValue(settings);
+    const currentSettings = { ...settings, signalPathControlEnabled: true };
+    const nextSettings = { ...currentSettings, signalPathControlEnabled: false };
+    getSettingsMock.mockResolvedValue(currentSettings);
     setSettingsMock.mockResolvedValue(nextSettings);
     resetSettingsMock.mockResolvedValue(settings);
     clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
@@ -909,7 +910,7 @@ describe('SettingsPage', () => {
     const row = screen.getByText('底栏信号路径').closest('.setting-row') as HTMLElement;
     fireEvent.click(within(row).getByRole('button'));
 
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ signalPathControlEnabled: true }));
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ signalPathControlEnabled: false }));
   });
 
   it('saves sidebar visibility and order from appearance controls', async () => {

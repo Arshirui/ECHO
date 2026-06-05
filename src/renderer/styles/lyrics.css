@@ -2431,14 +2431,6 @@ html:not([data-theme="dark"]) .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled=
 }
 
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar {
-  --lyrics-mini-player-readable-text: rgb(255 255 255);
-  --lyrics-mini-player-readable-muted: rgb(248 250 252);
-  --lyrics-mini-player-readable-shadow: 0 1px 2px rgb(0 0 0 / 0.48);
-  --lyrics-mini-player-readable-button-bg: rgb(255 255 255 / 0.1);
-  --lyrics-mini-player-readable-button-bg-hover: rgb(255 255 255 / 0.18);
-  --lyrics-mini-player-readable-button-border: rgb(255 255 255 / 0.16);
-  --lyrics-mini-player-readable-track-bg: rgb(255 255 255 / 0.24);
-  --lyrics-mini-player-readable-track-border: rgb(255 255 255 / 0.16);
   z-index: 12;
   grid-template-columns: auto auto;
   justify-content: center;
@@ -2505,16 +2497,16 @@ html:not([data-theme="dark"]) .lyrics-page:has(.lyrics-mv-panel[data-mv-enabled=
   gap: 9px;
   width: clamp(230px, 21vw, 286px);
   min-width: 0;
-  color: var(--lyrics-mini-player-readable-muted);
+  color: var(--lyrics-mini-player-readable-muted, rgb(248 250 252));
   font-size: 12px;
   font-weight: 760;
   font-variant-numeric: tabular-nums;
-  text-shadow: var(--lyrics-mini-player-readable-shadow);
+  text-shadow: var(--lyrics-mini-player-readable-shadow, 0 1px 2px rgb(0 0 0 / 0.48));
 }
 
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .progress-track {
   height: 4px;
-  background: var(--lyrics-mini-player-readable-track-bg);
+  background: var(--lyrics-mini-player-readable-track-bg, rgb(255 255 255 / 0.24));
 }
 
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .progress-fill,

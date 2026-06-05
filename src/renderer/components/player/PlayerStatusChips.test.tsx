@@ -52,6 +52,20 @@ describe('PlayerStatusChips', () => {
     expect(screen.getByText('Hi-Res')).toBeTruthy();
   });
 
+  it('adds restrained HQPlayer output chips when HQPlayer upsamples the source', () => {
+    render(<PlayerStatusChips hqPlayerActiveRate={22579200} status={null} state="playing" track={track({ sampleRate: 48000 })} />);
+
+    expect(screen.getByText('HQPlayer').className).toContain('tag-hqplayer');
+    expect(screen.getByText('22.58MHz').className).toContain('tag-hqplayer');
+    expect(screen.getByText('24bit / 48kHz')).toBeTruthy();
+  });
+
+  it('does not add HQPlayer output chips when the active rate matches the source', () => {
+    render(<PlayerStatusChips hqPlayerActiveRate={48000} status={null} state="playing" track={track({ sampleRate: 48000 })} />);
+
+    expect(screen.queryByText('HQPlayer')).toBeNull();
+  });
+
   it('surfaces remote playback loading even when codec chips are available', () => {
     render(<PlayerStatusChips status={null} state="loading" track={track({ mediaType: 'remote', sourceDisplayName: '百度网盘' })} />);
 

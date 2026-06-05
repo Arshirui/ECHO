@@ -20,7 +20,7 @@ import {
 } from '../../integrations/spotify/spotifyPlayback';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { beginPlaybackSeekSnapshot, getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
-import { isActiveConnectPlaybackStatus, playbackStatusFromConnectStatus } from '../../utils/connectPlayback';
+import { isActiveConnectPlaybackStatus, isHqPlayerConnectStatus, playbackStatusFromConnectStatus } from '../../utils/connectPlayback';
 import { openArtistDetailByName } from '../../utils/artistNavigation';
 import { logLyricsConsole } from '../../diagnostics/lyricsConsole';
 import { PlayerProgress } from './PlayerProgress';
@@ -586,6 +586,7 @@ export const PlayerBar = ({
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus | null>(null);
   const [connectStatus, setConnectStatus] = useState<ConnectSessionStatus | null>(null);
+  const [hqPlayerOutputRate, setHqPlayerOutputRate] = useState<number | null>(null);
   const [receiverStatus, setReceiverStatus] = useState<ConnectReceiverStatus | null>(null);
   const [airPlayReceiverStatus, setAirPlayReceiverStatus] = useState<AirPlayReceiverStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1896,6 +1897,35 @@ export const PlayerBar = ({
   }, []);
 
   useEffect(() => {
+    const hqPlayerActive =
+      isHqPlayerConnectStatus(connectStatus) && ['connecting', 'ready', 'playing', 'paused'].includes(connectStatus.state);
+    if (!hqPlayerActive) {
+      setHqPlayerOutputRate(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const refreshHqPlayerStatus = (): void => {
+      void window.echo?.hqPlayer?.getStatus?.()
+        .then((nextStatus) => {
+          const nextRate = nextStatus.playbackStatus?.activeRate ?? null;
+          if (!cancelled && typeof nextRate === 'number' && Number.isFinite(nextRate) && nextRate > 0) {
+            setHqPlayerOutputRate(nextRate);
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    refreshHqPlayerStatus();
+    const interval = window.setInterval(refreshHqPlayerStatus, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [connectStatus?.currentTrackId, connectStatus?.deviceId, connectStatus?.protocol, connectStatus?.state]);
+
+  useEffect(() => {
     let disposed = false;
     const connect = window.echo?.connect;
     const receiverStatusPromise = connect?.getReceiverStatus?.();
@@ -2009,16 +2039,6 @@ export const PlayerBar = ({
     const playback = window.echo?.playback;
     const connect = window.echo?.connect;
 
-    if (queue.hqPlayerTakeoverEnabled) {
-      if (visualState === 'playing' || visualState === 'loading') {
-        setError('HQPlayer 接管中，ECHO 已避免抢占本机音频设备。');
-        return;
-      }
-
-      await runPlaybackAction(queue.activateHqPlayerTakeover);
-      return;
-    }
-
     const activeConnectStatus = await getActiveConnectPlaybackStatus();
     if (activeConnectStatus && connect?.play && connect.pause) {
       try {
@@ -2032,6 +2052,16 @@ export const PlayerBar = ({
         setError(formatAudioHostError(message));
         setPlaybackStatusSnapshot({ error: shouldSuppressAudioHostError(message) ? null : message });
       }
+      return;
+    }
+
+    if (queue.hqPlayerTakeoverEnabled) {
+      if (visualState === 'playing' || visualState === 'loading') {
+        setError('HQPlayer 接管中，ECHO 已避免抢占本机音频设备。');
+        return;
+      }
+
+      await runPlaybackAction(queue.activateHqPlayerTakeover);
       return;
     }
 
@@ -2419,7 +2449,7 @@ export const PlayerBar = ({
         <div className="player-track-copy">
           <PlayerMarqueeText kind="title" text={title} />
           <PlayerMarqueeText kind="subtitle" text={artist} onClick={canOpenCurrentArtist ? handleOpenCurrentArtist : undefined} />
-          <PlayerStatusChips status={audioStatus} state={state} track={currentTrack} />
+          <PlayerStatusChips hqPlayerActiveRate={hqPlayerOutputRate} status={audioStatus} state={state} track={currentTrack} />
           {isNetworkPlaybackLoading ? (
             <span className="player-loading-hint" role="status" aria-live="polite">
               <Loader2 className="spinning-icon" size={13} aria-hidden="true" />

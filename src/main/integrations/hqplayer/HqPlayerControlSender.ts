@@ -26,7 +26,7 @@ export type HqPlayerControlProbeResult = {
 
 const hqPlayerControlSendTimeoutMs = 2500;
 
-type HqPlayerControlCommand = 'PlayNextURI' | 'Play' | 'Seek' | 'Stop' | 'GetInfo' | 'Status';
+type HqPlayerControlCommand = 'PlayNextURI' | 'Play' | 'Pause' | 'Seek' | 'Stop' | 'GetInfo' | 'Status';
 
 type XmlElementResponse = {
   attributes: Record<string, string>;
@@ -182,8 +182,16 @@ const buildSeekCommand = (positionSeconds: number): string =>
 const buildStopCommand = (): string =>
   '<?xml version="1.0" encoding="UTF-8"?>\n<Stop/>';
 
-const buildPlayCommand = (): string =>
+const buildPlayCommand = (options: { last?: boolean } = {}): string =>
+  options.last === true
+    ? '<?xml version="1.0" encoding="UTF-8"?>\n<Play last="1"/>'
+    : '<?xml version="1.0" encoding="UTF-8"?>\n<Play/>';
+
+const buildPlayLastCommand = (): string =>
   '<?xml version="1.0" encoding="UTF-8"?>\n<Play last="1"/>';
+
+const buildPauseCommand = (): string =>
+  '<?xml version="1.0" encoding="UTF-8"?>\n<Pause/>';
 
 const buildGetInfoCommand = (): string =>
   '<?xml version="1.0" encoding="UTF-8"?>\n<GetInfo/>';
@@ -259,7 +267,7 @@ const waitForXmlElement = (
 
 const waitForCommandResponse = (
   socket: Socket,
-  command: 'PlayNextURI' | 'Play' | 'Seek' | 'Stop',
+  command: 'PlayNextURI' | 'Play' | 'Pause' | 'Seek' | 'Stop',
   timeoutMs: number,
 ): Promise<{ raw: string; message: string | null }> =>
   new Promise((resolve, reject) => {
@@ -343,7 +351,7 @@ const readControlElement = async (
 
 const sendControlCommand = async (
   endpoint: HqPlayerEndpoint,
-  command: Extract<HqPlayerControlCommand, 'PlayNextURI' | 'Play' | 'Seek' | 'Stop'>,
+  command: Extract<HqPlayerControlCommand, 'PlayNextURI' | 'Play' | 'Pause' | 'Seek' | 'Stop'>,
   xml: string,
   timeoutMs: number,
 ): Promise<{ raw: string; message: string | null }> => {
@@ -573,7 +581,7 @@ export const sendHqPlayerPlaybackControlPlan = async (
 
   try {
     const nextUriResponse = await sendControlCommand(endpoint, 'PlayNextURI', buildPlayNextUriCommand(plan), timeoutMs);
-    const playResponse = await sendControlCommand(endpoint, 'Play', buildPlayCommand(), timeoutMs);
+    const playResponse = await sendControlCommand(endpoint, 'Play', buildPlayLastCommand(), timeoutMs);
     let rawResponse = `${nextUriResponse.raw}\n${playResponse.raw}`;
 
     if (plan.startSeconds && plan.startSeconds >= 1) {
@@ -660,6 +668,110 @@ export const sendHqPlayerSeekCommand = async (
       reason,
       endpoint,
       command: 'Seek',
+      startedAt,
+      message: error instanceof Error ? error.message : String(error),
+      response,
+    });
+  }
+};
+
+export const sendHqPlayerPlayCommand = async (
+  endpoint: HqPlayerEndpoint,
+  options: HqPlayerControlSendOptions = {},
+): Promise<HqPlayerPlaybackControlSendResult> => {
+  const timeoutMs = options.timeoutMs ?? hqPlayerControlSendTimeoutMs;
+  const startedAt = Date.now();
+
+  if (!endpoint.port) {
+    return createSendResult({
+      state: 'skipped',
+      reason: 'hqplayer_control_port_not_configured',
+      endpoint,
+      command: 'none',
+      startedAt,
+    });
+  }
+
+  try {
+    const response = await sendControlCommand(endpoint, 'Play', buildPlayCommand(), timeoutMs);
+    return createSendResult({
+      state: 'sent',
+      reason: null,
+      endpoint,
+      command: 'Play',
+      startedAt,
+      response: response.raw,
+    });
+  } catch (error) {
+    const reason =
+      error instanceof Error && (error as Error & { code?: string }).code === 'HQPLAYER_PROTOCOL_ERROR'
+        ? 'hqplayer_protocol_error'
+        : error instanceof Error && (error as Error & { code?: string }).code === 'HQPLAYER_RESPONSE_ERROR'
+          ? 'hqplayer_response_error'
+          : error instanceof Error
+            ? normalizeSocketReason(error as Error & { code?: string })
+            : 'hqplayer_connection_failed';
+    const response = typeof (error as { response?: unknown })?.response === 'string'
+      ? String((error as { response: string }).response)
+      : null;
+
+    return createSendResult({
+      state: 'failed',
+      reason,
+      endpoint,
+      command: 'Play',
+      startedAt,
+      message: error instanceof Error ? error.message : String(error),
+      response,
+    });
+  }
+};
+
+export const sendHqPlayerPauseCommand = async (
+  endpoint: HqPlayerEndpoint,
+  options: HqPlayerControlSendOptions = {},
+): Promise<HqPlayerPlaybackControlSendResult> => {
+  const timeoutMs = options.timeoutMs ?? hqPlayerControlSendTimeoutMs;
+  const startedAt = Date.now();
+
+  if (!endpoint.port) {
+    return createSendResult({
+      state: 'skipped',
+      reason: 'hqplayer_control_port_not_configured',
+      endpoint,
+      command: 'none',
+      startedAt,
+    });
+  }
+
+  try {
+    const response = await sendControlCommand(endpoint, 'Pause', buildPauseCommand(), timeoutMs);
+    return createSendResult({
+      state: 'sent',
+      reason: null,
+      endpoint,
+      command: 'Pause',
+      startedAt,
+      response: response.raw,
+    });
+  } catch (error) {
+    const reason =
+      error instanceof Error && (error as Error & { code?: string }).code === 'HQPLAYER_PROTOCOL_ERROR'
+        ? 'hqplayer_protocol_error'
+        : error instanceof Error && (error as Error & { code?: string }).code === 'HQPLAYER_RESPONSE_ERROR'
+          ? 'hqplayer_response_error'
+          : error instanceof Error
+            ? normalizeSocketReason(error as Error & { code?: string })
+            : 'hqplayer_connection_failed';
+    const response = typeof (error as { response?: unknown })?.response === 'string'
+      ? String((error as { response: string }).response)
+      : null;
+
+    return createSendResult({
+      state: 'failed',
+      reason,
+      endpoint,
+      command: 'Pause',
       startedAt,
       message: error instanceof Error ? error.message : String(error),
       response,
