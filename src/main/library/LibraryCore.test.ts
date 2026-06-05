@@ -775,6 +775,32 @@ describe('Library Core', () => {
     harness.cleanup();
   }, 20000);
 
+  it('adds new local playlist tracks to the top of manual order', async () => {
+    const harness = createHarness();
+    const firstPath = writeAudioFile(harness.folder, 'Top Insert A.flac');
+    const secondPath = writeAudioFile(harness.folder, 'Top Insert B.flac');
+    const thirdPath = writeAudioFile(harness.folder, 'Top Insert C.flac');
+    harness.metadataService.overrides.set(firstPath, baseMetadata({ title: 'First Pick' }));
+    harness.metadataService.overrides.set(secondPath, baseMetadata({ title: 'Second Pick' }));
+    harness.metadataService.overrides.set(thirdPath, baseMetadata({ title: 'Third Pick' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+    const tracks = harness.service.getTracks({ pageSize: 10, sort: 'titleAsc' }).items;
+    const byTitle = new Map(tracks.map((track) => [track.title, track.id]));
+    const playlist = harness.service.createPlaylist({ name: 'Top Inserts' });
+    harness.service.addTrackToPlaylist(playlist.id, byTitle.get('First Pick')!);
+    harness.service.addTracksToPlaylist(playlist.id, [byTitle.get('Second Pick')!, byTitle.get('Third Pick')!]);
+
+    expect(harness.service.getPlaylistItems(playlist.id, { pageSize: 10 }).items.map((item) => item.titleSnapshot)).toEqual([
+      'Second Pick',
+      'Third Pick',
+      'First Pick',
+    ]);
+
+    harness.cleanup();
+  }, 20000);
+
   it('orders playlist items by the saved playlist sort mode', async () => {
     const harness = createHarness();
     const bravoPath = writeAudioFile(harness.folder, 'Bravo.flac');
@@ -797,7 +823,7 @@ describe('Library Core', () => {
 
     const readTitles = () => harness.service.getPlaylistItems(playlist.id, { pageSize: 10 }).items.map((item) => item.titleSnapshot);
 
-    expect(readTitles()).toEqual(['Bravo', 'Alpha', 'Charlie']);
+    expect(readTitles()).toEqual(['Charlie', 'Alpha', 'Bravo']);
     harness.service.updatePlaylist({ playlistId: playlist.id, sortMode: 'titleAsc' });
     expect(readTitles()).toEqual(['Alpha', 'Bravo', 'Charlie']);
     harness.service.updatePlaylist({ playlistId: playlist.id, sortMode: 'titleDesc' });

@@ -193,6 +193,7 @@ export type AppSettings = {
   sidebarRouteOrder?: SidebarRouteId[];
   sidebarHiddenRouteIds?: SidebarRouteId[];
   sidebarAutoHideEnabled?: boolean;
+  sidebarIconOnlyEnabled?: boolean;
   songsSort?: LibrarySort;
   rememberedAudioOutput?: RememberedAudioOutput;
   hiddenAudioDeviceKeys?: string[];

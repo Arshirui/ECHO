@@ -873,7 +873,24 @@ describe('SettingsPage', () => {
     const row = screen.getByText('settings.general.sidebarAutoHide.title').closest('.setting-row') as HTMLElement;
     fireEvent.click(within(row).getByRole('button'));
 
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ sidebarAutoHideEnabled: true }));
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ sidebarAutoHideEnabled: true, sidebarIconOnlyEnabled: false }));
+  });
+
+  it('saves sidebar icon-only from the general settings toggle', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const nextSettings = { ...settings, sidebarIconOnlyEnabled: true };
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue(nextSettings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const row = screen.getByText('settings.general.sidebarIconOnly.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ sidebarIconOnlyEnabled: true, sidebarAutoHideEnabled: false }));
   });
 
   it('saves the bottom signal path control from general settings', async () => {
@@ -1008,13 +1025,15 @@ describe('SettingsPage', () => {
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.about\\.label');
     fireEvent.click(screen.getByRole('button', { name: /官方网站/ }));
+    fireEvent.click(screen.getByRole('button', { name: /使用文档/ }));
     fireEvent.click(screen.getByRole('button', { name: /百度网盘/ }));
     fireEvent.click(screen.getByRole('button', { name: /settings\.about\.updates\.action\.afdian/ }));
     fireEvent.click(screen.getByRole('button', { name: /settings\.about\.updates\.action\.history/ }));
     fireEvent.click(screen.getByRole('button', { name: /settings\.about\.updates\.action\.qq/ }));
     fireEvent.click(screen.getByRole('button', { name: /settings\.about\.updates\.action\.discord/ }));
 
-    expect(openExternalUrlMock).toHaveBeenCalledWith('https://echonagi.com');
+    expect(openExternalUrlMock).toHaveBeenCalledWith('https://echonext.moe');
+    expect(openExternalUrlMock).toHaveBeenCalledWith('https://echonext.moe/zh/docs/');
     expect(openExternalUrlMock).toHaveBeenCalledWith('https://pan.baidu.com/s/1ta0McyhY9knaD6FT5xW3Og?pwd=echo');
     await waitFor(() => expect(openExternalUrlMock).toHaveBeenCalledWith('https://afdian.com/a/echonext'));
     await waitFor(() => expect(openExternalUrlMock).toHaveBeenCalledWith('https://github.com/moekotori/echo/releases'));
@@ -1750,6 +1769,7 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.expand/ }));
     fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.action\.create/ }));
 
     await waitFor(() =>
@@ -1805,6 +1825,7 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.expand/ }));
     const pluginThemeButton = (await screen.findByText('Aurora Glass')).closest('button') as HTMLButtonElement;
     fireEvent.click(pluginThemeButton);
 
@@ -1843,6 +1864,8 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    expect(screen.getByLabelText('settings.appearance.themeCustom.field.accent').closest('[hidden]')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.expand/ }));
     const titlebarInput = screen.getByLabelText('settings.appearance.themeCustom.field.titlebar') as HTMLInputElement;
     expect(titlebarInput.closest('[hidden]')).toBeTruthy();
 
@@ -1881,6 +1904,7 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.expand/ }));
     fireEvent.click(screen.getByRole('button', { name: /Safe Theme/ }));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'nyanCat', appearanceThemeCustomId: 'theme-safe' }));

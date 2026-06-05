@@ -1276,7 +1276,7 @@ describe('LyricsSettingsDrawer', () => {
     window.removeEventListener('lyrics:display-settings-changed', displaySettingsChangedListener);
   });
 
-  it('shows the current track lyrics provider instead of enabled sources', async () => {
+  it('shows the current track lyrics title and provider instead of enabled sources', async () => {
     window.echo = {
       app: {
         getSettings: vi.fn().mockResolvedValue(makeSettings()),
@@ -1290,12 +1290,13 @@ describe('LyricsSettingsDrawer', () => {
         getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
       },
       lyrics: {
-        getForTrack: vi.fn().mockResolvedValue({ provider: 'netease' }),
+        getForTrack: vi.fn().mockResolvedValue({ provider: 'netease', title: 'Will He (Medasin Remix)' }),
       },
     } as unknown as Window['echo'];
 
     const { container } = render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
 
+    await waitFor(() => expect(screen.getByText('Will He (Medasin Remix)')).toBeTruthy());
     await waitFor(() => expect(screen.getAllByText('网易云音乐').length).toBeGreaterThan(0));
 
     expect(container.querySelector('.audio-engine-meter__badges')).toBeNull();

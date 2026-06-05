@@ -192,6 +192,27 @@ describe('RpcDiscordPresenceService', () => {
     expect(presenceTrack.artist).toBe('Local file');
   });
 
+  it('uses audio status metadata for streaming tracks missing from the library', () => {
+    const presenceTrack = createDiscordPresenceTrackFromStatus(
+      makeStatus({
+        currentFilePath: 'streaming:qqmusic:XOcGObhe56J+NHOS6vsC5aHIK...',
+        currentTrackId: 'streaming:qqmusic:0039MnYb0qxYhV',
+        currentTrackTitle: 'Streaming Song',
+        currentTrackArtist: 'Streaming Artist',
+        currentTrackAlbum: 'Streaming Album',
+        currentTrackAlbumArtist: 'Streaming Album Artist',
+      }),
+      () => null,
+    );
+
+    expect(presenceTrack).toMatchObject({
+      title: 'Streaming Song',
+      artist: 'Streaming Artist',
+      album: 'Streaming Album',
+      albumArtist: 'Streaming Album Artist',
+    });
+  });
+
   it('disabling clears activity', async () => {
     const harness = createService();
     const { service } = harness;

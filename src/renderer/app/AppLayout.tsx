@@ -125,7 +125,7 @@ type LyricsMiniPlayerSettings = Pick<
   | 'lyricsPlayerBarDrawerColor'
 >;
 
-type SidebarLayoutSettings = Pick<AppSettings, 'sidebarAutoHideEnabled' | 'sidebarHiddenRouteIds' | 'sidebarRouteOrder'>;
+type SidebarLayoutSettings = Pick<AppSettings, 'sidebarAutoHideEnabled' | 'sidebarHiddenRouteIds' | 'sidebarIconOnlyEnabled' | 'sidebarRouteOrder'>;
 
 const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appCustomWallpaperPath: null,
@@ -154,6 +154,7 @@ const defaultSidebarLayoutSettings: SidebarLayoutSettings = {
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
   sidebarHiddenRouteIds: [],
   sidebarAutoHideEnabled: false,
+  sidebarIconOnlyEnabled: false,
 };
 
 const downloadLibraryChangeDebounceMs = 250;
@@ -729,11 +730,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       const hasSidebarRouteOrder = Object.prototype.hasOwnProperty.call(settings, 'sidebarRouteOrder');
       const hasSidebarHiddenRouteIds = Object.prototype.hasOwnProperty.call(settings, 'sidebarHiddenRouteIds');
       const hasSidebarAutoHideEnabled = Object.prototype.hasOwnProperty.call(settings, 'sidebarAutoHideEnabled');
-      if (hasSidebarRouteOrder || hasSidebarHiddenRouteIds || hasSidebarAutoHideEnabled) {
+      const hasSidebarIconOnlyEnabled = Object.prototype.hasOwnProperty.call(settings, 'sidebarIconOnlyEnabled');
+      if (hasSidebarRouteOrder || hasSidebarHiddenRouteIds || hasSidebarAutoHideEnabled || hasSidebarIconOnlyEnabled) {
         setSidebarLayoutSettings((current) => ({
           sidebarRouteOrder: hasSidebarRouteOrder ? normalizeSidebarRouteOrder(settings.sidebarRouteOrder) : current.sidebarRouteOrder,
           sidebarHiddenRouteIds: hasSidebarHiddenRouteIds ? normalizeSidebarHiddenRouteIds(settings.sidebarHiddenRouteIds) : current.sidebarHiddenRouteIds,
           sidebarAutoHideEnabled: hasSidebarAutoHideEnabled ? settings.sidebarAutoHideEnabled === true : current.sidebarAutoHideEnabled,
+          sidebarIconOnlyEnabled: hasSidebarIconOnlyEnabled ? settings.sidebarIconOnlyEnabled === true : current.sidebarIconOnlyEnabled,
         }));
       }
     };
@@ -2087,6 +2090,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         shouldShowAppWallpaperVisual && isAppWallpaperReady ? 'app-shell--wallpaper-ready' : ''
       } ${
         sidebarLayoutSettings.sidebarAutoHideEnabled ? 'app-shell--sidebar-auto-hide' : ''
+      } ${
+        sidebarLayoutSettings.sidebarIconOnlyEnabled && !sidebarLayoutSettings.sidebarAutoHideEnabled ? 'app-shell--sidebar-icon-only' : ''
       }`}
       data-wallpaper-unified-opacity={shouldShowAppWallpaperVisual && isAppWallpaperReady && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled ? 'true' : undefined}
       data-wallpaper-visual-protection={
@@ -2161,6 +2166,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         <Sidebar
           routes={visibleRoutes}
           activeRouteId={activeRouteId}
+          iconOnly={sidebarLayoutSettings.sidebarIconOnlyEnabled && !sidebarLayoutSettings.sidebarAutoHideEnabled}
           onRouteChange={navigateRoute}
           onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
           onOpenLyricsSettings={() => setIsLyricsDrawerOpen(true)}

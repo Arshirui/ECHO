@@ -383,7 +383,8 @@ const defaultTidalRedirectUri = 'http://127.0.0.1:43880/tidal/callback';
 const spotifyDeveloperDashboardUrl = 'https://developer.spotify.com/dashboard';
 const tidalDeveloperDashboardUrl = 'https://developer.tidal.com/dashboard';
 const discogsDeveloperSettingsUrl = 'https://www.discogs.com/settings/developers';
-const officialWebsiteUrl = 'https://echonagi.com';
+const officialWebsiteUrl = 'https://echonext.moe';
+const userDocumentationUrl = 'https://echonext.moe/zh/docs/';
 const baiduPanShareUrl = 'https://pan.baidu.com/s/1ta0McyhY9knaD6FT5xW3Og?pwd=echo';
 const autoUpdateSourceOptions: Array<{ source: AutoUpdateSource; label: string; description: string }> = [
   { source: 'official', label: 'GitHub', description: '官方直连' },
@@ -4036,7 +4037,9 @@ export const SettingsPage = (): JSX.Element => {
   const [pluginThemeOptions, setPluginThemeOptions] = useState<PluginThemeOption[]>([]);
   const [themeCustomTone, setThemeCustomTone] = useState<ThemeTone>('light');
   const [themeCustomDraft, setThemeCustomDraft] = useState<AppThemeToneOverride>({});
+  const [themeCustomPanelOpen, setThemeCustomPanelOpen] = useState(false);
   const [themeCustomAdvancedOpen, setThemeCustomAdvancedOpen] = useState(false);
+  const [appearanceTypographyOpen, setAppearanceTypographyOpen] = useState(false);
   const [themeCustomMessage, setThemeCustomMessage] = useState<string | null>(null);
   const pendingThemeCopyDraftRef = useRef<{ draft: AppThemeToneOverride; tone: ThemeTone } | null>(null);
   const skipNextThemePreviewRef = useRef(false);
@@ -4261,6 +4264,24 @@ export const SettingsPage = (): JSX.Element => {
           'hide sidebar',
           'auto hide sidebar',
           'sidebar drawer',
+        ],
+      },
+      {
+        id: 'row-sidebar-icon-only',
+        sectionKey: 'general',
+        targetId: 'settings-row-sidebar-icon-only',
+        title: t('settings.general.sidebarIconOnly.title'),
+        description: t('settings.general.sidebarIconOnly.description'),
+        terms: [
+          t('settings.general.sidebarIconOnly.title'),
+          t('settings.general.sidebarIconOnly.description'),
+          '\u4fa7\u680f\u4ec5\u663e\u793a\u56fe\u6807',
+          '\u53ea\u663e\u793a\u56fe\u6807',
+          '\u56fe\u6807\u4fa7\u680f',
+          'sidebar',
+          'icons only',
+          'icon only sidebar',
+          'compact sidebar',
         ],
       },
       {
@@ -10070,6 +10091,24 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() =>
                     patchAppSettings({
                       sidebarAutoHideEnabled: !(appSettings?.sidebarAutoHideEnabled ?? false),
+                      sidebarIconOnlyEnabled: appSettings?.sidebarAutoHideEnabled === true ? (appSettings?.sidebarIconOnlyEnabled ?? false) : false,
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-sidebar-icon-only"
+                highlighted={highlightedSettingId === 'settings-row-sidebar-icon-only'}
+                title={t('settings.general.sidebarIconOnly.title')}
+                description={t('settings.general.sidebarIconOnly.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.sidebarIconOnlyEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      sidebarIconOnlyEnabled: !(appSettings?.sidebarIconOnlyEnabled ?? false),
+                      sidebarAutoHideEnabled: appSettings?.sidebarIconOnlyEnabled === true ? (appSettings?.sidebarAutoHideEnabled ?? false) : false,
                     })
                   }
                 />
@@ -10551,7 +10590,7 @@ export const SettingsPage = (): JSX.Element => {
                 />
               </SettingRow>
               <SettingRow
-                className="setting-row--full setting-row--compact-panel"
+                className={`setting-row--full setting-row--compact-panel setting-row--playback-advanced${playbackAdvancedPanelExpanded ? ' is-expanded' : ''}`}
                 title={t('settings.playback.advancedPanel.title')}
                 description={t('settings.playback.advancedPanel.description')}
               >
@@ -10569,7 +10608,7 @@ export const SettingsPage = (): JSX.Element => {
                 </button>
               </SettingRow>
               {playbackAdvancedPanelExpanded ? (
-                <>
+                <div className="settings-expanded-panel settings-expanded-panel--playback">
               <SettingRow title={t('settings.playback.troubleshooting.title')} description={t('settings.playback.troubleshooting.description')}>
                 <div className="settings-chip-row">
                   <button
@@ -11057,7 +11096,7 @@ export const SettingsPage = (): JSX.Element => {
                 )}
               </SettingRow>
               <PlaybackStabilityDiagnosticsPanel />
-                </>
+                </div>
               ) : null}
             </SettingSection>
 
@@ -11369,9 +11408,9 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('settings.integrations.networkProxy.title')}
                 description={t('settings.integrations.networkProxy.description')}
               >
-                <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--network-proxy">
+                <div className={`settings-cache-panel settings-cache-panel--bare settings-cache-panel--network-proxy settings-cache-panel--network-proxy-${networkProxyDraft.mode}`}>
                   <div className="settings-proxy-grid">
-                    <label className="settings-proxy-field">
+                    <label className="settings-proxy-field settings-proxy-field--mode">
                       <span>{t('settings.integrations.networkProxy.mode')}</span>
                       <StyledSelect
                         className="settings-select-control"
@@ -11386,7 +11425,7 @@ export const SettingsPage = (): JSX.Element => {
                         showFilterIcon={false}
                       />
                     </label>
-                    <label className="settings-proxy-field">
+                    <label className={`settings-proxy-field settings-proxy-field--manual${networkProxyDraft.mode === 'manual' ? ' is-active' : ''}`}>
                       <span>{t('settings.integrations.networkProxy.manualUrl')}</span>
                       <input
                         type="text"
@@ -11399,7 +11438,7 @@ export const SettingsPage = (): JSX.Element => {
                         }}
                       />
                     </label>
-                    <label className="settings-proxy-field">
+                    <label className={`settings-proxy-field settings-proxy-field--pac${networkProxyDraft.mode === 'pac' ? ' is-active' : ''}`}>
                       <span>{t('settings.integrations.networkProxy.pacUrl')}</span>
                       <input
                         type="text"
@@ -11412,7 +11451,7 @@ export const SettingsPage = (): JSX.Element => {
                         }}
                       />
                     </label>
-                    <label className="settings-proxy-field settings-proxy-field--wide">
+                    <label className="settings-proxy-field settings-proxy-field--wide settings-proxy-field--bypass">
                       <span>{t('settings.integrations.networkProxy.bypass')}</span>
                       <input
                         type="text"
@@ -11425,19 +11464,21 @@ export const SettingsPage = (): JSX.Element => {
                       />
                     </label>
                   </div>
-                  <div className="settings-chip-row settings-chip-row--left">
-                    <button className="settings-action-button" type="button" disabled={!appSettings || networkProxyBusy !== null} onClick={handleNetworkProxySave}>
-                      <Save size={15} />
-                      {networkProxyBusy === 'save' ? t('settings.integrations.networkProxy.saveBusy') : t('settings.integrations.networkProxy.save')}
-                    </button>
-                    <button className="settings-action-button" type="button" disabled={!appSettings || networkProxyBusy !== null} onClick={handleNetworkProxyTest}>
-                      <RotateCw size={15} />
-                      {networkProxyBusy === 'test' ? t('settings.integrations.networkProxy.testBusy') : t('settings.integrations.networkProxy.test')}
-                    </button>
-                  </div>
-                  <p className="settings-inline-note">
+                  <p className="settings-inline-note settings-proxy-note">
                     {t('settings.integrations.networkProxy.note')}
                   </p>
+                  <div className="settings-proxy-footer">
+                    <div className="settings-chip-row settings-chip-row--left settings-proxy-actions">
+                      <button className="settings-action-button" type="button" disabled={!appSettings || networkProxyBusy !== null} onClick={handleNetworkProxySave}>
+                        <Save size={15} />
+                        {networkProxyBusy === 'save' ? t('settings.integrations.networkProxy.saveBusy') : t('settings.integrations.networkProxy.save')}
+                      </button>
+                      <button className="settings-action-button" type="button" disabled={!appSettings || networkProxyBusy !== null} onClick={handleNetworkProxyTest}>
+                        <RotateCw size={15} />
+                        {networkProxyBusy === 'test' ? t('settings.integrations.networkProxy.testBusy') : t('settings.integrations.networkProxy.test')}
+                      </button>
+                    </div>
+                  </div>
                   {networkProxyTestResult ? (
                     <p className={`settings-inline-note settings-proxy-result ${networkProxyTestResult.ok ? 'is-ok' : 'is-error'}`}>
                       {networkProxyTestResult.message}
@@ -12267,7 +12308,7 @@ export const SettingsPage = (): JSX.Element => {
                     <ChevronDown size={16} />
                   </button>
                   {themePresetsExpanded ? (
-                    <div className="settings-theme-preset-grid">
+                    <div className="settings-theme-preset-grid settings-expandable-content">
                       {visibleThemePresetOptions.map((option) => {
                         const activePreset = selectedThemePreset;
                         const isActive = activePreset === option.preset;
@@ -12335,6 +12376,17 @@ export const SettingsPage = (): JSX.Element => {
                     </div>
                   </div>
 
+                  <button
+                    aria-expanded={themeCustomPanelOpen}
+                    className="settings-theme-custom-advanced-toggle"
+                    type="button"
+                    onClick={() => setThemeCustomPanelOpen((current) => !current)}
+                  >
+                    <ChevronDown size={15} />
+                    {themeCustomPanelOpen ? t('settings.appearance.themeCustom.collapse') : t('settings.appearance.themeCustom.expand')}
+                  </button>
+
+                  <div className="settings-expandable-content" hidden={!themeCustomPanelOpen}>
                   <div className="settings-theme-custom-section settings-theme-custom-library">
                     <div className="settings-theme-custom-section-title">
                       <strong>{t('settings.appearance.themeCustom.myThemes.title')}</strong>
@@ -12687,6 +12739,7 @@ export const SettingsPage = (): JSX.Element => {
                       {t('settings.appearance.themeCustom.action.reset')}
                     </button>
                   </div>
+                  </div>
                 </div>
               </SettingRow>
               <SettingRow title={t('settings.appearance.density.title')} description={t('settings.appearance.density.description')}>
@@ -12850,6 +12903,16 @@ export const SettingsPage = (): JSX.Element => {
                   </div>
                 )}
               </SettingRow>
+              <button
+                aria-expanded={appearanceTypographyOpen}
+                className="settings-theme-custom-advanced-toggle"
+                type="button"
+                onClick={() => setAppearanceTypographyOpen((current) => !current)}
+              >
+                <ChevronDown size={15} />
+                {appearanceTypographyOpen ? t('settings.appearance.typography.collapse') : t('settings.appearance.typography.expand')}
+              </button>
+              <div className="settings-expandable-content settings-expandable-content--typography" hidden={!appearanceTypographyOpen}>
               <SettingRow title={t('settings.appearance.font.main.title')} description={t('settings.appearance.font.main.description')}>
                 <button className="settings-font-picker-button" type="button" onClick={() => handleFontPickerOpen('main')}>
                   <span style={{ fontFamily: `"${appearancePreferences.mainFontFamily}", var(--echo-font-family)` }}>{appearancePreferences.mainFontFamily}</span>
@@ -12902,6 +12965,7 @@ export const SettingsPage = (): JSX.Element => {
                   onChange={(textDepth) => handleAppearanceChange({ ...appearancePreferences, textDepth })}
                 />
               </SettingRow>
+              </div>
               <SettingRow
                 id="settings-row-album-cover-shape"
                 highlighted={highlightedSettingId === 'settings-row-album-cover-shape'}
@@ -13684,6 +13748,14 @@ export const SettingsPage = (): JSX.Element => {
                     >
                       <Globe2 size={15} />
                       官方网站
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      onClick={() => void handleOpenExternalUrl(userDocumentationUrl)}
+                    >
+                      <ExternalLink size={15} />
+                      使用文档
                     </button>
                     <button
                       className="settings-action-button"

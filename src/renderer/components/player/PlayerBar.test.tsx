@@ -3,9 +3,10 @@ import { useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AudioStatus } from '../../../shared/types/audio';
-import type { ConnectSessionStatus } from '../../../shared/types/connect';
+import { hqPlayerConnectDeviceId, type ConnectSessionStatus } from '../../../shared/types/connect';
 import type { EqState } from '../../../shared/types/eq';
 import { createDefaultGlobalShortcuts, createDefaultLocalShortcuts, type GlobalShortcutAction } from '../../../shared/types/globalShortcuts';
+import type { HqPlayerStatus } from '../../../shared/types/hqplayer';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type { SmtcCommand } from '../../../shared/types/smtc';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
@@ -112,6 +113,26 @@ const dlnaConnectStatus = (track: LibraryTrack, state: ConnectSessionStatus['sta
   latencyMs: 86,
   error: null,
   updatedAt: '2026-05-27T07:30:00.000Z',
+});
+
+const hqPlayerConnectStatus = (track: LibraryTrack, state: ConnectSessionStatus['state'] = 'playing'): ConnectSessionStatus => ({
+  deviceId: hqPlayerConnectDeviceId,
+  protocol: 'hqplayer',
+  state,
+  currentTrackId: track.id,
+  metadata: {
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    albumArtist: track.albumArtist,
+    durationSeconds: track.duration,
+    coverHttpUrl: '',
+  },
+  positionSeconds: 12,
+  durationSeconds: track.duration,
+  latencyMs: 42,
+  error: null,
+  updatedAt: '2026-06-05T08:00:00.000Z',
 });
 
 const subscribeAudioStatusHandlers = (handlers: Array<(status: AudioStatus) => void>) => (handler: (status: AudioStatus) => void): (() => void) => {
@@ -319,6 +340,136 @@ describe('PlayerBar', () => {
     expect(dialog.textContent).toContain('数据源');
     expect(dialog.textContent).toContain('FLAC 96kHz 24bit');
     expect(dialog.textContent).toContain('输出');
+  });
+
+  it('opens the bottom signal path popover with the active HQPlayer chain', async () => {
+    const track = makeTrack(37, { title: 'HQPlayer Signal Track', codec: 'flac', sampleRate: 44100, bitDepth: 16 });
+    const connectStatus = hqPlayerConnectStatus(track, 'playing');
+    const hqStatus: HqPlayerStatus = {
+      enabled: true,
+      state: 'available',
+      endpoint: {
+        connectionMode: 'localDesktop',
+        host: '127.0.0.1',
+        port: 4321,
+      },
+      mediaServerEnabled: false,
+      defaultPlaybackBackend: 'hqplayer',
+      profileName: 'SDM',
+      lastCheckedAt: '2026-06-05T08:00:00.000Z',
+      lastError: null,
+      controlInfo: {
+        name: 'Local HQPlayer',
+        product: 'HQPlayer Desktop',
+        version: '5.17.2',
+        platform: 'Windows',
+        engine: '5.29.2',
+        receivedAt: '2026-06-05T08:00:00.000Z',
+      },
+      playbackStatus: {
+        state: 'playing',
+        stateCode: 1,
+        track: 1,
+        trackId: track.id,
+        tracksTotal: 1,
+        queued: false,
+        positionSeconds: 12,
+        durationSeconds: track.duration,
+        volume: null,
+        activeMode: 'SDM',
+        activeFilter: 'sinc-long',
+        activeShaper: 'ASDM7EC-super',
+        activeRate: 384000,
+        activeBits: 32,
+        activeChannels: 2,
+        inputFill: null,
+        outputFill: null,
+        outputDelayUs: null,
+        apodizing: null,
+        metadata: {
+          uri: track.path,
+          mime: 'audio/flac',
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          albumArtist: track.albumArtist,
+          composer: null,
+          performer: null,
+          genre: null,
+          date: null,
+          sampleRate: 44100,
+          bits: 16,
+          channels: 2,
+          bitrate: track.bitrate,
+        },
+        receivedAt: '2026-06-05T08:00:00.000Z',
+      },
+    };
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'paused',
+          currentTrackId: track.id,
+          positionMs: 12000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(connectStatus),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        onStatus: vi.fn(() => vi.fn()),
+      },
+      hqPlayer: {
+        getStatus: vi.fn().mockResolvedValue(hqStatus),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({
+          ...audioStatus(track),
+          state: 'idle',
+          currentTrackId: null,
+          currentFilePath: null,
+        }),
+        onStatus: vi.fn(() => vi.fn()),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(track),
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed showSignalPathControl={true} tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('HQPlayer Signal Track');
+    const signalPathButton = await screen.findByRole('button', { name: /HQPlayer/u });
+    fireEvent.click(signalPathButton);
+
+    const dialog = await screen.findByRole('dialog', { name: '信号路径' });
+    expect(dialog.textContent).toContain('信号路径: HQPlayer');
+    expect(dialog.textContent).toContain('FLAC 44.1kHz 16bit 2ch');
+    await waitFor(() => expect(dialog.textContent).toContain('HQPlayer Desktop'));
+    expect(dialog.textContent).toContain('SDM / sinc-long / ASDM7EC-super');
+    expect(dialog.textContent).toContain('HQPlayer 输出 / 384kHz / 32bit / 2ch');
+    expect(dialog.textContent).not.toContain('等待信号');
   });
 
   it('shows enhanced signal path nodes when EQ is enabled', () => {

@@ -389,7 +389,12 @@ const streamingLyricsToState = (
 };
 
 const dispatchCurrentLyricsProviderChanged = (lyrics: TrackLyrics | null): void => {
-  window.dispatchEvent(new CustomEvent("lyrics:current-provider-changed", { detail: { provider: lyrics?.provider ?? null } }));
+  window.dispatchEvent(new CustomEvent("lyrics:current-provider-changed", {
+    detail: {
+      provider: lyrics?.provider ?? null,
+      title: lyrics?.title ?? null,
+    },
+  }));
 };
 
 const dispatchPlaybackSeeked = (positionSeconds: number, trackId: string | null): void => {

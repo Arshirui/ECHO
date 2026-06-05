@@ -585,6 +585,7 @@ export const PlayerBar = ({
   const updateTrackSnapshot = queue.updateTrackSnapshot;
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus | null>(null);
+  const [connectStatus, setConnectStatus] = useState<ConnectSessionStatus | null>(null);
   const [receiverStatus, setReceiverStatus] = useState<ConnectReceiverStatus | null>(null);
   const [airPlayReceiverStatus, setAirPlayReceiverStatus] = useState<AirPlayReceiverStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1877,6 +1878,26 @@ export const PlayerBar = ({
   useEffect(() => {
     let disposed = false;
     const connect = window.echo?.connect;
+    const connectStatusPromise = connect?.getStatus?.();
+    void connectStatusPromise?.then((status) => {
+      if (!disposed) {
+        setConnectStatus(isActiveConnectPlaybackStatus(status) ? status : null);
+      }
+    }).catch(() => undefined);
+
+    const unsubscribeConnectStatus = connect?.onStatus?.((status) => {
+      setConnectStatus(isActiveConnectPlaybackStatus(status) ? status : null);
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribeConnectStatus?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    const connect = window.echo?.connect;
     const receiverStatusPromise = connect?.getReceiverStatus?.();
     void receiverStatusPromise?.then((status) => {
       if (!disposed) {
@@ -2416,12 +2437,14 @@ export const PlayerBar = ({
                 isOpen={openPopover === 'signal'}
                 status={audioStatus}
                 track={currentTrack}
+                connectStatus={connectStatus}
                 onClick={() => setOpenPopover((current) => current === 'signal' ? null : 'signal')}
               />
               <AudioSignalPathPopover
                 isOpen={openPopover === 'signal'}
                 status={audioStatus}
                 track={currentTrack}
+                connectStatus={connectStatus}
                 onClose={() => setOpenPopover(null)}
                 onOpenAudioSettings={onOpenAudioSettings}
               />

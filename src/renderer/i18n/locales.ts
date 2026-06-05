@@ -1900,6 +1900,8 @@ export type TranslationKey =
   | 'settings.appearance.reset.title'
   | 'settings.appearance.textDepth.description'
   | 'settings.appearance.textDepth.title'
+  | 'settings.appearance.typography.collapse'
+  | 'settings.appearance.typography.expand'
   | 'settings.appearance.wallpaper.blur'
   | 'settings.appearance.wallpaper.brightness'
   | 'settings.appearance.wallpaper.choose'
@@ -2264,6 +2266,8 @@ export type TranslationKey =
   | 'settings.general.searchTraditionalVariants.title'
   | 'settings.general.sidebarAutoHide.description'
   | 'settings.general.sidebarAutoHide.title'
+  | 'settings.general.sidebarIconOnly.description'
+  | 'settings.general.sidebarIconOnly.title'
   | 'settings.header.searchPlaceholder'
   | 'settings.integrations.discord.description'
   | 'settings.integrations.discord.action.refresh'
@@ -5003,7 +5007,7 @@ const zhCN: TranslationMap = {
   'settings.appearance.font.chinese.title': '中文字体',
   'settings.appearance.font.fallback.description': '界面字体的第三组备用，优先级最低，用于继续补齐缺失字符。',
   'settings.appearance.font.fallback.title': '备用字体',
-  'settings.appearance.font.main.description': 'ECHO 默认使用内置 Monocraft 与站酷快乐体；也可以输入任意已安装字体名称。',
+  'settings.appearance.font.main.description': 'ECHO 默认使用 Outfit、Microsoft YaHei 与 Noto Sans SC；也可以输入任意已安装字体名称。',
   'settings.appearance.font.main.title': '主字体',
   'settings.appearance.fontSize.description': '调整全局界面的基础字号。',
   'settings.appearance.fontSize.title': '基础字号',
@@ -5012,7 +5016,7 @@ const zhCN: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.title': '播放界面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '开启后，正在播放页会在空闲时从小封面抽样生成轻量背景；低负载模式会自动跳过。默认关闭。',
   'settings.appearance.reset.action': '恢复默认',
-  'settings.appearance.reset.description': '恢复 Monocraft、站酷快乐体、字号、行距、文字深浅与圆角封面。',
+  'settings.appearance.reset.description': '恢复 Outfit、Microsoft YaHei、Noto Sans SC、字号、行距、文字深浅与圆角封面。',
   'settings.appearance.reset.title': '外观默认值',
   'settings.appearance.sidebar.title': '左侧栏',
   'settings.appearance.sidebar.description': '调整左侧入口的顺序和显示状态，不会改动页面或播放链路。',
@@ -5036,6 +5040,8 @@ const zhCN: TranslationMap = {
   'settings.appearance.sidebar.showAria': '显示 {label}',
   'settings.appearance.textDepth.description': '调整界面文字颜色深浅；数值越低越浅。',
   'settings.appearance.textDepth.title': '文字颜色深浅',
+  'settings.appearance.typography.expand': '展开字体与排版',
+  'settings.appearance.typography.collapse': '收起字体与排版',
   'settings.appearance.wallpaper.title': '自定义背景',
   'settings.appearance.wallpaper.description': '横屏与竖屏背景独立保存；竖屏窗口只会应用竖屏背景。支持图片和本地视频。',
   'settings.appearance.wallpaper.choose': '选择横屏背景',
@@ -5364,6 +5370,8 @@ const zhCN: TranslationMap = {
   'settings.general.closeToTray': '关闭时隐藏到托盘',
   'settings.general.sidebarAutoHide.title': '隐藏侧栏',
   'settings.general.sidebarAutoHide.description': '开启后左侧栏会收进屏幕边缘；鼠标移到左边缘时自动抽出。默认关闭。',
+  'settings.general.sidebarIconOnly.title': '侧栏仅显示图标',
+  'settings.general.sidebarIconOnly.description': '开启后左侧栏保持显示，但导航入口只显示图标；悬停仍可查看名称。默认关闭。',
   'settings.general.fastStartup.description': '开启后，启动时只做轻量只读曲库验证；完整数据保护快照会在窗口打开后后台完成。默认关闭。',
   'settings.general.fastStartup.title': '快速启动',
   'settings.general.firstRunWizard.description': '打开后会重新显示第一次启动时的向导，可选择标准输出（系统音频）、WASAPI、Exclusive 或 ASIO；完成或跳过后会自动关闭这个开关。',
@@ -8455,6 +8463,8 @@ const zhTW: TranslationMap = {
   'settings.general.closeToTray': '關閉時隱藏到系統匣',
   'settings.general.sidebarAutoHide.title': '隱藏側邊欄',
   'settings.general.sidebarAutoHide.description': '開啟後側邊欄會收進螢幕邊緣；滑鼠移到左側邊緣時自動抽出。預設關閉。',
+  'settings.general.sidebarIconOnly.title': '側邊欄僅顯示圖示',
+  'settings.general.sidebarIconOnly.description': '開啟後側邊欄保持顯示，但導覽入口只顯示圖示；懸停仍可查看名稱。預設關閉。',
   'settings.general.fastStartup.description': '開啟後，啟動時只做輕量唯讀曲庫驗證；完整資料保護快照會在視窗開啟後於背景完成。預設關閉。',
   'settings.general.fastStartup.title': '快速啟動',
   'settings.general.firstRunWizard.description': '開啟後會重新顯示第一次啟動時的向導，可選擇標準輸出（系統音訊）、WASAPI、Exclusive 或 ASIO；完成或略過後會自動關閉這個開關。',
@@ -11359,6 +11369,8 @@ const jaJP: TranslationMap = {
   'settings.general.closeToTray': '閉じる時にトレイへ隠す',
   'settings.general.sidebarAutoHide.title': 'サイドバーを隠す',
   'settings.general.sidebarAutoHide.description': '有効にするとサイドバーを画面端に収納し、マウスを左端へ移動したときに自動で引き出します。既定ではオフです。',
+  'settings.general.sidebarIconOnly.title': 'サイドバーをアイコンのみ表示',
+  'settings.general.sidebarIconOnly.description': '有効にするとサイドバーは表示したまま、ナビゲーション項目はアイコンだけになります。ホバーで名前を確認できます。既定ではオフです。',
   'settings.general.fastStartup.description': '有効にすると、起動時は軽量な読み取り専用のライブラリ確認だけを行い、完全なデータ保護スナップショットはウィンドウ表示後にバックグラウンドで完了します。既定ではオフです。',
   'settings.general.fastStartup.title': '高速起動',
   'settings.general.firstRunWizard.description': '有効にすると初回起動時のガイドをもう一度表示し、標準出力（システムオーディオ）、WASAPI、Exclusive、ASIO を選べます。完了またはスキップ後、このスイッチは自動でオフになります。',
@@ -14362,6 +14374,8 @@ const enUS: TranslationMap = {
   'settings.general.closeToTray': 'Hide to tray on close',
   'settings.general.sidebarAutoHide.title': 'Hide Sidebar',
   'settings.general.sidebarAutoHide.description': 'Tuck the left sidebar into the screen edge, then slide it out when the pointer reaches the left edge. Off by default.',
+  'settings.general.sidebarIconOnly.title': 'Sidebar Icons Only',
+  'settings.general.sidebarIconOnly.description': 'Keep the left sidebar visible, but show navigation entries as icons only. Hover still shows each name. Off by default.',
   'settings.general.fastStartup.description': 'When enabled, startup only runs a lightweight read-only library check; the full data protection snapshot finishes in the background after the window opens. Off by default.',
   'settings.general.fastStartup.title': 'Fast Startup',
   'settings.general.firstRunWizard.description': 'Show the first-run guide again after opening. You can choose Standard Output (system audio), WASAPI, Exclusive, or ASIO; this switch turns off automatically after finishing or skipping.',
@@ -15018,17 +15032,19 @@ const enUS: TranslationMap = {
   'settings.appearance.font.chinese.title': 'Chinese Font',
   'settings.appearance.font.fallback.description': 'The third and lowest-priority interface font group, used to continue filling missing glyphs.',
   'settings.appearance.font.fallback.title': 'Fallback Font',
-  'settings.appearance.font.main.description': 'ECHO uses bundled Monocraft and ZCOOL Happy by default. You can enter any installed font family.',
+  'settings.appearance.font.main.description': 'ECHO uses Outfit, Microsoft YaHei, and Noto Sans SC by default. You can enter any installed font family.',
   'settings.appearance.font.main.title': 'Main Font',
   'settings.appearance.fontSize.description': 'Adjust the base size used by the interface.',
   'settings.appearance.fontSize.title': 'Base Font Size',
   'settings.appearance.lineHeight.description': 'Adjust default UI text spacing for denser or airier reading.',
   'settings.appearance.lineHeight.title': 'Interface Line Height',
   'settings.appearance.reset.action': 'Reset',
-  'settings.appearance.reset.description': 'Restore Monocraft, ZCOOL Happy, base size, line height, text depth, and rounded covers.',
+  'settings.appearance.reset.description': 'Restore Outfit, Microsoft YaHei, Noto Sans SC, base size, line height, text depth, and rounded covers.',
   'settings.appearance.reset.title': 'Appearance Defaults',
   'settings.appearance.textDepth.description': 'Adjust interface text darkness. Lower values make text lighter.',
   'settings.appearance.textDepth.title': 'Text Depth',
+  'settings.appearance.typography.expand': 'Expand Fonts and Typography',
+  'settings.appearance.typography.collapse': 'Collapse Fonts and Typography',
   'settings.devices.title': 'Device List',
   'settings.devices.empty': 'echo-audio-host has not returned output devices yet.',
   'settings.about.devMode.title': 'Developer Mode',

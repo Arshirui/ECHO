@@ -95,16 +95,19 @@ export const createDiscordPresenceTrackFromStatus = (
     : null;
 
   const fileTitle = status.currentFilePath ? basename(status.currentFilePath) : 'ECHO Next';
-  const title = safeText(track?.title, fileTitle);
-  const artist = safeText(track?.artist || track?.albumArtist, status.currentFilePath ? 'Local file' : 'ECHO Next');
+  const title = safeText(status.currentTrackTitle || track?.title, fileTitle);
+  const artist = safeText(
+    status.currentTrackArtist || track?.artist || status.currentTrackAlbumArtist || track?.albumArtist,
+    status.currentFilePath ? 'Local file' : 'ECHO Next',
+  );
   const durationSeconds = safeNumber(status.durationSeconds || track?.duration);
 
   return {
     trackId: status.currentTrackId,
     title,
     artist,
-    album: track?.album?.trim() || null,
-    albumArtist: track?.albumArtist?.trim() || null,
+    album: status.currentTrackAlbum?.trim() || track?.album?.trim() || null,
+    albumArtist: status.currentTrackAlbumArtist?.trim() || track?.albumArtist?.trim() || null,
     durationSeconds,
     positionSeconds: Math.min(safeNumber(status.positionSeconds), durationSeconds || Number.POSITIVE_INFINITY),
     codec: status.codec || track?.codec || null,

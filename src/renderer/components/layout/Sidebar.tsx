@@ -9,6 +9,7 @@ type SidebarProps = {
   onOpenLyricsSettings: () => void;
   onImportFolder: () => void;
   onImportFile: () => void;
+  iconOnly?: boolean;
 };
 
 const renderNavIcon = (Icon: AppRoute['icon'], size: number): JSX.Element => (
@@ -25,6 +26,7 @@ export const Sidebar = ({
   onOpenLyricsSettings,
   onImportFolder,
   onImportFile,
+  iconOnly = false,
 }: SidebarProps): JSX.Element => {
   const { t } = useI18n();
   const visibleRoutes = routes.filter((route) => !route.hideFromSidebar);
@@ -55,7 +57,7 @@ export const Sidebar = ({
   };
 
   return (
-    <aside className="sidebar" aria-label={t('app.navigation.main')}>
+    <aside className="sidebar" aria-label={t('app.navigation.main')} data-icon-only={iconOnly ? 'true' : undefined}>
       <nav className="nav-list">
         {mainRoutes.map((route) => {
           const Icon = route.icon;
@@ -70,6 +72,7 @@ export const Sidebar = ({
               onClick={() => onRouteChange(route.id)}
               type="button"
               title={label}
+              aria-label={label}
             >
               {renderNavIcon(Icon, 21)}
               <span className="nav-item-label">{label}</span>

@@ -866,6 +866,29 @@ describe('AppLayout standalone routes', () => {
     await waitFor(() => expect(container.querySelector('.app-shell--sidebar-auto-hide')).toBeTruthy());
   });
 
+  it('applies saved sidebar icon-only from settings', async () => {
+    window.localStorage.clear();
+    const getSettings = vi.fn().mockResolvedValue({
+      sidebarIconOnlyEnabled: true,
+    });
+    window.echo = {
+      app: {
+        getSettings,
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routesWithHome} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('.app-shell--sidebar-icon-only')).toBeTruthy();
+      expect(container.querySelector('.sidebar')?.getAttribute('data-icon-only')).toBe('true');
+    });
+  });
+
   it('notifies the library views when a download is imported', async () => {
     let jobsUpdated: ((jobs: Array<{ id: string; importedTrackId: string | null }>) => void) | null = null;
     const unsubscribeDownloads = vi.fn();

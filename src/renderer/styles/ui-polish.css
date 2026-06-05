@@ -142,6 +142,35 @@
   min-height: 14px;
 }
 
+@media (min-width: 981px) {
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) {
+    grid-template-columns: var(--sidebar-icon-only-width) minmax(0, 1fr);
+  }
+
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) .app-titlebar {
+    grid-template-columns: var(--sidebar-icon-only-width) minmax(0, 1fr) auto;
+  }
+
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) .sidebar {
+    padding-inline: 10px;
+  }
+
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) .nav-item {
+    width: 100%;
+    grid-template-columns: 1fr;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) .nav-icon-shell {
+    justify-self: center;
+  }
+
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) .nav-item-label {
+    display: none;
+  }
+}
+
 html[data-theme="dark"] .sidebar {
   background:
     linear-gradient(180deg, rgba(19, 25, 33, 0.96), rgba(14, 19, 26, 0.94) 58%, rgba(10, 14, 20, 0.97)),

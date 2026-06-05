@@ -88,6 +88,7 @@ describe('app settings normalization', () => {
     expect(settings.autoDataBackupLastPath).toBeNull();
     expect(settings.autoDataBackupLastError).toBeNull();
     expect(settings.sidebarAutoHideEnabled).toBe(false);
+    expect(settings.sidebarIconOnlyEnabled).toBe(false);
     expect(settings.rememberWindowSizeEnabled).toBe(true);
     expect(settings.rememberedWindowSize).toBeNull();
     expect(settings.appCustomWallpaperPath).toBeNull();
@@ -785,6 +786,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({}).sidebarAutoHideEnabled).toBe(false);
     expect(normalizeSettings({ sidebarAutoHideEnabled: true }).sidebarAutoHideEnabled).toBe(true);
     expect(normalizeSettings({ sidebarAutoHideEnabled: 'true' as never }).sidebarAutoHideEnabled).toBe(false);
+  });
+
+  it('normalizes sidebar icon-only as a visible-sidebar opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).sidebarIconOnlyEnabled).toBe(false);
+    expect(normalizeSettings({ sidebarIconOnlyEnabled: true }).sidebarIconOnlyEnabled).toBe(true);
+    expect(normalizeSettings({ sidebarIconOnlyEnabled: 'true' as never }).sidebarIconOnlyEnabled).toBe(false);
+    expect(normalizeSettings({ sidebarAutoHideEnabled: true, sidebarIconOnlyEnabled: true }).sidebarIconOnlyEnabled).toBe(false);
   });
 
   it('normalizes app wallpaper settings without accepting unsafe paths', async () => {

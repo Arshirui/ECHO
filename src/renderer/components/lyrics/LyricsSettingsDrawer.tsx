@@ -229,6 +229,14 @@ const providerLabelFor = (
   t: (key: TranslationKey, options?: Record<string, string | number>) => string = translateFallback,
 ): string => t(provider ? lyricsProviderLabelKeys[provider] : 'lyricsSettings.provider.none');
 
+const lyricsTitleLabelFor = (
+  lyrics: Pick<TrackLyrics, 'title'> | null | undefined,
+  fallback: string,
+): string => {
+  const title = lyrics?.title?.trim();
+  return title && title.length > 0 ? title : fallback;
+};
+
 const dispatchSettingsChanged = (patch?: Partial<AppSettings> | Partial<MvSettings>): void => {
   window.dispatchEvent(patch ? new CustomEvent('settings:changed', { detail: patch }) : new Event('settings:changed'));
 };
@@ -644,6 +652,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [currentLyricsProviderLabel, setCurrentLyricsProviderLabel] = useState(providerLabelFor(null, t));
+  const [currentLyricsTitleLabel, setCurrentLyricsTitleLabel] = useState(providerLabelFor(null, t));
   const [draggingSourceId, setDraggingSourceId] = useState<LyricsProviderId | null>(null);
   const [isLyricsDisplayPanelOpen, setIsLyricsDisplayPanelOpen] = useState(readLyricsDisplayPanelOpen);
   const [isLyricsStyleControlsOpen, setIsLyricsStyleControlsOpen] = useState(readLyricsStyleControlsOpen);
@@ -901,6 +910,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     const lyrics = window.echo?.lyrics;
     if (!lyrics || (!playback && !audio)) {
       setCurrentLyricsProviderLabel(providerLabelFor(null, t));
+      setCurrentLyricsTitleLabel(providerLabelFor(null, t));
       return;
     }
 
@@ -912,15 +922,18 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       const trackId = playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
       if (!trackId) {
         setCurrentLyricsProviderLabel(t('lyricsSettings.status.noPlayingTrack'));
+        setCurrentLyricsTitleLabel(t('lyricsSettings.status.noPlayingTrack'));
         setCurrentLyricsKind(null);
         return;
       }
 
       const trackLyrics = await lyrics.getForTrack(trackId);
       setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics?.provider, t));
+      setCurrentLyricsTitleLabel(lyricsTitleLabelFor(trackLyrics, providerLabelFor(trackLyrics?.provider, t)));
       setCurrentLyricsKind(trackLyrics?.kind ?? null);
     } catch {
       setCurrentLyricsProviderLabel(providerLabelFor(null, t));
+      setCurrentLyricsTitleLabel(providerLabelFor(null, t));
       setCurrentLyricsKind(null);
     }
   }, [t]);
@@ -1507,6 +1520,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           'applied',
         );
         setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider, t));
+        setCurrentLyricsTitleLabel(lyricsTitleLabelFor(trackLyrics, providerLabelFor(trackLyrics.provider, t)));
         setCurrentLyricsKind(trackLyrics.kind);
         setLyricsCandidates([]);
         setActiveLyricsCandidateSource('all');
@@ -1547,6 +1561,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
       const trackLyrics = await lyricsApi.markInstrumental(currentTrackId);
       setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider, t));
+      setCurrentLyricsTitleLabel(lyricsTitleLabelFor(trackLyrics, providerLabelFor(trackLyrics.provider, t)));
       setCurrentLyricsKind(trackLyrics.kind);
       setLyricsCandidates([]);
       setActiveLyricsCandidateSource('all');
@@ -1566,8 +1581,10 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
   useEffect(() => {
     const handleCurrentLyricsProviderChanged = (event: Event): void => {
-      const provider = (event as CustomEvent<{ provider?: LyricsSource | null }>).detail?.provider;
+      const detail = (event as CustomEvent<{ provider?: LyricsSource | null; title?: string | null }>).detail;
+      const provider = detail?.provider;
       setCurrentLyricsProviderLabel(providerLabelFor(provider, t));
+      setCurrentLyricsTitleLabel(detail?.title?.trim() || providerLabelFor(provider, t));
     };
 
     window.addEventListener('lyrics:current-provider-changed', handleCurrentLyricsProviderChanged);
@@ -1584,7 +1601,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             </span>
             <div>
             <span>{t('lyricsSettings.engine.title')}</span>
-              <strong>{currentLyricsProviderLabel}</strong>
+              <strong>{currentLyricsTitleLabel}</strong>
             </div>
             <RefreshCw size={15} />
           </div>

@@ -6524,44 +6524,51 @@ export class LibraryStore {
         throw new Error('Local tracks cannot be added to streaming playlists. Keep local and streaming playlists separate.');
       }
 
-      const items: LibraryPlaylistItem[] = [];
-      let nextPosition = Number(this.getRow('SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM playlist_items WHERE playlist_id = ?', playlistId)?.next_position ?? 0);
-
-      for (const trackId of trackIds) {
+      const tracks = trackIds.map((trackId) => {
         const track = this.getTrack(trackId);
         if (!track) {
           throw new Error(`Unknown track ${trackId}`);
         }
 
-        const itemId = randomUUID();
-        this.run(
-          `INSERT INTO playlist_items (
-            id, playlist_id, media_type, media_id, source_provider, source_item_id,
-            title_snapshot, artist_snapshot, album_snapshot, duration_snapshot,
-            cover_id, position, added_at, added_from, unavailable
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          itemId,
-          playlistId,
-          'track',
-          track.id,
-          'local',
-          track.path,
-          track.title,
-          track.artist,
-          track.album,
-          track.duration,
-          track.coverId,
-          nextPosition,
-          timestamp,
-          'library',
-          0,
-        );
-        nextPosition += 1;
+        return track;
+      });
 
-        const itemRow = this.getPlaylistItemRow(itemId);
-        const item = itemRow ? this.mapPlaylistItem(itemRow) : null;
-        if (item) {
-          items.push(item);
+      const items: LibraryPlaylistItem[] = [];
+      if (tracks.length > 0) {
+        this.run('UPDATE playlist_items SET position = position + ? WHERE playlist_id = ?', tracks.length, playlistId);
+        let nextPosition = 0;
+
+        for (const track of tracks) {
+          const itemId = randomUUID();
+          this.run(
+            `INSERT INTO playlist_items (
+              id, playlist_id, media_type, media_id, source_provider, source_item_id,
+              title_snapshot, artist_snapshot, album_snapshot, duration_snapshot,
+              cover_id, position, added_at, added_from, unavailable
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            itemId,
+            playlistId,
+            'track',
+            track.id,
+            'local',
+            track.path,
+            track.title,
+            track.artist,
+            track.album,
+            track.duration,
+            track.coverId,
+            nextPosition,
+            timestamp,
+            'library',
+            0,
+          );
+          nextPosition += 1;
+
+          const itemRow = this.getPlaylistItemRow(itemId);
+          const item = itemRow ? this.mapPlaylistItem(itemRow) : null;
+          if (item) {
+            items.push(item);
+          }
         }
       }
 
