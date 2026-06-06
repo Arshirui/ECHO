@@ -1342,6 +1342,66 @@ describe('LyricsSettingsDrawer', () => {
     expect(searchCandidates).toHaveBeenCalledWith('track-1', 'rough query', 'qqmusic');
   });
 
+  it('auto-applies drawer search results that clear the lyrics match threshold', async () => {
+    const appliedListener = vi.fn();
+    window.addEventListener('lyrics:candidate-applied', appliedListener);
+    const appliedLyrics = makeTrackLyrics({
+      title: 'Auto Applied Song',
+      lines: [{ timeMs: 0, text: 'auto applied line' }],
+      plainText: 'auto applied line',
+      syncedText: '[00:00.00]auto applied line',
+      score: 0.88,
+    });
+    const searchCandidates = vi.fn().mockResolvedValue([
+      makeLyricsCandidate({
+        id: 'candidate-88',
+        title: 'Auto Applied Song',
+        artist: 'Test Artist',
+        album: 'Test Album',
+        score: 0.88,
+        risk: 'low',
+        reasons: ['title_exact', 'artist_exact', 'duration_close', 'auto_accept'],
+      }),
+    ]);
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue(makeSettings({ lyricsAutoAcceptScore: 0.48 })),
+        setSettings: vi.fn(),
+        chooseLyricsWallpaper: vi.fn(),
+      },
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({ currentTrackId: 'track-1' }),
+      },
+      lyrics: {
+        getForTrack: vi.fn().mockResolvedValue(makeTrackLyrics()),
+        searchCandidates,
+        applyCandidate: vi.fn().mockResolvedValue(appliedLyrics),
+        markInstrumental: vi.fn(),
+        clearCache: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(<LyricsSettingsDrawer isOpen onClose={vi.fn()} />);
+
+    await waitFor(() => expect(window.echo?.app.getSettings).toHaveBeenCalled());
+    fireEvent.submit(screen.getByRole('searchbox').closest('form')!);
+
+    await waitFor(() => expect(window.echo?.lyrics.applyCandidate).toHaveBeenCalledWith('track-1', 'candidate-88'));
+    expect(appliedListener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: {
+          trackId: 'track-1',
+          lyrics: appliedLyrics,
+        },
+      }),
+    );
+
+    window.removeEventListener('lyrics:candidate-applied', appliedListener);
+  });
+
   it('labels instrumental lyric search results before synced badges in the drawer', async () => {
     const searchCandidates = vi.fn().mockResolvedValue([
       makeLyricsCandidate({

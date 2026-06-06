@@ -576,6 +576,46 @@ const mergeLyricsCandidates = (
   return Array.from(merged.values()).sort((left, right) => right.score - left.score);
 };
 
+const isAutoApplyRiskAllowed = (candidate: LyricsSearchCandidate): boolean => {
+  const risk = candidate.risk ?? 'low';
+  if (risk === 'low') {
+    return true;
+  }
+
+  const reasons = new Set(candidate.reasons ?? []);
+  const titleScore = candidate.titleScore ?? (reasons.has('title_exact') ? 1 : 0);
+  const artistScore = candidate.artistScore ?? (reasons.has('artist_exact') ? 1 : 0);
+  const hasOnlyDurationMismatch =
+    reasons.has('duration_mismatch') &&
+    !reasons.has('artist_mismatch') &&
+    !reasons.has('version_conflict') &&
+    !reasons.has('rejected_by_user') &&
+    !reasons.has('candidate_only_cover') &&
+    !reasons.has('cover_intent');
+
+  return hasOnlyDurationMismatch && titleScore >= 0.98 && artistScore >= 0.98;
+};
+
+const selectAutoApplyLyricsCandidate = (
+  candidates: LyricsSearchCandidate[],
+  settings: Pick<LyricsDrawerSettings, 'lyricsAutoAcceptScore' | 'lyricsAutoSearch'>,
+): LyricsSearchCandidate | null => {
+  if (!settings.lyricsAutoSearch) {
+    return null;
+  }
+
+  const threshold = Number.isFinite(settings.lyricsAutoAcceptScore)
+    ? Math.max(0.3, Math.min(1, settings.lyricsAutoAcceptScore))
+    : fallbackSettings.lyricsAutoAcceptScore;
+
+  return candidates.find(
+    (candidate) =>
+      candidate.score >= threshold &&
+      isAutoApplyRiskAllowed(candidate) &&
+      (candidate.hasSynced || candidate.hasPlain || candidate.instrumental),
+  ) ?? null;
+};
+
 const dispatchLyricsCandidateApplied = (trackId: string, lyrics: TrackLyrics): void => {
   window.dispatchEvent(new CustomEvent('lyrics:candidate-applied', { detail: { trackId, lyrics } }));
 };
@@ -1378,6 +1418,55 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     patchLyricsProviderOrder(nextOrder);
   }, [orderedOnlineProviderIds, patchLyricsProviderOrder]);
 
+  const applyLyricsCandidateToTarget = useCallback(
+    async (
+      target: { trackId: string; snapshot: LyricsTrackSnapshotRequest | null },
+      candidateId: string,
+      candidate: LyricsSearchCandidate | null,
+      candidatePool: LyricsSearchCandidate[],
+    ): Promise<boolean> => {
+      if (!effectiveSettings.lyricsEnabled) {
+        setLyricsCandidateStatus(null);
+        return false;
+      }
+
+      const lyricsApi = window.echo?.lyrics;
+      if (!lyricsApi?.applyCandidate && !lyricsApi?.applyCandidateForSnapshot) {
+        setError('Desktop bridge unavailable');
+        return false;
+      }
+
+      setApplyingLyricsCandidateId(candidateId);
+      try {
+        const trackLyrics = target.snapshot && lyricsApi.applyCandidateForSnapshot
+          ? await lyricsApi.applyCandidateForSnapshot(target.snapshot, candidateId)
+          : await lyricsApi.applyCandidate(target.trackId, candidateId);
+        const appliedCandidate = candidatePool.find((item) => item.id === candidateId) ?? candidate;
+        if (appliedCandidate) {
+          recordLyricsSourceQualityOutcome(appliedCandidate, 'applied');
+        }
+        setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider, t));
+        setCurrentLyricsTitleLabel(lyricsTitleLabelFor(trackLyrics, providerLabelFor(trackLyrics.provider, t)));
+        setCurrentLyricsKind(trackLyrics.kind);
+        setLyricsCandidates([]);
+        setActiveLyricsCandidateSource('all');
+        setLyricsCandidateStatus(t('lyricsSettings.status.applied'));
+        setError(null);
+        dispatchLyricsCandidateApplied(target.trackId, trackLyrics);
+        if (effectiveSettings.lyricsRestartOnApplyEnabled === true) {
+          await restartCurrentPlaybackForLyrics();
+        }
+        return true;
+      } catch (applyError) {
+        setError(applyError instanceof Error ? applyError.message : String(applyError));
+        return false;
+      } finally {
+        setApplyingLyricsCandidateId(null);
+      }
+    },
+    [effectiveSettings.lyricsEnabled, effectiveSettings.lyricsRestartOnApplyEnabled, t],
+  );
+
   const searchLyricsCandidates = useCallback(
     async (searchText?: string): Promise<void> => {
       if (!effectiveSettings.lyricsEnabled) {
@@ -1425,6 +1514,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
         setLyricsCandidates(collectedCandidates);
         setActiveLyricsCandidateSource('all');
+        const autoCandidate = normalizedSearchText
+          ? null
+          : selectAutoApplyLyricsCandidate(collectedCandidates, effectiveSettings);
+        if (autoCandidate) {
+          const applied = await applyLyricsCandidateToTarget(
+            { trackId: currentTrackId, snapshot },
+            autoCandidate.id,
+            autoCandidate,
+            collectedCandidates,
+          );
+          if (applied) {
+            return;
+          }
+        }
         setLyricsCandidateStatus(collectedCandidates.length ? null : t('lyricsSettings.status.noCandidates'));
         setError(null);
       } catch (candidateError) {
@@ -1434,7 +1537,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         setIsLyricsCandidateLoading(false);
       }
     },
-    [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentLyricsTarget, t],
+    [activeSearchProviders, applyLyricsCandidateToTarget, effectiveSettings, resolveCurrentLyricsTarget, t],
   );
 
   const rematchLyricsCandidates = useCallback(async (): Promise<void> => {
@@ -1481,6 +1584,18 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
       setLyricsCandidates(collectedCandidates);
       setActiveLyricsCandidateSource('all');
+      const autoCandidate = selectAutoApplyLyricsCandidate(collectedCandidates, effectiveSettings);
+      if (autoCandidate) {
+        const applied = await applyLyricsCandidateToTarget(
+          { trackId: currentTrackId, snapshot },
+          autoCandidate.id,
+          autoCandidate,
+          collectedCandidates,
+        );
+        if (applied) {
+          return;
+        }
+      }
       setLyricsCandidateStatus(collectedCandidates.length ? null : t('lyricsSettings.status.noCandidates'));
       setError(null);
     } catch (candidateError) {
@@ -1489,7 +1604,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     } finally {
       setIsLyricsCandidateLoading(false);
     }
-  }, [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentLyricsTarget, t]);
+  }, [activeSearchProviders, applyLyricsCandidateToTarget, effectiveSettings, resolveCurrentLyricsTarget, t]);
 
   const applyLyricsCandidate = useCallback(
     async (candidateId: string): Promise<void> => {
@@ -1512,31 +1627,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           return;
         }
 
-        const trackLyrics = snapshot && lyricsApi.applyCandidateForSnapshot
-          ? await lyricsApi.applyCandidateForSnapshot(snapshot, candidateId)
-          : await lyricsApi.applyCandidate(currentTrackId, candidateId);
-        recordLyricsSourceQualityOutcome(
-          lyricsCandidates.find((candidate) => candidate.id === candidateId),
-          'applied',
+        const candidate = lyricsCandidates.find((item) => item.id === candidateId);
+        await applyLyricsCandidateToTarget(
+          { trackId: currentTrackId, snapshot },
+          candidateId,
+          candidate ?? null,
+          lyricsCandidates,
         );
-        setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider, t));
-        setCurrentLyricsTitleLabel(lyricsTitleLabelFor(trackLyrics, providerLabelFor(trackLyrics.provider, t)));
-        setCurrentLyricsKind(trackLyrics.kind);
-        setLyricsCandidates([]);
-        setActiveLyricsCandidateSource('all');
-        setLyricsCandidateStatus(t('lyricsSettings.status.applied'));
-        setError(null);
-        dispatchLyricsCandidateApplied(currentTrackId, trackLyrics);
-        if (effectiveSettings.lyricsRestartOnApplyEnabled === true) {
-          await restartCurrentPlaybackForLyrics();
-        }
       } catch (applyError) {
         setError(applyError instanceof Error ? applyError.message : String(applyError));
       } finally {
         setApplyingLyricsCandidateId(null);
       }
     },
-    [effectiveSettings.lyricsEnabled, effectiveSettings.lyricsRestartOnApplyEnabled, lyricsCandidates, resolveCurrentLyricsTarget, t],
+    [applyLyricsCandidateToTarget, effectiveSettings.lyricsEnabled, lyricsCandidates, resolveCurrentLyricsTarget, t],
   );
 
   const markCurrentTrackInstrumental = useCallback(async (): Promise<void> => {

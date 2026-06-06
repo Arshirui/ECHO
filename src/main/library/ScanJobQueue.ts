@@ -78,7 +78,7 @@ type ScanJobQueueOptions = {
   metadataConcurrency?: number;
   coverConcurrency?: number;
   getAlbumMergeStrategy?: () => AlbumMergeStrategy;
-  checkDatabaseHealth?: (status: LibraryScanStatus) => void;
+  checkDatabaseHealth?: (status: LibraryScanStatus) => Promise<void> | void;
   createDatabaseScanGuard?: (status: LibraryScanStatus) => Promise<unknown | null> | unknown | null;
   createCompletedScanSnapshot?: (status: LibraryScanStatus) => Promise<void> | void;
   recoverDatabaseFromScanGuard?: (snapshot: unknown | null, status: LibraryScanStatus, error: unknown) => Promise<void> | void;
@@ -97,7 +97,6 @@ const cacheCheckYieldFileDelta = 256;
 const deferredGroupingRefreshDelayMs = 1000;
 const deferredCompletedScanMaintenanceDelayMs = 1500;
 const deferredCompletedScanMaintenancePlaybackDelayMs = 2000;
-const deferredCompletedScanMaintenanceMaxPlaybackDeferrals = 30;
 const largeScanFileThreshold = 2000;
 const largeScanWriteBatchSize = 64;
 const normalScanWriteBatchSize = 512;
@@ -1076,7 +1075,7 @@ export class ScanJobQueue {
         removedTracks,
         coverCount,
       });
-      this.queueDatabaseRecoveryIfUnhealthy(jobId, scanGuard, status);
+      await this.queueDatabaseRecoveryIfUnhealthy(jobId, scanGuard, status);
     }
   }
 
@@ -1123,13 +1122,13 @@ export class ScanJobQueue {
     this.pendingDatabaseRecoveries.set(jobId, { snapshot, status, error });
   }
 
-  private queueDatabaseRecoveryIfUnhealthy(
+  private async queueDatabaseRecoveryIfUnhealthy(
     jobId: string,
     snapshot: unknown | null,
     status: LibraryScanStatus,
-  ): void {
+  ): Promise<void> {
     try {
-      this.checkDatabaseHealth(status);
+      await this.checkDatabaseHealth(status);
     } catch (healthError) {
       this.queueDatabaseRecovery(jobId, snapshot, status, healthError);
       return;
@@ -1189,16 +1188,15 @@ export class ScanJobQueue {
     phase: 'checkDatabaseHealth' | 'createCompletedScanSnapshot',
     fileCount: number,
   ): Promise<void> {
-    for (let attempt = 0; attempt < deferredCompletedScanMaintenanceMaxPlaybackDeferrals; attempt += 1) {
-      if (this.disposed || !(await this.resolveBooleanOption(this.shouldReduceScanPressure))) {
-        break;
-      }
+    let attempt = 0;
+    while (!this.disposed && (await this.resolveBooleanOption(this.shouldReduceScanPressure))) {
+      attempt += 1;
       this.logPerf({
         jobId,
         folderId,
         phase,
         fileCount,
-        detail: `deferred_for_playback;attempt=${attempt + 1}`,
+        detail: `deferred_for_playback;attempt=${attempt}`,
       });
       await delay(deferredCompletedScanMaintenancePlaybackDelayMs);
     }

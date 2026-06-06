@@ -19,7 +19,7 @@ import {
 } from '../app/dataProtection';
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
 import { getLibraryDatabaseManager, type LibraryDatabaseConnection } from '../database/LibraryDatabaseManager';
-import { assertDatabaseHealthy } from '../database/health';
+import { assertDatabaseHealthy, assertDatabaseOpenHealthy } from '../database/health';
 import {
   isPlaybackActiveForMainWork,
   runMainBackgroundTask,
@@ -30,6 +30,7 @@ import {
   shouldCheckpointScanHealthForDiagnostics,
   shouldDisableScanGuardForDiagnostics,
   shouldDisableScanHealthCheckForDiagnostics,
+  shouldRunScanHealthCheckSynchronouslyForDiagnostics,
 } from '../diagnostics/LibraryScanPerfDiagnostics';
 import { AlbumService } from './AlbumService';
 import type { AlbumMergeStrategy } from './AlbumService';
@@ -2793,7 +2794,7 @@ export const createLibraryService = (
 
       await restore();
     },
-    checkDatabaseHealth: (scanStatus) => {
+    checkDatabaseHealth: async (scanStatus) => {
       if (shouldDisableScanHealthCheckForDiagnostics()) {
         logLibraryScanPerf({
           jobId: scanStatus.id,
@@ -2805,6 +2806,30 @@ export const createLibraryService = (
       }
 
       try {
+        if (!shouldRunScanHealthCheckSynchronouslyForDiagnostics() && (await shouldDelayGroupingRefreshForAudio())) {
+          const openHealthStartedAtMs = performance.now();
+          assertDatabaseOpenHealthy(databasePath);
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.assert_open_for_playback',
+            durationMs: performance.now() - openHealthStartedAtMs,
+          });
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.assert_cached',
+            detail: 'skipped_full_quick_check_during_playback',
+          });
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.checkpoint',
+            detail: 'skipped_during_playback',
+          });
+          return;
+        }
+
         const healthStartedAtMs = performance.now();
         assertDatabaseHealthy(databasePath, { cache: true });
         logLibraryScanPerf({
