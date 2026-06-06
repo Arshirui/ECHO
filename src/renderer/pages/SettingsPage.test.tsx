@@ -30,6 +30,9 @@ const settings: AppSettings = {
   hideToTrayOnClose: false,
   touchOnScreenKeyboardEnabled: false,
   appWindowAcrylicEnabled: false,
+  appWindowAcrylicKeepWhenUnfocusedEnabled: false,
+  appWindowAcrylicBlurPx: 22,
+  appWindowAcrylicTransparencyPercent: 70,
   appCustomWallpaperPath: null,
   appWallpaperScalePercent: 100,
   appWallpaperBlurPx: 0,
@@ -919,6 +922,23 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ featureCommentsHidden: true }));
   });
 
+  it('saves track context menu extra actions from the general settings toggle', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const nextSettings = { ...settings, trackContextMenuExtraActionsEnabled: true };
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue(nextSettings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const row = screen.getByText('settings.general.trackContextMenuExtraActions.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ trackContextMenuExtraActionsEnabled: true }));
+  });
+
   it('saves touch keyboard from the general settings toggle', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     const nextSettings = { ...settings, touchOnScreenKeyboardEnabled: true };
@@ -1771,6 +1791,20 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appWindowAcrylicEnabled: true }));
     expect(confirmSpy).toHaveBeenCalledWith('settings.appearance.windowAcrylic.restartConfirm');
     expect(relaunchAppMock).toHaveBeenCalledTimes(1);
+
+    const sliders = within(row).getAllByRole('slider') as HTMLInputElement[];
+    fireEvent.change(sliders[0], { target: { value: '100' } });
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appWindowAcrylicTransparencyPercent: 100 }));
+
+    fireEvent.change(sliders[1], { target: { value: '36' } });
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appWindowAcrylicBlurPx: 36 }));
+
+    const keepWhenUnfocusedToggle = within(row)
+      .getByText('settings.appearance.windowAcrylic.keepWhenUnfocused')
+      .parentElement
+      ?.querySelector('button') as HTMLButtonElement;
+    fireEvent.click(keepWhenUnfocusedToggle);
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appWindowAcrylicKeepWhenUnfocusedEnabled: true }));
   });
 
   it('saves The Dark Side of the Moon theme preset from Settings', async () => {

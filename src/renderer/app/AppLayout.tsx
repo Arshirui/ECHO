@@ -139,6 +139,8 @@ const isTouchKeyboardEditableTarget = (target: EventTarget | null): boolean => {
 type AppWallpaperSettings = Pick<
   AppSettings,
   | 'appWindowAcrylicEnabled'
+  | 'appWindowAcrylicKeepWhenUnfocusedEnabled'
+  | 'appWindowAcrylicBlurPx'
   | 'appWindowAcrylicTransparencyPercent'
   | 'appCustomWallpaperPath'
   | 'appPortraitWallpaperPath'
@@ -178,7 +180,9 @@ const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appWallpaperUnifiedOpacityEnabled: false,
   appVideoWallpaperPauseMode: 'smart',
   appWindowAcrylicEnabled: false,
-  appWindowAcrylicTransparencyPercent: 56,
+  appWindowAcrylicKeepWhenUnfocusedEnabled: false,
+  appWindowAcrylicBlurPx: 22,
+  appWindowAcrylicTransparencyPercent: 70,
 };
 
 const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
@@ -240,8 +244,12 @@ const selectAppWallpaperSettings = (settings: AppSettings): AppWallpaperSettings
   appWallpaperUnifiedOpacityEnabled: settings.appWallpaperUnifiedOpacityEnabled,
   appVideoWallpaperPauseMode: settings.appVideoWallpaperPauseMode ?? 'smart',
   appWindowAcrylicEnabled: settings.appWindowAcrylicEnabled === true,
+  appWindowAcrylicKeepWhenUnfocusedEnabled: settings.appWindowAcrylicKeepWhenUnfocusedEnabled === true,
+  appWindowAcrylicBlurPx: Number.isFinite(settings.appWindowAcrylicBlurPx)
+    ? Math.max(0, Math.min(40, Math.round(Number(settings.appWindowAcrylicBlurPx))))
+    : defaultAppWallpaperSettings.appWindowAcrylicBlurPx,
   appWindowAcrylicTransparencyPercent: Number.isFinite(settings.appWindowAcrylicTransparencyPercent)
-    ? Math.max(30, Math.min(82, Math.round(Number(settings.appWindowAcrylicTransparencyPercent))))
+    ? Math.max(0, Math.min(100, Math.round(Number(settings.appWindowAcrylicTransparencyPercent))))
     : defaultAppWallpaperSettings.appWindowAcrylicTransparencyPercent,
 });
 
@@ -489,6 +497,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isAppWallpaperDocumentHidden, setIsAppWallpaperDocumentHidden] = useState(() => document.visibilityState === 'hidden');
   const [isAppWallpaperBlurPaused, setIsAppWallpaperBlurPaused] = useState(false);
   const [isAppWallpaperPortraitViewport, setIsAppWallpaperPortraitViewport] = useState(() => isPortraitViewport());
+  const [isWindowFocused, setIsWindowFocused] = useState(() => document.hasFocus());
   const appWallpaperVideoRef = useRef<HTMLVideoElement | null>(null);
   const appWallpaperBlurTimerRef = useRef<number | null>(null);
   const fullscreenTransitionTimerRef = useRef<number | null>(null);
@@ -678,36 +687,39 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const isUnified = isAppWallpaperReady && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled;
     const scaledAlpha = (value: number): string => (uiAlpha * value).toFixed(3);
     const unifiedAlpha = uiAlpha.toFixed(3);
-    const acrylicTransparencyPercent = Math.max(30, Math.min(82, appWallpaperSettings.appWindowAcrylicTransparencyPercent ?? 56));
-    const acrylicBasePercent = Math.max(22, Math.min(64, 96 - acrylicTransparencyPercent));
-    const acrylicMix = (offset: number, min: number, max: number): string => `${Math.round(Math.max(min, Math.min(max, acrylicBasePercent + offset)))}%`;
+    const acrylicTransparencyPercent = Math.max(0, Math.min(100, appWallpaperSettings.appWindowAcrylicTransparencyPercent ?? 70));
+    const acrylicOpacityPercent = 100 - acrylicTransparencyPercent;
+    const acrylicBlurPx = Math.max(0, Math.min(40, appWallpaperSettings.appWindowAcrylicBlurPx ?? 22));
+    const acrylicMix = (factor: number, max: number): string => `${Math.round(Math.max(0, Math.min(max, acrylicOpacityPercent * factor)))}%`;
 
     return {
-      '--app-acrylic-page-strong-mix': acrylicMix(-2, 24, 58),
-      '--app-acrylic-page-muted-mix': acrylicMix(-8, 20, 52),
-      '--app-acrylic-titlebar-mix': acrylicMix(6, 34, 70),
-      '--app-acrylic-sidebar-strong-mix': acrylicMix(2, 32, 66),
-      '--app-acrylic-sidebar-muted-mix': acrylicMix(-2, 28, 62),
-      '--app-acrylic-player-strong-mix': acrylicMix(10, 38, 74),
-      '--app-acrylic-player-mix': acrylicMix(6, 34, 70),
-      '--app-acrylic-surface-mix': acrylicMix(-2, 26, 58),
-      '--app-acrylic-surface-strong-mix': acrylicMix(8, 36, 70),
-      '--app-acrylic-surface-muted-mix': acrylicMix(-6, 22, 54),
-      '--app-acrylic-field-mix': acrylicMix(10, 38, 74),
-      '--app-acrylic-button-mix': acrylicMix(8, 36, 72),
-      '--app-acrylic-button-hover-mix': acrylicMix(18, 48, 82),
-      '--app-acrylic-row-mix': acrylicMix(-6, 22, 54),
-      '--app-acrylic-row-hover-mix': acrylicMix(8, 34, 70),
-      '--app-acrylic-active-mix': acrylicMix(12, 40, 76),
-      '--app-acrylic-home-shell-strong-mix': acrylicMix(4, 30, 64),
-      '--app-acrylic-home-shell-muted-mix': acrylicMix(-6, 22, 54),
-      '--app-acrylic-home-hero-strong-mix': acrylicMix(2, 28, 62),
-      '--app-acrylic-home-hero-mix': acrylicMix(-8, 20, 54),
-      '--app-acrylic-home-hero-muted-mix': acrylicMix(-14, 16, 48),
-      '--app-acrylic-home-now-strong-mix': acrylicMix(8, 36, 70),
-      '--app-acrylic-home-now-mix': acrylicMix(0, 28, 62),
-      '--app-acrylic-home-week-mix': acrylicMix(-8, 20, 52),
-      '--app-acrylic-home-activity-mix': acrylicMix(-12, 18, 48),
+      '--app-acrylic-blur': `${acrylicBlurPx}px`,
+      '--app-acrylic-titlebar-blur': `${Math.max(0, Math.min(44, acrylicBlurPx + 2))}px`,
+      '--app-acrylic-page-strong-mix': acrylicMix(0.95, 58),
+      '--app-acrylic-page-muted-mix': acrylicMix(0.78, 52),
+      '--app-acrylic-titlebar-mix': acrylicMix(1.24, 70),
+      '--app-acrylic-sidebar-strong-mix': acrylicMix(1.12, 66),
+      '--app-acrylic-sidebar-muted-mix': acrylicMix(1.02, 62),
+      '--app-acrylic-player-strong-mix': acrylicMix(1.42, 74),
+      '--app-acrylic-player-mix': acrylicMix(1.22, 70),
+      '--app-acrylic-surface-mix': acrylicMix(0.86, 58),
+      '--app-acrylic-surface-strong-mix': acrylicMix(1.26, 70),
+      '--app-acrylic-surface-muted-mix': acrylicMix(0.72, 54),
+      '--app-acrylic-field-mix': acrylicMix(1.32, 74),
+      '--app-acrylic-button-mix': acrylicMix(1.18, 72),
+      '--app-acrylic-button-hover-mix': acrylicMix(1.56, 82),
+      '--app-acrylic-row-mix': acrylicMix(0.72, 54),
+      '--app-acrylic-row-hover-mix': acrylicMix(1.18, 70),
+      '--app-acrylic-active-mix': acrylicMix(1.34, 76),
+      '--app-acrylic-home-shell-strong-mix': acrylicMix(1.04, 64),
+      '--app-acrylic-home-shell-muted-mix': acrylicMix(0.72, 54),
+      '--app-acrylic-home-hero-strong-mix': acrylicMix(0.96, 62),
+      '--app-acrylic-home-hero-mix': acrylicMix(0.66, 54),
+      '--app-acrylic-home-hero-muted-mix': acrylicMix(0.52, 48),
+      '--app-acrylic-home-now-strong-mix': acrylicMix(1.18, 70),
+      '--app-acrylic-home-now-mix': acrylicMix(0.92, 62),
+      '--app-acrylic-home-week-mix': acrylicMix(0.68, 52),
+      '--app-acrylic-home-activity-mix': acrylicMix(0.56, 48),
       '--app-wallpaper-ui-unified-alpha': unifiedAlpha,
       '--app-wallpaper-ui-border-alpha': isUnified ? '0' : scaledAlpha(0.2),
       '--app-wallpaper-ui-titlebar-alpha': isUnified ? unifiedAlpha : scaledAlpha(0.74),
@@ -728,6 +740,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     } as CSSProperties;
   }, [
     appWallpaperRawUiAlpha,
+    appWallpaperSettings.appWindowAcrylicBlurPx,
     appWallpaperSettings.appWindowAcrylicTransparencyPercent,
     appWallpaperSettings.appWallpaperVisualProtectionEnabled,
     appWallpaperSettings.appWallpaperUnifiedOpacityEnabled,
@@ -1040,6 +1053,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       setIsAppWallpaperDocumentHidden(document.visibilityState === 'hidden');
     };
     const handleWindowBlur = (): void => {
+      setIsWindowFocused(false);
       if (appWallpaperBlurTimerRef.current !== null) {
         window.clearTimeout(appWallpaperBlurTimerRef.current);
       }
@@ -1049,6 +1063,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       }, 15000);
     };
     const handleWindowFocus = (): void => {
+      setIsWindowFocused(true);
       if (appWallpaperBlurTimerRef.current !== null) {
         window.clearTimeout(appWallpaperBlurTimerRef.current);
         appWallpaperBlurTimerRef.current = null;
@@ -1681,6 +1696,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           'appWallpaperVisualProtectionEnabled' in patch ||
           'appWallpaperUnifiedOpacityEnabled' in patch ||
           'appWindowAcrylicEnabled' in patch ||
+          'appWindowAcrylicKeepWhenUnfocusedEnabled' in patch ||
+          'appWindowAcrylicBlurPx' in patch ||
+          'appWindowAcrylicTransparencyPercent' in patch ||
           'appVideoWallpaperPauseMode' in patch)
       ) {
         setAppWallpaperSettings((current) => ({
@@ -1715,6 +1733,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           appWindowAcrylicEnabled: 'appWindowAcrylicEnabled' in patch
             ? (patch.appWindowAcrylicEnabled === true)
             : current.appWindowAcrylicEnabled,
+          appWindowAcrylicKeepWhenUnfocusedEnabled: 'appWindowAcrylicKeepWhenUnfocusedEnabled' in patch
+            ? (patch.appWindowAcrylicKeepWhenUnfocusedEnabled === true)
+            : current.appWindowAcrylicKeepWhenUnfocusedEnabled,
+          appWindowAcrylicBlurPx: 'appWindowAcrylicBlurPx' in patch && Number.isFinite(patch.appWindowAcrylicBlurPx)
+            ? Math.max(0, Math.min(40, Math.round(Number(patch.appWindowAcrylicBlurPx))))
+            : current.appWindowAcrylicBlurPx,
+          appWindowAcrylicTransparencyPercent: 'appWindowAcrylicTransparencyPercent' in patch && Number.isFinite(patch.appWindowAcrylicTransparencyPercent)
+            ? Math.max(0, Math.min(100, Math.round(Number(patch.appWindowAcrylicTransparencyPercent))))
+            : current.appWindowAcrylicTransparencyPercent,
           appVideoWallpaperPauseMode: 'appVideoWallpaperPauseMode' in patch
             ? (patch.appVideoWallpaperPauseMode ?? defaultAppWallpaperSettings.appVideoWallpaperPauseMode)
             : current.appVideoWallpaperPauseMode,
@@ -2265,6 +2292,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       data-wallpaper-ui-zero={shouldShowAppWallpaperVisual && isAppWallpaperUiZero ? 'true' : undefined}
       data-wallpaper-orientation={shouldShowAppWallpaperVisual ? activeAppWallpaperOrientation : undefined}
       data-window-acrylic={appWallpaperSettings.appWindowAcrylicEnabled ? 'true' : undefined}
+      data-window-acrylic-keep-unfocused={appWallpaperSettings.appWindowAcrylicEnabled && appWallpaperSettings.appWindowAcrylicKeepWhenUnfocusedEnabled ? 'true' : undefined}
+      data-window-focused={isWindowFocused ? 'true' : 'false'}
       data-feature-comments-hidden={featureCommentsHidden ? 'true' : undefined}
       data-window-fullscreen={isWindowFullscreen ? 'true' : 'false'}
       data-window-fullscreen-target={

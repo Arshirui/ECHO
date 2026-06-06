@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
+import type { AppSettings } from '../../../shared/types/appSettings';
 import type { PluginTrackContextMenuContribution } from '../../../shared/types/plugins';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
@@ -88,6 +89,12 @@ const nonLocalHiddenActions = new Set<TrackMenuAction>([
   'save-cover',
   'delete-song',
 ]);
+const extraHiddenActions = new Set<TrackMenuAction>([
+  'open-osu-timing',
+  'open-system',
+  'copy-cover',
+  'save-cover',
+]);
 const batchActions = new Set<TrackMenuAction>(['add-to-playlist', 'play-next', 'add-to-queue', 'toggle-liked', 'remove-from-queue']);
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(value, max));
@@ -117,6 +124,7 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
     y: position.y + pointerOffset,
   }));
   const [menuMaxHeight, setMenuMaxHeight] = useState(() => window.innerHeight - viewportPadding * 2);
+  const [extraActionsEnabled, setExtraActionsEnabled] = useState(false);
 
   useLayoutEffect(() => {
     const menu = menuRef.current;
@@ -140,7 +148,7 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
       y: nextY,
     });
     setMenuMaxHeight(Math.max(0, window.innerHeight - nextY - viewportPadding));
-  }, [enabledActions, liked, pluginMenuItems.length, position.x, position.y, selectionCount, showRemoveFromPlaylist, track.mediaType]);
+  }, [enabledActions, extraActionsEnabled, liked, pluginMenuItems.length, position.x, position.y, selectionCount, showRemoveFromPlaylist, track.mediaType]);
 
   const loadPlaylists = (): void => {
     if (playlistLoadStartedRef.current) {
@@ -191,6 +199,28 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
       window.removeEventListener('scroll', onClose, true);
     };
   }, [onClose]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
+      if (!cancelled) {
+        setExtraActionsEnabled(settings?.trackContextMenuExtraActionsEnabled === true);
+      }
+    };
+    const handleSettingsChanged = (event: Event): void => {
+      const detail = (event as CustomEvent<Partial<AppSettings>>).detail;
+      if (Object.prototype.hasOwnProperty.call(detail ?? {}, 'trackContextMenuExtraActionsEnabled')) {
+        applySettings(detail);
+      }
+    };
+
+    void window.echo?.app?.getSettings?.().then(applySettings).catch(() => applySettings(null));
+    window.addEventListener('settings:changed', handleSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
 
   const isBatch = selectionCount > 1;
   const isLocalFileTrack = !track.mediaType || track.mediaType === 'local';
@@ -259,6 +289,10 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
   ];
   const items = allItems.filter((item) => {
     if (enabledActionSet && !enabledActionSet.has(item.action)) {
+      return false;
+    }
+
+    if (!extraActionsEnabled && extraHiddenActions.has(item.action)) {
       return false;
     }
 

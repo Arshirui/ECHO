@@ -1765,6 +1765,9 @@ describe('AppLayout standalone routes', () => {
         getSettings: vi.fn().mockResolvedValue({
           lyricsPlayerBarDrawerEnabled: false,
           appWindowAcrylicEnabled: true,
+          appWindowAcrylicKeepWhenUnfocusedEnabled: true,
+          appWindowAcrylicBlurPx: 30,
+          appWindowAcrylicTransparencyPercent: 72,
           smtcEnabled: true,
         }),
       },
@@ -1783,7 +1786,24 @@ describe('AppLayout standalone routes', () => {
     });
 
     expect(shell.dataset.windowAcrylic).toBe('true');
+    expect(shell.dataset.windowAcrylicKeepUnfocused).toBe('true');
+    expect(shell.style.getPropertyValue('--app-acrylic-blur')).toBe('30px');
+    expect(shell.style.getPropertyValue('--app-acrylic-titlebar-blur')).toBe('32px');
+    expect(shell.style.getPropertyValue('--app-acrylic-surface-mix')).toBe('24%');
+    expect(shell.style.getPropertyValue('--app-acrylic-home-hero-muted-mix')).toBe('15%');
     expect(shell.querySelector('.app-wallpaper-layer')).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('settings:changed', { detail: {
+        appWindowAcrylicBlurPx: 0,
+        appWindowAcrylicKeepWhenUnfocusedEnabled: false,
+        appWindowAcrylicTransparencyPercent: 30,
+      } }));
+    });
+
+    await waitFor(() => expect(shell.style.getPropertyValue('--app-acrylic-surface-mix')).toBe('58%'));
+    expect(shell.dataset.windowAcrylicKeepUnfocused).toBeUndefined();
+    expect(shell.style.getPropertyValue('--app-acrylic-blur')).toBe('0px');
   });
 
   it('applies the portrait app wallpaper only while the viewport is portrait', async () => {

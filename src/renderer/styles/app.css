@@ -2884,6 +2884,38 @@
   font-variant-numeric: tabular-nums;
 }
 
+.settings-acrylic-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.settings-acrylic-options {
+  display: grid;
+  min-width: min(360px, 56vw);
+  gap: 10px;
+}
+
+.settings-acrylic-slider,
+.settings-acrylic-subtoggle {
+  display: grid;
+  align-items: center;
+  gap: 6px;
+  color: var(--theme-muted-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-acrylic-subtoggle {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.settings-acrylic-slider .settings-range-field {
+  grid-template-columns: minmax(0, 1fr) 54px;
+}
+
 .settings-cache-panel--transport-fade {
   max-width: min(460px, 100%);
   gap: 8px;

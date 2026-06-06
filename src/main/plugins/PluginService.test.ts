@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { PluginManifest } from '../../shared/types/plugins';
-import { PluginService } from './PluginService';
+import { normalizePluginCommandTimeoutMs, PluginService } from './PluginService';
 
 const mocks = vi.hoisted(() => {
   const status = {
@@ -429,6 +429,54 @@ describe('PluginService', () => {
     const messages = service.getLogs('echo.command-limits').map((entry) => entry.message);
     expect(messages.some((message) => message.includes('plugin_command_args_too_large'))).toBe(true);
     expect(messages.some((message) => message.includes('plugin_command_result_too_large'))).toBe(true);
+  });
+
+  it('clamps extended command timeouts to audio-analysis permission boundaries', async () => {
+    expect(normalizePluginCommandTimeoutMs(12_000, [])).toBe(2_000);
+    expect(normalizePluginCommandTimeoutMs(12_000, ['audio:analyze'])).toBe(12_000);
+    expect(normalizePluginCommandTimeoutMs(24_000, ['audio:analyze'])).toBe(24_000);
+    expect(normalizePluginCommandTimeoutMs(60_000, ['audio:analyze'])).toBe(24_000);
+    expect(normalizePluginCommandTimeoutMs(1, ['audio:analyze'])).toBe(250);
+  });
+
+  it('stores sanitized command timeouts on runtime command summaries', async () => {
+    const plainManifest: PluginManifest = {
+      id: 'echo.plain-command-timeouts',
+      name: 'Plain Command Timeouts',
+      version: '0.0.1',
+      apiVersion: 2,
+      entry: 'plugin.js',
+      permissions: [],
+    };
+    writePlugin(pluginRoot, plainManifest, [
+      "echo.commands.register('plain', { title: 'Plain', timeoutMs: 12000 }, () => 'ok');",
+      "echo.commands.register('tiny', { title: 'Tiny', timeoutMs: 1 }, () => 'ok');",
+    ].join('\n'));
+
+    service.enable({ pluginId: 'echo.plain-command-timeouts', trustedPermissions: [] });
+    expect(service.list().plugins.find((plugin) => plugin.id === 'echo.plain-command-timeouts')?.commands).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'plain', timeoutMs: 2_000 }),
+      expect.objectContaining({ id: 'tiny', timeoutMs: 250 }),
+    ]));
+
+    const audioManifest: PluginManifest = {
+      id: 'echo.command-timeouts',
+      name: 'Command Timeouts',
+      version: '0.0.1',
+      apiVersion: 2,
+      entry: 'plugin.js',
+      permissions: ['audio:analyze'],
+    };
+    writePlugin(pluginRoot, audioManifest, [
+      "echo.commands.register('plain', { title: 'Plain', timeoutMs: 24000 }, () => 'ok');",
+      "echo.commands.register('tiny', { title: 'Tiny', timeoutMs: 1 }, () => 'ok');",
+    ].join('\n'));
+
+    service.enable({ pluginId: 'echo.command-timeouts', trustedPermissions: ['audio:analyze'] });
+    expect(service.list().plugins.find((plugin) => plugin.id === 'echo.command-timeouts')?.commands).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'plain', timeoutMs: 24_000 }),
+      expect.objectContaining({ id: 'tiny', timeoutMs: 250 }),
+    ]));
   });
 
   it('times out async event handlers without blocking other handlers or plugin summaries', async () => {

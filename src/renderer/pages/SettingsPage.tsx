@@ -4334,6 +4334,25 @@ export const SettingsPage = (): JSX.Element => {
         ],
       },
       {
+        id: 'row-track-context-menu-extra-actions',
+        sectionKey: 'general',
+        targetId: 'settings-row-track-context-menu-extra-actions',
+        title: t('settings.general.trackContextMenuExtraActions.title'),
+        description: t('settings.general.trackContextMenuExtraActions.description'),
+        terms: [
+          t('settings.general.trackContextMenuExtraActions.title'),
+          t('settings.general.trackContextMenuExtraActions.description'),
+          '\u53f3\u952e\u83dc\u5355',
+          '\u590d\u5236\u6b4c\u66f2\u5361\u7247\u56fe\u7247',
+          '\u4fdd\u5b58\u6b4c\u66f2\u5361\u7247\u56fe\u7247',
+          '\u7cfb\u7edf\u9ed8\u8ba4\u5e94\u7528',
+          'context menu',
+          'osu timing',
+          'system default app',
+          'song card image',
+        ],
+      },
+      {
         id: 'row-fast-startup',
         sectionKey: 'general',
         targetId: 'settings-row-fast-startup',
@@ -6906,6 +6925,30 @@ export const SettingsPage = (): JSX.Element => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
   }, [appSettings, dispatchSettingsChanged, t]);
+
+  const handleWindowAcrylicTransparencyChange = useCallback(
+    (value: number): void => {
+      patchAppSettings({
+        appWindowAcrylicTransparencyPercent: Math.max(0, Math.min(100, Math.round(value))),
+      });
+    },
+    [patchAppSettings],
+  );
+
+  const handleWindowAcrylicBlurChange = useCallback(
+    (value: number): void => {
+      patchAppSettings({
+        appWindowAcrylicBlurPx: Math.max(0, Math.min(40, Math.round(value))),
+      });
+    },
+    [patchAppSettings],
+  );
+
+  const handleWindowAcrylicKeepWhenUnfocusedToggle = useCallback((): void => {
+    patchAppSettings({
+      appWindowAcrylicKeepWhenUnfocusedEnabled: !(appSettings?.appWindowAcrylicKeepWhenUnfocusedEnabled ?? false),
+    });
+  }, [appSettings?.appWindowAcrylicKeepWhenUnfocusedEnabled, patchAppSettings]);
 
   const handleSidebarRouteDragStart = useCallback((event: ReactDragEvent<HTMLDivElement>, routeId: SidebarRouteId): void => {
     setDraggingSidebarRouteId(routeId);
@@ -10353,6 +10396,25 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() => patchAppSettings({ featureCommentsHidden: !(appSettings?.featureCommentsHidden ?? false) })}
                 />
               </SettingRow>
+              <SettingRow
+                id="settings-row-track-context-menu-extra-actions"
+                highlighted={highlightedSettingId === 'settings-row-track-context-menu-extra-actions'}
+                title={t('settings.general.trackContextMenuExtraActions.title')}
+                description={t('settings.general.trackContextMenuExtraActions.description')}
+              >
+                <div className="settings-inline-toggle settings-inline-toggle--compact">
+                  <span>{appSettings?.trackContextMenuExtraActionsEnabled ? '已显示' : '已隐藏'}</span>
+                  <ToggleButton
+                    active={appSettings?.trackContextMenuExtraActionsEnabled === true}
+                    disabled={!appSettings}
+                    onClick={() =>
+                      patchAppSettings({
+                        trackContextMenuExtraActionsEnabled: !(appSettings?.trackContextMenuExtraActionsEnabled ?? false),
+                      })
+                    }
+                  />
+                </div>
+              </SettingRow>
               <SettingRow title={t('settings.general.rememberWindowSize.title')} description={t('settings.general.rememberWindowSize.description')}>
                 <ToggleButton
                   active={appSettings?.rememberWindowSizeEnabled ?? true}
@@ -12991,11 +13053,46 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('settings.appearance.windowAcrylic.title')}
                 description={t('settings.appearance.windowAcrylic.description')}
               >
-                <ToggleButton
-                  active={appSettings?.appWindowAcrylicEnabled === true}
-                  disabled={!appSettings}
-                  onClick={handleWindowAcrylicToggle}
-                />
+                <div className="settings-acrylic-control">
+                  <ToggleButton
+                    active={appSettings?.appWindowAcrylicEnabled === true}
+                    disabled={!appSettings}
+                    onClick={handleWindowAcrylicToggle}
+                  />
+                  {appSettings?.appWindowAcrylicEnabled === true ? (
+                    <div className="settings-acrylic-options">
+                      <div className="settings-acrylic-subtoggle">
+                        <span>{t('settings.appearance.windowAcrylic.keepWhenUnfocused')}</span>
+                        <ToggleButton
+                          active={appSettings.appWindowAcrylicKeepWhenUnfocusedEnabled === true}
+                          onClick={handleWindowAcrylicKeepWhenUnfocusedToggle}
+                        />
+                      </div>
+                      <div className="settings-acrylic-slider">
+                        <span>{t('settings.appearance.windowAcrylic.transparency')}</span>
+                        <NumberRangeField
+                          min={0}
+                          max={100}
+                          step={1}
+                          suffix="%"
+                          value={appSettings.appWindowAcrylicTransparencyPercent ?? 70}
+                          onChange={handleWindowAcrylicTransparencyChange}
+                        />
+                      </div>
+                      <div className="settings-acrylic-slider">
+                        <span>{t('settings.appearance.windowAcrylic.blur')}</span>
+                        <NumberRangeField
+                          min={0}
+                          max={40}
+                          step={1}
+                          suffix="px"
+                          value={appSettings.appWindowAcrylicBlurPx ?? 22}
+                          onChange={handleWindowAcrylicBlurChange}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </SettingRow>
               <SettingRow
                 id="settings-row-now-playing-cover-color"

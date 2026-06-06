@@ -40,6 +40,7 @@ import './styles/ui-polish.css';
 import './styles/theme-presets.css';
 import './styles/desktop-lyrics.css';
 import './styles/mini-player.css';
+import './styles/scrollbars.css';
 
 const appearancePreferences = readAppearancePreferences();
 const themeMode = readThemeMode();

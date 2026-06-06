@@ -182,6 +182,7 @@ const normalizeCommand = (value: unknown): PluginCommandContribution | null => {
       id: normalizePluginId(input.id),
       title: asText(input.title, 'command title', 80),
       description: typeof input.description === 'string' && input.description.trim() ? input.description.trim().slice(0, 180) : undefined,
+      timeoutMs: typeof input.timeoutMs === 'number' && Number.isFinite(input.timeoutMs) && input.timeoutMs > 0 ? Math.round(input.timeoutMs) : undefined,
     };
   } catch {
     return null;

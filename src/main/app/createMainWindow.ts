@@ -165,6 +165,12 @@ export const createMainWindow = (): BrowserWindow => {
       rememberMainWindowSize(window);
     }, rememberWindowSizeDebounceMs);
   };
+  const refreshAcrylicAfterFocusChange = (): void => {
+    const latestSettings = getAppSettings();
+    if (latestSettings.appWindowAcrylicEnabled === true && latestSettings.appWindowAcrylicKeepWhenUnfocusedEnabled === true) {
+      applyMainWindowBackgroundMaterial(window, latestSettings);
+    }
+  };
 
   window.once('ready-to-show', () => {
     const settings = getAppSettings();
@@ -177,6 +183,8 @@ export const createMainWindow = (): BrowserWindow => {
   });
 
   window.on('resize', scheduleRememberSize);
+  window.on('blur', refreshAcrylicAfterFocusChange);
+  window.on('focus', refreshAcrylicAfterFocusChange);
   window.on('maximize', publishMaximizedState);
   window.on('unmaximize', publishMaximizedState);
   window.on('enter-full-screen', () => {

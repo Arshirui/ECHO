@@ -112,6 +112,7 @@ export type PluginCommandContribution = {
   id: string;
   title: string;
   description?: string;
+  timeoutMs?: number;
 };
 
 export type PluginTrackContextMenuContribution = {
@@ -464,6 +465,12 @@ export type PluginAudioAnalysisMetrics = {
   durationSeconds: number | null;
   fileSizeBytes: number | null;
   dsdNativeSampleRate: number | null;
+  spectrumProbeStatus?: 'ready' | 'skipped' | 'unavailable' | 'too_short' | 'too_quiet' | 'error';
+  spectrumProbeWindows?: number | null;
+  spectrumSelectedStartSeconds?: number | null;
+  spectralCutoffHz?: number | null;
+  highFrequencyToAudibleDb?: number | null;
+  ultrasonicToAudibleDb?: number | null;
 };
 
 export type PluginAudioAnalysisReport = {

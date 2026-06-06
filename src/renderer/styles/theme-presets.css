@@ -13130,32 +13130,32 @@ html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) {
   --echo-polish-page-bg:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--theme-panel-bg-strong) 46%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-muted) 38%, transparent)
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-page-strong-mix, 38%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-page-muted-mix, 32%), transparent)
     );
-  --echo-polish-titlebar-bg: color-mix(in srgb, var(--theme-panel-bg-strong) 58%, transparent);
+  --echo-polish-titlebar-bg: color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-titlebar-mix, 48%), transparent);
   --echo-polish-sidebar-bg:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--theme-panel-bg-strong) 54%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-muted) 50%, transparent)
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-sidebar-strong-mix, 44%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-sidebar-muted-mix, 40%), transparent)
     );
   --echo-polish-player-bg:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--theme-panel-bg-strong) 62%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg) 58%, transparent)
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-player-strong-mix, 52%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-player-mix, 48%), transparent)
     );
-  --echo-polish-surface: color-mix(in srgb, var(--theme-panel-bg) 48%, transparent);
-  --echo-polish-surface-strong: color-mix(in srgb, var(--theme-panel-bg-strong) 60%, transparent);
-  --echo-polish-surface-muted: color-mix(in srgb, var(--theme-panel-bg-muted) 46%, transparent);
-  --echo-polish-field-bg: color-mix(in srgb, var(--theme-field-bg) 62%, transparent);
-  --echo-polish-button-bg: color-mix(in srgb, var(--theme-button-bg) 64%, transparent);
-  --echo-polish-button-bg-hover: color-mix(in srgb, var(--theme-button-bg-hover) 76%, transparent);
-  --echo-polish-row-bg: color-mix(in srgb, var(--theme-list-row-bg) 48%, transparent);
-  --echo-polish-row-bg-hover: color-mix(in srgb, var(--theme-list-row-bg-hover) 62%, transparent);
-  --echo-polish-row-bg-active: color-mix(in srgb, var(--theme-accent-bg) 64%, transparent);
-  --echo-polish-active-bg: color-mix(in srgb, var(--theme-accent-bg) 68%, transparent);
+  --echo-polish-surface: color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-surface-mix, 38%), transparent);
+  --echo-polish-surface-strong: color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-surface-strong-mix, 50%), transparent);
+  --echo-polish-surface-muted: color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-surface-muted-mix, 34%), transparent);
+  --echo-polish-field-bg: color-mix(in srgb, var(--theme-field-bg) var(--app-acrylic-field-mix, 52%), transparent);
+  --echo-polish-button-bg: color-mix(in srgb, var(--theme-button-bg) var(--app-acrylic-button-mix, 50%), transparent);
+  --echo-polish-button-bg-hover: color-mix(in srgb, var(--theme-button-bg-hover) var(--app-acrylic-button-hover-mix, 64%), transparent);
+  --echo-polish-row-bg: color-mix(in srgb, var(--theme-list-row-bg) var(--app-acrylic-row-mix, 34%), transparent);
+  --echo-polish-row-bg-hover: color-mix(in srgb, var(--theme-list-row-bg-hover) var(--app-acrylic-row-hover-mix, 50%), transparent);
+  --echo-polish-row-bg-active: color-mix(in srgb, var(--theme-accent-bg) var(--app-acrylic-active-mix, 54%), transparent);
+  --echo-polish-active-bg: color-mix(in srgb, var(--theme-accent-bg) var(--app-acrylic-active-mix, 54%), transparent);
   background: transparent;
 }
 
@@ -13167,29 +13167,29 @@ html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .page-surface {
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--theme-panel-bg-strong) 48%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-muted) 44%, transparent)
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-page-strong-mix, 38%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-page-muted-mix, 32%), transparent)
     ),
     transparent;
-  backdrop-filter: blur(22px) saturate(1.18);
+  backdrop-filter: blur(var(--app-acrylic-blur, 22px)) saturate(1.18);
 }
 
 html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .app-titlebar,
 html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .sidebar,
 html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .player-bar {
-  backdrop-filter: blur(24px) saturate(1.18);
+  backdrop-filter: blur(var(--app-acrylic-titlebar-blur, 24px)) saturate(1.18);
 }
 
 html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .app-titlebar {
-  background: color-mix(in srgb, var(--theme-panel-bg-strong) 58%, transparent);
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-titlebar-mix, 48%), transparent);
 }
 
 html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .sidebar {
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--theme-panel-bg-strong) 54%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-muted) 50%, transparent)
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-sidebar-strong-mix, 44%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-sidebar-muted-mix, 40%), transparent)
     );
 }
 
@@ -13197,8 +13197,8 @@ html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .player-bar {
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--theme-panel-bg-strong) 62%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg) 58%, transparent)
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-player-strong-mix, 52%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-player-mix, 48%), transparent)
     );
 }
 
@@ -13206,54 +13206,54 @@ html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .home-page {
   --home-shell-bg:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--theme-panel-bg-strong) 58%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-muted) 46%, transparent)
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-home-shell-strong-mix, 48%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-shell-muted-mix, 34%), transparent)
     ),
     transparent;
   --home-hero-bg:
-    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--theme-accent-bg) 28%, transparent) 0 22%, transparent 46%),
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--theme-accent-bg) 20%, transparent) 0 22%, transparent 46%),
     linear-gradient(
       135deg,
-      color-mix(in srgb, var(--theme-panel-bg-strong) 56%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg) 44%, transparent) 50%,
-      color-mix(in srgb, var(--theme-panel-bg-muted) 38%, transparent)
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-home-hero-strong-mix, 46%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-home-hero-mix, 32%), transparent) 50%,
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-hero-muted-mix, 26%), transparent)
     ),
     transparent;
-  --home-button-bg: color-mix(in srgb, var(--theme-button-bg) 66%, transparent);
+  --home-button-bg: color-mix(in srgb, var(--theme-button-bg) var(--app-acrylic-button-mix, 50%), transparent);
   --home-now-bg:
     radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--theme-accent-bg) 24%, transparent) 0 22%, transparent 44%),
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--theme-panel-bg-strong) 62%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg) 52%, transparent)
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-home-now-strong-mix, 52%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-home-now-mix, 40%), transparent)
     ),
     transparent;
   --home-now-empty-bg:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--theme-panel-bg-strong) 58%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg) 48%, transparent)
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-home-shell-strong-mix, 48%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-home-now-mix, 40%), transparent)
     ),
     transparent;
   --home-artwork-bg:
     linear-gradient(
       135deg,
-      color-mix(in srgb, var(--theme-field-bg-strong) 58%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-muted) 48%, transparent)
+      color-mix(in srgb, var(--theme-field-bg-strong) var(--app-acrylic-field-mix, 52%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-surface-muted-mix, 34%), transparent)
     ),
     transparent;
   --home-signal-panel-bg:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--theme-field-bg) 50%, transparent),
-      color-mix(in srgb, var(--theme-panel-bg-muted) 38%, transparent)
+      color-mix(in srgb, var(--theme-field-bg) var(--app-acrylic-surface-mix, 38%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-activity-mix, 28%), transparent)
     ),
     transparent;
-  --home-week-bg: color-mix(in srgb, var(--theme-panel-bg-muted) 48%, transparent);
-  --home-activity-bg: color-mix(in srgb, var(--theme-panel-bg-muted) 44%, transparent);
-  --home-row-bg: color-mix(in srgb, var(--theme-list-row-bg) 52%, transparent);
-  --home-row-hover-bg: color-mix(in srgb, var(--theme-list-row-bg-hover) 62%, transparent);
-  --home-empty-bg: color-mix(in srgb, var(--theme-panel-bg-muted) 42%, transparent);
+  --home-week-bg: color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-week-mix, 32%), transparent);
+  --home-activity-bg: color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-activity-mix, 28%), transparent);
+  --home-row-bg: color-mix(in srgb, var(--theme-list-row-bg) var(--app-acrylic-row-mix, 34%), transparent);
+  --home-row-hover-bg: color-mix(in srgb, var(--theme-list-row-bg-hover) var(--app-acrylic-row-hover-mix, 50%), transparent);
+  --home-empty-bg: color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-activity-mix, 28%), transparent);
 }
 
 html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(
@@ -13264,7 +13264,7 @@ html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(
   .home-week-stat,
   .home-week-heatmap
 ) {
-  backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(var(--app-acrylic-blur, 18px)) saturate(1.12);
 }
 
 html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(.home-hero, .home-panel, .home-metric-tile) {
@@ -13281,6 +13281,66 @@ html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .home-now-card {
 
 html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .home-now-card[data-empty="true"] {
   background: var(--home-now-empty-bg) !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .page-surface:has(.album-detail-page) {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-page-strong-mix, 38%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-page-muted-mix, 32%), transparent)
+    ),
+    transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .album-detail-page {
+  background: transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(
+  .album-detail-hero,
+  .album-detail-track-console,
+  .album-detail-tabs,
+  .album-detail-facts,
+  .album-release-detail-card,
+  .album-release-version-card,
+  .album-external-rating-card,
+  .album-source-link-grid a
+) {
+  background: color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-surface-mix, 38%), transparent) !important;
+  backdrop-filter: blur(var(--app-acrylic-blur, 18px)) saturate(1.12);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(.album-detail-track-console, .album-detail-tabs) {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-page-strong-mix, 38%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-page-muted-mix, 32%), transparent)
+    ),
+    transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(.album-detail-cover, .album-related-album-cover) {
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-field-mix, 52%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-surface-muted-mix, 34%), transparent)
+    ),
+    transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .album-detail-page .album-track-row {
+  background: transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .album-detail-page .album-track-row:hover {
+  background: var(--echo-polish-row-bg-hover) !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .album-detail-page .album-track-row[data-playing='true'] {
+  background: var(--echo-polish-row-bg-active) !important;
 }
 
 .settings-page :is(

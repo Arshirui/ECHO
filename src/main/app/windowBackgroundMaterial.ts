@@ -5,7 +5,7 @@ export const isMainWindowAcrylicSupportedPlatform = (): boolean => process.platf
 
 export const applyMainWindowBackgroundMaterial = (
   window: BrowserWindow,
-  settings: Pick<AppSettings, 'appWindowAcrylicEnabled'>,
+  settings: Pick<AppSettings, 'appWindowAcrylicEnabled' | 'appWindowAcrylicKeepWhenUnfocusedEnabled'>,
 ): void => {
   if (window.isDestroyed()) {
     return;

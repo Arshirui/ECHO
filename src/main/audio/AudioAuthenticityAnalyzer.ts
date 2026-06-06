@@ -11,12 +11,18 @@ import {
   isDsdFilePath,
   readDsdNativeSampleRate,
 } from './DsdProbe';
+import {
+  AudioAuthenticitySpectrumProbe,
+  type AudioAuthenticitySpectrumProbeRequest,
+  type AudioAuthenticitySpectrumProbeResult,
+} from './AudioAuthenticitySpectrumProbe';
 
 type AudioAuthenticityAnalyzerDependencies = {
   now?: () => Date;
   existsSync?: (path: string) => boolean;
   statSync?: typeof statSync;
   readDsdNativeSampleRate?: (filePath: string) => Promise<number | null>;
+  probeSpectrum?: (request: AudioAuthenticitySpectrumProbeRequest) => Promise<AudioAuthenticitySpectrumProbeResult | null>;
 };
 
 const losslessCodecs = new Set(['flac', 'alac', 'wav', 'wave', 'aiff', 'aif', 'ape']);
@@ -24,7 +30,8 @@ const lossyCodecs = new Set(['mp3', 'aac', 'ogg', 'opus', 'vorbis', 'wma']);
 const losslessExtensions = new Set(['.flac', '.alac', '.wav', '.wave', '.aiff', '.aif', '.ape']);
 const lossyExtensions = new Set(['.mp3', '.aac', '.m4a', '.ogg', '.opus', '.wma']);
 const dsdNativeRateFloor = 1_000_000;
-const dsdTextTranscodePattern = /(?:pcm\s*(?:to|2)\s*dsd|upsampl|up[-_\s]?convert|converted\s+to\s+dsd|dsd\s+convert|remodulat|noise[-_\s]?shap|hqplayer|foobar|sacd[-_\s]?r|升频|升采样|升取样|转\s*dsd|轉\s*dsd|转码|轉碼|转制|轉製|假\s*dsd|fake\s*dsd)/iu;
+const safeDsdTextTranscodePattern = /(?:pcm\s*(?:to|2)\s*dsd|upsampl|up[-_\s]?convert|converted\s+to\s+dsd|dsd\s+convert|remodulat|noise[-_\s]?shap|hqplayer|foobar|sacd[-_\s]?r|\u5347\u9891|\u5347\u91c7\u6837|\u5347\u53d6\u6837|\u8f6c\s*dsd|\u8f49\s*dsd|\u8f6c\u7801|\u8f49\u78bc|\u8f6c\u5236|\u8f49\u88fd|\u5047\s*dsd|fake\s*dsd)/iu;
+const safeHiresTextTranscodePattern = /(?:upsampl|up[-_\s]?convert|fake\s*hi[-_\s]?res|converted\s+to\s+(?:96|192|384)|44\.1\s*(?:to|2)\s*(?:88\.2|96|176\.4|192)|48\s*(?:to|2)\s*(?:96|192)|\u5347\u9891|\u5347\u91c7\u6837|\u5347\u53d6\u6837|\u5047\s*hi[-_\s]?res|\u5047\s*\u9ad8\u89e3\u6790|\u8f6c\u7801|\u8f49\u78bc|\u8f6c\u5236|\u8f49\u88fd)/iu;
 
 const cleanText = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -60,6 +67,12 @@ const formatKhz = (value: number): string =>
 const formatMbps = (value: number): string =>
   `${Math.round(value / 10_000) / 100} Mbps`;
 
+const formatDb = (value: number | null): string =>
+  value === null ? 'unavailable' : `${Math.round(value * 10) / 10} dB`;
+
+const formatHz = (value: number | null): string =>
+  value === null ? 'unavailable' : value >= 1_000 ? `${Math.round(value / 100) / 10} kHz` : `${Math.round(value)} Hz`;
+
 const dsdFamily = (sampleRate: number): string => {
   const multiple = Math.round(sampleRate / 44_100);
   return multiple >= 64 ? `DSD${multiple}` : `${formatKhz(sampleRate)} DSD`;
@@ -86,17 +99,26 @@ const dsdTextProbe = (track: LibraryTrack, filePath: string | null, codec: strin
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     .join(' ');
 
+const pcmTextProbe = dsdTextProbe;
+
 export class AudioAuthenticityAnalyzer {
   private readonly now: () => Date;
   private readonly exists: (path: string) => boolean;
   private readonly stat: typeof statSync;
   private readonly readDsdRate: (filePath: string) => Promise<number | null>;
+  private readonly probeSpectrum: (request: AudioAuthenticitySpectrumProbeRequest) => Promise<AudioAuthenticitySpectrumProbeResult | null>;
 
   constructor(dependencies: AudioAuthenticityAnalyzerDependencies = {}) {
     this.now = dependencies.now ?? (() => new Date());
     this.exists = dependencies.existsSync ?? existsSync;
     this.stat = dependencies.statSync ?? statSync;
     this.readDsdRate = dependencies.readDsdNativeSampleRate ?? readDsdNativeSampleRate;
+    if (dependencies.probeSpectrum) {
+      this.probeSpectrum = dependencies.probeSpectrum;
+    } else {
+      const defaultSpectrumProbe = new AudioAuthenticitySpectrumProbe();
+      this.probeSpectrum = (request) => defaultSpectrumProbe.probe(request);
+    }
   }
 
   async analyzeTrack(track: LibraryTrack): Promise<PluginAudioAnalysisReport> {
@@ -112,22 +134,41 @@ export class AudioAuthenticityAnalyzer {
     const dsdNativeSampleRate = dsdByName && filePath && this.exists(filePath)
       ? await this.readDsdRate(filePath)
       : null;
+    const isHiRes = (sampleRate !== null && sampleRate >= 88_200) || (bitDepth !== null && bitDepth >= 24);
+    const shouldRunSpectrumProbe = Boolean(filePath && this.exists(filePath) && (dsdByName || isHiRes));
+    const spectrum = shouldRunSpectrumProbe && filePath
+      ? await this.safeProbeSpectrum({
+          filePath,
+          trackDurationSeconds: durationSeconds,
+          isDsd: dsdByName,
+        })
+      : null;
+    const spectrumProbeStatus = spectrum?.status ?? (shouldRunSpectrumProbe ? 'unavailable' : 'skipped');
+    const metrics = (): PluginAudioAnalysisReport['metrics'] => ({
+      codec,
+      extension,
+      sampleRate,
+      bitDepth,
+      bitrate,
+      durationSeconds,
+      fileSizeBytes,
+      dsdNativeSampleRate,
+      spectrumProbeStatus,
+      spectrumProbeWindows: spectrum?.probeWindowCount ?? null,
+      spectrumSelectedStartSeconds: spectrum?.selectedStartSeconds ?? null,
+      spectralCutoffHz: spectrum?.spectralCutoffHz ?? null,
+      highFrequencyToAudibleDb: spectrum?.highFrequencyToAudibleDb ?? null,
+      ultrasonicToAudibleDb: spectrum?.ultrasonicToAudibleDb ?? null,
+    });
     const items: PluginAudioAnalysisEvidence[] = [];
     const limitations: string[] = [
-      'This quick report uses host-controlled metadata, file size, and DSD header checks; it does not prove the original mastering source.',
-      'Lossy-to-lossless and PCM-to-DSD conclusions remain probabilistic until spectral analysis is added.',
+      'This report combines host-controlled metadata, file size, DSD header checks, and a short FFmpeg spectral probe when the local file is available.',
+      'Spectral cutoff and DSD ultrasonic-noise cues are strong provenance signals, but they still cannot prove the full mastering chain alone.',
     ];
 
     if (!filePath) {
       return this.report(track.id, 'unsupported', 'unknown', 0.1, {
-        codec,
-        extension,
-        sampleRate,
-        bitDepth,
-        bitrate,
-        durationSeconds,
-        fileSizeBytes,
-        dsdNativeSampleRate,
+        ...metrics(),
       }, [evidence('track_path_missing', 'warning', 'Track has no local path exposed to the host analyzer.')], limitations);
     }
 
@@ -142,7 +183,7 @@ export class AudioAuthenticityAnalyzer {
       const pcmRateMetadata = sampleRate !== null && sampleRate < dsdNativeRateFloor;
       const pcmBitDepthMetadata = bitDepth !== null && bitDepth > 1;
       const textProbe = dsdTextProbe(track, filePath, codec);
-      const hasTranscodeTextHint = dsdTextTranscodePattern.test(textProbe);
+      const hasTranscodeTextHint = safeDsdTextTranscodePattern.test(textProbe);
       const measuredBitrate = observedBitrate(bitrate, fileSizeBytes, durationSeconds);
       let dsdBitrateRisk = false;
       let dsdBitrateWarning = false;
@@ -175,107 +216,91 @@ export class AudioAuthenticityAnalyzer {
         items.push(evidence('dsd_bitrate_unverified', 'warning', 'No reliable duration/file-size bitrate cross-check was available for the DSD container.'));
       }
 
-      if (hasTranscodeTextHint || dsdBitrateRisk || (pcmRateMetadata && pcmBitDepthMetadata)) {
-        return this.report(track.id, 'ready', 'likely_pcm_to_dsd', hasTranscodeTextHint || dsdBitrateRisk ? 0.78 : 0.7, {
-          codec,
-          extension,
-          sampleRate,
-          bitDepth,
-          bitrate,
-          durationSeconds,
-          fileSizeBytes,
-          dsdNativeSampleRate,
-        }, items, limitations);
+      this.addSpectrumEvidence(items, spectrum, 'dsd');
+      const spectralDsdRisk = spectrum?.status === 'ready' &&
+        (spectrum.brickwallLikely || spectrum.pcmBandwidthCutoffLikely);
+      const spectralDsdSupport = spectrum?.status === 'ready' &&
+        spectrum.dsdUltrasonicNoiseLikely &&
+        !spectrum.brickwallLikely &&
+        !spectrum.pcmBandwidthCutoffLikely;
+
+      if (hasTranscodeTextHint || dsdBitrateRisk || spectralDsdRisk || (pcmRateMetadata && pcmBitDepthMetadata)) {
+        const confidence = spectralDsdRisk
+          ? spectrum?.pcmBandwidthCutoffLikely
+            ? 0.82
+            : 0.86
+          : hasTranscodeTextHint || dsdBitrateRisk
+            ? 0.8
+            : 0.72;
+        return this.report(track.id, 'ready', 'likely_pcm_to_dsd', confidence, metrics(), items, limitations);
       }
 
       if (pcmRateMetadata || pcmBitDepthMetadata || dsdNativeSampleRate === null || dsdBitrateWarning) {
         if (dsdNativeSampleRate === null && pcmRateMetadata) {
           items.push(evidence('dsd_header_missing_pcm_rate', 'risk', 'Track looks like DSD but only PCM-rate metadata was available and the host could not verify a native DSD header.'));
         }
-        return this.report(track.id, 'ready', 'dsd_metadata_mismatch', 0.72, {
-          codec,
-          extension,
-          sampleRate,
-          bitDepth,
-          bitrate,
-          durationSeconds,
-          fileSizeBytes,
-          dsdNativeSampleRate,
-        }, items, limitations);
+        return this.report(track.id, 'ready', 'dsd_metadata_mismatch', 0.74, metrics(), items, limitations);
       }
-      items.push(evidence('dsd_source_not_proven', 'warning', 'Valid DSD container evidence does not prove the original mastering source; spectral/noise-shaping analysis is still required before calling it true native DSD.'));
-      return this.report(track.id, 'ready', 'trusted_dsd_container', 0.54, {
-        codec,
-        extension,
-        sampleRate,
-        bitDepth,
-        bitrate,
-        durationSeconds,
-        fileSizeBytes,
-        dsdNativeSampleRate,
-      }, items, limitations);
+      items.push(evidence('dsd_source_not_proven', 'warning', spectralDsdSupport
+        ? 'DSD-like ultrasonic noise shaping supports the container claim, but the original mastering chain is still not mathematically provable from the local file alone.'
+        : 'Valid DSD container evidence does not prove the original mastering source; use the report as a strong local-file authenticity signal, not a mastering-chain certificate.'));
+      const trustedDsdConfidence = spectralDsdSupport
+        ? 0.86
+        : spectrum?.status === 'ready'
+          ? 0.74
+          : 0.76;
+      return this.report(track.id, 'ready', 'trusted_dsd_container', trustedDsdConfidence, metrics(), items, limitations);
     }
 
     const codecIsLossless = hasCodecToken(codec, losslessCodecs) || (extension !== null && losslessExtensions.has(extension));
     const codecIsLossy = hasCodecToken(codec, lossyCodecs) || (extension !== null && lossyExtensions.has(extension));
-    const isHiRes = (sampleRate !== null && sampleRate >= 88_200) || (bitDepth !== null && bitDepth >= 24);
+    const isJasHiResContainer = sampleRate !== null && sampleRate >= 96_000 && bitDepth !== null && bitDepth >= 24;
+    const isHighBitDepthOnly = bitDepth !== null && bitDepth >= 24 && sampleRate !== null && sampleRate < 88_200;
     const longEnoughForBitrateSignal = durationSeconds === null || durationSeconds >= 45;
+    const pcmProbeText = pcmTextProbe(track, filePath, codec);
+    const hasHiresTranscodeHint = isHiRes && safeHiresTextTranscodePattern.test(pcmProbeText);
 
     if (codecIsLossy) {
       items.push(evidence('lossy_codec', 'info', 'Codec or extension is a known lossy format.'));
-      return this.report(track.id, 'ready', 'lossy_source', 0.9, {
-        codec,
-        extension,
-        sampleRate,
-        bitDepth,
-        bitrate,
-        durationSeconds,
-        fileSizeBytes,
-        dsdNativeSampleRate,
-      }, items, limitations);
+      return this.report(track.id, 'ready', 'lossy_source', 0.9, metrics(), items, limitations);
     }
 
     if (!codecIsLossless) {
       items.push(evidence('codec_unknown', 'warning', 'Codec is not enough to classify this file as lossless or lossy.'));
-      return this.report(track.id, 'ready', 'unknown', 0.3, {
-        codec,
-        extension,
-        sampleRate,
-        bitDepth,
-        bitrate,
-        durationSeconds,
-        fileSizeBytes,
-        dsdNativeSampleRate,
-      }, items, limitations);
+      return this.report(track.id, 'ready', 'unknown', 0.3, metrics(), items, limitations);
     }
 
     items.push(evidence('lossless_container', 'info', 'Codec or extension is a lossless container.'));
+    if (isJasHiResContainer) {
+      items.push(evidence('jas_hires_container', 'info', 'Metadata meets the common 96 kHz / 24-bit-or-above Hi-Res container threshold.'));
+    } else if (isHighBitDepthOnly) {
+      items.push(evidence('high_bit_depth_not_jas_hires', 'warning', 'Bit depth is above CD quality, but sample rate is below the common 96 kHz Hi-Res logo threshold.'));
+    }
+    this.addSpectrumEvidence(items, spectrum, 'hires');
+    const spectralHiResRisk = isHiRes && spectrum?.status === 'ready' && spectrum.brickwallLikely;
+    const spectralHiResSupport = isHiRes &&
+      spectrum?.status === 'ready' &&
+      !spectrum.brickwallLikely &&
+      spectrum.highFrequencyToAudibleDb !== null &&
+      spectrum.highFrequencyToAudibleDb > -55;
+
+    if (spectralHiResRisk) {
+      return this.report(track.id, 'ready', 'likely_fake_hires', 0.84, metrics(), items, limitations);
+    }
+
+    if (hasHiresTranscodeHint) {
+      items.push(evidence('hires_transcode_text_hint', 'risk', 'Path, title, album, artist, or genre contains wording commonly used for PCM upsampling or fake Hi-Res releases.'));
+      return this.report(track.id, 'ready', 'likely_fake_hires', 0.8, metrics(), items, limitations);
+    }
+
     if (bitrate !== null && longEnoughForBitrateSignal && bitrate < 360_000) {
       items.push(evidence('low_lossless_bitrate', 'risk', 'Average bitrate is unusually low for a normal lossless music file.'));
-      return this.report(track.id, 'ready', 'likely_lossy_transcode', 0.68, {
-        codec,
-        extension,
-        sampleRate,
-        bitDepth,
-        bitrate,
-        durationSeconds,
-        fileSizeBytes,
-        dsdNativeSampleRate,
-      }, items, limitations);
+      return this.report(track.id, 'ready', 'likely_lossy_transcode', 0.72, metrics(), items, limitations);
     }
 
     if (isHiRes && bitrate !== null && longEnoughForBitrateSignal && bitrate < 900_000) {
-      items.push(evidence('low_hires_bitrate', 'risk', 'Track is marked Hi-Res but has a low average bitrate for 24-bit or high-sample-rate lossless audio.'));
-      return this.report(track.id, 'ready', 'likely_fake_hires', 0.64, {
-        codec,
-        extension,
-        sampleRate,
-        bitDepth,
-        bitrate,
-        durationSeconds,
-        fileSizeBytes,
-        dsdNativeSampleRate,
-      }, items, limitations);
+      items.push(evidence('low_hires_bitrate', 'risk', 'Track is marked Hi-Res or high-bit-depth lossless but has a low average bitrate for that claim.'));
+      return this.report(track.id, 'ready', 'likely_fake_hires', 0.76, metrics(), items, limitations);
     }
 
     if (sampleRate !== null) {
@@ -288,16 +313,12 @@ export class AudioAuthenticityAnalyzer {
       items.push(evidence('bitrate_present', 'info', `Average bitrate is ${Math.round(bitrate)} bps.`));
     }
 
-    return this.report(track.id, 'ready', 'trusted_lossless', isHiRes ? 0.58 : 0.7, {
-      codec,
-      extension,
-      sampleRate,
-      bitDepth,
-      bitrate,
-      durationSeconds,
-      fileSizeBytes,
-      dsdNativeSampleRate,
-    }, items, limitations);
+    const trustedLosslessConfidence = isHiRes
+      ? spectralHiResSupport
+        ? 0.82
+        : 0.74
+      : 0.76;
+    return this.report(track.id, 'ready', 'trusted_lossless', trustedLosslessConfidence, metrics(), items, limitations);
   }
 
   private resolveFileSize(filePath: string | null): number | null {
@@ -308,6 +329,123 @@ export class AudioAuthenticityAnalyzer {
       return this.stat(filePath).size;
     } catch {
       return null;
+    }
+  }
+
+  private async safeProbeSpectrum(request: AudioAuthenticitySpectrumProbeRequest): Promise<AudioAuthenticitySpectrumProbeResult> {
+    try {
+      const result = await this.probeSpectrum(request);
+      return result ?? {
+        status: 'unavailable',
+        decodeSampleRate: null,
+        analyzedDurationSeconds: null,
+        selectedStartSeconds: null,
+        probeWindowCount: null,
+        rmsDb: null,
+        upperTrebleToAudibleDb: null,
+        lowUltrasonicToAudibleDb: null,
+        highFrequencyToAudibleDb: null,
+        ultrasonicToAudibleDb: null,
+        topBandToAudibleDb: null,
+        spectralCutoffHz: null,
+        brickwallLikely: false,
+        pcmBandwidthCutoffLikely: false,
+        dsdUltrasonicNoiseLikely: false,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        decodeSampleRate: null,
+        analyzedDurationSeconds: null,
+        selectedStartSeconds: null,
+        probeWindowCount: null,
+        rmsDb: null,
+        upperTrebleToAudibleDb: null,
+        lowUltrasonicToAudibleDb: null,
+        highFrequencyToAudibleDb: null,
+        ultrasonicToAudibleDb: null,
+        topBandToAudibleDb: null,
+        spectralCutoffHz: null,
+        brickwallLikely: false,
+        pcmBandwidthCutoffLikely: false,
+        dsdUltrasonicNoiseLikely: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private addSpectrumEvidence(
+    items: PluginAudioAnalysisEvidence[],
+    spectrum: AudioAuthenticitySpectrumProbeResult | null,
+    mode: 'dsd' | 'hires',
+  ): void {
+    if (!spectrum || spectrum.status === 'skipped') {
+      return;
+    }
+
+    if (spectrum.status !== 'ready') {
+      items.push(evidence(
+        'spectrum_probe_unavailable',
+        'warning',
+        `Spectral probe status is ${spectrum.status}${spectrum.error ? `: ${spectrum.error}` : ''}.`,
+      ));
+      return;
+    }
+
+    items.push(evidence(
+      'spectrum_probe_ready',
+      'info',
+      `Spectral probe decoded ${Math.round((spectrum.analyzedDurationSeconds ?? 0) * 10) / 10}s at ${formatKhz(spectrum.decodeSampleRate ?? 0)}; high/audible ${formatDb(spectrum.highFrequencyToAudibleDb)}, ultrasonic/audible ${formatDb(spectrum.ultrasonicToAudibleDb)}.`,
+    ));
+
+    if (spectrum.brickwallLikely) {
+      items.push(evidence(
+        mode === 'dsd' ? 'dsd_spectrum_pcm_bandwidth_cutoff' : 'hires_spectrum_brickwall_cutoff',
+        'risk',
+        `Decoded spectrum has a steep cutoff around ${formatHz(spectrum.spectralCutoffHz)} with very low ultrasonic energy; this is a strong sign of PCM-bandwidth material inside a higher-rate container.`,
+      ));
+      return;
+    }
+
+    if (mode === 'dsd' && spectrum.pcmBandwidthCutoffLikely) {
+      items.push(evidence(
+        'dsd_spectrum_noise_shaped_pcm_cutoff',
+        'risk',
+        `The decoded DSD spectrum has weak 18-30 kHz music-band energy but elevated ultrasonic noise. That pattern is consistent with PCM material converted to DSD with noise shaping, not strong evidence of native DSD provenance.`,
+      ));
+      return;
+    }
+
+    if (mode === 'dsd') {
+      if (spectrum.dsdUltrasonicNoiseLikely) {
+        items.push(evidence(
+          'dsd_spectrum_noise_shaping_present',
+          'info',
+          'Decoded spectrum includes DSD-like ultrasonic noise-shaped energy, which supports the container claim more strongly than metadata alone.',
+        ));
+      } else {
+        items.push(evidence(
+          'dsd_spectrum_noise_shaping_not_clear',
+          'warning',
+          'Spectral probe did not find a clear DSD ultrasonic-noise signature; this may be filtering, quiet content, or PCM-sourced conversion.',
+        ));
+      }
+      return;
+    }
+
+    if (spectrum.highFrequencyToAudibleDb !== null && spectrum.highFrequencyToAudibleDb > -55) {
+      items.push(evidence(
+        'hires_spectrum_high_band_present',
+        'info',
+        'High-frequency content above the CD audio band is present, supporting the Hi-Res container claim.',
+      ));
+    } else {
+      items.push(evidence(
+        'hires_spectrum_high_band_weak',
+        'warning',
+        'High-frequency energy above the CD audio band is weak; this alone is not proof of fake Hi-Res, but it lowers provenance confidence.',
+      ));
     }
   }
 

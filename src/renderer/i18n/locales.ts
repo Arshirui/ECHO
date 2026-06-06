@@ -1898,8 +1898,11 @@ export type TranslationKey =
   | 'settings.appearance.nowPlayingCoverColor.description'
   | 'settings.appearance.nowPlayingCoverColor.title'
   | 'settings.appearance.windowAcrylic.description'
+  | 'settings.appearance.windowAcrylic.blur'
+  | 'settings.appearance.windowAcrylic.keepWhenUnfocused'
   | 'settings.appearance.windowAcrylic.restartConfirm'
   | 'settings.appearance.windowAcrylic.title'
+  | 'settings.appearance.windowAcrylic.transparency'
   | 'settings.appearance.reset.action'
   | 'settings.appearance.reset.description'
   | 'settings.appearance.reset.title'
@@ -2275,6 +2278,8 @@ export type TranslationKey =
   | 'settings.general.sidebarIconOnly.title'
   | 'settings.general.featureCommentsHidden.description'
   | 'settings.general.featureCommentsHidden.title'
+  | 'settings.general.trackContextMenuExtraActions.description'
+  | 'settings.general.trackContextMenuExtraActions.title'
   | 'settings.general.touchKeyboard.description'
   | 'settings.general.touchKeyboard.title'
   | 'settings.header.searchPlaceholder'
@@ -5028,7 +5033,10 @@ const zhCN: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.description': '开启后，正在播放页会在空闲时从小封面抽样生成轻量背景；低负载模式会自动跳过。默认关闭。',
   'settings.appearance.windowAcrylic.title': '窗口亚克力',
   'settings.appearance.windowAcrylic.description': '开启后下次启动会使用系统亚克力材质，让桌面背景从窗口后方透出；界面会保留可读遮罩。Windows 11 22H2 及以上效果最佳。',
+  'settings.appearance.windowAcrylic.blur': '模糊度',
+  'settings.appearance.windowAcrylic.keepWhenUnfocused': '失焦时保持通透',
   'settings.appearance.windowAcrylic.restartConfirm': '窗口亚克力需要重启 ECHO 才能改变系统窗口材质。现在重启吗？',
+  'settings.appearance.windowAcrylic.transparency': '透明度',
   'settings.appearance.reset.action': '恢复默认',
   'settings.appearance.reset.description': '恢复 Outfit、Microsoft YaHei、Noto Sans SC、字号、行距、文字深浅与圆角封面。',
   'settings.appearance.reset.title': '外观默认值',
@@ -5388,6 +5396,8 @@ const zhCN: TranslationMap = {
   'settings.general.sidebarIconOnly.description': '开启后左侧栏保持显示，但导航入口只显示图标；悬停仍可查看名称。默认关闭。',
   'settings.general.featureCommentsHidden.title': '关闭功能注释',
   'settings.general.featureCommentsHidden.description': '开启后收起设置、抽屉和导航里的解释性说明，只保留标题、控件与状态。默认关闭。',
+  'settings.general.trackContextMenuExtraActions.title': '右键菜单扩展动作',
+  'settings.general.trackContextMenuExtraActions.description': '开启后在曲目右键菜单中显示 osu! Timing、使用系统默认应用打开、复制/保存歌曲卡片图片。默认隐藏以保持菜单精简。',
   'settings.general.touchKeyboard.title': '启用屏幕键盘',
   'settings.general.touchKeyboard.description': '输入字段能够自动显示屏幕上的 Windows 键盘。此功能适用于触摸屏。',
   'settings.general.fastStartup.description': '开启后，启动时只做轻量只读曲库验证；完整数据保护快照会在窗口打开后后台完成。默认关闭。',
@@ -8487,6 +8497,8 @@ const zhTW: TranslationMap = {
   'settings.general.sidebarIconOnly.description': '開啟後側邊欄保持顯示，但導覽入口只顯示圖示；懸停仍可查看名稱。預設關閉。',
   'settings.general.featureCommentsHidden.title': '關閉功能註釋',
   'settings.general.featureCommentsHidden.description': '開啟後收起設定、抽屜和導覽裡的解釋性說明，只保留標題、控制項與狀態。預設關閉。',
+  'settings.general.trackContextMenuExtraActions.title': '右鍵選單擴充操作',
+  'settings.general.trackContextMenuExtraActions.description': '開啟後在曲目右鍵選單中顯示 osu! Timing、使用系統預設應用程式打開、複製/儲存歌曲卡片圖片。預設隱藏以保持選單精簡。',
   'settings.general.touchKeyboard.title': '啟用螢幕鍵盤',
   'settings.general.touchKeyboard.description': '輸入欄位可自動顯示螢幕上的 Windows 鍵盤。此功能適用於觸控螢幕。',
   'settings.general.fastStartup.description': '開啟後，啟動時只做輕量唯讀曲庫驗證；完整資料保護快照會在視窗開啟後於背景完成。預設關閉。',
@@ -8843,7 +8855,10 @@ const zhTW: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.description': '開啟後，正在播放頁會在閒置時從小封面取樣生成輕量背景；低負載模式會自動略過。預設關閉。',
   'settings.appearance.windowAcrylic.title': '視窗壓克力',
   'settings.appearance.windowAcrylic.description': '開啟後下次啟動會使用系統壓克力材質，讓桌面背景從視窗後方透出；介面會保留可讀遮罩。Windows 11 22H2 以上效果最佳。',
+  'settings.appearance.windowAcrylic.blur': '模糊度',
+  'settings.appearance.windowAcrylic.keepWhenUnfocused': '失焦時保持通透',
   'settings.appearance.windowAcrylic.restartConfirm': '視窗壓克力需要重新啟動 ECHO 才能變更系統視窗材質。現在重新啟動嗎？',
+  'settings.appearance.windowAcrylic.transparency': '透明度',
   'settings.appearance.albumCoverShape.title': '專輯封面形狀',
   'settings.appearance.albumCoverShape.description': '選擇專輯封面顯示為圓角或方角；此設定優先於主題預設。預設圓角。',
   'settings.appearance.albumCoverShape.rounded': '圓角',
@@ -11402,6 +11417,8 @@ const jaJP: TranslationMap = {
   'settings.general.sidebarIconOnly.description': '有効にするとサイドバーは表示したまま、ナビゲーション項目はアイコンだけになります。ホバーで名前を確認できます。既定ではオフです。',
   'settings.general.featureCommentsHidden.title': '機能注釈を非表示',
   'settings.general.featureCommentsHidden.description': '有効にすると、設定、ドロワー、ナビゲーションの説明文を畳み、タイトル、操作、状態だけを残します。既定ではオフです。',
+  'settings.general.trackContextMenuExtraActions.title': '右クリックメニューの追加操作',
+  'settings.general.trackContextMenuExtraActions.description': '有効にすると、曲目の右クリックメニューに osu! Timing、システム既定アプリで開く、曲カード画像のコピー/保存を表示します。メニューを短く保つため既定では非表示です。',
   'settings.general.touchKeyboard.title': 'スクリーンキーボードを有効化',
   'settings.general.touchKeyboard.description': '入力フィールドにフォーカスすると、画面上の Windows キーボードを自動で表示します。タッチスクリーン向けの機能です。',
   'settings.general.fastStartup.description': '有効にすると、起動時は軽量な読み取り専用のライブラリ確認だけを行い、完全なデータ保護スナップショットはウィンドウ表示後にバックグラウンドで完了します。既定ではオフです。',
@@ -11755,7 +11772,10 @@ const jaJP: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.description': '有効にすると、再生中ページがアイドル時に小さなカバー画像から軽量な背景色を抽出します。低負荷モードでは自動的にスキップします。既定はオフです。',
   'settings.appearance.windowAcrylic.title': 'ウィンドウ アクリル',
   'settings.appearance.windowAcrylic.description': '有効にすると次回起動時にシステムのアクリル素材を使い、デスクトップ背景をウィンドウ越しに見せます。読みやすさを保つ保護レイヤーは維持します。Windows 11 22H2 以降で最適です。',
+  'settings.appearance.windowAcrylic.blur': 'ぼかし',
+  'settings.appearance.windowAcrylic.keepWhenUnfocused': '非アクティブ時も透明感を維持',
   'settings.appearance.windowAcrylic.restartConfirm': 'ウィンドウ アクリルでシステムのウィンドウ素材を変更するには ECHO の再起動が必要です。今すぐ再起動しますか？',
+  'settings.appearance.windowAcrylic.transparency': '透明度',
   'settings.appearance.albumCoverShape.title': 'アルバムカバー形状',
   'settings.appearance.albumCoverShape.description': 'アルバムアートを角丸または四角で表示します。この設定はテーマプリセットより優先されます。既定は角丸です。',
   'settings.appearance.albumCoverShape.rounded': '角丸',
@@ -14416,6 +14436,8 @@ const enUS: TranslationMap = {
   'settings.general.sidebarIconOnly.description': 'Keep the left sidebar visible, but show navigation entries as icons only. Hover still shows each name. Off by default.',
   'settings.general.featureCommentsHidden.title': 'Hide Feature Comments',
   'settings.general.featureCommentsHidden.description': 'Hide explanatory notes in settings, drawers, and navigation, leaving titles, controls, and status text. Off by default.',
+  'settings.general.trackContextMenuExtraActions.title': 'Context Menu Extra Actions',
+  'settings.general.trackContextMenuExtraActions.description': 'Show osu! Timing, open with the system default app, and copy/save song card image in the track context menu. Hidden by default to keep the menu compact.',
   'settings.general.touchKeyboard.title': 'Enable On-Screen Keyboard',
   'settings.general.touchKeyboard.description': 'Input fields can automatically show the on-screen Windows keyboard. This is useful for touch screens.',
   'settings.general.fastStartup.description': 'When enabled, startup only runs a lightweight read-only library check; the full data protection snapshot finishes in the background after the window opens. Off by default.',
@@ -14857,7 +14879,10 @@ const enUS: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.description': 'Sample the small cover art while idle to tint the Now Playing page. Low-load playback mode skips it automatically. Off by default.',
   'settings.appearance.windowAcrylic.title': 'Window Acrylic',
   'settings.appearance.windowAcrylic.description': 'Use the system acrylic material on next launch so the desktop shows through behind the window, while keeping a readability scrim over the UI. Best on Windows 11 22H2 and later.',
+  'settings.appearance.windowAcrylic.blur': 'Blur',
+  'settings.appearance.windowAcrylic.keepWhenUnfocused': 'Keep translucent when unfocused',
   'settings.appearance.windowAcrylic.restartConfirm': 'Window Acrylic needs an ECHO restart to change the system window material. Restart now?',
+  'settings.appearance.windowAcrylic.transparency': 'Transparency',
   'settings.appearance.wallpaper.title': 'Custom Background',
   'settings.appearance.wallpaper.description': 'Landscape and portrait backgrounds are saved separately. Portrait windows only apply the portrait background. Supports images and local videos.',
   'settings.appearance.wallpaper.choose': 'Choose Landscape Background',

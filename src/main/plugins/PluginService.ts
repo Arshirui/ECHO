@@ -84,6 +84,7 @@ type RuntimeCommand = {
   id: string;
   title: string;
   description?: string;
+  timeoutMs?: number;
   handler: (...args: unknown[]) => unknown;
 };
 
@@ -143,6 +144,7 @@ const manifestFileName = 'echo.plugin.json';
 const stateFileName = 'plugin-state.json';
 const storageFileName = 'plugin-storage.json';
 const commandTimeoutMs = 2_000;
+const audioAnalysisTimeoutMs = 24_000;
 const eventHandlerTimeoutMs = 2_000;
 const metadataProviderTimeoutMs = 2_500;
 const pluginNetworkTimeoutMs = 5_000;
@@ -197,6 +199,12 @@ const pluginPackageExcludedFiles = new Set([stateFileName, storageFileName]);
 const pluginSettingsFileName = 'plugin-settings.json';
 pluginPackageExcludedFiles.add(pluginSettingsFileName);
 const allowedPluginNetworkMethods = new Set(['GET', 'POST']);
+
+export const normalizePluginCommandTimeoutMs = (value: unknown, trustedPermissions: PluginPermission[]): number => {
+  const requested = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : commandTimeoutMs;
+  const maximum = trustedPermissions.includes('audio:analyze') ? audioAnalysisTimeoutMs : commandTimeoutMs;
+  return Math.max(250, Math.min(requested, maximum));
+};
 const allowedPluginRequestHeaders = new Set(['accept', 'accept-language', 'content-type', 'user-agent']);
 const redactedHeaderNames = new Set(['authorization', 'cookie', 'set-cookie', 'x-api-key', 'x-auth-token']);
 
@@ -1269,7 +1277,7 @@ export class PluginService {
     try {
       const args = Array.isArray(request.args) ? request.args : [];
       assertJsonByteLimit(args, maxPluginCommandArgsBytes, 'plugin_command_args_too_large');
-      const result = await timeout(Promise.resolve(command.handler(...args)), commandTimeoutMs, 'plugin_command_timeout');
+      const result = await timeout(Promise.resolve(command.handler(...args)), command.timeoutMs ?? commandTimeoutMs, 'plugin_command_timeout');
       assertJsonByteLimit(result, maxPluginCommandResultBytes, 'plugin_command_result_too_large');
       return jsonClone(result);
     } catch (error) {
@@ -1698,15 +1706,17 @@ export class PluginService {
         },
       }),
       commands: Object.freeze({
-        register: (commandId: string, options: { title?: unknown; description?: unknown } | ((...args: unknown[]) => unknown), handler?: (...args: unknown[]) => unknown): void => {
+        register: (commandId: string, options: { title?: unknown; description?: unknown; timeoutMs?: unknown } | ((...args: unknown[]) => unknown), handler?: (...args: unknown[]) => unknown): void => {
           const actualHandler = typeof options === 'function' ? options : handler;
           if (typeof commandId !== 'string' || !commandId.trim() || typeof actualHandler !== 'function') {
             throw new Error('plugin_command_invalid');
           }
+          const timeoutMs = isRecord(options) ? normalizePluginCommandTimeoutMs(options.timeoutMs, record.trustedPermissions) : commandTimeoutMs;
           runtime.commands.set(commandId.trim(), {
             id: commandId.trim(),
             title: isRecord(options) && typeof options.title === 'string' && options.title.trim() ? options.title.trim() : commandId.trim(),
             description: isRecord(options) && typeof options.description === 'string' && options.description.trim() ? options.description.trim() : undefined,
+            timeoutMs,
             handler: actualHandler,
           });
         },
@@ -1978,7 +1988,7 @@ export class PluginService {
     try {
       const result = await timeout(
         this.audioAnalyzer.analyzeTrack(track),
-        commandTimeoutMs,
+        audioAnalysisTimeoutMs,
         'plugin_audio_analyze_timeout',
       );
       assertJsonByteLimit(result, maxPluginAudioAnalyzeResultBytes, 'plugin_audio_analyze_result_too_large');
@@ -2101,6 +2111,7 @@ export class PluginService {
         id: command.id,
         title: command.title,
         description: command.description,
+        timeoutMs: command.timeoutMs,
         pluginId: manifest?.id ?? basename(record.directory),
       })) : []),
     ];

@@ -190,6 +190,8 @@ export type AppSettings = {
   appearanceThemeCustomExpanded?: boolean;
   appearanceSidebarLayoutExpanded?: boolean;
   appWindowAcrylicEnabled?: boolean;
+  appWindowAcrylicKeepWhenUnfocusedEnabled?: boolean;
+  appWindowAcrylicBlurPx?: number;
   appWindowAcrylicTransparencyPercent?: number;
   appearancePreferences?: AppearancePreferences;
   sidebarRouteOrder?: SidebarRouteId[];
@@ -197,6 +199,7 @@ export type AppSettings = {
   sidebarAutoHideEnabled?: boolean;
   sidebarIconOnlyEnabled?: boolean;
   featureCommentsHidden?: boolean;
+  trackContextMenuExtraActionsEnabled?: boolean;
   touchOnScreenKeyboardEnabled?: boolean;
   songsSort?: LibrarySort;
   rememberedAudioOutput?: RememberedAudioOutput;

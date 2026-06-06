@@ -1849,46 +1849,6 @@ export const HomePage = (): JSX.Element => {
     }
   }, []);
 
-  const loadRecentPlaybackPulse = useCallback(async (): Promise<void> => {
-    const library = window.echo?.library;
-    const requestId = playbackPulseRequestIdRef.current + 1;
-    playbackPulseRequestIdRef.current = requestId;
-
-    if (!library?.getPlaybackHistory) {
-      return;
-    }
-
-    try {
-      const historyPage = await library.getPlaybackHistory({ page: 1, pageSize: recentPlayedAlbumHistoryPageSize, sort: 'recent' });
-      if (playbackPulseRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      const fallbackRecentPlayedAlbums = recentPlayedAlbumsFromHistory(historyPage.items);
-      mergeCachedHomePageData({
-        recentHistory: historyPage.items,
-        recentPlayedAlbums: fallbackRecentPlayedAlbums,
-      });
-      setRecentHistory(historyPage.items);
-      setRecentPlayedAlbums((current) => (current.length > 0 && fallbackRecentPlayedAlbums.length > 0 ? current : fallbackRecentPlayedAlbums));
-
-      const resolvedRecentPlayedAlbums = await loadRecentPlayedAlbums(library, historyPage.items);
-      if (playbackPulseRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      const nextRecentPlayedAlbums = resolvedRecentPlayedAlbums.length > 0 ? resolvedRecentPlayedAlbums : fallbackRecentPlayedAlbums;
-      mergeCachedHomePageData({
-        recentPlayedAlbums: nextRecentPlayedAlbums,
-      });
-      setRecentPlayedAlbums(nextRecentPlayedAlbums);
-    } catch (loadError) {
-      if (playbackPulseRequestIdRef.current === requestId) {
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
-      }
-    }
-  }, []);
-
   const loadLibraryPulse = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
     const requestId = pulseRequestIdRef.current + 1;
@@ -2026,7 +1986,7 @@ export const HomePage = (): JSX.Element => {
       }
       playbackHistoryRefreshTimerRef.current = window.setTimeout(() => {
         playbackHistoryRefreshTimerRef.current = null;
-        void loadRecentPlaybackPulse();
+        void loadPlaybackPulse();
       }, homePlaybackHistoryRefreshDelayMs);
     };
 
@@ -2038,7 +1998,7 @@ export const HomePage = (): JSX.Element => {
         playbackHistoryRefreshTimerRef.current = null;
       }
     };
-  }, [loadRecentPlaybackPulse]);
+  }, [loadPlaybackPulse]);
 
   useEffect(() => {
     const track = queue.currentTrack;

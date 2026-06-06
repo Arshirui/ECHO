@@ -302,7 +302,10 @@ const applyAppSettingsPatch = async (
     refreshTaskbarPlaybackIntegration();
   }
 
-  if (typeof settingsPatch.appWindowAcrylicEnabled === 'boolean') {
+  if (
+    typeof settingsPatch.appWindowAcrylicEnabled === 'boolean' ||
+    typeof settingsPatch.appWindowAcrylicKeepWhenUnfocusedEnabled === 'boolean'
+  ) {
     const mainWindow = getMainWindow();
     if (mainWindow) {
       applyMainWindowBackgroundMaterial(mainWindow, settings);

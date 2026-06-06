@@ -213,6 +213,7 @@ type EchoPluginAudioAnalysisVerdict =
   | 'trusted_lossless'
   | 'likely_lossy_transcode'
   | 'likely_fake_hires'
+  | 'likely_pcm_to_dsd'
   | 'trusted_dsd_container'
   | 'dsd_metadata_mismatch'
   | 'lossy_source'
@@ -240,6 +241,12 @@ type EchoPluginAudioAnalysisReport = {
     durationSeconds: number | null;
     fileSizeBytes: number | null;
     dsdNativeSampleRate: number | null;
+    spectrumProbeStatus?: 'ready' | 'skipped' | 'unavailable' | 'too_short' | 'too_quiet' | 'error';
+    spectrumProbeWindows?: number | null;
+    spectrumSelectedStartSeconds?: number | null;
+    spectralCutoffHz?: number | null;
+    highFrequencyToAudibleDb?: number | null;
+    ultrasonicToAudibleDb?: number | null;
   };
   evidence: EchoPluginAudioAnalysisEvidence[];
   limitations: string[];
@@ -265,6 +272,7 @@ type EchoPluginPage<T> = {
 type EchoPluginCommandOptions = {
   title?: string;
   description?: string;
+  timeoutMs?: number;
 };
 
 type EchoPluginThemeBasePreset =
