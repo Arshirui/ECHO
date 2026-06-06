@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   Captions,
   Check,
@@ -43,12 +43,14 @@ import {
 } from './lyricsSourceQualityMemory';
 
 type LyricsSettingsDrawerProps = {
+  currentTrackTools?: ReactNode;
   isOpen: boolean;
   onClose: () => void;
 };
 
 type LyricsSettingsPanelProps = {
   className?: string;
+  currentTrackTools?: ReactNode;
   variant?: 'drawer' | 'settings';
 };
 
@@ -686,7 +688,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled ?? fallbackSettings.desktopLyricsTranslationEnabled,
 });
 
-export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSettingsPanelProps): JSX.Element => {
+export const LyricsSettingsPanel = ({ className, currentTrackTools, variant = 'drawer' }: LyricsSettingsPanelProps): JSX.Element => {
   const t = useOptionalI18n()?.t ?? translateFallback;
   const [settings, setSettings] = useState<LyricsDrawerSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -3073,6 +3075,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           <p>{t('lyricsSettings.timing.smartAlignmentDescription')}</p>
 
+          {showCurrentTrackTools && currentTrackTools ? (
+            <div className="lyrics-current-track-tools-panel">
+              {currentTrackTools}
+            </div>
+          ) : null}
+
           <button
             className="audio-device-pill"
             type="button"
@@ -3107,7 +3115,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   );
 };
 
-export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerProps): JSX.Element | null => {
+export const LyricsSettingsDrawer = ({ currentTrackTools, isOpen, onClose }: LyricsSettingsDrawerProps): JSX.Element | null => {
   const t = useOptionalI18n()?.t ?? translateFallback;
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isMotionOpen, setIsMotionOpen] = useState(false);
@@ -3168,7 +3176,7 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
             <X size={20} />
           </button>
           </header>
-          <LyricsSettingsPanel />
+          <LyricsSettingsPanel currentTrackTools={currentTrackTools} />
         </div>
       </aside>
     </div>

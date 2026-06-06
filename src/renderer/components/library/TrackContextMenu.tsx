@@ -14,6 +14,7 @@ import {
   Minus,
   PanelTopOpen,
   Play,
+  Puzzle,
   Plus,
   RefreshCw,
   Timer,
@@ -22,8 +23,10 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
+import type { PluginTrackContextMenuContribution } from '../../../shared/types/plugins';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
+import { pluginTrackActionDrawerEvent } from './PluginTrackActionDrawer';
 
 export type TrackMenuAction =
   | 'add-to-playlist'
@@ -64,6 +67,10 @@ type MenuItem = {
   disabled?: boolean;
 };
 
+type PluginMenuItem = PluginTrackContextMenuContribution & {
+  pluginId: string;
+};
+
 const viewportPadding = 8;
 const pointerOffset = 6;
 const submenuGap = 8;
@@ -85,6 +92,17 @@ const batchActions = new Set<TrackMenuAction>(['add-to-playlist', 'play-next', '
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(value, max));
 
+const openPluginTrackActionDrawer = (item: PluginMenuItem, track: LibraryTrack): void => {
+  window.dispatchEvent(new CustomEvent(pluginTrackActionDrawerEvent, {
+    detail: {
+      pluginId: item.pluginId,
+      commandId: item.commandId,
+      title: item.title,
+      track,
+    },
+  }));
+};
+
 export const TrackContextMenu = ({ track, position, liked = false, selectionCount = 1, enabledActions, showRemoveFromPlaylist = false, onAction, onClose }: TrackContextMenuProps): JSX.Element => {
   const { t } = useI18n();
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -92,6 +110,7 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
   const [playlistSubmenuOpen, setPlaylistSubmenuOpen] = useState(false);
   const [playlists, setPlaylists] = useState<LibraryPlaylist[]>([]);
   const [playlistsLoading, setPlaylistsLoading] = useState(false);
+  const [pluginMenuItems, setPluginMenuItems] = useState<PluginMenuItem[]>([]);
   const [playlistSubmenuPosition, setPlaylistSubmenuPosition] = useState(() => ({ x: position.x + menuWidth + submenuGap, y: position.y }));
   const [menuPosition, setMenuPosition] = useState(() => ({
     x: position.x + pointerOffset,
@@ -166,6 +185,47 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
   const isLocalFileTrack = !track.mediaType || track.mediaType === 'local';
   const isStreamingTrack = track.mediaType === 'streaming';
   const enabledActionSet = enabledActions ? new Set(enabledActions) : null;
+  useEffect(() => {
+    if (isBatch) {
+      setPluginMenuItems([]);
+      return undefined;
+    }
+
+    const plugins = window.echo?.plugins;
+    if (!plugins) {
+      setPluginMenuItems([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    void plugins.list()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        const nextItems = result.plugins
+          .filter((plugin) => plugin.enabled)
+          .flatMap((plugin) =>
+            (plugin.contributes.trackContextMenus ?? []).map((item) => ({
+              ...item,
+              pluginId: plugin.id,
+            })),
+          )
+          .filter((item) => isLocalFileTrack || item.localOnly !== true);
+        setPluginMenuItems(nextItems);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPluginMenuItems([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isBatch, isLocalFileTrack]);
+
   const allItems: MenuItem[] = [
     { action: 'add-to-playlist', labelKey: 'trackMenu.action.addToPlaylist', icon: Plus },
     { action: 'play-next', labelKey: 'trackMenu.action.playNext', icon: Play },
@@ -252,6 +312,22 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
             </button>
           );
         })}
+        {pluginMenuItems.map((item) => (
+          <button
+            className="track-menu-item"
+            key={`${item.pluginId}:${item.id}`}
+            role="menuitem"
+            type="button"
+            title={item.description}
+            onClick={() => {
+              openPluginTrackActionDrawer(item, track);
+              onClose();
+            }}
+          >
+            <Puzzle size={16} />
+            <span>{item.title}</span>
+          </button>
+        ))}
       </div>
       {playlistSubmenuOpen ? (
         <div

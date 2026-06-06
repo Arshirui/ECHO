@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { join } from 'node:path';
+import { win32 as pathWin32 } from 'node:path';
 
 type TouchKeyboardDependencies = {
   exists?: (path: string) => boolean;
@@ -25,8 +25,8 @@ export const getWindowsTouchKeyboardCandidates = (dependencies: TouchKeyboardDep
   const systemRoot = dependencies.systemRoot ?? process.env.SystemRoot ?? process.env.WINDIR ?? 'C:\\Windows';
 
   return [
-    join(programFiles, 'Common Files', 'microsoft shared', 'ink', 'TabTip.exe'),
-    join(systemRoot, 'System32', 'osk.exe'),
+    pathWin32.join(programFiles, 'Common Files', 'microsoft shared', 'ink', 'TabTip.exe'),
+    pathWin32.join(systemRoot, 'System32', 'osk.exe'),
   ];
 };
 

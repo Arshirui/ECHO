@@ -189,6 +189,7 @@ const seekAnchorSourceAdvanceReleaseSeconds = 0.75;
 const playbackRateChangeDiscontinuitySeconds = 0.35;
 const albumNavigationTransitionMs = 180;
 const lyricSeekPreviewMaxMs = 1200;
+const lyricsDrawerToolsChangedEvent = "app:lyrics-drawer-tools-changed";
 
 const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsEnabled: true,
@@ -4486,8 +4487,6 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         )}
 
         {shouldHideLyricsInMv ? null : lyricsControls}
-        {shouldHideLyricsInMv ? null : lyricsOffsetControls}
-        {!shouldHideLyricsInMv && lyricsDisplaySettings.lyricsOffsetControlsEnabled ? lyricsSmartAlignmentControls : null}
         {lyricsDisplaySettings.lyricsEnabled && !shouldHideLyricsInMv ? (
           <LyricsView
             durationMs={displayDurationSeconds * 1000}

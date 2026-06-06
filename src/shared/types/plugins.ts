@@ -114,6 +114,14 @@ export type PluginCommandContribution = {
   description?: string;
 };
 
+export type PluginTrackContextMenuContribution = {
+  id: string;
+  title: string;
+  commandId: string;
+  description?: string;
+  localOnly?: boolean;
+};
+
 export type PluginMetadataProviderContribution = {
   id: string;
   title: string;
@@ -172,6 +180,7 @@ export type PluginSettingContribution = {
 export type PluginManifestContributes = {
   commands?: PluginCommandContribution[];
   panels?: PluginPanelContribution[];
+  trackContextMenus?: PluginTrackContextMenuContribution[];
   metadataProviders?: PluginMetadataProviderContribution[];
   sourceProviders?: PluginSourceProviderContribution[];
   lyricsProviders?: PluginLyricsProviderContribution[];

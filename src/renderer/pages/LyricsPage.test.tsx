@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -2116,9 +2116,14 @@ describe("LyricsPage", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("First line"));
   });
 
-  it("shows simple per-track lyrics offset controls by default", async () => {
+  it("registers per-track lyrics offset controls for the drawer instead of the main lyrics surface", async () => {
     const track = makeTrack();
     mockEcho(track);
+    const drawerTools: { current: ReactNode | null } = { current: null };
+    const handleDrawerTools = (event: Event): void => {
+      drawerTools.current = (event as CustomEvent<{ currentTrackTools: ReactNode | null }>).detail.currentTrackTools;
+    };
+    window.addEventListener("app:lyrics-drawer-tools-changed", handleDrawerTools);
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(
         makeTrackLyrics({
@@ -2134,18 +2139,26 @@ describe("LyricsPage", () => {
       clearCache: vi.fn(),
     };
 
-    const { container } = render(
-      <PlaybackQueueProvider>
-        <QueueSeed track={track}>
-          <LyricsPage />
-        </QueueSeed>
-      </PlaybackQueueProvider>,
-    );
+    try {
+      const { container } = render(
+        <PlaybackQueueProvider>
+          <QueueSeed track={track}>
+            <LyricsPage />
+          </QueueSeed>
+        </PlaybackQueueProvider>,
+      );
 
-    expect(await screen.findByText("First line")).toBeTruthy();
-    expect(container.querySelector(".lyrics-offset-controls")).toBeTruthy();
-    expect(screen.getByText("本歌曲延迟")).toBeTruthy();
-    expect(screen.getByText("只保存到当前歌曲；切到下一首会使用下一首自己的延迟。")).toBeTruthy();
+      expect(await screen.findByText("First line")).toBeTruthy();
+      expect(container.querySelector(".lyrics-offset-controls")).toBeNull();
+      await waitFor(() => expect(drawerTools.current).toBeTruthy());
+
+      const drawerRender = render(<>{drawerTools.current}</>);
+      expect(drawerRender.container.querySelector(".lyrics-offset-controls")).toBeTruthy();
+      expect(drawerRender.getByText("本歌曲延迟")).toBeTruthy();
+      expect(drawerRender.getByText("只保存到当前歌曲；切到下一首会使用下一首自己的延迟。")).toBeTruthy();
+    } finally {
+      window.removeEventListener("app:lyrics-drawer-tools-changed", handleDrawerTools);
+    }
   });
 
   it("hides smart lyrics alignment when disabled", async () => {
@@ -2198,9 +2211,14 @@ describe("LyricsPage", () => {
     expect(container.querySelector(".lyrics-smart-alignment")).toBeNull();
   });
 
-  it("saves per-track lyrics offset from the lyrics page controls when enabled", async () => {
+  it("saves per-track lyrics offset from the drawer controls when enabled", async () => {
     const track = makeTrack();
     mockEcho(track, 0, { lyricsOffsetControlsEnabled: true });
+    const drawerTools: { current: ReactNode | null } = { current: null };
+    const handleDrawerTools = (event: Event): void => {
+      drawerTools.current = (event as CustomEvent<{ currentTrackTools: ReactNode | null }>).detail.currentTrackTools;
+    };
+    window.addEventListener("app:lyrics-drawer-tools-changed", handleDrawerTools);
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(
         makeTrackLyrics({
@@ -2221,23 +2239,26 @@ describe("LyricsPage", () => {
       clearCache: vi.fn(),
     };
 
-    const { container } = render(
-      <PlaybackQueueProvider>
-        <QueueSeed track={track}>
-          <LyricsPage />
-        </QueueSeed>
-      </PlaybackQueueProvider>,
-    );
+    try {
+      render(
+        <PlaybackQueueProvider>
+          <QueueSeed track={track}>
+            <LyricsPage />
+          </QueueSeed>
+        </PlaybackQueueProvider>,
+      );
 
-    expect(await screen.findByText("First line")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /\+100ms/ }));
+      expect(await screen.findByText("First line")).toBeTruthy();
+      await waitFor(() => expect(drawerTools.current).toBeTruthy());
+      const drawerRender = render(<>{drawerTools.current}</>);
+      fireEvent.click(drawerRender.getByRole("button", { name: /\+100ms/ }));
 
-    await waitFor(() =>
-      expect(window.echo.lyrics.setOffset).toHaveBeenCalledWith("track-1", 100),
-    );
-    await waitFor(() =>
-      expect(container.querySelector(".lyrics-offset-value")?.textContent).toBe("+100ms"),
-    );
+      await waitFor(() =>
+        expect(window.echo.lyrics.setOffset).toHaveBeenCalledWith("track-1", 100),
+      );
+    } finally {
+      window.removeEventListener("app:lyrics-drawer-tools-changed", handleDrawerTools);
+    }
   });
 
   it.each([

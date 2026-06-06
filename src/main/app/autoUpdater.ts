@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import electronUpdater from 'electron-updater';
 import type { UpdateInfo } from 'electron-updater';
+import { dirname } from 'node:path';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
 import type { AppSettings, AutoUpdateSource } from '../../shared/types/appSettings';
 import type { UpdateStatus } from '../../shared/types/updates';
@@ -19,6 +20,10 @@ type DownloadProgressInfo = {
   transferred?: number;
   total?: number;
   bytesPerSecond?: number;
+};
+
+type NsisUpdaterWithInstallDirectory = typeof autoUpdater & {
+  installDirectory?: string;
 };
 
 const officialGithubFeed = {
@@ -120,6 +125,20 @@ const configureUpdateFeed = (): boolean => {
   return true;
 };
 
+const configureWindowsInstallDirectory = (): void => {
+  if (process.platform !== 'win32' || !app.isPackaged) {
+    return;
+  }
+
+  const executablePath = app.getPath('exe') || process.execPath;
+  const installDirectory = dirname(executablePath);
+  if (!installDirectory) {
+    return;
+  }
+
+  (autoUpdater as NsisUpdaterWithInstallDirectory).installDirectory = installDirectory;
+};
+
 export const getUpdateStatus = (): UpdateStatus => ({
   ...updateStatus,
   currentVersion: currentVersion(),
@@ -213,6 +232,7 @@ export const initializeAutoUpdater = (enabled: boolean): void => {
   setAutoUpdateEnabled(enabled);
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  configureWindowsInstallDirectory();
   if (enabled) {
     configureUpdateFeed();
   }
@@ -294,6 +314,7 @@ export const initializeAutoUpdater = (enabled: boolean): void => {
       };
       emitUpdateStatus();
       setTimeout(() => {
+        configureWindowsInstallDirectory();
         autoUpdater.quitAndInstall();
       }, 1000);
     })();

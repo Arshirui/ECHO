@@ -198,6 +198,10 @@ describe('PluginService', () => {
     });
     expect(summary.security.highRiskPermissions).toEqual(['audio:analyze']);
     expect(summary.security.sandboxedPanel).toBe(true);
+    expect(summary.commands.map((command) => command.id)).toEqual(['analyze-page', 'analyze-track']);
+    expect(summary.contributes.trackContextMenus).toEqual([
+      { id: 'audio-authenticity', title: '音频可信度', commandId: 'analyze-track', localOnly: true },
+    ]);
   });
 
   it('requires explicit permission trust before enabling a plugin', () => {

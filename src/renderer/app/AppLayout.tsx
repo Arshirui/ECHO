@@ -1,5 +1,5 @@
 import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { PlayerBar } from '../components/player/PlayerBar';
 import { PlaybackQueueDrawer } from '../components/player/PlaybackQueueDrawer';
@@ -9,6 +9,7 @@ import { LyricsSettingsDrawer } from '../components/lyrics/LyricsSettingsDrawer'
 import { MvSettingsDrawer } from '../components/lyrics/MvSettingsDrawer';
 import { contrastRatio, parseHexColor, sampleImageUrl, type ReadableColorSample, type Rgb } from '../components/lyrics/lyricsReadableColor';
 import { DragDropImportOverlay } from '../components/import/DragDropImportOverlay';
+import { PluginTrackActionDrawerHost } from '../components/library/PluginTrackActionDrawer';
 import { FirstRunWizard } from '../components/onboarding/FirstRunWizard';
 import { loadPersistedRememberedAudioOutput } from '../components/player/audioOutputMemory';
 import { Sidebar } from '../components/layout/Sidebar';
@@ -119,7 +120,7 @@ const isTouchKeyboardEditableTarget = (target: EventTarget | null): boolean => {
     return false;
   }
 
-  const editable = target.closest('input, textarea, [contenteditable="true"], [role="textbox"]');
+  const editable = target.closest('input, textarea, [contenteditable], [role="textbox"]');
   if (!(editable instanceof HTMLElement)) {
     return false;
   }
@@ -132,7 +133,7 @@ const isTouchKeyboardEditableTarget = (target: EventTarget | null): boolean => {
     return !editable.disabled && !editable.readOnly;
   }
 
-  return editable.getAttribute('aria-readonly') !== 'true';
+  return editable.getAttribute('contenteditable') !== 'false' && editable.getAttribute('aria-readonly') !== 'true';
 };
 
 type AppWallpaperSettings = Pick<
@@ -331,6 +332,7 @@ const getDesktopLyricsForwardIdentity = (status: AudioStatus | PlaybackStatus): 
 const openAudioSettingsEvent = 'app:open-audio-settings';
 const openMvSettingsEvent = 'app:open-mv-settings';
 const openLyricsSettingsEvent = 'app:open-lyrics-settings';
+const lyricsDrawerToolsChangedEvent = 'app:lyrics-drawer-tools-changed';
 const settingsBackNavigationEvent = 'app:navigate:settings-back';
 const showChromeNoticeEvent = 'app:show-chrome-notice';
 const pendingRouteStorageKey = 'echo-next.pending-route';
@@ -397,6 +399,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [downloadsFeatureUnlocked, setDownloadsFeatureUnlocked] = useState(false);
   const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState(false);
   const [isLyricsDrawerOpen, setIsLyricsDrawerOpen] = useState(false);
+  const [lyricsDrawerCurrentTrackTools, setLyricsDrawerCurrentTrackTools] = useState<ReactNode | null>(null);
   const [isMvDrawerOpen, setIsMvDrawerOpen] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [isWindowFullscreen, setIsWindowFullscreen] = useState(false);
@@ -415,6 +418,19 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isLyricsMiniPlayerAutoHidden, setIsLyricsMiniPlayerAutoHidden] = useState(false);
   const [activeLyricsViewMode, setActiveLyricsViewMode] = useState<LyricsViewMode>(() => readRememberedLyricsViewMode());
   const lastDesktopLyricsForwardRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const handleLyricsDrawerToolsChanged = (event: Event): void => {
+      if (!(event instanceof CustomEvent)) {
+        return;
+      }
+
+      setLyricsDrawerCurrentTrackTools((event.detail as { currentTrackTools?: ReactNode | null } | null)?.currentTrackTools ?? null);
+    };
+
+    window.addEventListener(lyricsDrawerToolsChangedEvent, handleLyricsDrawerToolsChanged);
+    return () => window.removeEventListener(lyricsDrawerToolsChangedEvent, handleLyricsDrawerToolsChanged);
+  }, []);
 
   useEffect(() => {
     const desktopLyrics = window.echo?.desktopLyrics;
@@ -2416,8 +2432,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         onHqPlayerTakeoverEnabledChange={playbackQueue.setHqPlayerTakeoverEnabled}
         onStatusChange={setAudioDrawerStatus}
       />
-      <LyricsSettingsDrawer isOpen={isLyricsDrawerOpen} onClose={() => setIsLyricsDrawerOpen(false)} />
+      <LyricsSettingsDrawer
+        currentTrackTools={lyricsDrawerCurrentTrackTools}
+        isOpen={isLyricsDrawerOpen}
+        onClose={() => setIsLyricsDrawerOpen(false)}
+      />
       <MvSettingsDrawer isOpen={isMvDrawerOpen} onClose={() => setIsMvDrawerOpen(false)} />
+      <PluginTrackActionDrawerHost />
       <PlaybackQueueDrawer
         isOpen={isLyricsRoute && isLyricsQueueDrawerOpen}
         onClose={() => setIsLyricsQueueDrawerOpen(false)}

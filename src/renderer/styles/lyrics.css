@@ -1673,6 +1673,41 @@ html[data-theme="dark"] .lyrics-track-album:hover {
   transform: translateY(-8px);
 }
 
+.lyrics-current-track-tools,
+.lyrics-current-track-tools-panel {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.lyrics-settings-drawer .lyrics-current-track-tools {
+  width: 100%;
+}
+
+.lyrics-settings-drawer .lyrics-offset-controls,
+.lyrics-settings-drawer .lyrics-smart-alignment {
+  display: grid;
+  width: 100%;
+  max-width: none;
+  gap: 8px;
+  padding: 10px 11px;
+  border: 1px solid var(--theme-glass-bg-soft);
+  border-radius: 13px;
+  background: var(--theme-glass-bg-muted);
+  transform: none;
+}
+
+.lyrics-settings-drawer .lyrics-offset-buttons,
+.lyrics-settings-drawer .lyrics-smart-alignment-buttons {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.lyrics-settings-drawer .lyrics-offset-controls p,
+.lyrics-settings-drawer .lyrics-smart-alignment p {
+  margin: 0;
+}
+
 .mv-offset-controls {
   position: absolute;
   right: 18px;

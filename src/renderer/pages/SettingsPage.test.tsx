@@ -28,6 +28,7 @@ const settings: AppSettings = {
   suppressAccountExpiryNotices: false,
   coverCacheDir: null,
   hideToTrayOnClose: false,
+  touchOnScreenKeyboardEnabled: false,
   appWindowAcrylicEnabled: false,
   appCustomWallpaperPath: null,
   appWallpaperScalePercent: 100,
@@ -916,6 +917,23 @@ describe('SettingsPage', () => {
     fireEvent.click(within(row).getByRole('button'));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ featureCommentsHidden: true }));
+  });
+
+  it('saves touch keyboard from the general settings toggle', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const nextSettings = { ...settings, touchOnScreenKeyboardEnabled: true };
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue(nextSettings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const row = screen.getByText('settings.general.touchKeyboard.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ touchOnScreenKeyboardEnabled: true }));
   });
 
   it('saves the bottom signal path control from general settings', async () => {

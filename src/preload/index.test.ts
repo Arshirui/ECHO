@@ -1501,6 +1501,7 @@ describe('preload SMTC API', () => {
     await exposedApi!.app.openRepository();
     await exposedApi!.app.openExternalUrl('https://discord.gg/g7v4WMRq3K');
     await exposedApi!.app.testNetworkProxy();
+    await exposedApi!.app.showTouchKeyboard();
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppGetUpdateStatus);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppCheckForUpdates);
@@ -1509,6 +1510,7 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppOpenRepository);
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppOpenExternalUrl, 'https://discord.gg/g7v4WMRq3K');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppTestNetworkProxy);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AppShowTouchKeyboard);
   });
 
   it('exposes app window maximized state through IPC', async () => {

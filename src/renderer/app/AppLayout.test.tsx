@@ -911,6 +911,43 @@ describe('AppLayout standalone routes', () => {
     });
   });
 
+  it('shows the touch keyboard when an editable field receives focus and the setting is enabled', async () => {
+    window.localStorage.clear();
+    const showTouchKeyboard = vi.fn().mockResolvedValue(true);
+    const getSettings = vi.fn().mockResolvedValue({
+      touchOnScreenKeyboardEnabled: true,
+    });
+    window.echo = {
+      app: {
+        getSettings,
+        showTouchKeyboard,
+      },
+    } as unknown as Window['echo'];
+    const routesWithInput: AppRoute[] = [
+      {
+        id: 'songs',
+        label: 'Songs',
+        labelKey: 'route.songs.label',
+        description: 'Songs',
+        icon: Music2,
+        placement: 'main',
+        element: <label>Touch input<input aria-label="Touch input" /></label>,
+      },
+    ];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithInput} />
+      </AppProviders>,
+    );
+
+    const input = await screen.findByLabelText('Touch input');
+    await waitFor(() => expect(getSettings).toHaveBeenCalled());
+    fireEvent.focusIn(input);
+
+    await waitFor(() => expect(showTouchKeyboard).toHaveBeenCalledTimes(1));
+  });
+
   it('notifies the library views when a download is imported', async () => {
     let jobsUpdated: ((jobs: Array<{ id: string; importedTrackId: string | null }>) => void) | null = null;
     const unsubscribeDownloads = vi.fn();
