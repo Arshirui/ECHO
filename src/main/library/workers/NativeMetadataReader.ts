@@ -1,0 +1,368 @@
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { extname, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { logLibraryScanPerf } from '../../diagnostics/LibraryScanPerfDiagnostics';
+import type { NativeMetadataReaderDiagnostics } from '../../../shared/types/library';
+import type { FieldSources, MetadataFields, MetadataResult } from '../libraryTypes';
+import type { MetadataReader } from './MetadataReader';
+import { resolveNativeFileScannerPath } from './NativeFileScanner';
+import { TsMetadataReader } from './TsMetadataReader';
+
+type SpawnNativeMetadataReader = (command: string, args: readonly string[]) => ChildProcessWithoutNullStreams;
+type NativeMetadataReaderEnabledProvider = () => boolean;
+type NativeMetadataReaderEnablementSource = 'env-disable' | 'env-enable' | 'setting' | 'default';
+type PendingNativeMetadataRequest = {
+  path: string;
+  startedAtMs: number;
+  timer: NodeJS.Timeout;
+  resolve: (result: MetadataResult) => void;
+  reject: (error: Error) => void;
+};
+type NativeMetadataReaderRuntimeStats = {
+  total: number;
+  nativeOk: number;
+  fallbackToTs: number;
+  skippedUnsupportedExtension: number;
+};
+
+type NativeMetadataMessage =
+  | { type: 'ready' }
+  | { type: 'started'; path?: unknown; mode?: unknown }
+  | { type: 'metadata'; path?: unknown; result?: unknown }
+  | { type: 'unsupported'; path?: unknown; message?: unknown }
+  | { type: 'error'; kind?: unknown; path?: unknown; message?: unknown };
+
+const stderrTailLimit = 4096;
+const metadataRequestTimeoutMs = 10000;
+const nativeMetadataReaderSupportedFormats = ['FLAC', 'MP3', 'M4A/MP4'];
+const nativeMetadataReaderSupportedExtensions = new Set(['.flac', '.fla', '.mp3', '.m4a', '.mp4', '.m4b', '.m4p']);
+
+const isNativeMetadataSupportedPath = (filePath: string): boolean =>
+  nativeMetadataReaderSupportedExtensions.has(extname(filePath).toLowerCase());
+
+const getNativeMetadataReaderEnablement = (
+  readSettingEnabled: NativeMetadataReaderEnabledProvider = () => false,
+): { enabled: boolean; source: NativeMetadataReaderEnablementSource } => {
+  if (process.env.ECHO_DISABLE_NATIVE_METADATA_READER === '1') {
+    return { enabled: false, source: 'env-disable' };
+  }
+  if (process.env.ECHO_NATIVE_METADATA_READER === '1') {
+    return { enabled: true, source: 'env-enable' };
+  }
+  if (readSettingEnabled()) {
+    return { enabled: true, source: 'setting' };
+  }
+  return { enabled: false, source: 'default' };
+};
+
+export const getNativeMetadataReaderDiagnostics = (
+  readSettingEnabled: NativeMetadataReaderEnabledProvider = () => false,
+): NativeMetadataReaderDiagnostics => {
+  const enablement = getNativeMetadataReaderEnablement(readSettingEnabled);
+  const binaryPath = resolveNativeFileScannerPath();
+  const binaryFound = binaryPath !== null && existsSync(binaryPath);
+
+  return {
+    enabled: enablement.enabled,
+    enablementSource: enablement.source,
+    binaryFound,
+    binaryPath,
+    willUseNative: enablement.enabled && binaryFound,
+    supportedFormats: nativeMetadataReaderSupportedFormats,
+  };
+};
+
+const parseNativeMetadataLine = (line: string): NativeMetadataMessage | null => {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = JSON.parse(trimmed) as NativeMetadataMessage;
+  return parsed && typeof parsed === 'object' && typeof parsed.type === 'string' ? parsed : null;
+};
+
+const isMetadataFields = (value: unknown): value is MetadataFields => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const fields = value as Partial<MetadataFields>;
+  return (
+    typeof fields.title === 'string' &&
+    typeof fields.artist === 'string' &&
+    typeof fields.album === 'string' &&
+    typeof fields.albumArtist === 'string' &&
+    typeof fields.duration === 'number'
+  );
+};
+
+const isFieldSources = (value: unknown): value is FieldSources =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const isMetadataResult = (value: unknown): value is MetadataResult => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const result = value as Partial<MetadataResult>;
+  return (
+    isMetadataFields(result.fields) &&
+    isFieldSources(result.fieldSources) &&
+    (result.embeddedMetadataStatus === 'present' || result.embeddedMetadataStatus === 'missing' || result.embeddedMetadataStatus === 'error') &&
+    (result.embeddedCoverStatus === 'present' || result.embeddedCoverStatus === 'missing' || result.embeddedCoverStatus === 'error') &&
+    Array.isArray(result.warnings) &&
+    Array.isArray(result.errors) &&
+    (result.status === 'ok' || result.status === 'fallback' || result.status === 'error')
+  );
+};
+
+export class NativeMetadataReader implements MetadataReader {
+  private child: ChildProcessWithoutNullStreams | null = null;
+  private pending: PendingNativeMetadataRequest | null = null;
+  private stderrTail = '';
+  private requestQueue: Promise<void> = Promise.resolve();
+
+  constructor(
+    private readonly options: {
+      executablePath?: string | null;
+      spawnProcess?: SpawnNativeMetadataReader;
+    } = {},
+  ) {}
+
+  async read(filePath: string): Promise<MetadataResult> {
+    const task = this.requestQueue.then(
+      () => this.readQueued(filePath),
+      () => this.readQueued(filePath),
+    );
+    this.requestQueue = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
+  }
+
+  private async readQueued(filePath: string): Promise<MetadataResult> {
+    const child = this.ensureProcess();
+    const startedAtMs = performance.now();
+    const resolvedPath = resolve(filePath);
+
+    return new Promise<MetadataResult>((resolveResult, rejectResult) => {
+      const complete = (result: MetadataResult | null, error: Error | null): void => {
+        if (this.pending?.path !== resolvedPath) {
+          return;
+        }
+        clearTimeout(this.pending.timer);
+        this.pending = null;
+        if (result) {
+          resolveResult(result);
+          return;
+        }
+        rejectResult(error ?? new Error('native metadata reader did not return metadata'));
+      };
+
+      const timer = setTimeout(() => {
+        const message = `native metadata reader timed out after ${metadataRequestTimeoutMs}ms`;
+        this.killProcess();
+        logLibraryScanPerf({
+          phase: 'nativeMetadataReader',
+          durationMs: performance.now() - startedAtMs,
+          fileCount: 1,
+          detail: 'status=timeout; mode=persistent',
+        });
+        rejectResult(new Error(message));
+      }, metadataRequestTimeoutMs);
+      timer.unref?.();
+
+      this.pending = {
+        path: resolvedPath,
+        startedAtMs,
+        timer,
+        resolve: (result) => complete(result, null),
+        reject: (error) => complete(null, error),
+      };
+
+      child.stdin.write(`${JSON.stringify({
+        type: 'metadata',
+        path: resolvedPath,
+        readCover: false,
+      })}\n`, (error) => {
+        if (error) {
+          complete(null, error instanceof Error ? error : new Error(String(error)));
+        }
+      });
+    });
+  }
+
+  private ensureProcess(): ChildProcessWithoutNullStreams {
+    const executablePath = this.options.executablePath ?? resolveNativeFileScannerPath();
+    if (!executablePath) {
+      throw new Error('native metadata reader binary not found');
+    }
+    if (this.child && !this.child.killed) {
+      return this.child;
+    }
+
+    const child = (this.options.spawnProcess ?? spawn)(executablePath, []);
+    this.child = child;
+    this.stderrTail = '';
+
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => {
+      this.stderrTail = `${this.stderrTail}${chunk}`.slice(-stderrTailLimit);
+    });
+
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    lines.on('line', (line) => {
+      this.handleLine(line);
+    });
+
+    const failPending = (message: string): void => {
+      const pending = this.pending;
+      if (!pending) {
+        return;
+      }
+      clearTimeout(pending.timer);
+      this.pending = null;
+      pending.reject(new Error(message));
+    };
+
+    child.once('error', (error) => {
+      this.child = null;
+      failPending(error instanceof Error ? error.message : String(error));
+    });
+    child.once('exit', (code, signal) => {
+      this.child = null;
+      const detail = [
+        `exitCode=${code ?? 'null'}`,
+        `signal=${signal ?? 'null'}`,
+        this.stderrTail.trim() ? `stderrTail=${JSON.stringify(this.stderrTail.trim())}` : null,
+      ].filter(Boolean).join(' ');
+      failPending(`native metadata reader exited before response; ${detail}`);
+    });
+
+    return child;
+  }
+
+  private handleLine(line: string): void {
+    let message: NativeMetadataMessage | null = null;
+    try {
+      message = parseNativeMetadataLine(line);
+    } catch (error) {
+      this.pending?.reject(new Error(`native metadata reader returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`));
+      return;
+    }
+    if (!message || message.type === 'ready' || message.type === 'started') {
+      return;
+    }
+
+    const pending = this.pending;
+    if (!pending) {
+      return;
+    }
+
+    if (message.type === 'metadata') {
+      if (isMetadataResult(message.result)) {
+        pending.resolve(message.result);
+      } else {
+        pending.reject(new Error('native metadata reader returned invalid metadata result'));
+      }
+      return;
+    }
+
+    const detail = typeof message.message === 'string' ? message.message : 'native metadata reader error';
+    pending.reject(new Error(detail));
+  }
+
+  private killProcess(): void {
+    const pending = this.pending;
+    if (pending) {
+      clearTimeout(pending.timer);
+      this.pending = null;
+    }
+    if (this.child && !this.child.killed) {
+      this.child.kill();
+    }
+    this.child = null;
+  }
+}
+
+export class NativeThenTsMetadataReader implements MetadataReader {
+  private readonly warnedFallbackMessages = new Set<string>();
+  private readonly stats: NativeMetadataReaderRuntimeStats = {
+    total: 0,
+    nativeOk: 0,
+    fallbackToTs: 0,
+    skippedUnsupportedExtension: 0,
+  };
+  private lastStatsLogTotal = 0;
+
+  constructor(
+    private readonly nativeReader: MetadataReader = new NativeMetadataReader(),
+    private readonly tsReader: MetadataReader = new TsMetadataReader(),
+    private readonly logger: (message: string) => void = console.warn,
+    private readonly readSettingEnabled: NativeMetadataReaderEnabledProvider = () => false,
+  ) {}
+
+  async read(filePath: string): Promise<MetadataResult> {
+    const enablement = getNativeMetadataReaderEnablement(this.readSettingEnabled);
+    if (!enablement.enabled) {
+      return this.tsReader.read(filePath);
+    }
+
+    if (!isNativeMetadataSupportedPath(filePath)) {
+      this.recordNativeStats(enablement.source, 'skipped_extension');
+      return this.tsReader.read(filePath);
+    }
+
+    try {
+      const result = await this.nativeReader.read(filePath);
+      this.recordNativeStats(enablement.source, 'native_ok');
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!this.warnedFallbackMessages.has(message)) {
+        this.warnedFallbackMessages.add(message);
+        this.logger(`[library-scan] Native metadata reader failed; falling back to TS reader: ${message}`);
+      }
+      this.recordNativeStats(enablement.source, 'fallback_to_ts');
+      return this.tsReader.read(filePath);
+    }
+  }
+
+  private recordNativeStats(source: NativeMetadataReaderEnablementSource, status: 'native_ok' | 'fallback_to_ts' | 'skipped_extension'): void {
+    this.stats.total += 1;
+    if (status === 'native_ok') {
+      this.stats.nativeOk += 1;
+    } else if (status === 'fallback_to_ts') {
+      this.stats.fallbackToTs += 1;
+    } else {
+      this.stats.skippedUnsupportedExtension += 1;
+    }
+
+    const shouldLog =
+      this.stats.total === 1 ||
+      this.stats.fallbackToTs <= 3 && status === 'fallback_to_ts' ||
+      this.stats.skippedUnsupportedExtension <= 3 && status === 'skipped_extension' ||
+      this.stats.total - this.lastStatsLogTotal >= 100;
+    if (!shouldLog) {
+      return;
+    }
+
+    this.lastStatsLogTotal = this.stats.total;
+    const hitRate = this.stats.total > 0 ? this.stats.nativeOk / this.stats.total : 0;
+    logLibraryScanPerf({
+      phase: 'nativeMetadataReader',
+      fileCount: this.stats.total,
+      detail: [
+        'summary',
+        `source=${source}`,
+        `nativeOk=${this.stats.nativeOk}`,
+        `fallbackToTs=${this.stats.fallbackToTs}`,
+        `skippedUnsupportedExtension=${this.stats.skippedUnsupportedExtension}`,
+        `hitRate=${hitRate.toFixed(3)}`,
+      ].join(';'),
+    });
+  }
+}

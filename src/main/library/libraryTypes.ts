@@ -351,12 +351,19 @@ export type ScanFileSystemError = {
   message: string;
 };
 
+export type ScannerProgress = {
+  directories?: number;
+  files?: number;
+};
+
 export type ScanOptions = {
   signal?: AbortSignal;
+  shouldCancel?: () => boolean;
   audioExtensions?: readonly string[];
   fileSystemOperationTimeoutMs?: number;
   yieldEveryEntries?: number;
   onFileSystemError?: (error: ScanFileSystemError) => void;
+  onScannerProgress?: (progress: ScannerProgress) => void;
   getDirectorySnapshot?: (directoryPath: string) => ScanDirectorySnapshot | null;
   onDirectorySnapshot?: (snapshot: ScanDirectorySnapshot) => void;
 };

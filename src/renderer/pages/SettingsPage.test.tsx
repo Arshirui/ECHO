@@ -1965,6 +1965,44 @@ describe('SettingsPage', () => {
     window.removeEventListener('settings:changed', settingsChanged);
   });
 
+  it('saves the native file scanner experiment toggle from library settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue({ ...settings, nativeFileScannerEnabled: false });
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    getDownloadSettingsMock.mockResolvedValue(downloadSettings);
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.library\\.label');
+    const row = screen.getByRole('heading', { name: /Native File Scanner/ }).closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ nativeFileScannerEnabled: true }));
+    expect(scanFolderMock).not.toHaveBeenCalled();
+  });
+
+  it('saves the native metadata reader experiment toggle from library settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue({ ...settings, nativeMetadataReaderEnabled: false });
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    getDownloadSettingsMock.mockResolvedValue(downloadSettings);
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.library\\.label');
+    const row = screen.getByRole('heading', { name: /Native Metadata Reader/ }).closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ nativeMetadataReaderEnabled: true }));
+    expect(scanFolderMock).not.toHaveBeenCalled();
+  });
+
   it('saves the missing artist avatar album fallback setting', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     getSettingsMock.mockResolvedValue(settings);

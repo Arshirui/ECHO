@@ -111,6 +111,8 @@ describe('app settings normalization', () => {
     expect(settings.onlineArtistInfoSources).toEqual(['wikipedia']);
     expect(settings.onlineAlbumInfoDiscogsUserToken).toBeNull();
     expect(settings.scanPerformanceMode).toBe('balanced');
+    expect(settings.nativeFileScannerEnabled).toBe(false);
+    expect(settings.nativeMetadataReaderEnabled).toBe(false);
     expect(settings.backgroundSpacePauseEnabled).toBe(false);
     expect(settings.localShortcuts).toEqual(createDefaultLocalShortcuts());
     expect(settings.globalShortcuts?.playPause).toEqual({ enabled: false, accelerator: null });
@@ -220,6 +222,24 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({}).safeModeEnabled).toBe(false);
     expect(normalizeSettings({ safeModeEnabled: true }).safeModeEnabled).toBe(true);
     expect(normalizeSettings({ safeModeEnabled: 'true' }).safeModeEnabled).toBe(false);
+  });
+
+  it('normalizes native file scanner as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).nativeFileScannerEnabled).toBe(false);
+    expect(normalizeSettings({ nativeFileScannerEnabled: true }).nativeFileScannerEnabled).toBe(true);
+    expect(normalizeSettings({ nativeFileScannerEnabled: false }).nativeFileScannerEnabled).toBe(false);
+    expect(normalizeSettings({ nativeFileScannerEnabled: 'true' as never }).nativeFileScannerEnabled).toBe(false);
+  });
+
+  it('normalizes native metadata reader as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).nativeMetadataReaderEnabled).toBe(false);
+    expect(normalizeSettings({ nativeMetadataReaderEnabled: true }).nativeMetadataReaderEnabled).toBe(true);
+    expect(normalizeSettings({ nativeMetadataReaderEnabled: false }).nativeMetadataReaderEnabled).toBe(false);
+    expect(normalizeSettings({ nativeMetadataReaderEnabled: 'true' as never }).nativeMetadataReaderEnabled).toBe(false);
   });
 
   it('keeps the artist-album song sort preference', async () => {

@@ -152,6 +152,8 @@ import type { ScanConcurrencyRecommendation } from './ScanConcurrency';
 import type { CoverExtractor } from './workers/CoverExtractor';
 import type { FileScanner } from './workers/FileScanner';
 import type { MetadataReader } from './workers/MetadataReader';
+import { getNativeFileScannerDiagnostics, NativeThenTsFileScanner } from './workers/NativeFileScanner';
+import { getNativeMetadataReaderDiagnostics, NativeThenTsMetadataReader } from './workers/NativeMetadataReader';
 import { TsCoverExtractor } from './workers/TsCoverExtractor';
 import { TsFileScanner } from './workers/TsFileScanner';
 import { TsMetadataReader } from './workers/TsMetadataReader';
@@ -851,6 +853,8 @@ export class LibraryService {
   }
 
   getDiagnostics(): LibraryDiagnostics {
+    const nativeFileScanner = getNativeFileScannerDiagnostics(() => this.readAppSettings().nativeFileScannerEnabled === true);
+    const nativeMetadataReader = getNativeMetadataReaderDiagnostics(() => this.readAppSettings().nativeMetadataReaderEnabled === true);
     return {
       ...this.store.getDiagnostics({
         databasePath: this.databasePath,
@@ -863,6 +867,8 @@ export class LibraryService {
         coverConcurrency: this.scanConcurrency.coverConcurrency,
         audioAnalysisEnabled: this.readAppSettings().audioAnalysisEnabled,
       }),
+      nativeFileScanner,
+      nativeMetadataReader,
       groupingRefreshQueued: this.groupingRefreshQueued,
       lastGroupingRefreshDurationMs: this.lastGroupingRefreshDurationMs,
       lastGroupingRefreshAt: this.lastGroupingRefreshAt,
@@ -2416,6 +2422,8 @@ export class LibraryService {
     candidates: LibraryMoveCandidate[],
   ): LibraryLabState {
     const lastWatcherEventAt = watcherDiagnostics.recentEvents.at(-1)?.timestamp ?? null;
+    const nativeFileScanner = getNativeFileScannerDiagnostics(() => this.readAppSettings().nativeFileScannerEnabled === true);
+    const nativeMetadataReader = getNativeMetadataReaderDiagnostics(() => this.readAppSettings().nativeMetadataReaderEnabled === true);
 
     return {
       watcherEnabled: watcherDiagnostics.enabled,
@@ -2452,6 +2460,8 @@ export class LibraryService {
       lastGroupingRefreshAt: this.lastGroupingRefreshAt,
       groupingRefreshDelayedForPlaybackCount: this.groupingRefreshDelayedForPlaybackCount,
       lastGroupingRefreshError: this.lastGroupingRefreshError,
+      nativeFileScanner,
+      nativeMetadataReader,
       recentWatcherEvents: watcherDiagnostics.recentEvents.slice(-20).reverse(),
     };
   }
@@ -2631,7 +2641,12 @@ export const createLibraryService = (
     artistMergeStrategy: readSettings().artistMergeStrategy ?? 'standard',
     remoteAlbumMergeStrategy: readSettings().remoteAlbumMergeStrategy ?? 'conservative',
   }));
-  const fileScanner = dependencies.fileScanner ?? new TsFileScanner();
+  const fileScanner = dependencies.fileScanner ?? new NativeThenTsFileScanner(
+    undefined,
+    new TsFileScanner(),
+    console.warn,
+    () => getAppSettings().nativeFileScannerEnabled === true,
+  );
   const coverCacheDir = dependencies.coverCacheDir
     ? resolveCoverCacheDir(databasePath, dependencies.coverCacheDir)
     : resolveConfiguredCoverCacheDir(databasePath, (dependencies.appSettings ?? getAppSettingsSafe)());
@@ -2651,9 +2666,8 @@ export const createLibraryService = (
       : createWorkerBackedLibraryScanWorkers({
           workerCount: Math.max(scanConcurrency.metadataConcurrency, scanConcurrency.coverConcurrency),
         });
-  const metadataReader =
-    dependencies.metadataReader ??
-    (dependencies.metadataService
+  const tsMetadataReader =
+    dependencies.metadataService
       ? {
           read: async (filePath: string) =>
             inflateMetadataResult(
@@ -2665,7 +2679,15 @@ export const createLibraryService = (
               }),
             ),
         }
-      : workerBackedScanWorkers?.metadataReader ?? new TsMetadataReader());
+      : workerBackedScanWorkers?.metadataReader ?? new TsMetadataReader();
+  const metadataReader =
+    dependencies.metadataReader ??
+    new NativeThenTsMetadataReader(
+      undefined,
+      tsMetadataReader,
+      console.warn,
+      () => getAppSettings().nativeMetadataReaderEnabled === true,
+    );
   const coverExtractor = dependencies.coverExtractor ?? workerBackedScanWorkers?.coverExtractor ?? new TsCoverExtractor();
   const scanJobQueue = new ScanJobQueue(store, fileScanner, metadataReader, coverExtractor, albumService, {
     coverCacheDir,

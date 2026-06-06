@@ -1126,6 +1126,7 @@ export class ScanJobQueue {
     const protectedPaths = new Set<string>();
     const directorySnapshots = this.store.getScanDirectorySnapshotsByFolder(folder.id);
     const updatedSnapshots: ScanDirectorySnapshot[] = [];
+    let lastScannerProgressFiles = 0;
 
     const onFileSystemError = (error: ScanFileSystemError): void => {
       errors.push(`${error.path}: scanner: ${error.kind}: ${compactScanMessage(error.message)}`);
@@ -1141,7 +1142,21 @@ export class ScanJobQueue {
         audioExtensions: cueAwareScannableAudioExtensions,
         fileSystemOperationTimeoutMs: scanFileSystemOperationTimeoutMs,
         yieldEveryEntries: scanDiscoveryYieldEveryEntries,
+        shouldCancel: () => this.store.isScanCancelled(jobId),
         onFileSystemError,
+        onScannerProgress: (scannerProgress) => {
+          if (typeof scannerProgress.files !== 'number' || scannerProgress.files < lastScannerProgressFiles + 100) {
+            return;
+          }
+          lastScannerProgressFiles = scannerProgress.files;
+          progress.update(options.suppressDiscoveredTotal === true
+            ? { phase: 'discovering', errors }
+            : {
+                phase: 'discovering',
+                totalFiles: scannerProgress.files,
+                errors,
+              });
+        },
         getDirectorySnapshot: (directoryPath) => directorySnapshots.get(this.pathCompareValue(resolve(directoryPath))) ?? null,
         onDirectorySnapshot: (snapshot) => {
           updatedSnapshots.push(snapshot);
@@ -1165,6 +1180,9 @@ export class ScanJobQueue {
         }
       }
     } catch (error) {
+      if (this.store.isScanCancelled(jobId)) {
+        throw new ScanCancelledError();
+      }
       errors.push(`${folder.path}: scanner: ${compactScanMessage(error instanceof Error ? error.message : String(error))}`);
       throw error;
     }

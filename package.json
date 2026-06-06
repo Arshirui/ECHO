@@ -10,12 +10,15 @@
     "dev": "npm run rebuild:native && npm run ensure:audio-host && electron-vite dev",
     "dev:full": "npm run rebuild:native && npm run ensure:audio-host && npm run build:smtc-host && electron-vite dev",
     "build:audio-host": "node scripts/build-audio-host.mjs",
+    "build:native-scanner": "node scripts/build-native-scanner.mjs",
     "ensure:audio-host": "node scripts/ensure-audio-host.mjs",
     "build:smtc-host": "node scripts/build-smtc-host.mjs",
     "verify:ffmpeg": "node scripts/verify-ffmpeg-toolchain.mjs",
     "verify:airplay-package": "node scripts/verify-airplay-package.mjs",
     "test:audio-engine": "node scripts/test-audio-engine.mjs",
     "smoke:audio-host": "node scripts/smoke-audio-host.mjs",
+    "presmoke:native-scanner": "node scripts/build-native-scanner.mjs",
+    "smoke:native-scanner": "node scripts/smoke-native-scanner.mjs",
     "smoke:dsd-direct": "node scripts/smoke-dsd-direct.mjs",
     "smoke:smtc-host": "node scripts/smoke-smtc-host.mjs",
     "ensure:native:electron": "node scripts/ensure-native-abi.mjs electron",
@@ -26,8 +29,8 @@
     "rebuild:native:node": "npm rebuild better-sqlite3",
     "sync:audio-host": "node scripts/sync-audio-host.mjs",
     "build": "npm run typecheck && electron-vite build",
-    "build:win": "npm run rebuild:native && npm run verify:ffmpeg && npm run build:audio-host && npm run build:smtc-host && npm run build && electron-builder --win && npm run verify:airplay-package",
-    "build:win:unsigned": "npm run rebuild:native && npm run verify:ffmpeg && npm run build:audio-host && npm run build:smtc-host && npm run build && node scripts/build-win-unsigned.mjs && npm run verify:airplay-package",
+    "build:win": "npm run rebuild:native && npm run verify:ffmpeg && npm run build:audio-host && npm run build:smtc-host && npm run build:native-scanner && npm run build && electron-builder --win && npm run verify:airplay-package",
+    "build:win:unsigned": "npm run rebuild:native && npm run verify:ffmpeg && npm run build:audio-host && npm run build:smtc-host && npm run build:native-scanner && npm run build && node scripts/build-win-unsigned.mjs && npm run verify:airplay-package",
     "build:linux": "node scripts/build-linux.mjs",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:theme-colors": "node scripts/check-theme-colors.mjs",
@@ -38,6 +41,10 @@
     "typecheck": "tsc --noEmit",
     "prebenchmark:library": "node scripts/ensure-native-abi.mjs node",
     "benchmark:library": "node scripts/benchmark-library.mjs",
+    "prebenchmark:file-scanner": "node scripts/build-native-scanner.mjs",
+    "benchmark:file-scanner": "node scripts/benchmark-file-scanner.mjs",
+    "prebenchmark:metadata-reader": "node scripts/build-native-scanner.mjs",
+    "benchmark:metadata-reader": "node scripts/benchmark-native-metadata.mjs",
     "benchmark:scan-concurrency": "node scripts/benchmark-scan-concurrency.mjs",
     "postbenchmark:library": "node scripts/ensure-native-abi.mjs electron",
     "repair:electron": "node scripts/install-electron.cjs",
@@ -124,6 +131,10 @@
         {
           "from": "electron-app/build/echo-smtc-host.exe",
           "to": "echo-smtc-host.exe"
+        },
+        {
+          "from": "electron-app/build/echo-native-scanner.exe",
+          "to": "echo-native-scanner.exe"
         },
         {
           "from": "src/main/connect/airplayRaopHelper.cjs",
@@ -216,6 +227,10 @@
         {
           "from": "electron-app/build/echo-audio-host",
           "to": "echo-audio-host"
+        },
+        {
+          "from": "electron-app/build/echo-native-scanner",
+          "to": "echo-native-scanner"
         },
         {
           "from": "electron-app/tools-linux",

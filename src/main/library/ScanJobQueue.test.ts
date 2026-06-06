@@ -293,6 +293,20 @@ class FakeScanner implements FileScanner {
   }
 }
 
+class ProgressReportingScanner implements FileScanner {
+  constructor(
+    private readonly files: ScannedFile[],
+    private readonly reportedFiles: number,
+  ) {}
+
+  async *scanFolder(_folderPath?: string, options?: Parameters<FileScanner['scanFolder']>[1]): AsyncIterable<ScannedFile> {
+    options?.onScannerProgress?.({ directories: 4, files: this.reportedFiles });
+    for (const file of this.files) {
+      yield file;
+    }
+  }
+}
+
 class ThrowingScanner implements FileScanner {
   scanFolder(): AsyncIterable<ScannedFile> {
     throw new Error('scanner boom');
@@ -608,6 +622,29 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(store.getTrackCacheStatesByPathsCalls).toBe(1);
     expect(store.getTrackCacheStatesByFolderCalls).toBe(0);
     expect(store.findTrackCoverStateCalls).toBe(0);
+  });
+
+  it('applies scanner progress during discovery before buffered files are yielded', async () => {
+    const root = makeTempRoot();
+    const cacheRoot = join(root, 'custom-cache');
+    mkdirSync(cacheRoot, { recursive: true });
+    const [file] = makeFiles(root, 1);
+    const store = new FakeStore();
+
+    const status = await runQueue(
+      store,
+      new ProgressReportingScanner([file], 250),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      cacheRoot,
+      baseFolder(root),
+    );
+
+    expect(status.status).toBe('completed');
+    expect(store.updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ phase: 'discovering', totalFiles: 250 }),
+      expect.objectContaining({ phase: 'checking_cache', totalFiles: 1 }),
+    ]));
   });
 
   it('does not rebuild full album and artist groupings synchronously after a small changed scan', async () => {
