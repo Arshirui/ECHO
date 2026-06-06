@@ -1604,6 +1604,47 @@ describe('HomePage', () => {
     expect(library.getPlaybackStatsDashboard).not.toHaveBeenCalled();
   });
 
+  it('hides streaming albums from the recently played album rail', async () => {
+    const library = installLibraryMock({
+      getPlaybackHistory: vi.fn().mockResolvedValue(page([
+        historyEntry('streaming-history', {
+          mediaType: 'streaming',
+          provider: 'netease',
+          providerTrackId: 'netease-track-1',
+          stableKey: 'streaming:netease:track:1',
+          trackPath: 'streaming:netease:track:1',
+          title: 'Streaming Song',
+          album: 'Streaming Album',
+          albumArtist: 'Streaming Artist',
+          coverThumb: 'https://img.example/streaming-album.jpg',
+        }),
+        historyEntry('local-history', {
+          title: 'Local Song',
+          album: 'Local Album',
+          albumArtist: 'Local Artist',
+          coverThumb: 'echo-cover://thumb/local-history-cover',
+        }),
+      ])),
+      getAlbumForTrack: vi.fn(async (trackId: string) => {
+        if (trackId === 'local-history') {
+          return album('local-history-album', { title: 'Local Album', albumArtist: 'Local Artist' });
+        }
+
+        return album('streaming-history-album', { mediaType: 'streaming', title: 'Streaming Album', albumArtist: 'Streaming Artist' });
+      }),
+    });
+
+    render(<HomePage />);
+
+    await waitForRecentPanelReady();
+    fireEvent.click(screen.getAllByRole('tab')[0]);
+
+    expect(await screen.findByRole('button', { name: /Local Album/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Streaming Album/ })).toBeNull();
+    expect(library.getAlbumForTrack).toHaveBeenCalledWith('local-history');
+    expect(library.getAlbumForTrack).not.toHaveBeenCalledWith('streaming-history');
+  });
+
   it('places the currently playing album at the front of the played rail immediately', async () => {
     const currentTrack = track('current-played', {
       title: 'Current Song',
@@ -1638,5 +1679,28 @@ describe('HomePage', () => {
     );
     expect(within(document.querySelector('.home-played-rail') as HTMLElement).getByRole('button', { name: /Current Played Album/ })).toBeTruthy();
     expect(library.getAlbumForTrack).toHaveBeenCalledWith('current-played');
+  });
+
+  it('does not push the currently playing streaming album into the played rail', async () => {
+    queueState.value.currentTrack = track('streaming-current', {
+      mediaType: 'streaming',
+      stableKey: 'streaming:netease:track:current',
+      path: 'streaming:netease:track:current',
+      title: 'Current Streaming Song',
+      artist: 'Streaming Artist',
+      album: 'Current Streaming Album',
+      albumArtist: 'Streaming Artist',
+      coverThumb: 'https://img.example/current-streaming.jpg',
+    });
+    const library = installLibraryMock();
+
+    render(<HomePage />);
+
+    await screen.findAllByText(/Current Streaming Song/);
+    fireEvent.click(screen.getAllByRole('tab')[0]);
+
+    await waitForRecentPanelReady();
+    expect(within(document.querySelector('.home-played-rail') as HTMLElement).queryByRole('button', { name: /Current Streaming Album/ })).toBeNull();
+    expect(library.getAlbumForTrack).not.toHaveBeenCalledWith('streaming-current');
   });
 });

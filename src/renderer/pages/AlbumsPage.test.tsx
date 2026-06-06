@@ -5,6 +5,7 @@ import { AlbumsPage } from './AlbumsPage';
 import type { LibraryAlbum, LibraryPage, LibraryTrack } from '../../shared/types/library';
 import { I18nProvider } from '../i18n/I18nProvider';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { requestAlbumDetailNavigation } from '../utils/albumNavigation';
 
 const album = (id: string, overrides: Partial<LibraryAlbum> = {}): LibraryAlbum => ({
   id,
@@ -241,6 +242,22 @@ describe('AlbumsPage', () => {
 
     await waitFor(() => expect(navigateRoute).toHaveBeenCalledWith(expect.objectContaining({ detail: 'home' })));
     window.removeEventListener('app:navigate:route', navigateRoute);
+  });
+
+  it('opens pending home album detail on first paint without exposing the album wall', () => {
+    const targetAlbum = album('1', { title: 'Dream within a dream' });
+    installLibrary(
+      vi.fn().mockResolvedValue(page([targetAlbum])),
+      vi.fn(),
+      vi.fn().mockResolvedValue(trackPage([])),
+      vi.fn().mockResolvedValue(null),
+    );
+
+    requestAlbumDetailNavigation(targetAlbum, { returnTo: 'home' });
+    const { container } = renderAlbumsPage();
+
+    expect(screen.getByLabelText('Dream within a dream album details')).toBeTruthy();
+    expect(container.querySelector('.albums-page')?.getAttribute('data-detail-open')).toBe('true');
   });
 
   it('loads page 2 when the album wall scrolls to the spacer bottom', async () => {

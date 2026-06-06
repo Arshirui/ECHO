@@ -407,11 +407,21 @@ const historyText = (value: string | null | undefined, fallback: string): string
   return text && text.length > 0 ? text : fallback;
 };
 
+const isNonStreamingAlbum = (album: Pick<LibraryAlbum, 'mediaType'>): boolean =>
+  album.mediaType !== 'streaming';
+
+const isNonStreamingHistoryEntry = (entry: Pick<PlaybackHistoryEntry, 'mediaType'>): boolean =>
+  entry.mediaType !== 'streaming';
+
 const recentPlayedAlbumsFromHistory = (entries: PlaybackHistoryEntry[]): RecentPlayedAlbum[] => {
   const seenAlbumKeys = new Set<string>();
   const albums: RecentPlayedAlbum[] = [];
 
   for (const entry of entries) {
+    if (!isNonStreamingHistoryEntry(entry)) {
+      continue;
+    }
+
     const title = historyText(entry.album, historyText(entry.title, translateCurrentLocale('queue.unknownAlbum')));
     const albumArtist = historyText(entry.albumArtist, historyText(entry.artist, translateCurrentLocale('queue.unknownArtist')));
     const albumKey = `${entry.mediaType}:${albumArtist.toLowerCase()}:${title.toLowerCase()}`;
@@ -448,6 +458,7 @@ const normalizeStoredHomePageData = (value: unknown): HomePageData | null => {
 
   const recentHistory = Array.isArray(value.recentHistory) ? (value.recentHistory as PlaybackHistoryEntry[]) : [];
   const storedRecentPlayedAlbums = Array.isArray(value.recentPlayedAlbums) ? (value.recentPlayedAlbums as RecentPlayedAlbum[]) : [];
+  const storedNonStreamingRecentPlayedAlbums = storedRecentPlayedAlbums.filter((item) => isNonStreamingAlbum(item.album));
 
   return {
     recentAddedAlbums: Array.isArray(value.recentAddedAlbums) ? (value.recentAddedAlbums as LibraryAlbum[]) : [],
@@ -455,7 +466,7 @@ const normalizeStoredHomePageData = (value: unknown): HomePageData | null => {
     summary: isRecord(value.summary) ? ({ ...emptySummary, ...value.summary } as LibrarySummary) : emptySummary,
     recentTracks: Array.isArray(value.recentTracks) ? (value.recentTracks as LibraryTrack[]) : [],
     recentHistory,
-    recentPlayedAlbums: storedRecentPlayedAlbums.length > 0 ? storedRecentPlayedAlbums : recentPlayedAlbumsFromHistory(recentHistory),
+    recentPlayedAlbums: storedNonStreamingRecentPlayedAlbums.length > 0 ? storedNonStreamingRecentPlayedAlbums : recentPlayedAlbumsFromHistory(recentHistory),
     historySummary: isRecord(value.historySummary) ? (value.historySummary as PlaybackHistorySummary) : null,
     stats: isRecord(value.stats) ? (value.stats as PlaybackStatsDashboard) : null,
   };
@@ -885,13 +896,13 @@ const loadRecentPlayedAlbums = async (library: LibraryBridge, entries: PlaybackH
 
   const resolvedAlbums = await Promise.all(
     entries.map(async (entry): Promise<RecentPlayedAlbum | null> => {
-      if (!entry.trackId) {
+      if (!entry.trackId || !isNonStreamingHistoryEntry(entry)) {
         return null;
       }
 
       try {
         const album = await library.getAlbumForTrack(entry.trackId);
-        return album ? { album, startedAt: entry.startedAt } : null;
+        return album && isNonStreamingAlbum(album) ? { album, startedAt: entry.startedAt } : null;
       } catch {
         return null;
       }
@@ -2039,6 +2050,10 @@ export const HomePage = (): JSX.Element => {
       return;
     }
 
+    if (track.mediaType === 'streaming') {
+      return;
+    }
+
     const fallbackAlbum: LibraryAlbum = {
       id: `current:${track.stableKey ?? track.id ?? track.path}`,
       mediaType: track.mediaType === 'remote' ? 'remote' : 'local',
@@ -2066,7 +2081,7 @@ export const HomePage = (): JSX.Element => {
           return;
         }
 
-        pushRecentPlayedAlbum({ album: album ?? fallbackAlbum, startedAt });
+        pushRecentPlayedAlbum({ album: album && isNonStreamingAlbum(album) ? album : fallbackAlbum, startedAt });
       })
       .catch(() => {
         if (currentPlayedAlbumRequestIdRef.current === requestId) {

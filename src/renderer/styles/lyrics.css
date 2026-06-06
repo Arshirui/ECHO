@@ -502,7 +502,11 @@ html[data-theme="dark"] .lyrics-custom-lrc-drop {
 
 .lyrics-page:has(.lyrics-mv-background) .lyrics-track-copy h1,
 .lyrics-page:has(.lyrics-mv-background) .lyrics-track-copy p,
-.lyrics-page:has(.lyrics-mv-background) .lyrics-track-album,
+.lyrics-page:has(.lyrics-mv-background) .lyrics-track-album {
+  color: var(--lyrics-mv-muted-color);
+  text-shadow: none;
+}
+
 .lyrics-page:has(.lyrics-mv-background) .lyrics-back-button,
 .lyrics-page:has(.lyrics-mv-background) .lyrics-match-status,
 .lyrics-page:has(.lyrics-mv-background) .lyrics-empty {

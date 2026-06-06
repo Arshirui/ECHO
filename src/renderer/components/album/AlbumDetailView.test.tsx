@@ -389,7 +389,8 @@ afterEach(() => {
 });
 
 describe('AlbumDetailView', () => {
-  it('returns from the album detail immediately after Escape', () => {
+  it('plays the return animation before leaving after Escape', () => {
+    vi.useFakeTimers();
     installLibrary();
     const onBack = vi.fn();
 
@@ -398,6 +399,10 @@ describe('AlbumDetailView', () => {
     expect(screen.getByText('Mock Album')).toBeTruthy();
     fireEvent.keyDown(window, { key: 'Escape' });
 
+    expect(onBack).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(180);
+    });
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 

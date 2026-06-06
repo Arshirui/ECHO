@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { ArtistsPage } from './ArtistsPage';
 import type { LibraryArtist, LibraryPage } from '../../shared/types/library';
 import { I18nProvider } from '../i18n/I18nProvider';
+import { requestArtistDetailNavigation } from '../utils/artistNavigation';
 
 vi.mock('../components/artist/ArtistDetailView', () => ({
   ArtistDetailView: ({ artist, onBack }: { artist: LibraryArtist; onBack: () => void }) => (
@@ -165,7 +166,7 @@ describe('ArtistsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Back to artists' }));
 
     expect(navigateSongs).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Detail: BURTON')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Detail: BURTON')).toBeNull());
     window.removeEventListener('app:navigate:songs', navigateSongs);
   });
 
@@ -182,7 +183,7 @@ describe('ArtistsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Back to artists' }));
 
     expect(navigateRoute).toHaveBeenCalledWith(expect.objectContaining({ detail: 'albums' }));
-    expect(screen.queryByText('Detail: BURTON')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Detail: BURTON')).toBeNull());
     window.removeEventListener('app:navigate:route', navigateRoute);
   });
 
@@ -200,6 +201,18 @@ describe('ArtistsPage', () => {
 
     expect(navigateRoute).toHaveBeenCalledWith(expect.objectContaining({ detail: 'home' }));
     window.removeEventListener('app:navigate:route', navigateRoute);
+  });
+
+  it('opens pending home artist detail on first paint without exposing the artist wall', () => {
+    const targetArtist = artist('target', { name: 'BURTON' });
+    const getArtists = vi.fn().mockResolvedValue(page([targetArtist]));
+    installLibrary(getArtists);
+
+    requestArtistDetailNavigation(targetArtist, { returnTo: 'home' });
+    const { container } = renderArtistsPage();
+
+    expect(screen.getByText('Detail: BURTON')).toBeTruthy();
+    expect(container.querySelector('.artists-page')?.getAttribute('data-detail-open')).toBe('true');
   });
 
   it('loads the next artist page when the artist wall scrolls to the spacer bottom', async () => {

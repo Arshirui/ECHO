@@ -70,8 +70,9 @@ export const ArtistsPage = (): JSX.Element => {
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const [selectedArtist, setSelectedArtist] = useState<LibraryArtist | null>(null);
-  const [selectedArtistReturnTo, setSelectedArtistReturnTo] = useState<DetailReturnTarget | null>(null);
+  const [initialArtistDetailRequest] = useState(() => consumePendingArtistDetailNavigation());
+  const [selectedArtist, setSelectedArtist] = useState<LibraryArtist | null>(() => initialArtistDetailRequest?.artist ?? null);
+  const [selectedArtistReturnTo, setSelectedArtistReturnTo] = useState<DetailReturnTarget | null>(() => initialArtistDetailRequest?.returnTo ?? null);
   const [isArtistWallReturning, setIsArtistWallReturning] = useState(false);
   const [artistWallAlbumArtwork, setArtistWallAlbumArtwork] = useState(false);
   const [artistWallAlbumFallbackForMissingAvatars, setArtistWallAlbumFallbackForMissingAvatars] = useState(false);
@@ -87,6 +88,7 @@ export const ArtistsPage = (): JSX.Element => {
   const requestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
   const artistWallReturnTimerRef = useRef<number | null>(null);
+  const sourceRouteReturnCloseTimerRef = useRef<number | null>(null);
   const requestedArtistImageIdsRef = useRef(new Set<string>());
   const pauseDeferredArtistImages = useScrollImagePause(pageRootRef);
   const { wallRef: artistWallRef, spacerHeight } = useMediaWallScrollSpacer<HTMLElement>({
@@ -117,6 +119,9 @@ export const ArtistsPage = (): JSX.Element => {
     () => () => {
       if (artistWallReturnTimerRef.current !== null) {
         window.clearTimeout(artistWallReturnTimerRef.current);
+      }
+      if (sourceRouteReturnCloseTimerRef.current !== null) {
+        window.clearTimeout(sourceRouteReturnCloseTimerRef.current);
       }
     },
     [],
@@ -452,6 +457,11 @@ export const ArtistsPage = (): JSX.Element => {
   }, []);
 
   const closeArtistDetail = useCallback((showReturnAnimation = false): void => {
+    if (sourceRouteReturnCloseTimerRef.current !== null) {
+      window.clearTimeout(sourceRouteReturnCloseTimerRef.current);
+      sourceRouteReturnCloseTimerRef.current = null;
+    }
+
     setSelectedArtistReturnTo(null);
     setSelectedArtist(null);
 
@@ -469,6 +479,17 @@ export const ArtistsPage = (): JSX.Element => {
       setIsArtistWallReturning(false);
     }, artistWallReturnAnimationMs);
   }, []);
+
+  const closeArtistDetailAfterSourceRouteSwitch = useCallback((): void => {
+    if (sourceRouteReturnCloseTimerRef.current !== null) {
+      window.clearTimeout(sourceRouteReturnCloseTimerRef.current);
+    }
+
+    sourceRouteReturnCloseTimerRef.current = window.setTimeout(() => {
+      sourceRouteReturnCloseTimerRef.current = null;
+      closeArtistDetail();
+    }, 0);
+  }, [closeArtistDetail]);
 
   useEffect(() => {
     const pendingRequest = consumePendingArtistDetailNavigation();
@@ -490,31 +511,31 @@ export const ArtistsPage = (): JSX.Element => {
 
   const handleBackFromArtistDetail = useCallback((): void => {
     if (selectedArtistReturnTo === 'albums') {
-      closeArtistDetail();
       window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'albums' }));
+      closeArtistDetailAfterSourceRouteSwitch();
       return;
     }
 
     if (selectedArtistReturnTo === 'history') {
-      closeArtistDetail();
       window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'history' }));
+      closeArtistDetailAfterSourceRouteSwitch();
       return;
     }
 
     if (selectedArtistReturnTo === 'home') {
-      closeArtistDetail();
       window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'home' }));
+      closeArtistDetailAfterSourceRouteSwitch();
       return;
     }
 
     if (selectedArtistReturnTo === 'songs') {
-      closeArtistDetail();
       window.dispatchEvent(new Event('app:navigate:songs'));
+      closeArtistDetailAfterSourceRouteSwitch();
       return;
     }
 
     closeArtistDetail(true);
-  }, [closeArtistDetail, selectedArtistReturnTo]);
+  }, [closeArtistDetail, closeArtistDetailAfterSourceRouteSwitch, selectedArtistReturnTo]);
 
   const handleArtistKeyDown = useCallback((event: KeyboardEvent<HTMLElement>, artist: LibraryArtist): void => {
     if (event.key === 'Enter' || event.key === ' ') {

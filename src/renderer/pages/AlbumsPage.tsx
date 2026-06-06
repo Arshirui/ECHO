@@ -74,8 +74,9 @@ export const AlbumsPage = (): JSX.Element => {
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(null);
-  const [selectedAlbumReturnTo, setSelectedAlbumReturnTo] = useState<DetailReturnTarget | null>(null);
+  const [initialAlbumDetailRequest] = useState(() => consumePendingAlbumDetailNavigation());
+  const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(() => initialAlbumDetailRequest?.album ?? null);
+  const [selectedAlbumReturnTo, setSelectedAlbumReturnTo] = useState<DetailReturnTarget | null>(() => initialAlbumDetailRequest?.returnTo ?? null);
   const [isAlbumWallReturning, setIsAlbumWallReturning] = useState(false);
   const [albumMenu, setAlbumMenu] = useState<AlbumMenuState | null>(null);
   const [likedAlbumIds, setLikedAlbumIds] = useState<Record<string, boolean>>({});
@@ -95,6 +96,7 @@ export const AlbumsPage = (): JSX.Element => {
   const isLoadingRef = useRef(false);
   const tagEditorCloseTimerRef = useRef<number | null>(null);
   const albumWallReturnTimerRef = useRef<number | null>(null);
+  const sourceRouteReturnCloseTimerRef = useRef<number | null>(null);
   const coverRetryTimersRef = useRef<Record<string, number>>({});
   const coverErrorAttemptsRef = useRef<Record<string, { url: string; count: number }>>({});
   const pauseDeferredAlbumImages = useScrollImagePause(pageRootRef);
@@ -296,6 +298,11 @@ export const AlbumsPage = (): JSX.Element => {
   }, []);
 
   const closeAlbumDetail = useCallback((showReturnAnimation = false): void => {
+    if (sourceRouteReturnCloseTimerRef.current !== null) {
+      window.clearTimeout(sourceRouteReturnCloseTimerRef.current);
+      sourceRouteReturnCloseTimerRef.current = null;
+    }
+
     setSelectedAlbumReturnTo(null);
     setSelectedAlbum(null);
 
@@ -313,6 +320,17 @@ export const AlbumsPage = (): JSX.Element => {
       setIsAlbumWallReturning(false);
     }, albumWallReturnAnimationMs);
   }, []);
+
+  const closeAlbumDetailAfterSourceRouteSwitch = useCallback((): void => {
+    if (sourceRouteReturnCloseTimerRef.current !== null) {
+      window.clearTimeout(sourceRouteReturnCloseTimerRef.current);
+    }
+
+    sourceRouteReturnCloseTimerRef.current = window.setTimeout(() => {
+      sourceRouteReturnCloseTimerRef.current = null;
+      closeAlbumDetail();
+    }, 0);
+  }, [closeAlbumDetail]);
 
   useEffect(() => {
     const pendingRequest = consumePendingAlbumDetailNavigation();
@@ -334,25 +352,25 @@ export const AlbumsPage = (): JSX.Element => {
 
   const handleBackFromAlbumDetail = useCallback((): void => {
     if (selectedAlbumReturnTo === 'history') {
-      closeAlbumDetail();
       window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'history' }));
+      closeAlbumDetailAfterSourceRouteSwitch();
       return;
     }
 
     if (selectedAlbumReturnTo === 'home') {
-      closeAlbumDetail();
       window.dispatchEvent(new CustomEvent('app:navigate:route', { detail: 'home' }));
+      closeAlbumDetailAfterSourceRouteSwitch();
       return;
     }
 
     if (selectedAlbumReturnTo === 'songs') {
-      closeAlbumDetail();
       window.dispatchEvent(new Event('app:navigate:songs'));
+      closeAlbumDetailAfterSourceRouteSwitch();
       return;
     }
 
     closeAlbumDetail(true);
-  }, [closeAlbumDetail, selectedAlbumReturnTo]);
+  }, [closeAlbumDetail, closeAlbumDetailAfterSourceRouteSwitch, selectedAlbumReturnTo]);
 
   const getAllAlbumTracks = useCallback(async (albumId: string): Promise<LibraryTrack[]> => {
     const library = window.echo?.library;
@@ -690,6 +708,9 @@ export const AlbumsPage = (): JSX.Element => {
     return () => {
       if (albumWallReturnTimerRef.current !== null) {
         window.clearTimeout(albumWallReturnTimerRef.current);
+      }
+      if (sourceRouteReturnCloseTimerRef.current !== null) {
+        window.clearTimeout(sourceRouteReturnCloseTimerRef.current);
       }
       Object.values(coverRetryTimersRef.current).forEach((timer) => window.clearTimeout(timer));
       coverRetryTimersRef.current = {};

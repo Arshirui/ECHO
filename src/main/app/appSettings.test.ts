@@ -818,6 +818,14 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ sidebarAutoHideEnabled: true, sidebarIconOnlyEnabled: true }).sidebarIconOnlyEnabled).toBe(false);
   });
 
+  it('normalizes hidden feature comments as a default-off display preference', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).featureCommentsHidden).toBe(false);
+    expect(normalizeSettings({ featureCommentsHidden: true }).featureCommentsHidden).toBe(true);
+    expect(normalizeSettings({ featureCommentsHidden: 'true' as never }).featureCommentsHidden).toBe(false);
+  });
+
   it('normalizes app wallpaper settings without accepting unsafe paths', async () => {
     const { normalizeSettings } = await import('./appSettings');
     userDataPath = join(tmpdir(), `echo-next-settings-${Date.now()}-${Math.random().toString(16).slice(2)}`);

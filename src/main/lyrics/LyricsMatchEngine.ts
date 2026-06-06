@@ -56,6 +56,25 @@ const providerOrderPriority = (order: LyricsProviderId[], provider: LyricsProvid
 const sortProvidersByOrder = (providers: LyricsProvider[], order: LyricsProviderId[]): LyricsProvider[] =>
   [...providers].sort((left, right) => providerOrderPriority(order, right) - providerOrderPriority(order, left));
 
+const streamingPrimaryProviderFromQuery = (query: LyricsQuery): LyricsProviderId => {
+  if (query.mediaType !== 'streaming') {
+    return 'netease';
+  }
+
+  const identity = `${query.trackId ?? ''}\n${query.stableKey ?? ''}`;
+  if (/(?:^|\n)streaming:qqmusic:/u.test(identity)) {
+    return 'qqmusic';
+  }
+  if (/(?:^|\n)streaming:kugou:/u.test(identity)) {
+    return 'kugou';
+  }
+  if (/(?:^|\n)streaming:kuwo:/u.test(identity)) {
+    return 'kuwo';
+  }
+
+  return 'netease';
+};
+
 const hasText = (value: string | null | undefined): boolean => typeof value === 'string' && value.trim().length > 0;
 
 const isAutoAcceptCandidate = (candidate: MatchedLyricsCandidate | null): boolean =>
@@ -172,19 +191,20 @@ export class LyricsMatchEngine {
     const pending = new Map<LyricsProviderId, Promise<MatchedLyricsCandidate[]>>();
     const collected: MatchedLyricsCandidate[] = [...localCollected];
     let accepted: MatchedLyricsCandidate | null = null;
-    const primaryNeteaseProvider = settings.preferPrimaryProvider && !settings.collectAllCandidates
-      ? networkProviders.find((provider) => provider.id === 'netease')
+    const primaryProviderId = streamingPrimaryProviderFromQuery(query);
+    const primaryProvider = settings.preferPrimaryProvider && !settings.collectAllCandidates
+      ? networkProviders.find((provider) => provider.id === primaryProviderId)
       : undefined;
-    const remainingNetworkProviders = primaryNeteaseProvider
-      ? networkProviders.filter((provider) => provider.id !== primaryNeteaseProvider.id)
+    const remainingNetworkProviders = primaryProvider
+      ? networkProviders.filter((provider) => provider.id !== primaryProvider.id)
       : networkProviders;
 
     try {
-      if (primaryNeteaseProvider && !totalController.signal.aborted) {
-        const neteaseCandidates = await this.searchProvider(primaryNeteaseProvider, query, normalized, settings, totalController.signal);
-        collected.push(...neteaseCandidates);
+      if (primaryProvider && !totalController.signal.aborted) {
+        const primaryCandidates = await this.searchProvider(primaryProvider, query, normalized, settings, totalController.signal);
+        collected.push(...primaryCandidates);
         const sorted = sortLyricsCandidates(normalized.durationSeconds, dedupeLyricsCandidates(collected));
-        accepted = sorted.find((candidate) => candidate.provider === 'netease' && isAutoAcceptCandidate(candidate)) ?? null;
+        accepted = sorted.find((candidate) => candidate.provider === primaryProvider.id && isAutoAcceptCandidate(candidate)) ?? null;
         if (accepted) {
           return { normalized, accepted, candidates: sorted };
         }

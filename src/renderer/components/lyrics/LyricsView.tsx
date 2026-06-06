@@ -32,6 +32,7 @@ type LyricsViewProps = {
   positionUpdatedAtMs?: number;
   onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
   onSeek: (timeMs: number) => void;
+  emptyLabel?: string;
   hideEmptyState?: boolean;
   showRomanization?: boolean;
   preferKanaPronunciation?: boolean;
@@ -298,6 +299,7 @@ type ActiveWordElementCache = {
 
 export const LyricsView = ({
   durationMs,
+  emptyLabel,
   hideEmptyState = false,
   lyrics,
   onContextMenu,
@@ -753,7 +755,7 @@ export const LyricsView = ({
     return (
       <section className="lyrics-empty" aria-label="Lyrics">
         <Music2 size={26} />
-        <strong>{lyrics.kind === 'instrumental' ? t('lyricsView.empty.instrumental') : t('lyricsView.empty.noLyrics')}</strong>
+        <strong>{emptyLabel ?? (lyrics.kind === 'instrumental' ? t('lyricsView.empty.instrumental') : t('lyricsView.empty.noLyrics'))}</strong>
         {lyrics.kind === 'instrumental' ? <span>Instrumental track</span> : null}
       </section>
     );

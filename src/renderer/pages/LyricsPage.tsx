@@ -818,7 +818,7 @@ const highResolutionRemoteArtworkUrl = (coverUrl: string | null | undefined): st
       }
 
       if (url.hostname.endsWith("gtimg.cn") && /T002R\d+x\d+M000/u.test(url.href)) {
-        return url.href.replace(/T002R\d+x\d+M000/u, "T002R0x0M000");
+        return url.href.replace(/T002R\d+x\d+M000/u, "T002R500x500M000");
       }
 
       if (url.hostname.endsWith("coverartarchive.org") && /\/front-\d+(?=$|[?#])/u.test(url.pathname)) {
@@ -2302,15 +2302,25 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       ...enabled.filter((provider) => !order.includes(provider)),
     ];
 
-    return ordered.filter(
+    const filtered = ordered.filter(
       (provider): provider is LyricsProviderId =>
         searchableLyricsProviderSet.has(provider) &&
         (provider === "local" || lyricsDisplaySettings.lyricsNetworkEnabled),
     );
+    const streamingProvider = streamingTarget?.provider;
+    const preferredStreamingProvider =
+      streamingProvider && searchableLyricsProviderSet.has(streamingProvider)
+        ? (streamingProvider as LyricsProviderId)
+        : null;
+
+    return preferredStreamingProvider && filtered.includes(preferredStreamingProvider)
+      ? [preferredStreamingProvider, ...filtered.filter((provider) => provider !== preferredStreamingProvider)]
+      : filtered;
   }, [
     lyricsDisplaySettings.lyricsEnabledProviders,
     lyricsDisplaySettings.lyricsNetworkEnabled,
     lyricsDisplaySettings.lyricsProviderOrder,
+    streamingTarget?.provider,
   ]);
   const candidateSourceOptions = useMemo<Array<{ key: CandidateSourceFilter; label: string; count: number; order: number }>>(() => {
     const sourceMap = new Map<
@@ -4403,6 +4413,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
           <LyricsView
             durationMs={displayDurationSeconds * 1000}
             hideEmptyState={lyricsDisplaySettings.lyricsEmptyStateHidden && !isCurrentAirPlayReceiverTrack}
+            emptyLabel={isLyricsLoading || isCandidateLoading ? "正在加载歌词..." : undefined}
             lyrics={effectiveDisplayedLyrics}
             positionMs={
               lyricsPositionSeconds * 1000 +
