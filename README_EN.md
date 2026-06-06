@@ -235,3 +235,7 @@ Requests to bypass memberships, copyright, platform restrictions, or DRM will no
 | [ECHO_NEXT_NETWORK_METADATA.md](./docs/ECHO_NEXT_NETWORK_METADATA.md) | Network metadata enrichment |
 | [ECHO_NEXT_LINUX_BUILD.md](./docs/ECHO_NEXT_LINUX_BUILD.md) | Linux builds |
 | [ECHO_NEXT_UI_GUIDE.md](./docs/ECHO_NEXT_UI_GUIDE.md) | UI guide |
+
+## License
+
+ECHO NEXT is licensed under the [Apache License 2.0](./LICENSE).

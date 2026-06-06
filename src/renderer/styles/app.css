@@ -1801,6 +1801,35 @@
   line-height: 1.45;
 }
 
+.app-shell[data-feature-comments-hidden="true"] :is(
+  .settings-nav-desc,
+  .settings-header-context em,
+  .setting-info p,
+  .settings-inline-note,
+  .settings-search-result small,
+  .settings-card > p,
+  .settings-card > em,
+  .settings-theme-preset-card p,
+  .settings-theme-custom-preview em,
+  .settings-theme-custom-header span,
+  .settings-theme-custom-group-header span,
+  .audio-drawer-options > p,
+  .audio-toggle-row p,
+  .audio-toggle-row small,
+  .audio-toggle-row em,
+  .audio-settings-drawer p,
+  .audio-settings-drawer small,
+  .audio-settings-drawer em,
+  .lyrics-settings-panel p,
+  .lyrics-settings-panel small,
+  .lyrics-settings-panel em,
+  .mv-settings-drawer p,
+  .mv-settings-drawer small,
+  .mv-settings-drawer em
+) {
+  display: none !important;
+}
+
 .settings-chip-row {
   display: flex;
   max-width: min(560px, 100%);

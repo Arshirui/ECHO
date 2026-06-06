@@ -2268,6 +2268,8 @@ export type TranslationKey =
   | 'settings.general.sidebarAutoHide.title'
   | 'settings.general.sidebarIconOnly.description'
   | 'settings.general.sidebarIconOnly.title'
+  | 'settings.general.featureCommentsHidden.description'
+  | 'settings.general.featureCommentsHidden.title'
   | 'settings.header.searchPlaceholder'
   | 'settings.integrations.discord.description'
   | 'settings.integrations.discord.action.refresh'
@@ -5372,6 +5374,8 @@ const zhCN: TranslationMap = {
   'settings.general.sidebarAutoHide.description': '开启后左侧栏会收进屏幕边缘；鼠标移到左边缘时自动抽出。默认关闭。',
   'settings.general.sidebarIconOnly.title': '侧栏仅显示图标',
   'settings.general.sidebarIconOnly.description': '开启后左侧栏保持显示，但导航入口只显示图标；悬停仍可查看名称。默认关闭。',
+  'settings.general.featureCommentsHidden.title': '关闭功能注释',
+  'settings.general.featureCommentsHidden.description': '开启后收起设置、抽屉和导航里的解释性说明，只保留标题、控件与状态。默认关闭。',
   'settings.general.fastStartup.description': '开启后，启动时只做轻量只读曲库验证；完整数据保护快照会在窗口打开后后台完成。默认关闭。',
   'settings.general.fastStartup.title': '快速启动',
   'settings.general.firstRunWizard.description': '打开后会重新显示第一次启动时的向导，可选择标准输出（系统音频）、WASAPI、Exclusive 或 ASIO；完成或跳过后会自动关闭这个开关。',
@@ -8465,6 +8469,8 @@ const zhTW: TranslationMap = {
   'settings.general.sidebarAutoHide.description': '開啟後側邊欄會收進螢幕邊緣；滑鼠移到左側邊緣時自動抽出。預設關閉。',
   'settings.general.sidebarIconOnly.title': '側邊欄僅顯示圖示',
   'settings.general.sidebarIconOnly.description': '開啟後側邊欄保持顯示，但導覽入口只顯示圖示；懸停仍可查看名稱。預設關閉。',
+  'settings.general.featureCommentsHidden.title': '關閉功能註釋',
+  'settings.general.featureCommentsHidden.description': '開啟後收起設定、抽屜和導覽裡的解釋性說明，只保留標題、控制項與狀態。預設關閉。',
   'settings.general.fastStartup.description': '開啟後，啟動時只做輕量唯讀曲庫驗證；完整資料保護快照會在視窗開啟後於背景完成。預設關閉。',
   'settings.general.fastStartup.title': '快速啟動',
   'settings.general.firstRunWizard.description': '開啟後會重新顯示第一次啟動時的向導，可選擇標準輸出（系統音訊）、WASAPI、Exclusive 或 ASIO；完成或略過後會自動關閉這個開關。',
@@ -11371,6 +11377,8 @@ const jaJP: TranslationMap = {
   'settings.general.sidebarAutoHide.description': '有効にするとサイドバーを画面端に収納し、マウスを左端へ移動したときに自動で引き出します。既定ではオフです。',
   'settings.general.sidebarIconOnly.title': 'サイドバーをアイコンのみ表示',
   'settings.general.sidebarIconOnly.description': '有効にするとサイドバーは表示したまま、ナビゲーション項目はアイコンだけになります。ホバーで名前を確認できます。既定ではオフです。',
+  'settings.general.featureCommentsHidden.title': '機能注釈を非表示',
+  'settings.general.featureCommentsHidden.description': '有効にすると、設定、ドロワー、ナビゲーションの説明文を畳み、タイトル、操作、状態だけを残します。既定ではオフです。',
   'settings.general.fastStartup.description': '有効にすると、起動時は軽量な読み取り専用のライブラリ確認だけを行い、完全なデータ保護スナップショットはウィンドウ表示後にバックグラウンドで完了します。既定ではオフです。',
   'settings.general.fastStartup.title': '高速起動',
   'settings.general.firstRunWizard.description': '有効にすると初回起動時のガイドをもう一度表示し、標準出力（システムオーディオ）、WASAPI、Exclusive、ASIO を選べます。完了またはスキップ後、このスイッチは自動でオフになります。',
@@ -14376,6 +14384,8 @@ const enUS: TranslationMap = {
   'settings.general.sidebarAutoHide.description': 'Tuck the left sidebar into the screen edge, then slide it out when the pointer reaches the left edge. Off by default.',
   'settings.general.sidebarIconOnly.title': 'Sidebar Icons Only',
   'settings.general.sidebarIconOnly.description': 'Keep the left sidebar visible, but show navigation entries as icons only. Hover still shows each name. Off by default.',
+  'settings.general.featureCommentsHidden.title': 'Hide Feature Comments',
+  'settings.general.featureCommentsHidden.description': 'Hide explanatory notes in settings, drawers, and navigation, leaving titles, controls, and status text. Off by default.',
   'settings.general.fastStartup.description': 'When enabled, startup only runs a lightweight read-only library check; the full data protection snapshot finishes in the background after the window opens. Off by default.',
   'settings.general.fastStartup.title': 'Fast Startup',
   'settings.general.firstRunWizard.description': 'Show the first-run guide again after opening. You can choose Standard Output (system audio), WASAPI, Exclusive, or ASIO; this switch turns off automatically after finishing or skipping.',

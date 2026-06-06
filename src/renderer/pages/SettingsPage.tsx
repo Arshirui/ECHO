@@ -4315,6 +4315,25 @@ export const SettingsPage = (): JSX.Element => {
         ],
       },
       {
+        id: 'row-feature-comments-hidden',
+        sectionKey: 'general',
+        targetId: 'settings-row-feature-comments-hidden',
+        title: t('settings.general.featureCommentsHidden.title'),
+        description: t('settings.general.featureCommentsHidden.description'),
+        terms: [
+          t('settings.general.featureCommentsHidden.title'),
+          t('settings.general.featureCommentsHidden.description'),
+          '\u5173\u95ed\u529f\u80fd\u6ce8\u91ca',
+          '\u9690\u85cf\u529f\u80fd\u8bf4\u660e',
+          '\u5173\u95ed\u8bf4\u660e',
+          '\u7b80\u6d01\u754c\u9762',
+          'hide comments',
+          'hide descriptions',
+          'feature comments',
+          'minimal ui',
+        ],
+      },
+      {
         id: 'row-fast-startup',
         sectionKey: 'general',
         targetId: 'settings-row-fast-startup',
@@ -10274,6 +10293,18 @@ export const SettingsPage = (): JSX.Element => {
                       sidebarAutoHideEnabled: appSettings?.sidebarIconOnlyEnabled === true ? (appSettings?.sidebarAutoHideEnabled ?? false) : false,
                     })
                   }
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-feature-comments-hidden"
+                highlighted={highlightedSettingId === 'settings-row-feature-comments-hidden'}
+                title={t('settings.general.featureCommentsHidden.title')}
+                description={t('settings.general.featureCommentsHidden.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.featureCommentsHidden === true}
+                  disabled={!appSettings}
+                  onClick={() => patchAppSettings({ featureCommentsHidden: !(appSettings?.featureCommentsHidden ?? false) })}
                 />
               </SettingRow>
               <SettingRow title={t('settings.general.rememberWindowSize.title')} description={t('settings.general.rememberWindowSize.description')}>

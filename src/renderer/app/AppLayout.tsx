@@ -373,6 +373,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [signalPathControlEnabled, setSignalPathControlEnabled] = useState(true);
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
   const [sidebarLayoutSettings, setSidebarLayoutSettings] = useState<SidebarLayoutSettings>(defaultSidebarLayoutSettings);
+  const [featureCommentsHidden, setFeatureCommentsHidden] = useState(false);
   const [lyricsMiniPlayerCoverSample, setLyricsMiniPlayerCoverSample] = useState<ReadableColorSample | null>(null);
   const [isLyricsMiniPlayerAutoHidden, setIsLyricsMiniPlayerAutoHidden] = useState(false);
   const [activeLyricsViewMode, setActiveLyricsViewMode] = useState<LyricsViewMode>(() => readRememberedLyricsViewMode());
@@ -732,6 +733,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
       if (Object.prototype.hasOwnProperty.call(settings, 'downloadsFeatureUnlocked')) {
         setDownloadsFeatureUnlocked(settings.downloadsFeatureUnlocked === true);
+      }
+
+      if (Object.prototype.hasOwnProperty.call(settings, 'featureCommentsHidden')) {
+        setFeatureCommentsHidden(settings.featureCommentsHidden === true);
       }
 
       const hasSidebarRouteOrder = Object.prototype.hasOwnProperty.call(settings, 'sidebarRouteOrder');
@@ -2107,6 +2112,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       data-wallpaper-ui-transparent={shouldShowAppWallpaperVisual && isAppWallpaperUiTransparent ? 'true' : undefined}
       data-wallpaper-ui-zero={shouldShowAppWallpaperVisual && isAppWallpaperUiZero ? 'true' : undefined}
       data-wallpaper-orientation={shouldShowAppWallpaperVisual ? activeAppWallpaperOrientation : undefined}
+      data-feature-comments-hidden={featureCommentsHidden ? 'true' : undefined}
       data-window-fullscreen={isWindowFullscreen ? 'true' : 'false'}
       data-window-fullscreen-target={
         (windowFullscreenTransitionTarget ?? isWindowFullscreen) ? 'true' : 'false'

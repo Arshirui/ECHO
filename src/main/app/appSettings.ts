@@ -374,6 +374,7 @@ export const defaultSettings: AppSettings = {
   sidebarHiddenRouteIds: [],
   sidebarAutoHideEnabled: false,
   sidebarIconOnlyEnabled: false,
+  featureCommentsHidden: false,
   songsSort: 'default',
   rememberedAudioOutput: { ...defaultRememberedAudioOutput },
   hiddenAudioDeviceKeys: [],
@@ -1617,6 +1618,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     sidebarHiddenRouteIds: normalizeSidebarHiddenRouteIds(settings.sidebarHiddenRouteIds),
     sidebarAutoHideEnabled: settings.sidebarAutoHideEnabled === true,
     sidebarIconOnlyEnabled: settings.sidebarAutoHideEnabled === true ? false : settings.sidebarIconOnlyEnabled === true,
+    featureCommentsHidden: settings.featureCommentsHidden === true,
     songsSort: normalizeSongsSort(settings.songsSort),
     rememberedAudioOutput: migrateRememberedAudioOutput(
       normalizeRememberedAudioOutput(settings.rememberedAudioOutput),

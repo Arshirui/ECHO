@@ -89,6 +89,7 @@ describe('app settings normalization', () => {
     expect(settings.autoDataBackupLastError).toBeNull();
     expect(settings.sidebarAutoHideEnabled).toBe(false);
     expect(settings.sidebarIconOnlyEnabled).toBe(false);
+    expect(settings.featureCommentsHidden).toBe(false);
     expect(settings.rememberWindowSizeEnabled).toBe(true);
     expect(settings.rememberedWindowSize).toBeNull();
     expect(settings.appCustomWallpaperPath).toBeNull();

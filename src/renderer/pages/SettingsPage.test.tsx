@@ -895,6 +895,23 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ sidebarIconOnlyEnabled: true, sidebarAutoHideEnabled: false }));
   });
 
+  it('saves hidden feature comments from the general settings toggle', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const nextSettings = { ...settings, featureCommentsHidden: true };
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue(nextSettings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const row = screen.getByText('settings.general.featureCommentsHidden.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ featureCommentsHidden: true }));
+  });
+
   it('saves the bottom signal path control from general settings', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     const currentSettings = { ...settings, signalPathControlEnabled: true };
