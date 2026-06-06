@@ -25,6 +25,12 @@ import {
   runMainBackgroundTask,
   runNonCriticalMainWork,
 } from '../diagnostics/MainProcessWorkScheduler';
+import {
+  logLibraryScanPerf,
+  shouldCheckpointScanHealthForDiagnostics,
+  shouldDisableScanGuardForDiagnostics,
+  shouldDisableScanHealthCheckForDiagnostics,
+} from '../diagnostics/LibraryScanPerfDiagnostics';
 import { AlbumService } from './AlbumService';
 import type { AlbumMergeStrategy } from './AlbumService';
 import { getDefaultCoverCacheDir, migrateCoverCache, resolveConfiguredCoverCacheDir, resolveCoverCacheDir } from './CoverCacheManager';
@@ -146,6 +152,8 @@ import type { ScanConcurrencyRecommendation } from './ScanConcurrency';
 import type { CoverExtractor } from './workers/CoverExtractor';
 import type { FileScanner } from './workers/FileScanner';
 import type { MetadataReader } from './workers/MetadataReader';
+import { getNativeFileScannerDiagnostics, NativeThenTsFileScanner } from './workers/NativeFileScanner';
+import { getNativeMetadataReaderDiagnostics, NativeThenTsMetadataReader } from './workers/NativeMetadataReader';
 import { TsCoverExtractor } from './workers/TsCoverExtractor';
 import { TsFileScanner } from './workers/TsFileScanner';
 import { TsMetadataReader } from './workers/TsMetadataReader';
@@ -175,6 +183,7 @@ type LibraryServiceDependencies = {
 };
 
 const broadcastLibraryChanged = (): void => {
+  const startedAtMs = performance.now();
   const windows = (electron as unknown as {
     BrowserWindow?: {
       getAllWindows: () => Array<{ webContents: { send: (channel: string, payload?: unknown) => void } }>;
@@ -184,6 +193,11 @@ const broadcastLibraryChanged = (): void => {
   for (const window of windows) {
     window.webContents.send(IpcChannels.LibraryChanged);
   }
+  logLibraryScanPerf({
+    phase: 'broadcastLibraryChanged',
+    durationMs: performance.now() - startedAtMs,
+    batchSize: windows.length,
+  });
 };
 
 const romanizedSearchPattern = /[a-z]{2,}/iu;
@@ -839,6 +853,8 @@ export class LibraryService {
   }
 
   getDiagnostics(): LibraryDiagnostics {
+    const nativeFileScanner = getNativeFileScannerDiagnostics(() => this.readAppSettings().nativeFileScannerEnabled === true);
+    const nativeMetadataReader = getNativeMetadataReaderDiagnostics(() => this.readAppSettings().nativeMetadataReaderEnabled === true);
     return {
       ...this.store.getDiagnostics({
         databasePath: this.databasePath,
@@ -851,6 +867,8 @@ export class LibraryService {
         coverConcurrency: this.scanConcurrency.coverConcurrency,
         audioAnalysisEnabled: this.readAppSettings().audioAnalysisEnabled,
       }),
+      nativeFileScanner,
+      nativeMetadataReader,
       groupingRefreshQueued: this.groupingRefreshQueued,
       lastGroupingRefreshDurationMs: this.lastGroupingRefreshDurationMs,
       lastGroupingRefreshAt: this.lastGroupingRefreshAt,
@@ -2404,6 +2422,8 @@ export class LibraryService {
     candidates: LibraryMoveCandidate[],
   ): LibraryLabState {
     const lastWatcherEventAt = watcherDiagnostics.recentEvents.at(-1)?.timestamp ?? null;
+    const nativeFileScanner = getNativeFileScannerDiagnostics(() => this.readAppSettings().nativeFileScannerEnabled === true);
+    const nativeMetadataReader = getNativeMetadataReaderDiagnostics(() => this.readAppSettings().nativeMetadataReaderEnabled === true);
 
     return {
       watcherEnabled: watcherDiagnostics.enabled,
@@ -2440,6 +2460,8 @@ export class LibraryService {
       lastGroupingRefreshAt: this.lastGroupingRefreshAt,
       groupingRefreshDelayedForPlaybackCount: this.groupingRefreshDelayedForPlaybackCount,
       lastGroupingRefreshError: this.lastGroupingRefreshError,
+      nativeFileScanner,
+      nativeMetadataReader,
       recentWatcherEvents: watcherDiagnostics.recentEvents.slice(-20).reverse(),
     };
   }
@@ -2619,7 +2641,12 @@ export const createLibraryService = (
     artistMergeStrategy: readSettings().artistMergeStrategy ?? 'standard',
     remoteAlbumMergeStrategy: readSettings().remoteAlbumMergeStrategy ?? 'conservative',
   }));
-  const fileScanner = dependencies.fileScanner ?? new TsFileScanner();
+  const fileScanner = dependencies.fileScanner ?? new NativeThenTsFileScanner(
+    undefined,
+    new TsFileScanner(),
+    console.warn,
+    () => getAppSettings().nativeFileScannerEnabled === true,
+  );
   const coverCacheDir = dependencies.coverCacheDir
     ? resolveCoverCacheDir(databasePath, dependencies.coverCacheDir)
     : resolveConfiguredCoverCacheDir(databasePath, (dependencies.appSettings ?? getAppSettingsSafe)());
@@ -2639,9 +2666,8 @@ export const createLibraryService = (
       : createWorkerBackedLibraryScanWorkers({
           workerCount: Math.max(scanConcurrency.metadataConcurrency, scanConcurrency.coverConcurrency),
         });
-  const metadataReader =
-    dependencies.metadataReader ??
-    (dependencies.metadataService
+  const tsMetadataReader =
+    dependencies.metadataService
       ? {
           read: async (filePath: string) =>
             inflateMetadataResult(
@@ -2653,7 +2679,15 @@ export const createLibraryService = (
               }),
             ),
         }
-      : workerBackedScanWorkers?.metadataReader ?? new TsMetadataReader());
+      : workerBackedScanWorkers?.metadataReader ?? new TsMetadataReader();
+  const metadataReader =
+    dependencies.metadataReader ??
+    new NativeThenTsMetadataReader(
+      undefined,
+      tsMetadataReader,
+      console.warn,
+      () => getAppSettings().nativeMetadataReaderEnabled === true,
+    );
   const coverExtractor = dependencies.coverExtractor ?? workerBackedScanWorkers?.coverExtractor ?? new TsCoverExtractor();
   const scanJobQueue = new ScanJobQueue(store, fileScanner, metadataReader, coverExtractor, albumService, {
     coverCacheDir,
@@ -2670,10 +2704,27 @@ export const createLibraryService = (
     },
     onDeferredGroupingRefresh: broadcastLibraryChanged,
     createDatabaseScanGuard: (scanStatus) =>
-      readSettings().dataProtectionDisabled === true
+      shouldDisableScanGuardForDiagnostics()
+        ? (logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'createDatabaseScanGuard',
+            detail: 'scan guard disabled for diagnostics',
+          }), null)
+        : readSettings().dataProtectionDisabled === true
         ? null
         : createScanGuardLibraryDatabaseSnapshot(scanStatus, dirname(databasePath)),
     createCompletedScanSnapshot: async (scanStatus) => {
+      if (shouldDisableScanGuardForDiagnostics()) {
+        logLibraryScanPerf({
+          jobId: scanStatus.id,
+          folderId: scanStatus.folderId,
+          phase: 'createCompletedScanSnapshot',
+          detail: 'scan guard disabled for diagnostics',
+        });
+        return;
+      }
+
       if (
         scanStatus.addedTracks === 0 &&
         scanStatus.updatedTracks === 0 &&
@@ -2711,12 +2762,45 @@ export const createLibraryService = (
       await restore();
     },
     checkDatabaseHealth: (scanStatus) => {
+      if (shouldDisableScanHealthCheckForDiagnostics()) {
+        logLibraryScanPerf({
+          jobId: scanStatus.id,
+          folderId: scanStatus.folderId,
+          phase: 'checkDatabaseHealth',
+          detail: 'scan health check disabled for diagnostics',
+        });
+        return;
+      }
+
       try {
-        assertDatabaseHealthy(databasePath);
-        if (dependencies.checkpointDatabase) {
-          dependencies.checkpointDatabase('scan-health-check');
+        const healthStartedAtMs = performance.now();
+        assertDatabaseHealthy(databasePath, { cache: true });
+        logLibraryScanPerf({
+          jobId: scanStatus.id,
+          folderId: scanStatus.folderId,
+          phase: 'checkDatabaseHealth.assert_cached',
+          durationMs: performance.now() - healthStartedAtMs,
+        });
+        if (shouldCheckpointScanHealthForDiagnostics()) {
+          const checkpointStartedAtMs = performance.now();
+          if (dependencies.checkpointDatabase) {
+            dependencies.checkpointDatabase('scan-health-check');
+          } else {
+            database.pragma('wal_checkpoint(PASSIVE)');
+          }
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.checkpoint',
+            durationMs: performance.now() - checkpointStartedAtMs,
+          });
         } else {
-          database.pragma('wal_checkpoint(PASSIVE)');
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.checkpoint',
+            detail: 'skipped_by_default',
+          });
         }
       } catch (error) {
         recordLibraryDatabaseMaintenanceEvent({

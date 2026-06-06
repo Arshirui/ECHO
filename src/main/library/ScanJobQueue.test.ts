@@ -144,6 +144,7 @@ class FakeStore {
   refreshArtistsCalls = 0;
   finishFolderScanCalls = 0;
   getTrackCacheStatesByFolderCalls = 0;
+  getTrackCacheStatesByPathsCalls = 0;
   findTrackCoverStateCalls = 0;
   cancelled = false;
 
@@ -184,6 +185,18 @@ class FakeStore {
   getTrackCacheStatesByFolder(): Map<string, StoredTrackCoverState> {
     this.getTrackCacheStatesByFolderCalls += 1;
     return new Map(this.coverStatesByPath);
+  }
+
+  getTrackCacheStatesByPaths(_folderId: string, paths: readonly string[]): Map<string, StoredTrackCoverState> {
+    this.getTrackCacheStatesByPathsCalls += 1;
+    const states = new Map<string, StoredTrackCoverState>();
+    for (const filePath of paths) {
+      const state = this.coverStatesByPath.get(filePath);
+      if (state) {
+        states.set(filePath, state);
+      }
+    }
+    return states;
   }
 
   findTrackCoverState(filePath: string): StoredTrackCoverState | null {
@@ -241,6 +254,10 @@ class FakeStore {
     this.refreshArtistsCalls += 1;
   }
 
+  async refreshArtistsCooperatively(): Promise<void> {
+    this.refreshArtists();
+  }
+
   seedAlbumsForTracks(trackIds: readonly string[]): void {
     this.seededAlbumTrackIds.push([...trackIds]);
   }
@@ -270,6 +287,20 @@ class FakeScanner implements FileScanner {
   async *scanFolder(_folderPath?: string, options?: Parameters<FileScanner['scanFolder']>[1]): AsyncIterable<ScannedFile> {
     this.calls += 1;
     this.lastOptions = options;
+    for (const file of this.files) {
+      yield file;
+    }
+  }
+}
+
+class ProgressReportingScanner implements FileScanner {
+  constructor(
+    private readonly files: ScannedFile[],
+    private readonly reportedFiles: number,
+  ) {}
+
+  async *scanFolder(_folderPath?: string, options?: Parameters<FileScanner['scanFolder']>[1]): AsyncIterable<ScannedFile> {
+    options?.onScannerProgress?.({ directories: 4, files: this.reportedFiles });
     for (const file of this.files) {
       yield file;
     }
@@ -550,7 +581,8 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(store.updates.map((update) => update.phase)).toEqual(
       expect.arrayContaining(['discovering', 'checking_cache', 'reading_metadata', 'extracting_covers', 'grouping_albums', 'writing_database', 'finished']),
     );
-    expect(store.getTrackCacheStatesByFolderCalls).toBe(1);
+    expect(store.getTrackCacheStatesByPathsCalls).toBe(1);
+    expect(store.getTrackCacheStatesByFolderCalls).toBe(0);
     expect(store.findTrackCoverStateCalls).toBe(0);
   });
 
@@ -587,8 +619,32 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(metadataReader.paths).toEqual([]);
     expect(coverExtractor.cacheRoots).toEqual([]);
     expect(store.upsertedTracks).toEqual([]);
-    expect(store.getTrackCacheStatesByFolderCalls).toBe(1);
+    expect(store.getTrackCacheStatesByPathsCalls).toBe(1);
+    expect(store.getTrackCacheStatesByFolderCalls).toBe(0);
     expect(store.findTrackCoverStateCalls).toBe(0);
+  });
+
+  it('applies scanner progress during discovery before buffered files are yielded', async () => {
+    const root = makeTempRoot();
+    const cacheRoot = join(root, 'custom-cache');
+    mkdirSync(cacheRoot, { recursive: true });
+    const [file] = makeFiles(root, 1);
+    const store = new FakeStore();
+
+    const status = await runQueue(
+      store,
+      new ProgressReportingScanner([file], 250),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      cacheRoot,
+      baseFolder(root),
+    );
+
+    expect(status.status).toBe('completed');
+    expect(store.updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ phase: 'discovering', totalFiles: 250 }),
+      expect.objectContaining({ phase: 'checking_cache', totalFiles: 1 }),
+    ]));
   });
 
   it('does not rebuild full album and artist groupings synchronously after a small changed scan', async () => {
@@ -655,7 +711,8 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(metadataReader.paths).toEqual([]);
     expect(coverExtractor.cacheRoots).toEqual([]);
     expect(coverExtractor.repairCalls).toEqual(['repair-hash']);
-    expect(store.getTrackCacheStatesByFolderCalls).toBe(1);
+    expect(store.getTrackCacheStatesByPathsCalls).toBe(1);
+    expect(store.getTrackCacheStatesByFolderCalls).toBe(0);
     expect(store.findTrackCoverStateCalls).toBe(0);
   });
 
@@ -713,6 +770,7 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(store.upsertedTracks.map((track) => track.path)).toEqual([newFile.path]);
     expect(store.missingPaths).toEqual([deletedFile.path]);
     expect(store.getTrackCacheStatesByFolderCalls).toBe(1);
+    expect(store.getTrackCacheStatesByPathsCalls).toBe(0);
     expect(Math.max(...store.updates.map((update) => update.totalFiles ?? 0))).toBe(1);
   });
 
@@ -924,6 +982,38 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     );
   });
 
+  it('skips completed scan maintenance when a scan has no library changes', async () => {
+    const root = makeTempRoot();
+    const [file] = makeFiles(root, 1);
+    const cacheRoot = join(root, 'custom-cache');
+    mkdirSync(cacheRoot, { recursive: true });
+    const cachedCover = join(cacheRoot, 'cached.webp');
+    writeFileSync(cachedCover, 'cached');
+    const store = new FakeStore(coverStateMap([file], (item) => coverState(item, {
+      coverSource: 'embedded',
+      thumbPath: cachedCover,
+      albumPath: cachedCover,
+      largePath: cachedCover,
+    })));
+    const checkDatabaseHealth = vi.fn();
+    const createCompletedScanSnapshot = vi.fn();
+    const queue = new ScanJobQueue(
+      store as unknown as LibraryStore,
+      new FakeScanner([file]),
+      new FakeMetadataReader(),
+      new CapturingCoverExtractor(),
+      {} as AlbumService,
+      { coverCacheDir: cacheRoot, checkDatabaseHealth, createCompletedScanSnapshot },
+    );
+
+    const job = queue.scanFolder(baseFolder(root));
+    await queue.waitForIdle(job.id);
+
+    expect(store.getScanJob()).toMatchObject({ id: job.id, status: 'completed', skippedFiles: 1 });
+    expect(checkDatabaseHealth).not.toHaveBeenCalled();
+    expect(createCompletedScanSnapshot).not.toHaveBeenCalled();
+  });
+
   it('keeps a successful scan completed when the recovery snapshot cannot be written', async () => {
     const root = makeTempRoot();
     const [file] = makeFiles(root, 1);
@@ -980,7 +1070,7 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     deferGrouping = false;
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(store.refreshAlbumsCalls).toBe(1);
+    expect(store.refreshAlbumsCalls).toBe(0);
     expect(store.refreshArtistsCalls).toBe(1);
     expect(onDeferredGroupingRefresh).toHaveBeenCalledTimes(1);
   });
@@ -1013,7 +1103,7 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
 
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(store.refreshAlbumsCalls).toBe(1);
+    expect(store.refreshAlbumsCalls).toBe(0);
     expect(store.refreshArtistsCalls).toBe(1);
     expect(onDeferredGroupingRefresh).toHaveBeenCalledTimes(1);
   });
@@ -1050,7 +1140,8 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
     expect(status.skippedFiles).toBe(1);
     expect(store.missingPaths).toEqual([deletedFile.path]);
     expect(metadataReader.paths).toEqual([]);
-    expect(store.getTrackCacheStatesByFolderCalls).toBe(1);
+    expect(store.getTrackCacheStatesByPathsCalls).toBe(1);
+    expect(store.getTrackCacheStatesByFolderCalls).toBe(0);
     expect(store.findTrackCoverStateCalls).toBe(0);
   });
 
@@ -1128,6 +1219,47 @@ describe('ScanJobQueue progress and cover memory behavior', () => {
           coverSource: 'embedded',
           thumbPath: cachedCover,
           albumPath: missingCover,
+          largePath: cachedCover,
+          originalRef: cachedCover,
+        }),
+      ),
+    );
+
+    const status = await runStoredQueue(
+      store,
+      new ThrowingScanner(),
+      metadataReader,
+      new CapturingCoverExtractor(),
+      cacheRoot,
+      folder,
+      { mode: 'embedded-tags-missing-cover' },
+    );
+
+    expect(status.status).toBe('completed');
+    expect(status.totalFiles).toBe(1);
+    expect(metadataReader.paths).toEqual([resolve(file.path)]);
+    expect(store.upsertedTracks).toHaveLength(1);
+  });
+
+  it('treats a stored track with invalid duration as an embedded metadata repair target', async () => {
+    const root = makeTempRoot();
+    const cacheRoot = join(root, 'custom-cache');
+    const folder = baseFolder(root);
+    mkdirSync(folder.path, { recursive: true });
+    mkdirSync(cacheRoot, { recursive: true });
+    const cachedCover = join(cacheRoot, 'cached.webp');
+    writeFileSync(cachedCover, 'cached');
+    const [file] = makeFiles(root, 1);
+    writeFileSync(file.path, 'audio');
+
+    const metadataReader = new FakeMetadataReader();
+    const store = new FakeStore(
+      coverStateMap([file], (track) =>
+        coverState(track, {
+          duration: 0,
+          coverSource: 'embedded',
+          thumbPath: cachedCover,
+          albumPath: cachedCover,
           largePath: cachedCover,
           originalRef: cachedCover,
         }),

@@ -396,6 +396,8 @@ export type AppSettings = {
   playbackSpeed: number;
   playbackSpeedMode: PlaybackSpeedMode;
   scanPerformanceMode: ScanPerformanceMode;
+  nativeFileScannerEnabled?: boolean;
+  nativeMetadataReaderEnabled?: boolean;
   remoteCoverLoadPerformanceMode?: RemoteCoverLoadPerformanceMode;
   remoteAlbumMergeStrategy?: RemoteAlbumMergeStrategy;
   remoteBackgroundConcurrency?: RemoteBackgroundConcurrencySettings;

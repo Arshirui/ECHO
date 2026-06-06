@@ -6,7 +6,9 @@ import { spawnSync } from 'node:child_process';
 const scriptPath = fileURLToPath(import.meta.url);
 const projectRoot = resolve(dirname(scriptPath), '..');
 const hostBinary = join(projectRoot, 'electron-app', 'build', 'echo-audio-host');
+const nativeScannerBinary = join(projectRoot, 'electron-app', 'build', 'echo-native-scanner');
 const packagedHostBinary = join(projectRoot, 'dist', 'linux-unpacked', 'resources', 'echo-audio-host');
+const packagedNativeScannerBinary = join(projectRoot, 'dist', 'linux-unpacked', 'resources', 'echo-native-scanner');
 const linuxToolsDir = join(projectRoot, 'electron-app', 'tools-linux');
 const linuxFfmpegBinary = join(linuxToolsDir, 'ffmpeg');
 const linuxYtDlpBinary = join(linuxToolsDir, 'yt-dlp');
@@ -87,12 +89,15 @@ try {
   run('npm', ['run', 'rebuild:native']);
   run('npm', ['run', 'verify:ffmpeg']);
   run('npm', ['run', 'build:audio-host']);
+  run('npm', ['run', 'build:native-scanner']);
   assertExecutableFile(hostBinary, 'Linux audio host');
+  assertExecutableFile(nativeScannerBinary, 'Linux native scanner');
 
   run('npm', ['run', 'build']);
   run(electronBuilderBin, ['--linux']);
 
   assertExecutableFile(packagedHostBinary, 'packaged Linux audio host');
+  assertExecutableFile(packagedNativeScannerBinary, 'packaged Linux native scanner');
   assertExecutableFile(packagedFfmpegBinary, 'packaged Linux ffmpeg');
   if (existsSync(linuxYtDlpBinary)) {
     assertExecutableFile(packagedYtDlpBinary, 'packaged Linux yt-dlp');

@@ -39,6 +39,21 @@ const emptyState: LibraryLabState = {
   lastGroupingRefreshAt: null,
   groupingRefreshDelayedForPlaybackCount: 0,
   lastGroupingRefreshError: null,
+  nativeFileScanner: {
+    enabled: false,
+    enablementSource: 'default',
+    binaryFound: false,
+    binaryPath: null,
+    willUseNative: false,
+  },
+  nativeMetadataReader: {
+    enabled: false,
+    enablementSource: 'default',
+    binaryFound: false,
+    binaryPath: null,
+    willUseNative: false,
+    supportedFormats: ['FLAC', 'MP3', 'M4A/MP4'],
+  },
   recentWatcherEvents: [],
 };
 
@@ -402,6 +417,50 @@ export const LibraryDiagnosticsPanel = (): JSX.Element => {
       {message ? <p className="settings-inline-note" role="status">{message}</p> : null}
 
       <div className="settings-library-lab-status" aria-label="Library Lab status">
+        <div className="settings-library-lab-status-item">
+          <span>nativeFileScanner.enabled</span>
+          <strong>{formatValue(labState.nativeFileScanner.enabled)}</strong>
+        </div>
+        <div className="settings-library-lab-status-item">
+          <span>nativeFileScanner.source</span>
+          <strong>{labState.nativeFileScanner.enablementSource}</strong>
+        </div>
+        <div className="settings-library-lab-status-item">
+          <span>nativeFileScanner.binaryFound</span>
+          <strong>{formatValue(labState.nativeFileScanner.binaryFound)}</strong>
+        </div>
+        <div className="settings-library-lab-status-item">
+          <span>nativeFileScanner.willUseNative</span>
+          <strong>{formatValue(labState.nativeFileScanner.willUseNative)}</strong>
+        </div>
+        <div className="settings-library-lab-status-item">
+          <span>nativeFileScanner.binaryPath</span>
+          <strong title={labState.nativeFileScanner.binaryPath ?? undefined}>{labState.nativeFileScanner.binaryPath ?? '-'}</strong>
+        </div>
+        <div className="settings-library-lab-status-item">
+          <span>nativeMetadataReader.enabled</span>
+          <strong>{formatValue(labState.nativeMetadataReader.enabled)}</strong>
+        </div>
+        <div className="settings-library-lab-status-item">
+          <span>nativeMetadataReader.source</span>
+          <strong>{labState.nativeMetadataReader.enablementSource}</strong>
+        </div>
+        <div className="settings-library-lab-status-item">
+          <span>nativeMetadataReader.binaryFound</span>
+          <strong>{formatValue(labState.nativeMetadataReader.binaryFound)}</strong>
+        </div>
+        <div className="settings-library-lab-status-item">
+          <span>nativeMetadataReader.willUseNative</span>
+          <strong>{formatValue(labState.nativeMetadataReader.willUseNative)}</strong>
+        </div>
+        <div className="settings-library-lab-status-item">
+          <span>nativeMetadataReader.supportedFormats</span>
+          <strong>{labState.nativeMetadataReader.supportedFormats.join(', ')}</strong>
+        </div>
+        <div className="settings-library-lab-status-item">
+          <span>nativeMetadataReader.binaryPath</span>
+          <strong title={labState.nativeMetadataReader.binaryPath ?? undefined}>{labState.nativeMetadataReader.binaryPath ?? '-'}</strong>
+        </div>
         {statusFields.map((field) => (
           <div className="settings-library-lab-status-item" key={field.key}>
             <span>{field.label}</span>

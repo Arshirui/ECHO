@@ -4765,6 +4765,45 @@ export const SettingsPage = (): JSX.Element => {
         ],
       },
       {
+        id: 'row-native-file-scanner',
+        sectionKey: 'library',
+        targetId: 'settings-row-native-file-scanner',
+        title: 'Native File Scanner\uff08\u5b9e\u9a8c\uff09',
+        description: '\u4f7f\u7528 C++ \u72ec\u7acb\u8fdb\u7a0b\u53d1\u73b0\u97f3\u9891\u6587\u4ef6\uff1b\u4e0d\u8bfb\u53d6\u5143\u6570\u636e\u3001\u4e0d\u63d0\u53d6\u5c01\u9762\u3001\u4e0d\u5199\u5165\u66f2\u5e93\u6570\u636e\u5e93\u3002',
+        terms: [
+          'Native File Scanner',
+          'native scanner',
+          'C++ scanner',
+          'file discovery',
+          'NDJSON',
+          '\u539f\u751f\u626b\u63cf\u5668',
+          '\u6587\u4ef6\u53d1\u73b0',
+          '\u626b\u63cf\u6027\u80fd',
+          '\u5927\u66f2\u5e93',
+        ],
+      },
+      {
+        id: 'row-native-metadata-reader',
+        sectionKey: 'library',
+        targetId: 'settings-row-native-metadata-reader',
+        title: 'Native Metadata Reader\uff08\u5b9e\u9a8c\uff09',
+        description: '\u4f7f\u7528 C++ \u72ec\u7acb\u8fdb\u7a0b\u8bfb\u53d6 FLAC\u3001MP3\u3001M4A \u57fa\u7840\u5143\u6570\u636e\uff1b\u4e0d\u63d0\u53d6\u5c01\u9762\u3001\u4e0d\u5199\u5165\u66f2\u5e93\u6570\u636e\u5e93\uff0c\u5931\u8d25\u65f6\u56de\u9000 TypeScript\u3002',
+        terms: [
+          'Native Metadata Reader',
+          'native metadata',
+          'C++ metadata',
+          'FLAC',
+          'MP3',
+          'M4A',
+          'ID3',
+          'Vorbis Comment',
+          'MP4 atoms',
+          '\u539f\u751f\u5143\u6570\u636e',
+          '\u5143\u6570\u636e\u8bfb\u53d6',
+          '\u5927\u66f2\u5e93',
+        ],
+      },
+      {
         id: 'row-library-quality',
         sectionKey: 'library',
         targetId: 'settings-row-library-quality',
@@ -13090,6 +13129,36 @@ export const SettingsPage = (): JSX.Element => {
                   disabled={!appSettings}
                   onClick={handleLiveLibraryUpdatesToggle}
                 />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-native-file-scanner"
+                highlighted={highlightedSettingId === 'settings-row-native-file-scanner'}
+                title={'Native File Scanner\uff08\u5b9e\u9a8c\uff09'}
+                description={'\u4f7f\u7528 C++ \u72ec\u7acb\u8fdb\u7a0b\u53d1\u73b0\u97f3\u9891\u6587\u4ef6\uff1b\u4e0d\u8bfb\u53d6\u5143\u6570\u636e\u3001\u4e0d\u63d0\u53d6\u5c01\u9762\u3001\u4e0d\u5199\u5165\u66f2\u5e93\u6570\u636e\u5e93\u3002'}
+              >
+                <div className="settings-inline-toggle settings-inline-toggle--compact">
+                  <span>{appSettings?.nativeFileScannerEnabled ? '\u5df2\u542f\u7528\u539f\u751f\u6587\u4ef6\u53d1\u73b0' : '\u4f7f\u7528 TypeScript \u626b\u63cf\u5668'}</span>
+                  <ToggleButton
+                    active={appSettings?.nativeFileScannerEnabled === true}
+                    disabled={!appSettings}
+                    onClick={() => patchAppSettings({ nativeFileScannerEnabled: !(appSettings?.nativeFileScannerEnabled ?? false) })}
+                  />
+                </div>
+              </SettingRow>
+              <SettingRow
+                id="settings-row-native-metadata-reader"
+                highlighted={highlightedSettingId === 'settings-row-native-metadata-reader'}
+                title={'Native Metadata Reader\uff08\u5b9e\u9a8c\uff09'}
+                description={'\u4f7f\u7528 C++ \u72ec\u7acb\u8fdb\u7a0b\u8bfb\u53d6 FLAC\u3001MP3\u3001M4A \u57fa\u7840\u6807\u7b7e\uff1b\u4e0d\u63d0\u53d6\u5c01\u9762\u3001\u4e0d\u5199 SQLite\uff0c\u5931\u8d25\u65f6\u81ea\u52a8\u56de\u9000 TypeScript\u3002'}
+              >
+                <div className="settings-inline-toggle settings-inline-toggle--compact">
+                  <span>{appSettings?.nativeMetadataReaderEnabled ? '\u5df2\u542f\u7528\u539f\u751f\u5143\u6570\u636e\u8bfb\u53d6' : '\u4f7f\u7528 TypeScript \u5143\u6570\u636e\u8bfb\u53d6'}</span>
+                  <ToggleButton
+                    active={appSettings?.nativeMetadataReaderEnabled === true}
+                    disabled={!appSettings}
+                    onClick={() => patchAppSettings({ nativeMetadataReaderEnabled: !(appSettings?.nativeMetadataReaderEnabled ?? false) })}
+                  />
+                </div>
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"

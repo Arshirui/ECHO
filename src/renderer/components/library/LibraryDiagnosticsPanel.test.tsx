@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryLabState, LibraryMoveCandidate, LibraryMoveRepairResult } from '../../../shared/types/library';
 import { LibraryDiagnosticsPanel } from './LibraryDiagnosticsPanel';
 
+vi.mock('../../i18n/I18nProvider', () => ({
+  useI18n: () => ({ t: (key: string) => key }),
+}));
+
 const baseState: LibraryLabState = {
   watcherEnabled: false,
   watcherRunning: false,
@@ -40,6 +44,21 @@ const baseState: LibraryLabState = {
   lastGroupingRefreshAt: null,
   groupingRefreshDelayedForPlaybackCount: 0,
   lastGroupingRefreshError: null,
+  nativeFileScanner: {
+    enabled: false,
+    enablementSource: 'default',
+    binaryFound: false,
+    binaryPath: null,
+    willUseNative: false,
+  },
+  nativeMetadataReader: {
+    enabled: false,
+    enablementSource: 'default',
+    binaryFound: false,
+    binaryPath: null,
+    willUseNative: false,
+    supportedFormats: ['FLAC', 'MP3', 'M4A/MP4'],
+  },
   recentWatcherEvents: [],
 };
 
@@ -154,6 +173,27 @@ describe('LibraryDiagnosticsPanel', () => {
     expect(input('Enable Move Repair Lab').checked).toBe(false);
     expect(button('Start Watcher').disabled).toBe(true);
     expect(screen.queryByRole('button', { name: 'Apply Selected Move' })).toBeNull();
+  });
+
+  it('shows native metadata reader diagnostics', async () => {
+    createApi({
+      ...baseState,
+      nativeMetadataReader: {
+        enabled: true,
+        enablementSource: 'setting',
+        binaryFound: true,
+        binaryPath: 'G:\\ECHO-main\\electron-app\\build\\echo-native-scanner.exe',
+        willUseNative: true,
+        supportedFormats: ['FLAC', 'MP3', 'M4A/MP4'],
+      },
+    });
+    render(<LibraryDiagnosticsPanel />);
+
+    await openLab();
+
+    expect(await screen.findByText('nativeMetadataReader.enabled')).toBeTruthy();
+    expect(screen.getByText('nativeMetadataReader.supportedFormats')).toBeTruthy();
+    expect(screen.getByText('FLAC, MP3, M4A/MP4')).toBeTruthy();
   });
 
   it('allows Start Watcher after the watcher toggle is enabled', async () => {
@@ -292,6 +332,29 @@ describe('LibraryDiagnosticsPanel', () => {
     expect(screen.getByText('placeholderTrackCount')).toBeTruthy();
     expect(screen.getByText('lastSkippedByCacheCount')).toBeTruthy();
     expect(screen.getByText('2026-05-18T01:00:02.000Z')).toBeTruthy();
+  });
+
+  it('shows native file scanner diagnostics without starting a scan', async () => {
+    const api = createApi({
+      ...baseState,
+      nativeFileScanner: {
+        enabled: true,
+        enablementSource: 'setting',
+        binaryFound: true,
+        binaryPath: 'G:\\ECHO-main\\electron-app\\build\\echo-native-scanner.exe',
+        willUseNative: true,
+      },
+    });
+    render(<LibraryDiagnosticsPanel />);
+
+    await openLab();
+
+    expect(await screen.findByText('nativeFileScanner.enabled')).toBeTruthy();
+    expect(screen.getByText('nativeFileScanner.source')).toBeTruthy();
+    expect(screen.getByText('nativeFileScanner.binaryFound')).toBeTruthy();
+    expect(screen.getByText('nativeFileScanner.willUseNative')).toBeTruthy();
+    expect(screen.getByText('G:\\ECHO-main\\electron-app\\build\\echo-native-scanner.exe')).toBeTruthy();
+    expect(api.getState).toHaveBeenCalledTimes(1);
   });
 
   it('queues placeholder metadata backfill manually without applying move repair', async () => {

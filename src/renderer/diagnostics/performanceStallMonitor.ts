@@ -2,6 +2,8 @@ import type { DiagnosticPerformanceStallPayload } from '../../shared/types/diagn
 
 const frameStallThresholdMs = 750;
 const longTaskThresholdMs = 250;
+const rendererHeartbeatIntervalMs = 500;
+const rendererHeartbeatThresholdMs = 1000;
 const reportCooldownMs = 10_000;
 const maxElementDescriptionLength = 140;
 const inputEventNames = ['pointerdown', 'keydown', 'wheel', 'input'] as const;
@@ -15,8 +17,19 @@ type LastInputEvent = {
 let monitorStarted = false;
 let lastFrameAt = 0;
 let frameId: number | null = null;
+let heartbeatTimer: number | null = null;
 let lastInputEvent: LastInputEvent | null = null;
 const lastReportAtByKind = new Map<DiagnosticPerformanceStallPayload['kind'], number>();
+
+const readRendererEnv = (name: string): string | undefined => {
+  const maybeProcess = typeof process !== 'undefined' ? process : undefined;
+  return maybeProcess?.env?.[name];
+};
+
+const isRendererScanPerfDiagnosticsEnabled = (): boolean => {
+  const explicit = readRendererEnv('ECHO_SCAN_PERF_LOGS');
+  return explicit === '1';
+};
 
 const getWindowKind = (): DiagnosticPerformanceStallPayload['windowKind'] => {
   const params = new URLSearchParams(window.location.search);
@@ -203,6 +216,36 @@ const startLongTaskObserver = (): void => {
   }
 };
 
+const startRendererHeartbeat = (): void => {
+  if (heartbeatTimer !== null || !isRendererScanPerfDiagnosticsEnabled()) {
+    return;
+  }
+
+  let expectedAt = performance.now() + rendererHeartbeatIntervalMs;
+  heartbeatTimer = window.setInterval(() => {
+    const now = performance.now();
+    const driftMs = now - expectedAt;
+    expectedAt = now + rendererHeartbeatIntervalMs;
+    if (driftMs < rendererHeartbeatThresholdMs) {
+      return;
+    }
+
+    const roundedDriftMs = Math.round(driftMs);
+    console.warn(
+      `[library-scan-perf] renderer_heartbeat durationMs=${roundedDriftMs} thresholdMs=${rendererHeartbeatThresholdMs} route=${getRouteDetail()}`,
+    );
+    reportStall({
+      kind: 'long_task',
+      durationMs: driftMs,
+      thresholdMs: rendererHeartbeatThresholdMs,
+      details: {
+        heartbeat: 'renderer',
+        expectedIntervalMs: rendererHeartbeatIntervalMs,
+      },
+    });
+  }, rendererHeartbeatIntervalMs);
+};
+
 export const startPerformanceStallMonitor = (): void => {
   if (monitorStarted || typeof window === 'undefined' || !window.echo?.diagnostics.reportPerformanceStall) {
     return;
@@ -213,6 +256,7 @@ export const startPerformanceStallMonitor = (): void => {
   addInputBreadcrumbListeners();
   scheduleNextFrame();
   startLongTaskObserver();
+  startRendererHeartbeat();
 
   document.addEventListener('visibilitychange', () => {
     lastFrameAt = performance.now();
@@ -223,6 +267,10 @@ export const stopPerformanceStallMonitorForTests = (): void => {
   if (frameId !== null) {
     window.cancelAnimationFrame(frameId);
     frameId = null;
+  }
+  if (heartbeatTimer !== null) {
+    window.clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
   }
   monitorStarted = false;
   lastFrameAt = 0;

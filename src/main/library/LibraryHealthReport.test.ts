@@ -3,7 +3,6 @@ import type { AppCacheInventory } from '../../shared/types/coverCache';
 import type {
   LibraryDatabaseProtectionStatus,
   LibraryDiagnostics,
-  LibraryHealthReport,
   LibraryLabState,
   LibrarySummary,
 } from '../../shared/types/library';
@@ -141,6 +140,21 @@ const labState = (): LibraryLabState => ({
   lastGroupingRefreshAt: null,
   groupingRefreshDelayedForPlaybackCount: 0,
   lastGroupingRefreshError: null,
+  nativeFileScanner: {
+    enabled: false,
+    enablementSource: 'default',
+    binaryFound: false,
+    binaryPath: null,
+    willUseNative: false,
+  },
+  nativeMetadataReader: {
+    enabled: false,
+    enablementSource: 'default',
+    binaryFound: false,
+    binaryPath: null,
+    willUseNative: false,
+    supportedFormats: ['FLAC', 'MP3', 'M4A/MP4'],
+  },
   recentWatcherEvents: [],
 });
 

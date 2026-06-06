@@ -313,6 +313,7 @@ export type CoverCacheRepairOptions = {
 };
 
 export type StoredTrackCoverState = StoredTrackFingerprint & {
+  duration?: number | null;
   coverId: string | null;
   metadataStatus?: MetadataStatus | string | null;
   embeddedMetadataStatus?: EmbeddedReadinessStatus | string | null;
@@ -351,12 +352,19 @@ export type ScanFileSystemError = {
   message: string;
 };
 
+export type ScannerProgress = {
+  directories?: number;
+  files?: number;
+};
+
 export type ScanOptions = {
   signal?: AbortSignal;
+  shouldCancel?: () => boolean;
   audioExtensions?: readonly string[];
   fileSystemOperationTimeoutMs?: number;
   yieldEveryEntries?: number;
   onFileSystemError?: (error: ScanFileSystemError) => void;
+  onScannerProgress?: (progress: ScannerProgress) => void;
   getDirectorySnapshot?: (directoryPath: string) => ScanDirectorySnapshot | null;
   onDirectorySnapshot?: (snapshot: ScanDirectorySnapshot) => void;
 };
