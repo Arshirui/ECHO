@@ -1674,6 +1674,7 @@ describe('preload SMTC API', () => {
     const handler = vi.fn();
     await exposedApi!.accounts.saveCookie('netease', 'MUSIC_U=secret');
     await exposedApi!.accounts.startLogin?.('netease');
+    await exposedApi!.accounts.setBrowser('soundcloud', 'chrome');
     await exposedApi!.accounts.getStatuses();
     const unsubscribe = exposedApi!.accounts.onStatusesChanged(handler);
     const listener = listeners.get(IpcChannels.AccountStatusesChanged);
@@ -1683,6 +1684,7 @@ describe('preload SMTC API', () => {
 
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountSaveCookie, 'netease', 'MUSIC_U=secret');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountStartLogin, 'netease');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountSetBrowser, 'soundcloud', 'chrome');
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.AccountGetStatuses);
     expect(handler).toHaveBeenCalledWith(statuses);
     expect(listeners.has(IpcChannels.AccountStatusesChanged)).toBe(false);

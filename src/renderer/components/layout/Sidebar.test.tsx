@@ -78,12 +78,14 @@ describe('Sidebar direct import actions', () => {
     onOpenLyricsSettings?: () => void;
     onImportFolder: () => void;
     onImportFile: () => void;
+    iconOnly?: boolean;
   }): ReturnType<typeof render> => {
     return render(
       <I18nProvider>
         <Sidebar
           routes={routes}
           activeRouteId="songs"
+          iconOnly={props.iconOnly}
           onRouteChange={props.onRouteChange}
           onOpenAudioSettings={props.onOpenAudioSettings ?? vi.fn()}
           onOpenLyricsSettings={props.onOpenLyricsSettings ?? vi.fn()}
@@ -160,6 +162,13 @@ describe('Sidebar direct import actions', () => {
     const visibleRouteCount = routes.filter((route) => !route.hideFromSidebar).length;
 
     expect(container.querySelectorAll('.nav-icon-shell')).toHaveLength(visibleRouteCount);
+  });
+
+  it('marks icon-only mode while keeping visible routes accessible by name', () => {
+    const { container } = renderSidebar({ onRouteChange: vi.fn(), onImportFolder: vi.fn(), onImportFile: vi.fn(), iconOnly: true });
+
+    expect(container.querySelector('.sidebar')?.getAttribute('data-icon-only')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Songs' })).toBeTruthy();
   });
 
   it('opens the audio file picker from Import File without navigating', async () => {

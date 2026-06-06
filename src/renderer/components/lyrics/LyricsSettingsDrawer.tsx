@@ -15,6 +15,7 @@ import {
   Monitor,
   Music2,
   Palette,
+  Rows3,
   RefreshCw,
   RotateCcw,
   Search,
@@ -99,6 +100,7 @@ type LyricsDrawerSettings = Pick<
   | 'lyricsSecondaryFontSizePx'
   | 'lyricsFontFamily'
   | 'lyricsFontFilePath'
+  | 'lyricsTextDirection'
   | 'lyricsLineSpacingPercent'
   | 'lyricsLineMaxChars'
   | 'lyricsContextOpacityPercent'
@@ -114,6 +116,7 @@ type LyricsDrawerSettings = Pick<
   | 'desktopLyricsFontFamily'
   | 'desktopLyricsFontFilePath'
   | 'desktopLyricsOpacityPercent'
+  | 'desktopLyricsTextDirection'
   | 'desktopLyricsRomanizationEnabled'
   | 'desktopLyricsTranslationEnabled'
 >;
@@ -153,6 +156,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   lyricsSecondaryFontSizePx: 22,
   lyricsFontFamily: 'Microsoft YaHei',
   lyricsFontFilePath: null,
+  lyricsTextDirection: 'horizontal',
   lyricsLineSpacingPercent: 110,
   lyricsLineMaxChars: 0,
   lyricsContextOpacityPercent: 49,
@@ -168,6 +172,7 @@ const fallbackSettings: LyricsDrawerSettings = {
   desktopLyricsFontFamily: 'Microsoft YaHei',
   desktopLyricsFontFilePath: null,
   desktopLyricsOpacityPercent: 96,
+  desktopLyricsTextDirection: 'horizontal',
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
 };
@@ -223,6 +228,14 @@ const providerLabelFor = (
   provider: LyricsSource | null | undefined,
   t: (key: TranslationKey, options?: Record<string, string | number>) => string = translateFallback,
 ): string => t(provider ? lyricsProviderLabelKeys[provider] : 'lyricsSettings.provider.none');
+
+const lyricsTitleLabelFor = (
+  lyrics: Pick<TrackLyrics, 'title'> | null | undefined,
+  fallback: string,
+): string => {
+  const title = lyrics?.title?.trim();
+  return title && title.length > 0 ? title : fallback;
+};
 
 const dispatchSettingsChanged = (patch?: Partial<AppSettings> | Partial<MvSettings>): void => {
   window.dispatchEvent(patch ? new CustomEvent('settings:changed', { detail: patch }) : new Event('settings:changed'));
@@ -563,6 +576,46 @@ const mergeLyricsCandidates = (
   return Array.from(merged.values()).sort((left, right) => right.score - left.score);
 };
 
+const isAutoApplyRiskAllowed = (candidate: LyricsSearchCandidate): boolean => {
+  const risk = candidate.risk ?? 'low';
+  if (risk === 'low') {
+    return true;
+  }
+
+  const reasons = new Set(candidate.reasons ?? []);
+  const titleScore = candidate.titleScore ?? (reasons.has('title_exact') ? 1 : 0);
+  const artistScore = candidate.artistScore ?? (reasons.has('artist_exact') ? 1 : 0);
+  const hasOnlyDurationMismatch =
+    reasons.has('duration_mismatch') &&
+    !reasons.has('artist_mismatch') &&
+    !reasons.has('version_conflict') &&
+    !reasons.has('rejected_by_user') &&
+    !reasons.has('candidate_only_cover') &&
+    !reasons.has('cover_intent');
+
+  return hasOnlyDurationMismatch && titleScore >= 0.98 && artistScore >= 0.98;
+};
+
+const selectAutoApplyLyricsCandidate = (
+  candidates: LyricsSearchCandidate[],
+  settings: Pick<LyricsDrawerSettings, 'lyricsAutoAcceptScore' | 'lyricsAutoSearch'>,
+): LyricsSearchCandidate | null => {
+  if (!settings.lyricsAutoSearch) {
+    return null;
+  }
+
+  const threshold = Number.isFinite(settings.lyricsAutoAcceptScore)
+    ? Math.max(0.3, Math.min(1, settings.lyricsAutoAcceptScore))
+    : fallbackSettings.lyricsAutoAcceptScore;
+
+  return candidates.find(
+    (candidate) =>
+      candidate.score >= threshold &&
+      isAutoApplyRiskAllowed(candidate) &&
+      (candidate.hasSynced || candidate.hasPlain || candidate.instrumental),
+  ) ?? null;
+};
+
 const dispatchLyricsCandidateApplied = (trackId: string, lyrics: TrackLyrics): void => {
   window.dispatchEvent(new CustomEvent('lyrics:candidate-applied', { detail: { trackId, lyrics } }));
 };
@@ -612,6 +665,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   lyricsSecondaryFontSizePx: settings.lyricsSecondaryFontSizePx ?? fallbackSettings.lyricsSecondaryFontSizePx,
   lyricsFontFamily: settings.lyricsFontFamily ?? fallbackSettings.lyricsFontFamily,
   lyricsFontFilePath: settings.lyricsFontFilePath ?? fallbackSettings.lyricsFontFilePath,
+  lyricsTextDirection: settings.lyricsTextDirection ?? fallbackSettings.lyricsTextDirection,
   lyricsLineSpacingPercent: settings.lyricsLineSpacingPercent ?? fallbackSettings.lyricsLineSpacingPercent,
   lyricsLineMaxChars: settings.lyricsLineMaxChars ?? fallbackSettings.lyricsLineMaxChars,
   lyricsContextOpacityPercent: settings.lyricsContextOpacityPercent ?? fallbackSettings.lyricsContextOpacityPercent,
@@ -627,6 +681,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   desktopLyricsFontFamily: settings.desktopLyricsFontFamily ?? fallbackSettings.desktopLyricsFontFamily,
   desktopLyricsFontFilePath: settings.desktopLyricsFontFilePath ?? fallbackSettings.desktopLyricsFontFilePath,
   desktopLyricsOpacityPercent: settings.desktopLyricsOpacityPercent ?? fallbackSettings.desktopLyricsOpacityPercent,
+  desktopLyricsTextDirection: settings.desktopLyricsTextDirection ?? fallbackSettings.desktopLyricsTextDirection,
   desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled ?? fallbackSettings.desktopLyricsRomanizationEnabled,
   desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled ?? fallbackSettings.desktopLyricsTranslationEnabled,
 });
@@ -637,6 +692,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [currentLyricsProviderLabel, setCurrentLyricsProviderLabel] = useState(providerLabelFor(null, t));
+  const [currentLyricsTitleLabel, setCurrentLyricsTitleLabel] = useState(providerLabelFor(null, t));
   const [draggingSourceId, setDraggingSourceId] = useState<LyricsProviderId | null>(null);
   const [isLyricsDisplayPanelOpen, setIsLyricsDisplayPanelOpen] = useState(readLyricsDisplayPanelOpen);
   const [isLyricsStyleControlsOpen, setIsLyricsStyleControlsOpen] = useState(readLyricsStyleControlsOpen);
@@ -696,6 +752,11 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     desktopLyricsState?.settings.desktopLyricsTranslationEnabled ??
     effectiveSettings.desktopLyricsTranslationEnabled ??
     fallbackSettings.desktopLyricsTranslationEnabled;
+  const desktopLyricsTextDirection =
+    desktopLyricsState?.settings.desktopLyricsTextDirection ??
+    effectiveSettings.desktopLyricsTextDirection ??
+    fallbackSettings.desktopLyricsTextDirection ??
+    'horizontal';
   const wordHighlightClarityPercent = effectiveSettings.lyricsWordHighlightClarityPercent ?? fallbackSettings.lyricsWordHighlightClarityPercent ?? 70;
   const wordHighlightClarityLabel =
     wordHighlightClarityPercent === fallbackSettings.lyricsWordHighlightClarityPercent ? t('lyricsSettings.status.normal') : `${wordHighlightClarityPercent}%`;
@@ -889,6 +950,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     const lyrics = window.echo?.lyrics;
     if (!lyrics || (!playback && !audio)) {
       setCurrentLyricsProviderLabel(providerLabelFor(null, t));
+      setCurrentLyricsTitleLabel(providerLabelFor(null, t));
       return;
     }
 
@@ -900,15 +962,18 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
       const trackId = playbackStatus?.currentTrackId ?? audioStatus?.currentTrackId ?? null;
       if (!trackId) {
         setCurrentLyricsProviderLabel(t('lyricsSettings.status.noPlayingTrack'));
+        setCurrentLyricsTitleLabel(t('lyricsSettings.status.noPlayingTrack'));
         setCurrentLyricsKind(null);
         return;
       }
 
       const trackLyrics = await lyrics.getForTrack(trackId);
       setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics?.provider, t));
+      setCurrentLyricsTitleLabel(lyricsTitleLabelFor(trackLyrics, providerLabelFor(trackLyrics?.provider, t)));
       setCurrentLyricsKind(trackLyrics?.kind ?? null);
     } catch {
       setCurrentLyricsProviderLabel(providerLabelFor(null, t));
+      setCurrentLyricsTitleLabel(providerLabelFor(null, t));
       setCurrentLyricsKind(null);
     }
   }, [t]);
@@ -1353,6 +1418,55 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     patchLyricsProviderOrder(nextOrder);
   }, [orderedOnlineProviderIds, patchLyricsProviderOrder]);
 
+  const applyLyricsCandidateToTarget = useCallback(
+    async (
+      target: { trackId: string; snapshot: LyricsTrackSnapshotRequest | null },
+      candidateId: string,
+      candidate: LyricsSearchCandidate | null,
+      candidatePool: LyricsSearchCandidate[],
+    ): Promise<boolean> => {
+      if (!effectiveSettings.lyricsEnabled) {
+        setLyricsCandidateStatus(null);
+        return false;
+      }
+
+      const lyricsApi = window.echo?.lyrics;
+      if (!lyricsApi?.applyCandidate && !lyricsApi?.applyCandidateForSnapshot) {
+        setError('Desktop bridge unavailable');
+        return false;
+      }
+
+      setApplyingLyricsCandidateId(candidateId);
+      try {
+        const trackLyrics = target.snapshot && lyricsApi.applyCandidateForSnapshot
+          ? await lyricsApi.applyCandidateForSnapshot(target.snapshot, candidateId)
+          : await lyricsApi.applyCandidate(target.trackId, candidateId);
+        const appliedCandidate = candidatePool.find((item) => item.id === candidateId) ?? candidate;
+        if (appliedCandidate) {
+          recordLyricsSourceQualityOutcome(appliedCandidate, 'applied');
+        }
+        setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider, t));
+        setCurrentLyricsTitleLabel(lyricsTitleLabelFor(trackLyrics, providerLabelFor(trackLyrics.provider, t)));
+        setCurrentLyricsKind(trackLyrics.kind);
+        setLyricsCandidates([]);
+        setActiveLyricsCandidateSource('all');
+        setLyricsCandidateStatus(t('lyricsSettings.status.applied'));
+        setError(null);
+        dispatchLyricsCandidateApplied(target.trackId, trackLyrics);
+        if (effectiveSettings.lyricsRestartOnApplyEnabled === true) {
+          await restartCurrentPlaybackForLyrics();
+        }
+        return true;
+      } catch (applyError) {
+        setError(applyError instanceof Error ? applyError.message : String(applyError));
+        return false;
+      } finally {
+        setApplyingLyricsCandidateId(null);
+      }
+    },
+    [effectiveSettings.lyricsEnabled, effectiveSettings.lyricsRestartOnApplyEnabled, t],
+  );
+
   const searchLyricsCandidates = useCallback(
     async (searchText?: string): Promise<void> => {
       if (!effectiveSettings.lyricsEnabled) {
@@ -1400,6 +1514,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
         setLyricsCandidates(collectedCandidates);
         setActiveLyricsCandidateSource('all');
+        const autoCandidate = normalizedSearchText
+          ? null
+          : selectAutoApplyLyricsCandidate(collectedCandidates, effectiveSettings);
+        if (autoCandidate) {
+          const applied = await applyLyricsCandidateToTarget(
+            { trackId: currentTrackId, snapshot },
+            autoCandidate.id,
+            autoCandidate,
+            collectedCandidates,
+          );
+          if (applied) {
+            return;
+          }
+        }
         setLyricsCandidateStatus(collectedCandidates.length ? null : t('lyricsSettings.status.noCandidates'));
         setError(null);
       } catch (candidateError) {
@@ -1409,7 +1537,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
         setIsLyricsCandidateLoading(false);
       }
     },
-    [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentLyricsTarget, t],
+    [activeSearchProviders, applyLyricsCandidateToTarget, effectiveSettings, resolveCurrentLyricsTarget, t],
   );
 
   const rematchLyricsCandidates = useCallback(async (): Promise<void> => {
@@ -1456,6 +1584,18 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
       setLyricsCandidates(collectedCandidates);
       setActiveLyricsCandidateSource('all');
+      const autoCandidate = selectAutoApplyLyricsCandidate(collectedCandidates, effectiveSettings);
+      if (autoCandidate) {
+        const applied = await applyLyricsCandidateToTarget(
+          { trackId: currentTrackId, snapshot },
+          autoCandidate.id,
+          autoCandidate,
+          collectedCandidates,
+        );
+        if (applied) {
+          return;
+        }
+      }
       setLyricsCandidateStatus(collectedCandidates.length ? null : t('lyricsSettings.status.noCandidates'));
       setError(null);
     } catch (candidateError) {
@@ -1464,7 +1604,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
     } finally {
       setIsLyricsCandidateLoading(false);
     }
-  }, [activeSearchProviders, effectiveSettings.lyricsEnabled, resolveCurrentLyricsTarget, t]);
+  }, [activeSearchProviders, applyLyricsCandidateToTarget, effectiveSettings, resolveCurrentLyricsTarget, t]);
 
   const applyLyricsCandidate = useCallback(
     async (candidateId: string): Promise<void> => {
@@ -1487,30 +1627,20 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           return;
         }
 
-        const trackLyrics = snapshot && lyricsApi.applyCandidateForSnapshot
-          ? await lyricsApi.applyCandidateForSnapshot(snapshot, candidateId)
-          : await lyricsApi.applyCandidate(currentTrackId, candidateId);
-        recordLyricsSourceQualityOutcome(
-          lyricsCandidates.find((candidate) => candidate.id === candidateId),
-          'applied',
+        const candidate = lyricsCandidates.find((item) => item.id === candidateId);
+        await applyLyricsCandidateToTarget(
+          { trackId: currentTrackId, snapshot },
+          candidateId,
+          candidate ?? null,
+          lyricsCandidates,
         );
-        setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider, t));
-        setCurrentLyricsKind(trackLyrics.kind);
-        setLyricsCandidates([]);
-        setActiveLyricsCandidateSource('all');
-        setLyricsCandidateStatus(t('lyricsSettings.status.applied'));
-        setError(null);
-        dispatchLyricsCandidateApplied(currentTrackId, trackLyrics);
-        if (effectiveSettings.lyricsRestartOnApplyEnabled === true) {
-          await restartCurrentPlaybackForLyrics();
-        }
       } catch (applyError) {
         setError(applyError instanceof Error ? applyError.message : String(applyError));
       } finally {
         setApplyingLyricsCandidateId(null);
       }
     },
-    [effectiveSettings.lyricsEnabled, effectiveSettings.lyricsRestartOnApplyEnabled, lyricsCandidates, resolveCurrentLyricsTarget, t],
+    [applyLyricsCandidateToTarget, effectiveSettings.lyricsEnabled, lyricsCandidates, resolveCurrentLyricsTarget, t],
   );
 
   const markCurrentTrackInstrumental = useCallback(async (): Promise<void> => {
@@ -1535,6 +1665,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
       const trackLyrics = await lyricsApi.markInstrumental(currentTrackId);
       setCurrentLyricsProviderLabel(providerLabelFor(trackLyrics.provider, t));
+      setCurrentLyricsTitleLabel(lyricsTitleLabelFor(trackLyrics, providerLabelFor(trackLyrics.provider, t)));
       setCurrentLyricsKind(trackLyrics.kind);
       setLyricsCandidates([]);
       setActiveLyricsCandidateSource('all');
@@ -1554,8 +1685,10 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
   useEffect(() => {
     const handleCurrentLyricsProviderChanged = (event: Event): void => {
-      const provider = (event as CustomEvent<{ provider?: LyricsSource | null }>).detail?.provider;
+      const detail = (event as CustomEvent<{ provider?: LyricsSource | null; title?: string | null }>).detail;
+      const provider = detail?.provider;
       setCurrentLyricsProviderLabel(providerLabelFor(provider, t));
+      setCurrentLyricsTitleLabel(detail?.title?.trim() || providerLabelFor(provider, t));
     };
 
     window.addEventListener('lyrics:current-provider-changed', handleCurrentLyricsProviderChanged);
@@ -1572,7 +1705,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
             </span>
             <div>
             <span>{t('lyricsSettings.engine.title')}</span>
-              <strong>{currentLyricsProviderLabel}</strong>
+              <strong>{currentLyricsTitleLabel}</strong>
             </div>
             <RefreshCw size={15} />
           </div>
@@ -1898,6 +2031,26 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
                   onChange={(event) => patchDesktopLyricsStyle({ desktopLyricsTranslationEnabled: event.currentTarget.checked })}
                 />
               </label>
+              <div className="lyrics-color-panel__header">
+                <span>
+                  <Rows3 size={15} />
+                  <strong>{t('lyricsSettings.display.desktopTextDirection')}</strong>
+                </span>
+                <em>{t(desktopLyricsTextDirection === 'vertical' ? 'lyricsSettings.direction.vertical' : 'lyricsSettings.direction.horizontal')}</em>
+              </div>
+              <div className="lyrics-background-segmented" aria-label={t('lyricsSettings.display.desktopTextDirection')}>
+                {(['horizontal', 'vertical'] as const).map((direction) => (
+                  <button
+                    type="button"
+                    key={direction}
+                    aria-pressed={desktopLyricsTextDirection === direction}
+                    disabled={isBusy || isDesktopLyricsBusy || !hasDesktopLyricsBridge}
+                    onClick={() => patchDesktopLyricsStyle({ desktopLyricsTextDirection: direction })}
+                  >
+                    {t(direction === 'vertical' ? 'lyricsSettings.direction.vertical' : 'lyricsSettings.direction.horizontal')}
+                  </button>
+                ))}
+              </div>
 
               <label className="mv-threshold-control lyrics-desktop-opacity-control">
                 <span className="mv-threshold-copy">
@@ -2339,6 +2492,28 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
 
           {showPersistentControls ? (
             <div className="lyrics-style-range-grid" hidden={!isLyricsStyleControlsOpen}>
+              <div className="lyrics-color-panel lyrics-text-direction-panel">
+                <div className="lyrics-color-panel__header">
+                  <span>
+                    <Rows3 size={15} />
+                    <strong>{t('lyricsSettings.style.textDirection')}</strong>
+                  </span>
+                  <em>{t(effectiveSettings.lyricsTextDirection === 'vertical' ? 'lyricsSettings.direction.vertical' : 'lyricsSettings.direction.horizontal')}</em>
+                </div>
+                <div className="lyrics-background-segmented" aria-label={t('lyricsSettings.style.textDirection')}>
+                  {(['horizontal', 'vertical'] as const).map((direction) => (
+                    <button
+                      type="button"
+                      key={direction}
+                      aria-pressed={(effectiveSettings.lyricsTextDirection ?? 'horizontal') === direction}
+                      disabled={isBusy}
+                      onClick={() => void patchSettings({ lyricsTextDirection: direction })}
+                    >
+                      {t(direction === 'vertical' ? 'lyricsSettings.direction.vertical' : 'lyricsSettings.direction.horizontal')}
+                    </button>
+                  ))}
+                </div>
+              </div>
           {isSecondaryLyricsSizeOpen ? (
             <label className="lyrics-drawer-range lyrics-secondary-size-range">
               <span>

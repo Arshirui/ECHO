@@ -1,7 +1,13 @@
 import { createServer, type Server, type Socket } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { HqPlayerPlaybackControlPlan } from '../../../shared/types/hqplayer';
-import { probeHqPlayerControlEndpoint, sendHqPlayerPlaybackControlPlan, sendHqPlayerStopCommand } from './HqPlayerControlSender';
+import {
+  probeHqPlayerControlEndpoint,
+  sendHqPlayerPauseCommand,
+  sendHqPlayerPlaybackControlPlan,
+  sendHqPlayerPlayCommand,
+  sendHqPlayerStopCommand,
+} from './HqPlayerControlSender';
 
 const servers: Server[] = [];
 
@@ -180,7 +186,7 @@ describe('HqPlayerControlSender', () => {
         socket.end('<?xml version="1.0"?><PlayNextURI result="OK"/>\n');
       }
 
-      if (data.includes('<Play ')) {
+      if (/<Play(?:\s|\/>)/u.test(data)) {
         socket.end('<?xml version="1.0"?><Play result="OK"/>\n');
       }
     });
@@ -204,7 +210,7 @@ describe('HqPlayerControlSender', () => {
         socket.end('<?xml version="1.0"?><PlayNextURI result="OK"/>\n');
       }
 
-      if (data.includes('<Play ')) {
+      if (/<Play(?:\s|\/>)/u.test(data)) {
         socket.end('<?xml version="1.0"?><Play result="OK"/>\n');
       }
 
@@ -246,6 +252,40 @@ describe('HqPlayerControlSender', () => {
       command: 'Stop',
     });
     expect(server.received.join('')).toContain('<Stop');
+  });
+
+  it('sends Pause and Play for active HQPlayer transport control', async () => {
+    const server = await createTcpServer((data, socket) => {
+      if (data.includes('<Pause')) {
+        socket.end('<?xml version="1.0"?><Pause result="OK"/>\n');
+      }
+
+      if (/<Play(?:\s|\/>)/u.test(data)) {
+        socket.end('<?xml version="1.0"?><Play result="OK"/>\n');
+      }
+    });
+
+    await expect(sendHqPlayerPauseCommand({
+      connectionMode: 'localDesktop',
+      host: '127.0.0.1',
+      port: server.port,
+    }, { timeoutMs: 250 })).resolves.toMatchObject({
+      state: 'sent',
+      reason: null,
+      command: 'Pause',
+    });
+
+    await expect(sendHqPlayerPlayCommand({
+      connectionMode: 'localDesktop',
+      host: '127.0.0.1',
+      port: server.port,
+    }, { timeoutMs: 250 })).resolves.toMatchObject({
+      state: 'sent',
+      reason: null,
+      command: 'Play',
+    });
+    expect(server.received.join('')).toContain('<Pause');
+    expect(server.received.join('')).toContain('<Play/>');
   });
 
   it('reports timeout when HQPlayer accepts the socket but does not answer', async () => {

@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import { Captions, Download, FileDown, Loader2, Monitor } from 'lucide-react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { audioExportFormats, type AudioExportFormat, type AudioStatus } from '../../../shared/types/audio';
@@ -20,9 +21,11 @@ import {
 } from '../../integrations/spotify/spotifyPlayback';
 import { usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
 import { beginPlaybackSeekSnapshot, getVisualPlaybackState, refreshPlaybackStatus, setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../../stores/playbackStatusStore';
-import { isActiveConnectPlaybackStatus, playbackStatusFromConnectStatus } from '../../utils/connectPlayback';
+import { isActiveConnectPlaybackStatus, isHqPlayerConnectStatus, playbackStatusFromConnectStatus } from '../../utils/connectPlayback';
 import { openArtistDetailByName } from '../../utils/artistNavigation';
 import { logLyricsConsole } from '../../diagnostics/lyricsConsole';
+import { playerCoverLayoutId } from '../../ui/motion/layoutIds';
+import { miniPlayerTransition, springSoft } from '../../ui/motion/presets';
 import { PlayerProgress } from './PlayerProgress';
 import { AudioSignalPathControl, AudioSignalPathPopover } from './AudioSignalPathPopover';
 import { PlayerSpeedControl } from './PlayerSpeedControl';
@@ -57,6 +60,10 @@ const seekAnchorMaxAgeSeconds = 3;
 const seekAnchorSettleToleranceSeconds = 0.25;
 const playbackRateChangeDiscontinuitySeconds = 0.35;
 const endedAutoAdvanceGraceSeconds = 5;
+const endedAutoAdvanceRetryDelayMs = 1200;
+const endedAutoAdvanceMaxAttempts = 3;
+const tailAutoAdvanceToleranceSeconds = 0.35;
+const tailAutoAdvanceWatchdogDelayMs = 1500;
 const trackSwitchVisualIntentPositionToleranceMs = 1500;
 const isStreamingProviderName = (provider: string | null | undefined): provider is StreamingProviderName =>
   streamingProviderNames.includes(provider as StreamingProviderName);
@@ -88,6 +95,10 @@ const trackMatchesPlaybackIdentity = (track: LibraryTrack | null | undefined, id
     track.stableKey?.trim() === normalizedIdentity ||
     stableStreamingTrackId(track) === normalizedIdentity
   );
+};
+const shouldLetAutomixDriveTailAdvance = (status: AudioStatus | null): boolean => {
+  const automix = status?.automix;
+  return Boolean(automix?.active && (automix.mode === 'armed' || automix.mode === 'transitioning'));
 };
 const activeDownloadStatuses = new Set<DownloadJobStatus>([
   'queued',
@@ -585,6 +596,8 @@ export const PlayerBar = ({
   const updateTrackSnapshot = queue.updateTrackSnapshot;
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus | null>(null);
+  const [connectStatus, setConnectStatus] = useState<ConnectSessionStatus | null>(null);
+  const [hqPlayerOutputRate, setHqPlayerOutputRate] = useState<number | null>(null);
   const [receiverStatus, setReceiverStatus] = useState<ConnectReceiverStatus | null>(null);
   const [airPlayReceiverStatus, setAirPlayReceiverStatus] = useState<AirPlayReceiverStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -608,6 +621,7 @@ export const PlayerBar = ({
   const [isStreamingDownloadResolving, setIsStreamingDownloadResolving] = useState(false);
   const signalPathAnchorRef = useRef<HTMLDivElement | null>(null);
   const handledEndedTrackRef = useRef<string | null>(null);
+  const pendingEndedTrackRef = useRef<string | null>(null);
   const hydratedTrackIdsRef = useRef(new Set<string>());
   const bpmAnalysisJobIdsRef = useRef(new Map<string, string | 'done'>());
   const streamingBpmAnalysisTrackIdsRef = useRef(new Set<string>());
@@ -1877,6 +1891,55 @@ export const PlayerBar = ({
   useEffect(() => {
     let disposed = false;
     const connect = window.echo?.connect;
+    const connectStatusPromise = connect?.getStatus?.();
+    void connectStatusPromise?.then((status) => {
+      if (!disposed) {
+        setConnectStatus(isActiveConnectPlaybackStatus(status) ? status : null);
+      }
+    }).catch(() => undefined);
+
+    const unsubscribeConnectStatus = connect?.onStatus?.((status) => {
+      setConnectStatus(isActiveConnectPlaybackStatus(status) ? status : null);
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribeConnectStatus?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const hqPlayerActive =
+      isHqPlayerConnectStatus(connectStatus) && ['connecting', 'ready', 'playing', 'paused'].includes(connectStatus.state);
+    if (!hqPlayerActive) {
+      setHqPlayerOutputRate(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const refreshHqPlayerStatus = (): void => {
+      void window.echo?.hqPlayer?.getStatus?.()
+        .then((nextStatus) => {
+          const nextRate = nextStatus.playbackStatus?.activeRate ?? null;
+          if (!cancelled && typeof nextRate === 'number' && Number.isFinite(nextRate) && nextRate > 0) {
+            setHqPlayerOutputRate(nextRate);
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    refreshHqPlayerStatus();
+    const interval = window.setInterval(refreshHqPlayerStatus, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [connectStatus?.currentTrackId, connectStatus?.deviceId, connectStatus?.protocol, connectStatus?.state]);
+
+  useEffect(() => {
+    let disposed = false;
+    const connect = window.echo?.connect;
     const receiverStatusPromise = connect?.getReceiverStatus?.();
     void receiverStatusPromise?.then((status) => {
       if (!disposed) {
@@ -1918,7 +1981,10 @@ export const PlayerBar = ({
   }, []);
 
   const runPlaybackAction = useCallback(
-    async (action: () => Promise<PlaybackStatus | null>): Promise<void> => {
+    async (
+      action: () => Promise<PlaybackStatus | null>,
+      options: { rethrow?: boolean } = {},
+    ): Promise<PlaybackStatus | null> => {
       try {
         const status = await action();
         if (status) {
@@ -1943,13 +2009,18 @@ export const PlayerBar = ({
           );
           setQueueCurrentTrackId(status.currentTrackId);
           setPlaybackStatusSnapshot({ playbackStatus: status, error: null });
-          return;
+          return status;
         }
         await refreshStatus();
+        return null;
       } catch (actionError) {
         const message = actionError instanceof Error ? actionError.message : String(actionError);
         setError(formatAudioHostError(message));
         setPlaybackStatusSnapshot({ error: shouldSuppressAudioHostError(message) ? null : message });
+        if (options.rethrow === true) {
+          throw actionError;
+        }
+        return null;
       }
     },
     [refreshStatus, setQueueCurrentTrackId],
@@ -1988,16 +2059,6 @@ export const PlayerBar = ({
     const playback = window.echo?.playback;
     const connect = window.echo?.connect;
 
-    if (queue.hqPlayerTakeoverEnabled) {
-      if (visualState === 'playing' || visualState === 'loading') {
-        setError('HQPlayer 接管中，ECHO 已避免抢占本机音频设备。');
-        return;
-      }
-
-      await runPlaybackAction(queue.activateHqPlayerTakeover);
-      return;
-    }
-
     const activeConnectStatus = await getActiveConnectPlaybackStatus();
     if (activeConnectStatus && connect?.play && connect.pause) {
       try {
@@ -2011,6 +2072,16 @@ export const PlayerBar = ({
         setError(formatAudioHostError(message));
         setPlaybackStatusSnapshot({ error: shouldSuppressAudioHostError(message) ? null : message });
       }
+      return;
+    }
+
+    if (queue.hqPlayerTakeoverEnabled) {
+      if (visualState === 'playing' || visualState === 'loading') {
+        setError('HQPlayer 接管中，ECHO 已避免抢占本机音频设备。');
+        return;
+      }
+
+      await runPlaybackAction(queue.activateHqPlayerTakeover);
       return;
     }
 
@@ -2184,6 +2255,34 @@ export const PlayerBar = ({
   const currentQueueFilePathForEndedPlayback = queue.currentTrack?.path ?? null;
   const currentQueueIdForEndedPlayback = queue.currentQueueId;
   const playNextFromQueue = queue.playNext;
+  const runAutoAdvanceFromQueue = useCallback(
+    (playbackKey: string): void => {
+      pendingEndedTrackRef.current = playbackKey;
+      void (async () => {
+        try {
+          for (let attempt = 0; attempt < endedAutoAdvanceMaxAttempts; attempt += 1) {
+            try {
+              const status = await runPlaybackAction(() => playNextFromQueue({ autoAdvance: true }), { rethrow: true });
+              if (status || state === 'ended') {
+                handledEndedTrackRef.current = playbackKey;
+              }
+              return;
+            } catch {
+              if (attempt >= endedAutoAdvanceMaxAttempts - 1 || handledEndedTrackRef.current === playbackKey) {
+                return;
+              }
+              await new Promise((resolve) => window.setTimeout(resolve, endedAutoAdvanceRetryDelayMs));
+            }
+          }
+        } finally {
+          if (pendingEndedTrackRef.current === playbackKey) {
+            pendingEndedTrackRef.current = null;
+          }
+        }
+      })();
+    },
+    [playNextFromQueue, runPlaybackAction, state],
+  );
 
   useEffect(() => {
     const endedMatchesCurrent =
@@ -2204,13 +2303,13 @@ export const PlayerBar = ({
       !endedPlaybackKey ||
       !endedMatchesCurrent ||
       !endedAtNaturalEnd ||
+      pendingEndedTrackRef.current === endedPlaybackKey ||
       handledEndedTrackRef.current === endedPlaybackKey
     ) {
       return;
     }
 
-    handledEndedTrackRef.current = endedPlaybackKey;
-    void runPlaybackAction(() => playNextFromQueue({ autoAdvance: true }));
+    runAutoAdvanceFromQueue(endedPlaybackKey);
   }, [
     currentQueueFilePathForEndedPlayback,
     currentQueueIdForEndedPlayback,
@@ -2220,14 +2319,64 @@ export const PlayerBar = ({
     endedStatusFilePath,
     endedStatusPositionSeconds,
     endedStatusTrackId,
-    playNextFromQueue,
-    runPlaybackAction,
+    runAutoAdvanceFromQueue,
     state,
+  ]);
+
+  useEffect(() => {
+    const tailPlaybackKey = trackId ?? filePath ?? currentQueueIdForEndedPlayback ?? null;
+    if (
+      visualState !== 'playing' ||
+      state !== 'playing' ||
+      seekPreviewSeconds !== null ||
+      shouldLetAutomixDriveTailAdvance(playbackAudioStatus) ||
+      !tailPlaybackKey ||
+      durationSeconds <= 0 ||
+      positionSeconds < Math.max(0, durationSeconds - tailAutoAdvanceToleranceSeconds) ||
+      pendingEndedTrackRef.current === tailPlaybackKey ||
+      handledEndedTrackRef.current === tailPlaybackKey
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      const clock = progressClockRef.current;
+      const samePlayback = clock.trackKey === tailPlaybackKey || trackId === tailPlaybackKey || filePath === tailPlaybackKey;
+      const tailPositionSeconds = Math.max(clock.positionSeconds, realtimePositionSeconds, positionSeconds);
+      const stillAtTail =
+        clock.durationSeconds > 0 &&
+        tailPositionSeconds >= Math.max(0, clock.durationSeconds - tailAutoAdvanceToleranceSeconds);
+
+      if (
+        samePlayback &&
+        clock.state === 'playing' &&
+        stillAtTail &&
+        pendingEndedTrackRef.current !== tailPlaybackKey &&
+        handledEndedTrackRef.current !== tailPlaybackKey
+      ) {
+        runAutoAdvanceFromQueue(tailPlaybackKey);
+      }
+    }, tailAutoAdvanceWatchdogDelayMs);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    currentQueueIdForEndedPlayback,
+    durationSeconds,
+    filePath,
+    positionSeconds,
+    playbackAudioStatus,
+    realtimePositionSeconds,
+    runAutoAdvanceFromQueue,
+    seekPreviewSeconds,
+    state,
+    trackId,
+    visualState,
   ]);
 
   useEffect(() => {
     if (state === 'playing') {
       handledEndedTrackRef.current = null;
+      pendingEndedTrackRef.current = null;
     }
   }, [state, trackId]);
 
@@ -2347,13 +2496,15 @@ export const PlayerBar = ({
   );
 
   return (
-    <footer
+    <motion.footer
       className="player-bar"
       data-low-load-playback={lowLoadPlaybackModeEnabled ? 'true' : undefined}
       data-network-loading={isNetworkPlaybackLoading ? 'true' : undefined}
       data-playback-state={visualState}
       aria-busy={isNetworkPlaybackLoading}
       aria-label="播放控制"
+      layout="position"
+      transition={miniPlayerTransition}
     >
       {streamingDownloadNotice ? (
         <div className={`player-download-notice player-download-notice--${streamingDownloadNotice.tone}`} role="status" aria-live="polite">
@@ -2376,13 +2527,15 @@ export const PlayerBar = ({
         </div>
       ) : null}
       <div className="player-now">
-        <button
+        <motion.button
           className="player-cover"
           data-empty={!artworkUrl}
           type="button"
           aria-label="打开歌词"
           title="打开歌词"
           data-loading={isNetworkPlaybackLoading ? 'true' : undefined}
+          layoutId={playerCoverLayoutId(trackId)}
+          transition={springSoft}
           onClick={handleOpenLyrics}
         >
           {artworkUrl ? (
@@ -2394,11 +2547,11 @@ export const PlayerBar = ({
             </div>
           )}
           <div className="cover-sheen" />
-        </button>
+        </motion.button>
         <div className="player-track-copy">
           <PlayerMarqueeText kind="title" text={title} />
           <PlayerMarqueeText kind="subtitle" text={artist} onClick={canOpenCurrentArtist ? handleOpenCurrentArtist : undefined} />
-          <PlayerStatusChips status={audioStatus} state={state} track={currentTrack} />
+          <PlayerStatusChips hqPlayerActiveRate={hqPlayerOutputRate} status={audioStatus} state={state} track={currentTrack} />
           {isNetworkPlaybackLoading ? (
             <span className="player-loading-hint" role="status" aria-live="polite">
               <Loader2 className="spinning-icon" size={13} aria-hidden="true" />
@@ -2416,12 +2569,14 @@ export const PlayerBar = ({
                 isOpen={openPopover === 'signal'}
                 status={audioStatus}
                 track={currentTrack}
+                connectStatus={connectStatus}
                 onClick={() => setOpenPopover((current) => current === 'signal' ? null : 'signal')}
               />
               <AudioSignalPathPopover
                 isOpen={openPopover === 'signal'}
                 status={audioStatus}
                 track={currentTrack}
+                connectStatus={connectStatus}
                 onClose={() => setOpenPopover(null)}
                 onOpenAudioSettings={onOpenAudioSettings}
               />
@@ -2547,6 +2702,6 @@ export const PlayerBar = ({
           </button>
         ) : null}
       </div>
-    </footer>
+    </motion.footer>
   );
 };

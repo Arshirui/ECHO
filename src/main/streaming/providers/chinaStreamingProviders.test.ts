@@ -1049,6 +1049,77 @@ describe('China streaming providers', () => {
     });
   });
 
+  it('falls back to the modern QQ Music playlist API when legacy detail rejects the referer', async () => {
+    const fetchRunner = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          subcode: 1,
+          message: 'invalid referer',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          subcode: 1,
+          message: 'invalid referer',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          code: 0,
+          req_1: {
+            code: 0,
+            data: {
+              dirinfo: {
+                disstid: '9718644800',
+                title: 'QQ Modern Playlist',
+                songnum: 1,
+                picurl: 'https://y.gtimg.cn/music/photo_new/T002R300x300M000playlist.jpg',
+                host_nick: 'Playlist Creator',
+              },
+              songlist: [
+                {
+                  songmid: 'modern-playlist-song-mid',
+                  songname: 'Modern Playlist Song',
+                  interval: 240,
+                  singer: [{ mid: 'artist-mid', name: 'Playlist Artist' }],
+                },
+              ],
+            },
+          },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchRunner);
+
+    const detail = await new QQMusicStreamingProvider().getPlaylist({ providerPlaylistId: '9718644800', page: 1, pageSize: 500 });
+    const modernRequest = JSON.parse(String(fetchRunner.mock.calls[2][1]?.body));
+
+    expect(fetchRunner).toHaveBeenCalledTimes(3);
+    expect(String(fetchRunner.mock.calls[2][0])).toBe('https://u.y.qq.com/cgi-bin/musicu.fcg');
+    expect(modernRequest.req_1).toMatchObject({
+      module: 'music.srfDissInfo.aiDissInfo',
+      method: 'uniform_get_Dissinfo',
+      param: {
+        disstid: 9718644800,
+        song_begin: 0,
+        song_num: 500,
+      },
+    });
+    expect(detail).toMatchObject({
+      provider: 'qqmusic',
+      providerPlaylistId: '9718644800',
+      title: 'QQ Modern Playlist',
+      total: 1,
+      hasMore: false,
+    });
+    expect(detail.tracks[0]).toMatchObject({
+      providerTrackId: 'modern-playlist-song-mid',
+      title: 'Modern Playlist Song',
+    });
+  });
+
   it('does not silently import an empty QQ Music playlist when the first page has a nonzero total', async () => {
     vi.stubGlobal(
       'fetch',

@@ -311,10 +311,12 @@ vi.mock('../utils/echoBridge', () => ({
   }),
   getAccountsBridge: () => ({
     getStatuses: vi.fn().mockResolvedValue([]),
+    getStatus: vi.fn((provider) => Promise.resolve({ provider, connected: false })),
     saveCookie: vi.fn(),
     startLogin: vi.fn(),
     clear: vi.fn(),
     check: vi.fn(),
+    setBrowser: vi.fn((provider, browser) => Promise.resolve({ provider, connected: browser !== 'none' })),
     setYouTubeBrowser: vi.fn(),
   }),
   getDiagnosticsBridge: () => ({
@@ -873,13 +875,48 @@ describe('SettingsPage', () => {
     const row = screen.getByText('settings.general.sidebarAutoHide.title').closest('.setting-row') as HTMLElement;
     fireEvent.click(within(row).getByRole('button'));
 
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ sidebarAutoHideEnabled: true }));
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ sidebarAutoHideEnabled: true, sidebarIconOnlyEnabled: false }));
+  });
+
+  it('saves sidebar icon-only from the general settings toggle', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const nextSettings = { ...settings, sidebarIconOnlyEnabled: true };
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue(nextSettings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const row = screen.getByText('settings.general.sidebarIconOnly.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ sidebarIconOnlyEnabled: true, sidebarAutoHideEnabled: false }));
+  });
+
+  it('saves hidden feature comments from the general settings toggle', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const nextSettings = { ...settings, featureCommentsHidden: true };
+    getSettingsMock.mockResolvedValue(settings);
+    setSettingsMock.mockResolvedValue(nextSettings);
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    const row = screen.getByText('settings.general.featureCommentsHidden.title').closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ featureCommentsHidden: true }));
   });
 
   it('saves the bottom signal path control from general settings', async () => {
     Element.prototype.scrollIntoView = vi.fn();
-    const nextSettings = { ...settings, signalPathControlEnabled: true };
-    getSettingsMock.mockResolvedValue(settings);
+    const currentSettings = { ...settings, signalPathControlEnabled: true };
+    const nextSettings = { ...currentSettings, signalPathControlEnabled: false };
+    getSettingsMock.mockResolvedValue(currentSettings);
     setSettingsMock.mockResolvedValue(nextSettings);
     resetSettingsMock.mockResolvedValue(settings);
     clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
@@ -890,7 +927,7 @@ describe('SettingsPage', () => {
     const row = screen.getByText('底栏信号路径').closest('.setting-row') as HTMLElement;
     fireEvent.click(within(row).getByRole('button'));
 
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ signalPathControlEnabled: true }));
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ signalPathControlEnabled: false }));
   });
 
   it('saves sidebar visibility and order from appearance controls', async () => {
@@ -1007,11 +1044,17 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.about\\.label');
-    fireEvent.click(screen.getByRole('button', { name: /爱发电/ }));
-    fireEvent.click(screen.getByRole('button', { name: /查看历史更新日志/ }));
-    fireEvent.click(screen.getByRole('button', { name: /加入 QQ 群聊/ }));
-    fireEvent.click(screen.getByRole('button', { name: /加入 Discord/ }));
+    fireEvent.click(screen.getByRole('button', { name: /官方网站/ }));
+    fireEvent.click(screen.getByRole('button', { name: /使用文档/ }));
+    fireEvent.click(screen.getByRole('button', { name: /百度网盘/ }));
+    fireEvent.click(screen.getByRole('button', { name: /settings\.about\.updates\.action\.afdian/ }));
+    fireEvent.click(screen.getByRole('button', { name: /settings\.about\.updates\.action\.history/ }));
+    fireEvent.click(screen.getByRole('button', { name: /settings\.about\.updates\.action\.qq/ }));
+    fireEvent.click(screen.getByRole('button', { name: /settings\.about\.updates\.action\.discord/ }));
 
+    expect(openExternalUrlMock).toHaveBeenCalledWith('https://echonext.moe');
+    expect(openExternalUrlMock).toHaveBeenCalledWith('https://echonext.moe/zh/docs/');
+    expect(openExternalUrlMock).toHaveBeenCalledWith('https://pan.baidu.com/s/1ta0McyhY9knaD6FT5xW3Og?pwd=echo');
     await waitFor(() => expect(openExternalUrlMock).toHaveBeenCalledWith('https://afdian.com/a/echonext'));
     await waitFor(() => expect(openExternalUrlMock).toHaveBeenCalledWith('https://github.com/moekotori/echo/releases'));
     expect(openExternalUrlMock).toHaveBeenCalledWith('https://qm.qq.com/q/KrJE8PIqSQ');
@@ -1746,6 +1789,7 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.expand/ }));
     fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.action\.create/ }));
 
     await waitFor(() =>
@@ -1801,6 +1845,7 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.expand/ }));
     const pluginThemeButton = (await screen.findByText('Aurora Glass')).closest('button') as HTMLButtonElement;
     fireEvent.click(pluginThemeButton);
 
@@ -1839,6 +1884,8 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    expect(screen.getByLabelText('settings.appearance.themeCustom.field.accent').closest('[hidden]')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.expand/ }));
     const titlebarInput = screen.getByLabelText('settings.appearance.themeCustom.field.titlebar') as HTMLInputElement;
     expect(titlebarInput.closest('[hidden]')).toBeTruthy();
 
@@ -1877,6 +1924,7 @@ describe('SettingsPage', () => {
 
     await screen.findByText('route.settings.label');
     clickSettingsNav('settings\\.nav\\.appearance\\.label');
+    fireEvent.click(screen.getByRole('button', { name: /settings\.appearance\.themeCustom\.expand/ }));
     fireEvent.click(screen.getByRole('button', { name: /Safe Theme/ }));
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appearanceThemePreset: 'nyanCat', appearanceThemeCustomId: 'theme-safe' }));
@@ -1932,6 +1980,44 @@ describe('SettingsPage', () => {
     expect(settingsChanged).toHaveBeenCalledTimes(1);
 
     window.removeEventListener('settings:changed', settingsChanged);
+  });
+
+  it('saves the native file scanner experiment toggle from library settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue({ ...settings, nativeFileScannerEnabled: false });
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    getDownloadSettingsMock.mockResolvedValue(downloadSettings);
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.library\\.label');
+    const row = screen.getByRole('heading', { name: /Native File Scanner/ }).closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ nativeFileScannerEnabled: true }));
+    expect(scanFolderMock).not.toHaveBeenCalled();
+  });
+
+  it('saves the native metadata reader experiment toggle from library settings', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    getSettingsMock.mockResolvedValue({ ...settings, nativeMetadataReaderEnabled: false });
+    setSettingsMock.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }));
+    resetSettingsMock.mockResolvedValue(settings);
+    clearCacheMock.mockResolvedValue({ scannedCount: 0, removedCount: 0, deletedCoverCacheFiles: 0, freedCoverCacheBytes: 0 });
+    getDownloadSettingsMock.mockResolvedValue(downloadSettings);
+
+    render(<SettingsPage />);
+
+    await screen.findByText('route.settings.label');
+    clickSettingsNav('settings\\.nav\\.library\\.label');
+    const row = screen.getByRole('heading', { name: /Native Metadata Reader/ }).closest('.setting-row') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button'));
+
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ nativeMetadataReaderEnabled: true }));
+    expect(scanFolderMock).not.toHaveBeenCalled();
   });
 
   it('saves the missing artist avatar album fallback setting', async () => {
@@ -2200,14 +2286,13 @@ describe('SettingsPage', () => {
 
     const row = document.querySelector('#settings-row-volume-balance') as HTMLElement;
     fireEvent.click(row.querySelector('.settings-replay-gain-toggle button') as HTMLButtonElement);
-    fireEvent.click(row.querySelector('.settings-replay-gain-simple > button') as HTMLButtonElement);
+    fireEvent.click(row.querySelector('.settings-replay-gain-advanced-toggle') as HTMLButtonElement);
     fireEvent.click(row.querySelectorAll('.settings-replay-gain-toggles .settings-inline-toggle button')[1] as HTMLButtonElement);
     fireEvent.click(row.querySelectorAll('.settings-replay-gain-mode button')[1] as HTMLButtonElement);
-    fireEvent.click(row.querySelector('.settings-replay-gain-toggles > button') as HTMLButtonElement);
     fireEvent.click(document.querySelector('#settings-row-mono-audio button') as HTMLButtonElement);
 
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ gaplessPlaybackEnabled: true }));
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainEnabled: true }));
+    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainEnabled: true, replayGainAnalyzeOnPlay: true }));
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainAnalyzeOnPlay: false }));
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ replayGainMode: 'album' }));
     await waitFor(() => expect(setChannelBalanceStateMock).toHaveBeenCalledWith({ enabled: true, monoMode: 'sum' }));

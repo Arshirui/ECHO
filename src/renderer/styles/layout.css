@@ -287,7 +287,7 @@ html[data-theme="dark"] .app-wallpaper-layer {
   overflow: auto;
   scrollbar-color: rgba(86, 105, 128, 0.34) transparent;
   scrollbar-width: thin;
-  padding: 38px 42px 28px;
+  padding: 24px 42px 28px;
   border-width: 0;
   border-radius: 0;
   background:
@@ -300,8 +300,8 @@ html[data-theme="dark"] .app-wallpaper-layer {
 }
 
 .page-surface > * {
-  animation: page-content-settle 180ms cubic-bezier(0.2, 0.82, 0.18, 1) both;
-  transform-origin: 50% 16px;
+  position: relative;
+  z-index: 1;
 }
 
 .page-surface::-webkit-scrollbar {
@@ -460,17 +460,15 @@ html[data-theme="dark"] .app-shell--lyrics .window-control:hover {
 
 .lyrics-player-drawer-host--auto-hide {
   transition:
-    opacity 360ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 420ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: opacity, filter, transform;
+    opacity 120ms var(--echo-motion-ease-quick),
+    filter 120ms var(--echo-motion-ease-quick);
+  will-change: opacity, filter;
 }
 
 .lyrics-player-drawer-host--auto-hidden {
   opacity: 0;
   filter: blur(1px) saturate(0.96);
   pointer-events: none;
-  transform: translate3d(-50%, calc(100% + 18px), 0) scale(0.96);
 }
 
 .lyrics-player-drawer-host .player-bar {
@@ -781,25 +779,7 @@ html[data-theme="dark"] .app-shell--wallpaper-ready .player-bar {
   box-shadow: none;
 }
 
-@keyframes page-content-settle {
-  from {
-    opacity: 0.96;
-    filter: blur(1.6px);
-    transform: translateY(5px) scale(0.998);
-  }
-
-  to {
-    opacity: 1;
-    filter: blur(0);
-    transform: translateY(0) scale(1);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .page-surface > * {
-    animation: none;
-  }
-
   .app-shell--sidebar-auto-hide:not(.app-shell--standalone) .sidebar {
     transition: none;
   }
@@ -927,7 +907,7 @@ html[data-theme="dark"] .app-shell--wallpaper-ready .player-bar {
   .page-surface {
     grid-row: 2;
     grid-column: 1;
-    padding: 30px 30px 24px;
+    padding: 24px 30px 24px;
   }
 
   .page-surface:has(.liked-page),
@@ -1168,12 +1148,11 @@ html[data-theme="dark"] .app-shell--wallpaper-ready .player-bar {
 
 @media (prefers-reduced-motion: reduce) {
   .lyrics-player-drawer-host--auto-hide {
-    transition: opacity 120ms linear;
+    transition: none;
   }
 
   .lyrics-player-drawer-host--auto-hidden {
     filter: none;
-    transform: translate3d(-50%, calc(100% + 12px), 0);
   }
 }
 

@@ -504,6 +504,7 @@
 }
 
 .dsp-editor-shell[data-module="headroom"],
+.dsp-editor-shell[data-module="src"],
 .dsp-editor-shell[data-module="headphone"],
 .dsp-editor-shell[data-module="room"],
 .dsp-editor-shell[data-module="channel"],
@@ -1024,6 +1025,10 @@
 }
 
 .opra-curve {
+  --opra-plot-bottom: 34px;
+  --opra-plot-left: 18px;
+  --opra-plot-right: 54px;
+  --opra-plot-top: 18px;
   position: relative;
   min-height: 320px;
   overflow: hidden;
@@ -1035,28 +1040,102 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
+.opra-curve::before {
+  position: absolute;
+  top: var(--opra-plot-top);
+  right: var(--opra-plot-right);
+  bottom: var(--opra-plot-bottom);
+  left: var(--opra-plot-left);
+  content: "";
+  border: 1px solid rgba(32, 42, 56, 0.06);
+  border-radius: 7px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(237, 242, 248, 0.24)),
+    rgba(255, 255, 255, 0.22);
+}
+
 .opra-curve svg {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: var(--opra-plot-top);
+  right: var(--opra-plot-right);
+  bottom: var(--opra-plot-bottom);
+  left: var(--opra-plot-left);
+  z-index: 1;
+  width: calc(100% - var(--opra-plot-left) - var(--opra-plot-right));
+  height: calc(100% - var(--opra-plot-top) - var(--opra-plot-bottom));
+  overflow: visible;
 }
 
 .opra-curve-grid line {
-  stroke: rgba(76, 88, 108, 0.16);
+  stroke: rgba(76, 88, 108, 0.13);
   stroke-width: 0.4;
 }
 
 .opra-curve-line {
   fill: none;
-  stroke: #4f5ff0;
+  stroke: #4d63ff;
   stroke-linecap: round;
-  stroke-width: 1.35;
+  stroke-linejoin: round;
+  stroke-width: 1.55;
   vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 5px 10px rgba(77, 99, 255, 0.16));
+}
+
+.opra-curve-frequency-axis,
+.opra-curve-gain-axis {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  color: rgba(82, 92, 112, 0.76);
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.opra-curve-frequency-axis span,
+.opra-curve-gain-axis span {
+  position: absolute;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.opra-curve-frequency-axis {
+  right: var(--opra-plot-right);
+  bottom: 12px;
+  left: var(--opra-plot-left);
+  height: 12px;
+}
+
+.opra-curve-frequency-axis span {
+  bottom: 0;
+  left: var(--opra-axis-position);
+  transform: translateX(-50%);
+}
+
+.opra-curve-frequency-axis span:first-child {
+  transform: translateX(0);
+}
+
+.opra-curve-frequency-axis span:last-child {
+  transform: translateX(-100%);
+}
+
+.opra-curve-gain-axis {
+  top: var(--opra-plot-top);
+  right: 12px;
+  bottom: var(--opra-plot-bottom);
+  width: 38px;
+}
+
+.opra-curve-gain-axis span {
+  top: var(--opra-axis-position);
+  right: 0;
+  transform: translateY(-50%);
 }
 
 .opra-empty-preset {
   position: absolute;
+  z-index: 3;
   top: 44%;
   left: 50%;
   display: grid;
@@ -1230,6 +1309,10 @@
 .dsp-module-panel--headroom {
   width: min(1180px, 100%);
   max-width: 1180px;
+}
+
+.dsp-module-panel--src {
+  width: min(980px, 100%);
 }
 
 .dsp-module-panel--room {
@@ -3406,12 +3489,29 @@ html[data-theme="dark"] .opra-curve {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+html[data-theme="dark"] .opra-curve::before {
+  border-color: rgba(207, 218, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(52, 62, 86, 0.3), rgba(22, 28, 40, 0.22)),
+    rgba(18, 24, 36, 0.22);
+}
+
 html[data-theme="dark"] .opra-curve-grid line {
   stroke: rgba(220, 229, 247, 0.12);
 }
 
 html[data-theme="dark"] .opra-curve-line {
   stroke: #8f98ff;
+}
+
+html[data-theme="dark"] .opra-curve-frequency-axis,
+html[data-theme="dark"] .opra-curve-gain-axis {
+  color: rgba(229, 236, 255, 0.58);
+}
+
+html[data-theme="dark"] .opra-curve-frequency-axis span,
+html[data-theme="dark"] .opra-curve-gain-axis span {
+  text-shadow: 0 1px 0 rgba(12, 16, 24, 0.84);
 }
 
 html[data-theme="dark"] .opra-browser-search input {
@@ -3643,6 +3743,18 @@ html[data-theme="dark"] .opra-empty-preset {
 
   .opra-curve {
     min-height: 260px;
+  }
+
+  .opra-curve-frequency-axis,
+  .opra-curve-gain-axis {
+    font-size: 10px;
+  }
+
+  .opra-curve-frequency-axis span:nth-child(2),
+  .opra-curve-frequency-axis span:nth-child(4),
+  .opra-curve-frequency-axis span:nth-child(6),
+  .opra-curve-frequency-axis span:nth-child(8) {
+    display: none;
   }
 
   .opra-product-list button {

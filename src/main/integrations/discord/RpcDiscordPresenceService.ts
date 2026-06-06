@@ -55,6 +55,7 @@ type RpcDiscordPresenceServiceOptions = {
   loadRpcModule?: () => Promise<DiscordRpcModule>;
   now?: () => number;
   getTrack?: (trackId: string) => LibraryTrack | null;
+  getNetworkCoverUrl?: (trackId: string) => string | null;
 };
 
 const reconnectBackoffMs = 30_000;
@@ -80,9 +81,33 @@ const safeText = (value: string | null | undefined, fallback: string): string =>
 
 const safeNumber = (value: number | null | undefined): number => (Number.isFinite(value) && Number(value) > 0 ? Number(value) : 0);
 
+const publicDiscordCoverImageKey = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === 'https:') {
+      return url.toString();
+    }
+
+    if (url.protocol === 'echo-image:' && url.hostname === 'remote') {
+      const remoteUrl = new URL(decodeURIComponent(url.pathname.replace(/^\/+/u, '')));
+      return remoteUrl.protocol === 'https:' ? remoteUrl.toString() : null;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
 export const createDiscordPresenceTrackFromStatus = (
   status: AudioStatus,
   getTrack: (trackId: string) => LibraryTrack | null = (trackId) => getLibraryService().getTrack(trackId),
+  getNetworkCoverUrl: (trackId: string) => string | null = (trackId) => getLibraryService().getBestNetworkCoverUrlForTrack(trackId),
 ): DiscordPresenceTrack => {
   const track = status.currentTrackId
     ? (() => {
@@ -95,16 +120,30 @@ export const createDiscordPresenceTrackFromStatus = (
     : null;
 
   const fileTitle = status.currentFilePath ? basename(status.currentFilePath) : 'ECHO Next';
-  const title = safeText(track?.title, fileTitle);
-  const artist = safeText(track?.artist || track?.albumArtist, status.currentFilePath ? 'Local file' : 'ECHO Next');
+  const title = safeText(status.currentTrackTitle || track?.title, fileTitle);
+  const artist = safeText(
+    status.currentTrackArtist || track?.artist || status.currentTrackAlbumArtist || track?.albumArtist,
+    status.currentFilePath ? 'Local file' : 'ECHO Next',
+  );
   const durationSeconds = safeNumber(status.durationSeconds || track?.duration);
+
+  const networkCoverImageKey = status.currentTrackId
+    ? (() => {
+        try {
+          return publicDiscordCoverImageKey(getNetworkCoverUrl(status.currentTrackId ?? ''));
+        } catch {
+          return null;
+        }
+      })()
+    : null;
 
   return {
     trackId: status.currentTrackId,
     title,
     artist,
-    album: track?.album?.trim() || null,
-    albumArtist: track?.albumArtist?.trim() || null,
+    album: status.currentTrackAlbum?.trim() || track?.album?.trim() || null,
+    albumArtist: status.currentTrackAlbumArtist?.trim() || track?.albumArtist?.trim() || null,
+    coverImageKey: publicDiscordCoverImageKey(status.currentTrackCoverUrl) || publicDiscordCoverImageKey(track?.coverThumb) || networkCoverImageKey,
     durationSeconds,
     positionSeconds: Math.min(safeNumber(status.positionSeconds), durationSeconds || Number.POSITIVE_INFINITY),
     codec: status.codec || track?.codec || null,
@@ -153,7 +192,7 @@ export const createDiscordActivity = (status: AudioStatus, track: DiscordPresenc
     return {
       details: track.title,
       state: `Paused \u00b7 ${track.artist}`.slice(0, 128),
-      largeImageKey: 'echo_logo',
+      largeImageKey: track.coverImageKey ?? 'echo_logo',
       largeImageText: track.album || 'ECHO Next',
       smallImageKey: 'paused',
       smallImageText: formatDiscordSmallImageText(track),
@@ -164,7 +203,7 @@ export const createDiscordActivity = (status: AudioStatus, track: DiscordPresenc
   const activity: DiscordActivity = {
     details: track.title,
     state: track.artist,
-    largeImageKey: 'echo_logo',
+    largeImageKey: track.coverImageKey ?? 'echo_logo',
     largeImageText: track.album || 'ECHO Next',
     smallImageKey: 'playing',
     smallImageText: formatDiscordSmallImageText(track),
@@ -187,6 +226,7 @@ const activityIdentityKey = (status: AudioStatus, track: DiscordPresenceTrack): 
     title: track.title,
     artist: track.artist,
     album: track.album,
+    coverImageKey: track.coverImageKey,
     durationSeconds: Math.round(track.durationSeconds),
     codec: track.codec,
     sampleRate: track.sampleRate,
@@ -216,11 +256,14 @@ export class RpcDiscordPresenceService implements DiscordPresenceService {
   private lastIdentityKey: string | null = null;
   private lastFullActivityKey: string | null = null;
   private lastPositionUpdateAt = 0;
+  private pendingStatus: AudioStatus | null = null;
+  private updateInFlight = false;
   private readonly clientId: string;
   private readonly logger: PresenceLogger;
   private readonly loadRpcModule: () => Promise<DiscordRpcModule>;
   private readonly now: () => number;
   private readonly getTrack: (trackId: string) => LibraryTrack | null;
+  private readonly getNetworkCoverUrl: (trackId: string) => string | null;
 
   constructor(options: RpcDiscordPresenceServiceOptions = {}) {
     this.clientId = options.clientId ?? DISCORD_CLIENT_ID;
@@ -229,6 +272,7 @@ export class RpcDiscordPresenceService implements DiscordPresenceService {
     this.loadRpcModule = options.loadRpcModule ?? (async () => import('discord-rpc') as Promise<DiscordRpcModule>);
     this.now = options.now ?? Date.now;
     this.getTrack = options.getTrack ?? ((trackId) => getLibraryService().getTrack(trackId));
+    this.getNetworkCoverUrl = options.getNetworkCoverUrl ?? ((trackId) => getLibraryService().getBestNetworkCoverUrlForTrack(trackId));
   }
 
   async initialize(): Promise<void> {
@@ -287,6 +331,24 @@ export class RpcDiscordPresenceService implements DiscordPresenceService {
   }
 
   async updateFromAudioStatus(status: AudioStatus): Promise<void> {
+    this.pendingStatus = status;
+    if (this.updateInFlight) {
+      return;
+    }
+
+    this.updateInFlight = true;
+    try {
+      while (this.pendingStatus) {
+        const nextStatus = this.pendingStatus;
+        this.pendingStatus = null;
+        await this.applyAudioStatusUpdate(nextStatus);
+      }
+    } finally {
+      this.updateInFlight = false;
+    }
+  }
+
+  private async applyAudioStatusUpdate(status: AudioStatus): Promise<void> {
     if (!this.enabled) {
       return;
     }
@@ -302,7 +364,7 @@ export class RpcDiscordPresenceService implements DiscordPresenceService {
       return;
     }
 
-    const track = createDiscordPresenceTrackFromStatus(status, this.getTrack);
+    const track = createDiscordPresenceTrackFromStatus(status, this.getTrack, this.getNetworkCoverUrl);
     const identityKey = activityIdentityKey(status, track);
     const isIdentityChanged = identityKey !== this.lastIdentityKey;
     const shouldRefreshPosition =

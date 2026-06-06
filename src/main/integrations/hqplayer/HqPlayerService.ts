@@ -21,6 +21,8 @@ import { createHqPlayerPlaybackControlPlan } from './HqPlayerControlAdapter';
 import {
   createSkippedHqPlayerControlSendResult,
   probeHqPlayerControlEndpoint,
+  sendHqPlayerPauseCommand,
+  sendHqPlayerPlayCommand,
   sendHqPlayerSeekCommand,
   sendHqPlayerStopCommand,
   sendHqPlayerPlaybackControlPlan,
@@ -191,6 +193,22 @@ export class HqPlayerService {
     const settings = this.store.read();
     const endpoint = toEndpoint(settings);
     const send = await sendHqPlayerSeekCommand(endpoint, positionSeconds);
+    this.rememberPlaybackControlSend(send);
+    return send;
+  }
+
+  async playPlayback(): Promise<HqPlayerPlaybackControlSendResult> {
+    const settings = this.store.read();
+    const endpoint = toEndpoint(settings);
+    const send = await sendHqPlayerPlayCommand(endpoint);
+    this.rememberPlaybackControlSend(send);
+    return send;
+  }
+
+  async pausePlayback(): Promise<HqPlayerPlaybackControlSendResult> {
+    const settings = this.store.read();
+    const endpoint = toEndpoint(settings);
+    const send = await sendHqPlayerPauseCommand(endpoint);
     this.rememberPlaybackControlSend(send);
     return send;
   }

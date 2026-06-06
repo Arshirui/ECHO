@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
-const backAnimationMs = 180;
+const defaultBackAnimationMs = 180;
 
 const isEditableTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) {
@@ -13,6 +13,7 @@ const isEditableTarget = (target: EventTarget | null): boolean => {
 };
 
 type AnimatedBackNavigationOptions = {
+  durationMs?: number;
   rootRef?: RefObject<HTMLElement | null>;
 };
 
@@ -32,6 +33,7 @@ export const useAnimatedBackNavigation = (
   const [isReturning, setIsReturning] = useState(false);
   const onBackRef = useRef(onBack);
   const timeoutRef = useRef<number | null>(null);
+  const durationMs = options.durationMs ?? defaultBackAnimationMs;
   const rootRef = options.rootRef;
 
   useEffect(() => {
@@ -49,6 +51,11 @@ export const useAnimatedBackNavigation = (
       return;
     }
 
+    if (durationMs <= 0) {
+      onBackRef.current();
+      return;
+    }
+
     setIsReturning((current) => {
       if (current) {
         return current;
@@ -57,11 +64,11 @@ export const useAnimatedBackNavigation = (
       timeoutRef.current = window.setTimeout(() => {
         timeoutRef.current = null;
         onBackRef.current();
-      }, backAnimationMs);
+      }, durationMs);
 
       return true;
     });
-  }, [enabled]);
+  }, [durationMs, enabled]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {

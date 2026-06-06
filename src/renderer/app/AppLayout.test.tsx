@@ -866,6 +866,51 @@ describe('AppLayout standalone routes', () => {
     await waitFor(() => expect(container.querySelector('.app-shell--sidebar-auto-hide')).toBeTruthy());
   });
 
+  it('applies saved sidebar icon-only from settings', async () => {
+    window.localStorage.clear();
+    const getSettings = vi.fn().mockResolvedValue({
+      sidebarIconOnlyEnabled: true,
+    });
+    window.echo = {
+      app: {
+        getSettings,
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routesWithHome} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('.app-shell--sidebar-icon-only')).toBeTruthy();
+      expect(container.querySelector('.sidebar')?.getAttribute('data-icon-only')).toBe('true');
+    });
+  });
+
+  it('applies saved hidden feature comments from settings', async () => {
+    window.localStorage.clear();
+    const getSettings = vi.fn().mockResolvedValue({
+      featureCommentsHidden: true,
+    });
+    window.echo = {
+      app: {
+        getSettings,
+      },
+    } as unknown as Window['echo'];
+
+    const { container } = render(
+      <AppProviders>
+        <AppLayout routes={routesWithHome} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('.app-shell')?.getAttribute('data-feature-comments-hidden')).toBe('true');
+    });
+  });
+
   it('notifies the library views when a download is imported', async () => {
     let jobsUpdated: ((jobs: Array<{ id: string; importedTrackId: string | null }>) => void) | null = null;
     const unsubscribeDownloads = vi.fn();
@@ -976,17 +1021,34 @@ describe('AppLayout standalone routes', () => {
       </AppProviders>,
     );
 
-    expect(screen.queryByRole('button', { name: /打开音频链路/u })).toBeNull();
+    expect(screen.getByRole('button', { name: /打开音频链路/u })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Playback queue' }));
 
     await waitFor(() => expect(screen.getByText('Full queue page')).toBeTruthy());
     expect(screen.queryByRole('complementary', { name: '播放队列抽屉' })).toBeNull();
   });
 
-  it('shows the shell signal path button only when the app setting enables it', async () => {
+  it('hides the shell signal path button when the app setting disables it', async () => {
     window.echo = {
       app: {
-        getSettings: vi.fn().mockResolvedValue({ signalPathControlEnabled: true }),
+        getSettings: vi.fn().mockResolvedValue({ signalPathControlEnabled: false }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <AppProviders>
+        <AppLayout routes={routesWithQueue} />
+      </AppProviders>,
+    );
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: /打开音频链路/u })).toBeNull());
+    expect(screen.getByRole('button', { name: 'Playback queue' })).toBeTruthy();
+  });
+
+  it('shows the shell signal path button by default and hides it on the lyrics page', async () => {
+    window.echo = {
+      app: {
+        getSettings: vi.fn().mockResolvedValue({}),
       },
     } as unknown as Window['echo'];
 
@@ -1106,7 +1168,7 @@ describe('AppLayout standalone routes', () => {
           lyricsPlayerBarDrawerEnabled: true,
           lyricsPlayerBarDrawerOpacityPercent: 64,
           lyricsPlayerBarDrawerColorMode: 'custom',
-          lyricsPlayerBarDrawerColor: '#ff3366',
+          lyricsPlayerBarDrawerColor: '#FFFFFF',
           smtcEnabled: true,
         }),
       },
@@ -1127,10 +1189,13 @@ describe('AppLayout standalone routes', () => {
     const miniHost = container.querySelector('.lyrics-player-drawer-host') as HTMLElement;
     expect(miniHost.querySelector('.player-bar')).toBeTruthy();
     expect(miniHost.dataset.miniPlayerColorMode).toBe('custom');
-    expect(miniHost.style.getPropertyValue('--lyrics-mini-player-background')).toBe('rgba(255, 51, 102, 0.64)');
+    expect(miniHost.style.getPropertyValue('--lyrics-mini-player-background')).toBe('rgba(255, 255, 255, 0.64)');
     expect(miniHost.style.getPropertyValue('--lyrics-mini-player-readable-text')).toBe('rgb(17, 24, 39)');
     expect(miniHost.style.getPropertyValue('--lyrics-mini-player-readable-muted')).toBe('rgb(17, 24, 39)');
     expect(miniHost.style.getPropertyValue('--lyrics-mini-player-readable-shadow')).toBe('0 1px 0 rgba(255, 255, 255, 0.54)');
+    expect(miniHost.style.getPropertyValue('--lyrics-mini-player-readable-play-bg')).toBe('rgba(17, 24, 39, 0.12)');
+    expect(miniHost.style.getPropertyValue('--lyrics-mini-player-readable-play-bg-hover')).toBe('rgba(17, 24, 39, 0.18)');
+    expect(miniHost.style.getPropertyValue('--lyrics-mini-player-readable-play-border')).toBe('rgba(17, 24, 39, 0.18)');
     expect(screen.getByRole('contentinfo')).toBeTruthy();
   });
 

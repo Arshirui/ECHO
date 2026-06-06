@@ -13,6 +13,7 @@ vi.mock('../../diagnostics/CrashReportService', () => ({
 vi.mock('../../library/LibraryService', () => ({
   getLibraryService: () => ({
     getTrack: () => null,
+    getBestNetworkCoverUrlForTrack: () => null,
   }),
 }));
 
@@ -88,12 +89,28 @@ class FakeRpcClient extends EventEmitter {
     },
   };
   login = vi.fn(async () => undefined);
-  setActivity = vi.fn(async () => undefined);
+  setActivity = vi.fn(async (_activity: unknown): Promise<void> => undefined);
   clearActivity = vi.fn(async () => undefined);
   destroy = vi.fn(async () => undefined);
 }
 
-const createService = (options: { now?: () => number; loadFails?: boolean; getTrack?: (trackId: string) => LibraryTrack | null } = {}) => {
+const createDeferred = <T>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+};
+
+const createService = (options: {
+  now?: () => number;
+  loadFails?: boolean;
+  getTrack?: (trackId: string) => LibraryTrack | null;
+  getNetworkCoverUrl?: (trackId: string) => string | null;
+  setActivity?: (activity: unknown) => Promise<void>;
+} = {}) => {
   const clients: FakeRpcClient[] = [];
   const loadRpcModule = vi.fn(async () => {
     if (options.loadFails) {
@@ -104,6 +121,9 @@ const createService = (options: { now?: () => number; loadFails?: boolean; getTr
       Client: class extends FakeRpcClient {
         constructor() {
           super();
+          if (options.setActivity) {
+            this.setActivity = vi.fn(options.setActivity);
+          }
           clients.push(this);
         }
       },
@@ -116,6 +136,7 @@ const createService = (options: { now?: () => number; loadFails?: boolean; getTr
     loadRpcModule,
     now: options.now,
     getTrack: options.getTrack ?? (() => track),
+    getNetworkCoverUrl: options.getNetworkCoverUrl,
   });
 
   return { service, get client() {
@@ -182,6 +203,47 @@ describe('RpcDiscordPresenceService', () => {
     expect(harness.client?.setActivity).toHaveBeenCalledTimes(2);
   });
 
+  it('serializes overlapping updates so track switches land on the latest status', async () => {
+    const firstSetActivity = createDeferred<void>();
+    let setActivityCalls = 0;
+    const harness = createService({
+      getTrack: () => null,
+      setActivity: async () => {
+        setActivityCalls += 1;
+        if (setActivityCalls === 1) {
+          await firstSetActivity.promise;
+        }
+      },
+    });
+    const { service } = harness;
+
+    const firstUpdate = service.updateFromAudioStatus(makeStatus({
+      state: 'loading',
+      currentTrackId: 'streaming:qqmusic:first',
+      currentTrackTitle: 'First Song',
+      currentTrackArtist: 'First Artist',
+    }));
+
+    await expect.poll(() => harness.client?.setActivity).toHaveBeenCalledTimes(1);
+
+    void service.updateFromAudioStatus(makeStatus({
+      state: 'playing',
+      currentTrackId: 'streaming:qqmusic:second',
+      currentTrackTitle: 'Second Song',
+      currentTrackArtist: 'Second Artist',
+      currentTrackCoverUrl: 'https://y.gtimg.cn/music/photo_new/T002R300x300M000second.jpg',
+    }));
+    firstSetActivity.resolve();
+    await firstUpdate;
+
+    expect(harness.client?.setActivity).toHaveBeenCalledTimes(2);
+    expect(harness.client?.setActivity.mock.calls.at(-1)?.[0]).toMatchObject({
+      details: 'Second Song',
+      state: 'Second Artist',
+      largeImageKey: 'https://y.gtimg.cn/music/photo_new/T002R300x300M000second.jpg',
+    });
+  });
+
   it('falls back to file basename when track metadata is missing', () => {
     const presenceTrack = createDiscordPresenceTrackFromStatus(
       makeStatus({ currentTrackId: 'missing', currentFilePath: 'D:\\Music\\Loose File.wav' }),
@@ -190,6 +252,60 @@ describe('RpcDiscordPresenceService', () => {
 
     expect(presenceTrack.title).toBe('Loose File.wav');
     expect(presenceTrack.artist).toBe('Local file');
+  });
+
+  it('uses audio status metadata for streaming tracks missing from the library', () => {
+    const coverUrl = 'https://y.gtimg.cn/music/photo_new/T002R300x300M000album-mid.jpg';
+    const presenceTrack = createDiscordPresenceTrackFromStatus(
+      makeStatus({
+        currentFilePath: 'streaming:qqmusic:XOcGObhe56J+NHOS6vsC5aHIK...',
+        currentTrackId: 'streaming:qqmusic:0039MnYb0qxYhV',
+        currentTrackTitle: 'Streaming Song',
+        currentTrackArtist: 'Streaming Artist',
+        currentTrackAlbum: 'Streaming Album',
+        currentTrackAlbumArtist: 'Streaming Album Artist',
+        currentTrackCoverUrl: `echo-image://remote/${encodeURIComponent(coverUrl)}?referer=${encodeURIComponent('https://y.qq.com/')}`,
+      }),
+      () => null,
+    );
+    const activity = createDiscordActivity(makeStatus(), presenceTrack, Date.now());
+
+    expect(presenceTrack).toMatchObject({
+      title: 'Streaming Song',
+      artist: 'Streaming Artist',
+      album: 'Streaming Album',
+      albumArtist: 'Streaming Album Artist',
+      coverImageKey: coverUrl,
+    });
+    expect(activity?.largeImageKey).toBe(coverUrl);
+  });
+
+  it('falls back to the app logo for non-public cover protocols', () => {
+    const presenceTrack = createDiscordPresenceTrackFromStatus(
+      makeStatus({
+        currentTrackCoverUrl: 'echo-cover://thumb/local-cover',
+      }),
+      () => null,
+    );
+    const activity = createDiscordActivity(makeStatus(), presenceTrack, Date.now());
+
+    expect(presenceTrack.coverImageKey).toBeNull();
+    expect(activity?.largeImageKey).toBe('echo_logo');
+  });
+
+  it('uses a stored public network cover for local tracks with echo-cover artwork', () => {
+    const networkCoverUrl = 'https://covers.example.test/local-thumb.webp';
+    const presenceTrack = createDiscordPresenceTrackFromStatus(
+      makeStatus({
+        currentTrackCoverUrl: 'echo-cover://thumb/local-cover',
+      }),
+      () => ({ ...track, coverThumb: 'echo-cover://thumb/local-cover' }),
+      (trackId) => (trackId === 'track-1' ? networkCoverUrl : null),
+    );
+    const activity = createDiscordActivity(makeStatus(), presenceTrack, Date.now());
+
+    expect(presenceTrack.coverImageKey).toBe(networkCoverUrl);
+    expect(activity?.largeImageKey).toBe(networkCoverUrl);
   });
 
   it('disabling clears activity', async () => {

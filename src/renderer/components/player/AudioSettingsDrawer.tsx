@@ -83,6 +83,7 @@ type AudioDrawerCopy = {
   processed: string;
   ratePending: string;
   resampling: string;
+  upsampling: string;
   soxrResampler: string;
   shared: string;
   directSound: string;
@@ -524,6 +525,9 @@ const getResampleSignalText = (status: AudioStatus | null, deviceSampleRate: num
   return copy.nativeRate;
 };
 
+const getResamplingBadgeLabel = (status: AudioStatus | null, copy: AudioDrawerCopy): string =>
+  status?.echoSrcActive ? copy.upsampling : copy.resampling;
+
 const getDirectSignalText = (status: AudioStatus | null, deviceSampleRate: number | null | undefined, copy: AudioDrawerCopy): string => {
   if (status?.outputMode === 'system') {
     return copy.systemAudio;
@@ -538,6 +542,10 @@ const getDirectSignalText = (status: AudioStatus | null, deviceSampleRate: numbe
   }
 
   if (status?.bitPerfectDisabledReason) {
+    if (status.bitPerfectDisabledReason === 'echo_src_enabled') {
+      return 'ECHO SRC';
+    }
+
     return status.bitPerfectDisabledReason.replaceAll('_', ' ');
   }
 
@@ -773,6 +781,7 @@ export const AudioSettingsDrawer = ({
       processed: t('audioDrawer.signal.processed'),
       ratePending: t('audioDrawer.status.ratePending'),
       resampling: t('audioDrawer.badge.resampling'),
+      upsampling: t('audioDrawer.badge.upsampling'),
       soxrResampler: t('audioDrawer.badge.soxrResampler'),
       shared: t('audioDrawer.mode.shared'),
       directSound: t('audioDrawer.mode.directSound'),
@@ -890,7 +899,7 @@ export const AudioSettingsDrawer = ({
     }
 
     if (status?.resampling || status?.sampleRateMismatch) {
-      badges.push({ label: copy.resampling, tone: 'warning' });
+      badges.push({ label: getResamplingBadgeLabel(status, copy), tone: 'warning' });
     }
 
     if (status?.resamplerEngine === 'soxr' && status.resamplerFallbackActive !== true) {
@@ -923,8 +932,9 @@ export const AudioSettingsDrawer = ({
       badges.push({ label: copy.juceFallback, tone: 'warning' });
     }
 
-    if (hasInferredRateMismatch(status, effectiveSharedSampleRate) && !badges.some((badge) => badge.label === copy.resampling)) {
-      badges.push({ label: copy.resampling, tone: 'warning' });
+    const rateBadgeLabel = getResamplingBadgeLabel(status, copy);
+    if (hasInferredRateMismatch(status, effectiveSharedSampleRate) && !badges.some((badge) => badge.label === rateBadgeLabel)) {
+      badges.push({ label: rateBadgeLabel, tone: 'warning' });
     }
 
     return badges;
@@ -945,7 +955,7 @@ export const AudioSettingsDrawer = ({
           { label: t('audioDrawer.meter.source'), value: formatSourceQuality(status, copy) },
           { label: t('audioDrawer.meter.chain'), value: getPlaybackChainText(status, copy) },
           { label: 'EQ', value: getEqSignalText(status, copy) },
-          { label: status?.activeDsdOutputMode === 'dop' ? 'DoP' : t('audioDrawer.meter.resample'), value: getResampleSignalText(status, effectiveSharedSampleRate, copy) },
+          { label: status?.activeDsdOutputMode === 'dop' ? 'DoP' : status?.echoSrcActive ? t('audioDrawer.meter.upsample') : t('audioDrawer.meter.resample'), value: getResampleSignalText(status, effectiveSharedSampleRate, copy) },
           { label: t('audioDrawer.meter.direct'), value: getDirectSignalText(status, effectiveSharedSampleRate, copy) },
           { label: t('audioDrawer.meter.latency'), value: getNativeLatencyText(status, t('settings.playback.stability.value.unknown')) },
           { label: t('settings.playback.stability.field.sharedStabilityTier'), value: getSharedStabilityText(status, t('settings.playback.stability.value.unknown')) },
@@ -994,7 +1004,11 @@ export const AudioSettingsDrawer = ({
       modeLabel: formatMode(currentMode, copy),
       backend: getCurrentBackend(status, copy),
       sampleRate: formatRate(currentOutputSampleRate),
-      bitPerfect: status?.bitPerfectCandidate ? copy.bitPerfectReady : status?.bitPerfectDisabledReason ?? copy.standardPath,
+      bitPerfect: status?.bitPerfectCandidate
+        ? copy.bitPerfectReady
+        : status?.bitPerfectDisabledReason === 'echo_src_enabled'
+          ? 'ECHO SRC'
+          : status?.bitPerfectDisabledReason ?? copy.standardPath,
       highlight: shouldHighlightCurrentOutput(currentMode, status?.outputBackend),
       Icon: getDeviceIcon(name, currentMode),
     };

@@ -37,6 +37,14 @@ const trimTrailingZero = (value: string): string => value.replace(/\.0$/u, '');
 const normalizeReason = (value: string | null | undefined, fallback: string): string =>
   value ? value.replaceAll('_', ' ') : fallback;
 
+const formatBitPerfectReason = (value: string | null | undefined, fallback: string): string => {
+  if (value === 'echo_src_enabled') {
+    return 'ECHO SRC';
+  }
+
+  return normalizeReason(value, fallback);
+};
+
 const formatIssueReason = (
   value: string,
   fallback: string,
@@ -45,13 +53,34 @@ const formatIssueReason = (
 ): string => {
   const sharedMixRateMatch = /^shared_output_mix_rate_too_high:(\d+)->(\d+)$/u.exec(value);
   const windowsAudioDefaultFormatMatch = /^windows_audio_default_format_unusual:(\d+)$/u.exec(value);
+  const echoSrcActiveMatch = /^echo_src_active:(\d+)->(\d+)$/u.exec(value);
 
   if (sharedMixRateMatch) {
     return formatSharedMixRateTooHigh(Number(sharedMixRateMatch[1]), Number(sharedMixRateMatch[2]));
   }
 
+  if (echoSrcActiveMatch) {
+    return `ECHO SRC ${formatRate(Number(echoSrcActiveMatch[1]), fallback)} -> ${formatRate(Number(echoSrcActiveMatch[2]), fallback)}`;
+  }
+
   if (windowsAudioDefaultFormatMatch) {
     return formatWindowsAudioDefaultFormatUnusual(Number(windowsAudioDefaultFormatMatch[1]));
+  }
+
+  if (value === 'echo_src_bit_perfect_disabled') {
+    return 'ECHO SRC disables bit-perfect output.';
+  }
+
+  if (value === 'echo_src_bypassed_in_shared_output') {
+    return 'ECHO SRC is bypassed in shared output; the system mixer rate is used.';
+  }
+
+  if (value === 'echo_src_bypassed_in_non_direct_output') {
+    return 'ECHO SRC is bypassed outside ASIO or Exclusive output.';
+  }
+
+  if (value === 'echo_src_bypassed_for_dsd_direct' || value === 'echo_src_bypassed_for_dsd_pcm') {
+    return 'ECHO SRC is bypassed for DSD playback.';
   }
 
   return normalizeReason(value, fallback);
@@ -102,7 +131,7 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
   const bitPerfectText = status?.bitPerfectCandidate
     ? t('audioProfessional.value.ready')
     : status?.bitPerfectDisabledReason
-      ? normalizeReason(status.bitPerfectDisabledReason, unknown)
+      ? formatBitPerfectReason(status.bitPerfectDisabledReason, unknown)
       : status?.outputMode === 'shared'
         ? t('audioProfessional.value.sharedMixer')
         : t('audioProfessional.value.pending');
@@ -116,6 +145,7 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
     status?.eqEnabled ? t('audioProfessional.row.eq') : null,
     status?.roomCorrectionEnabled ? t('audioProfessional.signal.fir') : null,
     status?.channelBalanceEnabled ? t('audioProfessional.row.channelBalance') : null,
+    status?.echoSrcActive ? `ECHO SRC ${formatRate(status.echoSrcTargetSampleRate, unknown)}` : null,
     status?.replayGainEnabled ? t('audioProfessional.row.replayGain') : null,
     status?.dspLimiterProtecting ? t('audioProfessional.badge.protect') : null,
   ].filter((module): module is string => Boolean(module));
@@ -201,7 +231,7 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
       nextBadges.push({ label: t('audioProfessional.badge.bitPerfect'), tone: 'good' });
     }
     if (status?.resampling) {
-      nextBadges.push({ label: t('audioProfessional.badge.resampling'), tone: 'warning' });
+      nextBadges.push({ label: t(status.echoSrcActive ? 'audioProfessional.badge.upsampling' : 'audioProfessional.badge.resampling'), tone: 'warning' });
     }
     if (status?.dspActive || status?.eqEnabled || status?.roomCorrectionEnabled || status?.channelBalanceEnabled) {
       nextBadges.push({ label: t('audioProfessional.badge.dsp'), tone: 'warning' });
@@ -257,7 +287,7 @@ export const AudioProfessionalStatusPanel = ({ status, variant = 'drawer' }: Aud
       rows: [
         { label: t('audioProfessional.row.signalPath'), value: signalPathText, tone: dspModules.length ? 'warning' : 'good' },
         { label: t('audioProfessional.row.bitPerfect'), value: bitPerfectText, tone: status?.bitPerfectCandidate ? 'good' : 'muted' },
-        { label: t('audioProfessional.row.resampling'), value: status?.resampling ? yes : no, tone: status?.resampling ? 'warning' : 'good' },
+        { label: t(status?.echoSrcActive ? 'audioProfessional.row.upsampling' : 'audioProfessional.row.resampling'), value: status?.resampling ? yes : no, tone: status?.resampling ? 'warning' : 'good' },
         { label: t('audioProfessional.row.sampleRateMismatch'), value: status?.sampleRateMismatch ? yes : no, tone: status?.sampleRateMismatch ? 'danger' : 'good' },
         { label: t('audioProfessional.row.eq'), value: status?.eqEnabled ? enabled : disabled, tone: status?.eqEnabled ? 'warning' : 'muted' },
         { label: t('audioProfessional.row.roomCorrection'), value: status?.roomCorrectionEnabled ? enabled : disabled, tone: status?.roomCorrectionEnabled ? 'warning' : 'muted' },

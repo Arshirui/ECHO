@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { ChevronRight, Clock3, Headphones, RefreshCw, Search, Star, X } from 'lucide-react';
 import type { EqState } from '../../../shared/types/eq';
 import type {
@@ -8,7 +8,7 @@ import type {
   OpraHeadphoneCorrectionVendorResult,
 } from '../../../shared/types/opra';
 import { getEchoBridge, getEqBridge } from '../../utils/echoBridge';
-import { computeEqResponseGainDbAtFrequency } from './eqPanelUtils';
+import { computeEqResponseGainDbAtFrequency, formatFrequencyLabel } from './eqPanelUtils';
 
 type HeadphoneCorrectionPanelProps = {
   eqState: EqState;
@@ -33,6 +33,9 @@ const frequencyToX = (frequencyHz: number): number => {
 };
 
 const gainToY = (gainDb: number): number => 50 - (Math.max(-18, Math.min(18, gainDb)) / 36) * 100;
+
+const opraCurveFrequencyTicksHz = [20, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const opraCurveGainTicksDb = [-12, -6, 0, 6, 12];
 
 const createPreviewPath = (preview: OpraHeadphoneCorrectionPreview | null): string => {
   if (!preview) {
@@ -457,6 +460,26 @@ export const HeadphoneCorrectionPanel = ({ eqState, onApplied, onAppliedStatusRe
             </g>
             {previewPath ? <path className="opra-curve-line" d={previewPath} /> : null}
           </svg>
+          <div className="opra-curve-frequency-axis" aria-hidden="true">
+            {opraCurveFrequencyTicksHz.map((frequency) => (
+              <span
+                key={frequency}
+                style={{ '--opra-axis-position': `${frequencyToX(frequency)}%` } as CSSProperties}
+              >
+                {formatFrequencyLabel(frequency)}
+              </span>
+            ))}
+          </div>
+          <div className="opra-curve-gain-axis" aria-hidden="true">
+            {opraCurveGainTicksDb.map((gain) => (
+              <span
+                key={gain}
+                style={{ '--opra-axis-position': `${gainToY(gain)}%` } as CSSProperties}
+              >
+                {formatDb(gain)}
+              </span>
+            ))}
+          </div>
           {!selectedPreview ? (
             <div className="opra-empty-preset">
               <Headphones size={28} aria-hidden="true" />

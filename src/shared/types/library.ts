@@ -334,6 +334,25 @@ export type LibraryLabWatcherEvent = {
   stableForMs?: number;
 };
 
+export type NativeFileScannerEnablementSource = 'env-disable' | 'env-enable' | 'setting' | 'default';
+
+export type NativeFileScannerDiagnostics = {
+  enabled: boolean;
+  enablementSource: NativeFileScannerEnablementSource;
+  binaryFound: boolean;
+  binaryPath: string | null;
+  willUseNative: boolean;
+};
+
+export type NativeMetadataReaderDiagnostics = {
+  enabled: boolean;
+  enablementSource: NativeFileScannerEnablementSource;
+  binaryFound: boolean;
+  binaryPath: string | null;
+  willUseNative: boolean;
+  supportedFormats: string[];
+};
+
 export type LibraryLabState = {
   watcherEnabled: boolean;
   watcherRunning: boolean;
@@ -369,6 +388,8 @@ export type LibraryLabState = {
   lastGroupingRefreshAt: string | null;
   groupingRefreshDelayedForPlaybackCount: number;
   lastGroupingRefreshError: string | null;
+  nativeFileScanner: NativeFileScannerDiagnostics;
+  nativeMetadataReader: NativeMetadataReaderDiagnostics;
   recentWatcherEvents: LibraryLabWatcherEvent[];
 };
 
@@ -403,6 +424,8 @@ export type LibraryDiagnostics = {
   scanPerformanceMode: 'low' | 'balanced' | 'performance';
   metadataConcurrency: number;
   coverConcurrency: number;
+  nativeFileScanner?: NativeFileScannerDiagnostics;
+  nativeMetadataReader?: NativeMetadataReaderDiagnostics;
   audioAnalysisEnabled?: boolean;
   tracksWithFileIdentity?: number;
   tracksWithQuickHash?: number;

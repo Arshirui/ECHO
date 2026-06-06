@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app } from 'electron';
-import { artistOnlineInfoSources, artistStreamingAlbumProviders, defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
+import { artistOnlineInfoSources, artistStreamingAlbumProviders, autoUpdateSources, defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
 import { defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
 import type {
   ArtistOnlineInfoSource,
@@ -17,6 +17,7 @@ import type {
   AppVideoWallpaperPauseMode,
   AppWallpaperMediaType,
   AppSettings,
+  AutoUpdateSource,
   AudioTransportFadeCurve,
   DataBackupIntervalDays,
   DesktopLyricsColorMode,
@@ -55,6 +56,8 @@ import {
   channelBalanceMinBalance,
   channelBalanceMinDelayMs,
   channelBalanceMinGainDb,
+  type AudioEchoSrcMode,
+  type AudioEchoSrcQualityProfile,
   type AudioExportFormat,
   type ChannelBalanceMonoMode,
   type ChannelBalanceState,
@@ -370,6 +373,8 @@ export const defaultSettings: AppSettings = {
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
   sidebarHiddenRouteIds: [],
   sidebarAutoHideEnabled: false,
+  sidebarIconOnlyEnabled: false,
+  featureCommentsHidden: false,
   songsSort: 'default',
   rememberedAudioOutput: { ...defaultRememberedAudioOutput },
   hiddenAudioDeviceKeys: [],
@@ -381,6 +386,8 @@ export const defaultSettings: AppSettings = {
   audioAsioUnavailableFallbackEnabled: false,
   audioExclusiveInstabilityFallbackEnabled: false,
   audioSoxrFallbackEnabled: true,
+  audioEchoSrcMode: 'off',
+  audioEchoSrcQualityProfile: 'transparent',
   audioReleaseExclusiveOnPauseExperimentalEnabled: false,
   audioIssueDiagnosticsWindowEnabled: false,
   albumMergeStrategy: 'standard',
@@ -398,6 +405,8 @@ export const defaultSettings: AppSettings = {
   fastStartupEnabled: false,
   dataProtectionDisabled: false,
   autoUpdateEnabled: true,
+  autoUpdateSource: 'official',
+  autoUpdateCustomUrl: null,
   autoAccountCheckOnStartup: true,
   suppressAccountExpiryNotices: true,
   spotifyAutoLaunchOfficialPlayer: true,
@@ -485,6 +494,7 @@ export const defaultSettings: AppSettings = {
   lyricsSecondaryFontSizePx: 22,
   lyricsFontFamily: 'Microsoft YaHei',
   lyricsFontFilePath: null,
+  lyricsTextDirection: 'horizontal',
   lyricsLineSpacingPercent: 110,
   lyricsLineMaxChars: 0,
   lyricsContextOpacityPercent: 49,
@@ -507,6 +517,7 @@ export const defaultSettings: AppSettings = {
   desktopLyricsColor: defaultDesktopLyricsColor,
   desktopLyricsStrokeColor: defaultDesktopLyricsStrokeColor,
   desktopLyricsOpacityPercent: 96,
+  desktopLyricsTextDirection: 'horizontal',
   desktopLyricsRomanizationEnabled: true,
   desktopLyricsTranslationEnabled: true,
   desktopLyricsBounds: null,
@@ -544,7 +555,7 @@ export const defaultSettings: AppSettings = {
   lowLoadPlaybackEnhancementsEnabled: false,
   homeRandomHeroTitleEnabled: false,
   playerWaveformProgressEnabled: false,
-  signalPathControlEnabled: false,
+  signalPathControlEnabled: true,
   fixedVolumeEnabled: false,
   gaplessPlaybackEnabled: false,
   audioTransportFadeEnabled: false,
@@ -566,13 +577,15 @@ export const defaultSettings: AppSettings = {
   playbackSpeed: 1,
   playbackSpeedMode: 'nightcore',
   scanPerformanceMode: 'balanced',
+  nativeFileScannerEnabled: false,
+  nativeMetadataReaderEnabled: false,
   remoteCoverLoadPerformanceMode: 'balanced',
   remoteAlbumMergeStrategy: 'conservative',
   remoteBackgroundConcurrency: { ...defaultRemoteBackgroundConcurrency },
   duplicateTracksEnabled: true,
   duplicateTracksMode: 'strict',
   duplicateTracksAutoRebuildAfterScan: false,
-  discordRichPresenceEnabled: false,
+  discordRichPresenceEnabled: true,
   lastFmEnabled: false,
   lastFmUsername: null,
   lastFmSessionKey: null,
@@ -1021,6 +1034,12 @@ const normalizeAudioTransportFadeDurationMs = (value: unknown): number => {
 const normalizeAudioExportFormat = (value: unknown): AudioExportFormat =>
   value === 'wav' || value === 'flac' || value === 'ogg' || value === 'mp3' ? value : defaultSettings.audioExportFormat ?? 'mp3';
 
+const normalizeAudioEchoSrcMode = (value: unknown): AudioEchoSrcMode =>
+  value === 'family2x' || value === 'family4x' || value === 'family8x' ? value : 'off';
+
+const normalizeAudioEchoSrcQualityProfile = (value: unknown): AudioEchoSrcQualityProfile =>
+  value === 'balanced' || value === 'lowLatency' ? value : 'transparent';
+
 const normalizeAppearanceFontFamily = (value: unknown, fallback: string): string => {
   return normalizeRequiredText(value, fallback);
 };
@@ -1218,6 +1237,9 @@ const normalizeLyricsBackgroundMode = (value: unknown): LyricsBackgroundMode =>
     ? value
     : defaultSettings.lyricsBackgroundMode;
 
+const normalizeLyricsTextDirection = (value: unknown): AppSettings['lyricsTextDirection'] =>
+  value === 'vertical' || value === 'horizontal' ? value : defaultSettings.lyricsTextDirection ?? 'horizontal';
+
 const normalizeLyricsMiniPlayerColorMode = (value: unknown): LyricsMiniPlayerColorMode =>
   value === 'custom' || value === 'cover' || value === 'default' ? value : defaultSettings.lyricsPlayerBarDrawerColorMode ?? 'default';
 
@@ -1285,6 +1307,30 @@ const normalizeMvMaxQuality = (value: unknown): MvSettings['maxQuality'] =>
 
 const normalizeMvSyncMode = (value: unknown): MvSettings['syncMode'] =>
   value === 'stable' || value === 'precise' || value === 'balanced' ? value : defaultSettings.mvSyncMode;
+
+const normalizeAutoUpdateSource = (value: unknown): AutoUpdateSource =>
+  autoUpdateSources.includes(value as AutoUpdateSource) ? (value as AutoUpdateSource) : defaultSettings.autoUpdateSource ?? 'official';
+
+const normalizeAutoUpdateCustomUrl = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.replace(/[\r\n]/g, '').trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return null;
+    }
+    return url.toString().replace(/\/+$/u, '');
+  } catch {
+    return null;
+  }
+};
 
 const normalizeWallpaperPath = (value: unknown, directory: string, allowedExtensions: Set<string>): string | null => {
   if (typeof value !== 'string') {
@@ -1571,6 +1617,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     sidebarRouteOrder: normalizeSidebarRouteOrder(settings.sidebarRouteOrder),
     sidebarHiddenRouteIds: normalizeSidebarHiddenRouteIds(settings.sidebarHiddenRouteIds),
     sidebarAutoHideEnabled: settings.sidebarAutoHideEnabled === true,
+    sidebarIconOnlyEnabled: settings.sidebarAutoHideEnabled === true ? false : settings.sidebarIconOnlyEnabled === true,
+    featureCommentsHidden: settings.featureCommentsHidden === true,
     songsSort: normalizeSongsSort(settings.songsSort),
     rememberedAudioOutput: migrateRememberedAudioOutput(
       normalizeRememberedAudioOutput(settings.rememberedAudioOutput),
@@ -1585,6 +1633,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     audioAsioUnavailableFallbackEnabled: settings.audioAsioUnavailableFallbackEnabled === true,
     audioExclusiveInstabilityFallbackEnabled: settings.audioExclusiveInstabilityFallbackEnabled === true,
     audioSoxrFallbackEnabled: settings.audioSoxrFallbackEnabled !== false,
+    audioEchoSrcMode: normalizeAudioEchoSrcMode(settings.audioEchoSrcMode),
+    audioEchoSrcQualityProfile: normalizeAudioEchoSrcQualityProfile(settings.audioEchoSrcQualityProfile),
     audioReleaseExclusiveOnPauseExperimentalEnabled: settings.audioReleaseExclusiveOnPauseExperimentalEnabled === true,
     audioIssueDiagnosticsWindowEnabled: settings.audioIssueDiagnosticsWindowEnabled === true,
     albumMergeStrategy,
@@ -1602,6 +1652,8 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     fastStartupEnabled: settings.fastStartupEnabled === true,
     dataProtectionDisabled: settings.dataProtectionDisabled === true,
     autoUpdateEnabled: settings.autoUpdateEnabled !== false,
+    autoUpdateSource: normalizeAutoUpdateSource(settings.autoUpdateSource),
+    autoUpdateCustomUrl: normalizeAutoUpdateCustomUrl(settings.autoUpdateCustomUrl),
     autoAccountCheckOnStartup: settings.autoAccountCheckOnStartup !== false,
     suppressAccountExpiryNotices: settings.suppressAccountExpiryNotices !== false,
     spotifyAutoLaunchOfficialPlayer: settings.spotifyAutoLaunchOfficialPlayer !== false,
@@ -1722,6 +1774,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.lyricsSecondaryFontSizePx,
     lyricsFontFamily: normalizeRequiredText(settings.lyricsFontFamily, defaultSettings.lyricsFontFamily ?? 'Microsoft YaHei'),
     lyricsFontFilePath: normalizeFontPath(settings.lyricsFontFilePath),
+    lyricsTextDirection: normalizeLyricsTextDirection(settings.lyricsTextDirection),
     lyricsLineSpacingPercent: Number.isFinite(lyricsLineSpacingPercent)
       ? Math.round(clamp(lyricsLineSpacingPercent, 60, 150))
       : defaultSettings.lyricsLineSpacingPercent,
@@ -1764,6 +1817,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     desktopLyricsOpacityPercent: Number.isFinite(desktopLyricsOpacityPercent)
       ? Math.round(clamp(desktopLyricsOpacityPercent, 35, 100))
       : defaultSettings.desktopLyricsOpacityPercent,
+    desktopLyricsTextDirection: normalizeLyricsTextDirection(settings.desktopLyricsTextDirection),
     desktopLyricsRomanizationEnabled: settings.desktopLyricsRomanizationEnabled !== false,
     desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled !== false,
     desktopLyricsBounds: normalizeDesktopLyricsBounds(settings.desktopLyricsBounds),
@@ -1818,7 +1872,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     lowLoadPlaybackEnhancementsEnabled: settings.lowLoadPlaybackEnhancementsEnabled === true,
     homeRandomHeroTitleEnabled: settings.homeRandomHeroTitleEnabled === true,
     playerWaveformProgressEnabled: settings.playerWaveformProgressEnabled === true,
-    signalPathControlEnabled: settings.signalPathControlEnabled === true,
+    signalPathControlEnabled: settings.signalPathControlEnabled !== false,
     fixedVolumeEnabled: settings.fixedVolumeEnabled === true,
     gaplessPlaybackEnabled: settings.gaplessPlaybackEnabled === true,
     audioTransportFadeEnabled: settings.audioTransportFadeEnabled === true,
@@ -1847,13 +1901,16 @@ export const normalizeSettings = (value: unknown): AppSettings => {
       : defaultSettings.playbackSpeed,
     playbackSpeedMode,
     scanPerformanceMode,
+    nativeFileScannerEnabled: settings.nativeFileScannerEnabled === true,
+    nativeMetadataReaderEnabled: settings.nativeMetadataReaderEnabled === true,
     remoteCoverLoadPerformanceMode,
     remoteAlbumMergeStrategy,
     remoteBackgroundConcurrency: normalizeRemoteBackgroundConcurrency(settings.remoteBackgroundConcurrency),
     duplicateTracksEnabled: settings.duplicateTracksEnabled !== false,
     duplicateTracksMode,
     duplicateTracksAutoRebuildAfterScan: settings.duplicateTracksAutoRebuildAfterScan === true,
-    discordRichPresenceEnabled: settings.discordRichPresenceEnabled === true,
+    discordRichPresenceEnabled:
+      settings.discordRichPresenceEnabled === undefined ? defaultSettings.discordRichPresenceEnabled : settings.discordRichPresenceEnabled === true,
     lastFmEnabled: settings.lastFmEnabled === true,
     lastFmUsername: normalizeOptionalText(settings.lastFmUsername),
     lastFmSessionKey: normalizeOptionalText(settings.lastFmSessionKey),

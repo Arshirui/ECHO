@@ -1633,7 +1633,6 @@ html[data-theme="dark"] .artist-track-skeleton-actions {
 @keyframes detail-page-return {
   to {
     opacity: 0;
-    transform: translateX(22px) scale(0.992);
   }
 }
 

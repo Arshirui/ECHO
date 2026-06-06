@@ -1,4 +1,4 @@
-import type { AudioDsdOutputMode, AudioExportFormat, AudioLatencyProfile, AudioOutputMode, AudioSharedBackend, ChannelBalanceState, PlaybackSpeedMode } from './audio';
+import type { AudioDsdOutputMode, AudioEchoSrcMode, AudioEchoSrcQualityProfile, AudioExportFormat, AudioLatencyProfile, AudioOutputMode, AudioSharedBackend, ChannelBalanceState, PlaybackSpeedMode } from './audio';
 import type { DuplicateTrackMode } from './library';
 import type { LibrarySort } from './library';
 import type { LyricsProviderId } from './lyrics';
@@ -10,6 +10,7 @@ import type { SidebarRouteId } from './sidebar';
 export type ScanPerformanceMode = 'low' | 'balanced' | 'performance';
 export type RemoteCoverLoadPerformanceMode = 'low' | 'balanced' | 'aggressive' | 'lan';
 export type LyricsBackgroundMode = 'theme' | 'cover' | 'coverColor' | 'customWallpaper';
+export type LyricsTextDirection = 'horizontal' | 'vertical';
 export type LyricsMiniPlayerColorMode = 'default' | 'custom' | 'cover';
 export type DesktopLyricsColorMode = 'theme' | 'custom';
 export type AppWallpaperMediaType = 'image' | 'video';
@@ -21,6 +22,8 @@ export type AudioTransportFadeCurve = 'linear' | 'smooth' | 'equalPower';
 export type NetworkProxyMode = 'off' | 'system' | 'manual' | 'pac';
 export type DataBackupIntervalDays = 3 | 7 | 30;
 export type ArtistMergeStrategy = 'conservative' | 'standard';
+export const autoUpdateSources = ['official', 'ghfast', 'ghproxyVip', 'ghproxyCxkpro', 'custom'] as const;
+export type AutoUpdateSource = typeof autoUpdateSources[number];
 export const artistOnlineInfoSources = ['baidu-baike', 'moegirl', 'wikipedia'] as const;
 export type ArtistOnlineInfoSource = typeof artistOnlineInfoSources[number];
 export const defaultArtistOnlineInfoSources: ArtistOnlineInfoSource[] = ['wikipedia'];
@@ -190,6 +193,8 @@ export type AppSettings = {
   sidebarRouteOrder?: SidebarRouteId[];
   sidebarHiddenRouteIds?: SidebarRouteId[];
   sidebarAutoHideEnabled?: boolean;
+  sidebarIconOnlyEnabled?: boolean;
+  featureCommentsHidden?: boolean;
   songsSort?: LibrarySort;
   rememberedAudioOutput?: RememberedAudioOutput;
   hiddenAudioDeviceKeys?: string[];
@@ -201,6 +206,8 @@ export type AppSettings = {
   audioAsioUnavailableFallbackEnabled?: boolean;
   audioExclusiveInstabilityFallbackEnabled?: boolean;
   audioSoxrFallbackEnabled?: boolean;
+  audioEchoSrcMode?: AudioEchoSrcMode;
+  audioEchoSrcQualityProfile?: AudioEchoSrcQualityProfile;
   audioReleaseExclusiveOnPauseExperimentalEnabled?: boolean;
   audioIssueDiagnosticsWindowEnabled?: boolean;
   albumMergeStrategy: 'standard' | 'sameTitleAndCover';
@@ -218,6 +225,8 @@ export type AppSettings = {
   fastStartupEnabled?: boolean;
   dataProtectionDisabled?: boolean;
   autoUpdateEnabled?: boolean;
+  autoUpdateSource?: AutoUpdateSource;
+  autoUpdateCustomUrl?: string | null;
   autoAccountCheckOnStartup?: boolean;
   suppressAccountExpiryNotices?: boolean;
   spotifyAutoLaunchOfficialPlayer?: boolean;
@@ -305,6 +314,7 @@ export type AppSettings = {
   lyricsSecondaryFontSizePx?: number;
   lyricsFontFamily?: string;
   lyricsFontFilePath?: string | null;
+  lyricsTextDirection?: LyricsTextDirection;
   lyricsLineSpacingPercent?: number;
   lyricsLineMaxChars?: number;
   lyricsContextOpacityPercent?: number;
@@ -327,6 +337,7 @@ export type AppSettings = {
   desktopLyricsColor?: string;
   desktopLyricsStrokeColor?: string;
   desktopLyricsOpacityPercent?: number;
+  desktopLyricsTextDirection?: LyricsTextDirection;
   desktopLyricsRomanizationEnabled?: boolean;
   desktopLyricsTranslationEnabled?: boolean;
   desktopLyricsBounds?: DesktopLyricsBounds | null;
@@ -386,6 +397,8 @@ export type AppSettings = {
   playbackSpeed: number;
   playbackSpeedMode: PlaybackSpeedMode;
   scanPerformanceMode: ScanPerformanceMode;
+  nativeFileScannerEnabled?: boolean;
+  nativeMetadataReaderEnabled?: boolean;
   remoteCoverLoadPerformanceMode?: RemoteCoverLoadPerformanceMode;
   remoteAlbumMergeStrategy?: RemoteAlbumMergeStrategy;
   remoteBackgroundConcurrency?: RemoteBackgroundConcurrencySettings;

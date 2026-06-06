@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } fr
 import { stat as statFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers';
-import { setImmediate as yieldToMainLoop } from 'node:timers/promises';
+import { setImmediate as yieldToMainLoop, setTimeout as delay } from 'node:timers/promises';
 import electron from 'electron';
 import { SCANNABLE_AUDIO_EXTENSIONS } from '../../shared/constants/audioExtensions';
 import { IpcChannels } from '../../shared/constants/ipcChannels';
@@ -19,12 +19,19 @@ import {
 } from '../app/dataProtection';
 import { createDatabase, type EchoDatabase } from '../database/createDatabase';
 import { getLibraryDatabaseManager, type LibraryDatabaseConnection } from '../database/LibraryDatabaseManager';
-import { assertDatabaseHealthy } from '../database/health';
+import { assertDatabaseHealthy, assertDatabaseOpenHealthy } from '../database/health';
 import {
   isPlaybackActiveForMainWork,
   runMainBackgroundTask,
   runNonCriticalMainWork,
 } from '../diagnostics/MainProcessWorkScheduler';
+import {
+  logLibraryScanPerf,
+  shouldCheckpointScanHealthForDiagnostics,
+  shouldDisableScanGuardForDiagnostics,
+  shouldDisableScanHealthCheckForDiagnostics,
+  shouldRunScanHealthCheckSynchronouslyForDiagnostics,
+} from '../diagnostics/LibraryScanPerfDiagnostics';
 import { AlbumService } from './AlbumService';
 import type { AlbumMergeStrategy } from './AlbumService';
 import { getDefaultCoverCacheDir, migrateCoverCache, resolveConfiguredCoverCacheDir, resolveCoverCacheDir } from './CoverCacheManager';
@@ -146,6 +153,8 @@ import type { ScanConcurrencyRecommendation } from './ScanConcurrency';
 import type { CoverExtractor } from './workers/CoverExtractor';
 import type { FileScanner } from './workers/FileScanner';
 import type { MetadataReader } from './workers/MetadataReader';
+import { getNativeFileScannerDiagnostics, NativeThenTsFileScanner } from './workers/NativeFileScanner';
+import { getNativeMetadataReaderDiagnostics, NativeThenTsMetadataReader } from './workers/NativeMetadataReader';
 import { TsCoverExtractor } from './workers/TsCoverExtractor';
 import { TsFileScanner } from './workers/TsFileScanner';
 import { TsMetadataReader } from './workers/TsMetadataReader';
@@ -175,6 +184,7 @@ type LibraryServiceDependencies = {
 };
 
 const broadcastLibraryChanged = (): void => {
+  const startedAtMs = performance.now();
   const windows = (electron as unknown as {
     BrowserWindow?: {
       getAllWindows: () => Array<{ webContents: { send: (channel: string, payload?: unknown) => void } }>;
@@ -184,6 +194,11 @@ const broadcastLibraryChanged = (): void => {
   for (const window of windows) {
     window.webContents.send(IpcChannels.LibraryChanged);
   }
+  logLibraryScanPerf({
+    phase: 'broadcastLibraryChanged',
+    durationMs: performance.now() - startedAtMs,
+    batchSize: windows.length,
+  });
 };
 
 const romanizedSearchPattern = /[a-z]{2,}/iu;
@@ -364,9 +379,16 @@ export class LibraryService {
     return this.scanJobQueue.scanPaths(folder, paths, options);
   }
 
-  rescanEmbeddedTags(mode: Exclude<NonNullable<LibraryScanOptions['mode']>, 'normal'>): LibraryScanStatus[] {
+  async rescanEmbeddedTags(mode: Exclude<NonNullable<LibraryScanOptions['mode']>, 'normal'>): Promise<LibraryScanStatus[]> {
     const folders = this.getFolders();
-    return folders.map((folder) => this.scanJobQueue.scanStoredTracks(folder, { mode }));
+    const statuses: LibraryScanStatus[] = [];
+
+    for (const folder of folders) {
+      statuses.push(this.scanJobQueue.scanStoredTracks(folder, { mode, reduceScanPressure: true }));
+      await yieldToMainLoop();
+    }
+
+    return statuses;
   }
 
   getScanStatus(jobId: string): LibraryScanStatus {
@@ -839,6 +861,8 @@ export class LibraryService {
   }
 
   getDiagnostics(): LibraryDiagnostics {
+    const nativeFileScanner = getNativeFileScannerDiagnostics(() => this.readAppSettings().nativeFileScannerEnabled === true);
+    const nativeMetadataReader = getNativeMetadataReaderDiagnostics(() => this.readAppSettings().nativeMetadataReaderEnabled === true);
     return {
       ...this.store.getDiagnostics({
         databasePath: this.databasePath,
@@ -851,6 +875,8 @@ export class LibraryService {
         coverConcurrency: this.scanConcurrency.coverConcurrency,
         audioAnalysisEnabled: this.readAppSettings().audioAnalysisEnabled,
       }),
+      nativeFileScanner,
+      nativeMetadataReader,
       groupingRefreshQueued: this.groupingRefreshQueued,
       lastGroupingRefreshDurationMs: this.lastGroupingRefreshDurationMs,
       lastGroupingRefreshAt: this.lastGroupingRefreshAt,
@@ -1692,6 +1718,14 @@ export class LibraryService {
     return this.networkMetadataService.showCandidates(trackId);
   }
 
+  getBestNetworkCoverUrlForTrack(trackId: string): string | null {
+    if (!this.networkMetadataService) {
+      return null;
+    }
+
+    return this.networkMetadataService.getBestCoverUrlForTrack(trackId);
+  }
+
   async searchNetworkTagCandidates(request: NetworkTagCandidateSearchRequest): Promise<NetworkTagCandidate[]> {
     if (!this.networkMetadataService) {
       throw new Error('Network metadata service is unavailable');
@@ -2396,6 +2430,8 @@ export class LibraryService {
     candidates: LibraryMoveCandidate[],
   ): LibraryLabState {
     const lastWatcherEventAt = watcherDiagnostics.recentEvents.at(-1)?.timestamp ?? null;
+    const nativeFileScanner = getNativeFileScannerDiagnostics(() => this.readAppSettings().nativeFileScannerEnabled === true);
+    const nativeMetadataReader = getNativeMetadataReaderDiagnostics(() => this.readAppSettings().nativeMetadataReaderEnabled === true);
 
     return {
       watcherEnabled: watcherDiagnostics.enabled,
@@ -2432,6 +2468,8 @@ export class LibraryService {
       lastGroupingRefreshAt: this.lastGroupingRefreshAt,
       groupingRefreshDelayedForPlaybackCount: this.groupingRefreshDelayedForPlaybackCount,
       lastGroupingRefreshError: this.lastGroupingRefreshError,
+      nativeFileScanner,
+      nativeMetadataReader,
       recentWatcherEvents: watcherDiagnostics.recentEvents.slice(-20).reverse(),
     };
   }
@@ -2587,6 +2625,28 @@ const shouldDelayGroupingRefreshForAudio = async (): Promise<boolean> => {
   return isPlaybackActiveForMainWork();
 };
 
+const completedScanSnapshotPlaybackDelayMs = 2_000;
+const completedScanSnapshotMaxPlaybackDeferrals = 30;
+
+const waitForCompletedScanSnapshotSlot = async (
+  scanStatus: LibraryScanStatus,
+  phase: string,
+): Promise<void> => {
+  await yieldToMainLoop();
+  for (let attempt = 0; attempt < completedScanSnapshotMaxPlaybackDeferrals; attempt += 1) {
+    if (!(await shouldDelayGroupingRefreshForAudio())) {
+      return;
+    }
+    logLibraryScanPerf({
+      jobId: scanStatus.id,
+      folderId: scanStatus.folderId,
+      phase: 'createCompletedScanSnapshot',
+      detail: `deferred_for_playback;dataProtectionPhase=${phase};attempt=${attempt + 1}`,
+    });
+    await delay(completedScanSnapshotPlaybackDelayMs);
+  }
+};
+
 export const createLibraryService = (
   databasePath: string,
   dependencies: LibraryServiceDependencies = {},
@@ -2611,7 +2671,12 @@ export const createLibraryService = (
     artistMergeStrategy: readSettings().artistMergeStrategy ?? 'standard',
     remoteAlbumMergeStrategy: readSettings().remoteAlbumMergeStrategy ?? 'conservative',
   }));
-  const fileScanner = dependencies.fileScanner ?? new TsFileScanner();
+  const fileScanner = dependencies.fileScanner ?? new NativeThenTsFileScanner(
+    undefined,
+    new TsFileScanner(),
+    console.warn,
+    () => getAppSettings().nativeFileScannerEnabled === true,
+  );
   const coverCacheDir = dependencies.coverCacheDir
     ? resolveCoverCacheDir(databasePath, dependencies.coverCacheDir)
     : resolveConfiguredCoverCacheDir(databasePath, (dependencies.appSettings ?? getAppSettingsSafe)());
@@ -2631,9 +2696,8 @@ export const createLibraryService = (
       : createWorkerBackedLibraryScanWorkers({
           workerCount: Math.max(scanConcurrency.metadataConcurrency, scanConcurrency.coverConcurrency),
         });
-  const metadataReader =
-    dependencies.metadataReader ??
-    (dependencies.metadataService
+  const tsMetadataReader =
+    dependencies.metadataService
       ? {
           read: async (filePath: string) =>
             inflateMetadataResult(
@@ -2645,7 +2709,15 @@ export const createLibraryService = (
               }),
             ),
         }
-      : workerBackedScanWorkers?.metadataReader ?? new TsMetadataReader());
+      : workerBackedScanWorkers?.metadataReader ?? new TsMetadataReader();
+  const metadataReader =
+    dependencies.metadataReader ??
+    new NativeThenTsMetadataReader(
+      undefined,
+      tsMetadataReader,
+      console.warn,
+      () => getAppSettings().nativeMetadataReaderEnabled === true,
+    );
   const coverExtractor = dependencies.coverExtractor ?? workerBackedScanWorkers?.coverExtractor ?? new TsCoverExtractor();
   const scanJobQueue = new ScanJobQueue(store, fileScanner, metadataReader, coverExtractor, albumService, {
     coverCacheDir,
@@ -2662,10 +2734,27 @@ export const createLibraryService = (
     },
     onDeferredGroupingRefresh: broadcastLibraryChanged,
     createDatabaseScanGuard: (scanStatus) =>
-      readSettings().dataProtectionDisabled === true
+      shouldDisableScanGuardForDiagnostics()
+        ? (logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'createDatabaseScanGuard',
+            detail: 'scan guard disabled for diagnostics',
+          }), null)
+        : readSettings().dataProtectionDisabled === true
         ? null
         : createScanGuardLibraryDatabaseSnapshot(scanStatus, dirname(databasePath)),
     createCompletedScanSnapshot: async (scanStatus) => {
+      if (shouldDisableScanGuardForDiagnostics()) {
+        logLibraryScanPerf({
+          jobId: scanStatus.id,
+          folderId: scanStatus.folderId,
+          phase: 'createCompletedScanSnapshot',
+          detail: 'scan guard disabled for diagnostics',
+        });
+        return;
+      }
+
       if (
         scanStatus.addedTracks === 0 &&
         scanStatus.updatedTracks === 0 &&
@@ -2679,7 +2768,10 @@ export const createLibraryService = (
         return;
       }
 
-      await createDataProtectionSnapshot('scan-completed-library-snapshot', dirname(databasePath));
+      await createDataProtectionSnapshot('scan-completed-library-snapshot', dirname(databasePath), new Date(), {
+        scope: 'background',
+        beforePhase: (phase) => waitForCompletedScanSnapshotSlot(scanStatus, phase),
+      });
     },
     recoverDatabaseFromScanGuard: async (snapshot, scanStatus, error) => {
       if (!snapshot) {
@@ -2702,13 +2794,70 @@ export const createLibraryService = (
 
       await restore();
     },
-    checkDatabaseHealth: (scanStatus) => {
+    checkDatabaseHealth: async (scanStatus) => {
+      if (shouldDisableScanHealthCheckForDiagnostics()) {
+        logLibraryScanPerf({
+          jobId: scanStatus.id,
+          folderId: scanStatus.folderId,
+          phase: 'checkDatabaseHealth',
+          detail: 'scan health check disabled for diagnostics',
+        });
+        return;
+      }
+
       try {
-        assertDatabaseHealthy(databasePath);
-        if (dependencies.checkpointDatabase) {
-          dependencies.checkpointDatabase('scan-health-check');
+        if (!shouldRunScanHealthCheckSynchronouslyForDiagnostics() && (await shouldDelayGroupingRefreshForAudio())) {
+          const openHealthStartedAtMs = performance.now();
+          assertDatabaseOpenHealthy(databasePath);
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.assert_open_for_playback',
+            durationMs: performance.now() - openHealthStartedAtMs,
+          });
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.assert_cached',
+            detail: 'skipped_full_quick_check_during_playback',
+          });
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.checkpoint',
+            detail: 'skipped_during_playback',
+          });
+          return;
+        }
+
+        const healthStartedAtMs = performance.now();
+        assertDatabaseHealthy(databasePath, { cache: true });
+        logLibraryScanPerf({
+          jobId: scanStatus.id,
+          folderId: scanStatus.folderId,
+          phase: 'checkDatabaseHealth.assert_cached',
+          durationMs: performance.now() - healthStartedAtMs,
+        });
+        if (shouldCheckpointScanHealthForDiagnostics()) {
+          const checkpointStartedAtMs = performance.now();
+          if (dependencies.checkpointDatabase) {
+            dependencies.checkpointDatabase('scan-health-check');
+          } else {
+            database.pragma('wal_checkpoint(PASSIVE)');
+          }
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.checkpoint',
+            durationMs: performance.now() - checkpointStartedAtMs,
+          });
         } else {
-          database.pragma('wal_checkpoint(PASSIVE)');
+          logLibraryScanPerf({
+            jobId: scanStatus.id,
+            folderId: scanStatus.folderId,
+            phase: 'checkDatabaseHealth.checkpoint',
+            detail: 'skipped_by_default',
+          });
         }
       } catch (error) {
         recordLibraryDatabaseMaintenanceEvent({

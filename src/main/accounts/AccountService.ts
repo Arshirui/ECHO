@@ -3,8 +3,9 @@ import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import {
   type AccountCredentials,
+  accountBrowsers,
   accountProviders,
-  youtubeBrowsers,
+  type AccountBrowser,
   type AccountProvider,
   type AccountStatus,
   type YouTubeBrowser,
@@ -40,7 +41,10 @@ export const isAccountProvider = (value: unknown): value is AccountProvider =>
   typeof value === 'string' && accountProviders.includes(value as AccountProvider);
 
 export const isYouTubeBrowser = (value: unknown): value is YouTubeBrowser =>
-  typeof value === 'string' && youtubeBrowsers.includes(value as YouTubeBrowser);
+  isAccountBrowser(value);
+
+export const isAccountBrowser = (value: unknown): value is AccountBrowser =>
+  typeof value === 'string' && accountBrowsers.includes(value as AccountBrowser);
 
 const normalizeStoredRecord = (value: unknown): StoredAccountRecord => {
   if (!isRecord(value)) {
@@ -49,7 +53,7 @@ const normalizeStoredRecord = (value: unknown): StoredAccountRecord => {
 
     return {
       cookie: typeof value.cookie === 'string' ? value.cookie : undefined,
-      browser: isYouTubeBrowser(value.browser) ? value.browser : undefined,
+      browser: isAccountBrowser(value.browser) ? value.browser : undefined,
       accessToken: typeof value.accessToken === 'string' ? value.accessToken : undefined,
       refreshToken: typeof value.refreshToken === 'string' ? value.refreshToken : undefined,
       tokenType: typeof value.tokenType === 'string' ? value.tokenType : undefined,
@@ -254,18 +258,26 @@ export class AccountService {
   }
 
   setYouTubeBrowser(browser: YouTubeBrowser): AccountStatus {
-    if (!isYouTubeBrowser(browser)) {
+    if (!isAccountBrowser(browser)) {
+      throw new Error('browser must be edge, chrome, firefox, or none');
+    }
+
+    return this.setAccountBrowser('youtube', browser);
+  }
+
+  setAccountBrowser(provider: Extract<AccountProvider, 'youtube' | 'soundcloud'>, browser: AccountBrowser): AccountStatus {
+    if (!isAccountBrowser(browser)) {
       throw new Error('browser must be edge, chrome, firefox, or none');
     }
 
     const records = this.readRecords();
-    const provider = this.providers.youtube;
-    if (!(provider instanceof YouTubeAccountProvider)) {
-      throw new Error('YouTube provider is not available');
+    const accountProvider = this.providers[provider];
+    if (!(accountProvider instanceof YouTubeAccountProvider) && !(accountProvider instanceof SoundCloudAccountProvider)) {
+      throw new Error('provider does not support system browser login');
     }
-    records.youtube = provider.setBrowser(browser, records.youtube, nowIso());
+    records[provider] = accountProvider.setBrowser(browser, records[provider], nowIso());
     this.writeRecords(records);
-    return this.getStatus('youtube');
+    return this.getStatus(provider);
   }
 
   getSanitizedRecords(): unknown {

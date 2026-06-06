@@ -142,6 +142,23 @@ describe('AlbumTrackList', () => {
     expect(onPlayTrack).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }));
   });
 
+  it('groups loaded album tracks by disc number when multi-disc tags are present', async () => {
+    const getAlbumTracks = vi.fn().mockResolvedValue(
+      page([
+        track('1', { discNo: 1, trackNo: 1, title: 'Disc one opener' }),
+        track('2', { discNo: 2, trackNo: 1, title: 'Disc two opener' }),
+      ]),
+    );
+    installLibrary(getAlbumTracks);
+
+    render(<AlbumTrackList albumId="album-1" currentTrackId={null} onPlayTrack={vi.fn()} />);
+
+    expect(await screen.findByText('Disc 1')).toBeTruthy();
+    expect(screen.getByText('Disc 2')).toBeTruthy();
+    expect(screen.getByText('Disc one opener')).toBeTruthy();
+    expect(screen.getByText('Disc two opener')).toBeTruthy();
+  });
+
   it('opens the shared track menu from row right click', async () => {
     const getAlbumTracks = vi.fn().mockResolvedValue(page([track('1')]));
     const onOpenTrackMenu = vi.fn();

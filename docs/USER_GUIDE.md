@@ -115,6 +115,8 @@ EQ 用来调整声音风格。新手先记住两件事：
 1. 声音爆、糊、刺耳时，优先降低 Preamp，不要只往上推频段。
 2. 想确认原始输出，就先关闭 EQ 和 Preamp。
 
+新的调音入口在左侧 `DSP` 工作台。第一次使用建议先读 [DSP 新手教程](./ECHO_NEXT_DSP_BEGINNER_GUIDE.md)，只想快速知道 `Simple` 模式怎么用可以看 [DSP Simple 教程](./ECHO_NEXT_DSP_SIMPLE_GUIDE.md)。
+
 ReplayGain 用来让不同歌曲响度更接近，适合随机播放、混合歌单、夜间听歌。不适合做 bit-perfect 验证，也不适合你想保留每张专辑原始响度关系的场景。
 
 变速适合播客、练习、Nightcore / Daycore 等特殊玩法。排查播放问题时，先恢复正常速度。

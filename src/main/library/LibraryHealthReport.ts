@@ -101,6 +101,21 @@ const emptyLabState = (): LibraryLabState => ({
   lastGroupingRefreshAt: null,
   groupingRefreshDelayedForPlaybackCount: 0,
   lastGroupingRefreshError: null,
+  nativeFileScanner: {
+    enabled: false,
+    enablementSource: 'default',
+    binaryFound: false,
+    binaryPath: null,
+    willUseNative: false,
+  },
+  nativeMetadataReader: {
+    enabled: false,
+    enablementSource: 'default',
+    binaryFound: false,
+    binaryPath: null,
+    willUseNative: false,
+    supportedFormats: ['FLAC', 'MP3', 'M4A/MP4'],
+  },
   recentWatcherEvents: [],
 });
 

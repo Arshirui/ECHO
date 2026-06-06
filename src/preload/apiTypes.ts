@@ -19,7 +19,7 @@ import type {
   SettingsImportResult,
 } from '../shared/types/settingsBackup';
 import type { UpdateStatus } from '../shared/types/updates';
-import type { AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
+import type { AccountBrowser, AccountLoginStartResult, AccountProvider, AccountStatus, YouTubeBrowser } from '../shared/types/accounts';
 import type { AppCacheInventory, CoverCacheMigrationResult, SetCoverCacheDirectoryRequest } from '../shared/types/coverCache';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus, ConnectStartRequest } from '../shared/types/connect';
 import type {
@@ -103,6 +103,7 @@ import type {
   LibraryInboxUpdateStateResult,
   LibraryPlaylist,
   LibraryPlaylistItem,
+  LibraryScanOptions,
   LibraryScanStatus,
   LibraryScanMode,
   LibrarySummary,
@@ -366,7 +367,7 @@ export type EchoApi = {
     getFolderTracks: (query: LibraryFolderTracksQuery) => Promise<LibraryPage<LibraryTrack>>;
     openLibraryFolderPath: (request: LibraryFolderPathRequest) => Promise<void>;
     removeFolder: (folderId: string) => Promise<void>;
-    scanFolder: (folderId: string) => Promise<LibraryScanStatus>;
+    scanFolder: (folderId: string, options?: Pick<LibraryScanOptions, 'reduceScanPressure'>) => Promise<LibraryScanStatus>;
     scanFolderChanges: (folderId: string) => Promise<LibraryScanStatus>;
     rescanEmbeddedTags: (mode: Exclude<LibraryScanMode, 'normal'>) => Promise<LibraryScanStatus[]>;
     getScanStatus: (jobId: string) => Promise<LibraryScanStatus>;
@@ -770,6 +771,7 @@ export type EchoApi = {
     clear: (provider: AccountProvider) => Promise<AccountStatus>;
     check: (provider: AccountProvider) => Promise<AccountStatus>;
     checkAll: () => Promise<AccountStatus[]>;
+    setBrowser: (provider: AccountProvider, browser: AccountBrowser) => Promise<AccountStatus>;
     setYouTubeBrowser: (browser: YouTubeBrowser) => Promise<AccountStatus>;
     onStatusesChanged: (handler: (statuses: AccountStatus[]) => void) => () => void;
   };

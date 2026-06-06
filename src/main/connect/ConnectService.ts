@@ -38,7 +38,16 @@ type ConnectEvents = {
 
 type HqPlayerConnectService = Pick<
   HqPlayerService,
-  'getSettings' | 'setSettings' | 'getStatus' | 'testConnection' | 'createPlaybackHandoff' | 'sendLastPlaybackControl' | 'seekPlayback' | 'stopPlayback'
+  | 'getSettings'
+  | 'setSettings'
+  | 'getStatus'
+  | 'testConnection'
+  | 'createPlaybackHandoff'
+  | 'sendLastPlaybackControl'
+  | 'playPlayback'
+  | 'pausePlayback'
+  | 'seekPlayback'
+  | 'stopPlayback'
 >;
 
 type HqPlayerConnectSettings = ReturnType<HqPlayerConnectService['getSettings']>;
@@ -98,10 +107,10 @@ const airPlayPlaceholder: ConnectDevice = {
 };
 
 const hqPlayerDeviceCapabilities: ConnectDevice['capabilities'] = {
-  canPlay: false,
-  canPause: false,
-  canStop: false,
-  canSeek: false,
+  canPlay: true,
+  canPause: true,
+  canStop: true,
+  canSeek: true,
   canSetVolume: false,
   supportsMetadata: true,
   supportsSetNext: false,
@@ -115,6 +124,7 @@ const hqPlayerReasonText = (reason: string | null | undefined): string =>
 const hqPlayerPlaybackConfirmAttempts = 4;
 const hqPlayerPlaybackConfirmDelayMs = 250;
 const hqPlayerStatusSyncIntervalMs = 2500;
+const hqPlayerControlStatusSettleDelayMs = 350;
 const hqPlayerEndedGraceSeconds = 5;
 const dlnaStatusSyncIntervalMs = 3000;
 const dlnaDeviceRetentionMs = 10 * 60 * 1000;
@@ -335,6 +345,18 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   }
 
   async play(): Promise<ConnectSessionStatus> {
+    if (this.session.protocol === 'hqplayer' && this.session.deviceId === hqPlayerConnectDeviceId) {
+      const send = await this.hqPlayerService.playPlayback();
+      if (send.state !== 'sent') {
+        throw new Error(send.message ?? hqPlayerReasonText(send.reason));
+      }
+
+      this.startHqPlayerStatusSync();
+      this.setSession({ ...this.getStatus(), state: 'playing', error: null, updatedAt: new Date().toISOString() });
+      this.syncHqPlayerSessionStatusAfterControlSettle();
+      return this.getStatus();
+    }
+
     const device = this.requireActiveDlnaDevice();
     await playDlna(device);
     this.startDlnaStatusSync();
@@ -343,6 +365,17 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
   }
 
   async pause(): Promise<ConnectSessionStatus> {
+    if (this.session.protocol === 'hqplayer' && this.session.deviceId === hqPlayerConnectDeviceId) {
+      const send = await this.hqPlayerService.pausePlayback();
+      if (send.state !== 'sent') {
+        throw new Error(send.message ?? hqPlayerReasonText(send.reason));
+      }
+
+      this.setSession({ ...this.getStatus(), state: 'paused', error: null, updatedAt: new Date().toISOString() });
+      this.syncHqPlayerSessionStatusAfterControlSettle();
+      return this.getStatus();
+    }
+
     const device = this.requireActiveDlnaDevice();
     await pauseDlna(device);
     this.setSession({ ...this.getStatus(), state: 'paused', error: null, updatedAt: new Date().toISOString() });
@@ -824,6 +857,12 @@ export class ConnectService extends EventEmitter<ConnectEvents> {
       void this.syncHqPlayerSessionStatus();
     }, hqPlayerStatusSyncIntervalMs);
     (this.hqPlayerStatusTimer as { unref?: () => void }).unref?.();
+  }
+
+  private syncHqPlayerSessionStatusAfterControlSettle(): void {
+    setTimeout(() => {
+      void this.syncHqPlayerSessionStatus();
+    }, hqPlayerControlStatusSettleDelayMs).unref?.();
   }
 
   private stopHqPlayerStatusSync(): void {

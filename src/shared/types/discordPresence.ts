@@ -8,6 +8,7 @@ export type DiscordPresenceTrack = {
   artist: string;
   album: string | null;
   albumArtist: string | null;
+  coverImageKey: string | null;
   durationSeconds: number;
   positionSeconds: number;
   codec: string | null;

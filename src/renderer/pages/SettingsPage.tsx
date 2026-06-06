@@ -60,7 +60,7 @@ import {
   normalizeSidebarRouteOrder,
   type SidebarRouteId,
 } from '../../shared/types/sidebar';
-import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
+import type { AccountBrowser, AccountProvider, AccountStatus, YouTubeBrowser } from '../../shared/types/accounts';
 import type {
   ArtistOnlineInfoSource,
   ArtistStreamingAlbumsProvider,
@@ -70,6 +70,7 @@ import type {
   AppThemePreset,
   AppThemePresetOverrides,
   AppThemeToneOverride,
+  AutoUpdateSource,
   NetworkProxyMode,
   NetworkProxyTestResult,
 } from '../../shared/types/appSettings';
@@ -382,6 +383,16 @@ const defaultTidalRedirectUri = 'http://127.0.0.1:43880/tidal/callback';
 const spotifyDeveloperDashboardUrl = 'https://developer.spotify.com/dashboard';
 const tidalDeveloperDashboardUrl = 'https://developer.tidal.com/dashboard';
 const discogsDeveloperSettingsUrl = 'https://www.discogs.com/settings/developers';
+const officialWebsiteUrl = 'https://echonext.moe';
+const userDocumentationUrl = 'https://echonext.moe/zh/docs/';
+const baiduPanShareUrl = 'https://pan.baidu.com/s/1ta0McyhY9knaD6FT5xW3Og?pwd=echo';
+const autoUpdateSourceOptions: Array<{ source: AutoUpdateSource; label: string; description: string }> = [
+  { source: 'official', label: 'GitHub', description: '官方直连' },
+  { source: 'ghfast', label: 'ghfast.top', description: '实测可读 latest.yml' },
+  { source: 'ghproxyVip', label: 'ghproxy.vip', description: '实测可读 API 和文件' },
+  { source: 'ghproxyCxkpro', label: 'cxkpro', description: '实测可读 latest.yml' },
+  { source: 'custom', label: 'Custom', description: '自定义 generic 源' },
+];
 const playbackAdvancedPanelExpandedStorageKey = 'echo:settings:playback:advanced-panel-expanded';
 const integrationsAccountPanelExpandedStorageKey = 'echo:settings:integrations:account-panel-expanded';
 const integrationsCredentialPanelExpandedStorageKey = 'echo:settings:integrations:credential-panel-expanded';
@@ -873,6 +884,18 @@ const scheduleSettingsIdleTask = (callback: () => void): (() => void) => {
     }
   };
 };
+
+const yieldToSettingsPaint = (): Promise<void> =>
+  new Promise((resolve) => {
+    if (typeof window.requestAnimationFrame !== 'function') {
+      window.setTimeout(resolve, 0);
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      window.setTimeout(resolve, 0);
+    });
+  });
 
 const settingsNavItems: SettingsNavItem[] = [
   { key: 'general', labelKey: 'settings.nav.general.label', descriptionKey: 'settings.nav.general.description', icon: MessageSquare },
@@ -3635,10 +3658,12 @@ const renderAccountStatusBadge = (
 };
 
 const AccountCookieCard = ({
+  browser,
   busyAction,
   cookieValue,
   error,
   message,
+  onBrowserChange,
   onChangeCookie,
   onCheck,
   onClear,
@@ -3647,10 +3672,12 @@ const AccountCookieCard = ({
   provider,
   status,
 }: {
+  browser?: AccountBrowser;
   busyAction?: AccountBusyAction;
   cookieValue: string;
   error?: string | null;
   message?: string | null;
+  onBrowserChange?: (browser: AccountBrowser) => void;
   onChangeCookie: (value: string) => void;
   onCheck: () => void;
   onClear: () => void;
@@ -3660,6 +3687,7 @@ const AccountCookieCard = ({
   status?: AccountStatus;
 }): JSX.Element => {
   const { t } = useI18n();
+  const browserOptions = buildYouTubeBrowserOptions(t);
   return (
     <article className="settings-account-row" aria-label={accountProviderLabels[provider]}>
       <div className="settings-account-summary">
@@ -3678,6 +3706,18 @@ const AccountCookieCard = ({
           autoComplete="off"
         />
       </label>
+      {provider === 'soundcloud' && browser && onBrowserChange ? (
+        <label className="settings-select-field settings-account-browser-field">
+          <span>{t('settings.integrations.accounts.youtube.browser')}</span>
+          <select value={browser} onChange={(event) => onBrowserChange(event.target.value as AccountBrowser)} disabled={busyAction === 'browser'}>
+            {browserOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <div className="settings-account-actions">
         <button className="settings-action-button" type="button" disabled={busyAction === 'save' || cookieValue.trim().length === 0} onClick={onSave}>
           <Save size={15} />
@@ -4026,7 +4066,9 @@ export const SettingsPage = (): JSX.Element => {
   const [pluginThemeOptions, setPluginThemeOptions] = useState<PluginThemeOption[]>([]);
   const [themeCustomTone, setThemeCustomTone] = useState<ThemeTone>('light');
   const [themeCustomDraft, setThemeCustomDraft] = useState<AppThemeToneOverride>({});
+  const [themeCustomPanelOpen, setThemeCustomPanelOpen] = useState(false);
   const [themeCustomAdvancedOpen, setThemeCustomAdvancedOpen] = useState(false);
+  const [appearanceTypographyOpen, setAppearanceTypographyOpen] = useState(false);
   const [themeCustomMessage, setThemeCustomMessage] = useState<string | null>(null);
   const pendingThemeCopyDraftRef = useRef<{ draft: AppThemeToneOverride; tone: ThemeTone } | null>(null);
   const skipNextThemePreviewRef = useRef(false);
@@ -4052,11 +4094,13 @@ export const SettingsPage = (): JSX.Element => {
   const [accountErrors, setAccountErrors] = useState<Partial<Record<AccountProvider, string | null>>>({});
   const [accountMessages, setAccountMessages] = useState<Partial<Record<AccountProvider, string | null>>>({});
   const [youtubeBrowser, setYoutubeBrowser] = useState<YouTubeBrowser>('none');
+  const [soundCloudBrowser, setSoundCloudBrowser] = useState<AccountBrowser>('none');
   const [lastFmAuthToken, setLastFmAuthToken] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [deferredAboutReleaseNotes, setDeferredAboutReleaseNotes] = useState<string | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
+  const [autoUpdateCustomUrlDraft, setAutoUpdateCustomUrlDraft] = useState('');
   const [lastCrashSummary, setLastCrashSummary] = useState<LastCrashSummary | null>(null);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [diagnosticsMessage, setDiagnosticsMessage] = useState<string | null>(null);
@@ -4250,6 +4294,43 @@ export const SettingsPage = (): JSX.Element => {
           'hide sidebar',
           'auto hide sidebar',
           'sidebar drawer',
+        ],
+      },
+      {
+        id: 'row-sidebar-icon-only',
+        sectionKey: 'general',
+        targetId: 'settings-row-sidebar-icon-only',
+        title: t('settings.general.sidebarIconOnly.title'),
+        description: t('settings.general.sidebarIconOnly.description'),
+        terms: [
+          t('settings.general.sidebarIconOnly.title'),
+          t('settings.general.sidebarIconOnly.description'),
+          '\u4fa7\u680f\u4ec5\u663e\u793a\u56fe\u6807',
+          '\u53ea\u663e\u793a\u56fe\u6807',
+          '\u56fe\u6807\u4fa7\u680f',
+          'sidebar',
+          'icons only',
+          'icon only sidebar',
+          'compact sidebar',
+        ],
+      },
+      {
+        id: 'row-feature-comments-hidden',
+        sectionKey: 'general',
+        targetId: 'settings-row-feature-comments-hidden',
+        title: t('settings.general.featureCommentsHidden.title'),
+        description: t('settings.general.featureCommentsHidden.description'),
+        terms: [
+          t('settings.general.featureCommentsHidden.title'),
+          t('settings.general.featureCommentsHidden.description'),
+          '\u5173\u95ed\u529f\u80fd\u6ce8\u91ca',
+          '\u9690\u85cf\u529f\u80fd\u8bf4\u660e',
+          '\u5173\u95ed\u8bf4\u660e',
+          '\u7b80\u6d01\u754c\u9762',
+          'hide comments',
+          'hide descriptions',
+          'feature comments',
+          'minimal ui',
         ],
       },
       {
@@ -4712,6 +4793,45 @@ export const SettingsPage = (): JSX.Element => {
           '\u81ea\u52a8\u626b\u63cf',
           '\u81ea\u52a8\u5237\u65b0',
           '\u65b0\u589e\u6b4c\u66f2',
+        ],
+      },
+      {
+        id: 'row-native-file-scanner',
+        sectionKey: 'library',
+        targetId: 'settings-row-native-file-scanner',
+        title: 'Native File Scanner\uff08\u5b9e\u9a8c\uff09',
+        description: '\u4f7f\u7528 C++ \u72ec\u7acb\u8fdb\u7a0b\u53d1\u73b0\u97f3\u9891\u6587\u4ef6\uff1b\u4e0d\u8bfb\u53d6\u5143\u6570\u636e\u3001\u4e0d\u63d0\u53d6\u5c01\u9762\u3001\u4e0d\u5199\u5165\u66f2\u5e93\u6570\u636e\u5e93\u3002',
+        terms: [
+          'Native File Scanner',
+          'native scanner',
+          'C++ scanner',
+          'file discovery',
+          'NDJSON',
+          '\u539f\u751f\u626b\u63cf\u5668',
+          '\u6587\u4ef6\u53d1\u73b0',
+          '\u626b\u63cf\u6027\u80fd',
+          '\u5927\u66f2\u5e93',
+        ],
+      },
+      {
+        id: 'row-native-metadata-reader',
+        sectionKey: 'library',
+        targetId: 'settings-row-native-metadata-reader',
+        title: 'Native Metadata Reader\uff08\u5b9e\u9a8c\uff09',
+        description: '\u4f7f\u7528 C++ \u72ec\u7acb\u8fdb\u7a0b\u8bfb\u53d6 FLAC\u3001MP3\u3001M4A \u57fa\u7840\u5143\u6570\u636e\uff1b\u4e0d\u63d0\u53d6\u5c01\u9762\u3001\u4e0d\u5199\u5165\u66f2\u5e93\u6570\u636e\u5e93\uff0c\u5931\u8d25\u65f6\u56de\u9000 TypeScript\u3002',
+        terms: [
+          'Native Metadata Reader',
+          'native metadata',
+          'C++ metadata',
+          'FLAC',
+          'MP3',
+          'M4A',
+          'ID3',
+          'Vorbis Comment',
+          'MP4 atoms',
+          '\u539f\u751f\u5143\u6570\u636e',
+          '\u5143\u6570\u636e\u8bfb\u53d6',
+          '\u5927\u66f2\u5e93',
         ],
       },
       {
@@ -5279,6 +5399,7 @@ export const SettingsPage = (): JSX.Element => {
       setThemeCustomThemes(customThemes);
       setActiveThemeCustomId(customThemeId);
       setSelectedThemePreset(basePreset);
+      setAutoUpdateCustomUrlDraft(settings.autoUpdateCustomUrl ?? '');
       updateThemePreferences(
         settings.appearanceTheme ?? defaultThemeMode,
         basePreset,
@@ -5748,6 +5869,14 @@ export const SettingsPage = (): JSX.Element => {
   }, [accountStatusByProvider.youtube?.displayName, t]);
 
   useEffect(() => {
+    const displayName = accountStatusByProvider.soundcloud?.displayName?.toLowerCase() ?? '';
+    const savedBrowser = buildYouTubeBrowserOptions(t).find((option) => option.value !== 'none' && displayName.includes(option.value))?.value;
+    if (savedBrowser) {
+      setSoundCloudBrowser(savedBrowser);
+    }
+  }, [accountStatusByProvider.soundcloud?.displayName, t]);
+
+  useEffect(() => {
     if (statusSelectedDevice && compatibleDevices.some((device) => device.id === statusSelectedDevice.id)) {
       return;
     }
@@ -5892,6 +6021,8 @@ export const SettingsPage = (): JSX.Element => {
         asioUnavailableFallbackEnabled: appSettings?.audioAsioUnavailableFallbackEnabled === true,
         exclusiveInstabilityFallbackEnabled: appSettings?.audioExclusiveInstabilityFallbackEnabled === true,
         soxrFallbackEnabled: appSettings?.audioSoxrFallbackEnabled !== false,
+        echoSrcMode: appSettings?.audioEchoSrcMode ?? 'off',
+        echoSrcQualityProfile: appSettings?.audioEchoSrcQualityProfile ?? 'transparent',
       };
 
       if (nextDevice) {
@@ -5915,6 +6046,8 @@ export const SettingsPage = (): JSX.Element => {
       appSettings?.audioAsioNativeDsdExperimentalEnabled,
       appSettings?.audioExclusiveInstabilityFallbackEnabled,
       appSettings?.audioSoxrFallbackEnabled,
+      appSettings?.audioEchoSrcMode,
+      appSettings?.audioEchoSrcQualityProfile,
       appSettings?.audioDsdOutputMode,
       appSettings?.audioUseJuceDecode,
       appSettings?.audioUseJuceOutput,
@@ -6722,6 +6855,9 @@ export const SettingsPage = (): JSX.Element => {
       .setSettings(patch)
       .then((settings) => {
         setAppSettings(settings);
+        if (Object.prototype.hasOwnProperty.call(patch, 'autoUpdateCustomUrl')) {
+          setAutoUpdateCustomUrlDraft(settings.autoUpdateCustomUrl ?? '');
+        }
         if (Object.prototype.hasOwnProperty.call(patch, 'taskbarPlaybackControlsEnabled')) {
           void refreshTaskbarPlaybackStatus();
         }
@@ -7330,6 +7466,20 @@ export const SettingsPage = (): JSX.Element => {
     }
   };
 
+  const handleAutoUpdateSourceSelect = (source: AutoUpdateSource): void => {
+    patchAppSettings({
+      autoUpdateSource: source,
+      autoUpdateCustomUrl: source === 'custom' ? autoUpdateCustomUrlDraft.trim() || null : appSettings?.autoUpdateCustomUrl ?? null,
+    });
+  };
+
+  const handleAutoUpdateCustomUrlSave = (): void => {
+    patchAppSettings({
+      autoUpdateSource: 'custom',
+      autoUpdateCustomUrl: autoUpdateCustomUrlDraft.trim() || null,
+    });
+  };
+
   const handleOpenRepository = async (): Promise<void> => {
     const app = getAppBridge();
 
@@ -7687,6 +7837,8 @@ export const SettingsPage = (): JSX.Element => {
       updateAccountStatus(await accounts.clear(provider));
       if (provider === 'youtube') {
         setYoutubeBrowser('none');
+      } else if (provider === 'soundcloud') {
+        setSoundCloudBrowser('none');
       }
     } catch (accountError) {
       setAccountErrors((current) => ({ ...current, [provider]: accountError instanceof Error ? accountError.message : String(accountError) }));
@@ -7712,6 +7864,26 @@ export const SettingsPage = (): JSX.Element => {
       setAccountErrors((current) => ({ ...current, youtube: accountError instanceof Error ? accountError.message : String(accountError) }));
     } finally {
       setAccountBusyFor('youtube', null);
+    }
+  };
+
+  const handleSoundCloudBrowserChange = async (browser: AccountBrowser): Promise<void> => {
+    const accounts = getAccountsBridge();
+    setSoundCloudBrowser(browser);
+
+    if (!accounts) {
+      return;
+    }
+
+    try {
+      setAccountBusyFor('soundcloud', 'browser');
+      setAccountErrors((current) => ({ ...current, soundcloud: null }));
+      setAccountMessages((current) => ({ ...current, soundcloud: browser === 'none' ? null : `${browser} browser login state saved.` }));
+      updateAccountStatus(await accounts.setBrowser('soundcloud', browser));
+    } catch (accountError) {
+      setAccountErrors((current) => ({ ...current, soundcloud: accountError instanceof Error ? accountError.message : String(accountError) }));
+    } finally {
+      setAccountBusyFor('soundcloud', null);
     }
   };
 
@@ -7748,6 +7920,37 @@ export const SettingsPage = (): JSX.Element => {
         setAccountErrors((current) => ({ ...current, youtube: accountError instanceof Error ? accountError.message : String(accountError) }));
       } finally {
         setAccountBusyFor('youtube', null);
+      }
+      return;
+    }
+
+    if (provider === 'soundcloud') {
+      if (soundCloudBrowser === 'none' && !accountCookies.soundcloud.trim()) {
+        setAccountErrors((current) => ({ ...current, soundcloud: 'Please select Edge, Chrome, or Firefox, or paste a SoundCloud cookie manually.' }));
+        return;
+      }
+
+      try {
+        setAccountBusyFor('soundcloud', 'login');
+        setAccountErrors((current) => ({ ...current, soundcloud: null }));
+        const status = soundCloudBrowser !== 'none'
+          ? await accounts.setBrowser('soundcloud', soundCloudBrowser)
+          : (accountStatusByProvider.soundcloud ?? await accounts.getStatus('soundcloud'));
+        const result = typeof accounts.startLogin === 'function'
+          ? await accounts.startLogin('soundcloud')
+          : null;
+        if (!result) {
+          await handleOpenExternalUrl('https://soundcloud.com/');
+        }
+        updateAccountStatus(result?.status ?? status);
+        setAccountMessages((current) => ({
+          ...current,
+          soundcloud: result?.message ?? 'Opened SoundCloud in the system browser. ECHO will use the selected browser cookies through yt-dlp.',
+        }));
+      } catch (accountError) {
+        setAccountErrors((current) => ({ ...current, soundcloud: accountError instanceof Error ? accountError.message : String(accountError) }));
+      } finally {
+        setAccountBusyFor('soundcloud', null);
       }
       return;
     }
@@ -7945,6 +8148,7 @@ export const SettingsPage = (): JSX.Element => {
       ? `${formatUpdateBytes(updateStatus.transferredBytes)} / ${formatUpdateBytes(updateStatus.totalBytes)}`
       : formatUpdateBytes(updateStatus?.totalBytes);
   const updateDownloadSpeedLabel = updateStatus?.bytesPerSecond ? `${formatUpdateBytes(updateStatus.bytesPerSecond)}/s` : 'n/a';
+  const currentAutoUpdateSource = appSettings?.autoUpdateSource ?? 'official';
   const artistImageHasSummary = Boolean(artistImageProgress);
   const artistImageSummary = artistImageProgress?.summary ?? emptyArtistImageSummary;
   const artistImageQueuedTotal = artistImageProgress?.lastQueued.queued ?? 0;
@@ -8483,6 +8687,7 @@ export const SettingsPage = (): JSX.Element => {
       setLibraryScanBusy(true);
       setLibraryScanMessage(null);
       setError(null);
+      await yieldToSettingsPaint();
       const folders = await library.getFolders();
 
       if (folders.length === 0) {
@@ -8502,9 +8707,14 @@ export const SettingsPage = (): JSX.Element => {
         return;
       }
 
-      const scans = await Promise.all(foldersToScan.map((folder) => library.scanFolder(folder.id)));
-      scans.forEach(rememberLibraryScanStatus);
-      setLibraryScanStatuses(getLibraryScanStatuses());
+      const scans: LibraryScanStatus[] = [];
+      for (const folder of foldersToScan) {
+        const scan = await library.scanFolder(folder.id);
+        scans.push(scan);
+        rememberLibraryScanStatus(scan);
+        setLibraryScanStatuses(getLibraryScanStatuses());
+        await yieldToSettingsPaint();
+      }
       setLibraryScanMessage(
         runningFolderIds.size > 0
           ? `已加入 ${scans.length} 个曲库文件夹到扫描队列，已有 ${runningFolderIds.size} 个正在排队/运行。`
@@ -8530,6 +8740,7 @@ export const SettingsPage = (): JSX.Element => {
       setEmbeddedTagRescanBusy(scope);
       setEmbeddedTagRescanMessage(null);
       setError(null);
+      await yieldToSettingsPaint();
       const scans = await library.rescanEmbeddedTags(
         scope === 'all' ? 'embedded-tags-all' : 'embedded-tags-missing-cover',
       );
@@ -8788,6 +8999,10 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleStartReplayGainAnalysis = async (): Promise<void> => {
+    if (replayGainAnalysisBusy) {
+      return;
+    }
+
     const library = getLibraryBridge();
 
     if (!library) {
@@ -8815,6 +9030,28 @@ export const SettingsPage = (): JSX.Element => {
       setReplayGainAnalysisMessage(null);
       setError(analysisError instanceof Error ? analysisError.message : String(analysisError));
     }
+  };
+
+  const handleReplayGainEnabledChange = (enabled: boolean): void => {
+    patchAppSettings({
+      replayGainEnabled: enabled,
+      ...(enabled ? { replayGainAnalyzeOnPlay: true } : {}),
+    });
+
+    if (enabled) {
+      void handleStartReplayGainAnalysis();
+    }
+  };
+
+  const handleReplayGainPresetSelect = (targetLufs: number): void => {
+    patchAppSettings({
+      replayGainEnabled: true,
+      replayGainMode: 'track',
+      replayGainTargetLufs: targetLufs,
+      replayGainPreventClipping: true,
+      replayGainAnalyzeOnPlay: true,
+    });
+    void handleStartReplayGainAnalysis();
   };
 
   const formatLyricsBackfillMessage = (status: LyricsBackfillJobStatus): string => {
@@ -10036,8 +10273,38 @@ export const SettingsPage = (): JSX.Element => {
                   onClick={() =>
                     patchAppSettings({
                       sidebarAutoHideEnabled: !(appSettings?.sidebarAutoHideEnabled ?? false),
+                      sidebarIconOnlyEnabled: appSettings?.sidebarAutoHideEnabled === true ? (appSettings?.sidebarIconOnlyEnabled ?? false) : false,
                     })
                   }
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-sidebar-icon-only"
+                highlighted={highlightedSettingId === 'settings-row-sidebar-icon-only'}
+                title={t('settings.general.sidebarIconOnly.title')}
+                description={t('settings.general.sidebarIconOnly.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.sidebarIconOnlyEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      sidebarIconOnlyEnabled: !(appSettings?.sidebarIconOnlyEnabled ?? false),
+                      sidebarAutoHideEnabled: appSettings?.sidebarIconOnlyEnabled === true ? (appSettings?.sidebarAutoHideEnabled ?? false) : false,
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-feature-comments-hidden"
+                highlighted={highlightedSettingId === 'settings-row-feature-comments-hidden'}
+                title={t('settings.general.featureCommentsHidden.title')}
+                description={t('settings.general.featureCommentsHidden.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.featureCommentsHidden === true}
+                  disabled={!appSettings}
+                  onClick={() => patchAppSettings({ featureCommentsHidden: !(appSettings?.featureCommentsHidden ?? false) })}
                 />
               </SettingRow>
               <SettingRow title={t('settings.general.rememberWindowSize.title')} description={t('settings.general.rememberWindowSize.description')}>
@@ -10095,14 +10362,14 @@ export const SettingsPage = (): JSX.Element => {
                 id="settings-row-signal-path-control"
                 highlighted={highlightedSettingId === 'settings-row-signal-path-control'}
                 title="底栏信号路径"
-                description="在底部播放栏显示 Signal Path 入口。默认关闭，歌词页始终隐藏。"
+                description="在底部播放栏显示 Signal Path 入口。默认开启，歌词页始终隐藏。"
               >
                 <ToggleButton
-                  active={appSettings?.signalPathControlEnabled === true}
+                  active={appSettings?.signalPathControlEnabled !== false}
                   disabled={!appSettings}
                   onClick={() =>
                     patchAppSettings({
-                      signalPathControlEnabled: !(appSettings?.signalPathControlEnabled ?? false),
+                      signalPathControlEnabled: !(appSettings?.signalPathControlEnabled ?? true),
                     })
                   }
                 />
@@ -10517,7 +10784,7 @@ export const SettingsPage = (): JSX.Element => {
                 />
               </SettingRow>
               <SettingRow
-                className="setting-row--full setting-row--compact-panel"
+                className={`setting-row--full setting-row--compact-panel setting-row--playback-advanced${playbackAdvancedPanelExpanded ? ' is-expanded' : ''}`}
                 title={t('settings.playback.advancedPanel.title')}
                 description={t('settings.playback.advancedPanel.description')}
               >
@@ -10535,7 +10802,7 @@ export const SettingsPage = (): JSX.Element => {
                 </button>
               </SettingRow>
               {playbackAdvancedPanelExpanded ? (
-                <>
+                <div className="settings-expanded-panel settings-expanded-panel--playback">
               <SettingRow title={t('settings.playback.troubleshooting.title')} description={t('settings.playback.troubleshooting.description')}>
                 <div className="settings-chip-row">
                   <button
@@ -10832,41 +11099,34 @@ export const SettingsPage = (): JSX.Element => {
                       <ToggleButton
                         active={appSettings?.replayGainEnabled ?? false}
                         disabled={!appSettings}
-                        onClick={() => patchAppSettings({ replayGainEnabled: !(appSettings?.replayGainEnabled ?? false) })}
+                        onClick={() => handleReplayGainEnabledChange(!(appSettings?.replayGainEnabled ?? false))}
                       />
                     </div>
                     <div className="settings-chip-row settings-chip-row--left settings-replay-gain-presets">
                       <ChipButton
                         active={replayGainTargetLufs === SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS}
-                        onClick={() =>
-                          patchAppSettings({
-                            replayGainEnabled: true,
-                            replayGainMode: 'track',
-                            replayGainTargetLufs: SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS,
-                            replayGainPreventClipping: true,
-                            replayGainAnalyzeOnPlay: true,
-                          })
-                        }
+                        onClick={() => handleReplayGainPresetSelect(SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS)}
                       >
                         {t('settings.playback.replayGain.preset.standard')}
                       </ChipButton>
                       <ChipButton
                         active={replayGainTargetLufs === QUIET_REPLAY_GAIN_TARGET_LUFS}
-                        onClick={() =>
-                          patchAppSettings({
-                            replayGainEnabled: true,
-                            replayGainMode: 'track',
-                            replayGainTargetLufs: QUIET_REPLAY_GAIN_TARGET_LUFS,
-                            replayGainPreventClipping: true,
-                            replayGainAnalyzeOnPlay: true,
-                          })
-                        }
+                        onClick={() => handleReplayGainPresetSelect(QUIET_REPLAY_GAIN_TARGET_LUFS)}
                       >
                         {t('settings.playback.replayGain.preset.quiet')}
                       </ChipButton>
                     </div>
                     <button
                       className="settings-action-button"
+                      type="button"
+                      disabled={replayGainAnalysisBusy}
+                      onClick={() => void handleStartReplayGainAnalysis()}
+                    >
+                      <RotateCw className={replayGainAnalysisBusy ? 'spinning-icon' : undefined} size={15} />
+                      {replayGainAnalysisBusy ? t('settings.playback.replayGain.action.analyzing') : t('settings.playback.replayGain.action.analyzeMissing')}
+                    </button>
+                    <button
+                      className="settings-action-button settings-replay-gain-advanced-toggle"
                       type="button"
                       onClick={() => setReplayGainAdvancedOpen((open) => !open)}
                     >
@@ -10958,15 +11218,6 @@ export const SettingsPage = (): JSX.Element => {
                             onChange={(event) => patchAppSettings({ replayGainPreampDb: Number(event.currentTarget.value) })}
                           />
                         </label>
-                        <button
-                          className="settings-action-button"
-                          type="button"
-                          disabled={replayGainAnalysisBusy}
-                          onClick={() => void handleStartReplayGainAnalysis()}
-                        >
-                          <RotateCw className={replayGainAnalysisBusy ? 'spinning-icon' : undefined} size={15} />
-                          {replayGainAnalysisBusy ? t('settings.playback.replayGain.action.analyzing') : t('settings.playback.replayGain.action.analyzeMissing')}
-                        </button>
                       </div>
                     </div>
                   ) : null}
@@ -11023,7 +11274,7 @@ export const SettingsPage = (): JSX.Element => {
                 )}
               </SettingRow>
               <PlaybackStabilityDiagnosticsPanel />
-                </>
+                </div>
               ) : null}
             </SettingSection>
 
@@ -11335,9 +11586,9 @@ export const SettingsPage = (): JSX.Element => {
                 title={t('settings.integrations.networkProxy.title')}
                 description={t('settings.integrations.networkProxy.description')}
               >
-                <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--network-proxy">
+                <div className={`settings-cache-panel settings-cache-panel--bare settings-cache-panel--network-proxy settings-cache-panel--network-proxy-${networkProxyDraft.mode}`}>
                   <div className="settings-proxy-grid">
-                    <label className="settings-proxy-field">
+                    <label className="settings-proxy-field settings-proxy-field--mode">
                       <span>{t('settings.integrations.networkProxy.mode')}</span>
                       <StyledSelect
                         className="settings-select-control"
@@ -11352,7 +11603,7 @@ export const SettingsPage = (): JSX.Element => {
                         showFilterIcon={false}
                       />
                     </label>
-                    <label className="settings-proxy-field">
+                    <label className={`settings-proxy-field settings-proxy-field--manual${networkProxyDraft.mode === 'manual' ? ' is-active' : ''}`}>
                       <span>{t('settings.integrations.networkProxy.manualUrl')}</span>
                       <input
                         type="text"
@@ -11365,7 +11616,7 @@ export const SettingsPage = (): JSX.Element => {
                         }}
                       />
                     </label>
-                    <label className="settings-proxy-field">
+                    <label className={`settings-proxy-field settings-proxy-field--pac${networkProxyDraft.mode === 'pac' ? ' is-active' : ''}`}>
                       <span>{t('settings.integrations.networkProxy.pacUrl')}</span>
                       <input
                         type="text"
@@ -11378,7 +11629,7 @@ export const SettingsPage = (): JSX.Element => {
                         }}
                       />
                     </label>
-                    <label className="settings-proxy-field settings-proxy-field--wide">
+                    <label className="settings-proxy-field settings-proxy-field--wide settings-proxy-field--bypass">
                       <span>{t('settings.integrations.networkProxy.bypass')}</span>
                       <input
                         type="text"
@@ -11391,19 +11642,21 @@ export const SettingsPage = (): JSX.Element => {
                       />
                     </label>
                   </div>
-                  <div className="settings-chip-row settings-chip-row--left">
-                    <button className="settings-action-button" type="button" disabled={!appSettings || networkProxyBusy !== null} onClick={handleNetworkProxySave}>
-                      <Save size={15} />
-                      {networkProxyBusy === 'save' ? t('settings.integrations.networkProxy.saveBusy') : t('settings.integrations.networkProxy.save')}
-                    </button>
-                    <button className="settings-action-button" type="button" disabled={!appSettings || networkProxyBusy !== null} onClick={handleNetworkProxyTest}>
-                      <RotateCw size={15} />
-                      {networkProxyBusy === 'test' ? t('settings.integrations.networkProxy.testBusy') : t('settings.integrations.networkProxy.test')}
-                    </button>
-                  </div>
-                  <p className="settings-inline-note">
+                  <p className="settings-inline-note settings-proxy-note">
                     {t('settings.integrations.networkProxy.note')}
                   </p>
+                  <div className="settings-proxy-footer">
+                    <div className="settings-chip-row settings-chip-row--left settings-proxy-actions">
+                      <button className="settings-action-button" type="button" disabled={!appSettings || networkProxyBusy !== null} onClick={handleNetworkProxySave}>
+                        <Save size={15} />
+                        {networkProxyBusy === 'save' ? t('settings.integrations.networkProxy.saveBusy') : t('settings.integrations.networkProxy.save')}
+                      </button>
+                      <button className="settings-action-button" type="button" disabled={!appSettings || networkProxyBusy !== null} onClick={handleNetworkProxyTest}>
+                        <RotateCw size={15} />
+                        {networkProxyBusy === 'test' ? t('settings.integrations.networkProxy.testBusy') : t('settings.integrations.networkProxy.test')}
+                      </button>
+                    </div>
+                  </div>
                   {networkProxyTestResult ? (
                     <p className={`settings-inline-note settings-proxy-result ${networkProxyTestResult.ok ? 'is-ok' : 'is-error'}`}>
                       {networkProxyTestResult.message}
@@ -11917,10 +12170,12 @@ export const SettingsPage = (): JSX.Element => {
                         key={provider}
                         provider={provider}
                         status={accountStatusByProvider[provider]}
+                        browser={provider === 'soundcloud' ? soundCloudBrowser : undefined}
                         cookieValue={accountCookies[provider]}
                         busyAction={accountBusy[provider]}
                         error={accountErrors[provider]}
                         message={accountMessages[provider]}
+                        onBrowserChange={provider === 'soundcloud' ? (browser) => void handleSoundCloudBrowserChange(browser) : undefined}
                         onChangeCookie={(value) => setAccountCookies((current) => ({ ...current, [provider]: value }))}
                         onSave={() => void handleAccountSaveCookie(provider)}
                         onCheck={() => void handleAccountCheck(provider)}
@@ -12233,7 +12488,7 @@ export const SettingsPage = (): JSX.Element => {
                     <ChevronDown size={16} />
                   </button>
                   {themePresetsExpanded ? (
-                    <div className="settings-theme-preset-grid">
+                    <div className="settings-theme-preset-grid settings-expandable-content">
                       {visibleThemePresetOptions.map((option) => {
                         const activePreset = selectedThemePreset;
                         const isActive = activePreset === option.preset;
@@ -12301,6 +12556,17 @@ export const SettingsPage = (): JSX.Element => {
                     </div>
                   </div>
 
+                  <button
+                    aria-expanded={themeCustomPanelOpen}
+                    className="settings-theme-custom-advanced-toggle"
+                    type="button"
+                    onClick={() => setThemeCustomPanelOpen((current) => !current)}
+                  >
+                    <ChevronDown size={15} />
+                    {themeCustomPanelOpen ? t('settings.appearance.themeCustom.collapse') : t('settings.appearance.themeCustom.expand')}
+                  </button>
+
+                  <div className="settings-expandable-content" hidden={!themeCustomPanelOpen}>
                   <div className="settings-theme-custom-section settings-theme-custom-library">
                     <div className="settings-theme-custom-section-title">
                       <strong>{t('settings.appearance.themeCustom.myThemes.title')}</strong>
@@ -12653,6 +12919,7 @@ export const SettingsPage = (): JSX.Element => {
                       {t('settings.appearance.themeCustom.action.reset')}
                     </button>
                   </div>
+                  </div>
                 </div>
               </SettingRow>
               <SettingRow title={t('settings.appearance.density.title')} description={t('settings.appearance.density.description')}>
@@ -12816,6 +13083,16 @@ export const SettingsPage = (): JSX.Element => {
                   </div>
                 )}
               </SettingRow>
+              <button
+                aria-expanded={appearanceTypographyOpen}
+                className="settings-theme-custom-advanced-toggle"
+                type="button"
+                onClick={() => setAppearanceTypographyOpen((current) => !current)}
+              >
+                <ChevronDown size={15} />
+                {appearanceTypographyOpen ? t('settings.appearance.typography.collapse') : t('settings.appearance.typography.expand')}
+              </button>
+              <div className="settings-expandable-content settings-expandable-content--typography" hidden={!appearanceTypographyOpen}>
               <SettingRow title={t('settings.appearance.font.main.title')} description={t('settings.appearance.font.main.description')}>
                 <button className="settings-font-picker-button" type="button" onClick={() => handleFontPickerOpen('main')}>
                   <span style={{ fontFamily: `"${appearancePreferences.mainFontFamily}", var(--echo-font-family)` }}>{appearancePreferences.mainFontFamily}</span>
@@ -12868,6 +13145,7 @@ export const SettingsPage = (): JSX.Element => {
                   onChange={(textDepth) => handleAppearanceChange({ ...appearancePreferences, textDepth })}
                 />
               </SettingRow>
+              </div>
               <SettingRow
                 id="settings-row-album-cover-shape"
                 highlighted={highlightedSettingId === 'settings-row-album-cover-shape'}
@@ -12911,6 +13189,36 @@ export const SettingsPage = (): JSX.Element => {
                   disabled={!appSettings}
                   onClick={handleLiveLibraryUpdatesToggle}
                 />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-native-file-scanner"
+                highlighted={highlightedSettingId === 'settings-row-native-file-scanner'}
+                title={'Native File Scanner\uff08\u5b9e\u9a8c\uff09'}
+                description={'\u4f7f\u7528 C++ \u72ec\u7acb\u8fdb\u7a0b\u53d1\u73b0\u97f3\u9891\u6587\u4ef6\uff1b\u4e0d\u8bfb\u53d6\u5143\u6570\u636e\u3001\u4e0d\u63d0\u53d6\u5c01\u9762\u3001\u4e0d\u5199\u5165\u66f2\u5e93\u6570\u636e\u5e93\u3002'}
+              >
+                <div className="settings-inline-toggle settings-inline-toggle--compact">
+                  <span>{appSettings?.nativeFileScannerEnabled ? '\u5df2\u542f\u7528\u539f\u751f\u6587\u4ef6\u53d1\u73b0' : '\u4f7f\u7528 TypeScript \u626b\u63cf\u5668'}</span>
+                  <ToggleButton
+                    active={appSettings?.nativeFileScannerEnabled === true}
+                    disabled={!appSettings}
+                    onClick={() => patchAppSettings({ nativeFileScannerEnabled: !(appSettings?.nativeFileScannerEnabled ?? false) })}
+                  />
+                </div>
+              </SettingRow>
+              <SettingRow
+                id="settings-row-native-metadata-reader"
+                highlighted={highlightedSettingId === 'settings-row-native-metadata-reader'}
+                title={'Native Metadata Reader\uff08\u5b9e\u9a8c\uff09'}
+                description={'\u4f7f\u7528 C++ \u72ec\u7acb\u8fdb\u7a0b\u8bfb\u53d6 FLAC\u3001MP3\u3001M4A \u57fa\u7840\u6807\u7b7e\uff1b\u4e0d\u63d0\u53d6\u5c01\u9762\u3001\u4e0d\u5199 SQLite\uff0c\u5931\u8d25\u65f6\u81ea\u52a8\u56de\u9000 TypeScript\u3002'}
+              >
+                <div className="settings-inline-toggle settings-inline-toggle--compact">
+                  <span>{appSettings?.nativeMetadataReaderEnabled ? '\u5df2\u542f\u7528\u539f\u751f\u5143\u6570\u636e\u8bfb\u53d6' : '\u4f7f\u7528 TypeScript \u5143\u6570\u636e\u8bfb\u53d6'}</span>
+                  <ToggleButton
+                    active={appSettings?.nativeMetadataReaderEnabled === true}
+                    disabled={!appSettings}
+                    onClick={() => patchAppSettings({ nativeMetadataReaderEnabled: !(appSettings?.nativeMetadataReaderEnabled ?? false) })}
+                  />
+                </div>
               </SettingRow>
               <SettingRow
                 className="setting-row--full setting-row--compact-panel"
@@ -13599,6 +13907,37 @@ export const SettingsPage = (): JSX.Element => {
                         onClick={() => patchAppSettings({ autoUpdateEnabled: !(appSettings?.autoUpdateEnabled ?? true) })}
                       />
                     </div>
+                    <div className="settings-update-source-picker">
+                      <span>下载源</span>
+                      <StyledSelect
+                        ariaLabel="更新下载源"
+                        className="settings-update-source-select"
+                        disabled={!appSettings}
+                        options={autoUpdateSourceOptions.map((option) => ({
+                          value: option.source,
+                          label: `${option.label} · ${option.description}`,
+                        }))}
+                        showFilterIcon={false}
+                        value={currentAutoUpdateSource}
+                        onChange={handleAutoUpdateSourceSelect}
+                      />
+                    </div>
+                    {currentAutoUpdateSource === 'custom' ? (
+                      <div className="settings-update-custom-source">
+                        <span>自定义 generic 源</span>
+                        <input
+                          disabled={!appSettings}
+                          placeholder="https://example.com/echo/releases/latest/download"
+                          type="url"
+                          value={autoUpdateCustomUrlDraft}
+                          onChange={(event) => setAutoUpdateCustomUrlDraft(event.target.value)}
+                        />
+                        <button className="settings-action-button" type="button" disabled={!appSettings} onClick={handleAutoUpdateCustomUrlSave}>
+                          <Save size={15} />
+                          保存
+                        </button>
+                      </div>
+                    ) : null}
                     <button
                       className="settings-action-button"
                       type="button"
@@ -13611,6 +13950,30 @@ export const SettingsPage = (): JSX.Element => {
                     <button className="settings-action-button" type="button" onClick={() => void handleOpenRepository()}>
                       <Github size={15} />
                       ECHO NEXT
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      onClick={() => void handleOpenExternalUrl(officialWebsiteUrl)}
+                    >
+                      <Globe2 size={15} />
+                      官方网站
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      onClick={() => void handleOpenExternalUrl(userDocumentationUrl)}
+                    >
+                      <ExternalLink size={15} />
+                      使用文档
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      onClick={() => void handleOpenExternalUrl(baiduPanShareUrl)}
+                    >
+                      <ExternalLink size={15} />
+                      百度网盘
                     </button>
                     <button
                       className="settings-action-button"

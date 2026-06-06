@@ -3,9 +3,10 @@ import { useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AudioStatus } from '../../../shared/types/audio';
-import type { ConnectSessionStatus } from '../../../shared/types/connect';
+import { hqPlayerConnectDeviceId, type ConnectSessionStatus } from '../../../shared/types/connect';
 import type { EqState } from '../../../shared/types/eq';
 import { createDefaultGlobalShortcuts, createDefaultLocalShortcuts, type GlobalShortcutAction } from '../../../shared/types/globalShortcuts';
+import type { HqPlayerStatus } from '../../../shared/types/hqplayer';
 import type { LibraryTrack } from '../../../shared/types/library';
 import type { SmtcCommand } from '../../../shared/types/smtc';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../../stores/PlaybackQueueProvider';
@@ -112,6 +113,26 @@ const dlnaConnectStatus = (track: LibraryTrack, state: ConnectSessionStatus['sta
   latencyMs: 86,
   error: null,
   updatedAt: '2026-05-27T07:30:00.000Z',
+});
+
+const hqPlayerConnectStatus = (track: LibraryTrack, state: ConnectSessionStatus['state'] = 'playing'): ConnectSessionStatus => ({
+  deviceId: hqPlayerConnectDeviceId,
+  protocol: 'hqplayer',
+  state,
+  currentTrackId: track.id,
+  metadata: {
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    albumArtist: track.albumArtist,
+    durationSeconds: track.duration,
+    coverHttpUrl: '',
+  },
+  positionSeconds: 12,
+  durationSeconds: track.duration,
+  latencyMs: 42,
+  error: null,
+  updatedAt: '2026-06-05T08:00:00.000Z',
 });
 
 const subscribeAudioStatusHandlers = (handlers: Array<(status: AudioStatus) => void>) => (handler: (status: AudioStatus) => void): (() => void) => {
@@ -250,6 +271,67 @@ describe('PlayerBar', () => {
     expect(localPause).not.toHaveBeenCalled();
   });
 
+  it('pauses the active HQPlayer Connect session even while takeover mode is enabled', async () => {
+    window.localStorage.setItem('echo-next.hqplayer-takeover-enabled', 'true');
+    const track = makeTrack(32, { title: 'HQPlayer Takeover Pause Track' });
+    const playingConnectStatus = hqPlayerConnectStatus(track, 'playing');
+    const pausedConnectStatus = hqPlayerConnectStatus(track, 'paused');
+    const connectPause = vi.fn().mockResolvedValue(pausedConnectStatus);
+    const activateLocalPlayback = vi.fn();
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: track.id,
+          positionMs: 12000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: activateLocalPlayback,
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(playingConnectStatus),
+        play: vi.fn(),
+        pause: connectPause,
+        stop: vi.fn(),
+        seek: vi.fn(),
+        onStatus: vi.fn(() => vi.fn()),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(track)),
+        onStatus: vi.fn(() => vi.fn()),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(track),
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('HQPlayer Takeover Pause Track');
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+
+    await waitFor(() => expect(connectPause).toHaveBeenCalledTimes(1));
+    expect(activateLocalPlayback).not.toHaveBeenCalled();
+    expect(screen.queryByText('HQPlayer 接管中，ECHO 已避免抢占本机音频设备。')).toBeNull();
+  });
+
   it('opens the bottom signal path popover with the current audio chain', async () => {
     const track = makeTrack(33, { title: 'Signal Path Track', codec: 'flac', sampleRate: 96000, bitDepth: 24 });
     const status = {
@@ -321,6 +403,136 @@ describe('PlayerBar', () => {
     expect(dialog.textContent).toContain('输出');
   });
 
+  it('opens the bottom signal path popover with the active HQPlayer chain', async () => {
+    const track = makeTrack(37, { title: 'HQPlayer Signal Track', codec: 'flac', sampleRate: 44100, bitDepth: 16 });
+    const connectStatus = hqPlayerConnectStatus(track, 'playing');
+    const hqStatus: HqPlayerStatus = {
+      enabled: true,
+      state: 'available',
+      endpoint: {
+        connectionMode: 'localDesktop',
+        host: '127.0.0.1',
+        port: 4321,
+      },
+      mediaServerEnabled: false,
+      defaultPlaybackBackend: 'hqplayer',
+      profileName: 'SDM',
+      lastCheckedAt: '2026-06-05T08:00:00.000Z',
+      lastError: null,
+      controlInfo: {
+        name: 'Local HQPlayer',
+        product: 'HQPlayer Desktop',
+        version: '5.17.2',
+        platform: 'Windows',
+        engine: '5.29.2',
+        receivedAt: '2026-06-05T08:00:00.000Z',
+      },
+      playbackStatus: {
+        state: 'playing',
+        stateCode: 1,
+        track: 1,
+        trackId: track.id,
+        tracksTotal: 1,
+        queued: false,
+        positionSeconds: 12,
+        durationSeconds: track.duration,
+        volume: null,
+        activeMode: 'SDM',
+        activeFilter: 'sinc-long',
+        activeShaper: 'ASDM7EC-super',
+        activeRate: 22579200,
+        activeBits: 1,
+        activeChannels: 2,
+        inputFill: null,
+        outputFill: null,
+        outputDelayUs: null,
+        apodizing: null,
+        metadata: {
+          uri: track.path,
+          mime: 'audio/flac',
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          albumArtist: track.albumArtist,
+          composer: null,
+          performer: null,
+          genre: null,
+          date: null,
+          sampleRate: 44100,
+          bits: 16,
+          channels: 2,
+          bitrate: track.bitrate,
+        },
+        receivedAt: '2026-06-05T08:00:00.000Z',
+      },
+    };
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'paused',
+          currentTrackId: track.id,
+          positionMs: 12000,
+          durationMs: track.duration * 1000,
+          filePath: track.path,
+        }),
+        playLocalFile: vi.fn(),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      connect: {
+        getStatus: vi.fn().mockResolvedValue(connectStatus),
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        onStatus: vi.fn(() => vi.fn()),
+      },
+      hqPlayer: {
+        getStatus: vi.fn().mockResolvedValue(hqStatus),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue({
+          ...audioStatus(track),
+          state: 'idle',
+          currentTrackId: null,
+          currentFilePath: null,
+        }),
+        onStatus: vi.fn(() => vi.fn()),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      library: {
+        getTrack: vi.fn().mockResolvedValue(track),
+        getLikedTrackIds: vi.fn().mockResolvedValue({ [track.id]: false }),
+      },
+      app: {
+        getSettings: vi.fn().mockResolvedValue({ smtcEnabled: true }),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed showSignalPathControl={true} tracks={[track]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('HQPlayer Signal Track');
+    const signalPathButton = await screen.findByRole('button', { name: /HQPlayer/u });
+    fireEvent.click(signalPathButton);
+
+    const dialog = await screen.findByRole('dialog', { name: '信号路径' });
+    expect(dialog.textContent).toContain('信号路径: HQPlayer');
+    expect(dialog.textContent).toContain('FLAC 44.1kHz 16bit 2ch');
+    await waitFor(() => expect(dialog.textContent).toContain('HQPlayer Desktop'));
+    expect(dialog.textContent).toContain('SDM / sinc-long / ASDM7EC-super');
+    expect(dialog.textContent).toContain('HQPlayer 输出 / 22.58MHz / 1bit / 2ch');
+    expect(dialog.textContent).not.toContain('等待信号');
+  });
+
   it('shows enhanced signal path nodes when EQ is enabled', () => {
     const track = makeTrack(34, { title: 'EQ Signal Track', codec: 'flac', sampleRate: 96000, bitDepth: 24 });
     const status = {
@@ -370,6 +582,36 @@ describe('PlayerBar', () => {
     expect(dialog.textContent).toContain('信号路径: 重采样');
     expect(dialog.textContent).toContain('重采样');
     expect(dialog.textContent).toContain('96kHz -> 48kHz');
+  });
+
+  it('shows ECHO SRC as upsampling in the signal path', () => {
+    const track = makeTrack(36, { title: 'Upsampled Signal Track', codec: 'flac', sampleRate: 44100, bitDepth: 16 });
+    const status = {
+      ...audioStatus(track),
+      decoderOutputSampleRate: 352800,
+      requestedOutputSampleRate: 352800,
+      actualDeviceSampleRate: 352800,
+      resampling: true,
+      dspActive: true,
+      echoSrcMode: 'family8x' as const,
+      echoSrcQualityProfile: 'transparent' as const,
+      echoSrcTargetSampleRate: 352800,
+      echoSrcActive: true,
+      resamplerEngine: 'soxr' as const,
+      resamplerFallbackActive: false,
+    };
+
+    render(
+      <>
+        <AudioSignalPathControl isOpen={true} status={status} track={track} onClick={vi.fn()} />
+        <AudioSignalPathPopover isOpen={true} status={status} track={track} onClose={vi.fn()} />
+      </>,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: '信号路径' });
+    expect(dialog.textContent).toContain('ECHO SRC / 升频');
+    expect(dialog.textContent).toContain('44.1kHz -> ECHO SRC 352.8kHz / SOXR Transparent');
+    expect(dialog.textContent).not.toContain('96kHz -> 48kHz');
   });
 
   it('routes global play/pause to the active DLNA Connect session instead of local playback', async () => {
@@ -3429,6 +3671,183 @@ describe('PlayerBar', () => {
 
     emitAudioStatus(statusHandlers, audioStatus(secondTrack));
     expect(screen.getByText('Song 2')).toBeTruthy();
+  });
+
+  it('retries ended auto-advance when the first next-track playback attempt fails', async () => {
+    const firstTrack = makeTrack(1);
+    const secondTrack = makeTrack(2);
+    const statusHandlers: Array<(status: AudioStatus) => void> = [];
+    const playLocalFile = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary playback bridge stall'))
+      .mockResolvedValue({
+        state: 'playing',
+        currentTrackId: secondTrack.id,
+        positionMs: 0,
+        durationMs: secondTrack.duration * 1000,
+        filePath: secondTrack.path,
+      });
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: firstTrack.id,
+          positionMs: 4000,
+          durationMs: firstTrack.duration * 1000,
+          filePath: firstTrack.path,
+        }),
+        playLocalFile,
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(firstTrack)),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      eq: {
+        getState: vi.fn().mockResolvedValue(eqState()),
+        setEnabled: vi.fn().mockResolvedValue(eqState()),
+        setBandGain: vi.fn().mockResolvedValue(eqState()),
+        setPreamp: vi.fn().mockResolvedValue(eqState()),
+        setPreset: vi.fn().mockResolvedValue(eqState()),
+        reset: vi.fn().mockResolvedValue(eqState()),
+        listPresets: vi.fn().mockResolvedValue([]),
+        savePreset: vi.fn(),
+        deletePreset: vi.fn().mockResolvedValue([]),
+      },
+      library: {
+        getTracks: vi.fn(),
+        getAlbums: vi.fn(),
+        getAlbumTracks: vi.fn(),
+        getSummary: vi.fn(),
+        chooseFolder: vi.fn(),
+        addFolder: vi.fn(),
+        getFolders: vi.fn(),
+        removeFolder: vi.fn(),
+        scanFolder: vi.fn(),
+        getScanStatus: vi.fn(),
+        cancelScan: vi.fn(),
+        getDiagnostics: vi.fn(),
+      },
+      app: {
+        getVersion: vi.fn(),
+        minimize: vi.fn(),
+        toggleMaximize: vi.fn(),
+        close: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[firstTrack, secondTrack]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Song 1');
+    emitAudioStatus(statusHandlers, {
+      ...audioStatus(firstTrack),
+      state: 'ended',
+      positionSeconds: firstTrack.duration,
+    });
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => window.setTimeout(resolve, 1300));
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledTimes(2));
+    expect(playLocalFile).toHaveBeenLastCalledWith(expect.objectContaining({ trackId: secondTrack.id }));
+    await screen.findByText('Song 2');
+  });
+
+  it('auto-plays the next queued track when playback stays playing at the track tail', async () => {
+    const firstTrack = makeTrack(1);
+    const secondTrack = makeTrack(2);
+    const statusHandlers: Array<(status: AudioStatus) => void> = [];
+    const playLocalFile = vi.fn().mockResolvedValue({
+      state: 'playing',
+      currentTrackId: secondTrack.id,
+      positionMs: 0,
+      durationMs: secondTrack.duration * 1000,
+      filePath: secondTrack.path,
+    });
+
+    window.echo = {
+      playback: {
+        getStatus: vi.fn().mockResolvedValue({
+          state: 'playing',
+          currentTrackId: firstTrack.id,
+          positionMs: firstTrack.duration * 1000,
+          durationMs: firstTrack.duration * 1000,
+          filePath: firstTrack.path,
+        }),
+        playLocalFile,
+        play: vi.fn(),
+        pause: vi.fn(),
+        stop: vi.fn(),
+        seek: vi.fn(),
+        openLocalAudioFile: vi.fn(),
+      },
+      audio: {
+        getStatus: vi.fn().mockResolvedValue(audioStatus(firstTrack)),
+        onStatus: vi.fn(subscribeAudioStatusHandlers(statusHandlers)),
+        listDevices: vi.fn(),
+        setOutput: vi.fn(),
+      },
+      eq: {
+        getState: vi.fn().mockResolvedValue(eqState()),
+        setEnabled: vi.fn().mockResolvedValue(eqState()),
+        setBandGain: vi.fn().mockResolvedValue(eqState()),
+        setPreamp: vi.fn().mockResolvedValue(eqState()),
+        setPreset: vi.fn().mockResolvedValue(eqState()),
+        reset: vi.fn().mockResolvedValue(eqState()),
+        listPresets: vi.fn().mockResolvedValue([]),
+        savePreset: vi.fn(),
+        deletePreset: vi.fn().mockResolvedValue([]),
+      },
+      library: {
+        getTracks: vi.fn(),
+        getAlbums: vi.fn(),
+        getAlbumTracks: vi.fn(),
+        getSummary: vi.fn(),
+        chooseFolder: vi.fn(),
+        addFolder: vi.fn(),
+        getFolders: vi.fn(),
+        removeFolder: vi.fn(),
+        scanFolder: vi.fn(),
+        getScanStatus: vi.fn(),
+        cancelScan: vi.fn(),
+        getDiagnostics: vi.fn(),
+      },
+      app: {
+        getVersion: vi.fn(),
+        minimize: vi.fn(),
+        toggleMaximize: vi.fn(),
+        close: vi.fn(),
+      },
+    } as unknown as Window['echo'];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed tracks={[firstTrack, secondTrack]} />
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText('Song 1');
+    emitAudioStatus(statusHandlers, {
+      ...audioStatus(firstTrack),
+      state: 'playing',
+      positionSeconds: firstTrack.duration,
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1700));
+
+    await waitFor(() => expect(playLocalFile).toHaveBeenCalledWith(expect.objectContaining({ trackId: secondTrack.id })));
+    await screen.findByText('Song 2');
   });
 
   it('auto-plays the next queued track when Spotify polling reaches the track tail', async () => {

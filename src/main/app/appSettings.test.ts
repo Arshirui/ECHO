@@ -88,6 +88,8 @@ describe('app settings normalization', () => {
     expect(settings.autoDataBackupLastPath).toBeNull();
     expect(settings.autoDataBackupLastError).toBeNull();
     expect(settings.sidebarAutoHideEnabled).toBe(false);
+    expect(settings.sidebarIconOnlyEnabled).toBe(false);
+    expect(settings.featureCommentsHidden).toBe(false);
     expect(settings.rememberWindowSizeEnabled).toBe(true);
     expect(settings.rememberedWindowSize).toBeNull();
     expect(settings.appCustomWallpaperPath).toBeNull();
@@ -110,6 +112,8 @@ describe('app settings normalization', () => {
     expect(settings.onlineArtistInfoSources).toEqual(['wikipedia']);
     expect(settings.onlineAlbumInfoDiscogsUserToken).toBeNull();
     expect(settings.scanPerformanceMode).toBe('balanced');
+    expect(settings.nativeFileScannerEnabled).toBe(false);
+    expect(settings.nativeMetadataReaderEnabled).toBe(false);
     expect(settings.backgroundSpacePauseEnabled).toBe(false);
     expect(settings.localShortcuts).toEqual(createDefaultLocalShortcuts());
     expect(settings.globalShortcuts?.playPause).toEqual({ enabled: false, accelerator: null });
@@ -149,6 +153,7 @@ describe('app settings normalization', () => {
     expect(settings.lyricsWordHighlightClarityPercent).toBe(70);
     expect(settings.lyricsFontSizePx).toBe(40);
     expect(settings.lyricsSecondaryFontSizePx).toBe(22);
+    expect(settings.lyricsTextDirection).toBe('horizontal');
     expect(settings.lyricsLineSpacingPercent).toBe(110);
     expect(settings.lyricsLineMaxChars).toBe(0);
     expect(settings.lyricsContextOpacityPercent).toBe(49);
@@ -164,6 +169,7 @@ describe('app settings normalization', () => {
     expect(settings.desktopLyricsFontFamily).toBe('Microsoft YaHei');
     expect(settings.desktopLyricsFontFilePath).toBeNull();
     expect(settings.desktopLyricsColorMode).toBe('theme');
+    expect(settings.desktopLyricsTextDirection).toBe('horizontal');
     expect(settings.desktopLyricsRomanizationEnabled).toBe(true);
     expect(settings.desktopLyricsTranslationEnabled).toBe(true);
     expect(settings.miniPlayerEnabled).toBe(false);
@@ -217,6 +223,24 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({}).safeModeEnabled).toBe(false);
     expect(normalizeSettings({ safeModeEnabled: true }).safeModeEnabled).toBe(true);
     expect(normalizeSettings({ safeModeEnabled: 'true' }).safeModeEnabled).toBe(false);
+  });
+
+  it('normalizes native file scanner as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).nativeFileScannerEnabled).toBe(false);
+    expect(normalizeSettings({ nativeFileScannerEnabled: true }).nativeFileScannerEnabled).toBe(true);
+    expect(normalizeSettings({ nativeFileScannerEnabled: false }).nativeFileScannerEnabled).toBe(false);
+    expect(normalizeSettings({ nativeFileScannerEnabled: 'true' as never }).nativeFileScannerEnabled).toBe(false);
+  });
+
+  it('normalizes native metadata reader as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).nativeMetadataReaderEnabled).toBe(false);
+    expect(normalizeSettings({ nativeMetadataReaderEnabled: true }).nativeMetadataReaderEnabled).toBe(true);
+    expect(normalizeSettings({ nativeMetadataReaderEnabled: false }).nativeMetadataReaderEnabled).toBe(false);
+    expect(normalizeSettings({ nativeMetadataReaderEnabled: 'true' as never }).nativeMetadataReaderEnabled).toBe(false);
   });
 
   it('keeps the artist-album song sort preference', async () => {
@@ -785,6 +809,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ sidebarAutoHideEnabled: 'true' as never }).sidebarAutoHideEnabled).toBe(false);
   });
 
+  it('normalizes sidebar icon-only as a visible-sidebar opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).sidebarIconOnlyEnabled).toBe(false);
+    expect(normalizeSettings({ sidebarIconOnlyEnabled: true }).sidebarIconOnlyEnabled).toBe(true);
+    expect(normalizeSettings({ sidebarIconOnlyEnabled: 'true' as never }).sidebarIconOnlyEnabled).toBe(false);
+    expect(normalizeSettings({ sidebarAutoHideEnabled: true, sidebarIconOnlyEnabled: true }).sidebarIconOnlyEnabled).toBe(false);
+  });
+
   it('normalizes app wallpaper settings without accepting unsafe paths', async () => {
     const { normalizeSettings } = await import('./appSettings');
     userDataPath = join(tmpdir(), `echo-next-settings-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -883,11 +916,12 @@ describe('app settings normalization', () => {
     });
   });
 
-  it('keeps Discord Rich Presence disabled by default', async () => {
+  it('keeps Discord Rich Presence enabled by default', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
-    expect(normalizeSettings({}).discordRichPresenceEnabled).toBe(false);
+    expect(normalizeSettings({}).discordRichPresenceEnabled).toBe(true);
     expect(normalizeSettings({ discordRichPresenceEnabled: true }).discordRichPresenceEnabled).toBe(true);
+    expect(normalizeSettings({ discordRichPresenceEnabled: false }).discordRichPresenceEnabled).toBe(false);
     expect(normalizeSettings({ discordRichPresenceEnabled: 'yes' as never }).discordRichPresenceEnabled).toBe(false);
   });
 
@@ -1309,6 +1343,20 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ audioSoxrFallbackEnabled: 'yes' as never }).audioSoxrFallbackEnabled).toBe(true);
   });
 
+  it('keeps ECHO SRC disabled by default and normalizes safe PCM targets', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).audioEchoSrcMode).toBe('off');
+    expect(normalizeSettings({ audioEchoSrcMode: 'family2x' }).audioEchoSrcMode).toBe('family2x');
+    expect(normalizeSettings({ audioEchoSrcMode: 'family4x' }).audioEchoSrcMode).toBe('family4x');
+    expect(normalizeSettings({ audioEchoSrcMode: 'family8x' }).audioEchoSrcMode).toBe('family8x');
+    expect(normalizeSettings({ audioEchoSrcMode: 'dsd512' as never }).audioEchoSrcMode).toBe('off');
+    expect(normalizeSettings({}).audioEchoSrcQualityProfile).toBe('transparent');
+    expect(normalizeSettings({ audioEchoSrcQualityProfile: 'balanced' }).audioEchoSrcQualityProfile).toBe('balanced');
+    expect(normalizeSettings({ audioEchoSrcQualityProfile: 'lowLatency' }).audioEchoSrcQualityProfile).toBe('lowLatency');
+    expect(normalizeSettings({ audioEchoSrcQualityProfile: 'linearPhase' as never }).audioEchoSrcQualityProfile).toBe('transparent');
+  });
+
   it('keeps release-exclusive-on-pause experiment disabled until explicitly enabled', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -1417,6 +1465,7 @@ describe('app settings normalization', () => {
         lyricsWordHighlightEnabled: false,
         lyricsWordHighlightClarityPercent: 999,
         lyricsFontSizePx: 999,
+        lyricsTextDirection: 'sideways' as never,
         lyricsLineSpacingPercent: 999,
         lyricsLineMaxChars: 999,
         lyricsContextOpacityPercent: 1000,
@@ -1430,6 +1479,7 @@ describe('app settings normalization', () => {
         lyricsCoverBrightnessPercent: 12,
         lyricsBackgroundScalePercent: 999,
         desktopLyricsColorMode: 'neon' as never,
+        desktopLyricsTextDirection: 'sideways' as never,
         desktopLyricsRomanizationEnabled: false,
         desktopLyricsTranslationEnabled: false,
       }),
@@ -1466,6 +1516,7 @@ describe('app settings normalization', () => {
       lyricsWordHighlightEnabled: false,
       lyricsWordHighlightClarityPercent: 100,
       lyricsFontSizePx: 56,
+      lyricsTextDirection: 'horizontal',
       lyricsLineSpacingPercent: 150,
       lyricsLineMaxChars: 80,
       lyricsContextOpacityPercent: 100,
@@ -1479,6 +1530,7 @@ describe('app settings normalization', () => {
       lyricsCoverBrightnessPercent: 40,
       lyricsBackgroundScalePercent: 180,
       desktopLyricsColorMode: 'theme',
+      desktopLyricsTextDirection: 'horizontal',
       desktopLyricsRomanizationEnabled: false,
       desktopLyricsTranslationEnabled: false,
     });
@@ -1487,6 +1539,7 @@ describe('app settings normalization', () => {
     expect(
       normalizeSettings({
         lyricsFontSizePx: 12,
+        lyricsTextDirection: 'vertical',
         lyricsWordHighlightClarityPercent: 20,
         lyricsLineSpacingPercent: 20,
         lyricsLineMaxChars: -1,
@@ -1508,11 +1561,13 @@ describe('app settings normalization', () => {
         lyricsBackgroundScalePercent: 55,
         desktopLyricsColorMode: 'custom',
         desktopLyricsColor: '#ff8a80',
+        desktopLyricsTextDirection: 'vertical',
       }),
     ).toMatchObject({
       lyricsFontSizePx: 22,
       lyricsWordHighlightClarityPercent: 40,
       lyricsLineSpacingPercent: 60,
+      lyricsTextDirection: 'vertical',
       lyricsLineMaxChars: 0,
       lyricsAutoAcceptScore: 0.3,
       lyricsBackfillAutoAcceptScore: 0.3,
@@ -1532,6 +1587,7 @@ describe('app settings normalization', () => {
       lyricsBackgroundScalePercent: 70,
       desktopLyricsColorMode: 'custom',
       desktopLyricsColor: '#FF8A80',
+      desktopLyricsTextDirection: 'vertical',
       lyricsRomanizationEnabled: true,
       lyricsTranslationEnabled: true,
       lyricsWordHighlightEnabled: true,
@@ -1592,12 +1648,13 @@ describe('app settings normalization', () => {
     expect(settings.lyricsProviderOrder).toEqual(['local', 'amll-ttml', 'lrclib', 'netease', 'qqmusic', 'kugou', 'kuwo']);
   });
 
-  it('keeps the bottom signal path control opt-in', async () => {
+  it('enables the bottom signal path control by default', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
-    expect(normalizeSettings({}).signalPathControlEnabled).toBe(false);
+    expect(normalizeSettings({}).signalPathControlEnabled).toBe(true);
     expect(normalizeSettings({ signalPathControlEnabled: true }).signalPathControlEnabled).toBe(true);
-    expect(normalizeSettings({ signalPathControlEnabled: 'true' as never }).signalPathControlEnabled).toBe(false);
+    expect(normalizeSettings({ signalPathControlEnabled: false }).signalPathControlEnabled).toBe(false);
+    expect(normalizeSettings({ signalPathControlEnabled: 'true' as never }).signalPathControlEnabled).toBe(true);
   });
 
   it('normalizes channel balance settings for old and malformed settings files', async () => {

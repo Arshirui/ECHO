@@ -166,6 +166,7 @@
   --shadow-panel: 0 10px 28px rgba(36, 39, 48, 0.05);
   --titlebar-height: 44px;
   --sidebar-width: 220px;
+  --sidebar-icon-only-width: 72px;
   --player-height: 124px;
 
   --echo-polish-app-bg: #f6f6f7;

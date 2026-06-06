@@ -142,6 +142,35 @@
   min-height: 14px;
 }
 
+@media (min-width: 981px) {
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) {
+    grid-template-columns: var(--sidebar-icon-only-width) minmax(0, 1fr);
+  }
+
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) .app-titlebar {
+    grid-template-columns: var(--sidebar-icon-only-width) minmax(0, 1fr) auto;
+  }
+
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) .sidebar {
+    padding-inline: 10px;
+  }
+
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) .nav-item {
+    width: 100%;
+    grid-template-columns: 1fr;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) .nav-icon-shell {
+    justify-self: center;
+  }
+
+  .app-shell--sidebar-icon-only:not(.app-shell--standalone) .nav-item-label {
+    display: none;
+  }
+}
+
 html[data-theme="dark"] .sidebar {
   background:
     linear-gradient(180deg, rgba(19, 25, 33, 0.96), rgba(14, 19, 26, 0.94) 58%, rgba(10, 14, 20, 0.97)),
@@ -388,6 +417,51 @@ html[data-theme="dark"] .sidebar-folder:hover {
   color: var(--theme-on-accent);
   border-color: var(--theme-accent-border);
   background: var(--theme-accent-solid-bg);
+}
+
+.settings-update-source-picker {
+  display: grid;
+  gap: 8px;
+  min-width: min(320px, 100%);
+}
+
+.settings-update-source-picker > span,
+.settings-update-custom-source > span {
+  color: var(--theme-muted-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-update-custom-source {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  width: min(620px, 100%);
+  align-items: end;
+  gap: 8px;
+}
+
+.settings-update-custom-source > span {
+  grid-column: 1 / -1;
+}
+
+.settings-update-custom-source input {
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 12px;
+  color: var(--theme-page-text);
+  border: 1px solid var(--theme-panel-border-strong);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--theme-field-bg);
+  font: inherit;
+}
+
+.settings-update-source-select {
+  width: min(360px, 100%);
+}
+
+.settings-update-source-select .sort-button {
+  width: 100%;
 }
 
 .settings-select-control {
@@ -816,30 +890,30 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
 }
 
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .icon-button {
-  color: var(--lyrics-mini-player-readable-text);
-  border-color: var(--lyrics-mini-player-readable-button-border);
-  background: var(--lyrics-mini-player-readable-button-bg);
+  color: var(--lyrics-mini-player-readable-text, rgb(255 255 255));
+  border-color: var(--lyrics-mini-player-readable-button-border, rgb(255 255 255 / 0.16));
+  background: var(--lyrics-mini-player-readable-button-bg, rgb(255 255 255 / 0.1));
   box-shadow: none;
 }
 
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .icon-button:hover,
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .icon-button.is-soft-active {
-  color: var(--lyrics-mini-player-readable-text);
-  border-color: var(--lyrics-mini-player-readable-button-border);
-  background: var(--lyrics-mini-player-readable-button-bg-hover);
+  color: var(--lyrics-mini-player-readable-text, rgb(255 255 255));
+  border-color: var(--lyrics-mini-player-readable-button-border, rgb(255 255 255 / 0.16));
+  background: var(--lyrics-mini-player-readable-button-bg-hover, rgb(255 255 255 / 0.18));
 }
 
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .play-button {
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.2);
+  color: var(--lyrics-mini-player-readable-text, rgb(255 255 255));
+  border-color: var(--lyrics-mini-player-readable-play-border, var(--lyrics-mini-player-readable-button-border, rgb(255 255 255 / 0.16)));
+  background: var(--lyrics-mini-player-readable-play-bg, var(--lyrics-mini-player-readable-button-bg, rgb(255 255 255 / 0.1)));
   box-shadow:
     0 10px 22px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .player-bar .play-button:hover {
-  background: rgba(255, 255, 255, 0.26);
+  background: var(--lyrics-mini-player-readable-play-bg-hover, var(--lyrics-mini-player-readable-button-bg-hover, rgb(255 255 255 / 0.18)));
   box-shadow:
     0 12px 26px rgba(0, 0, 0, 0.26),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
@@ -861,8 +935,8 @@ html[data-theme="dark"] .app-shell:has(.lyrics-page) .player-tags .tag-bpm {
 }
 
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .progress-track {
-  border-color: var(--lyrics-mini-player-readable-track-border);
-  background: var(--lyrics-mini-player-readable-track-bg);
+  border-color: var(--lyrics-mini-player-readable-track-border, rgb(255 255 255 / 0.16));
+  background: var(--lyrics-mini-player-readable-track-bg, rgb(255 255 255 / 0.24));
 }
 
 .app-shell--lyrics-player-drawer .lyrics-player-drawer-host .progress-fill,

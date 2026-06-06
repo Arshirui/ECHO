@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SoundCloudStreamingProvider } from './SoundCloudStreamingProvider';
 
 const execFileMock = vi.hoisted(() => vi.fn());
+const credentialsMock = vi.hoisted(() => ({
+  cookie: 'sc_anonymous_id=test; oauth_token=secret',
+  browser: undefined as 'edge' | 'chrome' | 'firefox' | 'none' | undefined,
+}));
 
 vi.mock('node:child_process', () => ({
   execFile: execFileMock,
@@ -22,13 +26,16 @@ vi.mock('../../accounts/AccountService', () => ({
     }),
     getCredentials: (provider: string) => ({
       provider,
-      cookie: 'sc_anonymous_id=test; oauth_token=secret',
+      cookie: credentialsMock.cookie,
+      browser: credentialsMock.browser,
     }),
   }),
 }));
 
 afterEach(() => {
   execFileMock.mockReset();
+  credentialsMock.cookie = 'sc_anonymous_id=test; oauth_token=secret';
+  credentialsMock.browser = undefined;
 });
 
 describe('SoundCloudStreamingProvider', () => {
@@ -98,5 +105,34 @@ describe('SoundCloudStreamingProvider', () => {
       Referer: 'https://soundcloud.com/',
     });
     expect(source.headers.Cookie).toBeUndefined();
+  });
+
+  it('uses selected browser cookies when no manual SoundCloud cookie is saved', async () => {
+    credentialsMock.cookie = '';
+    credentialsMock.browser = 'edge';
+    let capturedArgs: string[] = [];
+    execFileMock.mockImplementation((_file: string, args: string[], _options: unknown, callback: (...args: unknown[]) => void) => {
+      capturedArgs = args;
+      callback(
+        null,
+        JSON.stringify({
+          entries: [
+            {
+              id: 'soundcloud:tracks:7',
+              title: 'Track 7',
+              uploader: 'Artist',
+              duration: 120,
+            },
+          ],
+        }),
+        '',
+      );
+    });
+
+    const result = await new SoundCloudStreamingProvider().search({ provider: 'soundcloud', query: 'track', page: 1, pageSize: 1 });
+
+    expect(capturedArgs).toEqual(expect.arrayContaining(['--cookies-from-browser', 'edge']));
+    expect(capturedArgs).not.toContain('Cookie:sc_anonymous_id=test; oauth_token=secret');
+    expect(result.tracks).toHaveLength(1);
   });
 });

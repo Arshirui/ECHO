@@ -31,6 +31,7 @@ import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { setPlaybackStatusSnapshot, useSharedPlaybackStatus } from '../stores/playbackStatusStore';
 import { albumDetailNavigationEvent } from '../utils/albumNavigation';
 import { artistDetailNavigationEvent } from '../utils/artistNavigation';
+import { AnimatedOutlet } from '../ui/motion/AnimatedOutlet';
 import { applySidebarPreferences } from './sidebarPreferences';
 import { defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
 import type { PlaybackStatus } from '../../shared/types/playback';
@@ -125,7 +126,7 @@ type LyricsMiniPlayerSettings = Pick<
   | 'lyricsPlayerBarDrawerColor'
 >;
 
-type SidebarLayoutSettings = Pick<AppSettings, 'sidebarAutoHideEnabled' | 'sidebarHiddenRouteIds' | 'sidebarRouteOrder'>;
+type SidebarLayoutSettings = Pick<AppSettings, 'sidebarAutoHideEnabled' | 'sidebarHiddenRouteIds' | 'sidebarIconOnlyEnabled' | 'sidebarRouteOrder'>;
 
 const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appCustomWallpaperPath: null,
@@ -154,6 +155,7 @@ const defaultSidebarLayoutSettings: SidebarLayoutSettings = {
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
   sidebarHiddenRouteIds: [],
   sidebarAutoHideEnabled: false,
+  sidebarIconOnlyEnabled: false,
 };
 
 const downloadLibraryChangeDebounceMs = 250;
@@ -262,6 +264,9 @@ const getMiniPlayerReadablePalette = (backgroundRgb: Rgb): Record<string, string
         '--lyrics-mini-player-readable-button-bg': 'rgba(255, 255, 255, 0.10)',
         '--lyrics-mini-player-readable-button-bg-hover': 'rgba(255, 255, 255, 0.18)',
         '--lyrics-mini-player-readable-button-border': 'rgba(255, 255, 255, 0.16)',
+        '--lyrics-mini-player-readable-play-bg': 'rgba(255, 255, 255, 0.20)',
+        '--lyrics-mini-player-readable-play-bg-hover': 'rgba(255, 255, 255, 0.26)',
+        '--lyrics-mini-player-readable-play-border': 'rgba(255, 255, 255, 0.20)',
         '--lyrics-mini-player-readable-track-bg': 'rgba(255, 255, 255, 0.24)',
         '--lyrics-mini-player-readable-track-border': 'rgba(255, 255, 255, 0.16)',
       }
@@ -272,6 +277,9 @@ const getMiniPlayerReadablePalette = (backgroundRgb: Rgb): Record<string, string
         '--lyrics-mini-player-readable-button-bg': 'rgba(17, 24, 39, 0.08)',
         '--lyrics-mini-player-readable-button-bg-hover': 'rgba(17, 24, 39, 0.14)',
         '--lyrics-mini-player-readable-button-border': 'rgba(17, 24, 39, 0.14)',
+        '--lyrics-mini-player-readable-play-bg': 'rgba(17, 24, 39, 0.12)',
+        '--lyrics-mini-player-readable-play-bg-hover': 'rgba(17, 24, 39, 0.18)',
+        '--lyrics-mini-player-readable-play-border': 'rgba(17, 24, 39, 0.18)',
         '--lyrics-mini-player-readable-track-bg': 'rgba(17, 24, 39, 0.18)',
         '--lyrics-mini-player-readable-track-border': 'rgba(17, 24, 39, 0.14)',
       };
@@ -362,9 +370,10 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [desktopLyricsLocked, setDesktopLyricsLocked] = useState(false);
   const [audioDrawerStatus, setAudioDrawerStatus] = useState<AudioStatus | null>(null);
   const [audioIssueDiagnosticsWindowEnabled, setAudioIssueDiagnosticsWindowEnabled] = useState(false);
-  const [signalPathControlEnabled, setSignalPathControlEnabled] = useState(false);
+  const [signalPathControlEnabled, setSignalPathControlEnabled] = useState(true);
   const [lyricsMiniPlayerSettings, setLyricsMiniPlayerSettings] = useState<LyricsMiniPlayerSettings>(defaultLyricsMiniPlayerSettings);
   const [sidebarLayoutSettings, setSidebarLayoutSettings] = useState<SidebarLayoutSettings>(defaultSidebarLayoutSettings);
+  const [featureCommentsHidden, setFeatureCommentsHidden] = useState(false);
   const [lyricsMiniPlayerCoverSample, setLyricsMiniPlayerCoverSample] = useState<ReadableColorSample | null>(null);
   const [isLyricsMiniPlayerAutoHidden, setIsLyricsMiniPlayerAutoHidden] = useState(false);
   const [activeLyricsViewMode, setActiveLyricsViewMode] = useState<LyricsViewMode>(() => readRememberedLyricsViewMode());
@@ -726,14 +735,20 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         setDownloadsFeatureUnlocked(settings.downloadsFeatureUnlocked === true);
       }
 
+      if (Object.prototype.hasOwnProperty.call(settings, 'featureCommentsHidden')) {
+        setFeatureCommentsHidden(settings.featureCommentsHidden === true);
+      }
+
       const hasSidebarRouteOrder = Object.prototype.hasOwnProperty.call(settings, 'sidebarRouteOrder');
       const hasSidebarHiddenRouteIds = Object.prototype.hasOwnProperty.call(settings, 'sidebarHiddenRouteIds');
       const hasSidebarAutoHideEnabled = Object.prototype.hasOwnProperty.call(settings, 'sidebarAutoHideEnabled');
-      if (hasSidebarRouteOrder || hasSidebarHiddenRouteIds || hasSidebarAutoHideEnabled) {
+      const hasSidebarIconOnlyEnabled = Object.prototype.hasOwnProperty.call(settings, 'sidebarIconOnlyEnabled');
+      if (hasSidebarRouteOrder || hasSidebarHiddenRouteIds || hasSidebarAutoHideEnabled || hasSidebarIconOnlyEnabled) {
         setSidebarLayoutSettings((current) => ({
           sidebarRouteOrder: hasSidebarRouteOrder ? normalizeSidebarRouteOrder(settings.sidebarRouteOrder) : current.sidebarRouteOrder,
           sidebarHiddenRouteIds: hasSidebarHiddenRouteIds ? normalizeSidebarHiddenRouteIds(settings.sidebarHiddenRouteIds) : current.sidebarHiddenRouteIds,
           sidebarAutoHideEnabled: hasSidebarAutoHideEnabled ? settings.sidebarAutoHideEnabled === true : current.sidebarAutoHideEnabled,
+          sidebarIconOnlyEnabled: hasSidebarIconOnlyEnabled ? settings.sidebarIconOnlyEnabled === true : current.sidebarIconOnlyEnabled,
         }));
       }
     };
@@ -1730,6 +1745,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         const asioUnavailableFallbackEnabled = settings?.audioAsioUnavailableFallbackEnabled === true;
         const exclusiveInstabilityFallbackEnabled = settings?.audioExclusiveInstabilityFallbackEnabled === true;
         const soxrFallbackEnabled = settings?.audioSoxrFallbackEnabled !== false;
+        const echoSrcMode = settings?.audioEchoSrcMode === 'family2x' || settings?.audioEchoSrcMode === 'family4x' || settings?.audioEchoSrcMode === 'family8x'
+          ? settings.audioEchoSrcMode
+          : 'off';
+        const echoSrcQualityProfile =
+          settings?.audioEchoSrcQualityProfile === 'balanced' || settings?.audioEchoSrcQualityProfile === 'lowLatency'
+            ? settings.audioEchoSrcQualityProfile
+            : 'transparent';
         const releaseExclusiveOnPauseExperimentalEnabled = settings?.audioReleaseExclusiveOnPauseExperimentalEnabled === true;
         if (!remembered.enabled) {
           return audio
@@ -1741,6 +1763,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
               asioUnavailableFallbackEnabled,
               exclusiveInstabilityFallbackEnabled,
               soxrFallbackEnabled,
+              echoSrcMode,
+              echoSrcQualityProfile,
               releaseExclusiveOnPauseExperimentalEnabled,
             })
             .then(setAudioDrawerStatus);
@@ -1760,6 +1784,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
             asioUnavailableFallbackEnabled,
             exclusiveInstabilityFallbackEnabled,
             soxrFallbackEnabled,
+            echoSrcMode,
+            echoSrcQualityProfile,
             releaseExclusiveOnPauseExperimentalEnabled,
           })
           .then(setAudioDrawerStatus);
@@ -2076,6 +2102,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         shouldShowAppWallpaperVisual && isAppWallpaperReady ? 'app-shell--wallpaper-ready' : ''
       } ${
         sidebarLayoutSettings.sidebarAutoHideEnabled ? 'app-shell--sidebar-auto-hide' : ''
+      } ${
+        sidebarLayoutSettings.sidebarIconOnlyEnabled && !sidebarLayoutSettings.sidebarAutoHideEnabled ? 'app-shell--sidebar-icon-only' : ''
       }`}
       data-wallpaper-unified-opacity={shouldShowAppWallpaperVisual && isAppWallpaperReady && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled ? 'true' : undefined}
       data-wallpaper-visual-protection={
@@ -2084,6 +2112,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       data-wallpaper-ui-transparent={shouldShowAppWallpaperVisual && isAppWallpaperUiTransparent ? 'true' : undefined}
       data-wallpaper-ui-zero={shouldShowAppWallpaperVisual && isAppWallpaperUiZero ? 'true' : undefined}
       data-wallpaper-orientation={shouldShowAppWallpaperVisual ? activeAppWallpaperOrientation : undefined}
+      data-feature-comments-hidden={featureCommentsHidden ? 'true' : undefined}
       data-window-fullscreen={isWindowFullscreen ? 'true' : 'false'}
       data-window-fullscreen-target={
         (windowFullscreenTransitionTarget ?? isWindowFullscreen) ? 'true' : 'false'
@@ -2150,6 +2179,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         <Sidebar
           routes={visibleRoutes}
           activeRouteId={activeRouteId}
+          iconOnly={sidebarLayoutSettings.sidebarIconOnlyEnabled && !sidebarLayoutSettings.sidebarAutoHideEnabled}
           onRouteChange={navigateRoute}
           onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
           onOpenLyricsSettings={() => setIsLyricsDrawerOpen(true)}
@@ -2169,15 +2199,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
             : route.element;
 
         return (
-          <main
-            aria-hidden={isActive ? undefined : true}
+          <AnimatedOutlet
             className={`page-surface ${routeIsStandalone ? 'page-surface--standalone' : ''}`}
-            data-route-id={route.id}
             hidden={!isActive}
+            isActive={isActive}
             key={route.id}
+            routeId={route.id}
           >
             {routeElement}
-          </main>
+          </AnimatedOutlet>
         );
       })}
 

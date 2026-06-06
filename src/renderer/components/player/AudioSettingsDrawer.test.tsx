@@ -52,6 +52,7 @@ const testTranslations: Record<string, string> = {
   'audioDrawer.troubleshooting.softDone': 'Audio engine restarted.',
   'audioDrawer.troubleshooting.title': 'Audio Troubleshooting',
   'audioDrawer.badge.soxrResampler': 'SOXR',
+  'audioDrawer.badge.upsampling': 'Upsampling',
   'audioDrawer.meter.chain': 'Chain',
   'audioDrawer.signal.asioSdkOutput': 'ASIO SDK output',
   'audioDrawer.signal.ffmpegDecode': 'FFmpeg decode',
@@ -72,6 +73,7 @@ const testTranslations: Record<string, string> = {
   'audioProfessional.badge.replayGain': 'ReplayGain',
   'audioProfessional.badge.resampling': 'Resampling',
   'audioProfessional.badge.sampleMismatch': 'Sample-rate mismatch',
+  'audioProfessional.badge.upsampling': 'Upsampling',
   'audioProfessional.badge.warning': 'Device issue/warning',
   'audioProfessional.issue.reason': 'Reason',
   'audioProfessional.group.directDsp': 'Direct And DSP',
@@ -89,6 +91,8 @@ const testTranslations: Record<string, string> = {
   'audioProfessional.value.systemDefault': 'System default output',
   'audioProfessional.value.unknown': 'n/a',
   'audioProfessional.value.yes': 'Yes',
+  'audioDrawer.meter.upsample': 'Upsampling',
+  'audioProfessional.row.upsampling': 'Upsampling',
 };
 
 vi.mock('../../i18n/I18nProvider', () => ({
@@ -168,6 +172,19 @@ const soxrResamplingStatus: AudioStatus = {
   resampling: true,
   resamplerEngine: 'soxr',
   resamplerFallbackActive: false,
+};
+
+const echoSrcUpsamplingStatus: AudioStatus = {
+  ...soxrResamplingStatus,
+  fileSampleRate: 44100,
+  decoderOutputSampleRate: 176400,
+  requestedOutputSampleRate: 176400,
+  actualDeviceSampleRate: 176400,
+  echoSrcMode: 'family4x',
+  echoSrcQualityProfile: 'transparent',
+  echoSrcTargetSampleRate: 176400,
+  echoSrcActive: true,
+  bitPerfectDisabledReason: 'echo_src_enabled',
 };
 
 const asioDevice: AudioDeviceInfo = {
@@ -1053,6 +1070,13 @@ describe('AudioSettingsDrawer ASIO buffer controls', () => {
 
     expect(screen.getByText('192 kHz -> 48 kHz / SOXR')).toBeTruthy();
     expect(screen.getByText('SOXR')).toBeTruthy();
+  });
+
+  it('labels ECHO SRC sample-rate changes as upsampling instead of resampling', () => {
+    renderDrawer(echoSrcUpsamplingStatus);
+
+    expect(screen.getAllByText('Upsampling').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Resampling')).toBeNull();
   });
 
   it('hides the SOXR label when resampling fell back to the default engine', () => {

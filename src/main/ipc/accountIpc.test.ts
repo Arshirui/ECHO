@@ -33,7 +33,8 @@ vi.mock('../accounts/AccountService', async (importOriginal) => {
       clearAccount: vi.fn((provider) => ({ provider, connected: false })),
       checkAccount: vi.fn(async (provider) => ({ provider, connected: false })),
       checkAllAccounts: vi.fn(async () => []),
-      getCredentials: vi.fn((provider) => ({ provider, browser: provider === 'youtube' ? 'edge' : undefined })),
+      getCredentials: vi.fn((provider) => ({ provider, browser: provider === 'youtube' || provider === 'soundcloud' ? 'edge' : undefined })),
+      setAccountBrowser: vi.fn((provider, browser) => ({ provider, connected: browser !== 'none' })),
       setYouTubeBrowser: vi.fn((browser) => ({ provider: 'youtube', connected: browser !== 'none' })),
     }),
   };
@@ -95,5 +96,21 @@ describe('account IPC', () => {
     });
     expect(openExternalMock).toHaveBeenCalledWith('microsoft-edge:https://www.youtube.com/');
     expect(startAccountLoginWindowMock).not.toHaveBeenCalled();
+  });
+
+  it('opens SoundCloud login in the system browser instead of the Electron login window', async () => {
+    await expect(handlers[IpcChannels.AccountStartLogin]!(null, 'soundcloud')).resolves.toMatchObject({
+      status: { provider: 'soundcloud' },
+      saved: false,
+    });
+    expect(openExternalMock).toHaveBeenCalledWith('microsoft-edge:https://soundcloud.com/');
+    expect(startAccountLoginWindowMock).not.toHaveBeenCalled();
+  });
+
+  it('saves a system browser choice for SoundCloud', () => {
+    expect(handlers[IpcChannels.AccountSetBrowser]!(null, 'soundcloud', 'chrome')).toEqual({
+      provider: 'soundcloud',
+      connected: true,
+    });
   });
 });

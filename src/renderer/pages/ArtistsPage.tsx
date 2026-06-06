@@ -20,6 +20,7 @@ import { readStoredLibrarySort, writeStoredLibrarySort } from '../utils/libraryS
 import { readStoredLibrarySourceMode, writeStoredLibrarySourceMode, type LibrarySourceMode } from '../utils/librarySourceMode';
 
 const pageSize = 96;
+const artistWallReturnAnimationMs = 80;
 const priorityArtistWallImageCount = 32;
 const maxPreservedRefreshPageSize = 500;
 const preserveScrollThresholdPx = 80;
@@ -71,6 +72,7 @@ export const ArtistsPage = (): JSX.Element => {
   const [hasMore, setHasMore] = useState(false);
   const [selectedArtist, setSelectedArtist] = useState<LibraryArtist | null>(null);
   const [selectedArtistReturnTo, setSelectedArtistReturnTo] = useState<DetailReturnTarget | null>(null);
+  const [isArtistWallReturning, setIsArtistWallReturning] = useState(false);
   const [artistWallAlbumArtwork, setArtistWallAlbumArtwork] = useState(false);
   const [artistWallAlbumFallbackForMissingAvatars, setArtistWallAlbumFallbackForMissingAvatars] = useState(false);
   const [artistImagesAutoFetch, setArtistImagesAutoFetch] = useState(false);
@@ -84,6 +86,7 @@ export const ArtistsPage = (): JSX.Element => {
   const shouldRestorePageScrollRef = useRef(false);
   const requestIdRef = useRef(0);
   const isLoadingRef = useRef(false);
+  const artistWallReturnTimerRef = useRef<number | null>(null);
   const requestedArtistImageIdsRef = useRef(new Set<string>());
   const pauseDeferredArtistImages = useScrollImagePause(pageRootRef);
   const { wallRef: artistWallRef, spacerHeight } = useMediaWallScrollSpacer<HTMLElement>({
@@ -109,6 +112,15 @@ export const ArtistsPage = (): JSX.Element => {
     window.addEventListener('pointerdown', handlePointerDown);
     return () => window.removeEventListener('pointerdown', handlePointerDown);
   }, [isSortOpen]);
+
+  useEffect(
+    () => () => {
+      if (artistWallReturnTimerRef.current !== null) {
+        window.clearTimeout(artistWallReturnTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const loadArtists = useCallback(
     async (
@@ -428,15 +440,34 @@ export const ArtistsPage = (): JSX.Element => {
   );
 
   const openArtistDetail = useCallback((artist: LibraryArtist, returnTo: DetailReturnTarget | null = null): void => {
+    if (artistWallReturnTimerRef.current !== null) {
+      window.clearTimeout(artistWallReturnTimerRef.current);
+      artistWallReturnTimerRef.current = null;
+    }
+    setIsArtistWallReturning(false);
     pageScrollTopRef.current = readPageScrollTop(pageRootRef.current);
     shouldRestorePageScrollRef.current = !returnTo;
     setSelectedArtistReturnTo(returnTo);
     setSelectedArtist(artist);
   }, []);
 
-  const closeArtistDetail = useCallback((): void => {
+  const closeArtistDetail = useCallback((showReturnAnimation = false): void => {
     setSelectedArtistReturnTo(null);
     setSelectedArtist(null);
+
+    if (!showReturnAnimation) {
+      return;
+    }
+
+    if (artistWallReturnTimerRef.current !== null) {
+      window.clearTimeout(artistWallReturnTimerRef.current);
+    }
+
+    setIsArtistWallReturning(true);
+    artistWallReturnTimerRef.current = window.setTimeout(() => {
+      artistWallReturnTimerRef.current = null;
+      setIsArtistWallReturning(false);
+    }, artistWallReturnAnimationMs);
   }, []);
 
   useEffect(() => {
@@ -482,7 +513,7 @@ export const ArtistsPage = (): JSX.Element => {
       return;
     }
 
-    closeArtistDetail();
+    closeArtistDetail(true);
   }, [closeArtistDetail, selectedArtistReturnTo]);
 
   const handleArtistKeyDown = useCallback((event: KeyboardEvent<HTMLElement>, artist: LibraryArtist): void => {
@@ -492,12 +523,15 @@ export const ArtistsPage = (): JSX.Element => {
     }
   }, [openArtistDetail]);
 
-  if (selectedArtist) {
-    return <ArtistDetailView artist={selectedArtist} onBack={handleBackFromArtistDetail} />;
-  }
-
   return (
-    <div className="artists-page">
+    <>
+      {selectedArtist ? <ArtistDetailView artist={selectedArtist} onBack={handleBackFromArtistDetail} /> : null}
+      <div
+        className="artists-page"
+        data-detail-open={selectedArtist ? 'true' : 'false'}
+        data-detail-returning={isArtistWallReturning ? 'true' : undefined}
+        aria-hidden={selectedArtist ? 'true' : undefined}
+      >
       <header className="songs-header">
         <div className="songs-title-group">
           <h1>{t('library.artists.title')}</h1>
@@ -653,13 +687,14 @@ export const ArtistsPage = (): JSX.Element => {
         </section>
         <InfiniteScrollSentinel canLoadMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMoreArtists} />
 
-        {error || isLoading ? (
+        {error ? (
           <div className="list-footer">
-            <span>{error ?? t('library.artists.loading')}</span>
+            <span>{error}</span>
           </div>
         ) : null}
         <MediaWallScrollSpacer height={spacerHeight} />
       </div>
-    </div>
+      </div>
+    </>
   );
 };

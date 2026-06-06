@@ -650,7 +650,7 @@ export const ArtistDetailView = ({ artist, onBack }: ArtistDetailViewProps): JSX
     setStreamingAlbumDownload(null);
     streamingAlbumDownloadRunIdRef.current += 1;
   }, []);
-  const { isReturning, returnBack } = useAnimatedBackNavigation(onBack, !selectedAlbum && !selectedStreamingAlbum, { rootRef: detailRootRef });
+  const { isReturning, returnBack } = useAnimatedBackNavigation(onBack, !selectedAlbum && !selectedStreamingAlbum, { durationMs: 0, rootRef: detailRootRef });
   const { isReturning: isStreamingAlbumReturning, returnBack: returnBackFromStreamingAlbum } = useAnimatedBackNavigation(
     handleBackFromStreamingAlbum,
     Boolean(selectedStreamingAlbum),

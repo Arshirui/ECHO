@@ -597,9 +597,12 @@ export type TranslationKey =
   | 'desktopLyrics.control.increaseFontSize'
   | 'desktopLyrics.control.increaseScale'
   | 'desktopLyrics.control.lock'
+  | 'desktopLyrics.control.pause'
+  | 'desktopLyrics.control.play'
   | 'desktopLyrics.control.resetPosition'
   | 'desktopLyrics.control.romanization'
   | 'desktopLyrics.control.themeColor'
+  | 'desktopLyrics.control.textDirection'
   | 'desktopLyrics.control.translation'
   | 'desktopLyrics.control.translationShort'
   | 'desktopLyrics.primary.empty'
@@ -691,6 +694,7 @@ export type TranslationKey =
   | 'audioDrawer.badge.resampling'
   | 'audioDrawer.badge.soxrResampler'
   | 'audioDrawer.badge.speedUp'
+  | 'audioDrawer.badge.upsampling'
   | 'audioDrawer.buffer.asio'
   | 'audioDrawer.buffer.auto'
   | 'audioDrawer.buffer.collapsedDescription'
@@ -723,6 +727,7 @@ export type TranslationKey =
   | 'audioDrawer.meter.resample'
   | 'audioDrawer.meter.source'
   | 'audioDrawer.meter.latency'
+  | 'audioDrawer.meter.upsample'
   | 'audioDrawer.guard.asioUnavailable.description'
   | 'audioDrawer.guard.asioUnavailable.title'
   | 'audioDrawer.guard.exclusiveInstability.description'
@@ -820,6 +825,7 @@ export type TranslationKey =
   | 'audioProfessional.badge.replayGain'
   | 'audioProfessional.badge.resampling'
   | 'audioProfessional.badge.sampleMismatch'
+  | 'audioProfessional.badge.upsampling'
   | 'audioProfessional.badge.warning'
   | 'audioProfessional.issue.reason'
   | 'audioProfessional.issue.audioLevelClipped'
@@ -870,6 +876,7 @@ export type TranslationKey =
   | 'audioProfessional.row.resampler'
   | 'audioProfessional.row.resampling'
   | 'audioProfessional.row.sampleRateMismatch'
+  | 'audioProfessional.row.upsampling'
   | 'audioProfessional.row.signalPath'
   | 'audioProfessional.row.sharedDeviceSampleRate'
   | 'audioProfessional.row.sharedStability'
@@ -1065,6 +1072,7 @@ export type TranslationKey =
   | 'folders.prompt.createPlaylist'
   | 'folders.queueSource.recursive'
   | 'folders.scan.progress'
+  | 'folders.scan.patientWarning'
   | 'folders.scan.unresponsiveWarning'
   | 'folders.sidebar.kicker'
   | 'folders.sidebar.title'
@@ -1464,6 +1472,7 @@ export type TranslationKey =
   | 'lyricsSettings.display.desktopOpacity'
   | 'lyricsSettings.display.desktopOpacityDescription'
   | 'lyricsSettings.display.desktopRomanization'
+  | 'lyricsSettings.display.desktopTextDirection'
   | 'lyricsSettings.display.desktopTranslation'
   | 'lyricsSettings.display.disableMvTrackInfoAutoShow'
   | 'lyricsSettings.display.enableLyrics'
@@ -1500,6 +1509,8 @@ export type TranslationKey =
   | 'lyricsSettings.drawer.aria'
   | 'lyricsSettings.drawer.close'
   | 'lyricsSettings.drawer.title'
+  | 'lyricsSettings.direction.horizontal'
+  | 'lyricsSettings.direction.vertical'
   | 'lyricsSettings.engine.autoMatch'
   | 'lyricsSettings.engine.provider'
   | 'lyricsSettings.engine.threshold'
@@ -1571,6 +1582,7 @@ export type TranslationKey =
   | 'lyricsSettings.style.secondaryFontSize'
   | 'lyricsSettings.style.showControls'
   | 'lyricsSettings.style.showControlsDescription'
+  | 'lyricsSettings.style.textDirection'
   | 'lyricsSettings.style.useColor'
   | 'lyricsSettings.timing.defaultOffset'
   | 'lyricsSettings.timing.globalOffset'
@@ -1888,6 +1900,8 @@ export type TranslationKey =
   | 'settings.appearance.reset.title'
   | 'settings.appearance.textDepth.description'
   | 'settings.appearance.textDepth.title'
+  | 'settings.appearance.typography.collapse'
+  | 'settings.appearance.typography.expand'
   | 'settings.appearance.wallpaper.blur'
   | 'settings.appearance.wallpaper.brightness'
   | 'settings.appearance.wallpaper.choose'
@@ -2252,6 +2266,10 @@ export type TranslationKey =
   | 'settings.general.searchTraditionalVariants.title'
   | 'settings.general.sidebarAutoHide.description'
   | 'settings.general.sidebarAutoHide.title'
+  | 'settings.general.sidebarIconOnly.description'
+  | 'settings.general.sidebarIconOnly.title'
+  | 'settings.general.featureCommentsHidden.description'
+  | 'settings.general.featureCommentsHidden.title'
   | 'settings.header.searchPlaceholder'
   | 'settings.integrations.discord.description'
   | 'settings.integrations.discord.action.refresh'
@@ -3386,9 +3404,12 @@ const zhCN: TranslationMap = {
   'desktopLyrics.control.increaseFontSize': '增大字号',
   'desktopLyrics.control.increaseScale': '放大',
   'desktopLyrics.control.lock': '锁定',
+  'desktopLyrics.control.pause': '暂停',
+  'desktopLyrics.control.play': '播放',
   'desktopLyrics.control.resetPosition': '重置位置',
   'desktopLyrics.control.romanization': '桌面歌词显示罗马音',
   'desktopLyrics.control.themeColor': '跟随主题颜色',
+  'desktopLyrics.control.textDirection': '切换横排 / 竖排',
   'desktopLyrics.control.translation': '桌面歌词显示翻译',
   'desktopLyrics.control.translationShort': '译',
   'desktopLyrics.primary.empty': '暂无歌词',
@@ -3610,6 +3631,7 @@ const zhCN: TranslationMap = {
   'audioDrawer.badge.resampling': 'Resampling',
   'audioDrawer.badge.soxrResampler': 'SOXR',
   'audioDrawer.badge.speedUp': 'Speed Up',
+  'audioDrawer.badge.upsampling': '升频',
   'audioDrawer.buffer.asio': 'ASIO 缓冲',
   'audioDrawer.buffer.auto': '自动',
   'audioDrawer.buffer.collapsedDescription': '默认收起；点开可调整延迟档位和 ASIO 缓冲。',
@@ -3642,6 +3664,7 @@ const zhCN: TranslationMap = {
   'audioDrawer.meter.resample': '重采样',
   'audioDrawer.meter.source': '音源',
   'audioDrawer.meter.latency': '延迟',
+  'audioDrawer.meter.upsample': '升频',
   'audioDrawer.guard.asioUnavailable.description': '默认关闭。遇到 No device found 后会短暂跳过同一个 ASIO 设备，并改用安全的共享输出。',
   'audioDrawer.guard.asioUnavailable.title': 'ASIO 不可用保护',
   'audioDrawer.guard.exclusiveInstability.description': '默认关闭。WASAPI 独占持续 underrun 或设备变得不稳定时，开启后会从当前位置切到安全共享输出。',
@@ -3739,6 +3762,7 @@ const zhCN: TranslationMap = {
   'audioProfessional.badge.replayGain': 'ReplayGain',
   'audioProfessional.badge.resampling': '重采样',
   'audioProfessional.badge.sampleMismatch': '采样率不匹配',
+  'audioProfessional.badge.upsampling': '升频',
   'audioProfessional.badge.warning': '设备异常/警告',
   'audioProfessional.issue.reason': '异常原因',
   'audioProfessional.issue.audioLevelClipped': '实时电平检测到削波，请降低前级增益或关闭增益类 DSP。',
@@ -3788,6 +3812,7 @@ const zhCN: TranslationMap = {
   'audioProfessional.row.resampler': '重采样器',
   'audioProfessional.row.resampling': '重采样',
   'audioProfessional.row.sampleRateMismatch': '采样率不匹配',
+  'audioProfessional.row.upsampling': '升频',
   'audioProfessional.row.signalPath': '信号路径',
   'audioProfessional.row.sharedDeviceSampleRate': '共享设备采样率',
   'audioProfessional.row.sharedStability': '共享稳定档',
@@ -4087,6 +4112,7 @@ const zhCN: TranslationMap = {
   'folders.prompt.createPlaylist': '还没有歌单。输入名称来创建一个：',
   'folders.queueSource.recursive': '{name} 文件夹',
   'folders.scan.progress': '{processed}/{total} 个文件，{errors} 个错误',
+  'folders.scan.patientWarning': '扫描期间未响应为正常现象，请耐心等待！',
   'folders.scan.unresponsiveWarning': '正在扫描曲库。扫描期间软件可能短暂未响应，这是正常现象；请等待或使用取消扫描。',
   'folders.sidebar.kicker': '曲库',
   'folders.sidebar.title': '文件夹',
@@ -4568,6 +4594,7 @@ const zhCN: TranslationMap = {
   'lyricsSettings.display.desktopOpacity': '桌面歌词透明度',
   'lyricsSettings.display.desktopOpacityDescription': '当前 {opacity}%，调低可减少遮挡。',
   'lyricsSettings.display.desktopRomanization': '桌面歌词显示罗马音',
+  'lyricsSettings.display.desktopTextDirection': '桌面歌词排版',
   'lyricsSettings.display.desktopTranslation': '桌面歌词显示翻译',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': '关闭MV自动显示歌曲信息',
   'lyricsSettings.display.enableLyrics': '启用歌词',
@@ -4604,6 +4631,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.drawer.aria': '歌词设置',
   'lyricsSettings.drawer.close': '关闭歌词设置',
   'lyricsSettings.drawer.title': '歌词设置',
+  'lyricsSettings.direction.horizontal': '横排',
+  'lyricsSettings.direction.vertical': '竖排',
   'lyricsSettings.engine.autoMatch': '自动匹配',
   'lyricsSettings.engine.provider': '来源',
   'lyricsSettings.engine.threshold': '阈值',
@@ -4674,7 +4703,8 @@ const zhCN: TranslationMap = {
   'lyricsSettings.style.lyricsFont': '歌词字体',
   'lyricsSettings.style.secondaryFontSize': '辅歌词字号',
   'lyricsSettings.style.showControls': '显示歌词样式设置',
-  'lyricsSettings.style.showControlsDescription': '包含辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。',
+  'lyricsSettings.style.showControlsDescription': '包含排版方向、辅助字号、歌词字号、歌词行距、上下文透明度和歌词颜色。',
+  'lyricsSettings.style.textDirection': '歌词排版',
   'lyricsSettings.style.useColor': '使用颜色 {color}',
   'lyricsSettings.timing.defaultOffset': '新歌词默认延迟',
   'lyricsSettings.timing.globalOffset': '全局延迟',
@@ -4979,7 +5009,7 @@ const zhCN: TranslationMap = {
   'settings.appearance.font.chinese.title': '中文字体',
   'settings.appearance.font.fallback.description': '界面字体的第三组备用，优先级最低，用于继续补齐缺失字符。',
   'settings.appearance.font.fallback.title': '备用字体',
-  'settings.appearance.font.main.description': 'ECHO 默认使用内置 Monocraft 与站酷快乐体；也可以输入任意已安装字体名称。',
+  'settings.appearance.font.main.description': 'ECHO 默认使用 Outfit、Microsoft YaHei 与 Noto Sans SC；也可以输入任意已安装字体名称。',
   'settings.appearance.font.main.title': '主字体',
   'settings.appearance.fontSize.description': '调整全局界面的基础字号。',
   'settings.appearance.fontSize.title': '基础字号',
@@ -4988,7 +5018,7 @@ const zhCN: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.title': '播放界面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '开启后，正在播放页会在空闲时从小封面抽样生成轻量背景；低负载模式会自动跳过。默认关闭。',
   'settings.appearance.reset.action': '恢复默认',
-  'settings.appearance.reset.description': '恢复 Monocraft、站酷快乐体、字号、行距、文字深浅与圆角封面。',
+  'settings.appearance.reset.description': '恢复 Outfit、Microsoft YaHei、Noto Sans SC、字号、行距、文字深浅与圆角封面。',
   'settings.appearance.reset.title': '外观默认值',
   'settings.appearance.sidebar.title': '左侧栏',
   'settings.appearance.sidebar.description': '调整左侧入口的顺序和显示状态，不会改动页面或播放链路。',
@@ -5012,6 +5042,8 @@ const zhCN: TranslationMap = {
   'settings.appearance.sidebar.showAria': '显示 {label}',
   'settings.appearance.textDepth.description': '调整界面文字颜色深浅；数值越低越浅。',
   'settings.appearance.textDepth.title': '文字颜色深浅',
+  'settings.appearance.typography.expand': '展开字体与排版',
+  'settings.appearance.typography.collapse': '收起字体与排版',
   'settings.appearance.wallpaper.title': '自定义背景',
   'settings.appearance.wallpaper.description': '横屏与竖屏背景独立保存；竖屏窗口只会应用竖屏背景。支持图片和本地视频。',
   'settings.appearance.wallpaper.choose': '选择横屏背景',
@@ -5340,6 +5372,10 @@ const zhCN: TranslationMap = {
   'settings.general.closeToTray': '关闭时隐藏到托盘',
   'settings.general.sidebarAutoHide.title': '隐藏侧栏',
   'settings.general.sidebarAutoHide.description': '开启后左侧栏会收进屏幕边缘；鼠标移到左边缘时自动抽出。默认关闭。',
+  'settings.general.sidebarIconOnly.title': '侧栏仅显示图标',
+  'settings.general.sidebarIconOnly.description': '开启后左侧栏保持显示，但导航入口只显示图标；悬停仍可查看名称。默认关闭。',
+  'settings.general.featureCommentsHidden.title': '关闭功能注释',
+  'settings.general.featureCommentsHidden.description': '开启后收起设置、抽屉和导航里的解释性说明，只保留标题、控件与状态。默认关闭。',
   'settings.general.fastStartup.description': '开启后，启动时只做轻量只读曲库验证；完整数据保护快照会在窗口打开后后台完成。默认关闭。',
   'settings.general.fastStartup.title': '快速启动',
   'settings.general.firstRunWizard.description': '打开后会重新显示第一次启动时的向导，可选择标准输出（系统音频）、WASAPI、Exclusive 或 ASIO；完成或跳过后会自动关闭这个开关。',
@@ -6475,9 +6511,12 @@ const zhTW: TranslationMap = {
   'desktopLyrics.control.increaseFontSize': '放大字號',
   'desktopLyrics.control.increaseScale': '放大',
   'desktopLyrics.control.lock': '鎖定',
+  'desktopLyrics.control.pause': '暫停',
+  'desktopLyrics.control.play': '播放',
   'desktopLyrics.control.resetPosition': '重設位置',
   'desktopLyrics.control.romanization': '桌面歌詞顯示羅馬音',
   'desktopLyrics.control.themeColor': '跟隨主題顏色',
+  'desktopLyrics.control.textDirection': '切換橫排 / 直排',
   'desktopLyrics.control.translation': '桌面歌詞顯示翻譯',
   'desktopLyrics.control.translationShort': '譯',
   'desktopLyrics.primary.empty': '暫無歌詞',
@@ -6887,6 +6926,7 @@ const zhTW: TranslationMap = {
   'audioDrawer.badge.resampling': '重取樣',
   'audioDrawer.badge.soxrResampler': 'SOXR',
   'audioDrawer.badge.speedUp': '加速',
+  'audioDrawer.badge.upsampling': '升頻',
   'audioDrawer.buffer.asio': 'ASIO 緩衝',
   'audioDrawer.buffer.auto': '自動',
   'audioDrawer.buffer.collapsedDescription': '預設收合；點開可調整延遲檔位與 ASIO 緩衝。',
@@ -6919,6 +6959,7 @@ const zhTW: TranslationMap = {
   'audioDrawer.meter.resample': '重取樣',
   'audioDrawer.meter.source': '音源',
   'audioDrawer.meter.latency': '延遲',
+  'audioDrawer.meter.upsample': '升頻',
   'audioDrawer.guard.asioUnavailable.description': '預設關閉。遇到 No device found 後會短暫跳過同一個 ASIO 裝置，並改用安全的共享輸出。',
   'audioDrawer.guard.asioUnavailable.title': 'ASIO 不可用保護',
   'audioDrawer.guard.exclusiveInstability.description': '預設關閉。WASAPI 獨占持續 underrun 或裝置變得不穩定時，開啟後會從目前位置切到安全共享輸出。',
@@ -7016,6 +7057,7 @@ const zhTW: TranslationMap = {
   'audioProfessional.badge.replayGain': 'ReplayGain',
   'audioProfessional.badge.resampling': '重取樣',
   'audioProfessional.badge.sampleMismatch': '取樣率不符',
+  'audioProfessional.badge.upsampling': '升頻',
   'audioProfessional.badge.warning': '裝置異常/警告',
   'audioProfessional.issue.reason': '異常原因',
   'audioProfessional.issue.audioLevelClipped': '即時電平偵測到削波，請降低前級增益或關閉增益類 DSP。',
@@ -7065,6 +7107,7 @@ const zhTW: TranslationMap = {
   'audioProfessional.row.resampler': '重取樣器',
   'audioProfessional.row.resampling': '重取樣',
   'audioProfessional.row.sampleRateMismatch': '取樣率不符',
+  'audioProfessional.row.upsampling': '升頻',
   'audioProfessional.row.signalPath': '訊號路徑',
   'audioProfessional.row.sharedDeviceSampleRate': '共享裝置取樣率',
   'audioProfessional.row.sharedStability': '共享穩定檔',
@@ -7186,6 +7229,7 @@ const zhTW: TranslationMap = {
   'folders.prompt.createPlaylist': '還沒有播放清單。輸入名稱來建立一個：',
   'folders.queueSource.recursive': '{name} 資料夾',
   'folders.scan.progress': '{processed}/{total} 個檔案，{errors} 個錯誤',
+  'folders.scan.patientWarning': '掃描期間未回應是正常現象，請耐心等待！',
   'folders.scan.unresponsiveWarning': '正在掃描曲庫。掃描期間軟體可能短暫未回應，這是正常現象；請等待或使用取消掃描。',
   'folders.sidebar.kicker': '曲庫',
   'folders.sidebar.title': '資料夾',
@@ -7589,6 +7633,7 @@ const zhTW: TranslationMap = {
   'lyricsSettings.display.desktopOpacity': '桌面歌詞透明度',
   'lyricsSettings.display.desktopOpacityDescription': '目前 {opacity}%，調低可減少遮擋。',
   'lyricsSettings.display.desktopRomanization': '桌面歌詞顯示羅馬音',
+  'lyricsSettings.display.desktopTextDirection': '桌面歌詞排版',
   'lyricsSettings.display.desktopTranslation': '桌面歌詞顯示翻譯',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': '關閉 MV 自動顯示歌曲資訊',
   'lyricsSettings.display.enableLyrics': '啟用歌詞',
@@ -7625,6 +7670,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.drawer.aria': '歌詞設定',
   'lyricsSettings.drawer.close': '關閉歌詞設定',
   'lyricsSettings.drawer.title': '歌詞設定',
+  'lyricsSettings.direction.horizontal': '橫排',
+  'lyricsSettings.direction.vertical': '直排',
   'lyricsSettings.engine.autoMatch': '自動匹配',
   'lyricsSettings.engine.provider': '來源',
   'lyricsSettings.engine.threshold': '閾值',
@@ -7695,7 +7742,8 @@ const zhTW: TranslationMap = {
   'lyricsSettings.style.lyricsFont': '歌詞字體',
   'lyricsSettings.style.secondaryFontSize': '輔助歌詞字號',
   'lyricsSettings.style.showControls': '顯示歌詞樣式設定',
-  'lyricsSettings.style.showControlsDescription': '包含輔助字號、歌詞字號、歌詞行距、上下文透明度和歌詞顏色。',
+  'lyricsSettings.style.showControlsDescription': '包含排版方向、輔助字號、歌詞字號、歌詞行距、上下文透明度和歌詞顏色。',
+  'lyricsSettings.style.textDirection': '歌詞排版',
   'lyricsSettings.style.useColor': '使用顏色 {color}',
   'lyricsSettings.timing.defaultOffset': '新歌詞預設延遲',
   'lyricsSettings.timing.globalOffset': '全域延遲',
@@ -8419,6 +8467,10 @@ const zhTW: TranslationMap = {
   'settings.general.closeToTray': '關閉時隱藏到系統匣',
   'settings.general.sidebarAutoHide.title': '隱藏側邊欄',
   'settings.general.sidebarAutoHide.description': '開啟後側邊欄會收進螢幕邊緣；滑鼠移到左側邊緣時自動抽出。預設關閉。',
+  'settings.general.sidebarIconOnly.title': '側邊欄僅顯示圖示',
+  'settings.general.sidebarIconOnly.description': '開啟後側邊欄保持顯示，但導覽入口只顯示圖示；懸停仍可查看名稱。預設關閉。',
+  'settings.general.featureCommentsHidden.title': '關閉功能註釋',
+  'settings.general.featureCommentsHidden.description': '開啟後收起設定、抽屜和導覽裡的解釋性說明，只保留標題、控制項與狀態。預設關閉。',
   'settings.general.fastStartup.description': '開啟後，啟動時只做輕量唯讀曲庫驗證；完整資料保護快照會在視窗開啟後於背景完成。預設關閉。',
   'settings.general.fastStartup.title': '快速啟動',
   'settings.general.firstRunWizard.description': '開啟後會重新顯示第一次啟動時的向導，可選擇標準輸出（系統音訊）、WASAPI、Exclusive 或 ASIO；完成或略過後會自動關閉這個開關。',
@@ -9315,9 +9367,12 @@ const jaJP: TranslationMap = {
   'desktopLyrics.control.increaseFontSize': '文字サイズを大きく',
   'desktopLyrics.control.increaseScale': '拡大',
   'desktopLyrics.control.lock': 'ロック',
+  'desktopLyrics.control.pause': '一時停止',
+  'desktopLyrics.control.play': '再生',
   'desktopLyrics.control.resetPosition': '位置をリセット',
   'desktopLyrics.control.romanization': 'デスクトップ歌詞にローマ字を表示',
   'desktopLyrics.control.themeColor': 'テーマ色に合わせる',
+  'desktopLyrics.control.textDirection': '横書き / 縦書きを切り替え',
   'desktopLyrics.control.translation': 'デスクトップ歌詞に翻訳を表示',
   'desktopLyrics.control.translationShort': '訳',
   'desktopLyrics.primary.empty': '歌詞がありません',
@@ -9738,6 +9793,7 @@ const jaJP: TranslationMap = {
   'audioDrawer.badge.resampling': 'リサンプル',
   'audioDrawer.badge.soxrResampler': 'SOXR',
   'audioDrawer.badge.speedUp': '速度アップ',
+  'audioDrawer.badge.upsampling': 'アップサンプル',
   'audioDrawer.buffer.asio': 'ASIO バッファー',
   'audioDrawer.buffer.auto': '自動',
   'audioDrawer.buffer.collapsedDescription': '既定では折りたたみます。開くとレイテンシプロファイルと ASIO バッファーを調整できます。',
@@ -9770,6 +9826,7 @@ const jaJP: TranslationMap = {
   'audioDrawer.meter.resample': 'リサンプル',
   'audioDrawer.meter.source': 'ソース',
   'audioDrawer.meter.latency': 'レイテンシ',
+  'audioDrawer.meter.upsample': 'アップサンプル',
   'audioDrawer.guard.asioUnavailable.description': '既定ではオフです。No device found の後、同じ ASIO デバイスを短時間スキップし、安全な共有出力を使います。',
   'audioDrawer.guard.asioUnavailable.title': 'ASIO 不可時ガード',
   'audioDrawer.guard.exclusiveInstability.description': '既定ではオフです。WASAPI 排他で underrun が続く、またはデバイスが不安定になった場合、オンなら現在位置から安全な共有出力へ切り替えます。',
@@ -9867,6 +9924,7 @@ const jaJP: TranslationMap = {
   'audioProfessional.badge.replayGain': 'ReplayGain',
   'audioProfessional.badge.resampling': 'リサンプル',
   'audioProfessional.badge.sampleMismatch': 'サンプルレート不一致',
+  'audioProfessional.badge.upsampling': 'アップサンプル',
   'audioProfessional.badge.warning': 'デバイス警告',
   'audioProfessional.issue.reason': '理由',
   'audioProfessional.issue.audioLevelClipped': 'リアルタイムレベルでクリップを検出しました。プリアンプを下げるか、ゲイン系 DSP をオフにしてください。',
@@ -9916,6 +9974,7 @@ const jaJP: TranslationMap = {
   'audioProfessional.row.resampler': 'リサンプラー',
   'audioProfessional.row.resampling': 'リサンプル',
   'audioProfessional.row.sampleRateMismatch': 'レート不一致',
+  'audioProfessional.row.upsampling': 'アップサンプル',
   'audioProfessional.row.signalPath': '信号パス',
   'audioProfessional.row.sharedDeviceSampleRate': '共有デバイスレート',
   'audioProfessional.row.sharedStability': '共有安定度',
@@ -10018,6 +10077,7 @@ const jaJP: TranslationMap = {
   'folders.prompt.createPlaylist': 'プレイリストがまだありません。作成する名前を入力してください:',
   'folders.queueSource.recursive': '{name} フォルダー',
   'folders.scan.progress': '{processed}/{total} ファイル、エラー {errors} 件',
+  'folders.scan.patientWarning': 'スキャン中に応答しなくなることがありますが、正常です。しばらくお待ちください。',
   'folders.scan.unresponsiveWarning': 'ライブラリをスキャン中です。スキャン中は一時的に応答しないことがありますが、正常です。待つか、スキャンをキャンセルしてください。',
   'folders.sidebar.kicker': 'ライブラリ',
   'folders.sidebar.title': 'フォルダー',
@@ -10445,6 +10505,7 @@ const jaJP: TranslationMap = {
   'lyricsSettings.display.desktopOpacity': 'デスクトップ歌詞の透明度',
   'lyricsSettings.display.desktopOpacityDescription': '現在 {opacity}%。下げると画面を遮りにくくなります。',
   'lyricsSettings.display.desktopRomanization': 'デスクトップ歌詞にローマ字を表示',
+  'lyricsSettings.display.desktopTextDirection': 'デスクトップ歌詞の組み方向',
   'lyricsSettings.display.desktopTranslation': 'デスクトップ歌詞に翻訳を表示',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': 'MV で曲情報を自動表示しない',
   'lyricsSettings.display.enableLyrics': '歌詞を有効化',
@@ -10481,6 +10542,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.drawer.aria': '歌詞設定',
   'lyricsSettings.drawer.close': '歌詞設定を閉じる',
   'lyricsSettings.drawer.title': '歌詞設定',
+  'lyricsSettings.direction.horizontal': '横書き',
+  'lyricsSettings.direction.vertical': '縦書き',
   'lyricsSettings.engine.autoMatch': '自動マッチ',
   'lyricsSettings.engine.provider': 'ソース',
   'lyricsSettings.engine.threshold': 'しきい値',
@@ -10551,7 +10614,8 @@ const jaJP: TranslationMap = {
   'lyricsSettings.style.lyricsFont': '歌詞フォント',
   'lyricsSettings.style.secondaryFontSize': 'サブ歌詞フォントサイズ',
   'lyricsSettings.style.showControls': '歌詞スタイル設定を表示',
-  'lyricsSettings.style.showControlsDescription': 'サブ歌詞サイズ、歌詞サイズ、行間、前後行の透明度、歌詞色を含みます。',
+  'lyricsSettings.style.showControlsDescription': '組み方向、サブ歌詞サイズ、歌詞サイズ、行間、前後行の透明度、歌詞色を含みます。',
+  'lyricsSettings.style.textDirection': '歌詞の組み方向',
   'lyricsSettings.style.useColor': '色 {color} を使用',
   'lyricsSettings.timing.defaultOffset': '新しい歌詞の既定遅延',
   'lyricsSettings.timing.globalOffset': '全体遅延',
@@ -11311,6 +11375,10 @@ const jaJP: TranslationMap = {
   'settings.general.closeToTray': '閉じる時にトレイへ隠す',
   'settings.general.sidebarAutoHide.title': 'サイドバーを隠す',
   'settings.general.sidebarAutoHide.description': '有効にするとサイドバーを画面端に収納し、マウスを左端へ移動したときに自動で引き出します。既定ではオフです。',
+  'settings.general.sidebarIconOnly.title': 'サイドバーをアイコンのみ表示',
+  'settings.general.sidebarIconOnly.description': '有効にするとサイドバーは表示したまま、ナビゲーション項目はアイコンだけになります。ホバーで名前を確認できます。既定ではオフです。',
+  'settings.general.featureCommentsHidden.title': '機能注釈を非表示',
+  'settings.general.featureCommentsHidden.description': '有効にすると、設定、ドロワー、ナビゲーションの説明文を畳み、タイトル、操作、状態だけを残します。既定ではオフです。',
   'settings.general.fastStartup.description': '有効にすると、起動時は軽量な読み取り専用のライブラリ確認だけを行い、完全なデータ保護スナップショットはウィンドウ表示後にバックグラウンドで完了します。既定ではオフです。',
   'settings.general.fastStartup.title': '高速起動',
   'settings.general.firstRunWizard.description': '有効にすると初回起動時のガイドをもう一度表示し、標準出力（システムオーディオ）、WASAPI、Exclusive、ASIO を選べます。完了またはスキップ後、このスイッチは自動でオフになります。',
@@ -12236,9 +12304,12 @@ const enUS: TranslationMap = {
   'desktopLyrics.control.increaseFontSize': 'Increase font size',
   'desktopLyrics.control.increaseScale': 'Scale up',
   'desktopLyrics.control.lock': 'Lock',
+  'desktopLyrics.control.pause': 'Pause',
+  'desktopLyrics.control.play': 'Play',
   'desktopLyrics.control.resetPosition': 'Reset position',
   'desktopLyrics.control.romanization': 'Show romanization in desktop lyrics',
   'desktopLyrics.control.themeColor': 'Follow theme color',
+  'desktopLyrics.control.textDirection': 'Toggle horizontal / vertical',
   'desktopLyrics.control.translation': 'Show translation in desktop lyrics',
   'desktopLyrics.control.translationShort': 'T',
   'desktopLyrics.primary.empty': 'No lyrics',
@@ -12659,6 +12730,7 @@ const enUS: TranslationMap = {
   'audioDrawer.badge.resampling': 'Resampling',
   'audioDrawer.badge.soxrResampler': 'SOXR',
   'audioDrawer.badge.speedUp': 'Speed Up',
+  'audioDrawer.badge.upsampling': 'Upsampling',
   'audioDrawer.buffer.asio': 'ASIO buffer',
   'audioDrawer.buffer.auto': 'Auto',
   'audioDrawer.buffer.collapsedDescription': 'Collapsed by default; open to adjust latency profile and ASIO buffer options.',
@@ -12691,6 +12763,7 @@ const enUS: TranslationMap = {
   'audioDrawer.meter.resample': 'Resample',
   'audioDrawer.meter.source': 'Source',
   'audioDrawer.meter.latency': 'Latency',
+  'audioDrawer.meter.upsample': 'Upsampling',
   'audioDrawer.guard.asioUnavailable.description': 'Default off. Skips the same ASIO device briefly after No device found, then uses safe shared output.',
   'audioDrawer.guard.asioUnavailable.title': 'ASIO unavailable guard',
   'audioDrawer.guard.exclusiveInstability.description': 'Default off. If WASAPI Exclusive has sustained underruns or becomes unstable, switch from the current position to safe Shared output.',
@@ -12788,6 +12861,7 @@ const enUS: TranslationMap = {
   'audioProfessional.badge.replayGain': 'ReplayGain',
   'audioProfessional.badge.resampling': 'Resampling',
   'audioProfessional.badge.sampleMismatch': 'Sample-rate mismatch',
+  'audioProfessional.badge.upsampling': 'Upsampling',
   'audioProfessional.badge.warning': 'Device issue/warning',
   'audioProfessional.issue.reason': 'Reason',
   'audioProfessional.issue.audioLevelClipped': 'Real-time level metering detected clipping. Lower preamp gain or disable gain-boosting DSP.',
@@ -12837,6 +12911,7 @@ const enUS: TranslationMap = {
   'audioProfessional.row.resampler': 'Resampler',
   'audioProfessional.row.resampling': 'Resampling',
   'audioProfessional.row.sampleRateMismatch': 'Sample-rate mismatch',
+  'audioProfessional.row.upsampling': 'Upsampling',
   'audioProfessional.row.signalPath': 'Signal path',
   'audioProfessional.row.sharedDeviceSampleRate': 'Shared device rate',
   'audioProfessional.row.sharedStability': 'Shared stability',
@@ -12939,6 +13014,7 @@ const enUS: TranslationMap = {
   'folders.prompt.createPlaylist': 'No playlists yet. Enter a name to create one:',
   'folders.queueSource.recursive': '{name} folder',
   'folders.scan.progress': '{processed}/{total} files, {errors} errors',
+  'folders.scan.patientWarning': 'The app may become unresponsive during scanning. This is normal; please wait.',
   'folders.scan.unresponsiveWarning': 'Library scan is running. The app may briefly become unresponsive during scanning; this is normal. Please wait or cancel the scan.',
   'folders.sidebar.kicker': 'Library',
   'folders.sidebar.title': 'Folders',
@@ -13366,6 +13442,7 @@ const enUS: TranslationMap = {
   'lyricsSettings.display.desktopOpacity': 'Desktop lyrics opacity',
   'lyricsSettings.display.desktopOpacityDescription': 'Currently {opacity}%; lower it to reduce visual blocking.',
   'lyricsSettings.display.desktopRomanization': 'Show romanization in desktop lyrics',
+  'lyricsSettings.display.desktopTextDirection': 'Desktop lyrics direction',
   'lyricsSettings.display.desktopTranslation': 'Show translation in desktop lyrics',
   'lyricsSettings.display.disableMvTrackInfoAutoShow': 'Disable MV auto track info',
   'lyricsSettings.display.enableLyrics': 'Enable lyrics',
@@ -13402,6 +13479,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.drawer.aria': 'Lyrics settings',
   'lyricsSettings.drawer.close': 'Close lyrics settings',
   'lyricsSettings.drawer.title': 'Lyrics Settings',
+  'lyricsSettings.direction.horizontal': 'Horizontal',
+  'lyricsSettings.direction.vertical': 'Vertical',
   'lyricsSettings.engine.autoMatch': 'Auto match',
   'lyricsSettings.engine.provider': 'Provider',
   'lyricsSettings.engine.threshold': 'Threshold',
@@ -13472,7 +13551,8 @@ const enUS: TranslationMap = {
   'lyricsSettings.style.lyricsFont': 'Lyrics font',
   'lyricsSettings.style.secondaryFontSize': 'Secondary lyrics font size',
   'lyricsSettings.style.showControls': 'Show lyrics style settings',
-  'lyricsSettings.style.showControlsDescription': 'Includes secondary font size, lyrics font size, line spacing, context opacity, and lyrics color.',
+  'lyricsSettings.style.showControlsDescription': 'Includes text direction, secondary font size, lyrics font size, line spacing, context opacity, and lyrics color.',
+  'lyricsSettings.style.textDirection': 'Lyrics direction',
   'lyricsSettings.style.useColor': 'Use color {color}',
   'lyricsSettings.timing.defaultOffset': 'Default offset for new lyrics',
   'lyricsSettings.timing.globalOffset': 'Global offset',
@@ -14302,6 +14382,10 @@ const enUS: TranslationMap = {
   'settings.general.closeToTray': 'Hide to tray on close',
   'settings.general.sidebarAutoHide.title': 'Hide Sidebar',
   'settings.general.sidebarAutoHide.description': 'Tuck the left sidebar into the screen edge, then slide it out when the pointer reaches the left edge. Off by default.',
+  'settings.general.sidebarIconOnly.title': 'Sidebar Icons Only',
+  'settings.general.sidebarIconOnly.description': 'Keep the left sidebar visible, but show navigation entries as icons only. Hover still shows each name. Off by default.',
+  'settings.general.featureCommentsHidden.title': 'Hide Feature Comments',
+  'settings.general.featureCommentsHidden.description': 'Hide explanatory notes in settings, drawers, and navigation, leaving titles, controls, and status text. Off by default.',
   'settings.general.fastStartup.description': 'When enabled, startup only runs a lightweight read-only library check; the full data protection snapshot finishes in the background after the window opens. Off by default.',
   'settings.general.fastStartup.title': 'Fast Startup',
   'settings.general.firstRunWizard.description': 'Show the first-run guide again after opening. You can choose Standard Output (system audio), WASAPI, Exclusive, or ASIO; this switch turns off automatically after finishing or skipping.',
@@ -14958,17 +15042,19 @@ const enUS: TranslationMap = {
   'settings.appearance.font.chinese.title': 'Chinese Font',
   'settings.appearance.font.fallback.description': 'The third and lowest-priority interface font group, used to continue filling missing glyphs.',
   'settings.appearance.font.fallback.title': 'Fallback Font',
-  'settings.appearance.font.main.description': 'ECHO uses bundled Monocraft and ZCOOL Happy by default. You can enter any installed font family.',
+  'settings.appearance.font.main.description': 'ECHO uses Outfit, Microsoft YaHei, and Noto Sans SC by default. You can enter any installed font family.',
   'settings.appearance.font.main.title': 'Main Font',
   'settings.appearance.fontSize.description': 'Adjust the base size used by the interface.',
   'settings.appearance.fontSize.title': 'Base Font Size',
   'settings.appearance.lineHeight.description': 'Adjust default UI text spacing for denser or airier reading.',
   'settings.appearance.lineHeight.title': 'Interface Line Height',
   'settings.appearance.reset.action': 'Reset',
-  'settings.appearance.reset.description': 'Restore Monocraft, ZCOOL Happy, base size, line height, text depth, and rounded covers.',
+  'settings.appearance.reset.description': 'Restore Outfit, Microsoft YaHei, Noto Sans SC, base size, line height, text depth, and rounded covers.',
   'settings.appearance.reset.title': 'Appearance Defaults',
   'settings.appearance.textDepth.description': 'Adjust interface text darkness. Lower values make text lighter.',
   'settings.appearance.textDepth.title': 'Text Depth',
+  'settings.appearance.typography.expand': 'Expand Fonts and Typography',
+  'settings.appearance.typography.collapse': 'Collapse Fonts and Typography',
   'settings.devices.title': 'Device List',
   'settings.devices.empty': 'echo-audio-host has not returned output devices yet.',
   'settings.about.devMode.title': 'Developer Mode',

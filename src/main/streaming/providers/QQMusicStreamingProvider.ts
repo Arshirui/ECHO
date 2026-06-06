@@ -574,6 +574,70 @@ const mapPlaylist = (playlistValue: unknown): StreamingPlaylist => {
   };
 };
 
+const qqPlaylistSongsFromValue = (value: unknown): unknown[] => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  const record = asRecord(value);
+  for (const key of ['songlist', 'songList', 'songs', 'list', 'v_songlist', 'vSonglist']) {
+    const nested = record[key];
+    if (Array.isArray(nested)) {
+      return nested;
+    }
+
+    const nestedRecord = asRecord(nested);
+    if (Array.isArray(nestedRecord.list)) {
+      return nestedRecord.list;
+    }
+  }
+
+  return [];
+};
+
+const qqPlaylistTotalFromValue = (value: unknown, fallback: number): number => {
+  const record = asRecord(value);
+  return (
+    integer(
+      record.total_song_num ??
+        record.totalSongNum ??
+        record.songnum ??
+        record.songNum ??
+        record.total ??
+        record.song_count ??
+        record.songCount ??
+        asRecord(record.songlist).total ??
+        asRecord(record.songList).total,
+    ) ?? fallback
+  );
+};
+
+const qqPlaylistCdFromData = (data: Record<string, unknown>, providerPlaylistId: string): Record<string, unknown> => {
+  const legacyCd = asRecord((Array.isArray(data.cdlist) ? data.cdlist : [])[0]);
+  if (Object.keys(legacyCd).length > 0) {
+    return legacyCd;
+  }
+
+  const payload = asRecord(asRecord(data.req_1).data);
+  if (Object.keys(payload).length === 0) {
+    return {};
+  }
+
+  const info = asRecord(payload.dirinfo ?? payload.dirInfo ?? payload.info ?? payload.dissinfo ?? payload.dissInfo);
+  const songlist = qqPlaylistSongsFromValue(payload.songlist ?? payload.songList ?? payload);
+  const total = qqPlaylistTotalFromValue(payload, qqPlaylistTotalFromValue(info, songlist.length));
+  return {
+    ...info,
+    disstid: text(info.disstid) ?? text(info.dissid) ?? providerPlaylistId,
+    dissname: text(info.dissname) ?? text(info.title) ?? text(info.name),
+    logo: text(info.logo) ?? text(info.picurl) ?? text(info.cover) ?? text(info.coverUrl),
+    nickname: text(info.host_nick) ?? text(asRecord(info.creator).nick) ?? text(asRecord(info.creator).name),
+    songlist,
+    total_song_num: total,
+    songnum: total,
+  };
+};
+
 const qqSearchType = (request: StreamingSearchRequest): number => {
   const mediaType = request.mediaTypes?.[0] ?? 'track';
   if (mediaType === 'album') {
@@ -1007,7 +1071,10 @@ export class QQMusicStreamingProvider implements StreamingProvider {
     if (isInvalidRefererResponse(data)) {
       data = asRecord(await fetchJsonWithRawReferer(playlistDetailUrl, playlistDetailHeaders, 12_000));
     }
-    const cd = asRecord((Array.isArray(data.cdlist) ? data.cdlist : [])[0]);
+    if (isInvalidRefererResponse(data)) {
+      data = await this.fetchPlaylistDetailWithModernApi(input.providerPlaylistId, begin, pageSize);
+    }
+    const cd = qqPlaylistCdFromData(data, input.providerPlaylistId);
     if (Object.keys(cd).length === 0) {
       throw new Error(text(data.message) ?? text(data.msg) ?? 'QQ Music playlist detail is empty.');
     }
@@ -1035,6 +1102,38 @@ export class QQMusicStreamingProvider implements StreamingProvider {
       total,
       hasMore: begin + songlist.length < total,
     };
+  }
+
+  private async fetchPlaylistDetailWithModernApi(providerPlaylistId: string, begin: number, pageSize: number): Promise<Record<string, unknown>> {
+    const body = {
+      comm: {
+        ct: 24,
+        cv: 0,
+      },
+      req_1: {
+        module: 'music.srfDissInfo.aiDissInfo',
+        method: 'uniform_get_Dissinfo',
+        param: {
+          disstid: Number(providerPlaylistId),
+          dirid: 0,
+          song_begin: begin,
+          song_num: pageSize,
+          onlysong: 0,
+          enc_host_uin: '',
+          tag: 1,
+          userinfo: 1,
+        },
+      },
+    };
+
+    return asRecord(
+      await jsonFetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
+        method: 'POST',
+        headers: qqHeaders(accountCookie()),
+        body,
+        timeoutMs: 12_000,
+      }),
+    );
   }
 
   async getLyrics(input: { providerTrackId: string }): Promise<StreamingLyricsResult> {

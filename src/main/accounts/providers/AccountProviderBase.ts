@@ -1,8 +1,8 @@
-import type { AccountProvider, AccountStatus, YouTubeBrowser } from '../../../shared/types/accounts';
+import type { AccountBrowser, AccountProvider, AccountStatus } from '../../../shared/types/accounts';
 
 export type StoredAccountRecord = {
   cookie?: string;
-  browser?: YouTubeBrowser;
+  browser?: AccountBrowser;
   accessToken?: string;
   refreshToken?: string;
   tokenType?: string;
