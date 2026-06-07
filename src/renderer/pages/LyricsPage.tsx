@@ -189,6 +189,7 @@ const seekAnchorSourceAdvanceReleaseSeconds = 0.75;
 const playbackRateChangeDiscontinuitySeconds = 0.35;
 const albumNavigationTransitionMs = 180;
 const lyricSeekPreviewMaxMs = 1200;
+const lyricsDrawerToolsChangedEvent = "app:lyrics-drawer-tools-changed";
 
 const fallbackLyricsDisplaySettings: LyricsDisplaySettings = {
   lyricsEnabled: true,
@@ -244,6 +245,54 @@ const syncedLyrics = (lines: LyricLine[], offsetMs: number): LyricsState => ({
   lines,
   offsetMs,
 });
+
+const lyricsPageSessionMemoryPrefix = "echo-next.lyrics-page.state.v1:";
+const isRememberableLyricsState = (lyrics: LyricsState): boolean =>
+  lyrics.kind === "instrumental" || lyrics.lines.length > 0;
+
+const readRememberedLyricsState = (key: string | null): LyricsState | null => {
+  if (!key || typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(`${lyricsPageSessionMemoryPrefix}${key}`);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<LyricsState> | null;
+    if (
+      !parsed ||
+      !Array.isArray(parsed.lines) ||
+      (parsed.kind !== "plain" && parsed.kind !== "synced" && parsed.kind !== "instrumental") ||
+      typeof parsed.offsetMs !== "number"
+    ) {
+      return null;
+    }
+
+    return {
+      kind: parsed.kind,
+      source: parsed.source ?? "none",
+      lines: parsed.lines,
+      offsetMs: parsed.offsetMs,
+    } as LyricsState;
+  } catch {
+    return null;
+  }
+};
+
+const rememberLyricsState = (key: string | null, lyrics: LyricsState): void => {
+  if (!key || !isRememberableLyricsState(lyrics) || typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(`${lyricsPageSessionMemoryPrefix}${key}`, JSON.stringify(lyrics));
+  } catch {
+    // Session memory is only a visual continuity hint.
+  }
+};
 
 const trackLyricsToState = (
   lyrics: TrackLyrics | null,
@@ -818,7 +867,7 @@ const highResolutionRemoteArtworkUrl = (coverUrl: string | null | undefined): st
       }
 
       if (url.hostname.endsWith("gtimg.cn") && /T002R\d+x\d+M000/u.test(url.href)) {
-        return url.href.replace(/T002R\d+x\d+M000/u, "T002R0x0M000");
+        return url.href.replace(/T002R\d+x\d+M000/u, "T002R500x500M000");
       }
 
       if (url.hostname.endsWith("coverartarchive.org") && /\/front-\d+(?=$|[?#])/u.test(url.pathname)) {
@@ -1772,6 +1821,17 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     title,
     trackId,
   ]);
+  const lyricsMemoryKey = useMemo(
+    () =>
+      trackId
+        ? [
+            trackId,
+            currentTrack?.stableKey ?? "",
+            isStreamingTrack(currentTrack) ? currentTrack.providerTrackId : "",
+          ].join("|")
+        : null,
+    [currentTrack, trackId],
+  );
   const isCurrentAirPlayReceiverTrack =
     Boolean(airPlaySourceId) ||
     snapshotProtocol(trackId) === "airplay" ||
@@ -1782,7 +1842,14 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     () => (isCurrentAirPlayReceiverTrack ? airPlaySingleLineLyrics(airPlayReceiverStatus?.currentLyricLine ?? null) : null),
     [airPlayReceiverStatus?.currentLyricLine, isCurrentAirPlayReceiverTrack],
   );
-  const displayedLyrics = liveAirPlayLyrics ?? lyrics;
+  const hasMatchedLyricsForAirPlay = isCurrentAirPlayReceiverTrack && isRememberableLyricsState(lyrics);
+  const displayedLyrics = hasMatchedLyricsForAirPlay ? lyrics : liveAirPlayLyrics ?? lyrics;
+  const shouldRevealAutomaticLyricsCandidates =
+    isCurrentAirPlayReceiverTrack ||
+    lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled === true;
+  useEffect(() => {
+    rememberLyricsState(lyricsMemoryKey, lyrics);
+  }, [lyrics, lyricsMemoryKey]);
   useEffect(() => {
     setIsSmartAlignmentSessionActive(false);
     setSmartAlignmentAnchors([]);
@@ -2302,15 +2369,25 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       ...enabled.filter((provider) => !order.includes(provider)),
     ];
 
-    return ordered.filter(
+    const filtered = ordered.filter(
       (provider): provider is LyricsProviderId =>
         searchableLyricsProviderSet.has(provider) &&
         (provider === "local" || lyricsDisplaySettings.lyricsNetworkEnabled),
     );
+    const streamingProvider = streamingTarget?.provider;
+    const preferredStreamingProvider =
+      streamingProvider && searchableLyricsProviderSet.has(streamingProvider)
+        ? (streamingProvider as LyricsProviderId)
+        : null;
+
+    return preferredStreamingProvider && filtered.includes(preferredStreamingProvider)
+      ? [preferredStreamingProvider, ...filtered.filter((provider) => provider !== preferredStreamingProvider)]
+      : filtered;
   }, [
     lyricsDisplaySettings.lyricsEnabledProviders,
     lyricsDisplaySettings.lyricsNetworkEnabled,
     lyricsDisplaySettings.lyricsProviderOrder,
+    streamingTarget?.provider,
   ]);
   const candidateSourceOptions = useMemo<Array<{ key: CandidateSourceFilter; label: string; count: number; order: number }>>(() => {
     const sourceMap = new Map<
@@ -2448,15 +2525,10 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         ? isAudioStatusForPlayback(snapshotAudioStatus, snapshot.playbackStatus) ||
           Boolean(snapshotAudioStatus.currentTrackId || snapshotAudioStatus.currentFilePath)
         : false;
-      if (shouldApplyAudioStatus) {
+      if (snapshotAudioStatus && shouldApplyAudioStatus) {
         setAudioStatus(snapshotAudioStatus);
-      } else if (snapshot.playbackStatus) {
-        const nextPlaybackStatus = snapshot.playbackStatus;
-        setAudioStatus((current) =>
-          current && !isAudioStatusForPlayback(current, nextPlaybackStatus)
-            ? null
-            : current,
-        );
+      } else if (snapshotAudioStatus || snapshot.playbackStatus || snapshot.error) {
+        setAudioStatus(null);
       }
 
       const nextTrackId =
@@ -2826,6 +2898,17 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       return;
     }
 
+    const rememberedLyrics = readRememberedLyricsState(lyricsMemoryKey);
+    const setPendingLyrics = (fallbackOffsetMs = 0): boolean => {
+      if (rememberedLyrics) {
+        setLyrics(rememberedLyrics);
+        return true;
+      }
+
+      setLyrics(emptyLyrics(fallbackOffsetMs));
+      return false;
+    };
+
     if (!lyricsDisplaySettings.lyricsEnabled) {
       lyricsRequestRef.current += 1;
       setLyrics(emptyLyrics(0));
@@ -2858,9 +2941,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       lyricsRequestRef.current += 1;
       setIsLyricsLoading(true);
       setIsCandidateLoading(false);
-      setLyrics(emptyLyrics(0));
+      const hasRememberedLyrics = setPendingLyrics();
       dispatchCurrentLyricsProviderChanged(null);
-      setLyricsStatus("Loading lyrics...");
+      setLyricsStatus(hasRememberedLyrics ? null : "Loading lyrics...");
       setCandidates([]);
       setActiveCandidateSource(readRememberedCandidateSource());
       setIsLyricsMatchPanelRevealed(false);
@@ -2881,9 +2964,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
       lyricsRequestRef.current = requestId;
       setIsLyricsLoading(true);
       setIsCandidateLoading(false);
-      setLyrics(emptyLyrics(0));
+      const hasRememberedLyrics = setPendingLyrics();
       dispatchCurrentLyricsProviderChanged(null);
-      setLyricsStatus("Loading streaming lyrics...");
+      setLyricsStatus(hasRememberedLyrics ? null : "Loading streaming lyrics...");
       setCandidates([]);
       setActiveCandidateSource(readRememberedCandidateSource());
       setIsLyricsMatchPanelRevealed(false);
@@ -2938,7 +3021,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
           setActiveCandidateSource(readRememberedCandidateSource());
           setIsLyricsMatchPanelRevealed(
             nextCandidates.length > 0 &&
-              lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled === true,
+              shouldRevealAutomaticLyricsCandidates,
           );
           setLyricsStatus(nextCandidates.length ? null : "No lyrics found");
         })
@@ -2947,14 +3030,16 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
             return;
           }
 
-          setLyrics(emptyLyrics(0));
+          if (!rememberedLyrics) {
+            setLyrics(emptyLyrics(0));
+          }
           dispatchCurrentLyricsProviderChanged(null);
-          setLyricsStatus("No lyrics found");
-          setError(
-            lyricsError instanceof Error
+          setLyricsStatus(rememberedLyrics ? null : "No lyrics found");
+          setError(rememberedLyrics
+            ? null
+            : lyricsError instanceof Error
               ? lyricsError.message
-              : String(lyricsError),
-          );
+              : String(lyricsError));
         })
         .finally(() => {
           if (lyricsRequestRef.current === requestId) {
@@ -2969,9 +3054,10 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     if (!lyricsApi) {
       lyricsRequestRef.current += 1;
       setLyrics(
-        initialLyrics && initialLyrics.length > 0
+        rememberedLyrics ??
+        (initialLyrics && initialLyrics.length > 0
           ? syncedLyrics(initialLyrics, 0)
-          : emptyLyrics(0),
+          : emptyLyrics(0)),
       );
       dispatchCurrentLyricsProviderChanged(null);
       return;
@@ -2980,7 +3066,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     const requestId = lyricsRequestRef.current + 1;
     lyricsRequestRef.current = requestId;
     setIsLyricsLoading(true);
-    setLyrics(emptyLyrics(0));
+    const hasRememberedLyrics = setPendingLyrics();
     dispatchCurrentLyricsProviderChanged(null);
     setLyricsStatus("正在匹配歌词...");
     setCandidates([]);
@@ -3025,7 +3111,7 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
           setActiveCandidateSource(readRememberedCandidateSource());
           setIsLyricsMatchPanelRevealed(
             nextCandidates.length > 0 &&
-              lyricsDisplaySettings.lyricsCandidatePanelAutoOpenEnabled === true,
+              shouldRevealAutomaticLyricsCandidates,
           );
           setLyricsStatus(nextCandidates.length ? null : "No lyrics found");
           return;
@@ -3040,14 +3126,16 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
           return;
         }
 
-        setLyrics(emptyLyrics(0));
+        if (!rememberedLyrics) {
+          setLyrics(emptyLyrics(0));
+        }
         dispatchCurrentLyricsProviderChanged(null);
-        setLyricsStatus("No lyrics found");
-        setError(
-          lyricsError instanceof Error
+        setLyricsStatus(rememberedLyrics ? null : "No lyrics found");
+        setError(rememberedLyrics
+          ? null
+          : lyricsError instanceof Error
             ? lyricsError.message
-            : String(lyricsError),
-        );
+            : String(lyricsError));
       })
       .finally(() => {
         if (lyricsRequestRef.current === requestId) {
@@ -3066,7 +3154,9 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
     lyricsDisplaySettings.lyricsEnabled,
     lyricsDisplaySettings.lyricsRomanizationEnabled,
     lyricsDisplaySettings.lyricsUtatenKanaEnabled,
+    lyricsMemoryKey,
     searchLyricsCandidatesForProvider,
+    shouldRevealAutomaticLyricsCandidates,
     streamingTarget,
     trackId,
     tryAutoApplyCandidate,
@@ -4237,6 +4327,40 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
   ]);
 
   const shouldHideLyricsInMv = lyricsViewMode === "mv" && mvHideLyrics;
+  const lyricsDrawerCurrentTrackTools = useMemo(() => {
+    if (shouldHideLyricsInMv) {
+      return null;
+    }
+
+    const smartAlignmentControls = lyricsDisplaySettings.lyricsOffsetControlsEnabled ? lyricsSmartAlignmentControls : null;
+    if (!lyricsOffsetControls && !smartAlignmentControls) {
+      return null;
+    }
+
+    return (
+      <div className="lyrics-current-track-tools">
+        {lyricsOffsetControls}
+        {smartAlignmentControls}
+      </div>
+    );
+  }, [
+    lyricsDisplaySettings.lyricsOffsetControlsEnabled,
+    lyricsOffsetControls,
+    lyricsSmartAlignmentControls,
+    shouldHideLyricsInMv,
+  ]);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(lyricsDrawerToolsChangedEvent, {
+      detail: { currentTrackTools: lyricsDrawerCurrentTrackTools },
+    }));
+
+    return () => {
+      window.dispatchEvent(new CustomEvent(lyricsDrawerToolsChangedEvent, {
+        detail: { currentTrackTools: null },
+      }));
+    };
+  }, [lyricsDrawerCurrentTrackTools]);
 
   if (!currentTrack && !filePath && !trackId) {
     return (
@@ -4397,12 +4521,11 @@ export const LyricsPage = ({ initialLyrics, usePlayerDrawerHeader = false }: Lyr
         )}
 
         {shouldHideLyricsInMv ? null : lyricsControls}
-        {shouldHideLyricsInMv ? null : lyricsOffsetControls}
-        {!shouldHideLyricsInMv && lyricsDisplaySettings.lyricsOffsetControlsEnabled ? lyricsSmartAlignmentControls : null}
         {lyricsDisplaySettings.lyricsEnabled && !shouldHideLyricsInMv ? (
           <LyricsView
             durationMs={displayDurationSeconds * 1000}
             hideEmptyState={lyricsDisplaySettings.lyricsEmptyStateHidden && !isCurrentAirPlayReceiverTrack}
+            emptyLabel={isLyricsLoading || isCandidateLoading ? "正在加载歌词..." : undefined}
             lyrics={effectiveDisplayedLyrics}
             positionMs={
               lyricsPositionSeconds * 1000 +

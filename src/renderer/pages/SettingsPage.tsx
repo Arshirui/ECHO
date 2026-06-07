@@ -51,9 +51,10 @@ import type {
   PlaybackSpeedMode,
 } from '../../shared/types/audio';
 import { QUIET_REPLAY_GAIN_TARGET_LUFS, SPOTIFY_NORMAL_REPLAY_GAIN_TARGET_LUFS } from '../../shared/constants/replayGain';
-import { isDownloadFeatureUnlockCode, isFinalThemeUnlockCode } from '../../shared/constants/featureUnlocks';
+import { finalThemeUnlockVersion, isDownloadFeatureUnlockCode, isFinalThemeUnlockCode } from '../../shared/constants/featureUnlocks';
 import { defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
 import {
+  defaultSidebarHiddenRouteIds,
   defaultSidebarRouteOrder,
   lockedVisibleSidebarRouteIds,
   normalizeSidebarHiddenRouteIds,
@@ -386,6 +387,7 @@ const discogsDeveloperSettingsUrl = 'https://www.discogs.com/settings/developers
 const officialWebsiteUrl = 'https://echonext.moe';
 const userDocumentationUrl = 'https://echonext.moe/zh/docs/';
 const baiduPanShareUrl = 'https://pan.baidu.com/s/1ta0McyhY9knaD6FT5xW3Og?pwd=echo';
+const bilibiliSpaceUrl = 'https://space.bilibili.com/25265128';
 const autoUpdateSourceOptions: Array<{ source: AutoUpdateSource; label: string; description: string }> = [
   { source: 'official', label: 'GitHub', description: '官方直连' },
   { source: 'ghfast', label: 'ghfast.top', description: '实测可读 latest.yml' },
@@ -523,7 +525,7 @@ const networkProviderLabels: Record<AppSettings['networkMetadataProviders'][numb
   'cover-art-archive': 'Cover Art Archive',
   mock: 'Mock',
 };
-const visibleNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music', 'kugou-music', 'musicbrainz'];
+const visibleNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music', 'musicbrainz'];
 const defaultNetworkMetadataProviders: AppSettings['networkMetadataProviders'] = ['netease-cloud-music', 'qq-music'];
 const artistOnlineInfoSourceOptions: Array<{ source: ArtistOnlineInfoSource; label: string; description: string }> = [
   { source: 'baidu-baike', label: '百度百科', description: '中文艺人和大众歌手优先' },
@@ -769,7 +771,7 @@ const accountLoginUrls: Record<AccountProvider, string> = {
   osu: 'https://osu.ppy.sh/',
 };
 
-const cookieAccountProviders: AccountProvider[] = ['netease', 'qqmusic', 'kugou', 'bilibili', 'soundcloud', 'osu'];
+const cookieAccountProviders: AccountProvider[] = ['netease', 'qqmusic', 'bilibili', 'soundcloud', 'osu'];
 const buildYouTubeBrowserOptions = (t: (key: TranslationKey, params?: Record<string, string | number>) => string): Array<{ value: YouTubeBrowser; label: string }> => [
   { value: 'edge', label: 'Edge' },
   { value: 'chrome', label: 'Chrome' },
@@ -913,6 +915,14 @@ const settingsNavItems: SettingsNavItem[] = [
   { key: 'danger', labelKey: 'settings.nav.danger.label', descriptionKey: 'settings.nav.danger.description', icon: Trash2 },
 ];
 
+const shouldShowSettingsNavItem = (key: SettingsNavKey, settings: Partial<AppSettings> | null | undefined): boolean => {
+  if (key === 'plugins' || key === 'remote' || key === 'eq') {
+    return settings?.settingsOptionalSectionsVisible === true;
+  }
+
+  return true;
+};
+
 type SidebarSettingsRouteItem = {
   id: SidebarRouteId;
   labelKey: TranslationKey;
@@ -963,6 +973,7 @@ const lockedVisibleSidebarRouteIdSet = new Set<SidebarRouteId>(lockedVisibleSide
 const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
 const pendingRouteStorageKey = 'echo-next.pending-route';
 const settingsBackNavigationEvent = 'app:navigate:settings-back';
+const settingsSectionNavigationEvent = 'app:navigate:settings-section';
 const pluginsDocumentationUrl = 'https://github.com/moekotori/echo/blob/main/docs/ECHO_NEXT_PLUGINS.md';
 const settingsNavKeys = new Set<SettingsNavKey>(settingsNavItems.map((item) => item.key));
 
@@ -1096,7 +1107,6 @@ const settingsSearchAliases: Record<SettingsNavKey, string[]> = {
     'system',
     'wallpaper',
     'font',
-    'density',
     'sidebar',
     'side bar',
     'left sidebar',
@@ -1766,6 +1776,23 @@ const themePresetOptions: Array<{
     swatches: ['#f4f5f4', '#30363a', '#7c8588', '#b08a56'],
   },
 ];
+
+const randomThemePresetOption = {
+  labelKey: 'settings.appearance.themePreset.random',
+  descriptionKey: 'settings.appearance.themePreset.random.description',
+  preview: 'linear-gradient(135deg, #f7f8fb 0%, #e4ecea 44%, #f2e2d8 100%)',
+  swatches: ['#f7f8fb', '#3f6f9e', '#6f9a8d', '#b47b68'],
+} satisfies {
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
+  preview: string;
+  swatches: string[];
+};
+
+type GeneratedRandomThemeDraft = {
+  dark: AppThemeToneOverride;
+  light: AppThemeToneOverride;
+};
 
 type PluginThemeOption = PluginThemePresetContribution & {
   pluginId: string;
@@ -3243,6 +3270,177 @@ const getContrastRatio = (foreground: string, background: string): number => {
 
 const bestReadableColor = (background: string): string => (getContrastRatio('#ffffff', background) >= getContrastRatio('#241a17', background) ? '#ffffff' : '#241a17');
 
+const clampNumber = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+
+const randomNumber = (min: number, max: number): number => min + Math.random() * (max - min);
+
+const randomInteger = (min: number, max: number): number => Math.round(randomNumber(min, max));
+
+const hslToHex = (hue: number, saturation: number, lightness: number): string => {
+  const normalizedHue = (((hue % 360) + 360) % 360) / 360;
+  const normalizedSaturation = clampNumber(saturation, 0, 100) / 100;
+  const normalizedLightness = clampNumber(lightness, 0, 100) / 100;
+
+  const hueToRgb = (p: number, q: number, t: number): number => {
+    let nextT = t;
+    if (nextT < 0) {
+      nextT += 1;
+    }
+    if (nextT > 1) {
+      nextT -= 1;
+    }
+    if (nextT < 1 / 6) {
+      return p + (q - p) * 6 * nextT;
+    }
+    if (nextT < 1 / 2) {
+      return q;
+    }
+    if (nextT < 2 / 3) {
+      return p + (q - p) * (2 / 3 - nextT) * 6;
+    }
+    return p;
+  };
+
+  const q = normalizedLightness < 0.5
+    ? normalizedLightness * (1 + normalizedSaturation)
+    : normalizedLightness + normalizedSaturation - normalizedLightness * normalizedSaturation;
+  const p = 2 * normalizedLightness - q;
+  const channels = normalizedSaturation === 0
+    ? [normalizedLightness, normalizedLightness, normalizedLightness]
+    : [
+        hueToRgb(p, q, normalizedHue + 1 / 3),
+        hueToRgb(p, q, normalizedHue),
+        hueToRgb(p, q, normalizedHue - 1 / 3),
+      ];
+
+  return `#${channels.map((channel) => Math.round(channel * 255).toString(16).padStart(2, '0')).join('')}`;
+};
+
+const readableCandidate = (background: string, candidates: string[], minimumRatio: number): string => {
+  const ranked = candidates
+    .map((color) => ({ color, ratio: getContrastRatio(color, background) }))
+    .sort((left, right) => right.ratio - left.ratio);
+
+  return ranked.find((item) => item.ratio >= minimumRatio)?.color ?? ranked[0]?.color ?? bestReadableColor(background);
+};
+
+const buildRandomThemeTone = (tone: ThemeTone, hue: number, secondaryHue: number, warmHue: number): AppThemeToneOverride => {
+  const tertiaryHue = secondaryHue + randomInteger(42, 86);
+
+  if (tone === 'dark') {
+    const appBg = hslToHex(hue, randomInteger(16, 30), randomInteger(8, 12));
+    const appBg2 = hslToHex(secondaryHue, randomInteger(18, 34), randomInteger(13, 17));
+    const appBg3 = hslToHex(tertiaryHue, randomInteger(16, 30), randomInteger(11, 15));
+    const panel = hslToHex(hue, randomInteger(14, 24), randomInteger(17, 21));
+    const panelSoft = hslToHex(hue, randomInteger(12, 22), randomInteger(13, 17));
+    const accent = hslToHex(hue, randomInteger(46, 60), randomInteger(58, 66));
+    const accentStrong = hslToHex(hue, randomInteger(38, 54), randomInteger(74, 82));
+    const secondary = hslToHex(secondaryHue, randomInteger(38, 54), randomInteger(56, 66));
+    const text = readableCandidate(appBg, ['#eef4ff', '#f8fbff', '#e6edf7'], 4.5);
+    const heading = readableCandidate(appBg, ['#ffffff', '#f8fbff', text], 4.5);
+    const buttonText = readableCandidate(panel, [text, heading, '#ffffff'], 4.5);
+
+    return {
+      appBg,
+      appBg2,
+      appBg3,
+      panel,
+      panelSoft,
+      accent,
+      accentStrong,
+      secondary,
+      heading,
+      text,
+      muted: readableCandidate(appBg, ['#b8c5d6', '#c5cfdd', '#d2d9e6'], 4.5),
+      border: hslToHex(hue, randomInteger(36, 56), randomInteger(46, 56)),
+      onAccent: readableCandidate(accent, ['#101318', '#ffffff'], 3),
+      buttonText,
+      titlebar: panel,
+      sidebar: panelSoft,
+      player: panel,
+      field: panel,
+      row: panel,
+      rowHover: hslToHex(hue, randomInteger(16, 28), randomInteger(22, 27)),
+      rowActive: hslToHex(hue, randomInteger(34, 48), randomInteger(26, 32)),
+      chip: panel,
+      focus: accent,
+      danger: '#ff7676',
+      success: secondary,
+      warning: hslToHex(warmHue, randomInteger(52, 66), randomInteger(60, 68)),
+      panelOpacityPercent: randomInteger(86, 92),
+      glassPercent: randomInteger(16, 24),
+      shadowPercent: randomInteger(82, 100),
+      cornerRadiusPx: randomInteger(8, 14),
+      panelBlurPx: randomInteger(10, 18),
+      saturationPercent: randomInteger(88, 106),
+      motionEnabled: true,
+      motionSpeedSeconds: Math.round(randomNumber(0.2, 0.36) * 100) / 100,
+      motionIntensityPercent: randomInteger(54, 88),
+    };
+  }
+
+  const appBg = hslToHex(hue, randomInteger(18, 34), randomInteger(94, 97));
+  const appBg2 = hslToHex(secondaryHue, randomInteger(20, 38), randomInteger(86, 91));
+  const appBg3 = hslToHex(tertiaryHue, randomInteger(18, 34), randomInteger(88, 93));
+  const panel = hslToHex(hue, randomInteger(10, 22), randomInteger(98, 100));
+  const panelSoft = hslToHex(secondaryHue, randomInteger(16, 30), randomInteger(91, 95));
+  const accent = hslToHex(hue, randomInteger(42, 58), randomInteger(36, 44));
+  const accentStrong = hslToHex(hue, randomInteger(46, 62), randomInteger(26, 34));
+  const secondary = hslToHex(secondaryHue, randomInteger(34, 50), randomInteger(36, 46));
+  const text = readableCandidate(appBg, ['#26313f', '#1e2430', '#343846'], 4.5);
+  const heading = readableCandidate(appBg, ['#101722', '#1d2430', text], 4.5);
+  const buttonText = readableCandidate(panel, [text, heading, '#111827'], 4.5);
+
+  return {
+    appBg,
+    appBg2,
+    appBg3,
+    panel,
+    panelSoft,
+    accent,
+    accentStrong,
+    secondary,
+    heading,
+    text,
+    muted: readableCandidate(appBg, ['#566171', '#626b78', '#4b5563'], 4.5),
+    border: hslToHex(hue, randomInteger(30, 48), randomInteger(52, 62)),
+    onAccent: readableCandidate(accent, ['#ffffff', '#101318'], 3),
+    buttonText,
+    titlebar: panel,
+    sidebar: panelSoft,
+    player: panel,
+    field: panel,
+    row: panel,
+    rowHover: hslToHex(hue, randomInteger(12, 24), randomInteger(95, 98)),
+    rowActive: hslToHex(hue, randomInteger(26, 40), randomInteger(89, 93)),
+    chip: panel,
+    focus: accent,
+    danger: '#d64545',
+    success: secondary,
+    warning: hslToHex(warmHue, randomInteger(44, 60), randomInteger(38, 48)),
+    panelOpacityPercent: randomInteger(72, 82),
+    glassPercent: randomInteger(12, 20),
+    shadowPercent: randomInteger(70, 100),
+    cornerRadiusPx: randomInteger(8, 14),
+    panelBlurPx: randomInteger(10, 18),
+    saturationPercent: randomInteger(88, 104),
+    motionEnabled: true,
+    motionSpeedSeconds: Math.round(randomNumber(0.2, 0.36) * 100) / 100,
+    motionIntensityPercent: randomInteger(50, 84),
+  };
+};
+
+const buildRandomThemeDraft = (): GeneratedRandomThemeDraft => {
+  const hue = randomInteger(0, 359);
+  const secondaryHue = hue + randomInteger(82, 148);
+  const warmHue = hue + randomInteger(24, 52);
+
+  return {
+    light: buildRandomThemeTone('light', hue, secondaryHue, warmHue),
+    dark: buildRandomThemeTone('dark', hue + randomInteger(8, 28), secondaryHue, warmHue),
+  };
+};
+
 const getThemeEditorDefaults = (preset: AppThemePreset, tone: ThemeTone): ThemeEditorDefaults => ({
   ...baseThemeEditorDefaults[tone],
   ...(themeEditorDefaults[preset]?.[tone] ?? {}),
@@ -3463,8 +3661,17 @@ const getUpdateStateLabel = (state: UpdateStatus['state']): TranslationKey => {
   }
 };
 
-const readFinalThemeUnlocked = (): boolean =>
-  readBooleanStoragePreference(finalThemeUnlockedStorageKey, false);
+const readFinalThemeUnlocked = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(finalThemeUnlockedStorageKey) === finalThemeUnlockVersion;
+  } catch {
+    return false;
+  }
+};
 
 const writeFinalThemeUnlocked = (): void => {
   if (typeof window === 'undefined') {
@@ -3472,7 +3679,7 @@ const writeFinalThemeUnlocked = (): void => {
   }
 
   try {
-    window.localStorage.setItem(finalThemeUnlockedStorageKey, 'true');
+    window.localStorage.setItem(finalThemeUnlockedStorageKey, finalThemeUnlockVersion);
   } catch {
     // Ignore storage failures; the unlock can still work for this session.
   }
@@ -4027,6 +4234,7 @@ export const SettingsPage = (): JSX.Element => {
   const mysteriousKeyUnlockNoticeShownRef = useRef(false);
   const [finalThemeUnlocked, setFinalThemeUnlocked] = useState(() => readFinalThemeUnlocked());
   const finalThemeUnlockNoticeShownRef = useRef(false);
+  const finalThemeRelockAppliedRef = useRef(false);
   const [status, setStatus] = useState<AudioStatus | null>(null);
   const [audioDiagnosticsCopied, setAudioDiagnosticsCopied] = useState(false);
   const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
@@ -4071,6 +4279,7 @@ export const SettingsPage = (): JSX.Element => {
   const [appearanceTypographyOpen, setAppearanceTypographyOpen] = useState(false);
   const [themeCustomMessage, setThemeCustomMessage] = useState<string | null>(null);
   const pendingThemeCopyDraftRef = useRef<{ draft: AppThemeToneOverride; tone: ThemeTone } | null>(null);
+  const pendingRandomThemeDraftRef = useRef<GeneratedRandomThemeDraft | null>(null);
   const skipNextThemePreviewRef = useRef(false);
   const wallpaperPersistTimerRef = useRef<number | null>(null);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus | null>(null);
@@ -4242,7 +4451,37 @@ export const SettingsPage = (): JSX.Element => {
   const libraryScanHasVisibleProgress = libraryScanStatusList.length > 0 && (libraryScanRunningList.length > 0 || libraryScanMessage !== null);
   const libraryScanActionDisabled = libraryScanBusy || libraryScanRunningList.length > 0;
 
+  const settingsNavigationItems = useMemo(
+    () => settingsNavItems.filter((item) => shouldShowSettingsNavItem(item.key, appSettings)),
+    [appSettings?.settingsOptionalSectionsVisible],
+  );
+
+  useEffect(() => {
+    const handleSettingsSectionNavigation = (event: Event): void => {
+      const section = event instanceof CustomEvent ? (event.detail as { section?: unknown } | null | undefined)?.section : null;
+      if (!section || !settingsNavKeys.has(section as SettingsNavKey)) {
+        return;
+      }
+
+      setActiveSection(section as SettingsNavKey);
+      setSettingsQuery('');
+      setHighlightedSettingId(null);
+    };
+
+    window.addEventListener(settingsSectionNavigationEvent, handleSettingsSectionNavigation);
+    return () => window.removeEventListener(settingsSectionNavigationEvent, handleSettingsSectionNavigation);
+  }, []);
+
+  useEffect(() => {
+    if (!settingsNavigationItems.some((item) => item.key === activeSection)) {
+      setActiveSection('general');
+      setSettingsQuery('');
+      setHighlightedSettingId(null);
+    }
+  }, [activeSection, settingsNavigationItems]);
+
   const settingsSearchEntries = useMemo(() => {
+    const visibleSectionKeys = new Set(settingsNavigationItems.map((item) => item.key));
     const sectionEntries: Array<{
       id: string;
       sectionKey: SettingsNavKey;
@@ -4250,7 +4489,7 @@ export const SettingsPage = (): JSX.Element => {
       title: string;
       description: string;
       terms: string[];
-    }> = settingsNavItems.map((item) => {
+    }> = settingsNavigationItems.map((item) => {
       const title = t(item.labelKey);
       const description = t(item.descriptionKey);
       return {
@@ -4331,6 +4570,25 @@ export const SettingsPage = (): JSX.Element => {
           'hide descriptions',
           'feature comments',
           'minimal ui',
+        ],
+      },
+      {
+        id: 'row-track-context-menu-extra-actions',
+        sectionKey: 'general',
+        targetId: 'settings-row-track-context-menu-extra-actions',
+        title: t('settings.general.trackContextMenuExtraActions.title'),
+        description: t('settings.general.trackContextMenuExtraActions.description'),
+        terms: [
+          t('settings.general.trackContextMenuExtraActions.title'),
+          t('settings.general.trackContextMenuExtraActions.description'),
+          '\u53f3\u952e\u83dc\u5355',
+          '\u590d\u5236\u6b4c\u66f2\u5361\u7247\u56fe\u7247',
+          '\u4fdd\u5b58\u6b4c\u66f2\u5361\u7247\u56fe\u7247',
+          '\u7cfb\u7edf\u9ed8\u8ba4\u5e94\u7528',
+          'context menu',
+          'osu timing',
+          'system default app',
+          'song card image',
         ],
       },
       {
@@ -4990,12 +5248,12 @@ export const SettingsPage = (): JSX.Element => {
         return false;
       }
 
-      return true;
+      return visibleSectionKeys.has(entry.sectionKey);
     });
     return windowsIntegrationAvailable
       ? entries
       : entries.filter((entry) => entry.targetId !== 'settings-row-smtc' && entry.targetId !== 'settings-row-taskbar-playback');
-  }, [appSettings?.downloadsFeatureUnlocked, mysteriousKeyVisible, t, windowsIntegrationAvailable]);
+  }, [appSettings?.downloadsFeatureUnlocked, mysteriousKeyVisible, settingsNavigationItems, t, windowsIntegrationAvailable]);
 
   const mysteriousKeySearchUnlocked = activeSection === 'general' && normalizeSettingsSearchText(settingsQuery) === 'zimin';
   const finalThemeSearchUnlocked = isFinalThemeUnlockCode(settingsQuery);
@@ -5013,28 +5271,6 @@ export const SettingsPage = (): JSX.Element => {
     mysteriousKeyUnlockNoticeShownRef.current = true;
     window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'Mysterious key 已解锁。' }));
   }, [mysteriousKeySearchUnlocked]);
-
-  useEffect(() => {
-    if (!finalThemeSearchUnlocked) {
-      return;
-    }
-
-    if (!finalThemeUnlocked) {
-      writeFinalThemeUnlocked();
-      setFinalThemeUnlocked(true);
-    }
-
-    setSettingsQuery('');
-    setActiveSection('appearance');
-    setAppSettings((current) => (current ? { ...current, appearanceThemePresetsExpanded: true } : current));
-
-    if (finalThemeUnlockNoticeShownRef.current) {
-      return;
-    }
-
-    finalThemeUnlockNoticeShownRef.current = true;
-    window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'FINAL theme unlocked.' }));
-  }, [finalThemeSearchUnlocked, finalThemeUnlocked]);
 
   const settingsSearchResults = useMemo<SettingsSearchResult[]>(() => {
     const query = normalizeSettingsSearchText(settingsQuery);
@@ -5067,12 +5303,12 @@ export const SettingsPage = (): JSX.Element => {
     const query = normalizeSettingsSearchText(settingsQuery);
 
     if (!query) {
-      return settingsNavItems;
+      return settingsNavigationItems;
     }
 
     const resultKeys = new Set(settingsSearchResults.map((item) => item.sectionKey));
-    return settingsNavItems.filter((item) => resultKeys.has(item.key));
-  }, [settingsQuery, settingsSearchResults]);
+    return settingsNavigationItems.filter((item) => resultKeys.has(item.key));
+  }, [settingsNavigationItems, settingsQuery, settingsSearchResults]);
 
   const compatibleDevices = useMemo(
     () => getCompatiblePlaybackDevices(devices, outputMode),
@@ -5121,7 +5357,6 @@ export const SettingsPage = (): JSX.Element => {
     playbackStatus: segmentPlaybackStatus,
     playbackVisualIntent: sharedPlaybackStatus.playbackVisualIntent,
   });
-  const libraryHeavyRefreshAllowed = segmentVisualState !== 'playing' && segmentVisualState !== 'loading';
   const segmentIsSpotifyTrack = isSpotifyTrack(segmentCurrentTrack);
   const segmentTitle = segmentCurrentTrack?.title ?? titleFromPath(segmentFilePath);
   const segmentArtist = segmentCurrentTrack?.artist ?? segmentCurrentTrack?.albumArtist ?? '';
@@ -5534,26 +5769,14 @@ export const SettingsPage = (): JSX.Element => {
       return undefined;
     }
 
-    let cacheInventoryTimer: number | null = null;
     const cancelIdleTask = scheduleSettingsIdleTask(() => {
       void refreshDuplicateSummary();
-
-      if (!libraryHeavyRefreshAllowed) {
-        return;
-      }
-
-      cacheInventoryTimer = window.setTimeout(() => {
-        void refreshCacheInventory();
-      }, 900);
     });
 
     return () => {
       cancelIdleTask();
-      if (cacheInventoryTimer !== null) {
-        window.clearTimeout(cacheInventoryTimer);
-      }
     };
-  }, [activeSection, libraryDeferredRefreshReady, libraryHeavyRefreshAllowed, refreshCacheInventory, refreshDuplicateSummary]);
+  }, [activeSection, libraryDeferredRefreshReady, refreshDuplicateSummary]);
 
   useEffect(() => {
     if (activeSection !== 'library') {
@@ -5712,6 +5935,12 @@ export const SettingsPage = (): JSX.Element => {
       setThemeCustomDraft(pendingCopy.draft);
       pendingThemeCopyDraftRef.current = null;
       setThemeCustomMessage(null);
+      return;
+    }
+
+    const pendingRandom = pendingRandomThemeDraftRef.current;
+    if (pendingRandom && !activeThemeCustom && selectedThemePreset === 'classic') {
+      setThemeCustomDraft(pendingRandom[themeCustomTone]);
       return;
     }
 
@@ -6424,6 +6653,7 @@ export const SettingsPage = (): JSX.Element => {
 
   const handleThemeModeChange = (appearanceTheme: AppThemeMode): void => {
     skipNextThemePreviewRef.current = true;
+    pendingRandomThemeDraftRef.current = null;
     updateThemePreferences(appearanceTheme, selectedThemePreset, savedThemePresetOverrides, {
       animate: true,
       customThemeId: activeThemeCustom?.id ?? null,
@@ -6450,6 +6680,7 @@ export const SettingsPage = (): JSX.Element => {
       return;
     }
 
+    pendingRandomThemeDraftRef.current = null;
     const nextCustomId = activeThemeCustom ? null : savedThemeCustomId;
     skipNextThemePreviewRef.current = true;
     updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, appearanceThemePreset, savedThemePresetOverrides, {
@@ -6468,18 +6699,50 @@ export const SettingsPage = (): JSX.Element => {
           }
         : current,
     );
-    patchAppSettings(activeThemeCustom ? { appearanceThemePreset, appearanceThemeCustomId: null } : { appearanceThemePreset });
+    const nextFinalThemeUnlockVersion = finalThemeUnlocked ? finalThemeUnlockVersion : null;
+    patchAppSettings(
+      activeThemeCustom
+        ? { appearanceThemePreset, appearanceThemeCustomId: null, finalThemeUnlockVersion: nextFinalThemeUnlockVersion }
+        : { appearanceThemePreset, finalThemeUnlockVersion: nextFinalThemeUnlockVersion },
+    );
+  };
+
+  const handleRandomThemeCreate = (): void => {
+    const randomTheme = buildRandomThemeDraft();
+    pendingRandomThemeDraftRef.current = randomTheme;
+    setActiveThemeCustomId(null);
+    setSelectedThemePreset('classic');
+    setThemeCustomDraft(randomTheme[themeCustomTone]);
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset: 'classic',
+            appearanceThemeCustomId: null,
+            finalThemeUnlockVersion: null,
+          }
+        : current,
+    );
+    setThemeCustomMessage(t('settings.appearance.themeCustom.message.randomReady'));
   };
 
   const themeCustomValues = mergeThemeToneValues(selectedThemePreset, themeCustomTone, themeCustomDraft);
   const themeCustomWarnings = getThemeContrastWarnings(themeCustomValues);
   const selectedThemePresetOption = themePresetOptions.find((option) => option.preset === selectedThemePreset) ?? themePresetOptions[0];
-  const visibleThemePresetOptions = useMemo(
-    () => finalThemeUnlocked ? themePresetOptions : themePresetOptions.filter((option) => option.preset !== 'FINAL'),
-    [finalThemeUnlocked],
-  );
+  const visibleThemePresetOptions = themePresetOptions;
   const themePresetsExpanded = appSettings?.appearanceThemePresetsExpanded === true;
   const themeCustomGradientPreview = `linear-gradient(135deg, ${themeCustomValues.appBg} 0%, ${themeCustomValues.appBg2} 52%, ${themeCustomValues.appBg3} 100%)`;
+
+  const rememberPendingRandomThemeDraft = (draft: AppThemeToneOverride): void => {
+    if (!pendingRandomThemeDraftRef.current) {
+      return;
+    }
+
+    pendingRandomThemeDraftRef.current = {
+      ...pendingRandomThemeDraftRef.current,
+      [themeCustomTone]: draft,
+    };
+  };
 
   const updateThemeCustomColor = (field: ThemeColorField, value: string): void => {
     const color = normalizeThemeHexColor(value);
@@ -6496,6 +6759,7 @@ export const SettingsPage = (): JSX.Element => {
       } else {
         next[field] = color;
       }
+      rememberPendingRandomThemeDraft(next);
       return next;
     });
   };
@@ -6516,6 +6780,7 @@ export const SettingsPage = (): JSX.Element => {
       } else {
         next[field] = normalized;
       }
+      rememberPendingRandomThemeDraft(next);
       return next;
     });
   };
@@ -6529,6 +6794,7 @@ export const SettingsPage = (): JSX.Element => {
       } else {
         next.motionEnabled = enabled;
       }
+      rememberPendingRandomThemeDraft(next);
       return next;
     });
   };
@@ -6539,21 +6805,41 @@ export const SettingsPage = (): JSX.Element => {
     const accentText = bestReadableColor(themeCustomValues.accent);
     const darkBackground = getRelativeLuminance(themeCustomValues.appBg) < 0.42;
 
-    setThemeCustomDraft((current) => ({
-      ...current,
-      heading: backgroundText,
-      text: backgroundText,
-      muted: darkBackground ? '#c7d1d8' : '#61564d',
-      buttonText: panelText,
-      onAccent: accentText,
-    }));
+    setThemeCustomDraft((current) => {
+      const next = {
+        ...current,
+        heading: backgroundText,
+        text: backgroundText,
+        muted: darkBackground ? '#c7d1d8' : '#61564d',
+        buttonText: panelText,
+        onAccent: accentText,
+      };
+      rememberPendingRandomThemeDraft(next);
+      return next;
+    });
     setThemeCustomMessage(t('settings.appearance.themeCustom.message.fixed'));
   };
 
   const handleThemeCustomSave = (): void => {
     const currentTheme = activeThemeCustom;
+    const pendingRandomTheme = pendingRandomThemeDraftRef.current;
+    const buildSavedRandomTheme = (): AppThemeCustomTheme => {
+      const timestamp = new Date().toISOString();
+      return {
+        id: createThemeCustomId(),
+        name: t(randomThemePresetOption.labelKey),
+        basePreset: selectedThemePreset,
+        light: pendingRandomTheme?.light,
+        dark: pendingRandomTheme?.dark,
+        [themeCustomTone]: themeCustomDraft,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+    };
     const nextThemes = currentTheme
       ? updateThemeCustomThemeTone(savedThemeCustomThemes, currentTheme.id, themeCustomTone, themeCustomDraft)
+      : pendingRandomTheme
+        ? normalizeThemeCustomThemes([...savedThemeCustomThemes, buildSavedRandomTheme()])
       : normalizeThemeCustomThemes([...savedThemeCustomThemes, buildThemeCustomTheme(savedThemeCustomThemes, selectedThemePreset, themeCustomTone, themeCustomDraft)]);
     const nextThemeId = currentTheme?.id ?? nextThemes[nextThemes.length - 1]?.id ?? null;
     updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, savedThemePresetOverrides, {
@@ -6574,10 +6860,12 @@ export const SettingsPage = (): JSX.Element => {
         : current,
     );
     patchAppSettings({ appearanceThemePreset: selectedThemePreset, appearanceCustomThemes: nextThemes, appearanceThemeCustomId: nextThemeId });
+    pendingRandomThemeDraftRef.current = null;
     setThemeCustomMessage(t('settings.appearance.themeCustom.message.saved'));
   };
 
   const handleThemeCustomReset = (): void => {
+    pendingRandomThemeDraftRef.current = null;
     setThemeCustomDraft({});
     if (activeThemeCustom) {
       const nextThemes = updateThemeCustomThemeTone(savedThemeCustomThemes, activeThemeCustom.id, themeCustomTone, null);
@@ -6605,6 +6893,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomImport = (): void => {
+    pendingRandomThemeDraftRef.current = null;
     const input = document.createElement('input');
     input.accept = '.json,.echo-theme.json,application/json';
     input.type = 'file';
@@ -6676,6 +6965,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handlePluginThemeApply = (pluginTheme: PluginThemeOption): void => {
+    pendingRandomThemeDraftRef.current = null;
     const existingTheme = savedThemeCustomThemes.find((theme) => theme.id === pluginTheme.customThemeId);
     const importedTheme = buildPluginThemeCustomTheme(pluginTheme, existingTheme);
     const nextThemes = normalizeThemeCustomThemes([...savedThemeCustomThemes.filter((theme) => theme.id !== importedTheme.id), importedTheme]);
@@ -6709,6 +6999,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomCreate = (): void => {
+    pendingRandomThemeDraftRef.current = null;
     const nextTheme = buildThemeCustomTheme(savedThemeCustomThemes, selectedThemePreset, themeCustomTone, themeCustomDraft);
     const nextThemes = normalizeThemeCustomThemes([...savedThemeCustomThemes, nextTheme]);
     updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, selectedThemePreset, savedThemePresetOverrides, {
@@ -6733,6 +7024,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomSelect = (theme: AppThemeCustomTheme): void => {
+    pendingRandomThemeDraftRef.current = null;
     skipNextThemePreviewRef.current = true;
     updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, theme.basePreset, savedThemePresetOverrides, {
       animate: true,
@@ -6774,6 +7066,7 @@ export const SettingsPage = (): JSX.Element => {
       return;
     }
 
+    pendingRandomThemeDraftRef.current = null;
     const nextThemes = duplicateThemeCustomTheme(savedThemeCustomThemes, activeThemeCustom.id);
     const nextTheme = nextThemes[nextThemes.length - 1];
     updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, nextTheme.basePreset, savedThemePresetOverrides, {
@@ -6806,6 +7099,7 @@ export const SettingsPage = (): JSX.Element => {
       return;
     }
 
+    pendingRandomThemeDraftRef.current = null;
     const fallbackPreset = activeThemeCustom.basePreset;
     const nextThemes = savedThemeCustomThemes.filter((theme) => theme.id !== activeThemeCustom.id);
     updateThemePreferences(appSettings?.appearanceTheme ?? defaultThemeMode, fallbackPreset, savedThemePresetOverrides, {
@@ -6831,6 +7125,7 @@ export const SettingsPage = (): JSX.Element => {
   };
 
   const handleThemeCustomCopyTone = (fromTone: ThemeTone, toTone: ThemeTone): void => {
+    pendingRandomThemeDraftRef.current = null;
     const source = fromTone === themeCustomTone ? themeCustomDraft : activeThemeCustom?.[fromTone] ?? savedThemePresetOverrides[selectedThemePreset]?.[fromTone] ?? {};
     const draft = { ...source };
     pendingThemeCopyDraftRef.current = { draft, tone: toTone };
@@ -6876,6 +7171,108 @@ export const SettingsPage = (): JSX.Element => {
         setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
       });
   }, [dispatchSettingsChanged, refreshDataBackupStatus, refreshTaskbarPlaybackStatus]);
+
+  useEffect(() => {
+    if (!finalThemeSearchUnlocked) {
+      return;
+    }
+
+    if (!finalThemeUnlocked) {
+      writeFinalThemeUnlocked();
+      setFinalThemeUnlocked(true);
+      setAppSettings((current) => (current ? { ...current, appearanceThemePresetsExpanded: true, finalThemeUnlockVersion } : current));
+      patchAppSettings({ appearanceThemePresetsExpanded: true, finalThemeUnlockVersion });
+    }
+
+    setSettingsQuery('');
+    setActiveSection('appearance');
+    setAppSettings((current) => (current ? { ...current, appearanceThemePresetsExpanded: true } : current));
+
+    if (finalThemeUnlockNoticeShownRef.current) {
+      return;
+    }
+
+    finalThemeUnlockNoticeShownRef.current = true;
+    window.dispatchEvent(new CustomEvent('app:show-chrome-notice', { detail: 'FINAL theme unlocked.' }));
+  }, [finalThemeSearchUnlocked, finalThemeUnlocked, patchAppSettings]);
+
+  useEffect(() => {
+    if (finalThemeUnlocked || finalThemeRelockAppliedRef.current || appSettings?.appearanceThemePreset !== 'FINAL') {
+      return;
+    }
+
+    finalThemeRelockAppliedRef.current = true;
+    const fallbackPreset: AppThemePreset = 'classic';
+    updateThemePreferences(appSettings.appearanceTheme ?? defaultThemeMode, fallbackPreset, savedThemePresetOverrides, {
+      animate: true,
+      customThemeId: null,
+      customThemes: savedThemeCustomThemes,
+    });
+    setSelectedThemePreset(fallbackPreset);
+    setActiveThemeCustomId(null);
+    setAppSettings((current) =>
+      current
+        ? {
+            ...current,
+            appearanceThemePreset: fallbackPreset,
+            appearanceThemeCustomId: null,
+          }
+        : current,
+    );
+    patchAppSettings({ appearanceThemePreset: fallbackPreset, appearanceThemeCustomId: null, finalThemeUnlockVersion: null });
+  }, [
+    appSettings?.appearanceTheme,
+    appSettings?.appearanceThemePreset,
+    finalThemeUnlocked,
+    patchAppSettings,
+    savedThemeCustomThemes,
+    savedThemePresetOverrides,
+  ]);
+
+  const handleWindowAcrylicToggle = useCallback((): void => {
+    const app = getAppBridge();
+    const diagnostics = getDiagnosticsBridge();
+
+    if (!app || !appSettings) {
+      setError('Desktop bridge unavailable. Open ECHO Next in Electron to save app settings.');
+      return;
+    }
+
+    const nextEnabled = !(appSettings.appWindowAcrylicEnabled ?? false);
+
+    void app
+      .setSettings({ appWindowAcrylicEnabled: nextEnabled })
+      .then((settings) => {
+        setAppSettings(settings);
+        dispatchSettingsChanged(settings);
+
+        if (window.confirm(t('settings.appearance.windowAcrylic.restartConfirm'))) {
+          if (!diagnostics) {
+            setError('Desktop bridge unavailable. Restart ECHO Next manually to apply Window Acrylic.');
+            return;
+          }
+          void diagnostics.relaunchApp();
+        }
+      })
+      .catch((settingsError) => {
+        setError(settingsError instanceof Error ? settingsError.message : String(settingsError));
+      });
+  }, [appSettings, dispatchSettingsChanged, t]);
+
+  const handleWindowAcrylicTransparencyChange = useCallback(
+    (value: number): void => {
+      patchAppSettings({
+        appWindowAcrylicTransparencyPercent: Math.max(0, Math.min(100, Math.round(value))),
+      });
+    },
+    [patchAppSettings],
+  );
+
+  const handleWindowAcrylicKeepWhenUnfocusedToggle = useCallback((): void => {
+    patchAppSettings({
+      appWindowAcrylicKeepWhenUnfocusedEnabled: !(appSettings?.appWindowAcrylicKeepWhenUnfocusedEnabled ?? false),
+    });
+  }, [appSettings?.appWindowAcrylicKeepWhenUnfocusedEnabled, patchAppSettings]);
 
   const handleSidebarRouteDragStart = useCallback((event: ReactDragEvent<HTMLDivElement>, routeId: SidebarRouteId): void => {
     setDraggingSidebarRouteId(routeId);
@@ -6964,7 +7361,7 @@ export const SettingsPage = (): JSX.Element => {
   const handleSidebarRoutesReset = useCallback((): void => {
     patchAppSettings({
       sidebarRouteOrder: [...defaultSidebarRouteOrder],
-      sidebarHiddenRouteIds: [],
+      sidebarHiddenRouteIds: [...defaultSidebarHiddenRouteIds],
     });
   }, [patchAppSettings]);
 
@@ -9172,7 +9569,7 @@ export const SettingsPage = (): JSX.Element => {
       const job = await library.startLyricsBackfill({
         mode,
         limit: 10000,
-        concurrency: mode === 'complete' ? 6 : 18,
+        concurrency: mode === 'complete' ? 6 : 10,
         autoAcceptScore: lyricsBackfillAutoAcceptScore,
       });
       setLyricsBackfillJob(job);
@@ -9922,7 +10319,7 @@ export const SettingsPage = (): JSX.Element => {
     }
   };
 
-  const activeNavItems = visibleNavItems.length ? visibleNavItems : settingsNavItems;
+  const activeNavItems = visibleNavItems.length ? visibleNavItems : settingsNavigationItems;
   const activeNavItem = settingsNavItems.find((item) => item.key === activeSection) ?? settingsNavItems[0];
   const ActiveNavIcon = activeNavItem.icon;
   const activeFontValue =
@@ -10262,6 +10659,22 @@ export const SettingsPage = (): JSX.Element => {
                 />
               </SettingRow>
               <SettingRow
+                id="settings-row-touch-keyboard"
+                highlighted={highlightedSettingId === 'settings-row-touch-keyboard'}
+                title={t('settings.general.touchKeyboard.title')}
+                description={t('settings.general.touchKeyboard.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.touchOnScreenKeyboardEnabled === true}
+                  disabled={!appSettings}
+                  onClick={() =>
+                    patchAppSettings({
+                      touchOnScreenKeyboardEnabled: !(appSettings?.touchOnScreenKeyboardEnabled ?? false),
+                    })
+                  }
+                />
+              </SettingRow>
+              <SettingRow
                 id="settings-row-sidebar-auto-hide"
                 highlighted={highlightedSettingId === 'settings-row-sidebar-auto-hide'}
                 title={t('settings.general.sidebarAutoHide.title')}
@@ -10296,6 +10709,18 @@ export const SettingsPage = (): JSX.Element => {
                 />
               </SettingRow>
               <SettingRow
+                id="settings-row-settings-optional-sections"
+                highlighted={highlightedSettingId === 'settings-row-settings-optional-sections'}
+                title={t('settings.general.settingsOptionalSections.title')}
+                description={t('settings.general.settingsOptionalSections.description')}
+              >
+                <ToggleButton
+                  active={appSettings?.settingsOptionalSectionsVisible === true}
+                  disabled={!appSettings}
+                  onClick={() => patchAppSettings({ settingsOptionalSectionsVisible: !(appSettings?.settingsOptionalSectionsVisible ?? false) })}
+                />
+              </SettingRow>
+              <SettingRow
                 id="settings-row-feature-comments-hidden"
                 highlighted={highlightedSettingId === 'settings-row-feature-comments-hidden'}
                 title={t('settings.general.featureCommentsHidden.title')}
@@ -10306,6 +10731,25 @@ export const SettingsPage = (): JSX.Element => {
                   disabled={!appSettings}
                   onClick={() => patchAppSettings({ featureCommentsHidden: !(appSettings?.featureCommentsHidden ?? false) })}
                 />
+              </SettingRow>
+              <SettingRow
+                id="settings-row-track-context-menu-extra-actions"
+                highlighted={highlightedSettingId === 'settings-row-track-context-menu-extra-actions'}
+                title={t('settings.general.trackContextMenuExtraActions.title')}
+                description={t('settings.general.trackContextMenuExtraActions.description')}
+              >
+                <div className="settings-inline-toggle settings-inline-toggle--compact">
+                  <span>{appSettings?.trackContextMenuExtraActionsEnabled ? '已显示' : '已隐藏'}</span>
+                  <ToggleButton
+                    active={appSettings?.trackContextMenuExtraActionsEnabled === true}
+                    disabled={!appSettings}
+                    onClick={() =>
+                      patchAppSettings({
+                        trackContextMenuExtraActionsEnabled: !(appSettings?.trackContextMenuExtraActionsEnabled ?? false),
+                      })
+                    }
+                  />
+                </div>
               </SettingRow>
               <SettingRow title={t('settings.general.rememberWindowSize.title')} description={t('settings.general.rememberWindowSize.description')}>
                 <ToggleButton
@@ -11315,29 +11759,25 @@ export const SettingsPage = (): JSX.Element => {
                     <button
                       className={`settings-shortcut-key ${isRecording ? 'is-recording' : ''}`}
                       type="button"
+                      aria-label={t('settings.shortcuts.action.record')}
                       disabled={!appSettings}
+                      title={t('settings.shortcuts.action.record')}
                       onClick={() => setRecordingShortcutTarget({ scope, action: item.action })}
                     >
                       {isRecording
                         ? t('settings.shortcuts.recording')
                         : formatAcceleratorForDisplay(binding.accelerator, t('settings.shortcuts.empty'))}
                     </button>
-                    <div className="settings-chip-row settings-chip-row--actions">
+                    <div className="settings-shortcut-actions">
                       <button
-                        className="settings-action-button"
+                        className="settings-icon-button settings-shortcut-clear"
                         type="button"
-                        disabled={!appSettings}
-                        onClick={() => setRecordingShortcutTarget({ scope, action: item.action })}
-                      >
-                        {t('settings.shortcuts.action.record')}
-                      </button>
-                      <button
-                        className="settings-action-button"
-                        type="button"
+                        aria-label={t('settings.shortcuts.action.clear')}
                         disabled={!appSettings || !binding.accelerator}
+                        title={t('settings.shortcuts.action.clear')}
                         onClick={() => handleShortcutClear(scope, item.action)}
                       >
-                        {t('settings.shortcuts.action.clear')}
+                        <X size={14} />
                       </button>
                       <ToggleButton
                         active={binding.enabled}
@@ -11372,29 +11812,40 @@ export const SettingsPage = (): JSX.Element => {
             </SettingSection>
 
             <SettingSection activeKey={activeSection} icon={Clapperboard} id="mv" title={t('route.mvSettings.label')}>
-              <SettingRow title={t('route.mvSettings.label')} description={t('route.mvSettings.description')}>
-                <div className="settings-chip-row">
-                  <StatusText tone={(appSettings?.mvEnabled ?? true) ? 'good' : 'muted'}>
-                    {(appSettings?.mvEnabled ?? true) ? t('mvSettings.status.on') : t('mvSettings.status.off')}
-                  </StatusText>
-                  <ToggleButton
-                    active={appSettings?.mvEnabled ?? true}
-                    disabled={!appSettings}
-                    onClick={() => patchMvSettings({ enabled: !(appSettings?.mvEnabled ?? true) })}
-                  />
-                </div>
-              </SettingRow>
-              <SettingRow title={t('mvSettings.network.maxQuality')} description={t('mvSettings.aria.maxQuality', { quality: mvQualityLabels[appSettings?.mvMaxQuality ?? 'max'] })}>
-                <div className="settings-chip-row">
-                  {mvQualityCaps.map((quality) => (
-                    <ChipButton
-                      active={(appSettings?.mvMaxQuality ?? 'max') === quality}
-                      key={quality}
-                      onClick={() => patchMvSettings({ maxQuality: quality })}
-                    >
-                      {mvQualityLabels[quality]}
-                    </ChipButton>
-                  ))}
+              <SettingRow
+                className="setting-row--full setting-row--compact-panel setting-row--mv-overview"
+                title={t('route.mvSettings.label')}
+                description={t('route.mvSettings.description')}
+              >
+                <div className="settings-cache-panel settings-cache-panel--mv-overview">
+                  <div className="settings-mv-overview-card settings-mv-overview-card--enable">
+                    <span>
+                      <strong>{t('mvSettings.general.enabled')}</strong>
+                      <em>{(appSettings?.mvEnabled ?? true) ? t('mvSettings.status.on') : t('mvSettings.status.off')}</em>
+                    </span>
+                    <ToggleButton
+                      active={appSettings?.mvEnabled ?? true}
+                      disabled={!appSettings}
+                      onClick={() => patchMvSettings({ enabled: !(appSettings?.mvEnabled ?? true) })}
+                    />
+                  </div>
+                  <div className="settings-mv-overview-card settings-mv-overview-card--quality">
+                    <span>
+                      <strong>{t('mvSettings.network.maxQuality')}</strong>
+                      <em>{t('mvSettings.aria.maxQuality', { quality: mvQualityLabels[appSettings?.mvMaxQuality ?? 'max'] })}</em>
+                    </span>
+                    <div className="settings-chip-row settings-chip-row--left">
+                      {mvQualityCaps.map((quality) => (
+                        <ChipButton
+                          active={(appSettings?.mvMaxQuality ?? 'max') === quality}
+                          key={quality}
+                          onClick={() => patchMvSettings({ maxQuality: quality })}
+                        >
+                          {mvQualityLabels[quality]}
+                        </ChipButton>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </SettingRow>
               <SettingRow
@@ -11403,7 +11854,7 @@ export const SettingsPage = (): JSX.Element => {
                 description={t('mvSettings.network.autoApplyThresholdDescription', { threshold: formatMvThreshold(appSettings?.mvAutoApplyThreshold) })}
               >
                 <div className="settings-cache-panel settings-cache-panel--mv-network">
-                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions settings-mv-toggle-grid">
                     <div className="settings-inline-toggle">
                       <span>{t('mvSettings.network.autoApply')}</span>
                       <ToggleButton
@@ -11437,7 +11888,7 @@ export const SettingsPage = (): JSX.Element => {
                       />
                     </div>
                     {appSettings?.mvRestartAudioOnLoad === true ? (
-                      <div className="settings-chip-row settings-chip-row--left">
+                      <div className="settings-chip-row settings-chip-row--left settings-mv-sync-row">
                         {mvSyncModes.map((mode) => (
                           <ChipButton
                             active={(appSettings?.mvSyncMode ?? 'balanced') === mode}
@@ -11478,7 +11929,7 @@ export const SettingsPage = (): JSX.Element => {
                       onChange={(value) => patchMvSettings({ autoApplyThreshold: mvThresholdFromPercent(value) })}
                     />
                   </div>
-                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions">
+                  <div className="settings-chip-row settings-chip-row--left settings-chip-row--actions settings-mv-provider-grid">
                     {mvProviderOrder.map((provider, index) => (
                       <div className="settings-inline-toggle" key={provider}>
                         <span>{`${index + 1}. ${mvProviderLabels[provider]}`}</span>
@@ -12281,8 +12732,8 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={SlidersHorizontal} id="eq" title={t('settings.nav.eq.label')}>
               <SettingRow
-                title="DSP 工作台"
-                description="EQ、余量、声道与输出保护已经搬到侧栏里的调音工作区。"
+                title="音效处理工作台"
+                description="EQ、余量、声道与输出保护已经搬到侧栏里的音效处理工作区。"
               >
                 <div className="settings-cache-panel settings-cache-panel--bare settings-cache-panel--dsp-workbench">
                   <div className="settings-status-grid settings-status-grid--audio">
@@ -12306,7 +12757,7 @@ export const SettingsPage = (): JSX.Element => {
                   <div className="settings-chip-row settings-chip-row--left">
                     <button className="settings-action-button" type="button" onClick={handleOpenDspPage}>
                       <SlidersHorizontal size={15} />
-                      打开 DSP 工作台
+                      打开音效处理
                     </button>
                     <button className="settings-action-button" type="button" onClick={() => void refreshStatus()}>
                       <RefreshCw size={15} />
@@ -12314,7 +12765,7 @@ export const SettingsPage = (): JSX.Element => {
                     </button>
                   </div>
                   <p className="settings-inline-note">
-                    这里保留状态摘要；具体调音请从左侧 DSP 进入，布局更接近 Roon 的链路式工作流。
+                    这里保留状态摘要；具体调音请从左侧音效处理进入，布局更接近 Roon 的链路式工作流。
                   </p>
                 </div>
               </SettingRow>
@@ -12489,18 +12940,46 @@ export const SettingsPage = (): JSX.Element => {
                   </button>
                   {themePresetsExpanded ? (
                     <div className="settings-theme-preset-grid settings-expandable-content">
+                      <button
+                        aria-pressed="false"
+                        className="settings-theme-preset-card"
+                        data-preset="random"
+                        onClick={handleRandomThemeCreate}
+                        title={t(randomThemePresetOption.descriptionKey)}
+                        type="button"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="settings-theme-preset-preview"
+                          style={{ background: randomThemePresetOption.preview } as CSSProperties}
+                        >
+                          <RefreshCw size={16} />
+                        </span>
+                        <span className="settings-theme-preset-copy">
+                          <strong>{t(randomThemePresetOption.labelKey)}</strong>
+                          <em>{t(randomThemePresetOption.descriptionKey)}</em>
+                        </span>
+                        <span aria-hidden="true" className="settings-theme-preset-swatches">
+                          {randomThemePresetOption.swatches.map((swatch) => (
+                            <span key={swatch} style={{ background: swatch } as CSSProperties} />
+                          ))}
+                        </span>
+                      </button>
                       {visibleThemePresetOptions.map((option) => {
                         const activePreset = selectedThemePreset;
                         const isActive = activePreset === option.preset;
+                        const isFinalThemeLocked = option.preset === 'FINAL' && !finalThemeUnlocked;
 
                         return (
                           <button
+                            aria-disabled={isFinalThemeLocked}
                             aria-pressed={isActive}
-                            className={`settings-theme-preset-card${isActive ? ' active' : ''}`}
+                            className={`settings-theme-preset-card${isActive ? ' active' : ''}${isFinalThemeLocked ? ' locked' : ''}`}
                             data-preset={option.preset}
+                            disabled={isFinalThemeLocked}
                             key={option.preset}
                             onClick={() => handleThemePresetChange(option.preset)}
-                            title={t(option.descriptionKey)}
+                            title={isFinalThemeLocked ? '需持有FINAL耳机解锁主题' : t(option.descriptionKey)}
                             type="button"
                           >
                             <span
@@ -12513,6 +12992,7 @@ export const SettingsPage = (): JSX.Element => {
                             <span className="settings-theme-preset-copy">
                               <strong>{t(option.labelKey)}</strong>
                               <em>{t(option.descriptionKey)}</em>
+                              {isFinalThemeLocked ? <small>需持有FINAL耳机解锁主题</small> : null}
                             </span>
                             <span aria-hidden="true" className="settings-theme-preset-swatches">
                               {option.swatches.map((swatch) => (
@@ -12922,10 +13402,40 @@ export const SettingsPage = (): JSX.Element => {
                   </div>
                 </div>
               </SettingRow>
-              <SettingRow title={t('settings.appearance.density.title')} description={t('settings.appearance.density.description')}>
-                <div className="settings-chip-row">
-                  <ChipButton active>{t('settings.appearance.density.compact')}</ChipButton>
-                  <ChipButton>{t('settings.appearance.density.standard')}</ChipButton>
+              <SettingRow
+                id="settings-row-window-acrylic"
+                highlighted={highlightedSettingId === 'settings-row-window-acrylic'}
+                title={t('settings.appearance.windowAcrylic.title')}
+                description={t('settings.appearance.windowAcrylic.description')}
+              >
+                <div className="settings-acrylic-control">
+                  <ToggleButton
+                    active={appSettings?.appWindowAcrylicEnabled === true}
+                    disabled={!appSettings}
+                    onClick={handleWindowAcrylicToggle}
+                  />
+                  {appSettings?.appWindowAcrylicEnabled === true ? (
+                    <div className="settings-acrylic-options">
+                      <div className="settings-acrylic-subtoggle">
+                        <span>{t('settings.appearance.windowAcrylic.keepWhenUnfocused')}</span>
+                        <ToggleButton
+                          active={appSettings.appWindowAcrylicKeepWhenUnfocusedEnabled === true}
+                          onClick={handleWindowAcrylicKeepWhenUnfocusedToggle}
+                        />
+                      </div>
+                      <div className="settings-acrylic-slider">
+                        <span>{t('settings.appearance.windowAcrylic.transparency')}</span>
+                        <NumberRangeField
+                          min={0}
+                          max={100}
+                          step={1}
+                          suffix="%"
+                          value={appSettings.appWindowAcrylicTransparencyPercent ?? 70}
+                          onChange={handleWindowAcrylicTransparencyChange}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </SettingRow>
               <SettingRow
@@ -13176,7 +13686,7 @@ export const SettingsPage = (): JSX.Element => {
 
             <SettingSection activeKey={activeSection} icon={Download} id="library" title={t('settings.nav.library.label')}>
               <div id="settings-row-library-folders" data-search-highlight={highlightedSettingId === 'settings-row-library-folders' ? 'true' : undefined}>
-                <LibraryFoldersPanel autoRefresh={libraryDeferredRefreshReady} pollScanStatuses={false} />
+                <LibraryFoldersPanel autoRefresh={libraryDeferredRefreshReady} defaultCollapsed pollScanStatuses={false} />
               </div>
               <SettingRow
                 id="settings-row-live-library-updates"
@@ -13678,6 +14188,10 @@ export const SettingsPage = (): JSX.Element => {
                     <strong title={currentCacheDirectoryLabel}>{currentCacheDirectoryLabel}</strong>
                   </div>
                   <div className="settings-chip-row settings-chip-row--left">
+                    <button className="settings-action-button" type="button" onClick={() => void refreshCacheInventory()} disabled={cacheInventoryBusy}>
+                      <RefreshCw className={cacheInventoryBusy ? 'spinning-icon' : undefined} size={15} />
+                      刷新清单
+                    </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleCacheDirectoryChoose()} disabled={cacheDirectoryBusy}>
                       <FolderOpen size={15} />
                       选择目录
@@ -13974,6 +14488,14 @@ export const SettingsPage = (): JSX.Element => {
                     >
                       <ExternalLink size={15} />
                       百度网盘
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
+                      onClick={() => void handleOpenExternalUrl(bilibiliSpaceUrl)}
+                    >
+                      <ExternalLink size={15} />
+                      哔哩哔哩
                     </button>
                     <button
                       className="settings-action-button"

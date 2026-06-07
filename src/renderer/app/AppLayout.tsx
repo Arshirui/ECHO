@@ -1,5 +1,5 @@
 import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { PlayerBar } from '../components/player/PlayerBar';
 import { PlaybackQueueDrawer } from '../components/player/PlaybackQueueDrawer';
@@ -9,6 +9,7 @@ import { LyricsSettingsDrawer } from '../components/lyrics/LyricsSettingsDrawer'
 import { MvSettingsDrawer } from '../components/lyrics/MvSettingsDrawer';
 import { contrastRatio, parseHexColor, sampleImageUrl, type ReadableColorSample, type Rgb } from '../components/lyrics/lyricsReadableColor';
 import { DragDropImportOverlay } from '../components/import/DragDropImportOverlay';
+import { PluginTrackActionDrawerHost } from '../components/library/PluginTrackActionDrawer';
 import { FirstRunWizard } from '../components/onboarding/FirstRunWizard';
 import { loadPersistedRememberedAudioOutput } from '../components/player/audioOutputMemory';
 import { Sidebar } from '../components/layout/Sidebar';
@@ -33,7 +34,7 @@ import { albumDetailNavigationEvent } from '../utils/albumNavigation';
 import { artistDetailNavigationEvent } from '../utils/artistNavigation';
 import { AnimatedOutlet } from '../ui/motion/AnimatedOutlet';
 import { applySidebarPreferences } from './sidebarPreferences';
-import { defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
+import { defaultSidebarHiddenRouteIds, defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
 import type { PlaybackStatus } from '../../shared/types/playback';
 
 type AppLayoutProps = {
@@ -101,8 +102,45 @@ const rememberLyricsViewMode = (mode: LyricsViewMode): void => {
   }
 };
 
+const nonTextInputTypes = new Set([
+  'button',
+  'checkbox',
+  'color',
+  'file',
+  'hidden',
+  'image',
+  'radio',
+  'range',
+  'reset',
+  'submit',
+]);
+
+const isTouchKeyboardEditableTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const editable = target.closest('input, textarea, [contenteditable], [role="textbox"]');
+  if (!(editable instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (editable instanceof HTMLInputElement) {
+    return !editable.disabled && !editable.readOnly && !nonTextInputTypes.has(editable.type);
+  }
+
+  if (editable instanceof HTMLTextAreaElement) {
+    return !editable.disabled && !editable.readOnly;
+  }
+
+  return editable.getAttribute('contenteditable') !== 'false' && editable.getAttribute('aria-readonly') !== 'true';
+};
+
 type AppWallpaperSettings = Pick<
   AppSettings,
+  | 'appWindowAcrylicEnabled'
+  | 'appWindowAcrylicKeepWhenUnfocusedEnabled'
+  | 'appWindowAcrylicTransparencyPercent'
   | 'appCustomWallpaperPath'
   | 'appPortraitWallpaperPath'
   | 'appWallpaperMediaType'
@@ -140,6 +178,9 @@ const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appWallpaperVisualProtectionEnabled: true,
   appWallpaperUnifiedOpacityEnabled: false,
   appVideoWallpaperPauseMode: 'smart',
+  appWindowAcrylicEnabled: false,
+  appWindowAcrylicKeepWhenUnfocusedEnabled: false,
+  appWindowAcrylicTransparencyPercent: 70,
 };
 
 const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
@@ -153,7 +194,7 @@ const defaultLyricsMiniPlayerSettings: LyricsMiniPlayerSettings = {
 
 const defaultSidebarLayoutSettings: SidebarLayoutSettings = {
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
-  sidebarHiddenRouteIds: [],
+  sidebarHiddenRouteIds: [...defaultSidebarHiddenRouteIds],
   sidebarAutoHideEnabled: false,
   sidebarIconOnlyEnabled: false,
 };
@@ -200,6 +241,11 @@ const selectAppWallpaperSettings = (settings: AppSettings): AppWallpaperSettings
   appWallpaperVisualProtectionEnabled: settings.appWallpaperVisualProtectionEnabled !== false,
   appWallpaperUnifiedOpacityEnabled: settings.appWallpaperUnifiedOpacityEnabled,
   appVideoWallpaperPauseMode: settings.appVideoWallpaperPauseMode ?? 'smart',
+  appWindowAcrylicEnabled: settings.appWindowAcrylicEnabled === true,
+  appWindowAcrylicKeepWhenUnfocusedEnabled: settings.appWindowAcrylicKeepWhenUnfocusedEnabled === true,
+  appWindowAcrylicTransparencyPercent: Number.isFinite(settings.appWindowAcrylicTransparencyPercent)
+    ? Math.max(0, Math.min(100, Math.round(Number(settings.appWindowAcrylicTransparencyPercent))))
+    : defaultAppWallpaperSettings.appWindowAcrylicTransparencyPercent,
 });
 
 const selectLyricsMiniPlayerSettings = (settings: Partial<AppSettings>): LyricsMiniPlayerSettings => ({
@@ -294,9 +340,12 @@ const getDesktopLyricsForwardIdentity = (status: AudioStatus | PlaybackStatus): 
 const openAudioSettingsEvent = 'app:open-audio-settings';
 const openMvSettingsEvent = 'app:open-mv-settings';
 const openLyricsSettingsEvent = 'app:open-lyrics-settings';
+const lyricsDrawerToolsChangedEvent = 'app:lyrics-drawer-tools-changed';
 const settingsBackNavigationEvent = 'app:navigate:settings-back';
 const showChromeNoticeEvent = 'app:show-chrome-notice';
 const pendingRouteStorageKey = 'echo-next.pending-route';
+const pendingSettingsSectionStorageKey = 'echo-next.settings.pending-section';
+const settingsSectionNavigationEvent = 'app:navigate:settings-section';
 const lyricsMiniPlayerAutoHideDistancePx = 118;
 const lyricsMiniPlayerAutoHideDelayMs = 460;
 const readSuppressAccountExpiryNotices = (settings: Partial<AppSettings> | null | undefined): boolean =>
@@ -350,6 +399,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const playbackStatusSnapshot = useSharedPlaybackStatus();
   const [activeRouteId, setActiveRouteId] = useState<AppRouteId>(() => readInitialRouteId(routes));
   const [chromeNotice, setChromeNotice] = useState<string | null>(null);
+  const [availableUpdateStatus, setAvailableUpdateStatus] = useState<UpdateStatus | null>(null);
   const [isChromeNoticeVisible, setIsChromeNoticeVisible] = useState(false);
   const [accountNotice, setAccountNotice] = useState<string | null>(null);
   const suppressAccountExpiryNoticesRef = useRef(false);
@@ -360,6 +410,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [downloadsFeatureUnlocked, setDownloadsFeatureUnlocked] = useState(false);
   const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState(false);
   const [isLyricsDrawerOpen, setIsLyricsDrawerOpen] = useState(false);
+  const [lyricsDrawerCurrentTrackTools, setLyricsDrawerCurrentTrackTools] = useState<ReactNode | null>(null);
   const [isMvDrawerOpen, setIsMvDrawerOpen] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [isWindowFullscreen, setIsWindowFullscreen] = useState(false);
@@ -378,6 +429,19 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isLyricsMiniPlayerAutoHidden, setIsLyricsMiniPlayerAutoHidden] = useState(false);
   const [activeLyricsViewMode, setActiveLyricsViewMode] = useState<LyricsViewMode>(() => readRememberedLyricsViewMode());
   const lastDesktopLyricsForwardRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const handleLyricsDrawerToolsChanged = (event: Event): void => {
+      if (!(event instanceof CustomEvent)) {
+        return;
+      }
+
+      setLyricsDrawerCurrentTrackTools((event.detail as { currentTrackTools?: ReactNode | null } | null)?.currentTrackTools ?? null);
+    };
+
+    window.addEventListener(lyricsDrawerToolsChangedEvent, handleLyricsDrawerToolsChanged);
+    return () => window.removeEventListener(lyricsDrawerToolsChangedEvent, handleLyricsDrawerToolsChanged);
+  }, []);
 
   useEffect(() => {
     const desktopLyrics = window.echo?.desktopLyrics;
@@ -431,6 +495,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const [isAppWallpaperDocumentHidden, setIsAppWallpaperDocumentHidden] = useState(() => document.visibilityState === 'hidden');
   const [isAppWallpaperBlurPaused, setIsAppWallpaperBlurPaused] = useState(false);
   const [isAppWallpaperPortraitViewport, setIsAppWallpaperPortraitViewport] = useState(() => isPortraitViewport());
+  const [isWindowFocused, setIsWindowFocused] = useState(() => document.hasFocus());
   const appWallpaperVideoRef = useRef<HTMLVideoElement | null>(null);
   const appWallpaperBlurTimerRef = useRef<number | null>(null);
   const fullscreenTransitionTimerRef = useRef<number | null>(null);
@@ -439,6 +504,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lyricsMiniPlayerHostRef = useRef<HTMLDivElement | null>(null);
   const lyricsMiniPlayerAutoHideTimerRef = useRef<number | null>(null);
+  const touchOnScreenKeyboardEnabledRef = useRef(false);
+  const touchKeyboardLastRequestAtRef = useRef(0);
   const lastAudioErrorRef = useRef<string | null>(null);
   const notifiedWindowsAudioDefaultFormatKeysRef = useRef<Set<string>>(new Set());
   const previousRouteIdRef = useRef<AppRouteId>('songs');
@@ -618,8 +685,47 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const isUnified = isAppWallpaperReady && appWallpaperSettings.appWallpaperUnifiedOpacityEnabled;
     const scaledAlpha = (value: number): string => (uiAlpha * value).toFixed(3);
     const unifiedAlpha = uiAlpha.toFixed(3);
+    const acrylicTransparencyPercent = Math.max(0, Math.min(100, appWallpaperSettings.appWindowAcrylicTransparencyPercent ?? 70));
+    const acrylicOpacityPercent = 100 - acrylicTransparencyPercent;
+    const acrylicReadabilityPercent = Math.max(acrylicOpacityPercent, 32);
+    const acrylicTextProtectionPercent = Math.max(acrylicOpacityPercent, 46);
+    const acrylicMix = (factor: number, max: number): string => `${Math.round(Math.max(0, Math.min(max, acrylicOpacityPercent * factor)))}%`;
+    const acrylicReadableMix = (factor: number, max: number): string => `${Math.round(Math.max(0, Math.min(max, acrylicReadabilityPercent * factor)))}%`;
+    const acrylicProtectionMix = (factor: number, max: number): string => `${Math.round(Math.max(0, Math.min(max, acrylicTextProtectionPercent * factor)))}%`;
 
     return {
+      '--app-acrylic-readable-page-strong-mix': acrylicReadableMix(0.82, 52),
+      '--app-acrylic-readable-page-muted-mix': acrylicReadableMix(0.66, 46),
+      '--app-acrylic-readable-surface-mix': acrylicReadableMix(0.78, 50),
+      '--app-acrylic-readable-surface-strong-mix': acrylicReadableMix(1.02, 58),
+      '--app-acrylic-readable-sidebar-mix': acrylicReadableMix(0.9, 54),
+      '--app-acrylic-readable-player-mix': acrylicReadableMix(1.06, 60),
+      '--app-acrylic-text-protection-mix': acrylicProtectionMix(0.34, 28),
+      '--app-acrylic-page-strong-mix': acrylicMix(0.95, 58),
+      '--app-acrylic-page-muted-mix': acrylicMix(0.78, 52),
+      '--app-acrylic-titlebar-mix': acrylicMix(1.24, 70),
+      '--app-acrylic-sidebar-strong-mix': acrylicMix(1.12, 66),
+      '--app-acrylic-sidebar-muted-mix': acrylicMix(1.02, 62),
+      '--app-acrylic-player-strong-mix': acrylicMix(1.42, 74),
+      '--app-acrylic-player-mix': acrylicMix(1.22, 70),
+      '--app-acrylic-surface-mix': acrylicMix(0.86, 58),
+      '--app-acrylic-surface-strong-mix': acrylicMix(1.26, 70),
+      '--app-acrylic-surface-muted-mix': acrylicMix(0.72, 54),
+      '--app-acrylic-field-mix': acrylicMix(1.32, 74),
+      '--app-acrylic-button-mix': acrylicMix(1.18, 72),
+      '--app-acrylic-button-hover-mix': acrylicMix(1.56, 82),
+      '--app-acrylic-row-mix': acrylicMix(0.72, 54),
+      '--app-acrylic-row-hover-mix': acrylicMix(1.18, 70),
+      '--app-acrylic-active-mix': acrylicMix(1.34, 76),
+      '--app-acrylic-home-shell-strong-mix': acrylicMix(1.04, 64),
+      '--app-acrylic-home-shell-muted-mix': acrylicMix(0.72, 54),
+      '--app-acrylic-home-hero-strong-mix': acrylicMix(0.96, 62),
+      '--app-acrylic-home-hero-mix': acrylicMix(0.66, 54),
+      '--app-acrylic-home-hero-muted-mix': acrylicMix(0.52, 48),
+      '--app-acrylic-home-now-strong-mix': acrylicMix(1.18, 70),
+      '--app-acrylic-home-now-mix': acrylicMix(0.92, 62),
+      '--app-acrylic-home-week-mix': acrylicMix(0.68, 52),
+      '--app-acrylic-home-activity-mix': acrylicMix(0.56, 48),
       '--app-wallpaper-ui-unified-alpha': unifiedAlpha,
       '--app-wallpaper-ui-border-alpha': isUnified ? '0' : scaledAlpha(0.2),
       '--app-wallpaper-ui-titlebar-alpha': isUnified ? unifiedAlpha : scaledAlpha(0.74),
@@ -640,6 +746,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     } as CSSProperties;
   }, [
     appWallpaperRawUiAlpha,
+    appWallpaperSettings.appWindowAcrylicTransparencyPercent,
     appWallpaperSettings.appWallpaperVisualProtectionEnabled,
     appWallpaperSettings.appWallpaperUnifiedOpacityEnabled,
     isAppWallpaperReady,
@@ -866,6 +973,63 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
+      if (!settings || !Object.prototype.hasOwnProperty.call(settings, 'touchOnScreenKeyboardEnabled')) {
+        return;
+      }
+
+      touchOnScreenKeyboardEnabledRef.current = settings.touchOnScreenKeyboardEnabled === true;
+    };
+
+    const refreshSettings = (): void => {
+      void window.echo?.app?.getSettings?.()
+        .then((settings) => {
+          if (!cancelled) {
+            applySettings(settings);
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    const handleSettingsChanged = (event: Event): void => {
+      if (event instanceof CustomEvent) {
+        applySettings(event.detail as Partial<AppSettings> | null | undefined);
+        return;
+      }
+
+      if (!cancelled) {
+        refreshSettings();
+      }
+    };
+
+    const handleFocusIn = (event: FocusEvent): void => {
+      if (!touchOnScreenKeyboardEnabledRef.current || !isTouchKeyboardEditableTarget(event.target)) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - touchKeyboardLastRequestAtRef.current < 700) {
+        return;
+      }
+
+      touchKeyboardLastRequestAtRef.current = now;
+      void window.echo?.app?.showTouchKeyboard?.().catch(() => undefined);
+    };
+
+    refreshSettings();
+    window.addEventListener('settings:changed', handleSettingsChanged);
+    window.addEventListener('focusin', handleFocusIn);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+      window.removeEventListener('focusin', handleFocusIn);
+    };
+  }, []);
+
+  useEffect(() => {
     const syncWallpaperOrientation = (): void => {
       setIsAppWallpaperPortraitViewport(isPortraitViewport());
     };
@@ -894,6 +1058,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       setIsAppWallpaperDocumentHidden(document.visibilityState === 'hidden');
     };
     const handleWindowBlur = (): void => {
+      setIsWindowFocused(false);
       if (appWallpaperBlurTimerRef.current !== null) {
         window.clearTimeout(appWallpaperBlurTimerRef.current);
       }
@@ -903,6 +1068,7 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       }, 15000);
     };
     const handleWindowFocus = (): void => {
+      setIsWindowFocused(true);
       if (appWallpaperBlurTimerRef.current !== null) {
         window.clearTimeout(appWallpaperBlurTimerRef.current);
         appWallpaperBlurTimerRef.current = null;
@@ -1332,7 +1498,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
 
   useEffect(() => {
     const notifyUpdateStatus = (status: UpdateStatus): void => {
-      if (status.state !== 'available' && status.state !== 'downloaded') {
+      if (status.state !== 'available' && status.state !== 'downloading' && status.state !== 'downloaded') {
+        setAvailableUpdateStatus(null);
+        return;
+      }
+
+      setAvailableUpdateStatus(status);
+      if (status.state === 'downloading') {
         return;
       }
 
@@ -1534,6 +1706,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           'appWallpaperUiOpacityPercent' in patch ||
           'appWallpaperVisualProtectionEnabled' in patch ||
           'appWallpaperUnifiedOpacityEnabled' in patch ||
+          'appWindowAcrylicEnabled' in patch ||
+          'appWindowAcrylicKeepWhenUnfocusedEnabled' in patch ||
+          'appWindowAcrylicTransparencyPercent' in patch ||
           'appVideoWallpaperPauseMode' in patch)
       ) {
         setAppWallpaperSettings((current) => ({
@@ -1565,6 +1740,15 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           appWallpaperUnifiedOpacityEnabled: 'appWallpaperUnifiedOpacityEnabled' in patch
             ? (patch.appWallpaperUnifiedOpacityEnabled === true)
             : current.appWallpaperUnifiedOpacityEnabled,
+          appWindowAcrylicEnabled: 'appWindowAcrylicEnabled' in patch
+            ? (patch.appWindowAcrylicEnabled === true)
+            : current.appWindowAcrylicEnabled,
+          appWindowAcrylicKeepWhenUnfocusedEnabled: 'appWindowAcrylicKeepWhenUnfocusedEnabled' in patch
+            ? (patch.appWindowAcrylicKeepWhenUnfocusedEnabled === true)
+            : current.appWindowAcrylicKeepWhenUnfocusedEnabled,
+          appWindowAcrylicTransparencyPercent: 'appWindowAcrylicTransparencyPercent' in patch && Number.isFinite(patch.appWindowAcrylicTransparencyPercent)
+            ? Math.max(0, Math.min(100, Math.round(Number(patch.appWindowAcrylicTransparencyPercent))))
+            : current.appWindowAcrylicTransparencyPercent,
           appVideoWallpaperPauseMode: 'appVideoWallpaperPauseMode' in patch
             ? (patch.appVideoWallpaperPauseMode ?? defaultAppWallpaperSettings.appVideoWallpaperPauseMode)
             : current.appVideoWallpaperPauseMode,
@@ -2011,6 +2195,21 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     [isWindowFullscreen, startWindowFullscreenTransition, t],
   );
 
+  const handleOpenUpdateSettings = useCallback((): void => {
+    try {
+      window.sessionStorage.setItem(pendingSettingsSectionStorageKey, 'about');
+      window.localStorage.setItem(pendingSettingsSectionStorageKey, 'about');
+    } catch {
+      // SettingsPage falls back to the normal settings entrypoint when storage is unavailable.
+    }
+
+    setIsAudioDrawerOpen(false);
+    setIsLyricsDrawerOpen(false);
+    setIsMvDrawerOpen(false);
+    navigateRoute('settings');
+    window.dispatchEvent(new CustomEvent(settingsSectionNavigationEvent, { detail: { section: 'about' } }));
+  }, [navigateRoute]);
+
   const handleOpenCrashReportNotice = useCallback(async (): Promise<void> => {
     try {
       const reportPath = await window.echo?.diagnostics.openCrashReport();
@@ -2101,6 +2300,8 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       } ${
         shouldShowAppWallpaperVisual && isAppWallpaperReady ? 'app-shell--wallpaper-ready' : ''
       } ${
+        appWallpaperSettings.appWindowAcrylicEnabled ? 'app-shell--acrylic' : ''
+      } ${
         sidebarLayoutSettings.sidebarAutoHideEnabled ? 'app-shell--sidebar-auto-hide' : ''
       } ${
         sidebarLayoutSettings.sidebarIconOnlyEnabled && !sidebarLayoutSettings.sidebarAutoHideEnabled ? 'app-shell--sidebar-icon-only' : ''
@@ -2112,6 +2313,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
       data-wallpaper-ui-transparent={shouldShowAppWallpaperVisual && isAppWallpaperUiTransparent ? 'true' : undefined}
       data-wallpaper-ui-zero={shouldShowAppWallpaperVisual && isAppWallpaperUiZero ? 'true' : undefined}
       data-wallpaper-orientation={shouldShowAppWallpaperVisual ? activeAppWallpaperOrientation : undefined}
+      data-window-acrylic={appWallpaperSettings.appWindowAcrylicEnabled ? 'true' : undefined}
+      data-window-acrylic-keep-unfocused={appWallpaperSettings.appWindowAcrylicEnabled && appWallpaperSettings.appWindowAcrylicKeepWhenUnfocusedEnabled ? 'true' : undefined}
+      data-window-focused={isWindowFocused ? 'true' : 'false'}
       data-feature-comments-hidden={featureCommentsHidden ? 'true' : undefined}
       data-window-fullscreen={isWindowFullscreen ? 'true' : 'false'}
       data-window-fullscreen-target={
@@ -2163,7 +2367,9 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         isAudioSettingsOpen={isAudioDrawerOpen}
         isLyricsSettingsOpen={isLyricsDrawerOpen}
         isMvSettingsOpen={isMvDrawerOpen}
+        updateStatus={availableUpdateStatus}
         onRouteChange={navigateRoute}
+        onOpenUpdateSettings={handleOpenUpdateSettings}
         onOpenAudioSettings={() => setIsAudioDrawerOpen(true)}
         onOpenLyricsSettings={() => setIsLyricsDrawerOpen(true)}
         onOpenMvSettings={() => setIsMvDrawerOpen(true)}
@@ -2313,8 +2519,13 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
         onHqPlayerTakeoverEnabledChange={playbackQueue.setHqPlayerTakeoverEnabled}
         onStatusChange={setAudioDrawerStatus}
       />
-      <LyricsSettingsDrawer isOpen={isLyricsDrawerOpen} onClose={() => setIsLyricsDrawerOpen(false)} />
+      <LyricsSettingsDrawer
+        currentTrackTools={lyricsDrawerCurrentTrackTools}
+        isOpen={isLyricsDrawerOpen}
+        onClose={() => setIsLyricsDrawerOpen(false)}
+      />
       <MvSettingsDrawer isOpen={isMvDrawerOpen} onClose={() => setIsMvDrawerOpen(false)} />
+      <PluginTrackActionDrawerHost />
       <PlaybackQueueDrawer
         isOpen={isLyricsRoute && isLyricsQueueDrawerOpen}
         onClose={() => setIsLyricsQueueDrawerOpen(false)}

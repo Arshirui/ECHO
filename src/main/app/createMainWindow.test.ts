@@ -7,6 +7,7 @@ import {
   defaultMainWindowSize,
   mainWindowMinimumSize,
   resolveInitialMainWindowSize,
+  resolveMainWindowBackgroundOptions,
   resolvePreloadPath,
 } from './createMainWindow';
 
@@ -84,5 +85,21 @@ describe('resolveInitialMainWindowSize', () => {
         rememberedWindowSize: { width: 900, height: 700 },
       } as never),
     ).toEqual(defaultMainWindowSize);
+  });
+});
+
+describe('resolveMainWindowBackgroundOptions', () => {
+  it('keeps the normal main window opaque when acrylic is off', () => {
+    expect(resolveMainWindowBackgroundOptions({ appWindowAcrylicEnabled: false }, true)).toEqual({
+      backgroundColor: '#f7f9fc',
+      backgroundMaterial: 'none',
+    });
+  });
+
+  it('uses acrylic background material only when acrylic is explicitly on', () => {
+    expect(resolveMainWindowBackgroundOptions({ appWindowAcrylicEnabled: true }, true)).toEqual({
+      backgroundColor: '#f7f9fc',
+      backgroundMaterial: 'acrylic',
+    });
   });
 });

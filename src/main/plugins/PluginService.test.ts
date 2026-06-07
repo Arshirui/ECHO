@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { AudioStatus } from '../../shared/types/audio';
 import type { PluginManifest } from '../../shared/types/plugins';
-import { PluginService } from './PluginService';
+import { normalizePluginCommandTimeoutMs, PluginService } from './PluginService';
 
 const mocks = vi.hoisted(() => {
   const status = {
@@ -56,6 +56,24 @@ const mocks = vi.hoisted(() => {
       total: 1,
       hasMore: false,
     })),
+    getTrackMock: vi.fn((trackId: string) => trackId === 'track-1'
+      ? {
+          id: 'track-1',
+          mediaType: 'local',
+          path: 'D:\\Music\\Song.flac',
+          title: 'Song',
+          artist: 'Artist',
+          album: 'Album',
+          duration: 180,
+          codec: 'FLAC',
+          sampleRate: 44_100,
+          bitDepth: 16,
+          bitrate: 920_000,
+          coverThumb: 'echo-cover://thumb/cover-1',
+          fieldSources: { title: 'embedded' },
+          unavailable: false,
+        }
+      : null),
     getAppSettingsMock: vi.fn(() => ({ smtcEnabled: true })),
     setAppSettingsMock: vi.fn((patch: Record<string, unknown>) => ({ smtcEnabled: true, ...patch })),
     showSaveDialogMock: vi.fn(),
@@ -84,6 +102,7 @@ vi.mock('../library/LibraryService', () => ({
   getLibraryService: () => ({
     getSummary: mocks.getSummaryMock,
     getTracks: mocks.getTracksMock,
+    getTrack: mocks.getTrackMock,
   }),
 }));
 
@@ -113,6 +132,7 @@ describe('PluginService', () => {
     mocks.fakeAudioSession.seek.mockClear();
     mocks.getSummaryMock.mockClear();
     mocks.getTracksMock.mockClear();
+    mocks.getTrackMock.mockClear();
     mocks.getAppSettingsMock.mockClear();
     mocks.setAppSettingsMock.mockClear();
     mocks.openPathMock.mockClear();
@@ -160,6 +180,37 @@ describe('PluginService', () => {
       title: 'Aurora Glass',
       basePreset: 'classic',
     });
+  });
+
+  it('surfaces plugin-provided track context menu contributions', () => {
+    const manifest: PluginManifest = {
+      id: 'echo.audio-authenticity',
+      name: 'Audio Authenticity',
+      version: '0.0.1',
+      apiVersion: 2,
+      entry: 'plugin.js',
+      permissions: ['library:read', 'audio:analyze'],
+      contributes: {
+        commands: [{ id: 'analyze-track', title: 'Analyze selected track authenticity' }],
+        trackContextMenus: [{ id: 'audio-authenticity', title: '音频可信度', commandId: 'analyze-track', localOnly: true }],
+      },
+    };
+    writePlugin(pluginRoot, manifest, [
+      "echo.commands.register('analyze-track', async () => ({ title: 'OK' }));",
+    ].join('\n'));
+    const summary = service.list().plugins[0];
+
+    expect(summary).toMatchObject({
+      id: 'echo.audio-authenticity',
+      enabled: false,
+      status: 'disabled',
+      permissions: ['library:read', 'audio:analyze'],
+    });
+    expect(summary.security.highRiskPermissions).toEqual(['audio:analyze']);
+    expect(summary.commands.map((command) => command.id)).toEqual(['analyze-track']);
+    expect(summary.contributes.trackContextMenus).toEqual([
+      { id: 'audio-authenticity', title: '音频可信度', commandId: 'analyze-track', localOnly: true },
+    ]);
   });
 
   it('requires explicit permission trust before enabling a plugin', () => {
@@ -253,7 +304,7 @@ describe('PluginService', () => {
   it('exports and imports plugin packages without runtime storage', async () => {
     service.createExample('command-tool');
     writeFileSync(join(pluginRoot, 'echo.command-tool', 'plugin-storage.json'), '{"secret":"nope"}\n', 'utf8');
-    const packagePath = join(pluginRoot, 'echo.command-tool.echo-plugin.json');
+    const packagePath = join(pluginRoot, 'echo.command-tool.echo');
 
     await expect(service.exportPluginPackage('echo.command-tool', packagePath)).resolves.toBe(packagePath);
 
@@ -279,6 +330,21 @@ describe('PluginService', () => {
     } finally {
       rmSync(importRoot, { recursive: true, force: true });
     }
+  });
+
+  it('uses .echo as the default plugin package extension', async () => {
+    service.createExample('command-tool');
+    const packagePath = join(pluginRoot, 'echo.command-tool.echo');
+    mocks.showSaveDialogMock.mockResolvedValue({ canceled: false, filePath: packagePath });
+
+    await expect(service.exportPluginPackage('echo.command-tool')).resolves.toBe(packagePath);
+
+    expect(mocks.showSaveDialogMock).toHaveBeenCalledWith(expect.objectContaining({
+      defaultPath: 'echo.command-tool-0.0.1.echo',
+      filters: expect.arrayContaining([
+        { name: 'ECHO plugin package', extensions: ['echo'] },
+      ]),
+    }));
   });
 
   it('isolates a plugin after repeated startup crashes', async () => {
@@ -363,6 +429,54 @@ describe('PluginService', () => {
     const messages = service.getLogs('echo.command-limits').map((entry) => entry.message);
     expect(messages.some((message) => message.includes('plugin_command_args_too_large'))).toBe(true);
     expect(messages.some((message) => message.includes('plugin_command_result_too_large'))).toBe(true);
+  });
+
+  it('clamps extended command timeouts to audio-analysis permission boundaries', async () => {
+    expect(normalizePluginCommandTimeoutMs(12_000, [])).toBe(2_000);
+    expect(normalizePluginCommandTimeoutMs(12_000, ['audio:analyze'])).toBe(12_000);
+    expect(normalizePluginCommandTimeoutMs(24_000, ['audio:analyze'])).toBe(24_000);
+    expect(normalizePluginCommandTimeoutMs(60_000, ['audio:analyze'])).toBe(24_000);
+    expect(normalizePluginCommandTimeoutMs(1, ['audio:analyze'])).toBe(250);
+  });
+
+  it('stores sanitized command timeouts on runtime command summaries', async () => {
+    const plainManifest: PluginManifest = {
+      id: 'echo.plain-command-timeouts',
+      name: 'Plain Command Timeouts',
+      version: '0.0.1',
+      apiVersion: 2,
+      entry: 'plugin.js',
+      permissions: [],
+    };
+    writePlugin(pluginRoot, plainManifest, [
+      "echo.commands.register('plain', { title: 'Plain', timeoutMs: 12000 }, () => 'ok');",
+      "echo.commands.register('tiny', { title: 'Tiny', timeoutMs: 1 }, () => 'ok');",
+    ].join('\n'));
+
+    service.enable({ pluginId: 'echo.plain-command-timeouts', trustedPermissions: [] });
+    expect(service.list().plugins.find((plugin) => plugin.id === 'echo.plain-command-timeouts')?.commands).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'plain', timeoutMs: 2_000 }),
+      expect.objectContaining({ id: 'tiny', timeoutMs: 250 }),
+    ]));
+
+    const audioManifest: PluginManifest = {
+      id: 'echo.command-timeouts',
+      name: 'Command Timeouts',
+      version: '0.0.1',
+      apiVersion: 2,
+      entry: 'plugin.js',
+      permissions: ['audio:analyze'],
+    };
+    writePlugin(pluginRoot, audioManifest, [
+      "echo.commands.register('plain', { title: 'Plain', timeoutMs: 24000 }, () => 'ok');",
+      "echo.commands.register('tiny', { title: 'Tiny', timeoutMs: 1 }, () => 'ok');",
+    ].join('\n'));
+
+    service.enable({ pluginId: 'echo.command-timeouts', trustedPermissions: ['audio:analyze'] });
+    expect(service.list().plugins.find((plugin) => plugin.id === 'echo.command-timeouts')?.commands).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'plain', timeoutMs: 24_000 }),
+      expect.objectContaining({ id: 'tiny', timeoutMs: 250 }),
+    ]));
   });
 
   it('times out async event handlers without blocking other handlers or plugin summaries', async () => {
@@ -683,6 +797,59 @@ describe('PluginService', () => {
     expect(service.list().plugins[0].security.networkEnabled).toBe(true);
   });
 
+  it('exposes host-controlled audio analysis only with the audio permission', async () => {
+    const deniedManifest: PluginManifest = {
+      id: 'echo.audio-denied',
+      name: 'Audio Denied',
+      version: '0.0.1',
+      apiVersion: 2,
+      entry: 'plugin.js',
+      permissions: [],
+    };
+    writePlugin(pluginRoot, deniedManifest, [
+      "echo.commands.register('analyze', async () => echo.audio.analyzeTrack('track-1'));",
+    ].join('\n'));
+    service.enable({ pluginId: 'echo.audio-denied', trustedPermissions: [] });
+
+    await expect(service.runCommand({ pluginId: 'echo.audio-denied', commandId: 'analyze' })).rejects.toThrow('plugin_permission_denied:audio:analyze');
+
+    const manifest: PluginManifest = {
+      id: 'echo.audio-analyzer',
+      name: 'Audio Analyzer',
+      version: '0.0.1',
+      apiVersion: 2,
+      entry: 'plugin.js',
+      permissions: ['audio:analyze'],
+    };
+    writePlugin(pluginRoot, manifest, [
+      "echo.commands.register('analyze', async () => {",
+      "  const report = await echo.audio.analyzeTrack({ trackId: 'track-1' });",
+      "  await echo.storage.set('report', report);",
+      '  return report;',
+      '});',
+    ].join('\n'));
+    service.enable({ pluginId: 'echo.audio-analyzer', trustedPermissions: ['audio:analyze'] });
+
+    await expect(service.runCommand({ pluginId: 'echo.audio-analyzer', commandId: 'analyze' })).resolves.toMatchObject({
+      trackId: 'track-1',
+      status: 'ready',
+      verdict: 'trusted_lossless',
+      metrics: {
+        codec: 'FLAC',
+        sampleRate: 44_100,
+        bitDepth: 16,
+        bitrate: 920_000,
+      },
+    });
+    expect(mocks.getTrackMock).toHaveBeenCalledWith('track-1');
+    const storage = JSON.parse(readFileSync(join(pluginRoot, 'echo.audio-analyzer', 'plugin-storage.json'), 'utf8')) as {
+      report: { verdict: string; limitations: string[] };
+    };
+    expect(storage.report.verdict).toBe('trusted_lossless');
+    expect(storage.report.limitations[0]).toContain('host-controlled');
+    expect(service.list().plugins.find((plugin) => plugin.id === 'echo.audio-analyzer')?.security.highRiskPermissions).toEqual(['audio:analyze']);
+  });
+
   it('keeps v2 plugin-owned settings isolated from application settings', async () => {
     const manifest: PluginManifest = {
       id: 'echo.owned-settings',
@@ -761,7 +928,7 @@ describe('PluginService', () => {
 
   it('overwrites imported packages only when explicitly allowed and keeps a backup', async () => {
     service.createExample('command-tool');
-    const packagePath = join(pluginRoot, 'echo.command-tool.echo-plugin.json');
+    const packagePath = join(pluginRoot, 'echo.command-tool.echo');
     await service.exportPluginPackage('echo.command-tool', packagePath);
 
     await expect(service.importPluginPackage(packagePath)).rejects.toThrow('plugin_import_target_exists');

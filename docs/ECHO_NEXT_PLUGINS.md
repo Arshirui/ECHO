@@ -291,6 +291,7 @@ console.log('simple theme plugin loaded');
 | 给歌曲提供候选标签 | Metadata Provider | `library:read` |
 | 给歌曲提供候选歌词 | Lyrics Provider | `library:read` |
 | 给歌曲提供候选封面 | Cover Provider | `library:read` |
+| 分析无损/DSD 可信度 | Command 或 Panel + Command | `library:read` + `audio:analyze` |
 | 接入一个第三方音乐搜索源 | Source Provider | `sources:provide`，可能还要 `network` |
 | 做一个可导入主题 | Theme Preset | 不需要 |
 | 做一个复杂界面 | Panel + Command | 按命令实际用到的 API 申请 |
@@ -588,6 +589,7 @@ docs/plugin-sdk/echo-plugin.d.ts -> plugins/echo.my-plugin/echo-plugin.d.ts
 | `sources:provide` | 已开放 | 中 | 注册自定义音源搜索和播放解析 |
 | `settings:read` | 已开放 | 中 | v1 读取应用设置；v2 插件设置不需要它 |
 | `settings:write` | 已开放 | 高 | v1 写应用设置 patch；新插件尽量不要申请 |
+| `audio:analyze` | 已开放 | 高 | 通过宿主受控 API 按曲库 `trackId` 分析无损/DSD 可信度，不开放任意文件或进程执行 |
 | `network` | 已开放 | 高 | v2 通过宿主受控 API 访问 `http` / `https` |
 | `fs:plugin` | 受限 | 中 | 不开放任意文件 API，插件存储请用 `echo.storage` |
 | `library:write` | 预留 | 高 | 当前不提供实际曲库写入 API |
@@ -644,6 +646,7 @@ echo.commands.register('hello', { title: 'Hello' }, async () => {
 | `echo.playback.play/pause/stop/seek()` | `playback:control` | 控制播放 |
 | `echo.library.getSummary()` | `library:read` | 获取曲库摘要 |
 | `echo.library.getTracks(query)` | `library:read` | 分页读取公开曲目字段 |
+| `echo.audio.analyzeTrack(trackId)` | `audio:analyze` | 请求宿主按曲库 `trackId` 返回音频可信度报告 |
 | `echo.metadata.registerProvider(...)` | `library:read` | 返回元数据候选 |
 | `echo.lyrics.registerProvider(...)` | `library:read` | 返回歌词候选 |
 | `echo.covers.registerProvider(...)` | `library:read` | 返回封面候选 |
@@ -1281,7 +1284,7 @@ document.getElementById('refresh').addEventListener('click', async () => {
 
 ## 导入、导出与发布
 
-插件页可以导出 `.json` 插件包。包结构：
+插件页默认导出 `.echo` 插件包，并兼容导入旧 `.echo-plugin.json` 包。包内容仍是受限 JSON 结构：
 
 ```json
 {
@@ -1305,7 +1308,7 @@ document.getElementById('refresh').addEventListener('click', async () => {
 - 单文件最大约 512 KB。
 - 只导出插件根目录文件，不递归子目录。
 - 排除 `plugin-state.json`、`plugin-storage.json`、`plugin-settings.json`。
-- 排除 `.echo-plugin.json` 包文件，避免递归打包。
+- 排除 `.echo` 插件包文件，并兼容排除旧 `.echo-plugin.json` 包文件，避免递归打包。
 
 导入规则：
 

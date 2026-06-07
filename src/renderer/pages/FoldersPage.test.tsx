@@ -199,6 +199,7 @@ let libraryMock: {
   addFolder: ReturnType<typeof vi.fn>;
   scanFolder: ReturnType<typeof vi.fn>;
   scanFolderChanges: ReturnType<typeof vi.fn>;
+  rescanEmbeddedTags: ReturnType<typeof vi.fn>;
   removeFolder: ReturnType<typeof vi.fn>;
   getScanStatus: ReturnType<typeof vi.fn>;
 };
@@ -228,6 +229,7 @@ beforeEach(() => {
     addFolder: vi.fn(),
     scanFolder: vi.fn(),
     scanFolderChanges: vi.fn(),
+    rescanEmbeddedTags: vi.fn().mockResolvedValue([scanStatus({ folderId: 'folder-1' })]),
     removeFolder: vi.fn(),
     getScanStatus: vi.fn().mockResolvedValue(scanStatus()),
   };
@@ -667,6 +669,29 @@ describe('FoldersPage', () => {
     expect(libraryMock.scanFolder).not.toHaveBeenCalled();
   });
 
+  it('starts a low-pressure embedded tag rescan for the selected folder', async () => {
+    renderFoldersPage();
+
+    await screen.findByRole('heading', { name: 'Folders' });
+    fireEvent.click(screen.getByRole('button', { name: 'Rescan embedded tags' }));
+
+    await waitFor(() =>
+      expect(libraryMock.rescanEmbeddedTags).toHaveBeenCalledWith('embedded-tags-all', {
+        folderId: 'folder-1',
+        path: 'D:\\Music',
+        recursive: true,
+      }),
+    );
+    expect(await screen.findByText('Embedded tag rescan started in the background.')).toBeTruthy();
+  });
+
+  it('keeps the scan patience warning hidden until a local scan is running', async () => {
+    renderFoldersPage();
+
+    await screen.findByRole('heading', { name: 'Folders' });
+    expect(screen.queryByText(/The app may become unresponsive during scanning\. This is normal; please wait\./i)).toBeNull();
+  });
+
   it('warns users that scanning can briefly make the app unresponsive', async () => {
     act(() => {
       rememberLibraryScanStatus(scanStatus());
@@ -677,6 +702,7 @@ describe('FoldersPage', () => {
     expect(
       await screen.findByText(/The app may briefly become unresponsive during scanning; this is normal/i),
     ).toBeTruthy();
+    expect(screen.getByText(/The app may become unresponsive during scanning\. This is normal; please wait\./i)).toBeTruthy();
   });
 
   it('refreshes folder overviews once for each terminal scan job', async () => {

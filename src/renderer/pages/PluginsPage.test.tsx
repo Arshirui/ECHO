@@ -83,7 +83,7 @@ const pluginsBridge = {
   disable: vi.fn(async () => ({ ...plugins[0], enabled: false, status: 'disabled' })),
   reload: vi.fn(async () => plugins[0]),
   openDirectory: vi.fn(async () => undefined),
-  exportPackage: vi.fn(async () => 'D:\\Echo\\plugins\\echo.playback-panel.echo-plugin.json'),
+  exportPackage: vi.fn(async () => 'D:\\Echo\\plugins\\echo.playback-panel.echo'),
   importPackage: vi.fn(async () => ({ pluginId: 'echo.playback-panel', directory: 'D:\\Echo\\plugins\\echo.playback-panel', importedFileCount: 2, checksum: 'abc' })),
   runCommand: vi.fn(async () => undefined),
   queryLyrics: vi.fn(async () => ({ providers: [], candidates: [] })),
@@ -148,6 +148,10 @@ describe('PluginsPage', () => {
     fireEvent.click(createButtons[0]);
 
     await waitFor(() => expect(pluginsBridge.createExample).toHaveBeenCalledWith('playback-panel'));
+
+    fireEvent.click(createButtons[3]);
+
+    await waitFor(() => expect(pluginsBridge.createExample).toHaveBeenCalledWith('source-provider'));
   });
 
   it('imports and exports local plugin packages', async () => {
@@ -158,6 +162,32 @@ describe('PluginsPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /导出插件包/u }));
     await waitFor(() => expect(pluginsBridge.exportPackage).toHaveBeenCalledWith('echo.playback-panel'));
+  });
+
+  it('imports dropped .echo plugin packages', async () => {
+    const { container } = render(<PluginsPage />);
+    const page = container.querySelector('.plugins-page') as HTMLElement;
+    const file = new File(['{}'], 'echo.playback-panel.echo', { type: 'application/json' });
+
+    fireEvent.dragOver(page, {
+      dataTransfer: {
+        files: [file],
+        types: ['Files'],
+        dropEffect: '',
+      },
+    });
+
+    expect(screen.getByText('释放导入 .echo 插件包')).toBeTruthy();
+
+    fireEvent.drop(page, {
+      dataTransfer: {
+        files: [file],
+        types: ['Files'],
+        dropEffect: '',
+      },
+    });
+
+    await waitFor(() => expect(pluginsBridge.importPackage).toHaveBeenCalledWith(file));
   });
 
   it('routes sandbox panel bridge requests to the selected plugin only', async () => {

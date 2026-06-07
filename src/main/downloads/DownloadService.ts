@@ -50,6 +50,8 @@ const defaultSettings: DownloadSettings = {
 const terminalStatuses = new Set<DownloadJobStatus>(['completed', 'failed', 'cancelled']);
 const cancellableStatuses = new Set<DownloadJobStatus>(['queued', 'probing', 'downloading', 'extracting_audio', 'importing', 'binding_mv']);
 const progressEmitIntervalMs = 500;
+const progressPersistIntervalMs = 15_000;
+const burstPersistDelayMs = 750;
 const maxCommandOutputBytes = 1024 * 1024 * 4;
 const ytDlpFileName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
 const outputTemplate = '%(title).180B.%(ext)s';
@@ -215,6 +217,7 @@ type DownloadServiceDependencies = {
         albumArtist?: string;
       };
       coverUrl?: string | null;
+      deferGroupingRefresh?: boolean;
     },
   ) => Promise<{ id: string }>;
   bindMvUrl?: (trackId: string, url: string) => unknown;
@@ -635,6 +638,10 @@ export class DownloadService extends EventEmitter {
 
   private jobOptions = new Map<string, DownloadJobOptions>();
 
+  private persistJobsTimer: NodeJS.Timeout | null = null;
+
+  private lastPersistJobsAt = 0;
+
   private deferredImportJobIds: string[] = [];
 
   private deferredImportTimer: NodeJS.Timeout | null = null;
@@ -751,7 +758,7 @@ export class DownloadService extends EventEmitter {
     });
     this.jobs = [job, ...this.jobs];
     this.queuedJobIds.push(job.id);
-    this.emitJobsNow();
+    this.emitJobsNow({ persist: 'deferred' });
     this.startNextJob();
     return cloneJob(job);
   }
@@ -1949,8 +1956,23 @@ export class DownloadService extends EventEmitter {
             downloadedBytes += chunk.byteLength;
             if (!writer.write(chunk)) {
               await new Promise<void>((resolveDrain, rejectDrain) => {
-                writer.once('drain', resolveDrain);
-                writer.once('error', rejectDrain);
+                const cleanup = (): void => {
+                  writer.off('drain', handleDrain);
+                  writer.off('error', handleError);
+                };
+
+                function handleDrain(): void {
+                  cleanup();
+                  resolveDrain();
+                }
+
+                function handleError(error: Error): void {
+                  cleanup();
+                  rejectDrain(error);
+                }
+
+                writer.once('drain', handleDrain);
+                writer.once('error', handleError);
               });
             }
 
@@ -2134,6 +2156,7 @@ export class DownloadService extends EventEmitter {
           }
         : undefined,
       coverUrl: coverUrl ?? undefined,
+      deferGroupingRefresh: true,
     });
     this.updateJob(jobId, { importedTrackId: track.id });
     if (options.streamingProvider && options.streamingProviderTrackId) {
@@ -2218,13 +2241,41 @@ export class DownloadService extends EventEmitter {
     const lastEmitAt = this.lastProgressEmitAt.get(jobId) ?? 0;
     if (now - lastEmitAt >= progressEmitIntervalMs) {
       this.lastProgressEmitAt.set(jobId, now);
-      this.emitJobsNow();
+      this.emitJobsNow({
+        persist: now - this.lastPersistJobsAt >= progressPersistIntervalMs ? 'deferred' : false,
+      });
     }
   }
 
-  private emitJobsNow(): void {
-    this.persistJobs();
+  private emitJobsNow(options: { persist?: boolean | 'deferred' } = {}): void {
+    const persist = options.persist ?? true;
+    if (persist === true) {
+      this.flushPersistJobs();
+    } else if (persist === 'deferred') {
+      this.schedulePersistJobs();
+    }
     this.emit('jobs-updated', this.getJobs());
+  }
+
+  private schedulePersistJobs(delayMs = burstPersistDelayMs): void {
+    if (this.persistJobsTimer) {
+      return;
+    }
+
+    this.persistJobsTimer = setTimeout(() => {
+      this.persistJobsTimer = null;
+      this.flushPersistJobs();
+    }, delayMs);
+    this.persistJobsTimer.unref?.();
+  }
+
+  private flushPersistJobs(): void {
+    if (this.persistJobsTimer) {
+      clearTimeout(this.persistJobsTimer);
+      this.persistJobsTimer = null;
+    }
+    this.persistJobs();
+    this.lastPersistJobsAt = Date.now();
   }
 
   private persistJobs(): void {

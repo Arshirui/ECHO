@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   Captions,
   Check,
@@ -43,12 +43,14 @@ import {
 } from './lyricsSourceQualityMemory';
 
 type LyricsSettingsDrawerProps = {
+  currentTrackTools?: ReactNode;
   isOpen: boolean;
   onClose: () => void;
 };
 
 type LyricsSettingsPanelProps = {
   className?: string;
+  currentTrackTools?: ReactNode;
   variant?: 'drawer' | 'settings';
 };
 
@@ -686,7 +688,7 @@ const selectLyricsSettings = (settings: AppSettings): LyricsDrawerSettings => ({
   desktopLyricsTranslationEnabled: settings.desktopLyricsTranslationEnabled ?? fallbackSettings.desktopLyricsTranslationEnabled,
 });
 
-export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSettingsPanelProps): JSX.Element => {
+export const LyricsSettingsPanel = ({ className, currentTrackTools, variant = 'drawer' }: LyricsSettingsPanelProps): JSX.Element => {
   const t = useOptionalI18n()?.t ?? translateFallback;
   const [settings, setSettings] = useState<LyricsDrawerSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -701,6 +703,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const [fontPickerTarget, setFontPickerTarget] = useState<LyricsFontPickerTarget>('lyrics');
   const [fontPickerQuery, setFontPickerQuery] = useState('');
   const [isBackgroundControlsOpen, setIsBackgroundControlsOpen] = useState(true);
+  const [isBackgroundModeMenuOpen, setIsBackgroundModeMenuOpen] = useState(false);
   const [isBackgroundTuningOpen, setIsBackgroundTuningOpen] = useState(readLyricsBackgroundTuningOpen);
   const [lyricsReadabilityEnhanced, setLyricsReadabilityEnhanced] = useState(false);
   const [lyricsSearchQuery, setLyricsSearchQuery] = useState('');
@@ -723,6 +726,18 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   const currentQueueTrack = playbackQueue?.currentTrack ?? null;
 
   const effectiveSettings = settings ?? fallbackSettings;
+  const lyricsBackgroundModeOptions = useMemo(
+    () => [
+      { mode: 'theme', label: t('lyricsSettings.background.mode.theme') },
+      { mode: 'cover', label: t('lyricsSettings.background.mode.cover') },
+      { mode: 'coverColor', label: t('lyricsSettings.background.mode.coverColor') },
+      { mode: 'customWallpaper', label: t('lyricsSettings.background.mode.customWallpaper') },
+    ] satisfies Array<{ mode: AppSettings['lyricsBackgroundMode']; label: string }>,
+    [t],
+  );
+  const lyricsBackgroundModeLabel =
+    lyricsBackgroundModeOptions.find((option) => option.mode === effectiveSettings.lyricsBackgroundMode)?.label ??
+    t('lyricsSettings.background.mode.theme');
   // Settings should expose every persistent lyrics preference; only current-track tools stay drawer-only.
   const showCurrentTrackTools = variant === 'drawer';
   const showPersistentControls = variant === 'drawer' || variant === 'settings';
@@ -2698,61 +2713,85 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
 
           <div className="lyrics-background-controls" hidden={!isBackgroundControlsOpen}>
-          <div className="lyrics-background-segmented" aria-label={t('lyricsSettings.background.modeAria')}>
-            {[
-              ['theme', t('lyricsSettings.background.mode.theme')],
-              ['cover', t('lyricsSettings.background.mode.cover')],
-              ['coverColor', t('lyricsSettings.background.mode.coverColor')],
-              ['customWallpaper', t('lyricsSettings.background.mode.customWallpaper')],
-            ].map(([mode, label]) => (
-              <button
-                type="button"
-                key={mode}
-                aria-pressed={effectiveSettings.lyricsBackgroundMode === mode}
-                disabled={isBusy}
-                onClick={() => {
-                  if (mode === 'customWallpaper' && !effectiveSettings.lyricsCustomWallpaperPath) {
-                    void chooseWallpaper();
-                    return;
-                  }
-
-                  void patchSettings({ lyricsBackgroundMode: mode as AppSettings['lyricsBackgroundMode'] });
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <p>{t('lyricsSettings.background.modeDescription')}</p>
-
-          <label className="audio-toggle-row lyrics-background-network-cover-toggle">
-            <span>
-              <ImageIcon size={17} />
-              <strong>{t('lyricsSettings.background.highResolutionCover')}</strong>
-            </span>
-            <input
-              type="checkbox"
-              checked={effectiveSettings.lyricsHighResolutionNetworkCoverEnabled === true}
-              disabled={isBusy || effectiveSettings.lyricsBackgroundMode !== 'cover'}
-              onChange={(event) => void patchSettings({ lyricsHighResolutionNetworkCoverEnabled: event.currentTarget.checked })}
-            />
-          </label>
-          <p>{t('lyricsSettings.background.highResolutionCoverDescription')}</p>
-
-          <div className={`lyrics-cover-tuning${isBackgroundTuningOpen ? ' lyrics-cover-tuning--open' : ''}`}>
-            <button
-              className="lyrics-background-tuning-collapse-button"
-              type="button"
-              aria-expanded={isBackgroundTuningOpen}
-              onClick={toggleBackgroundTuning}
+            <div
+              className="lyrics-background-select"
+              onBlur={(event) => {
+                const nextFocus = event.relatedTarget;
+                if (!(nextFocus instanceof Node) || !event.currentTarget.contains(nextFocus)) {
+                  setIsBackgroundModeMenuOpen(false);
+                }
+              }}
             >
+              <span>{t('lyricsSettings.background.modeAria')}</span>
+              <button
+                className="lyrics-background-select__trigger"
+                type="button"
+                aria-label={t('lyricsSettings.background.modeAria')}
+                aria-haspopup="listbox"
+                aria-expanded={isBackgroundModeMenuOpen}
+                disabled={isBusy}
+                onClick={() => setIsBackgroundModeMenuOpen((open) => !open)}
+              >
+                <strong>{lyricsBackgroundModeLabel}</strong>
+                <ChevronDown size={16} aria-hidden="true" />
+              </button>
+              {isBackgroundModeMenuOpen ? (
+                <div className="lyrics-background-select__menu" role="listbox" aria-label={t('lyricsSettings.background.modeAria')}>
+                  {lyricsBackgroundModeOptions.map((option) => (
+                    <button
+                      className="lyrics-background-select__option"
+                      type="button"
+                      role="option"
+                      aria-selected={effectiveSettings.lyricsBackgroundMode === option.mode}
+                      data-mode={option.mode}
+                      key={option.mode}
+                      onClick={() => {
+                        setIsBackgroundModeMenuOpen(false);
+                        if (option.mode === 'customWallpaper' && !effectiveSettings.lyricsCustomWallpaperPath) {
+                          void chooseWallpaper();
+                          return;
+                        }
+
+                        void patchSettings({ lyricsBackgroundMode: option.mode });
+                      }}
+                    >
+                      <span>{option.label}</span>
+                      {effectiveSettings.lyricsBackgroundMode === option.mode ? <Check size={15} aria-hidden="true" /> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <p>{t('lyricsSettings.background.modeDescription')}</p>
+
+            <label className="audio-toggle-row lyrics-background-network-cover-toggle">
               <span>
                 <ImageIcon size={17} />
-                <strong>{t('lyricsSettings.background.tuning')}</strong>
-                <small>{t('lyricsSettings.background.tuningDescription')}</small>
+                <strong>{t('lyricsSettings.background.highResolutionCover')}</strong>
               </span>
-              <ChevronDown size={16} aria-hidden="true" />
-            </button>
+              <input
+                type="checkbox"
+                checked={effectiveSettings.lyricsHighResolutionNetworkCoverEnabled === true}
+                disabled={isBusy || effectiveSettings.lyricsBackgroundMode !== 'cover'}
+                onChange={(event) => void patchSettings({ lyricsHighResolutionNetworkCoverEnabled: event.currentTarget.checked })}
+              />
+            </label>
+            <p>{t('lyricsSettings.background.highResolutionCoverDescription')}</p>
+
+            <div className={`lyrics-cover-tuning${isBackgroundTuningOpen ? ' lyrics-cover-tuning--open' : ''}`}>
+              <button
+                className="lyrics-background-tuning-collapse-button"
+                type="button"
+                aria-expanded={isBackgroundTuningOpen}
+                onClick={toggleBackgroundTuning}
+              >
+                <span>
+                  <ImageIcon size={17} />
+                  <strong>{t('lyricsSettings.background.tuning')}</strong>
+                  <small>{t('lyricsSettings.background.tuningDescription')}</small>
+                </span>
+                <ChevronDown size={16} aria-hidden="true" />
+              </button>
 
             {isBackgroundTuningOpen ? (
               <div className="lyrics-cover-tuning-body">
@@ -3073,6 +3112,12 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
           </label>
           <p>{t('lyricsSettings.timing.smartAlignmentDescription')}</p>
 
+          {showCurrentTrackTools && currentTrackTools ? (
+            <div className="lyrics-current-track-tools-panel">
+              {currentTrackTools}
+            </div>
+          ) : null}
+
           <button
             className="audio-device-pill"
             type="button"
@@ -3107,7 +3152,7 @@ export const LyricsSettingsPanel = ({ className, variant = 'drawer' }: LyricsSet
   );
 };
 
-export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerProps): JSX.Element | null => {
+export const LyricsSettingsDrawer = ({ currentTrackTools, isOpen, onClose }: LyricsSettingsDrawerProps): JSX.Element | null => {
   const t = useOptionalI18n()?.t ?? translateFallback;
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isMotionOpen, setIsMotionOpen] = useState(false);
@@ -3168,7 +3213,7 @@ export const LyricsSettingsDrawer = ({ isOpen, onClose }: LyricsSettingsDrawerPr
             <X size={20} />
           </button>
           </header>
-          <LyricsSettingsPanel />
+          <LyricsSettingsPanel currentTrackTools={currentTrackTools} />
         </div>
       </aside>
     </div>

@@ -407,11 +407,21 @@ const historyText = (value: string | null | undefined, fallback: string): string
   return text && text.length > 0 ? text : fallback;
 };
 
+const isNonStreamingAlbum = (album: Pick<LibraryAlbum, 'mediaType'>): boolean =>
+  album.mediaType !== 'streaming';
+
+const isNonStreamingHistoryEntry = (entry: Pick<PlaybackHistoryEntry, 'mediaType'>): boolean =>
+  entry.mediaType !== 'streaming';
+
 const recentPlayedAlbumsFromHistory = (entries: PlaybackHistoryEntry[]): RecentPlayedAlbum[] => {
   const seenAlbumKeys = new Set<string>();
   const albums: RecentPlayedAlbum[] = [];
 
   for (const entry of entries) {
+    if (!isNonStreamingHistoryEntry(entry)) {
+      continue;
+    }
+
     const title = historyText(entry.album, historyText(entry.title, translateCurrentLocale('queue.unknownAlbum')));
     const albumArtist = historyText(entry.albumArtist, historyText(entry.artist, translateCurrentLocale('queue.unknownArtist')));
     const albumKey = `${entry.mediaType}:${albumArtist.toLowerCase()}:${title.toLowerCase()}`;
@@ -448,6 +458,7 @@ const normalizeStoredHomePageData = (value: unknown): HomePageData | null => {
 
   const recentHistory = Array.isArray(value.recentHistory) ? (value.recentHistory as PlaybackHistoryEntry[]) : [];
   const storedRecentPlayedAlbums = Array.isArray(value.recentPlayedAlbums) ? (value.recentPlayedAlbums as RecentPlayedAlbum[]) : [];
+  const storedNonStreamingRecentPlayedAlbums = storedRecentPlayedAlbums.filter((item) => isNonStreamingAlbum(item.album));
 
   return {
     recentAddedAlbums: Array.isArray(value.recentAddedAlbums) ? (value.recentAddedAlbums as LibraryAlbum[]) : [],
@@ -455,7 +466,7 @@ const normalizeStoredHomePageData = (value: unknown): HomePageData | null => {
     summary: isRecord(value.summary) ? ({ ...emptySummary, ...value.summary } as LibrarySummary) : emptySummary,
     recentTracks: Array.isArray(value.recentTracks) ? (value.recentTracks as LibraryTrack[]) : [],
     recentHistory,
-    recentPlayedAlbums: storedRecentPlayedAlbums.length > 0 ? storedRecentPlayedAlbums : recentPlayedAlbumsFromHistory(recentHistory),
+    recentPlayedAlbums: storedNonStreamingRecentPlayedAlbums.length > 0 ? storedNonStreamingRecentPlayedAlbums : recentPlayedAlbumsFromHistory(recentHistory),
     historySummary: isRecord(value.historySummary) ? (value.historySummary as PlaybackHistorySummary) : null,
     stats: isRecord(value.stats) ? (value.stats as PlaybackStatsDashboard) : null,
   };
@@ -885,13 +896,13 @@ const loadRecentPlayedAlbums = async (library: LibraryBridge, entries: PlaybackH
 
   const resolvedAlbums = await Promise.all(
     entries.map(async (entry): Promise<RecentPlayedAlbum | null> => {
-      if (!entry.trackId) {
+      if (!entry.trackId || !isNonStreamingHistoryEntry(entry)) {
         return null;
       }
 
       try {
         const album = await library.getAlbumForTrack(entry.trackId);
-        return album ? { album, startedAt: entry.startedAt } : null;
+        return album && isNonStreamingAlbum(album) ? { album, startedAt: entry.startedAt } : null;
       } catch {
         return null;
       }
@@ -1838,46 +1849,6 @@ export const HomePage = (): JSX.Element => {
     }
   }, []);
 
-  const loadRecentPlaybackPulse = useCallback(async (): Promise<void> => {
-    const library = window.echo?.library;
-    const requestId = playbackPulseRequestIdRef.current + 1;
-    playbackPulseRequestIdRef.current = requestId;
-
-    if (!library?.getPlaybackHistory) {
-      return;
-    }
-
-    try {
-      const historyPage = await library.getPlaybackHistory({ page: 1, pageSize: recentPlayedAlbumHistoryPageSize, sort: 'recent' });
-      if (playbackPulseRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      const fallbackRecentPlayedAlbums = recentPlayedAlbumsFromHistory(historyPage.items);
-      mergeCachedHomePageData({
-        recentHistory: historyPage.items,
-        recentPlayedAlbums: fallbackRecentPlayedAlbums,
-      });
-      setRecentHistory(historyPage.items);
-      setRecentPlayedAlbums((current) => (current.length > 0 && fallbackRecentPlayedAlbums.length > 0 ? current : fallbackRecentPlayedAlbums));
-
-      const resolvedRecentPlayedAlbums = await loadRecentPlayedAlbums(library, historyPage.items);
-      if (playbackPulseRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      const nextRecentPlayedAlbums = resolvedRecentPlayedAlbums.length > 0 ? resolvedRecentPlayedAlbums : fallbackRecentPlayedAlbums;
-      mergeCachedHomePageData({
-        recentPlayedAlbums: nextRecentPlayedAlbums,
-      });
-      setRecentPlayedAlbums(nextRecentPlayedAlbums);
-    } catch (loadError) {
-      if (playbackPulseRequestIdRef.current === requestId) {
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
-      }
-    }
-  }, []);
-
   const loadLibraryPulse = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
     const requestId = pulseRequestIdRef.current + 1;
@@ -2015,7 +1986,7 @@ export const HomePage = (): JSX.Element => {
       }
       playbackHistoryRefreshTimerRef.current = window.setTimeout(() => {
         playbackHistoryRefreshTimerRef.current = null;
-        void loadRecentPlaybackPulse();
+        void loadPlaybackPulse();
       }, homePlaybackHistoryRefreshDelayMs);
     };
 
@@ -2027,7 +1998,7 @@ export const HomePage = (): JSX.Element => {
         playbackHistoryRefreshTimerRef.current = null;
       }
     };
-  }, [loadRecentPlaybackPulse]);
+  }, [loadPlaybackPulse]);
 
   useEffect(() => {
     const track = queue.currentTrack;
@@ -2036,6 +2007,10 @@ export const HomePage = (): JSX.Element => {
     currentPlayedAlbumRequestIdRef.current = requestId;
 
     if (!track) {
+      return;
+    }
+
+    if (track.mediaType === 'streaming') {
       return;
     }
 
@@ -2066,7 +2041,7 @@ export const HomePage = (): JSX.Element => {
           return;
         }
 
-        pushRecentPlayedAlbum({ album: album ?? fallbackAlbum, startedAt });
+        pushRecentPlayedAlbum({ album: album && isNonStreamingAlbum(album) ? album : fallbackAlbum, startedAt });
       })
       .catch(() => {
         if (currentPlayedAlbumRequestIdRef.current === requestId) {

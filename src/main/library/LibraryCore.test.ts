@@ -1305,6 +1305,54 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('embedded tag rescan can target a child folder without rereading sibling tracks', async () => {
+    const scannedFiles: ScannedFile[] = [];
+    const metadataCalls: string[] = [];
+    const metadataTitles = new Map<string, string>();
+    const metadataReader: MetadataReader = {
+      async read(filePath: string) {
+        metadataCalls.push(filePath);
+        return metadataResult({ title: metadataTitles.get(filePath) ?? 'Untitled' });
+      },
+    };
+    const harness = createHarness({
+      fileScanner: new FakeFileScanner(scannedFiles),
+      metadataReader,
+      coverExtractor: new FakeCoverExtractor(),
+    });
+    const childFolder = join(harness.folder, 'Child');
+    const siblingFolder = join(harness.folder, 'Sibling');
+    mkdirSync(childFolder, { recursive: true });
+    mkdirSync(siblingFolder, { recursive: true });
+    const childFile = writeAudioFile(childFolder, 'Artist - Child.flac');
+    const siblingFile = writeAudioFile(siblingFolder, 'Artist - Sibling.flac');
+    scannedFiles.push(
+      { path: childFile, sizeBytes: 128, mtimeMs: 1 },
+      { path: siblingFile, sizeBytes: 128, mtimeMs: 1 },
+    );
+    metadataTitles.set(childFile, 'Child Before');
+    metadataTitles.set(siblingFile, 'Sibling Before');
+    const folder = harness.addFolder();
+
+    await harness.scanFolder();
+    metadataTitles.set(childFile, 'Child After');
+    metadataTitles.set(siblingFile, 'Sibling After');
+    const [job] = await harness.service.rescanEmbeddedTags('embedded-tags-all', {
+      folderId: folder.id,
+      path: childFolder,
+      recursive: true,
+    });
+    await harness.service.waitForScan(job!.id);
+    const secondScan = harness.service.getScanStatus(job!.id);
+    const tracks = harness.service.getTracks({ pageSize: 10 }).items;
+
+    expect(metadataCalls).toHaveLength(3);
+    expect(secondScan.updatedTracks).toBe(1);
+    expect(tracks.find((track) => track.path === childFile)?.title).toBe('Child After');
+    expect(tracks.find((track) => track.path === siblingFile)?.title).toBe('Sibling Before');
+    harness.cleanup();
+  });
+
   it('embedded tag rescan missing cover only rereads tracks without complete cover cache', async () => {
     const coverExtractor = new FakeCoverExtractor({ source: 'embedded' });
     const harness = createHarness({ coverExtractor });
@@ -2655,6 +2703,31 @@ describe('Library Core', () => {
     harness.cleanup();
   });
 
+  it('getAlbums recent sort uses the newest track added time instead of album maintenance updates', async () => {
+    const harness = createHarness();
+    const oldAlbumFile = writeAudioFile(harness.folder, 'Old Added Album.flac');
+    const newAlbumFile = writeAudioFile(harness.folder, 'New Added Album.flac');
+    harness.metadataService.overrides.set(oldAlbumFile, baseMetadata({ title: 'Old Added Track', album: 'Old Added Album' }));
+    harness.metadataService.overrides.set(newAlbumFile, baseMetadata({ title: 'New Added Track', album: 'New Added Album' }));
+    harness.addFolder();
+
+    await harness.scanFolder();
+
+    const database = new Database(harness.databasePath);
+    try {
+      database.prepare("UPDATE tracks SET created_at = ? WHERE title = 'Old Added Track'").run('2024-01-01T00:00:00.000Z');
+      database.prepare("UPDATE tracks SET created_at = ? WHERE title = 'New Added Track'").run('2024-02-01T00:00:00.000Z');
+      database.prepare("UPDATE albums SET updated_at = ? WHERE title = 'Old Added Album'").run('2024-03-01T00:00:00.000Z');
+    } finally {
+      database.close();
+    }
+
+    const recent = harness.service.getAlbums({ pageSize: 10, sort: 'recent' });
+
+    expect(recent.items.map((album) => album.title)).toEqual(['New Added Album', 'Old Added Album']);
+    harness.cleanup();
+  });
+
   it('getTracks search matches multiple terms across metadata fields', async () => {
     const harness = createHarness();
     const match = writeAudioFile(harness.folder, 'Loose Match.flac');
@@ -3725,6 +3798,31 @@ describe('Library Core', () => {
     expect(harness.service.getTracks({ pageSize: 10 }).total).toBe(1);
     expect(harness.service.getAlbums({ pageSize: 10 }).total).toBe(1);
     expect(harness.service.getArtists({ pageSize: 10 }).total).toBeGreaterThan(0);
+    harness.cleanup();
+  });
+
+  it('can defer full grouping refresh for latency-sensitive single-file imports', async () => {
+    const metadataReader = new FakeMetadataReader(metadataResult({
+      title: 'Dropped Song',
+      artist: 'Dropped Artist',
+      album: 'Dropped Album',
+      albumArtist: 'Dropped Artist',
+    }));
+    const harness = createHarness({ metadataReader, coverExtractor: new FakeCoverExtractor() });
+    const filePath = writeAudioFile(harness.folder, 'Dropped Song.flac');
+
+    const track = await harness.service.importAudioFile(filePath, { deferGroupingRefresh: true });
+
+    expect(track.title).toBe('Dropped Song');
+    expect(harness.service.getTracks({ pageSize: 10 }).total).toBe(1);
+    expect(harness.service.getAlbums({ pageSize: 10 }).total).toBe(1);
+    expect(harness.service.getArtists({ pageSize: 10 }).total).toBe(0);
+    expect(harness.service.getDiagnostics().groupingRefreshQueued).toBe(true);
+
+    await (harness.service as unknown as { runScheduledGroupingRefresh: () => Promise<void> }).runScheduledGroupingRefresh();
+
+    expect(harness.service.getArtists({ pageSize: 10 }).total).toBeGreaterThan(0);
+    expect(harness.service.getDiagnostics().groupingRefreshQueued).toBe(false);
     harness.cleanup();
   });
 

@@ -23,7 +23,7 @@ import {
   Unplug,
   Volume2,
 } from 'lucide-react';
-import type { AppSettings } from '../../shared/types/appSettings';
+import type { AirPlayReceiverProtocol, AppSettings } from '../../shared/types/appSettings';
 import { hqPlayerConnectDeviceId } from '../../shared/types/connect';
 import type { AirPlayReceiverStatus, ConnectDevice, ConnectReceiverStatus, ConnectSessionStatus } from '../../shared/types/connect';
 import type {
@@ -78,6 +78,7 @@ const defaultReceiverStatus: ConnectReceiverStatus = {
 const defaultAirPlayReceiverStatus: AirPlayReceiverStatus = {
   enabled: false,
   state: 'disabled',
+  protocol: 'airplay1',
   advertisedName: 'ECHO Next (AirPlay)',
   nativeAvailable: false,
   currentSourceId: null,
@@ -153,9 +154,12 @@ const hqPlayerLocalHost = '127.0.0.1';
 const hqPlayerDefaultPort = 4321;
 const hiddenConnectDevicesStorageKey = 'echo.connect.hiddenDevices.v1';
 const connectDeviceSectionCollapsedStorageKey = 'echo.connect.deviceSectionCollapsed.v1';
+const connectRadioPanelCollapsedStorageKey = 'echo.connect.radioPanelCollapsed.v1';
+const connectHqPlayerPanelCollapsedStorageKey = 'echo.connect.hqPlayerPanelCollapsed.v1';
 const legacyRadioStationsStorageKey = 'echo.connect.radioStations.v1';
 const radioStationsStorageKey = 'echo.connect.radioStations.v2';
 const maxStoredRadioStations = 40;
+const airPlayReceiverProtocols: AirPlayReceiverProtocol[] = ['airplay1', 'airplay2'];
 
 const hqPlayerConnectionModes: HqPlayerConnectionMode[] = ['localDesktop', 'remote'];
 const hqPlayerDefaultBackends: HqPlayerDefaultPlaybackBackend[] = ['echoNative', 'ask', 'hqplayer'];
@@ -871,6 +875,7 @@ export const ConnectPage = (): JSX.Element => {
   const [copiedAirPlayDebug, setCopiedAirPlayDebug] = useState(false);
   const [isAutoStartBusy, setIsAutoStartBusy] = useState(false);
   const [autoStartReceiversEnabled, setAutoStartReceiversEnabled] = useState(false);
+  const [airPlayReceiverProtocol, setAirPlayReceiverProtocol] = useState<AirPlayReceiverProtocol>('airplay1');
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [isCommandBusy, setIsCommandBusy] = useState(false);
   const [volumePercent, setVolumePercent] = useState(80);
@@ -889,6 +894,12 @@ export const ConnectPage = (): JSX.Element => {
   const [hiddenDeviceIds, setHiddenDeviceIds] = useState<Set<string>>(() => readStoredStringSet(hiddenConnectDevicesStorageKey));
   const [isDeviceSectionCollapsed, setIsDeviceSectionCollapsed] = useState(() =>
     readStoredBoolean(connectDeviceSectionCollapsedStorageKey, false),
+  );
+  const [isRadioPanelCollapsed, setIsRadioPanelCollapsed] = useState(() =>
+    readStoredBoolean(connectRadioPanelCollapsedStorageKey, false),
+  );
+  const [isHqPlayerPanelCollapsed, setIsHqPlayerPanelCollapsed] = useState(() =>
+    readStoredBoolean(connectHqPlayerPanelCollapsedStorageKey, false),
   );
 
   const activeDevice = useMemo(
@@ -1086,6 +1097,7 @@ export const ConnectPage = (): JSX.Element => {
     void window.echo?.app?.getSettings?.().then((settings: AppSettings) => {
       if (!disposed) {
         setAutoStartReceiversEnabled(settings.connectAutoStartReceiversEnabled === true);
+        setAirPlayReceiverProtocol(settings.airPlayReceiverProtocol === 'airplay2' ? 'airplay2' : 'airplay1');
       }
     }).catch(() => undefined);
     void refreshDevices();
@@ -1104,6 +1116,9 @@ export const ConnectPage = (): JSX.Element => {
     }) ?? (() => undefined);
     const unsubscribeAirPlayReceiver = connect.onAirPlayReceiverStatus?.((nextStatus) => {
       setAirPlayReceiverStatus(nextStatus);
+      if (nextStatus.protocol) {
+        setAirPlayReceiverProtocol(nextStatus.protocol);
+      }
       if (nextStatus.error) {
         setError(nextStatus.error);
       }
@@ -1273,6 +1288,37 @@ export const ConnectPage = (): JSX.Element => {
       setIsAirPlayReceiverBusy(false);
     }
   }, [airPlayReceiverStatus.enabled]);
+
+  const setAirPlayProtocol = useCallback(async (protocol: AirPlayReceiverProtocol): Promise<void> => {
+    if (protocol === airPlayReceiverProtocol && airPlayReceiverStatus.protocol === protocol) {
+      return;
+    }
+    const app = window.echo?.app;
+    const connect = window.echo?.connect;
+    if (!app?.setSettings) {
+      setError('AirPlay protocol setting bridge unavailable.');
+      return;
+    }
+
+    setIsAirPlayReceiverBusy(true);
+    setError(null);
+    try {
+      const settings = await app.setSettings({ airPlayReceiverProtocol: protocol });
+      const savedProtocol = settings.airPlayReceiverProtocol === 'airplay2' ? 'airplay2' : 'airplay1';
+      setAirPlayReceiverProtocol(savedProtocol);
+      window.dispatchEvent(new CustomEvent('settings:changed', { detail: { airPlayReceiverProtocol: savedProtocol } }));
+      if (airPlayReceiverStatus.enabled && connect?.setAirPlayReceiverEnabled) {
+        await connect.setAirPlayReceiverEnabled(false);
+        setAirPlayReceiverStatus(await connect.setAirPlayReceiverEnabled(true));
+      } else if (connect?.getAirPlayReceiverStatus) {
+        setAirPlayReceiverStatus(await connect.getAirPlayReceiverStatus());
+      }
+    } catch (protocolError) {
+      setError(protocolError instanceof Error ? protocolError.message : String(protocolError));
+    } finally {
+      setIsAirPlayReceiverBusy(false);
+    }
+  }, [airPlayReceiverProtocol, airPlayReceiverStatus.enabled, airPlayReceiverStatus.protocol]);
 
   const stopAirPlayReceiverPlayback = useCallback(async (): Promise<void> => {
     const connect = window.echo?.connect;
@@ -1547,6 +1593,22 @@ export const ConnectPage = (): JSX.Element => {
     });
   }, []);
 
+  const toggleRadioPanelCollapsed = useCallback((): void => {
+    setIsRadioPanelCollapsed((current) => {
+      const next = !current;
+      writeStoredBoolean(connectRadioPanelCollapsedStorageKey, next);
+      return next;
+    });
+  }, []);
+
+  const toggleHqPlayerPanelCollapsed = useCallback((): void => {
+    setIsHqPlayerPanelCollapsed((current) => {
+      const next = !current;
+      writeStoredBoolean(connectHqPlayerPanelCollapsedStorageKey, next);
+      return next;
+    });
+  }, []);
+
   return (
     <div className="connect-page">
       <header className="connect-header">
@@ -1764,15 +1826,29 @@ export const ConnectPage = (): JSX.Element => {
         </section>
       </section>
 
-      <section className="connect-radio-panel" aria-label="网络电台">
+      <section className="connect-radio-panel" aria-label="网络电台" data-collapsed={isRadioPanelCollapsed ? 'true' : undefined}>
         <div className="connect-section-title">
           <div>
             <span>Radio</span>
             <h2>网络电台</h2>
           </div>
-          <small>{radioStatusLabel}</small>
+          <div className="connect-section-actions">
+            <small>{radioStatusLabel}</small>
+            <button
+              className="icon-button connect-collapse-button"
+              type="button"
+              aria-label={isRadioPanelCollapsed ? '展开网络电台' : '折叠网络电台'}
+              title={isRadioPanelCollapsed ? '展开网络电台' : '折叠网络电台'}
+              aria-expanded={!isRadioPanelCollapsed}
+              onClick={toggleRadioPanelCollapsed}
+            >
+              <ChevronDown size={16} />
+            </button>
+          </div>
         </div>
 
+        <div className="connect-collapsible-content" data-expanded={!isRadioPanelCollapsed}>
+          <div className="connect-collapsible-content__inner">
         <form className="connect-radio-form" aria-label="网络电台表单" onSubmit={(event) => void playRadioDraft(event)}>
           <label className="connect-radio-field">
             <span>电台名</span>
@@ -1860,9 +1936,16 @@ export const ConnectPage = (): JSX.Element => {
             </div>
           )}
         </div>
+          </div>
+        </div>
       </section>
 
-      <section className="connect-hqplayer-panel" aria-label="HQPlayer Connect" data-collapsed={isHqPlayerExpanded ? undefined : 'true'}>
+      <section
+        className="connect-hqplayer-panel"
+        aria-label="HQPlayer Connect"
+        data-collapsed={isHqPlayerExpanded ? undefined : 'true'}
+        data-section-collapsed={isHqPlayerPanelCollapsed ? 'true' : undefined}
+      >
         <div className="connect-hqplayer-header">
           <div className="connect-hqplayer-title">
             <div className="connect-hqplayer-icon">
@@ -1884,9 +1967,21 @@ export const ConnectPage = (): JSX.Element => {
               <RefreshCw className={hqPlayerBusy === 'test' ? 'spinning-icon' : undefined} size={15} />
               {t('connectPage.hqplayer.test')}
             </button>
+            <button
+              className="icon-button connect-collapse-button"
+              type="button"
+              aria-label={isHqPlayerPanelCollapsed ? '展开 HQPlayer' : '折叠 HQPlayer'}
+              title={isHqPlayerPanelCollapsed ? '展开 HQPlayer' : '折叠 HQPlayer'}
+              aria-expanded={!isHqPlayerPanelCollapsed}
+              onClick={toggleHqPlayerPanelCollapsed}
+            >
+              <ChevronDown size={16} />
+            </button>
           </div>
         </div>
 
+        <div className="connect-collapsible-content" data-expanded={!isHqPlayerPanelCollapsed}>
+          <div className="connect-collapsible-content__inner">
         {shouldShowHqPlayerDetails ? (
           <div className="connect-hqplayer-layout" data-expanded={isHqPlayerExpanded ? 'true' : 'false'}>
           <div className="connect-hqplayer-config">
@@ -2105,6 +2200,8 @@ export const ConnectPage = (): JSX.Element => {
             </div>
           </div>
         ) : null}
+          </div>
+        </div>
       </section>
 
       <section className="connect-receiver-panel" aria-label={t('connectPage.receiver.aria')}>
@@ -2186,6 +2283,19 @@ export const ConnectPage = (): JSX.Element => {
             {airPlayReceiverStatus.enabled ? '关闭 AirPlay' : '开启 AirPlay'}
           </button>
         </div>
+        <div className="connect-airplay-protocols" aria-label="AirPlay protocol">
+          {airPlayReceiverProtocols.map((protocol) => (
+            <button
+              key={protocol}
+              type="button"
+              aria-pressed={airPlayReceiverProtocol === protocol}
+              disabled={isAirPlayReceiverBusy}
+              onClick={() => void setAirPlayProtocol(protocol)}
+            >
+              {protocol === 'airplay1' ? 'AirPlay 1 / RAOP' : 'AirPlay 2 实验'}
+            </button>
+          ))}
+        </div>
         <div className="connect-receiver-body">
           <div className="connect-artwork" data-empty={!airPlayCover}>
             {airPlayCover ? <img alt="" src={airPlayCover} /> : <Cast size={42} />}
@@ -2207,7 +2317,10 @@ export const ConnectPage = (): JSX.Element => {
             <small>
               {airPlayReceiverStatus.error ?? (airPlayReceiverStatus.nativeAvailable ? 'RAOP 后端已加载' : '需要可用的 AirPlay 原生后端')}
             </small>
-            <small>使用 AirPlay 后进度条将被锁定</small>
+            <small>
+              {airPlayReceiverProtocol === 'airplay2' ? '当前使用 AirPlay 2 实验发现' : '当前使用 AirPlay 1 / RAOP'}
+            </small>
+            <small>播放器进度条可拖动，是否响应取决于发送端</small>
           </div>
           <button
             className="settings-action-button"

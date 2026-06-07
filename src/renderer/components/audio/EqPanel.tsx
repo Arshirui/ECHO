@@ -2309,7 +2309,7 @@ export const EqPanel = ({ audioStatus, onAudioStatusRefresh, surface = 'full' }:
   };
 
   return (
-    <section className="eq-panel" aria-label="ECHO Next EQ panel" data-enabled={state.enabled} data-mode={eqUiMode}>
+    <section className="eq-panel" aria-label="ECHO Next EQ panel" data-enabled={state.enabled} data-mode={eqUiMode} data-surface={surface}>
       <header className="eq-header">
         <div className="eq-title-block">
           <span className="eq-title-icon">

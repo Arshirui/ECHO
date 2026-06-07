@@ -32,6 +32,7 @@ import { PlayerSpeedControl } from './PlayerSpeedControl';
 import { PlayerStatusChips } from './PlayerStatusChips';
 import { PlayerTransport } from './PlayerTransport';
 import { PlayerVolumeControl } from './PlayerVolumeControl';
+import { SleepTimerButton } from './SleepTimerButton';
 import { formatAudioHostError, shouldSuppressAudioHostError } from './audioErrorFormat';
 import { applyMediaSessionSnapshot } from './mediaSession';
 import { titleFromPath } from './playerFormat';
@@ -48,8 +49,8 @@ type PlayerBarProps = {
   onUnlockDesktopLyrics?: () => void;
 };
 
-const progressRenderIntervalMs = 250;
 const lowLoadProgressRenderIntervalMs = 1000;
+const minRealtimeProgressStepSeconds = 0.004;
 const bpmAnalysisStatusPollMs = 1500;
 const playbackSeekedEvent = 'playback:seeked';
 const lyricsViewModeMemoryKey = 'echo:lyrics:view-mode';
@@ -750,9 +751,8 @@ export const PlayerBar = ({
       let appliedAudioStatus = false;
       if (snapshotAudioStatus && shouldApplyAudioStatus) {
         appliedAudioStatus = applyAudioStatus(snapshotAudioStatus);
-      } else if (snapshot.playbackStatus) {
-        const nextPlaybackStatus = snapshot.playbackStatus;
-        setAudioStatus((current) => (current && !isAudioStatusForPlayback(current, nextPlaybackStatus) ? null : current));
+      } else if (snapshotAudioStatus || snapshot.playbackStatus || snapshot.error) {
+        setAudioStatus(null);
       }
 
       const nextTrackId =
@@ -833,7 +833,7 @@ export const PlayerBar = ({
     !activeReceiverStatus &&
     visualState === 'paused' &&
     (playbackAudioStatus?.state === 'paused' || currentPlaybackStatus?.state === 'paused');
-  const isPlaying = visualState === 'playing';
+  const isPlaying = visualState === 'playing' || visualState === 'loading';
   const isRemotePlaybackLoading =
     currentTrack?.mediaType === 'remote' &&
     !isReceiverTrackId(currentTrack.id) &&
@@ -1505,12 +1505,11 @@ export const PlayerBar = ({
   }, [durationSeconds, filePath, playbackAudioStatus?.playbackRate, sourcePositionSeconds, state, trackId, visualState]);
 
   useEffect(() => {
-    if (visualState !== 'playing' || seekPreviewSeconds !== null) {
+    if (visualState !== 'playing' || state !== 'playing' || seekPreviewSeconds !== null) {
       return;
     }
 
-    const intervalMs = lowLoadPlaybackModeEnabled ? lowLoadProgressRenderIntervalMs : progressRenderIntervalMs;
-    const timer = window.setInterval(() => {
+    const updateRealtimePosition = (): void => {
       const clock = progressClockRef.current;
       if (clock.state !== 'playing') {
         return;
@@ -1518,11 +1517,32 @@ export const PlayerBar = ({
 
       const durationLimit = clock.durationSeconds > 0 ? clock.durationSeconds : Number.POSITIVE_INFINITY;
       const elapsedSeconds = Math.max(0, (performance.now() - clock.updatedAtMs) / 1000) * clock.playbackRate;
-      setRealtimePositionSeconds(Math.min(clock.positionSeconds + elapsedSeconds, durationLimit));
-    }, intervalMs);
+      const nextPositionSeconds = Math.min(clock.positionSeconds + elapsedSeconds, durationLimit);
+      setRealtimePositionSeconds((currentPositionSeconds) =>
+        Math.abs(nextPositionSeconds - currentPositionSeconds) >= minRealtimeProgressStepSeconds
+          ? nextPositionSeconds
+          : currentPositionSeconds,
+      );
+    };
 
-    return () => window.clearInterval(timer);
-  }, [lowLoadPlaybackModeEnabled, seekPreviewSeconds, visualState]);
+    if (lowLoadPlaybackModeEnabled) {
+      const timer = window.setInterval(updateRealtimePosition, lowLoadProgressRenderIntervalMs);
+      return () => window.clearInterval(timer);
+    }
+
+    let frameId: number | null = null;
+    const tick = (): void => {
+      updateRealtimePosition();
+      frameId = window.requestAnimationFrame(tick);
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [lowLoadPlaybackModeEnabled, seekPreviewSeconds, state, visualState]);
 
   useEffect(() => {
     if (!currentTrack || currentTrack.mediaType !== 'streaming') {
@@ -2026,6 +2046,46 @@ export const PlayerBar = ({
     [refreshStatus, setQueueCurrentTrackId],
   );
 
+  const publishOptimisticPause = useCallback((): void => {
+    const status: PlaybackStatus = {
+      state: 'paused',
+      currentTrackId: trackId,
+      filePath,
+      positionMs: Math.round(Math.max(0, positionSeconds) * 1000),
+      durationMs: Math.round(Math.max(0, durationSeconds) * 1000),
+    };
+    lastPlaybackActionStatusRef.current = {
+      state: status.state,
+      trackId: status.currentTrackId,
+      filePath: status.filePath,
+      updatedAtMs: performance.now(),
+    };
+    setPlaybackStatus(status);
+    setAudioStatus((current) =>
+      current
+        ? {
+            ...current,
+            state: 'paused',
+            positionSeconds,
+            durationSeconds,
+          }
+        : current,
+    );
+    setPlaybackStatusSnapshot({
+      audioStatus: audioStatus
+        ? {
+            ...audioStatus,
+            state: 'paused',
+            positionSeconds,
+            durationSeconds,
+          }
+        : null,
+      playbackStatus: status,
+      playbackVisualIntent: null,
+      error: null,
+    });
+  }, [audioStatus, durationSeconds, filePath, positionSeconds, trackId]);
+
   const applyConnectPlaybackStatus = useCallback(
     (connectStatus: ConnectSessionStatus, fallbackPositionSeconds?: number): PlaybackStatus => {
       const nextStatus = playbackStatusFromConnectStatus(connectStatus, {
@@ -2101,6 +2161,7 @@ export const PlayerBar = ({
 
     await runPlaybackAction(async () => {
       if (visualState === 'playing' || visualState === 'loading') {
+        publishOptimisticPause();
         return playback.pause();
       }
 
@@ -2603,7 +2664,7 @@ export const PlayerBar = ({
           />
         </div>
         <PlayerProgress
-          disabled={isAirPlayReceiverPlaybackActive || (!filePath && !isSpotifyCurrentTrack)}
+          disabled={!filePath && !isSpotifyCurrentTrack}
           durationSeconds={durationSeconds}
           isLoading={isNetworkPlaybackLoading}
           waveformEnabled={playerWaveformProgressEnabled && !lowLoadPlaybackModeEnabled && !isNetworkPlaybackLoading}
@@ -2615,6 +2676,7 @@ export const PlayerBar = ({
       </div>
 
       <div className="output-status">
+        <SleepTimerButton />
         {hasDesktopLyricsBridge ? (
           <button
             className={`icon-button ${desktopLyricsVisible ? 'is-soft-active' : ''}`}

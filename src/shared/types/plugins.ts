@@ -11,6 +11,7 @@ export const pluginPermissions = [
   'sources:provide',
   'settings:read',
   'settings:write',
+  'audio:analyze',
   'network',
   'fs:plugin',
 ] as const;
@@ -78,6 +79,13 @@ export const pluginPermissionDescriptors: Record<PluginPermission, PluginPermiss
     risk: 'high',
     availability: 'active',
   },
+  'audio:analyze': {
+    permission: 'audio:analyze',
+    label: 'Audio analysis',
+    description: 'Allows host-controlled quality and DSD confidence analysis for library tracks by trackId.',
+    risk: 'high',
+    availability: 'active',
+  },
   network: {
     permission: 'network',
     label: '访问网络',
@@ -104,6 +112,15 @@ export type PluginCommandContribution = {
   id: string;
   title: string;
   description?: string;
+  timeoutMs?: number;
+};
+
+export type PluginTrackContextMenuContribution = {
+  id: string;
+  title: string;
+  commandId: string;
+  description?: string;
+  localOnly?: boolean;
 };
 
 export type PluginMetadataProviderContribution = {
@@ -164,6 +181,7 @@ export type PluginSettingContribution = {
 export type PluginManifestContributes = {
   commands?: PluginCommandContribution[];
   panels?: PluginPanelContribution[];
+  trackContextMenus?: PluginTrackContextMenuContribution[];
   metadataProviders?: PluginMetadataProviderContribution[];
   sourceProviders?: PluginSourceProviderContribution[];
   lyricsProviders?: PluginLyricsProviderContribution[];
@@ -419,6 +437,60 @@ export type PluginNetworkRequest = {
   timeoutMs?: number;
 };
 
+export type PluginAudioAnalysisVerdict =
+  | 'trusted_lossless'
+  | 'likely_lossy_transcode'
+  | 'likely_fake_hires'
+  | 'likely_pcm_to_dsd'
+  | 'trusted_dsd_container'
+  | 'dsd_metadata_mismatch'
+  | 'lossy_source'
+  | 'not_applicable'
+  | 'unknown';
+
+export type PluginAudioAnalysisSeverity = 'info' | 'warning' | 'risk';
+
+export type PluginAudioAnalysisEvidence = {
+  id: string;
+  severity: PluginAudioAnalysisSeverity;
+  message: string;
+};
+
+export type PluginAudioAnalysisMetrics = {
+  codec: string | null;
+  extension: string | null;
+  sampleRate: number | null;
+  bitDepth: number | null;
+  bitrate: number | null;
+  durationSeconds: number | null;
+  fileSizeBytes: number | null;
+  dsdNativeSampleRate: number | null;
+  spectrumProbeStatus?: 'ready' | 'skipped' | 'unavailable' | 'too_short' | 'too_quiet' | 'error';
+  spectrumProbeWindows?: number | null;
+  spectrumSelectedStartSeconds?: number | null;
+  spectralCutoffHz?: number | null;
+  upperTrebleToAudibleDb?: number | null;
+  lowUltrasonicToAudibleDb?: number | null;
+  highFrequencyToAudibleDb?: number | null;
+  ultrasonicToAudibleDb?: number | null;
+  topBandToAudibleDb?: number | null;
+};
+
+export type PluginAudioAnalysisReport = {
+  trackId: string;
+  analyzedAt: string;
+  status: 'ready' | 'unsupported' | 'error';
+  verdict: PluginAudioAnalysisVerdict;
+  confidence: number;
+  metrics: PluginAudioAnalysisMetrics;
+  evidence: PluginAudioAnalysisEvidence[];
+  limitations: string[];
+};
+
+export type PluginAudioAnalyzeTrackRequest = {
+  trackId: string;
+};
+
 export type PluginSettingsPatch = Record<string, string | number | boolean | null>;
 
 export type PluginSettingsResult = {
@@ -584,7 +656,12 @@ export type PluginRunCommandRequest = {
   args?: unknown[];
 };
 
-export type PluginCreateExampleKind = 'playback-panel' | 'command-tool' | 'library-script' | 'source-provider' | 'theme-preset';
+export type PluginCreateExampleKind =
+  | 'playback-panel'
+  | 'command-tool'
+  | 'library-script'
+  | 'source-provider'
+  | 'theme-preset';
 
 export type PluginCreateExampleResult = {
   pluginId: string;

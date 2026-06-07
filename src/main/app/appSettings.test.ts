@@ -73,6 +73,7 @@ describe('app settings normalization', () => {
     expect(settings.autoAccountCheckOnStartup).toBe(true);
     expect(settings.spotifyAutoLaunchOfficialPlayer).toBe(true);
     expect(settings.connectAutoStartReceiversEnabled).toBe(false);
+    expect(settings.airPlayReceiverProtocol).toBe('airplay1');
     expect(settings.hqPlayer).toMatchObject({
       enabled: false,
       connectionMode: 'localDesktop',
@@ -89,9 +90,14 @@ describe('app settings normalization', () => {
     expect(settings.autoDataBackupLastError).toBeNull();
     expect(settings.sidebarAutoHideEnabled).toBe(false);
     expect(settings.sidebarIconOnlyEnabled).toBe(false);
+    expect(settings.settingsOptionalSectionsVisible).toBe(false);
     expect(settings.featureCommentsHidden).toBe(false);
+    expect(settings.touchOnScreenKeyboardEnabled).toBe(false);
     expect(settings.rememberWindowSizeEnabled).toBe(true);
     expect(settings.rememberedWindowSize).toBeNull();
+    expect(settings.appWindowAcrylicEnabled).toBe(false);
+    expect(settings.appWindowAcrylicKeepWhenUnfocusedEnabled).toBe(false);
+    expect(settings.appWindowAcrylicTransparencyPercent).toBe(70);
     expect(settings.appCustomWallpaperPath).toBeNull();
     expect(settings.appWallpaperMediaType).toBe('image');
     expect(settings.appWallpaperScalePercent).toBe(100);
@@ -255,6 +261,22 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({}).fastStartupEnabled).toBe(false);
     expect(normalizeSettings({ fastStartupEnabled: true }).fastStartupEnabled).toBe(true);
     expect(normalizeSettings({ fastStartupEnabled: 'true' }).fastStartupEnabled).toBe(false);
+  });
+
+  it('normalizes the touch on-screen keyboard as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).touchOnScreenKeyboardEnabled).toBe(false);
+    expect(normalizeSettings({ touchOnScreenKeyboardEnabled: true }).touchOnScreenKeyboardEnabled).toBe(true);
+    expect(normalizeSettings({ touchOnScreenKeyboardEnabled: 'true' as never }).touchOnScreenKeyboardEnabled).toBe(false);
+  });
+
+  it('normalizes optional settings sections as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).settingsOptionalSectionsVisible).toBe(false);
+    expect(normalizeSettings({ settingsOptionalSectionsVisible: true }).settingsOptionalSectionsVisible).toBe(true);
+    expect(normalizeSettings({ settingsOptionalSectionsVisible: 'true' as never }).settingsOptionalSectionsVisible).toBe(false);
   });
 
   it('normalizes data protection disable as an explicit opt-in', async () => {
@@ -465,6 +487,17 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceTheme: 'midnight' as never }).appearanceTheme).toBe('light');
   });
 
+  it('normalizes window acrylic as an explicit opt-in', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).appWindowAcrylicEnabled).toBe(false);
+    expect(normalizeSettings({ appWindowAcrylicEnabled: true }).appWindowAcrylicEnabled).toBe(true);
+    expect(normalizeSettings({ appWindowAcrylicEnabled: 'true' as never }).appWindowAcrylicEnabled).toBe(false);
+    expect(normalizeSettings({ appWindowAcrylicKeepWhenUnfocusedEnabled: true }).appWindowAcrylicKeepWhenUnfocusedEnabled).toBe(true);
+    expect(normalizeSettings({ appWindowAcrylicTransparencyPercent: -5 }).appWindowAcrylicTransparencyPercent).toBe(0);
+    expect(normalizeSettings({ appWindowAcrylicTransparencyPercent: 100 }).appWindowAcrylicTransparencyPercent).toBe(100);
+  });
+
   it('normalizes appearance theme schedule settings', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -506,8 +539,17 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appearanceThemePreset: 'matsuriLantern' }).appearanceThemePreset).toBe('matsuriLantern');
     expect(normalizeSettings({ appearanceThemePreset: 'ginzaNoir' }).appearanceThemePreset).toBe('ginzaNoir');
     expect(normalizeSettings({ appearanceThemePreset: 'frostJazz' }).appearanceThemePreset).toBe('frostJazz');
-    expect(normalizeSettings({ appearanceThemePreset: 'FINAL' }).appearanceThemePreset).toBe('FINAL');
+    expect(normalizeSettings({ appearanceThemePreset: 'FINAL' }).appearanceThemePreset).toBe('classic');
     expect(normalizeSettings({ appearanceThemePreset: 'midnight' as never }).appearanceThemePreset).toBe('classic');
+  });
+
+  it('keeps FINAL locked unless the current unlock version is stored', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+    const { finalThemeUnlockVersion } = await import('../../shared/constants/featureUnlocks');
+
+    expect(normalizeSettings({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion: 'true' }).appearanceThemePreset).toBe('classic');
+    expect(normalizeSettings({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion }).appearanceThemePreset).toBe('FINAL');
+    expect(normalizeSettings({ appearanceThemePreset: 'FINAL', finalThemeUnlockVersion }).finalThemeUnlockVersion).toBe(finalThemeUnlockVersion);
   });
 
   it('normalizes appearance theme preset expansion state', async () => {
@@ -784,6 +826,15 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ connectAutoStartReceiversEnabled: 'yes' as never }).connectAutoStartReceiversEnabled).toBe(false);
   });
 
+  it('defaults AirPlay receiver to AirPlay 1 unless the experimental mode is selected', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).airPlayReceiverProtocol).toBe('airplay1');
+    expect(normalizeSettings({ airPlayReceiverProtocol: 'airplay1' }).airPlayReceiverProtocol).toBe('airplay1');
+    expect(normalizeSettings({ airPlayReceiverProtocol: 'airplay2' }).airPlayReceiverProtocol).toBe('airplay2');
+    expect(normalizeSettings({ airPlayReceiverProtocol: 'airplay3' as never }).airPlayReceiverProtocol).toBe('airplay1');
+  });
+
   it('normalizes remembered window size settings', async () => {
     const { normalizeSettings } = await import('./appSettings');
 
@@ -816,6 +867,14 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ sidebarIconOnlyEnabled: true }).sidebarIconOnlyEnabled).toBe(true);
     expect(normalizeSettings({ sidebarIconOnlyEnabled: 'true' as never }).sidebarIconOnlyEnabled).toBe(false);
     expect(normalizeSettings({ sidebarAutoHideEnabled: true, sidebarIconOnlyEnabled: true }).sidebarIconOnlyEnabled).toBe(false);
+  });
+
+  it('normalizes hidden feature comments as a default-off display preference', async () => {
+    const { normalizeSettings } = await import('./appSettings');
+
+    expect(normalizeSettings({}).featureCommentsHidden).toBe(false);
+    expect(normalizeSettings({ featureCommentsHidden: true }).featureCommentsHidden).toBe(true);
+    expect(normalizeSettings({ featureCommentsHidden: 'true' as never }).featureCommentsHidden).toBe(false);
   });
 
   it('normalizes app wallpaper settings without accepting unsafe paths', async () => {

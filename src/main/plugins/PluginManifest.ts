@@ -15,6 +15,7 @@ import {
   type PluginSettingType,
   type PluginSourceProviderContribution,
   type PluginThemePresetContribution,
+  type PluginTrackContextMenuContribution,
 } from '../../shared/types/plugins';
 import type { AppThemePreset, AppThemeToneOverride } from '../../shared/types/appSettings';
 
@@ -181,6 +182,7 @@ const normalizeCommand = (value: unknown): PluginCommandContribution | null => {
       id: normalizePluginId(input.id),
       title: asText(input.title, 'command title', 80),
       description: typeof input.description === 'string' && input.description.trim() ? input.description.trim().slice(0, 180) : undefined,
+      timeoutMs: typeof input.timeoutMs === 'number' && Number.isFinite(input.timeoutMs) && input.timeoutMs > 0 ? Math.round(input.timeoutMs) : undefined,
     };
   } catch {
     return null;
@@ -299,6 +301,25 @@ const normalizeSetting = (item: unknown): PluginSettingContribution | null => {
       normalized.required = setting.required;
     }
     return normalized;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeTrackContextMenu = (value: unknown): PluginTrackContextMenuContribution | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const input = value as Partial<PluginTrackContextMenuContribution>;
+  try {
+    return {
+      id: normalizePluginId(input.id),
+      title: asText(input.title, 'track menu title', 80),
+      commandId: normalizePluginId(input.commandId),
+      description: typeof input.description === 'string' && input.description.trim() ? input.description.trim().slice(0, 180) : undefined,
+      localOnly: input.localOnly !== false,
+    };
   } catch {
     return null;
   }
@@ -532,6 +553,11 @@ const normalizeContributes = (value: unknown): PluginManifestContributes => {
   return {
     commands: Array.isArray(input.commands) ? input.commands.map(normalizeCommand).filter((item): item is PluginCommandContribution => Boolean(item)) : [],
     panels: Array.isArray(input.panels) ? input.panels.map(normalizePanel).filter((item): item is PluginPanelContribution => Boolean(item)) : [],
+    trackContextMenus: Array.isArray(input.trackContextMenus)
+      ? input.trackContextMenus
+          .map(normalizeTrackContextMenu)
+          .filter((item): item is PluginTrackContextMenuContribution => Boolean(item))
+      : [],
     metadataProviders: Array.isArray(input.metadataProviders)
       ? input.metadataProviders
           .map(normalizeMetadataProvider)

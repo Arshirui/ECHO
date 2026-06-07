@@ -26,6 +26,8 @@ const historyCachedRefreshDelayMs = isHistoryPageTestRuntime ? 0 : 900;
 const historyStatsRefreshDelayMs = isHistoryPageTestRuntime ? 0 : 1600;
 const historyStatsPlaybackDeferDelayMs = 15_000;
 const historyStatsDeferredPlaybackStates = new Set(['loading', 'playing']);
+const recentPlaybackCardMinWidthPx = 220;
+const recentPlaybackCardGapPx = 10;
 
 type HistoryFilter = 'all' | 'today' | 'week' | 'month' | 'completed';
 
@@ -125,6 +127,48 @@ const sortHistoryItems = (items: PlaybackHistoryEntry[]): PlaybackHistoryEntry[]
 const sortRecentHistoryItems = (items: PlaybackHistoryEntry[]): PlaybackHistoryEntry[] =>
   [...items]
     .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt) || right.playCount - left.playCount);
+
+const useVisibleRecentPlaybackLimit = (maxItems: number, enabled: boolean) => {
+  const recentListRef = useRef<HTMLDivElement | null>(null);
+  const [visibleRecentItemLimit, setVisibleRecentItemLimit] = useState(maxItems);
+
+  useEffect(() => {
+    if (!enabled) {
+      setVisibleRecentItemLimit(maxItems);
+      return undefined;
+    }
+
+    const updateVisibleLimit = (): void => {
+      const width = recentListRef.current?.clientWidth ?? 0;
+      if (width <= 0) {
+        setVisibleRecentItemLimit(maxItems);
+        return;
+      }
+
+      const nextLimit = Math.max(
+        1,
+        Math.min(
+          maxItems,
+          Math.floor((width + recentPlaybackCardGapPx) / (recentPlaybackCardMinWidthPx + recentPlaybackCardGapPx)),
+        ),
+      );
+      setVisibleRecentItemLimit(nextLimit);
+    };
+
+    updateVisibleLimit();
+
+    if (typeof ResizeObserver !== 'undefined' && recentListRef.current) {
+      const observer = new ResizeObserver(updateVisibleLimit);
+      observer.observe(recentListRef.current);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', updateVisibleLimit);
+    return () => window.removeEventListener('resize', updateVisibleLimit);
+  }, [enabled, maxItems]);
+
+  return { recentListRef, visibleRecentItemLimit };
+};
 
 const mergeHistoryItems = (
   currentItems: PlaybackHistoryEntry[],
@@ -462,6 +506,11 @@ export const HistoryPage = (): JSX.Element => {
   const requestIdRef = useRef(0);
   const statsRequestIdRef = useRef(0);
   const statsRefreshTimerRef = useRef<number | null>(null);
+  const { recentListRef, visibleRecentItemLimit } = useVisibleRecentPlaybackLimit(recentPlaybackPageSize, recentItems.length > 0);
+  const visibleRecentItems = useMemo(
+    () => recentItems.slice(0, visibleRecentItemLimit),
+    [recentItems, visibleRecentItemLimit],
+  );
 
   const clearStatsRefreshTimer = useCallback((): void => {
     if (statsRefreshTimerRef.current !== null) {
@@ -832,11 +881,11 @@ export const HistoryPage = (): JSX.Element => {
             <span className="section-kicker">{t('historyPage.recent.kicker')}</span>
             <h2>{t('historyPage.recent.title')}</h2>
           </div>
-          <span>{t('historyPage.recent.count', { count: recentItems.length })}</span>
+          <span>{t('historyPage.recent.count', { count: visibleRecentItems.length })}</span>
         </header>
-        {recentItems.length > 0 ? (
-          <div className="history-recent-list">
-            {recentItems.map((entry) => (
+        {visibleRecentItems.length > 0 ? (
+          <div className="history-recent-list" ref={recentListRef}>
+            {visibleRecentItems.map((entry) => (
               <article className="history-recent-row" key={entry.id}>
                 <div className="history-recent-cover" data-empty={!entry.coverThumb}>
                   {entry.coverThumb ? <img alt="" src={entry.coverThumb} /> : <Music2 size={17} />}

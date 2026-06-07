@@ -33,8 +33,8 @@ type PlaybackVisualIntentSnapshot = {
   startedAtMs: number;
 };
 
-const progressRenderIntervalMs = 500;
 const enhancedLowLoadProgressRenderIntervalMs = 1500;
+const minRealtimeProgressStepSeconds = 0.004;
 const forwardedSystemStatusMaxAgeMs = 30_000;
 const trackSwitchVisualIntentPositionToleranceMs = 1500;
 const seekAnchorMaxAgeSeconds = 3;
@@ -245,6 +245,7 @@ export const MiniPlayerApp = (): JSX.Element => {
     playbackStatus,
     playbackVisualIntent: sharedPlaybackStatus.playbackVisualIntent,
   });
+  const realtimePlaybackState = activeAudioStatus?.state ?? playbackStatus?.state ?? 'idle';
   const statusTrackId = activeAudioStatus?.currentTrackId ?? playbackStatus?.currentTrackId ?? null;
   const statusFilePath = activeAudioStatus?.currentFilePath ?? playbackStatus?.filePath ?? null;
   const statusMatchedTrack =
@@ -407,23 +408,43 @@ export const MiniPlayerApp = (): JSX.Element => {
   }, [durationSeconds, playbackRate, progressTrackKey, sourcePositionSeconds, visualState]);
 
   useEffect(() => {
-    if (visualState !== 'playing' || seekPreviewSeconds !== null) {
+    if (visualState !== 'playing' || realtimePlaybackState !== 'playing' || seekPreviewSeconds !== null) {
       return undefined;
     }
 
-    const intervalMs = enhancedLowLoadPlaybackActive ? enhancedLowLoadProgressRenderIntervalMs : progressRenderIntervalMs;
-    const timer = window.setInterval(() => {
+    const updateRealtimePosition = (): void => {
       const clock = clockRef.current;
       if (clock.state !== 'playing') {
         return;
       }
       const elapsedSeconds = ((performance.now() - clock.updatedAtMs) / 1000) * clock.playbackRate;
       const nextPosition = clock.positionSeconds + elapsedSeconds;
-      setRealtimePositionSeconds(clock.durationSeconds > 0 ? clamp(nextPosition, 0, clock.durationSeconds) : Math.max(0, nextPosition));
-    }, intervalMs);
+      const nextPositionSeconds = clock.durationSeconds > 0 ? clamp(nextPosition, 0, clock.durationSeconds) : Math.max(0, nextPosition);
+      setRealtimePositionSeconds((currentPositionSeconds) =>
+        Math.abs(nextPositionSeconds - currentPositionSeconds) >= minRealtimeProgressStepSeconds
+          ? nextPositionSeconds
+          : currentPositionSeconds,
+      );
+    };
 
-    return () => window.clearInterval(timer);
-  }, [enhancedLowLoadPlaybackActive, seekPreviewSeconds, visualState]);
+    if (enhancedLowLoadPlaybackActive) {
+      const timer = window.setInterval(updateRealtimePosition, enhancedLowLoadProgressRenderIntervalMs);
+      return () => window.clearInterval(timer);
+    }
+
+    let frameId: number | null = null;
+    const tick = (): void => {
+      updateRealtimePosition();
+      frameId = window.requestAnimationFrame(tick);
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [enhancedLowLoadPlaybackActive, realtimePlaybackState, seekPreviewSeconds, visualState]);
 
   useEffect(() => {
     requestMiniPlayerQueueBounds(isQueueOpen);

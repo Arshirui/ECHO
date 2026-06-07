@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronRight,
@@ -14,6 +14,7 @@ import {
   Minus,
   PanelTopOpen,
   Play,
+  Puzzle,
   Plus,
   RefreshCw,
   Timer,
@@ -22,8 +23,11 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { LibraryPlaylist, LibraryTrack } from '../../../shared/types/library';
+import type { AppSettings } from '../../../shared/types/appSettings';
+import type { PluginTrackContextMenuContribution } from '../../../shared/types/plugins';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { TranslationKey } from '../../i18n/locales';
+import { pluginTrackActionDrawerEvent } from './PluginTrackActionDrawer';
 
 export type TrackMenuAction =
   | 'add-to-playlist'
@@ -64,12 +68,17 @@ type MenuItem = {
   disabled?: boolean;
 };
 
+type PluginMenuItem = PluginTrackContextMenuContribution & {
+  pluginId: string;
+};
+
 const viewportPadding = 8;
 const pointerOffset = 6;
 const submenuGap = 8;
 const menuWidth = 224;
 const submenuWidth = 224;
 const submenuMaxHeight = 360;
+const menuCloseAnimationMs = 120;
 const nonLocalHiddenActions = new Set<TrackMenuAction>([
   'edit-tags',
   'reload-embedded-tags',
@@ -81,22 +90,71 @@ const nonLocalHiddenActions = new Set<TrackMenuAction>([
   'save-cover',
   'delete-song',
 ]);
+const extraHiddenActions = new Set<TrackMenuAction>([
+  'open-osu-timing',
+  'open-system',
+  'copy-cover',
+  'save-cover',
+]);
 const batchActions = new Set<TrackMenuAction>(['add-to-playlist', 'play-next', 'add-to-queue', 'toggle-liked', 'remove-from-queue']);
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(value, max));
+
+const openPluginTrackActionDrawer = (item: PluginMenuItem, track: LibraryTrack): void => {
+  window.dispatchEvent(new CustomEvent(pluginTrackActionDrawerEvent, {
+    detail: {
+      pluginId: item.pluginId,
+      commandId: item.commandId,
+      title: item.title,
+      track,
+    },
+  }));
+};
 
 export const TrackContextMenu = ({ track, position, liked = false, selectionCount = 1, enabledActions, showRemoveFromPlaylist = false, onAction, onClose }: TrackContextMenuProps): JSX.Element => {
   const { t } = useI18n();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const playlistLoadStartedRef = useRef(false);
+  const closeTimerRef = useRef<number | null>(null);
   const [playlistSubmenuOpen, setPlaylistSubmenuOpen] = useState(false);
   const [playlists, setPlaylists] = useState<LibraryPlaylist[]>([]);
   const [playlistsLoading, setPlaylistsLoading] = useState(false);
+  const [pluginMenuItems, setPluginMenuItems] = useState<PluginMenuItem[]>([]);
   const [playlistSubmenuPosition, setPlaylistSubmenuPosition] = useState(() => ({ x: position.x + menuWidth + submenuGap, y: position.y }));
   const [menuPosition, setMenuPosition] = useState(() => ({
     x: position.x + pointerOffset,
     y: position.y + pointerOffset,
   }));
+  const [menuMaxHeight, setMenuMaxHeight] = useState(() => window.innerHeight - viewportPadding * 2);
+  const [extraActionsEnabled, setExtraActionsEnabled] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+
+  const requestClose = useCallback((): void => {
+    if (closeTimerRef.current !== null) {
+      return;
+    }
+
+    setIsClosing(true);
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      onClose();
+    }, menuCloseAnimationMs);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setIsClosing(false);
+  }, [position.x, position.y, track.id]);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
 
   useLayoutEffect(() => {
     const menu = menuRef.current;
@@ -106,11 +164,21 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
     }
 
     const rect = menu.getBoundingClientRect();
+    const viewportMaxHeight = Math.max(0, window.innerHeight - viewportPadding * 2);
+    const measuredHeight = Math.max(menu.scrollHeight, rect.height);
+    const fittedHeight = Math.min(measuredHeight, viewportMaxHeight);
+    const nextY = clamp(
+      position.y + pointerOffset,
+      viewportPadding,
+      Math.max(viewportPadding, window.innerHeight - fittedHeight - viewportPadding),
+    );
+
     setMenuPosition({
       x: clamp(position.x + pointerOffset, viewportPadding, window.innerWidth - rect.width - viewportPadding),
-      y: clamp(position.y + pointerOffset, viewportPadding, window.innerHeight - rect.height - viewportPadding),
+      y: nextY,
     });
-  }, [position.x, position.y]);
+    setMenuMaxHeight(Math.max(0, window.innerHeight - nextY - viewportPadding));
+  }, [enabledActions, extraActionsEnabled, liked, pluginMenuItems.length, position.x, position.y, selectionCount, showRemoveFromPlaylist, track.mediaType]);
 
   const loadPlaylists = (): void => {
     if (playlistLoadStartedRef.current) {
@@ -148,24 +216,87 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
-        onClose();
+        requestClose();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('resize', onClose);
-    window.addEventListener('scroll', onClose, true);
+    window.addEventListener('resize', requestClose);
+    window.addEventListener('scroll', requestClose, true);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('resize', onClose);
-      window.removeEventListener('scroll', onClose, true);
+      window.removeEventListener('resize', requestClose);
+      window.removeEventListener('scroll', requestClose, true);
     };
-  }, [onClose]);
+  }, [requestClose]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const applySettings = (settings: Partial<AppSettings> | null | undefined): void => {
+      if (!cancelled) {
+        setExtraActionsEnabled(settings?.trackContextMenuExtraActionsEnabled === true);
+      }
+    };
+    const handleSettingsChanged = (event: Event): void => {
+      const detail = (event as CustomEvent<Partial<AppSettings>>).detail;
+      if (Object.prototype.hasOwnProperty.call(detail ?? {}, 'trackContextMenuExtraActionsEnabled')) {
+        applySettings(detail);
+      }
+    };
+
+    void window.echo?.app?.getSettings?.().then(applySettings).catch(() => applySettings(null));
+    window.addEventListener('settings:changed', handleSettingsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('settings:changed', handleSettingsChanged);
+    };
+  }, []);
 
   const isBatch = selectionCount > 1;
   const isLocalFileTrack = !track.mediaType || track.mediaType === 'local';
   const isStreamingTrack = track.mediaType === 'streaming';
   const enabledActionSet = enabledActions ? new Set(enabledActions) : null;
+  useEffect(() => {
+    if (isBatch) {
+      setPluginMenuItems([]);
+      return undefined;
+    }
+
+    const plugins = window.echo?.plugins;
+    if (!plugins) {
+      setPluginMenuItems([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    void plugins.list()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        const nextItems = result.plugins
+          .filter((plugin) => plugin.enabled)
+          .flatMap((plugin) =>
+            (plugin.contributes.trackContextMenus ?? []).map((item) => ({
+              ...item,
+              pluginId: plugin.id,
+            })),
+          )
+          .filter((item) => isLocalFileTrack || item.localOnly !== true);
+        setPluginMenuItems(nextItems);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPluginMenuItems([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isBatch, isLocalFileTrack]);
+
   const allItems: MenuItem[] = [
     { action: 'add-to-playlist', labelKey: 'trackMenu.action.addToPlaylist', icon: Plus },
     { action: 'play-next', labelKey: 'trackMenu.action.playNext', icon: Play },
@@ -191,6 +322,10 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
       return false;
     }
 
+    if (!extraActionsEnabled && extraHiddenActions.has(item.action)) {
+      return false;
+    }
+
     if (item.action === 'add-to-playlist') {
       return !isStreamingTrack;
     }
@@ -207,12 +342,12 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
   });
 
   return createPortal(
-    <div className="track-menu-layer" role="presentation" onMouseDown={onClose}>
+    <div className="track-menu-layer" role="presentation" onMouseDown={requestClose}>
       <div
         ref={menuRef}
-        className="track-context-menu"
+        className={`track-context-menu${isClosing ? ' track-context-menu--closing' : ''}`}
         role="menu"
-        style={{ left: menuPosition.x, top: menuPosition.y }}
+        style={{ left: menuPosition.x, top: menuPosition.y, maxHeight: menuMaxHeight }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {isBatch ? <div className="track-menu-heading">已选 {selectionCount} 首</div> : null}
@@ -252,10 +387,26 @@ export const TrackContextMenu = ({ track, position, liked = false, selectionCoun
             </button>
           );
         })}
+        {pluginMenuItems.map((item) => (
+          <button
+            className="track-menu-item"
+            key={`${item.pluginId}:${item.id}`}
+            role="menuitem"
+            type="button"
+            title={item.description}
+            onClick={() => {
+              openPluginTrackActionDrawer(item, track);
+              onClose();
+            }}
+          >
+            <Puzzle size={16} />
+            <span>{item.title}</span>
+          </button>
+        ))}
       </div>
       {playlistSubmenuOpen ? (
         <div
-          className="track-playlist-submenu"
+          className={`track-playlist-submenu${isClosing ? ' track-playlist-submenu--closing' : ''}`}
           role="menu"
           aria-label="选择歌单"
           style={{ left: playlistSubmenuPosition.x, top: playlistSubmenuPosition.y }}

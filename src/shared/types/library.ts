@@ -533,6 +533,14 @@ export type LibraryScanOptions = {
   deferGroupingRefresh?: boolean;
   skipDeferredGroupingRefresh?: boolean;
   reduceScanPressure?: boolean;
+  storedTrackPath?: string;
+  storedTrackRecursive?: boolean;
+};
+
+export type LibraryEmbeddedTagRescanOptions = {
+  folderId?: string;
+  path?: string;
+  recursive?: boolean;
 };
 
 export type ArtistInsightRelationKind =
@@ -755,6 +763,7 @@ export type UpdatePlaylistRequest = {
 export type ExportPlaylistRequest = {
   playlistId: string;
   format: PlaylistExportFormat;
+  sourceProvider?: Extract<PlaylistSourceProvider, 'local' | 'netease' | 'qqmusic'>;
 };
 
 export type ImportPlaylistFileResult = {
@@ -1230,7 +1239,7 @@ export type LyricsBackgroundCoverResult = {
 
 export type LibraryAlbum = {
   id: string;
-  mediaType?: 'local' | 'remote';
+  mediaType?: 'local' | 'remote' | 'streaming';
   sourceId?: string | null;
   sourceDisplayName?: string | null;
   provider?: string | null;

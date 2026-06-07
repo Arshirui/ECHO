@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -23,7 +23,10 @@ import {
   PlaybackQueueProvider,
   usePlaybackQueue,
 } from "../stores/PlaybackQueueProvider";
-import { setPlaybackStatusSnapshot } from "../stores/playbackStatusStore";
+import {
+  beginPlaybackSeekSnapshot,
+  setPlaybackStatusSnapshot,
+} from "../stores/playbackStatusStore";
 import { LyricsPage } from "./LyricsPage";
 import type { LyricLine } from "../components/lyrics/lyricsTypes";
 import { albumDetailNavigationEvent } from "../utils/albumNavigation";
@@ -591,7 +594,7 @@ describe("LyricsPage", () => {
     expect(screen.queryByText(/FLAC \/ 2400 kbps \/ 96 kHz/)).toBeNull();
   });
 
-  it("uses the live AirPlay lyric line instead of matching whole-song lyrics", async () => {
+  it("prefers matched whole-song lyrics over the live AirPlay lyric line", async () => {
     const track = makeTrack({
       id: "airplay-receiver:source-1:air-song",
       path: "airplay-receiver:source-1",
@@ -642,8 +645,157 @@ describe("LyricsPage", () => {
       </PlaybackQueueProvider>,
     );
 
+    expect(await screen.findByText("Second line")).toBeTruthy();
+    expect(screen.queryByText("AirPlay live lyric line")).toBeNull();
+  });
+
+  it("uses the live AirPlay lyric line as a fallback before whole-song lyrics are matched", async () => {
+    const track = makeTrack({
+      id: "airplay-receiver:source-1:air-song",
+      path: "airplay-receiver:source-1",
+      mediaType: "remote",
+      isTemporary: true,
+      title: "Air Song",
+      artist: "Air Artist",
+      duration: 180,
+      fieldSources: { title: "airplay", artist: "airplay" },
+    });
+    mockEcho(track, 12);
+    window.echo = {
+      ...window.echo,
+      lyrics: {
+        getForTrack: vi.fn(),
+        getForSnapshot: vi.fn().mockResolvedValue(null),
+        searchCandidates: vi.fn(),
+        searchCandidatesForSnapshot: vi.fn().mockResolvedValue([]),
+        applyCandidate: vi.fn(),
+        applyCandidateForSnapshot: vi.fn(),
+        markInstrumental: vi.fn(),
+        rejectCandidate: vi.fn(),
+        setOffset: vi.fn(),
+        clearCache: vi.fn(),
+      },
+      connect: {
+        getAirPlayReceiverStatus: vi.fn().mockResolvedValue({
+          enabled: true,
+          state: "playing",
+          advertisedName: "ECHO Next",
+          nativeAvailable: true,
+          currentSourceId: "airplay-receiver:source-1",
+          currentClient: null,
+          metadata: {
+            title: "Air Song",
+            artist: "Air Artist",
+            album: null,
+            albumArtist: "Air Artist",
+            durationSeconds: 180,
+            coverHttpUrl: "",
+          },
+          currentLyricLine: "AirPlay live lyric line",
+          artworkUrl: null,
+          positionSeconds: 12,
+          durationSeconds: 180,
+          volume: 100,
+          error: null,
+          debugEvents: [],
+          updatedAt: "2026-05-19T00:00:00.000Z",
+        }),
+        onAirPlayReceiverStatus: vi.fn(() => () => undefined),
+      },
+    } as unknown as Window["echo"];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={[]} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
     expect(await screen.findByText("AirPlay live lyric line")).toBeTruthy();
-    expect(screen.queryByText("Second line")).toBeNull();
+  });
+
+  it("reveals lyrics candidates for AirPlay snapshots when Apple Music sends no live lyric line", async () => {
+    const track = makeTrack({
+      id: "airplay-receiver:source-1:otona-survivor",
+      path: "airplay-receiver:source-1",
+      mediaType: "remote",
+      isTemporary: true,
+      title: "Otona Survivor",
+      artist: "Last Idol",
+      album: "Otona Survivor - EP",
+      duration: 265,
+      fieldSources: { title: "airplay", artist: "airplay", album: "airplay" },
+    });
+    mockEcho(track, 12, { lyricsCandidatePanelAutoOpenEnabled: false });
+    const searchCandidatesForSnapshot = vi.fn().mockResolvedValue([
+      makeLyricsCandidate({
+        id: "netease-otona-survivor",
+        provider: "netease",
+        sourceLabel: "NetEase",
+        title: "大人サバイバー",
+        artist: "ラストアイドル",
+        album: "大人サバイバー",
+        durationSeconds: 265,
+        score: 0.42,
+        risk: "high",
+      }),
+    ]);
+    window.echo = {
+      ...window.echo,
+      lyrics: {
+        getForTrack: vi.fn(),
+        getForSnapshot: vi.fn().mockResolvedValue(null),
+        searchCandidates: vi.fn(),
+        searchCandidatesForSnapshot,
+        applyCandidate: vi.fn(),
+        applyCandidateForSnapshot: vi.fn(),
+        markInstrumental: vi.fn(),
+        rejectCandidate: vi.fn(),
+        setOffset: vi.fn(),
+        clearCache: vi.fn(),
+      },
+      connect: {
+        getAirPlayReceiverStatus: vi.fn().mockResolvedValue({
+          enabled: true,
+          state: "playing",
+          advertisedName: "ECHO Next",
+          nativeAvailable: true,
+          currentSourceId: "airplay-receiver:source-1",
+          currentClient: null,
+          metadata: {
+            title: "Otona Survivor",
+            artist: "Last Idol",
+            album: "Otona Survivor - EP",
+            albumArtist: "Last Idol",
+            durationSeconds: 265,
+            coverHttpUrl: "",
+          },
+          currentLyricLine: null,
+          artworkUrl: null,
+          positionSeconds: 12,
+          durationSeconds: 265,
+          volume: 100,
+          error: null,
+          debugEvents: [],
+          updatedAt: "2026-05-19T00:00:00.000Z",
+        }),
+        onAirPlayReceiverStatus: vi.fn(() => () => undefined),
+      },
+    } as unknown as Window["echo"];
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={[]} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() => expect(searchCandidatesForSnapshot).toHaveBeenCalled());
+    expect(container.querySelector(".lyrics-match-panel")).toBeTruthy();
+    expect(container.querySelector(".lyrics-candidate-list")?.textContent).toContain("大人サバイバー");
+    expect(window.echo.lyrics.applyCandidateForSnapshot).not.toHaveBeenCalled();
   });
 
   it("keeps AirPlay lyrics visible when the lyrics page opens in MV mode", async () => {
@@ -700,7 +852,8 @@ describe("LyricsPage", () => {
       </PlaybackQueueProvider>,
     );
 
-    expect(await screen.findByText("AirPlay live lyric line")).toBeTruthy();
+    expect(await screen.findByText("Second line")).toBeTruthy();
+    expect(screen.queryByText("AirPlay live lyric line")).toBeNull();
     expect(container.querySelector('.lyrics-page[data-view-mode="mv"][data-airplay-receiver="true"]')).toBeTruthy();
     expect(container.querySelector(".lyrics-left-panel")).toBeTruthy();
     expect(container.querySelector(".lyrics-mv-panel")).toBeTruthy();
@@ -748,7 +901,8 @@ describe("LyricsPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Air Song" })).toBeTruthy();
-    expect(await screen.findByText("AirPlay live lyric line")).toBeTruthy();
+    expect(await screen.findByText("Second line")).toBeTruthy();
+    expect(screen.queryByText("AirPlay live lyric line")).toBeNull();
     expect(container.querySelector(".lyrics-page--empty")).toBeNull();
     expect(container.querySelector('.lyrics-page[data-view-mode="mv"][data-airplay-receiver="true"]')).toBeTruthy();
   });
@@ -945,6 +1099,46 @@ describe("LyricsPage", () => {
     expect(
       container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
     ).toContain("Third line");
+  });
+
+  it("does not retain same-track audio status after a shared seek snapshot clears audio telemetry", async () => {
+    const track = makeTrack({ duration: 240 });
+    const seekSensitiveLyrics: LyricLine[] = [
+      { timeMs: 0, text: "line at start" },
+      { timeMs: 60000, text: "line at 60" },
+      { timeMs: 181000, text: "line at 181" },
+    ];
+    mockEcho(track, 181);
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={seekSensitiveLyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("line at 181"),
+    );
+
+    act(() => {
+      beginPlaybackSeekSnapshot({
+        state: "playing",
+        currentTrackId: track.id,
+        positionMs: 60000,
+        durationMs: track.duration * 1000,
+        filePath: track.path,
+      });
+    });
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('.lyrics-line[data-active="true"]')?.textContent,
+      ).toContain("line at 60"),
+    );
   });
 
   it("keeps lyrics advancing when the reported playback position stalls without native telemetry", async () => {
@@ -1869,6 +2063,36 @@ describe("LyricsPage", () => {
     expect(page.style.getPropertyValue("--lyrics-cover")).toBe(`url("${upgradedCoverUrl}")`);
   });
 
+  it("upgrades QQ Music proxied thumbnails to the stable 500px artwork endpoint", async () => {
+    const track = makeTrack({
+      mediaType: "streaming",
+      provider: "qqmusic",
+      providerTrackId: "004Drt082CV5gf",
+      coverId: null,
+      coverThumb: "echo-image://remote/https%3A%2F%2Fy.gtimg.cn%2Fmusic%2Fphoto_new%2FT002R150x150M000004Tm0RJ36QLOF.jpg?referer=https%3A%2F%2Fy.qq.com%2F",
+    });
+    mockEcho(track, 0, {
+      lyricsBackgroundMode: "cover",
+      lyricsHighResolutionNetworkCoverEnabled: false,
+    });
+
+    const { container } = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage initialLyrics={lyrics} />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Test Song" });
+    const page = container.querySelector(".lyrics-page") as HTMLElement;
+    const upgradedCoverUrl = "echo-image://remote/https%3A%2F%2Fy.gtimg.cn%2Fmusic%2Fphoto_new%2FT002R500x500M000004Tm0RJ36QLOF.jpg?referer=https%3A%2F%2Fy.qq.com%2F";
+
+    expect(container.querySelector(".lyrics-track-cover img")?.getAttribute("src")).toBe(upgradedCoverUrl);
+    expect(page.dataset.background).toBe("cover");
+    expect(page.style.getPropertyValue("--lyrics-cover")).toBe(`url("${upgradedCoverUrl}")`);
+  });
+
   it("uses a high resolution network cover for cover-following lyrics background when available", async () => {
     const track = makeTrack({ coverId: "cover 1" });
     mockEcho(track, 0, {
@@ -2086,9 +2310,14 @@ describe("LyricsPage", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("First line"));
   });
 
-  it("shows simple per-track lyrics offset controls by default", async () => {
+  it("registers per-track lyrics offset controls for the drawer instead of the main lyrics surface", async () => {
     const track = makeTrack();
     mockEcho(track);
+    const drawerTools: { current: ReactNode | null } = { current: null };
+    const handleDrawerTools = (event: Event): void => {
+      drawerTools.current = (event as CustomEvent<{ currentTrackTools: ReactNode | null }>).detail.currentTrackTools;
+    };
+    window.addEventListener("app:lyrics-drawer-tools-changed", handleDrawerTools);
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(
         makeTrackLyrics({
@@ -2104,18 +2333,26 @@ describe("LyricsPage", () => {
       clearCache: vi.fn(),
     };
 
-    const { container } = render(
-      <PlaybackQueueProvider>
-        <QueueSeed track={track}>
-          <LyricsPage />
-        </QueueSeed>
-      </PlaybackQueueProvider>,
-    );
+    try {
+      const { container } = render(
+        <PlaybackQueueProvider>
+          <QueueSeed track={track}>
+            <LyricsPage />
+          </QueueSeed>
+        </PlaybackQueueProvider>,
+      );
 
-    expect(await screen.findByText("First line")).toBeTruthy();
-    expect(container.querySelector(".lyrics-offset-controls")).toBeTruthy();
-    expect(screen.getByText("本歌曲延迟")).toBeTruthy();
-    expect(screen.getByText("只保存到当前歌曲；切到下一首会使用下一首自己的延迟。")).toBeTruthy();
+      expect(await screen.findByText("First line")).toBeTruthy();
+      expect(container.querySelector(".lyrics-offset-controls")).toBeNull();
+      await waitFor(() => expect(drawerTools.current).toBeTruthy());
+
+      const drawerRender = render(<>{drawerTools.current}</>);
+      expect(drawerRender.container.querySelector(".lyrics-offset-controls")).toBeTruthy();
+      expect(drawerRender.getByText("本歌曲延迟")).toBeTruthy();
+      expect(drawerRender.getByText("只保存到当前歌曲；切到下一首会使用下一首自己的延迟。")).toBeTruthy();
+    } finally {
+      window.removeEventListener("app:lyrics-drawer-tools-changed", handleDrawerTools);
+    }
   });
 
   it("hides smart lyrics alignment when disabled", async () => {
@@ -2168,9 +2405,14 @@ describe("LyricsPage", () => {
     expect(container.querySelector(".lyrics-smart-alignment")).toBeNull();
   });
 
-  it("saves per-track lyrics offset from the lyrics page controls when enabled", async () => {
+  it("saves per-track lyrics offset from the drawer controls when enabled", async () => {
     const track = makeTrack();
     mockEcho(track, 0, { lyricsOffsetControlsEnabled: true });
+    const drawerTools: { current: ReactNode | null } = { current: null };
+    const handleDrawerTools = (event: Event): void => {
+      drawerTools.current = (event as CustomEvent<{ currentTrackTools: ReactNode | null }>).detail.currentTrackTools;
+    };
+    window.addEventListener("app:lyrics-drawer-tools-changed", handleDrawerTools);
     window.echo.lyrics = {
       getForTrack: vi.fn().mockResolvedValue(
         makeTrackLyrics({
@@ -2191,23 +2433,26 @@ describe("LyricsPage", () => {
       clearCache: vi.fn(),
     };
 
-    const { container } = render(
-      <PlaybackQueueProvider>
-        <QueueSeed track={track}>
-          <LyricsPage />
-        </QueueSeed>
-      </PlaybackQueueProvider>,
-    );
+    try {
+      render(
+        <PlaybackQueueProvider>
+          <QueueSeed track={track}>
+            <LyricsPage />
+          </QueueSeed>
+        </PlaybackQueueProvider>,
+      );
 
-    expect(await screen.findByText("First line")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /\+100ms/ }));
+      expect(await screen.findByText("First line")).toBeTruthy();
+      await waitFor(() => expect(drawerTools.current).toBeTruthy());
+      const drawerRender = render(<>{drawerTools.current}</>);
+      fireEvent.click(drawerRender.getByRole("button", { name: /\+100ms/ }));
 
-    await waitFor(() =>
-      expect(window.echo.lyrics.setOffset).toHaveBeenCalledWith("track-1", 100),
-    );
-    await waitFor(() =>
-      expect(container.querySelector(".lyrics-offset-value")?.textContent).toBe("+100ms"),
-    );
+      await waitFor(() =>
+        expect(window.echo.lyrics.setOffset).toHaveBeenCalledWith("track-1", 100),
+      );
+    } finally {
+      window.removeEventListener("app:lyrics-drawer-tools-changed", handleDrawerTools);
+    }
   });
 
   it.each([
@@ -3404,6 +3649,94 @@ describe("LyricsPage", () => {
       "qq-candidate",
     ));
     expect(await screen.findByText("Auto applied QQ lyric")).toBeTruthy();
+  });
+
+  it("does not show no-lyrics while QQ Music streaming lyrics are still loading", async () => {
+    const track = makeTrack({
+      id: "streaming:qqmusic:004Drt082CV5gf",
+      path: "streaming:qqmusic:004Drt082CV5gf",
+      mediaType: "streaming",
+      provider: "qqmusic",
+      providerTrackId: "004Drt082CV5gf",
+      stableKey: "streaming:qqmusic:004Drt082CV5gf",
+      title: "Cry For Me (feat. Ami)",
+      artist: "Michita",
+      album: "Pureness",
+      duration: 302,
+    });
+    mockEcho(track, 0, { lyricsEmptyStateHidden: false });
+    window.echo.streaming = {
+      getLyrics: vi.fn().mockImplementation(() => new Promise(() => undefined)),
+    } as unknown as Window["echo"]["streaming"];
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    await screen.findByText("正在加载歌词...");
+    expect(screen.queryByText("暂无歌词")).toBeNull();
+  });
+
+  it("keeps the last visible lyrics when returning to the lyrics page for the same track", async () => {
+    const track = makeTrack();
+    mockEcho(track, 0, { lyricsEmptyStateHidden: false });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockResolvedValue(
+        makeTrackLyrics({
+          lines: [{ timeMs: 0, text: "Remembered lyric" }],
+          syncedText: "[00:00.00]Remembered lyric",
+        }),
+      ),
+      getForSnapshot: vi.fn(),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      searchCandidatesForSnapshot: vi.fn(),
+      applyCandidate: vi.fn(),
+      applyCandidateForSnapshot: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    const firstRender = render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+    await screen.findByText("Remembered lyric");
+    firstRender.unmount();
+
+    mockEcho(track, 0, { lyricsEmptyStateHidden: false });
+    window.echo.lyrics = {
+      getForTrack: vi.fn().mockImplementation(() => new Promise(() => undefined)),
+      getForSnapshot: vi.fn(),
+      searchCandidates: vi.fn().mockResolvedValue([]),
+      searchCandidatesForSnapshot: vi.fn(),
+      applyCandidate: vi.fn(),
+      applyCandidateForSnapshot: vi.fn(),
+      markInstrumental: vi.fn(),
+      rejectCandidate: vi.fn(),
+      setOffset: vi.fn(),
+      clearCache: vi.fn(),
+    };
+
+    render(
+      <PlaybackQueueProvider>
+        <QueueSeed track={track}>
+          <LyricsPage />
+        </QueueSeed>
+      </PlaybackQueueProvider>,
+    );
+
+    expect(await screen.findByText("Remembered lyric")).toBeTruthy();
+    expect(screen.queryByText("正在加载歌词...")).toBeNull();
+    expect(screen.queryByText("暂无歌词")).toBeNull();
   });
 
   it("falls back to candidate search for QQ Music streaming lyrics when exact lookup is missing", async () => {

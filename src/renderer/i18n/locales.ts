@@ -1,4 +1,4 @@
-﻿export type Locale = 'zh-CN' | 'zh-TW' | 'ja-JP' | 'en-US';
+export type Locale = 'zh-CN' | 'zh-TW' | 'ja-JP' | 'en-US';
 
 export const localeOptions: Array<{ locale: Locale; label: string }> = [
   { locale: 'zh-CN', label: '简体中文' },
@@ -1012,6 +1012,7 @@ export type TranslationKey =
   | 'folders.action.remove'
   | 'folders.action.scan'
   | 'folders.action.scanChanges'
+  | 'folders.action.rescanEmbeddedTags'
   | 'folders.confirm.deleteTrack'
   | 'folders.confirm.removeRoot'
   | 'folders.count.tracks'
@@ -1049,6 +1050,7 @@ export type TranslationKey =
   | 'folders.message.queuedTracks'
   | 'folders.message.scanCancelled'
   | 'folders.message.incrementalScanStarted'
+  | 'folders.message.embeddedTagRescanStarted'
   | 'folders.message.scanStarted'
   | 'folders.metrics.duration'
   | 'folders.metrics.label'
@@ -1862,10 +1864,6 @@ export type TranslationKey =
   | 'settings.about.updates.title'
   | 'settings.about.version.description'
   | 'settings.about.version.title'
-  | 'settings.appearance.density.compact'
-  | 'settings.appearance.density.description'
-  | 'settings.appearance.density.standard'
-  | 'settings.appearance.density.title'
   | 'settings.appearance.artistAvatars.action.clear'
   | 'settings.appearance.artistAvatars.action.queueing'
   | 'settings.appearance.artistAvatars.action.refreshMissing'
@@ -1895,6 +1893,11 @@ export type TranslationKey =
   | 'settings.appearance.lineHeight.title'
   | 'settings.appearance.nowPlayingCoverColor.description'
   | 'settings.appearance.nowPlayingCoverColor.title'
+  | 'settings.appearance.windowAcrylic.description'
+  | 'settings.appearance.windowAcrylic.keepWhenUnfocused'
+  | 'settings.appearance.windowAcrylic.restartConfirm'
+  | 'settings.appearance.windowAcrylic.title'
+  | 'settings.appearance.windowAcrylic.transparency'
   | 'settings.appearance.reset.action'
   | 'settings.appearance.reset.description'
   | 'settings.appearance.reset.title'
@@ -1957,6 +1960,8 @@ export type TranslationKey =
   | 'settings.appearance.themePreset.berryDream.description'
   | 'settings.appearance.themePreset.classic'
   | 'settings.appearance.themePreset.classic.description'
+  | 'settings.appearance.themePreset.random'
+  | 'settings.appearance.themePreset.random.description'
   | 'settings.appearance.themePreset.amberNoir'
   | 'settings.appearance.themePreset.amberNoir.description'
   | 'settings.appearance.themePreset.caramelPudding'
@@ -2121,6 +2126,7 @@ export type TranslationKey =
   | 'settings.appearance.themeCustom.message.importFailed'
   | 'settings.appearance.themeCustom.message.invalidColor'
   | 'settings.appearance.themeCustom.message.lowContrast'
+  | 'settings.appearance.themeCustom.message.randomReady'
   | 'settings.appearance.themeCustom.message.reset'
   | 'settings.appearance.themeCustom.message.saved'
   | 'settings.appearance.themeCustom.myThemes.description'
@@ -2268,8 +2274,14 @@ export type TranslationKey =
   | 'settings.general.sidebarAutoHide.title'
   | 'settings.general.sidebarIconOnly.description'
   | 'settings.general.sidebarIconOnly.title'
+  | 'settings.general.settingsOptionalSections.description'
+  | 'settings.general.settingsOptionalSections.title'
   | 'settings.general.featureCommentsHidden.description'
   | 'settings.general.featureCommentsHidden.title'
+  | 'settings.general.trackContextMenuExtraActions.description'
+  | 'settings.general.trackContextMenuExtraActions.title'
+  | 'settings.general.touchKeyboard.description'
+  | 'settings.general.touchKeyboard.title'
   | 'settings.header.searchPlaceholder'
   | 'settings.integrations.discord.description'
   | 'settings.integrations.discord.action.refresh'
@@ -3132,6 +3144,24 @@ export type TranslationKey =
   | 'segmentLoop.empty'
   | 'segmentLoop.notSet'
   | 'spotifyPlayback.error.noDevice'
+  | 'sleepTimer.title'
+  | 'sleepTimer.action.pause'
+  | 'sleepTimer.action.stop'
+  | 'sleepTimer.action.quit'
+  | 'sleepTimer.fadeOut.label'
+  | 'sleepTimer.custom.placeholder'
+  | 'sleepTimer.custom.unit'
+  | 'sleepTimer.custom.confirm'
+  | 'sleepTimer.status.active'
+  | 'sleepTimer.status.inactive'
+  | 'sleepTimer.status.cancel'
+  | 'sleepTimer.preset.5'
+  | 'sleepTimer.preset.10'
+  | 'sleepTimer.preset.15'
+  | 'sleepTimer.preset.30'
+  | 'sleepTimer.preset.45'
+  | 'sleepTimer.preset.60'
+  | 'sleepTimer.afterAction'
   | 'spotifyPlayback.error.noDrmKeysystem';
 
 type TranslationMap = Record<TranslationKey, string>;
@@ -4052,6 +4082,7 @@ const zhCN: TranslationMap = {
   'folders.action.remove': '移除',
   'folders.action.scan': '扫描',
   'folders.action.scanChanges': '增量扫描',
+  'folders.action.rescanEmbeddedTags': '重扫内嵌标签',
   'folders.confirm.deleteTrack': '删除这个音乐文件？\n{title}',
   'folders.confirm.removeRoot': '从曲库索引中移除“{name}”？音乐文件会保留在磁盘上。',
   'folders.count.tracks': '{count} 首',
@@ -4089,6 +4120,7 @@ const zhCN: TranslationMap = {
   'folders.message.queuedTracks': '已加入队列 {count} 首。',
   'folders.message.scanCancelled': '扫描已取消。',
   'folders.message.incrementalScanStarted': '增量扫描已开始，只处理新增和移除。',
+  'folders.message.embeddedTagRescanStarted': '内嵌标签重扫已在后台开始。',
   'folders.message.scanStarted': '扫描已开始。',
   'folders.metrics.duration': '时长',
   'folders.metrics.label': '文件夹指标',
@@ -4208,7 +4240,7 @@ const zhCN: TranslationMap = {
   'route.connect.description': 'DLNA / AirPlay 无线播放。',
   'route.connect.label': '连接',
   'route.dsp.description': '信号链调音工作台。',
-  'route.dsp.label': 'DSP',
+  'route.dsp.label': '音效处理',
   'connectPage.controls.aria': 'Connect 控制',
   'connectPage.controls.disconnect': '断开',
   'connectPage.controls.pause': '暂停',
@@ -4850,7 +4882,7 @@ const zhCN: TranslationMap = {
   'playlistsPage.form.placeholder': '新建本地歌单',
   'playlistsPage.importStreaming.add': '添加歌单',
   'playlistsPage.importStreaming.adding': '添加中',
-  'playlistsPage.importStreaming.placeholder': '粘贴网易云 / QQ 音乐 / 酷狗 / Spotify 歌单链接',
+  'playlistsPage.importStreaming.placeholder': '粘贴网易云 / QQ 音乐 / Spotify 歌单链接',
   'playlistsPage.importStreaming.title': '添加流媒体歌单',
   'playlistsPage.prompt.newLocalName': '新建本地歌单名称',
   'playlistsPage.status.createdLocal': '本地歌单已创建',
@@ -4984,10 +5016,6 @@ const zhCN: TranslationMap = {
   'settings.about.updates.state.notAvailable': '已是最新',
   'settings.about.updates.state.error': '检查失败',
   'settings.about.updates.state.disabled': '已关闭',
-  'settings.appearance.density.compact': '紧凑',
-  'settings.appearance.density.description': '曲库列表采用更紧凑的桌面密度，不再使用过大的卡片行。',
-  'settings.appearance.density.standard': '标准',
-  'settings.appearance.density.title': '界面密度',
   'settings.appearance.artistAvatars.action.clear': '清除头像缓存',
   'settings.appearance.artistAvatars.action.queueing': '加入队列中...',
   'settings.appearance.artistAvatars.action.refreshMissing': '刷新缺失头像',
@@ -5017,6 +5045,11 @@ const zhCN: TranslationMap = {
   'settings.appearance.lineHeight.title': '界面行距',
   'settings.appearance.nowPlayingCoverColor.title': '播放界面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '开启后，正在播放页会在空闲时从小封面抽样生成轻量背景；低负载模式会自动跳过。默认关闭。',
+  'settings.appearance.windowAcrylic.title': '窗口亚克力',
+  'settings.appearance.windowAcrylic.description': '开启后下次启动会使用系统亚克力材质，让桌面背景从窗口后方透出；界面会保留可读遮罩。Windows 11 22H2 及以上效果最佳。',
+  'settings.appearance.windowAcrylic.keepWhenUnfocused': '失焦时保持通透',
+  'settings.appearance.windowAcrylic.restartConfirm': '窗口亚克力需要重启 ECHO 才能改变系统窗口材质。现在重启吗？',
+  'settings.appearance.windowAcrylic.transparency': '透明度',
   'settings.appearance.reset.action': '恢复默认',
   'settings.appearance.reset.description': '恢复 Outfit、Microsoft YaHei、Noto Sans SC、字号、行距、文字深浅与圆角封面。',
   'settings.appearance.reset.title': '外观默认值',
@@ -5077,8 +5110,10 @@ const zhCN: TranslationMap = {
   'settings.appearance.theme.title': '主题',
   'settings.appearance.themePreset.title': '主题预设',
   'settings.appearance.themePreset.description': '选择一套全局渐变色板；当前明暗模式仍会保留。',
-  'settings.appearance.themePreset.classic': '经典 ECHO Next',
-  'settings.appearance.themePreset.classic.description': '白灰基底、克制蓝紫强调，接近 Roon 的干净耐看。',
+  'settings.appearance.themePreset.classic': '经典',
+  'settings.appearance.themePreset.classic.description': '白灰基底、克制蓝紫强调，清爽耐看。',
+  'settings.appearance.themePreset.random': '随机主题',
+  'settings.appearance.themePreset.random.description': '生成一套可读性校验通过的随机配色，满意后可手动保存。',
   'settings.appearance.themePreset.echoTwilight': '暮光桃雾',
   'settings.appearance.themePreset.echoTwilight.description': '老版 ECHO 的暖粉渐变感。',
   'settings.appearance.themePreset.sakuraMilk': '樱粉奶霜',
@@ -5249,6 +5284,7 @@ const zhCN: TranslationMap = {
   'settings.appearance.themeCustom.message.fixed': '已自动调整文字与按钮颜色。',
   'settings.appearance.themeCustom.message.invalidColor': '请输入 #RRGGBB 格式的安全颜色。',
   'settings.appearance.themeCustom.message.lowContrast': '当前文字对比度不足，可能影响阅读。可自动修正或手动调整文字颜色。',
+  'settings.appearance.themeCustom.message.randomReady': '已生成随机主题草稿，满意后点保存。',
   'settings.appearance.themeCustom.message.reset': '已重置当前主题的自定义。',
   'settings.appearance.themeCustom.message.saved': '已保存当前主题自定义。',
   'settings.danger.database.kicker': '曲库数据库安全',
@@ -5374,8 +5410,14 @@ const zhCN: TranslationMap = {
   'settings.general.sidebarAutoHide.description': '开启后左侧栏会收进屏幕边缘；鼠标移到左边缘时自动抽出。默认关闭。',
   'settings.general.sidebarIconOnly.title': '侧栏仅显示图标',
   'settings.general.sidebarIconOnly.description': '开启后左侧栏保持显示，但导航入口只显示图标；悬停仍可查看名称。默认关闭。',
+  'settings.general.settingsOptionalSections.title': '显示插件 / 网盘 / EQ 设置栏目',
+  'settings.general.settingsOptionalSections.description': '默认隐藏。开启后在设置栏目中显示插件、网盘 / 远程和 EQ；功能入口仍保留在侧栏。',
   'settings.general.featureCommentsHidden.title': '关闭功能注释',
   'settings.general.featureCommentsHidden.description': '开启后收起设置、抽屉和导航里的解释性说明，只保留标题、控件与状态。默认关闭。',
+  'settings.general.trackContextMenuExtraActions.title': '右键菜单扩展动作',
+  'settings.general.trackContextMenuExtraActions.description': '开启后在曲目右键菜单中显示 osu! Timing、使用系统默认应用打开、复制/保存歌曲卡片图片。默认隐藏以保持菜单精简。',
+  'settings.general.touchKeyboard.title': '启用屏幕键盘',
+  'settings.general.touchKeyboard.description': '输入字段能够自动显示屏幕上的 Windows 键盘。此功能适用于触摸屏。',
   'settings.general.fastStartup.description': '开启后，启动时只做轻量只读曲库验证；完整数据保护快照会在窗口打开后后台完成。默认关闭。',
   'settings.general.fastStartup.title': '快速启动',
   'settings.general.firstRunWizard.description': '打开后会重新显示第一次启动时的向导，可选择标准输出（系统音频）、WASAPI、Exclusive 或 ASIO；完成或跳过后会自动关闭这个开关。',
@@ -6253,6 +6295,24 @@ const zhCN: TranslationMap = {
   'segmentLoop.empty': '保存片段后会显示在这里',
   'segmentLoop.notSet': '未设置',
   'spotifyPlayback.error.noDevice': '没有可用的 Spotify 播放设备。请开启“自动启动官方播放器”，或先打开 Spotify 桌面端/网页版。{hint}',
+  'sleepTimer.title': '睡眠定时器',
+  'sleepTimer.action.pause': '暂停',
+  'sleepTimer.action.stop': '停止',
+  'sleepTimer.action.quit': '退出',
+  'sleepTimer.fadeOut.label': '触发前渐弱',
+  'sleepTimer.custom.placeholder': '1-120',
+  'sleepTimer.custom.unit': '分钟',
+  'sleepTimer.custom.confirm': '确定',
+  'sleepTimer.status.active': '剩余 {time}',
+  'sleepTimer.status.inactive': '未启动',
+  'sleepTimer.status.cancel': '取消定时器',
+  'sleepTimer.preset.5': '5分钟',
+  'sleepTimer.preset.10': '10分钟',
+  'sleepTimer.preset.15': '15分钟',
+  'sleepTimer.preset.30': '30分钟',
+  'sleepTimer.preset.45': '45分钟',
+  'sleepTimer.preset.60': '60分钟',
+  'sleepTimer.afterAction': '到期后{action}',
   'spotifyPlayback.error.noDrmKeysystem': '当前 Electron 构建没有可用的 DRM/Widevine keysystem，Spotify 官方播放器无法在 ECHO 内注册设备。',
 };
 
@@ -7169,6 +7229,7 @@ const zhTW: TranslationMap = {
   'folders.action.remove': '移除',
   'folders.action.scan': '掃描',
   'folders.action.scanChanges': '增量掃描',
+  'folders.action.rescanEmbeddedTags': '重掃內嵌標籤',
   'folders.confirm.deleteTrack': '刪除這個音樂檔？\n{title}',
   'folders.confirm.removeRoot': '從曲庫索引中移除「{name}」？音樂檔會保留在磁碟上。',
   'folders.count.tracks': '{count} 首',
@@ -7206,6 +7267,7 @@ const zhTW: TranslationMap = {
   'folders.message.queuedTracks': '已加入佇列 {count} 首。',
   'folders.message.scanCancelled': '掃描已取消。',
   'folders.message.incrementalScanStarted': '增量掃描已開始，只處理新增和移除。',
+  'folders.message.embeddedTagRescanStarted': '內嵌標籤重掃已在背景開始。',
   'folders.message.scanStarted': '掃描已開始。',
   'folders.metrics.duration': '長度',
   'folders.metrics.label': '資料夾指標',
@@ -7253,7 +7315,7 @@ const zhTW: TranslationMap = {
   'route.connect.description': 'DLNA / AirPlay 無線播放。',
   'route.connect.label': '連接',
   'route.dsp.description': '訊號鏈調音工作台。',
-  'route.dsp.label': 'DSP',
+  'route.dsp.label': '音效處理',
   'connectPage.controls.aria': 'Connect 控制',
   'connectPage.controls.disconnect': '中斷連接',
   'connectPage.controls.pause': '暫停',
@@ -7888,7 +7950,7 @@ const zhTW: TranslationMap = {
   'playlistsPage.form.placeholder': '新建本地歌單',
   'playlistsPage.importStreaming.add': '添加歌單',
   'playlistsPage.importStreaming.adding': '添加中',
-  'playlistsPage.importStreaming.placeholder': '貼上網易雲 / QQ 音樂 / 酷狗 / Spotify 歌單連結',
+  'playlistsPage.importStreaming.placeholder': '貼上網易雲 / QQ 音樂 / Spotify 歌單連結',
   'playlistsPage.importStreaming.title': '添加串流歌單',
   'playlistsPage.prompt.newLocalName': '新建本地歌單名稱',
   'playlistsPage.status.createdLocal': '本地歌單已建立',
@@ -8469,8 +8531,14 @@ const zhTW: TranslationMap = {
   'settings.general.sidebarAutoHide.description': '開啟後側邊欄會收進螢幕邊緣；滑鼠移到左側邊緣時自動抽出。預設關閉。',
   'settings.general.sidebarIconOnly.title': '側邊欄僅顯示圖示',
   'settings.general.sidebarIconOnly.description': '開啟後側邊欄保持顯示，但導覽入口只顯示圖示；懸停仍可查看名稱。預設關閉。',
+  'settings.general.settingsOptionalSections.title': '顯示外掛 / 網路硬碟 / EQ 設定欄目',
+  'settings.general.settingsOptionalSections.description': '預設隱藏。開啟後在設定欄目中顯示外掛、網路硬碟 / 遠端和 EQ；功能入口仍保留在側邊欄。',
   'settings.general.featureCommentsHidden.title': '關閉功能註釋',
   'settings.general.featureCommentsHidden.description': '開啟後收起設定、抽屜和導覽裡的解釋性說明，只保留標題、控制項與狀態。預設關閉。',
+  'settings.general.trackContextMenuExtraActions.title': '右鍵選單擴充操作',
+  'settings.general.trackContextMenuExtraActions.description': '開啟後在曲目右鍵選單中顯示 osu! Timing、使用系統預設應用程式打開、複製/儲存歌曲卡片圖片。預設隱藏以保持選單精簡。',
+  'settings.general.touchKeyboard.title': '啟用螢幕鍵盤',
+  'settings.general.touchKeyboard.description': '輸入欄位可自動顯示螢幕上的 Windows 鍵盤。此功能適用於觸控螢幕。',
   'settings.general.fastStartup.description': '開啟後，啟動時只做輕量唯讀曲庫驗證；完整資料保護快照會在視窗開啟後於背景完成。預設關閉。',
   'settings.general.fastStartup.title': '快速啟動',
   'settings.general.firstRunWizard.description': '開啟後會重新顯示第一次啟動時的向導，可選擇標準輸出（系統音訊）、WASAPI、Exclusive 或 ASIO；完成或略過後會自動關閉這個開關。',
@@ -8780,6 +8848,24 @@ const zhTW: TranslationMap = {
   'segmentLoop.empty': '儲存片段後會顯示在這裡',
   'segmentLoop.notSet': '未設定',
   'spotifyPlayback.error.noDevice': '沒有可用的 Spotify 播放裝置。請開啟「自動啟動官方播放器」，或先打開 Spotify 桌面端/網頁版。{hint}',
+  'sleepTimer.title': '睡眠定時器',
+  'sleepTimer.action.pause': '暫停',
+  'sleepTimer.action.stop': '停止',
+  'sleepTimer.action.quit': '退出',
+  'sleepTimer.fadeOut.label': '觸發前漸弱',
+  'sleepTimer.custom.placeholder': '1-120',
+  'sleepTimer.custom.unit': '分鐘',
+  'sleepTimer.custom.confirm': '確定',
+  'sleepTimer.status.active': '剩餘 {time}',
+  'sleepTimer.status.inactive': '未啟動',
+  'sleepTimer.status.cancel': '取消定時器',
+  'sleepTimer.preset.5': '5分鐘',
+  'sleepTimer.preset.10': '10分鐘',
+  'sleepTimer.preset.15': '15分鐘',
+  'sleepTimer.preset.30': '30分鐘',
+  'sleepTimer.preset.45': '45分鐘',
+  'sleepTimer.preset.60': '60分鐘',
+  'sleepTimer.afterAction': '到期後{action}',
   'spotifyPlayback.error.noDrmKeysystem': '目前 Electron 建置沒有可用的 DRM/Widevine keysystem，Spotify 官方播放器無法在 ECHO 內註冊裝置。',
   'settings.eq.ab.summary': '{preset} / 峰值 {peak} / 輸出 {output} / 前級 {preamp}',
   'settings.eq.level.clips': '削波 {count}',
@@ -8823,6 +8909,11 @@ const zhTW: TranslationMap = {
   'settings.appearance.sidebar.showAria': '顯示 {label}',
   'settings.appearance.nowPlayingCoverColor.title': '播放介面封面取色',
   'settings.appearance.nowPlayingCoverColor.description': '開啟後，正在播放頁會在閒置時從小封面取樣生成輕量背景；低負載模式會自動略過。預設關閉。',
+  'settings.appearance.windowAcrylic.title': '視窗壓克力',
+  'settings.appearance.windowAcrylic.description': '開啟後下次啟動會使用系統壓克力材質，讓桌面背景從視窗後方透出；介面會保留可讀遮罩。Windows 11 22H2 以上效果最佳。',
+  'settings.appearance.windowAcrylic.keepWhenUnfocused': '失焦時保持通透',
+  'settings.appearance.windowAcrylic.restartConfirm': '視窗壓克力需要重新啟動 ECHO 才能變更系統視窗材質。現在重新啟動嗎？',
+  'settings.appearance.windowAcrylic.transparency': '透明度',
   'settings.appearance.albumCoverShape.title': '專輯封面形狀',
   'settings.appearance.albumCoverShape.description': '選擇專輯封面顯示為圓角或方角；此設定優先於主題預設。預設圓角。',
   'settings.appearance.albumCoverShape.rounded': '圓角',
@@ -8847,8 +8938,10 @@ const zhTW: TranslationMap = {
   'settings.appearance.wallpaper.unifiedOpacity': '統一透明度',
   'settings.appearance.themePreset.title': '主題預設',
   'settings.appearance.themePreset.description': '選擇一套全域漸層色板；目前的明暗模式仍會保留。',
-  'settings.appearance.themePreset.classic': '經典 ECHO Next',
-  'settings.appearance.themePreset.classic.description': '白灰基底、克制藍紫強調，接近 Roon 的乾淨耐看。',
+  'settings.appearance.themePreset.classic': '經典',
+  'settings.appearance.themePreset.classic.description': '白灰基底、克制藍紫強調，清爽耐看。',
+  'settings.appearance.themePreset.random': '隨機主題',
+  'settings.appearance.themePreset.random.description': '產生一套通過可讀性校驗的隨機配色，滿意後可手動保存。',
   'settings.appearance.themePreset.echoTwilight': '暮光桃霧',
   'settings.appearance.themePreset.echoTwilight.description': '老版 ECHO 的暖粉漸層感。',
   'settings.appearance.themePreset.sakuraMilk': '櫻粉奶霜',
@@ -9019,11 +9112,9 @@ const zhTW: TranslationMap = {
   'settings.appearance.themeCustom.message.fixed': '已自動調整文字與按鈕顏色。',
   'settings.appearance.themeCustom.message.invalidColor': '請輸入 #RRGGBB 格式的安全顏色。',
   'settings.appearance.themeCustom.message.lowContrast': '目前文字對比不足，可能影響閱讀。可自動修正或手動調整文字顏色。',
+  'settings.appearance.themeCustom.message.randomReady': '已產生隨機主題草稿，滿意後點保存。',
   'settings.appearance.themeCustom.message.reset': '已重置目前主題的自訂。',
   'settings.appearance.themeCustom.message.saved': '已儲存目前主題自訂。',
-  'settings.appearance.density.title': '介面密度',
-  'settings.appearance.density.compact': '緊湊',
-  'settings.appearance.density.standard': '標準',
   'settings.appearance.artistAvatars.action.clear': '清除頭像快取',
   'settings.appearance.artistAvatars.action.queueing': '加入佇列中...',
   'settings.appearance.artistAvatars.action.refreshMissing': '重新整理缺失頭像',
@@ -10017,6 +10108,7 @@ const jaJP: TranslationMap = {
   'folders.action.remove': '削除',
   'folders.action.scan': 'スキャン',
   'folders.action.scanChanges': '差分スキャン',
+  'folders.action.rescanEmbeddedTags': '埋め込みタグを再スキャン',
   'folders.confirm.deleteTrack': 'この音楽ファイルを削除しますか？\n{title}',
   'folders.confirm.removeRoot': '「{name}」をライブラリインデックスから削除しますか？音楽ファイルはディスク上に残ります。',
   'folders.count.tracks': '{count} 曲',
@@ -10054,6 +10146,7 @@ const jaJP: TranslationMap = {
   'folders.message.queuedTracks': '{count} 曲をキューに追加しました。',
   'folders.message.scanCancelled': 'スキャンをキャンセルしました。',
   'folders.message.incrementalScanStarted': '差分スキャンを開始しました。追加と削除だけを処理します。',
+  'folders.message.embeddedTagRescanStarted': '埋め込みタグの再スキャンをバックグラウンドで開始しました。',
   'folders.message.scanStarted': 'スキャンを開始しました。',
   'folders.metrics.duration': '再生時間',
   'folders.metrics.label': 'フォルダー指標',
@@ -10780,7 +10873,7 @@ const jaJP: TranslationMap = {
   'playlistsPage.form.placeholder': '新しいローカルプレイリスト',
   'playlistsPage.importStreaming.add': 'プレイリストを追加',
   'playlistsPage.importStreaming.adding': '追加中',
-  'playlistsPage.importStreaming.placeholder': 'NetEase / QQ Music / KuGou / Spotify のプレイリストリンクを貼り付け',
+  'playlistsPage.importStreaming.placeholder': 'NetEase / QQ Music / Spotify のプレイリストリンクを貼り付け',
   'playlistsPage.importStreaming.title': 'ストリーミングプレイリストを追加',
   'playlistsPage.prompt.newLocalName': 'ローカルプレイリスト名',
   'playlistsPage.status.createdLocal': 'ローカルプレイリストを作成しました',
@@ -11377,8 +11470,14 @@ const jaJP: TranslationMap = {
   'settings.general.sidebarAutoHide.description': '有効にするとサイドバーを画面端に収納し、マウスを左端へ移動したときに自動で引き出します。既定ではオフです。',
   'settings.general.sidebarIconOnly.title': 'サイドバーをアイコンのみ表示',
   'settings.general.sidebarIconOnly.description': '有効にするとサイドバーは表示したまま、ナビゲーション項目はアイコンだけになります。ホバーで名前を確認できます。既定ではオフです。',
+  'settings.general.settingsOptionalSections.title': 'プラグイン / クラウド / EQ 設定セクションを表示',
+  'settings.general.settingsOptionalSections.description': '既定では非表示です。有効にすると設定にプラグイン、クラウド / リモート、EQ を表示します。機能入口はサイドバーにも残ります。',
   'settings.general.featureCommentsHidden.title': '機能注釈を非表示',
   'settings.general.featureCommentsHidden.description': '有効にすると、設定、ドロワー、ナビゲーションの説明文を畳み、タイトル、操作、状態だけを残します。既定ではオフです。',
+  'settings.general.trackContextMenuExtraActions.title': '右クリックメニューの追加操作',
+  'settings.general.trackContextMenuExtraActions.description': '有効にすると、曲目の右クリックメニューに osu! Timing、システム既定アプリで開く、曲カード画像のコピー/保存を表示します。メニューを短く保つため既定では非表示です。',
+  'settings.general.touchKeyboard.title': 'スクリーンキーボードを有効化',
+  'settings.general.touchKeyboard.description': '入力フィールドにフォーカスすると、画面上の Windows キーボードを自動で表示します。タッチスクリーン向けの機能です。',
   'settings.general.fastStartup.description': '有効にすると、起動時は軽量な読み取り専用のライブラリ確認だけを行い、完全なデータ保護スナップショットはウィンドウ表示後にバックグラウンドで完了します。既定ではオフです。',
   'settings.general.fastStartup.title': '高速起動',
   'settings.general.firstRunWizard.description': '有効にすると初回起動時のガイドをもう一度表示し、標準出力（システムオーディオ）、WASAPI、Exclusive、ASIO を選べます。完了またはスキップ後、このスイッチは自動でオフになります。',
@@ -11692,6 +11791,24 @@ const jaJP: TranslationMap = {
   'segmentLoop.empty': '区間を保存するとここに表示されます',
   'segmentLoop.notSet': '未設定',
   'spotifyPlayback.error.noDevice': '利用可能な Spotify 再生デバイスがありません。「公式プレイヤーを自動起動」を有効にするか、Spotify デスクトップ版または Web 版を先に開いてください。{hint}',
+  'sleepTimer.title': 'スリープタイマー',
+  'sleepTimer.action.pause': '一時停止',
+  'sleepTimer.action.stop': '停止',
+  'sleepTimer.action.quit': '終了',
+  'sleepTimer.fadeOut.label': 'フェードアウト',
+  'sleepTimer.custom.placeholder': '1-120',
+  'sleepTimer.custom.unit': '分',
+  'sleepTimer.custom.confirm': '確定',
+  'sleepTimer.status.active': '残り {time}',
+  'sleepTimer.status.inactive': '未設定',
+  'sleepTimer.status.cancel': 'タイマーをキャンセル',
+  'sleepTimer.preset.5': '5分',
+  'sleepTimer.preset.10': '10分',
+  'sleepTimer.preset.15': '15分',
+  'sleepTimer.preset.30': '30分',
+  'sleepTimer.preset.45': '45分',
+  'sleepTimer.preset.60': '60分',
+  'sleepTimer.afterAction': '終了後{action}',
   'spotifyPlayback.error.noDrmKeysystem': '現在の Electron ビルドには利用可能な DRM/Widevine keysystem がないため、Spotify 公式プレイヤーを ECHO 内でデバイス登録できません。',
   'settings.appearance.theme.title': 'テーマ',
   'settings.appearance.theme.description': 'ライト、ダーク、またはシステム設定に合わせます。',
@@ -11728,6 +11845,11 @@ const jaJP: TranslationMap = {
   'settings.appearance.sidebar.showAria': '{label} を表示',
   'settings.appearance.nowPlayingCoverColor.title': '再生画面のカバー色',
   'settings.appearance.nowPlayingCoverColor.description': '有効にすると、再生中ページがアイドル時に小さなカバー画像から軽量な背景色を抽出します。低負荷モードでは自動的にスキップします。既定はオフです。',
+  'settings.appearance.windowAcrylic.title': 'ウィンドウ アクリル',
+  'settings.appearance.windowAcrylic.description': '有効にすると次回起動時にシステムのアクリル素材を使い、デスクトップ背景をウィンドウ越しに見せます。読みやすさを保つ保護レイヤーは維持します。Windows 11 22H2 以降で最適です。',
+  'settings.appearance.windowAcrylic.keepWhenUnfocused': '非アクティブ時も透明感を維持',
+  'settings.appearance.windowAcrylic.restartConfirm': 'ウィンドウ アクリルでシステムのウィンドウ素材を変更するには ECHO の再起動が必要です。今すぐ再起動しますか？',
+  'settings.appearance.windowAcrylic.transparency': '透明度',
   'settings.appearance.albumCoverShape.title': 'アルバムカバー形状',
   'settings.appearance.albumCoverShape.description': 'アルバムアートを角丸または四角で表示します。この設定はテーマプリセットより優先されます。既定は角丸です。',
   'settings.appearance.albumCoverShape.rounded': '角丸',
@@ -11752,8 +11874,10 @@ const jaJP: TranslationMap = {
   'settings.appearance.wallpaper.unifiedOpacity': '透明度を統一',
   'settings.appearance.themePreset.title': 'テーマプリセット',
   'settings.appearance.themePreset.description': 'アプリ全体のグラデーション色板を選びます。ライト/ダーク設定はそのまま使われます。',
-  'settings.appearance.themePreset.classic': 'Classic ECHO Next',
-  'settings.appearance.themePreset.classic.description': '白とライトグレーを基調に、控えめなブルーパープルを添えた Roon 風の見た目です。',
+  'settings.appearance.themePreset.classic': 'Classic',
+  'settings.appearance.themePreset.classic.description': 'White and light gray with a restrained blue-violet accent.',
+  'settings.appearance.themePreset.random': 'Random Theme',
+  'settings.appearance.themePreset.random.description': 'Generate a readable random palette, then save it manually if it feels right.',
   'settings.appearance.themePreset.echoTwilight': 'Twilight Peach Mist',
   'settings.appearance.themePreset.echoTwilight.description': '旧 ECHO らしい暖かいピンクのグラデーション。',
   'settings.appearance.themePreset.sakuraMilk': 'Sakura Milk',
@@ -11924,12 +12048,9 @@ const jaJP: TranslationMap = {
   'settings.appearance.themeCustom.message.fixed': 'Text and button colors were adjusted.',
   'settings.appearance.themeCustom.message.invalidColor': 'Use a safe #RRGGBB color.',
   'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is low and may affect readability. You can auto-fix it or adjust text colors.',
+  'settings.appearance.themeCustom.message.randomReady': 'Random theme draft generated. Save it if it feels right.',
   'settings.appearance.themeCustom.message.reset': 'Custom colors for this theme were reset.',
   'settings.appearance.themeCustom.message.saved': 'Custom colors for this theme were saved.',
-  'settings.appearance.density.title': '表示密度',
-  'settings.appearance.density.description': 'ライブラリ一覧はよりコンパクトなデスクトップ密度を使い、大きすぎるカード行は使いません。',
-  'settings.appearance.density.compact': 'コンパクト',
-  'settings.appearance.density.standard': '標準',
   'settings.appearance.artistAvatars.action.clear': 'アバターキャッシュを消去',
   'settings.appearance.artistAvatars.action.queueing': 'キューに追加中...',
   'settings.appearance.artistAvatars.action.refreshMissing': '不足アバターを更新',
@@ -12954,6 +13075,7 @@ const enUS: TranslationMap = {
   'folders.action.remove': 'Remove',
   'folders.action.scan': 'Scan',
   'folders.action.scanChanges': 'Scan changes',
+  'folders.action.rescanEmbeddedTags': 'Rescan embedded tags',
   'folders.confirm.deleteTrack': 'Delete the music file?\n{title}',
   'folders.confirm.removeRoot': 'Remove "{name}" from the library index? Music files stay on disk.',
   'folders.count.tracks': '{count} tracks',
@@ -12991,6 +13113,7 @@ const enUS: TranslationMap = {
   'folders.message.queuedTracks': 'Queued {count} tracks.',
   'folders.message.scanCancelled': 'Scan cancelled.',
   'folders.message.incrementalScanStarted': 'Incremental scan started. Only additions and removals will be processed.',
+  'folders.message.embeddedTagRescanStarted': 'Embedded tag rescan started in the background.',
   'folders.message.scanStarted': 'Scan started.',
   'folders.metrics.duration': 'Duration',
   'folders.metrics.label': 'Folder metrics',
@@ -13717,7 +13840,7 @@ const enUS: TranslationMap = {
   'playlistsPage.form.placeholder': 'New local playlist',
   'playlistsPage.importStreaming.add': 'Add playlist',
   'playlistsPage.importStreaming.adding': 'Adding',
-  'playlistsPage.importStreaming.placeholder': 'Paste a NetEase / QQ Music / KuGou / Spotify playlist link',
+  'playlistsPage.importStreaming.placeholder': 'Paste a NetEase / QQ Music / Spotify playlist link',
   'playlistsPage.importStreaming.title': 'Add streaming playlist',
   'playlistsPage.prompt.newLocalName': 'New local playlist name',
   'playlistsPage.status.createdLocal': 'Local playlist created',
@@ -14384,8 +14507,14 @@ const enUS: TranslationMap = {
   'settings.general.sidebarAutoHide.description': 'Tuck the left sidebar into the screen edge, then slide it out when the pointer reaches the left edge. Off by default.',
   'settings.general.sidebarIconOnly.title': 'Sidebar Icons Only',
   'settings.general.sidebarIconOnly.description': 'Keep the left sidebar visible, but show navigation entries as icons only. Hover still shows each name. Off by default.',
+  'settings.general.settingsOptionalSections.title': 'Show Plugins / Cloud / EQ Settings Sections',
+  'settings.general.settingsOptionalSections.description': 'Hidden by default. Turn on to show Plugins, Cloud / Remote, and EQ in Settings; their feature entries stay in the sidebar.',
   'settings.general.featureCommentsHidden.title': 'Hide Feature Comments',
   'settings.general.featureCommentsHidden.description': 'Hide explanatory notes in settings, drawers, and navigation, leaving titles, controls, and status text. Off by default.',
+  'settings.general.trackContextMenuExtraActions.title': 'Context Menu Extra Actions',
+  'settings.general.trackContextMenuExtraActions.description': 'Show osu! Timing, open with the system default app, and copy/save song card image in the track context menu. Hidden by default to keep the menu compact.',
+  'settings.general.touchKeyboard.title': 'Enable On-Screen Keyboard',
+  'settings.general.touchKeyboard.description': 'Input fields can automatically show the on-screen Windows keyboard. This is useful for touch screens.',
   'settings.general.fastStartup.description': 'When enabled, startup only runs a lightweight read-only library check; the full data protection snapshot finishes in the background after the window opens. Off by default.',
   'settings.general.fastStartup.title': 'Fast Startup',
   'settings.general.firstRunWizard.description': 'Show the first-run guide again after opening. You can choose Standard Output (system audio), WASAPI, Exclusive, or ASIO; this switch turns off automatically after finishing or skipping.',
@@ -14787,6 +14916,24 @@ const enUS: TranslationMap = {
   'segmentLoop.empty': 'Saved segments will appear here',
   'segmentLoop.notSet': 'Not set',
   'spotifyPlayback.error.noDevice': 'No Spotify playback device is available. Enable "auto-launch official player", or open Spotify desktop/web first.{hint}',
+  'sleepTimer.title': 'Sleep Timer',
+  'sleepTimer.action.pause': 'Pause',
+  'sleepTimer.action.stop': 'Stop',
+  'sleepTimer.action.quit': 'Quit',
+  'sleepTimer.fadeOut.label': 'Fade out before trigger',
+  'sleepTimer.custom.placeholder': '1-120',
+  'sleepTimer.custom.unit': 'min',
+  'sleepTimer.custom.confirm': 'OK',
+  'sleepTimer.status.active': '{time} remaining',
+  'sleepTimer.status.inactive': 'Not set',
+  'sleepTimer.status.cancel': 'Cancel timer',
+  'sleepTimer.preset.5': '5 min',
+  'sleepTimer.preset.10': '10 min',
+  'sleepTimer.preset.15': '15 min',
+  'sleepTimer.preset.30': '30 min',
+  'sleepTimer.preset.45': '45 min',
+  'sleepTimer.preset.60': '60 min',
+  'sleepTimer.afterAction': '{action} after timer',
   'spotifyPlayback.error.noDrmKeysystem': 'This Electron build has no available DRM/Widevine keysystem, so the official Spotify player cannot register a device inside ECHO.',
   'settings.appearance.theme.title': 'Theme',
   'settings.appearance.theme.description': 'Choose light, dark, or follow the system appearance.',
@@ -14823,6 +14970,11 @@ const enUS: TranslationMap = {
   'settings.appearance.sidebar.showAria': 'Show {label}',
   'settings.appearance.nowPlayingCoverColor.title': 'Now Playing Cover Color',
   'settings.appearance.nowPlayingCoverColor.description': 'Sample the small cover art while idle to tint the Now Playing page. Low-load playback mode skips it automatically. Off by default.',
+  'settings.appearance.windowAcrylic.title': 'Window Acrylic',
+  'settings.appearance.windowAcrylic.description': 'Use the system acrylic material on next launch so the desktop shows through behind the window, while keeping a readability scrim over the UI. Best on Windows 11 22H2 and later.',
+  'settings.appearance.windowAcrylic.keepWhenUnfocused': 'Keep translucent when unfocused',
+  'settings.appearance.windowAcrylic.restartConfirm': 'Window Acrylic needs an ECHO restart to change the system window material. Restart now?',
+  'settings.appearance.windowAcrylic.transparency': 'Transparency',
   'settings.appearance.wallpaper.title': 'Custom Background',
   'settings.appearance.wallpaper.description': 'Landscape and portrait backgrounds are saved separately. Portrait windows only apply the portrait background. Supports images and local videos.',
   'settings.appearance.wallpaper.choose': 'Choose Landscape Background',
@@ -14843,8 +14995,10 @@ const enUS: TranslationMap = {
   'settings.appearance.wallpaper.unifiedOpacity': 'Unified Opacity',
   'settings.appearance.themePreset.title': 'Theme Presets',
   'settings.appearance.themePreset.description': 'Choose a global gradient palette; your light, dark, or system mode stays separate.',
-  'settings.appearance.themePreset.classic': 'Classic ECHO Next',
-  'settings.appearance.themePreset.classic.description': 'White and light gray surfaces with a restrained blue-violet accent, closer to Roon.',
+  'settings.appearance.themePreset.classic': 'Classic',
+  'settings.appearance.themePreset.classic.description': 'White and light gray surfaces with a restrained blue-violet accent.',
+  'settings.appearance.themePreset.random': 'Random Theme',
+  'settings.appearance.themePreset.random.description': 'Generate a readable random palette, then save it manually if it feels right.',
   'settings.appearance.themePreset.echoTwilight': 'Twilight Peach Mist',
   'settings.appearance.themePreset.echoTwilight.description': 'Warm pink gradients inspired by classic ECHO.',
   'settings.appearance.themePreset.sakuraMilk': 'Sakura Milk',
@@ -15015,12 +15169,9 @@ const enUS: TranslationMap = {
   'settings.appearance.themeCustom.message.fixed': 'Text and button colors were adjusted.',
   'settings.appearance.themeCustom.message.invalidColor': 'Use a safe #RRGGBB color.',
   'settings.appearance.themeCustom.message.lowContrast': 'Text contrast is low and may affect readability. You can auto-fix it or adjust text colors.',
+  'settings.appearance.themeCustom.message.randomReady': 'Random theme draft generated. Save it if it feels right.',
   'settings.appearance.themeCustom.message.reset': 'Custom colors for this theme were reset.',
   'settings.appearance.themeCustom.message.saved': 'Custom colors for this theme were saved.',
-  'settings.appearance.density.title': 'Interface Density',
-  'settings.appearance.density.description': 'Library lists use a tighter desktop density instead of oversized card rows.',
-  'settings.appearance.density.compact': 'Compact',
-  'settings.appearance.density.standard': 'Standard',
   'settings.appearance.artistAvatars.action.clear': 'Clear Avatar Cache',
   'settings.appearance.artistAvatars.action.queueing': 'Queueing...',
   'settings.appearance.artistAvatars.action.refreshMissing': 'Refresh Missing Avatars',

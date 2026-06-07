@@ -160,6 +160,22 @@ describe('LyricsMatchEngine', () => {
     expect(matched.candidates[0].risk).toBe('high');
   });
 
+  it('allows safe medium-risk candidates only for relaxed backfill matching', async () => {
+    const engine = new LyricsMatchEngine([provider('lrclib', [result({ durationSeconds: 121 })])]);
+    const coverQuery = { ...query, title: 'Echo Song Cover', durationSeconds: 120 };
+
+    const normal = await engine.match(coverQuery, { enabledProviders: ['lrclib'], autoAcceptScore: 0.45 });
+    const relaxed = await engine.match(coverQuery, {
+      enabledProviders: ['lrclib'],
+      autoAcceptScore: 0.45,
+      relaxedAutoAccept: true,
+    });
+
+    expect(normal.accepted).toBeNull();
+    expect(normal.candidates[0].risk).toBe('medium');
+    expect(relaxed.accepted?.providerLyricsId).toBe('same-id');
+  });
+
   it('does not auto accept a user-rejected provider lyrics id', async () => {
     const engine = new LyricsMatchEngine([provider('lrclib', [result()])]);
 
@@ -235,6 +251,32 @@ describe('LyricsMatchEngine', () => {
     expect(matched.accepted?.provider).toBe('netease');
     expect(matched.accepted?.providerLyricsId).toBe('first');
     expect(second.search).not.toHaveBeenCalled();
+  });
+
+  it('checks QQ Music first for QQ Music streaming snapshots', async () => {
+    const qq = provider('qqmusic', [result({ provider: 'qqmusic', providerLyricsId: 'qq-direct' })], 20);
+    const lrclib = provider('lrclib', [result({ providerLyricsId: 'lrclib-fallback', durationSeconds: 135 })], 0);
+    const engine = new LyricsMatchEngine([lrclib, qq]);
+
+    const matched = await engine.match(
+      {
+        ...query,
+        trackId: 'streaming:qqmusic:004Drt082CV5gf',
+        mediaType: 'streaming',
+        sourceId: '004Drt082CV5gf',
+        stableKey: 'streaming:qqmusic:004Drt082CV5gf',
+      },
+      {
+        enabledProviders: ['lrclib', 'netease', 'qqmusic'],
+        deepSearchEnabled: true,
+        providerTimeoutMs: 100,
+        totalMatchTimeoutMs: 200,
+      },
+    );
+
+    expect(matched.accepted?.provider).toBe('qqmusic');
+    expect(matched.accepted?.providerLyricsId).toBe('qq-direct');
+    expect(lrclib.search).not.toHaveBeenCalled();
   });
 
   it('can race providers in parallel for high-throughput backfill', async () => {

@@ -335,6 +335,8 @@ export class ScanJobQueue {
         options.mode ?? 'normal',
         options.skipDeferredGroupingRefresh === true,
         options.reduceScanPressure === true,
+        options.storedTrackPath,
+        options.storedTrackRecursive !== false,
       ),
     );
 
@@ -517,6 +519,8 @@ export class ScanJobQueue {
     mode: LibraryScanMode,
     skipDeferredGroupingRefresh: boolean,
     forceReducedScanPressure: boolean,
+    storedTrackPath?: string,
+    storedTrackRecursive = true,
   ): Promise<void> {
     const progress = this.createProgressReporter(jobId);
     const errors: string[] = [];
@@ -532,7 +536,10 @@ export class ScanJobQueue {
       await yieldToMainLoop();
       const files = await this.measureScanPhase(
         { jobId, folderId: folder.id, phase: 'collectStoredTrackRescanFiles' },
-        () => this.collectStoredTrackRescanFiles(jobId, folder, mode, progress, errors),
+        () => this.collectStoredTrackRescanFiles(jobId, folder, mode, progress, errors, {
+          path: storedTrackPath,
+          recursive: storedTrackRecursive,
+        }),
       );
       progress.flushNow({
         phase: 'discovering',
@@ -1435,9 +1442,12 @@ export class ScanJobQueue {
     mode: LibraryScanMode,
     progress: ScanProgressReporter,
     errors: string[],
+    scope: { path?: string; recursive?: boolean } = {},
   ): Promise<ScannedAudioFile[]> {
     const files: ScannedAudioFile[] = [];
-    const states = this.store.getTrackCacheStatesByFolder(folder.id);
+    const states = scope.path
+      ? this.store.getTrackCacheStatesByFolderScope(folder.id, scope.path, scope.recursive !== false)
+      : this.store.getTrackCacheStatesByFolder(folder.id);
     let checkedFiles = 0;
 
     for (const [trackPath, state] of states) {
@@ -1458,7 +1468,7 @@ export class ScanJobQueue {
       }
 
       try {
-        const fileStat = statSync(physicalPath);
+        const fileStat = await statFile(physicalPath);
         if (fileStat.isFile()) {
           files.push({
             path: normalizedTrackPath,

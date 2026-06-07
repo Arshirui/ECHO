@@ -11,6 +11,7 @@ import type {
   PlaybackHistorySummary,
   PlaybackStatsDashboard,
 } from '../../shared/types/library';
+import type * as I18nProviderModule from '../i18n/I18nProvider';
 import { albumDetailNavigationEvent } from '../utils/albumNavigation';
 import { artistDetailNavigationEvent } from '../utils/artistNavigation';
 import { translations, isLocale, localeOptions } from '../i18n/locales';
@@ -44,7 +45,7 @@ vi.mock('../stores/playbackStatusStore', () => ({
 }));
 
 vi.mock('../i18n/I18nProvider', async () => {
-  const actual = await vi.importActual<typeof import('../i18n/I18nProvider')>('../i18n/I18nProvider');
+  const actual = await vi.importActual<typeof I18nProviderModule>('../i18n/I18nProvider');
   const fallbackLocale = 'zh-CN' as const;
   const interpolate = (text: string, options?: Record<string, string | number>): string =>
     options
@@ -1572,7 +1573,7 @@ describe('HomePage', () => {
     expect(library.getPlaybackStatsDashboard).not.toHaveBeenCalled();
   });
 
-  it('refreshes recently played album cards on playback history changes', async () => {
+  it('refreshes recently played album cards and weekly stats on playback history changes', async () => {
     const library = installLibraryMock();
     vi.mocked(library.getAlbumForTrack).mockImplementation(async (trackId: string) => {
       if (trackId === 'history-new') {
@@ -1594,14 +1595,78 @@ describe('HomePage', () => {
     vi.mocked(library.getPlaybackHistory).mockResolvedValue(page([
       historyEntry('history-new', { title: 'Fresh Play', coverId: 'fresh-track-cover' }),
     ]));
+    vi.mocked(library.getPlaybackHistorySummary).mockResolvedValue(historySummary({
+      rangeCount: 42,
+      rangePlayedSeconds: 3660,
+    }));
+    vi.mocked(library.getPlaybackStatsDashboard).mockResolvedValue(stats({
+      totals: {
+        playCount: 42,
+        completedCount: 41,
+        playedSeconds: 3660,
+        uniqueTracks: 12,
+        uniqueArtists: 5,
+      },
+      dailyActivity: [
+        { date: '2026-06-01', playCount: 3, playedSeconds: 360 },
+      ],
+    }));
 
     window.dispatchEvent(new Event('playback-history:changed'));
 
     expect(await screen.findByRole('button', { name: /Fresh Played Album/ })).toBeTruthy();
     expect(document.querySelector('.home-recent-panel .home-played-rail img')?.getAttribute('src')).toBe('echo-cover://large/fresh-played-cover');
+    await waitFor(() => expect(document.querySelector('.home-week-panel')?.textContent).toContain('42'));
     expect(library.getPlaybackHistory).toHaveBeenCalledWith({ page: 1, pageSize: 12, sort: 'recent' });
-    expect(library.getPlaybackHistorySummary).not.toHaveBeenCalled();
-    expect(library.getPlaybackStatsDashboard).not.toHaveBeenCalled();
+    expect(library.getPlaybackHistorySummary).toHaveBeenCalledWith(expect.objectContaining({
+      from: expect.any(String),
+      to: expect.any(String),
+    }));
+    expect(library.getPlaybackStatsDashboard).toHaveBeenCalledWith(expect.objectContaining({
+      from: expect.any(String),
+      to: expect.any(String),
+    }));
+  });
+
+  it('hides streaming albums from the recently played album rail', async () => {
+    const library = installLibraryMock({
+      getPlaybackHistory: vi.fn().mockResolvedValue(page([
+        historyEntry('streaming-history', {
+          mediaType: 'streaming',
+          provider: 'netease',
+          providerTrackId: 'netease-track-1',
+          stableKey: 'streaming:netease:track:1',
+          trackPath: 'streaming:netease:track:1',
+          title: 'Streaming Song',
+          album: 'Streaming Album',
+          albumArtist: 'Streaming Artist',
+          coverThumb: 'https://img.example/streaming-album.jpg',
+        }),
+        historyEntry('local-history', {
+          title: 'Local Song',
+          album: 'Local Album',
+          albumArtist: 'Local Artist',
+          coverThumb: 'echo-cover://thumb/local-history-cover',
+        }),
+      ])),
+      getAlbumForTrack: vi.fn(async (trackId: string) => {
+        if (trackId === 'local-history') {
+          return album('local-history-album', { title: 'Local Album', albumArtist: 'Local Artist' });
+        }
+
+        return album('streaming-history-album', { mediaType: 'streaming', title: 'Streaming Album', albumArtist: 'Streaming Artist' });
+      }),
+    });
+
+    render(<HomePage />);
+
+    await waitForRecentPanelReady();
+    fireEvent.click(screen.getAllByRole('tab')[0]);
+
+    expect(await screen.findByRole('button', { name: /Local Album/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Streaming Album/ })).toBeNull();
+    expect(library.getAlbumForTrack).toHaveBeenCalledWith('local-history');
+    expect(library.getAlbumForTrack).not.toHaveBeenCalledWith('streaming-history');
   });
 
   it('places the currently playing album at the front of the played rail immediately', async () => {
@@ -1638,5 +1703,28 @@ describe('HomePage', () => {
     );
     expect(within(document.querySelector('.home-played-rail') as HTMLElement).getByRole('button', { name: /Current Played Album/ })).toBeTruthy();
     expect(library.getAlbumForTrack).toHaveBeenCalledWith('current-played');
+  });
+
+  it('does not push the currently playing streaming album into the played rail', async () => {
+    queueState.value.currentTrack = track('streaming-current', {
+      mediaType: 'streaming',
+      stableKey: 'streaming:netease:track:current',
+      path: 'streaming:netease:track:current',
+      title: 'Current Streaming Song',
+      artist: 'Streaming Artist',
+      album: 'Current Streaming Album',
+      albumArtist: 'Streaming Artist',
+      coverThumb: 'https://img.example/current-streaming.jpg',
+    });
+    const library = installLibraryMock();
+
+    render(<HomePage />);
+
+    await screen.findAllByText(/Current Streaming Song/);
+    fireEvent.click(screen.getAllByRole('tab')[0]);
+
+    await waitForRecentPanelReady();
+    expect(within(document.querySelector('.home-played-rail') as HTMLElement).queryByRole('button', { name: /Current Streaming Album/ })).toBeNull();
+    expect(library.getAlbumForTrack).not.toHaveBeenCalledWith('streaming-current');
   });
 });

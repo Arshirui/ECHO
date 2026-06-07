@@ -1,11 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { app } from 'electron';
+import { finalThemeUnlockVersion } from '../../shared/constants/featureUnlocks';
 import { artistOnlineInfoSources, artistStreamingAlbumProviders, autoUpdateSources, defaultArtistOnlineInfoSources, defaultArtistStreamingAlbumsProvider } from '../../shared/types/appSettings';
-import { defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
+import { defaultSidebarHiddenRouteIds, defaultSidebarRouteOrder, normalizeSidebarHiddenRouteIds, normalizeSidebarRouteOrder } from '../../shared/types/sidebar';
 import type {
   ArtistOnlineInfoSource,
   ArtistStreamingAlbumsProvider,
+  AirPlayReceiverProtocol,
   AppThemeCustomTheme,
   AppLocale,
   AppThemeMode,
@@ -85,6 +87,7 @@ const fallbackLocale: AppLocale = 'zh-CN';
 const appThemeModes: AppThemeMode[] = ['light', 'dark', 'system'];
 const defaultAppearanceThemeScheduleDarkAt = '19:00';
 const defaultAppearanceThemeScheduleLightAt = '07:00';
+const defaultAppWindowAcrylicTransparencyPercent = 70;
 const audioTransportFadeCurves: AudioTransportFadeCurve[] = ['linear', 'smooth', 'equalPower'];
 const defaultAudioTransportFadeDurationMs = 80;
 const defaultAudioTransportFadeCurve: AudioTransportFadeCurve = 'smooth';
@@ -366,15 +369,22 @@ export const defaultSettings: AppSettings = {
   appearanceThemePresetOverrides: {},
   appearanceCustomThemes: [],
   appearanceThemeCustomId: null,
+  finalThemeUnlockVersion: null,
   appearanceThemePresetsExpanded: false,
   appearanceThemeCustomExpanded: false,
   appearanceSidebarLayoutExpanded: false,
+  appWindowAcrylicEnabled: false,
+  appWindowAcrylicKeepWhenUnfocusedEnabled: false,
+  appWindowAcrylicTransparencyPercent: defaultAppWindowAcrylicTransparencyPercent,
   appearancePreferences: { ...defaultAppearancePreferences },
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
-  sidebarHiddenRouteIds: [],
+  sidebarHiddenRouteIds: [...defaultSidebarHiddenRouteIds],
   sidebarAutoHideEnabled: false,
   sidebarIconOnlyEnabled: false,
+  settingsOptionalSectionsVisible: false,
   featureCommentsHidden: false,
+  trackContextMenuExtraActionsEnabled: false,
+  touchOnScreenKeyboardEnabled: false,
   songsSort: 'default',
   rememberedAudioOutput: { ...defaultRememberedAudioOutput },
   hiddenAudioDeviceKeys: [],
@@ -419,6 +429,7 @@ export const defaultSettings: AppSettings = {
   downloadsFeatureUnlocked: false,
   streamingDownloadActionsEnabled: false,
   connectAutoStartReceiversEnabled: false,
+  airPlayReceiverProtocol: 'airplay1',
   hqPlayer: { ...defaultHqPlayerSettings },
   playlistBackupsEnabled: true,
   autoDataBackupEnabled: false,
@@ -718,6 +729,9 @@ const normalizeNullablePort = (value: unknown): number | null => {
 
 const normalizeHqPlayerBackend = (value: unknown): HqPlayerDefaultPlaybackBackend =>
   value === 'echoNative' || value === 'hqplayer' || value === 'ask' ? value : defaultHqPlayerSettings.defaultPlaybackBackend;
+
+export const normalizeAirPlayReceiverProtocol = (value: unknown): AirPlayReceiverProtocol =>
+  value === 'airplay2' ? 'airplay2' : 'airplay1';
 
 const normalizeRemoteBackgroundConcurrency = (value: unknown): RemoteBackgroundConcurrencySettings => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -1592,10 +1606,16 @@ export const normalizeSettings = (value: unknown): AppSettings => {
   );
   const replayGainTargetLufs = Number(settings.replayGainTargetLufs);
   const replayGainPreampDb = Number(settings.replayGainPreampDb);
+  const finalThemeUnlocked = settings.finalThemeUnlockVersion === finalThemeUnlockVersion;
   const appearanceCustomThemes = normalizeThemeCustomThemes(settings.appearanceCustomThemes);
-  const appearanceThemeCustomId = normalizeThemeCustomId(settings.appearanceThemeCustomId, appearanceCustomThemes);
+  const requestedAppearanceThemeCustomId = normalizeThemeCustomId(settings.appearanceThemeCustomId, appearanceCustomThemes);
+  const requestedAppearanceCustomTheme = appearanceCustomThemes.find((theme) => theme.id === requestedAppearanceThemeCustomId);
+  const appearanceThemeCustomId = !finalThemeUnlocked && requestedAppearanceCustomTheme?.basePreset === 'FINAL'
+    ? null
+    : requestedAppearanceThemeCustomId;
   const activeAppearanceCustomTheme = appearanceCustomThemes.find((theme) => theme.id === appearanceThemeCustomId);
-  const appearanceThemePreset = activeAppearanceCustomTheme?.basePreset ?? normalizeAppearanceThemePreset(settings.appearanceThemePreset);
+  const requestedAppearanceThemePreset = activeAppearanceCustomTheme?.basePreset ?? normalizeAppearanceThemePreset(settings.appearanceThemePreset);
+  const appearanceThemePreset = !finalThemeUnlocked && requestedAppearanceThemePreset === 'FINAL' ? 'classic' : requestedAppearanceThemePreset;
   const downloadsFeatureUnlocked = settings.downloadsFeatureUnlocked === true;
 
   return {
@@ -1610,15 +1630,24 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     appearanceThemePresetOverrides: normalizeThemePresetOverrides(settings.appearanceThemePresetOverrides),
     appearanceCustomThemes,
     appearanceThemeCustomId,
+    finalThemeUnlockVersion: finalThemeUnlocked ? finalThemeUnlockVersion : null,
     appearanceThemePresetsExpanded: settings.appearanceThemePresetsExpanded === true,
     appearanceThemeCustomExpanded: settings.appearanceThemeCustomExpanded === true,
     appearanceSidebarLayoutExpanded: settings.appearanceSidebarLayoutExpanded === true,
+    appWindowAcrylicEnabled: settings.appWindowAcrylicEnabled === true,
+    appWindowAcrylicKeepWhenUnfocusedEnabled: settings.appWindowAcrylicKeepWhenUnfocusedEnabled === true,
+    appWindowAcrylicTransparencyPercent: Number.isFinite(settings.appWindowAcrylicTransparencyPercent)
+      ? clamp(Math.round(Number(settings.appWindowAcrylicTransparencyPercent)), 0, 100)
+      : defaultAppWindowAcrylicTransparencyPercent,
     appearancePreferences: normalizeAppearancePreferences(settings.appearancePreferences),
     sidebarRouteOrder: normalizeSidebarRouteOrder(settings.sidebarRouteOrder),
     sidebarHiddenRouteIds: normalizeSidebarHiddenRouteIds(settings.sidebarHiddenRouteIds),
     sidebarAutoHideEnabled: settings.sidebarAutoHideEnabled === true,
     sidebarIconOnlyEnabled: settings.sidebarAutoHideEnabled === true ? false : settings.sidebarIconOnlyEnabled === true,
+    settingsOptionalSectionsVisible: settings.settingsOptionalSectionsVisible === true,
     featureCommentsHidden: settings.featureCommentsHidden === true,
+    trackContextMenuExtraActionsEnabled: settings.trackContextMenuExtraActionsEnabled === true,
+    touchOnScreenKeyboardEnabled: settings.touchOnScreenKeyboardEnabled === true,
     songsSort: normalizeSongsSort(settings.songsSort),
     rememberedAudioOutput: migrateRememberedAudioOutput(
       normalizeRememberedAudioOutput(settings.rememberedAudioOutput),
@@ -1666,6 +1695,7 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     downloadsFeatureUnlocked,
     streamingDownloadActionsEnabled: downloadsFeatureUnlocked && settings.streamingDownloadActionsEnabled === true,
     connectAutoStartReceiversEnabled: settings.connectAutoStartReceiversEnabled === true,
+    airPlayReceiverProtocol: normalizeAirPlayReceiverProtocol(settings.airPlayReceiverProtocol),
     hqPlayer: normalizeHqPlayerSettings(settings.hqPlayer),
     playlistBackupsEnabled: settings.playlistBackupsEnabled !== false,
     autoDataBackupEnabled: settings.autoDataBackupEnabled === true,

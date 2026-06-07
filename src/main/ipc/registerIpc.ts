@@ -31,12 +31,15 @@ import {
 } from '../app/dataBackup';
 import { exportEchoDataPackage } from '../app/dataPackage';
 import { getTaskbarPlaybackStatus, refreshTaskbarPlaybackIntegration } from '../app/taskbarPlaybackIntegration';
+import { showWindowsTouchKeyboard } from '../app/touchKeyboard';
 import { ensureTray, requestAppQuit } from '../app/tray';
 import { ensureCoverCacheDirectory } from '../library/CoverCacheManager';
 import { getLibraryService } from '../library/LibraryService';
 import { setDiscordPresenceEnabled } from '../integrations/discord/getDiscordPresenceService';
 import { getLastFmService } from '../integrations/lastfm/getLastFmService';
 import { applyNetworkProxySettings, testNetworkProxyConnection } from '../network/proxySettings';
+import { getMainWindow } from '../app/windowManager';
+import { applyMainWindowBackgroundMaterial } from '../app/windowBackgroundMaterial';
 import { markStartupStage } from '../diagnostics/StartupDiagnostics';
 import { beginMainBackgroundTask } from '../diagnostics/PlaybackPerformanceDiagnostics';
 import { installIpcPerformanceDiagnostics } from '../diagnostics/IpcPerformanceDiagnostics';
@@ -58,6 +61,7 @@ import { registerPluginIpc } from './pluginIpc';
 import { registerRemoteSourcesIpc } from './remoteSourcesIpc';
 import { registerSmtcIpc } from './smtcIpc';
 import { registerStreamingIpc } from './streamingIpc';
+import { registerSleepTimerIpc } from './sleepTimerIpc';
 
 const fontMimeTypes: Record<string, string> = {
   '.otf': 'font/otf',
@@ -297,6 +301,16 @@ const applyAppSettingsPatch = async (
 
   if (typeof settingsPatch.taskbarPlaybackControlsEnabled === 'boolean') {
     refreshTaskbarPlaybackIntegration();
+  }
+
+  if (
+    typeof settingsPatch.appWindowAcrylicEnabled === 'boolean' ||
+    typeof settingsPatch.appWindowAcrylicKeepWhenUnfocusedEnabled === 'boolean'
+  ) {
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      applyMainWindowBackgroundMaterial(mainWindow, settings);
+    }
   }
 
   if (
@@ -585,6 +599,7 @@ export const registerIpc = (): void => {
   ipcMain.handle(IpcChannels.AppOpenExternalUrl, async (_event: IpcMainInvokeEvent, rawUrl: unknown): Promise<void> => {
     await shell.openExternal(requireExternalHttpUrl(rawUrl));
   });
+  ipcMain.handle(IpcChannels.AppShowTouchKeyboard, (): boolean => showWindowsTouchKeyboard());
   ipcMain.handle(IpcChannels.AppTestNetworkProxy, (_event: IpcMainInvokeEvent, rawPatch?: unknown) =>
     testNetworkProxyConnection(
       normalizeNetworkProxyTestSettings(rawPatch),
@@ -642,4 +657,5 @@ export const registerIpc = (): void => {
   registerIpcStartupStep('streaming', registerStreamingIpc);
   registerIpcStartupStep('playback', registerPlaybackIpc);
   registerIpcStartupStep('audio', registerAudioIpc);
+  registerIpcStartupStep('sleepTimer', registerSleepTimerIpc);
 };

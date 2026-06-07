@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { ArtistsPage } from './ArtistsPage';
 import type { LibraryArtist, LibraryPage } from '../../shared/types/library';
 import { I18nProvider } from '../i18n/I18nProvider';
+import { requestArtistDetailNavigation } from '../utils/artistNavigation';
 
 vi.mock('../components/artist/ArtistDetailView', () => ({
   ArtistDetailView: ({ artist, onBack }: { artist: LibraryArtist; onBack: () => void }) => (
@@ -165,7 +166,7 @@ describe('ArtistsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Back to artists' }));
 
     expect(navigateSongs).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Detail: BURTON')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Detail: BURTON')).toBeNull());
     window.removeEventListener('app:navigate:songs', navigateSongs);
   });
 
@@ -182,7 +183,7 @@ describe('ArtistsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Back to artists' }));
 
     expect(navigateRoute).toHaveBeenCalledWith(expect.objectContaining({ detail: 'albums' }));
-    expect(screen.queryByText('Detail: BURTON')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Detail: BURTON')).toBeNull());
     window.removeEventListener('app:navigate:route', navigateRoute);
   });
 
@@ -200,6 +201,18 @@ describe('ArtistsPage', () => {
 
     expect(navigateRoute).toHaveBeenCalledWith(expect.objectContaining({ detail: 'home' }));
     window.removeEventListener('app:navigate:route', navigateRoute);
+  });
+
+  it('opens pending home artist detail on first paint without exposing the artist wall', () => {
+    const targetArtist = artist('target', { name: 'BURTON' });
+    const getArtists = vi.fn().mockResolvedValue(page([targetArtist]));
+    installLibrary(getArtists);
+
+    requestArtistDetailNavigation(targetArtist, { returnTo: 'home' });
+    const { container } = renderArtistsPage();
+
+    expect(screen.getByText('Detail: BURTON')).toBeTruthy();
+    expect(container.querySelector('.artists-page')?.getAttribute('data-detail-open')).toBe('true');
   });
 
   it('loads the next artist page when the artist wall scrolls to the spacer bottom', async () => {
@@ -412,6 +425,49 @@ describe('ArtistsPage', () => {
     const image = document.querySelector('.artist-avatar img') as HTMLImageElement | null;
     expect(image?.getAttribute('src')).toBe('echo-artist-image://thumb/artist-1');
     expect(image?.getAttribute('loading')).toBe('lazy');
+    expect(screen.queryByText('AR')).toBeNull();
+  });
+
+  it('refreshes the artist wall avatar after an artist image update reuses the same local URL', async () => {
+    let emitArtistImagesUpdated: (payload: { artistId: string | null; artistKey: string; status: string }) => void = () => undefined;
+    const getArtists = vi.fn().mockResolvedValue(
+      page([
+        artist('1', {
+          avatarUrl: 'echo-artist-image://large/artist-1',
+          avatarStatus: 'matched',
+        }),
+      ]),
+    );
+    const getArtist = vi.fn().mockResolvedValue(
+      artist('1', {
+        avatarThumbUrl: 'echo-artist-image://thumb/artist-1',
+        avatarUrl: 'echo-artist-image://large/artist-1',
+        avatarStatus: 'matched',
+      }),
+    );
+    installLibrary(getArtists, vi.fn().mockResolvedValue({ artistWallAlbumArtwork: false, autoFetchArtistImages: false }));
+    window.echo!.library.getArtist = getArtist;
+    window.echo!.library.onArtistImagesUpdated = vi.fn((callback: (payload: { artistId: string | null; artistKey: string; status: string }) => void) => {
+      emitArtistImagesUpdated = callback;
+      return vi.fn();
+    });
+
+    renderArtistsPage();
+
+    await screen.findByText('Artist 1');
+    const staleImage = document.querySelector('.artist-avatar img') as HTMLImageElement | null;
+    expect(staleImage?.getAttribute('src')).toBe('echo-artist-image://large/artist-1');
+    fireEvent.error(staleImage!);
+    expect(document.querySelector('.artist-avatar img')).toBeNull();
+    expect(screen.getByText('AR')).toBeTruthy();
+
+    emitArtistImagesUpdated({ artistId: '1', artistKey: 'artist-1', status: 'matched' });
+
+    await waitFor(() => expect(getArtist).toHaveBeenCalledWith('1'));
+    await waitFor(() => expect(document.querySelector('.artist-avatar img')?.getAttribute('src')).toBe('echo-artist-image://large/artist-1?v=1'));
+    expect((document.querySelector('.artist-avatar img') as HTMLImageElement | null)?.getAttribute('srcset')).toBe(
+      'echo-artist-image://thumb/artist-1?v=1 192w, echo-artist-image://large/artist-1?v=1 1024w',
+    );
     expect(screen.queryByText('AR')).toBeNull();
   });
 

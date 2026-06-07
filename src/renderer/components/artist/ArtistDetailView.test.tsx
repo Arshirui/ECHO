@@ -399,15 +399,20 @@ describe('ArtistDetailView', () => {
     expect(screen.queryByRole('button', { name: 'Expand all' })).toBeNull();
   });
 
-  it('returns from the artist detail immediately after Escape', async () => {
+  it('plays the return animation before leaving after Escape', async () => {
     installLibrary();
     const onBack = vi.fn();
 
     renderDetail(artist(), onBack);
 
     await screen.findByText('Echo Unit');
+    vi.useFakeTimers();
     fireEvent.keyDown(window, { key: 'Escape' });
 
+    expect(onBack).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(180);
+    });
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 

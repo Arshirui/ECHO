@@ -7,6 +7,8 @@ import type { AudioStatus } from '../../shared/types/audio';
 import { pluginEventNames, pluginLibraryTrackFields, pluginPermissionDescriptors } from '../../shared/types/plugins';
 import type {
   PluginActivitySummary,
+  PluginAudioAnalysisReport,
+  PluginAudioAnalyzeTrackRequest,
   PluginCommand,
   PluginCompatibilitySummary,
   PluginCoverCandidate,
@@ -58,6 +60,7 @@ import type {
   PluginSummary,
 } from '../../shared/types/plugins';
 import { getAppSettings, setAppSettings } from '../app/appSettings';
+import { AudioAuthenticityAnalyzer } from '../audio/AudioAuthenticityAnalyzer';
 import { getAudioSession } from '../audio/AudioSession';
 import { getLibraryService } from '../library/LibraryService';
 import { fetchWithNetworkProxy } from '../network/networkFetch';
@@ -81,6 +84,7 @@ type RuntimeCommand = {
   id: string;
   title: string;
   description?: string;
+  timeoutMs?: number;
   handler: (...args: unknown[]) => unknown;
 };
 
@@ -140,6 +144,7 @@ const manifestFileName = 'echo.plugin.json';
 const stateFileName = 'plugin-state.json';
 const storageFileName = 'plugin-storage.json';
 const commandTimeoutMs = 2_000;
+const audioAnalysisTimeoutMs = 24_000;
 const eventHandlerTimeoutMs = 2_000;
 const metadataProviderTimeoutMs = 2_500;
 const pluginNetworkTimeoutMs = 5_000;
@@ -176,12 +181,16 @@ const maxPluginCoverRequestBytes = 32 * 1024;
 const maxPluginCoverResultBytes = 128 * 1024;
 const maxPluginNetworkRequestBytes = 64 * 1024;
 const maxPluginNetworkResponseBytes = 512 * 1024;
+const maxPluginAudioAnalyzeRequestBytes = 16 * 1024;
+const maxPluginAudioAnalyzeResultBytes = 64 * 1024;
 const maxPluginSettingValueBytes = 32 * 1024;
 const maxPluginSettingsBytes = 128 * 1024;
 const pluginCrashLoopWindowMs = 10 * 60 * 1_000;
 const pluginCrashLoopLimit = 3;
 const pluginPackageType = 'echo-next-plugin-package';
 const pluginPackageVersion = 1;
+const pluginPackageExtension = '.echo';
+const legacyPluginPackageExtension = '.echo-plugin.json';
 const maxPluginPackageBytes = 2 * 1024 * 1024;
 const maxPluginPackageFiles = 32;
 const maxPluginPackageFileBytes = 512 * 1024;
@@ -190,6 +199,12 @@ const pluginPackageExcludedFiles = new Set([stateFileName, storageFileName]);
 const pluginSettingsFileName = 'plugin-settings.json';
 pluginPackageExcludedFiles.add(pluginSettingsFileName);
 const allowedPluginNetworkMethods = new Set(['GET', 'POST']);
+
+export const normalizePluginCommandTimeoutMs = (value: unknown, trustedPermissions: PluginPermission[]): number => {
+  const requested = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : commandTimeoutMs;
+  const maximum = trustedPermissions.includes('audio:analyze') ? audioAnalysisTimeoutMs : commandTimeoutMs;
+  return Math.max(250, Math.min(requested, maximum));
+};
 const allowedPluginRequestHeaders = new Set(['accept', 'accept-language', 'content-type', 'user-agent']);
 const redactedHeaderNames = new Set(['authorization', 'cookie', 'set-cookie', 'x-api-key', 'x-auth-token']);
 
@@ -968,6 +983,15 @@ const normalizePluginNetworkRequest = (value: unknown): PluginNetworkRequest => 
   };
 };
 
+const normalizePluginAudioAnalyzeTrackRequest = (value: unknown): PluginAudioAnalyzeTrackRequest => {
+  const input = typeof value === 'string' ? { trackId: value } : isRecord(value) ? value : {};
+  const trackId = boundedText(input.trackId, 180);
+  if (!trackId) {
+    throw new Error('plugin_audio_track_id_required');
+  }
+  return { trackId };
+};
+
 const timeout = <T>(promise: Promise<T>, timeoutMs: number, errorCode: string): Promise<T> =>
   new Promise<T>((resolvePromise, reject) => {
     const timer = setTimeout(() => reject(new Error(errorCode)), timeoutMs);
@@ -991,6 +1015,7 @@ export class PluginService {
   private state: Required<PluginStateFile> = { plugins: {} };
   private autoStartScheduled = false;
   private audioStatusSubscribed = false;
+  private readonly audioAnalyzer = new AudioAuthenticityAnalyzer();
 
   constructor(private readonly pluginDirectory = join(app.getPath('userData'), 'plugins')) {}
 
@@ -1169,7 +1194,13 @@ export class PluginService {
           continue;
         }
         const safePath = normalizePluginPackageFilePath(file.path);
-        if (!safePath || safePath === manifestFileName || safePath.endsWith('.echo-plugin.json') || pluginPackageExcludedFiles.has(safePath)) {
+        if (
+          !safePath ||
+          safePath === manifestFileName ||
+          safePath.endsWith(pluginPackageExtension) ||
+          safePath.endsWith(legacyPluginPackageExtension) ||
+          pluginPackageExcludedFiles.has(safePath)
+        ) {
           continue;
         }
         if (!exportablePluginFileExtensions.has(extname(safePath).toLowerCase())) {
@@ -1246,7 +1277,7 @@ export class PluginService {
     try {
       const args = Array.isArray(request.args) ? request.args : [];
       assertJsonByteLimit(args, maxPluginCommandArgsBytes, 'plugin_command_args_too_large');
-      const result = await timeout(Promise.resolve(command.handler(...args)), commandTimeoutMs, 'plugin_command_timeout');
+      const result = await timeout(Promise.resolve(command.handler(...args)), command.timeoutMs ?? commandTimeoutMs, 'plugin_command_timeout');
       assertJsonByteLimit(result, maxPluginCommandResultBytes, 'plugin_command_result_too_large');
       return jsonClone(result);
     } catch (error) {
@@ -1675,15 +1706,17 @@ export class PluginService {
         },
       }),
       commands: Object.freeze({
-        register: (commandId: string, options: { title?: unknown; description?: unknown } | ((...args: unknown[]) => unknown), handler?: (...args: unknown[]) => unknown): void => {
+        register: (commandId: string, options: { title?: unknown; description?: unknown; timeoutMs?: unknown } | ((...args: unknown[]) => unknown), handler?: (...args: unknown[]) => unknown): void => {
           const actualHandler = typeof options === 'function' ? options : handler;
           if (typeof commandId !== 'string' || !commandId.trim() || typeof actualHandler !== 'function') {
             throw new Error('plugin_command_invalid');
           }
+          const timeoutMs = isRecord(options) ? normalizePluginCommandTimeoutMs(options.timeoutMs, record.trustedPermissions) : commandTimeoutMs;
           runtime.commands.set(commandId.trim(), {
             id: commandId.trim(),
             title: isRecord(options) && typeof options.title === 'string' && options.title.trim() ? options.title.trim() : commandId.trim(),
             description: isRecord(options) && typeof options.description === 'string' && options.description.trim() ? options.description.trim() : undefined,
+            timeoutMs,
             handler: actualHandler,
           });
         },
@@ -1812,6 +1845,9 @@ export class PluginService {
           return jsonClone(toPluginLibraryTrackPage(getLibraryService().getTracks(request.query), request.fields));
         },
       }),
+      audio: Object.freeze({
+        analyzeTrack: async (request: unknown) => this.analyzePluginAudioTrack(record, request),
+      }),
       settings: Object.freeze({
         get: async (key?: unknown) => {
           if (record.manifest?.apiVersion === 1) {
@@ -1936,6 +1972,34 @@ export class PluginService {
     writeFileSync(join(record.directory, pluginSettingsFileName), `${JSON.stringify(values, null, 2)}\n`, 'utf8');
   }
 
+  private async analyzePluginAudioTrack(record: PluginRecord, request: unknown): Promise<PluginAudioAnalysisReport> {
+    if (!record.manifest) {
+      throw new Error('plugin_manifest_invalid');
+    }
+    if (!record.trustedPermissions.includes('audio:analyze')) {
+      throw new Error('plugin_permission_denied:audio:analyze');
+    }
+    const safeRequest = normalizePluginAudioAnalyzeTrackRequest(request);
+    assertJsonByteLimit(safeRequest, maxPluginAudioAnalyzeRequestBytes, 'plugin_audio_analyze_request_too_large');
+    const track = getLibraryService().getTrack(safeRequest.trackId);
+    if (!track) {
+      throw new Error('plugin_audio_track_not_found');
+    }
+    try {
+      const result = await timeout(
+        this.audioAnalyzer.analyzeTrack(track),
+        audioAnalysisTimeoutMs,
+        'plugin_audio_analyze_timeout',
+      );
+      assertJsonByteLimit(result, maxPluginAudioAnalyzeResultBytes, 'plugin_audio_analyze_result_too_large');
+      return jsonClone(result);
+    } catch (error) {
+      this.recordPluginErrorActivity(record.manifest.id);
+      this.log(record.manifest.id, 'error', `audio_analyze_failed:${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+
   private async fetchPluginNetwork(record: PluginRecord, request: unknown, responseType: 'json' | 'text'): Promise<unknown> {
     if (!record.manifest) {
       throw new Error('plugin_manifest_invalid');
@@ -2047,6 +2111,7 @@ export class PluginService {
         id: command.id,
         title: command.title,
         description: command.description,
+        timeoutMs: command.timeoutMs,
         pluginId: manifest?.id ?? basename(record.directory),
       })) : []),
     ];
@@ -2215,7 +2280,12 @@ export class PluginService {
         continue;
       }
       const safePath = normalizePluginPackageFilePath(item.name);
-      if (!safePath || safePath.endsWith('.echo-plugin.json') || pluginPackageExcludedFiles.has(safePath)) {
+      if (
+        !safePath ||
+        safePath.endsWith(pluginPackageExtension) ||
+        safePath.endsWith(legacyPluginPackageExtension) ||
+        pluginPackageExcludedFiles.has(safePath)
+      ) {
         continue;
       }
       if (!exportablePluginFileExtensions.has(extname(safePath).toLowerCase())) {
@@ -2236,8 +2306,11 @@ export class PluginService {
   private async chooseExportPath(manifest: PluginManifest): Promise<string | null> {
     const result = await dialog.showSaveDialog({
       title: 'Export ECHO plugin package',
-      defaultPath: `${manifest.id}-${manifest.version}.echo-plugin.json`,
-      filters: [{ name: 'ECHO plugin package', extensions: ['json'] }],
+      defaultPath: `${manifest.id}-${manifest.version}${pluginPackageExtension}`,
+      filters: [
+        { name: 'ECHO plugin package', extensions: ['echo'] },
+        { name: 'Legacy ECHO plugin package', extensions: ['json'] },
+      ],
     });
     return result.canceled ? null : result.filePath ?? null;
   }
@@ -2246,7 +2319,10 @@ export class PluginService {
     const result = await dialog.showOpenDialog({
       title: 'Import ECHO plugin package',
       properties: ['openFile'],
-      filters: [{ name: 'ECHO plugin package', extensions: ['json'] }],
+      filters: [
+        { name: 'ECHO plugin package', extensions: ['echo'] },
+        { name: 'Legacy ECHO plugin package', extensions: ['json'] },
+      ],
     });
     return result.canceled ? null : result.filePaths[0] ?? null;
   }

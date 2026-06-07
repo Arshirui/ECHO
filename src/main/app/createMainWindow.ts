@@ -11,6 +11,7 @@ import { IpcChannels } from '../../shared/constants/ipcChannels';
 import { getCrashReportService } from '../diagnostics/CrashReportService';
 import { closeDevConsoleWindow, recordMainRuntimeIssue, recordRendererConsoleMessage } from '../diagnostics/DevConsoleService';
 import { markStartupStage } from '../diagnostics/StartupDiagnostics';
+import { applyMainWindowBackgroundMaterial, isMainWindowAcrylicSupportedPlatform } from './windowBackgroundMaterial';
 
 const mainOutputDir = import.meta.dirname;
 const appIconPath = join(mainOutputDir, '../../software.ico');
@@ -51,6 +52,22 @@ export const resolveInitialMainWindowSize = (settings: AppSettings = getAppSetti
   };
 };
 
+export const resolveMainWindowBackgroundOptions = (
+  settings: Pick<AppSettings, 'appWindowAcrylicEnabled'>,
+  acrylicSupported = isMainWindowAcrylicSupportedPlatform(),
+): Pick<Electron.BrowserWindowConstructorOptions, 'backgroundColor' | 'backgroundMaterial'> => {
+  const acrylicEnabled = acrylicSupported && settings.appWindowAcrylicEnabled === true;
+
+  return {
+    backgroundColor: '#f7f9fc',
+    ...(acrylicSupported
+      ? {
+          backgroundMaterial: acrylicEnabled ? 'acrylic' : 'none',
+        }
+      : {}),
+  };
+};
+
 const rememberMainWindowSize = (window: BrowserWindow): void => {
   if (window.isDestroyed() || window.isMinimized() || window.isMaximized() || window.isFullScreen()) {
     return;
@@ -71,7 +88,8 @@ const rememberMainWindowSize = (window: BrowserWindow): void => {
 
 export const createMainWindow = (): BrowserWindow => {
   markStartupStage('main-window:create:start');
-  const initialSize = resolveInitialMainWindowSize();
+  const settings = getAppSettings();
+  const initialSize = resolveInitialMainWindowSize(settings);
   const window = new BrowserWindow({
     width: initialSize.width,
     height: initialSize.height,
@@ -79,7 +97,7 @@ export const createMainWindow = (): BrowserWindow => {
     minHeight: mainWindowMinimumSize.height,
     title: 'ECHO NEXT',
     icon: existsSync(appIconPath) ? appIconPath : undefined,
-    backgroundColor: '#f7f9fc',
+    ...resolveMainWindowBackgroundOptions(settings),
     frame: false,
     show: false,
     webPreferences: createMainWindowWebPreferences(),
@@ -147,6 +165,12 @@ export const createMainWindow = (): BrowserWindow => {
       rememberMainWindowSize(window);
     }, rememberWindowSizeDebounceMs);
   };
+  const refreshAcrylicAfterFocusChange = (): void => {
+    const latestSettings = getAppSettings();
+    if (latestSettings.appWindowAcrylicEnabled === true && latestSettings.appWindowAcrylicKeepWhenUnfocusedEnabled === true) {
+      applyMainWindowBackgroundMaterial(window, latestSettings);
+    }
+  };
 
   window.once('ready-to-show', () => {
     const settings = getAppSettings();
@@ -159,6 +183,8 @@ export const createMainWindow = (): BrowserWindow => {
   });
 
   window.on('resize', scheduleRememberSize);
+  window.on('blur', refreshAcrylicAfterFocusChange);
+  window.on('focus', refreshAcrylicAfterFocusChange);
   window.on('maximize', publishMaximizedState);
   window.on('unmaximize', publishMaximizedState);
   window.on('enter-full-screen', () => {
@@ -200,6 +226,8 @@ export const createMainWindow = (): BrowserWindow => {
       app.quit();
     }
   });
+
+  applyMainWindowBackgroundMaterial(window, settings);
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL);

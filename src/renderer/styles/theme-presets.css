@@ -12378,21 +12378,17 @@ html[data-theme-preset="FINAL"] :is(.queue-page, .albums-page, .artists-page) {
 }
 
 html[data-theme-preset="FINAL"] .queue-page {
-  overflow: hidden;
+  overflow: visible;
 }
 
 html[data-theme-preset="FINAL"] .queue-list-section {
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 html[data-theme-preset="FINAL"] .queue-list {
   min-height: 140px;
-  overflow-x: hidden;
-  overflow-y: auto !important;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
 }
 
 html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .media-wall-scroll-shell {
@@ -12901,4 +12897,657 @@ html[data-album-cover-shape] :is(
   .mini-player-cover
 ) .deferred-wall-image {
   border-radius: inherit !important;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance {
+  grid-template-columns: repeat(3, minmax(300px, 1fr));
+  grid-auto-flow: dense;
+  align-items: start;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance > .section-title {
+  grid-column: 1 / -1;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance > .setting-row:not(.setting-row--theme-presets):not(.setting-row--theme-custom):not(#settings-row-sidebar-layout) {
+  grid-column: auto;
+  min-height: 46px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-row-sidebar-layout {
+  grid-column: span 2;
+  min-height: 0;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-row-sidebar-layout .settings-sidebar-layout-panel {
+  gap: 8px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-row-sidebar-layout .settings-sidebar-route-list {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-row-sidebar-layout .settings-sidebar-route-item {
+  min-height: 36px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .setting-row--theme-presets {
+  grid-column: span 1;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .setting-row--theme-custom {
+  grid-column: span 2;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .setting-row--theme-presets:has(.settings-theme-preset-grid),
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .setting-row--theme-custom:has(.settings-expandable-content:not([hidden])) {
+  grid-column: 1 / -1;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .setting-row--theme-presets .setting-info,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .setting-row--theme-custom .setting-info {
+  margin-bottom: 2px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-preset-panel,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-panel {
+  gap: 8px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-preset-summary {
+  width: 100%;
+  min-height: 46px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  padding: 7px 9px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-preset-summary-preview {
+  width: 42px;
+  height: 28px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-preset-grid {
+  grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+  gap: 7px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-preset-card {
+  min-height: 90px;
+  gap: 6px;
+  padding: 8px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-preset-preview {
+  min-height: 36px;
+  border-radius: 7px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-preset-copy em,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-preset-summary em,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-heading em,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-section-title span,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-color-copy em,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-slider span em,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-motion-row em,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-theme-card em {
+  display: none !important;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-header {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.48fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-heading span {
+  display: none;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-toolbar {
+  justify-content: end;
+  gap: 8px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-preview {
+  width: min(190px, 100%);
+  min-width: 160px;
+  padding: 5px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-preview span,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-preview strong {
+  min-height: 26px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-advanced-toggle {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-panel > .settings-expandable-content {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.72fr) minmax(420px, 1.28fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-panel > .settings-expandable-content[hidden] {
+  display: none !important;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-library,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-mock-preview {
+  grid-column: auto;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-section,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-sliders,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-actions,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-advanced-toggle:nth-of-type(2),
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-warning,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-message {
+  grid-column: 1 / -1;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-section.settings-theme-custom-library {
+  grid-column: 1;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-mock-preview {
+  grid-column: 2;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-library {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  padding: 9px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-library-actions,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-copy-actions,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-actions {
+  gap: 6px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-theme-list {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-theme-card {
+  min-height: 34px;
+  padding: 7px 8px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-mock-body {
+  grid-template-columns: minmax(70px, 0.24fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-mock-body main {
+  gap: 6px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-mock-card {
+  min-height: 46px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-card-grid,
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-gradient-card {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-color-card {
+  min-height: 42px;
+  padding: 7px 9px;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-color-control code {
+  display: none;
+}
+
+.app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-sliders {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) {
+  --echo-polish-page-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-page-strong-mix, var(--app-acrylic-page-strong-mix, 38%)), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-readable-page-muted-mix, var(--app-acrylic-page-muted-mix, 32%)), transparent)
+    );
+  --echo-polish-titlebar-bg: color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-page-muted-mix, var(--app-acrylic-titlebar-mix, 48%)), transparent);
+  --echo-polish-sidebar-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-sidebar-mix, var(--app-acrylic-sidebar-strong-mix, 44%)), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-readable-page-muted-mix, var(--app-acrylic-sidebar-muted-mix, 40%)), transparent)
+    );
+  --echo-polish-player-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-player-mix, var(--app-acrylic-player-strong-mix, 52%)), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-readable-surface-strong-mix, var(--app-acrylic-player-mix, 48%)), transparent)
+    );
+  --echo-polish-surface: color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-readable-surface-mix, var(--app-acrylic-surface-mix, 38%)), transparent);
+  --echo-polish-surface-strong: color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-surface-strong-mix, var(--app-acrylic-surface-strong-mix, 50%)), transparent);
+  --echo-polish-surface-muted: color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-readable-page-muted-mix, var(--app-acrylic-surface-muted-mix, 34%)), transparent);
+  --echo-polish-field-bg: color-mix(in srgb, var(--theme-field-bg) var(--app-acrylic-readable-surface-strong-mix, var(--app-acrylic-field-mix, 52%)), transparent);
+  --echo-polish-button-bg: color-mix(in srgb, var(--theme-button-bg) var(--app-acrylic-button-mix, 50%), transparent);
+  --echo-polish-button-bg-hover: color-mix(in srgb, var(--theme-button-bg-hover) var(--app-acrylic-button-hover-mix, 64%), transparent);
+  --echo-polish-row-bg: color-mix(in srgb, var(--theme-list-row-bg) var(--app-acrylic-row-mix, 34%), transparent);
+  --echo-polish-row-bg-hover: color-mix(in srgb, var(--theme-list-row-bg-hover) var(--app-acrylic-row-hover-mix, 50%), transparent);
+  --echo-polish-row-bg-active: color-mix(in srgb, var(--theme-accent-bg) var(--app-acrylic-active-mix, 54%), transparent);
+  --echo-polish-active-bg: color-mix(in srgb, var(--theme-accent-bg) var(--app-acrylic-active-mix, 54%), transparent);
+  background: transparent;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper)::before {
+  display: block;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-text-protection-mix, 16%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-text-protection-mix, 16%), transparent)
+    ),
+    transparent;
+  backdrop-filter: blur(30px) saturate(1.08);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .page-surface {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-page-strong-mix, var(--app-acrylic-page-strong-mix, 38%)), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-readable-page-muted-mix, var(--app-acrylic-page-muted-mix, 32%)), transparent)
+    ),
+    transparent;
+  backdrop-filter: blur(22px) saturate(1.18);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .app-titlebar,
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .sidebar,
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .player-bar {
+  backdrop-filter: blur(24px) saturate(1.18);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .app-titlebar {
+  background: color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-page-muted-mix, var(--app-acrylic-titlebar-mix, 48%)), transparent);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .sidebar {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-sidebar-mix, var(--app-acrylic-sidebar-strong-mix, 44%)), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-readable-page-muted-mix, var(--app-acrylic-sidebar-muted-mix, 40%)), transparent)
+    );
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .player-bar {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-player-mix, var(--app-acrylic-player-strong-mix, 52%)), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-readable-surface-strong-mix, var(--app-acrylic-player-mix, 48%)), transparent)
+    );
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .home-page {
+  --home-shell-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-home-shell-strong-mix, 48%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-shell-muted-mix, 34%), transparent)
+    ),
+    transparent;
+  --home-hero-bg:
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--theme-accent-bg) 20%, transparent) 0 22%, transparent 46%),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-home-hero-strong-mix, 46%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-home-hero-mix, 32%), transparent) 50%,
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-hero-muted-mix, 26%), transparent)
+    ),
+    transparent;
+  --home-button-bg: color-mix(in srgb, var(--theme-button-bg) var(--app-acrylic-button-mix, 50%), transparent);
+  --home-now-bg:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--theme-accent-bg) 24%, transparent) 0 22%, transparent 44%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-home-now-strong-mix, 52%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-home-now-mix, 40%), transparent)
+    ),
+    transparent;
+  --home-now-empty-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-home-shell-strong-mix, 48%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-home-now-mix, 40%), transparent)
+    ),
+    transparent;
+  --home-artwork-bg:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--theme-field-bg-strong) var(--app-acrylic-field-mix, 52%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-surface-muted-mix, 34%), transparent)
+    ),
+    transparent;
+  --home-signal-panel-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-field-bg) var(--app-acrylic-surface-mix, 38%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-activity-mix, 28%), transparent)
+    ),
+    transparent;
+  --home-week-bg: color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-week-mix, 32%), transparent);
+  --home-activity-bg: color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-activity-mix, 28%), transparent);
+  --home-row-bg: color-mix(in srgb, var(--theme-list-row-bg) var(--app-acrylic-row-mix, 34%), transparent);
+  --home-row-hover-bg: color-mix(in srgb, var(--theme-list-row-bg-hover) var(--app-acrylic-row-hover-mix, 50%), transparent);
+  --home-empty-bg: color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-home-activity-mix, 28%), transparent);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(
+  .home-hero,
+  .home-panel,
+  .home-metric-tile,
+  .home-now-card,
+  .home-week-stat,
+  .home-week-heatmap
+) {
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(.home-hero, .home-panel, .home-metric-tile) {
+  background: var(--home-shell-bg) !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .home-hero {
+  background: var(--home-hero-bg) !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .home-now-card {
+  background: var(--home-now-bg) !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .home-now-card[data-empty="true"] {
+  background: var(--home-now-empty-bg) !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .page-surface:has(.album-detail-page) {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-page-strong-mix, 38%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-page-muted-mix, 32%), transparent)
+    ),
+    transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .album-detail-page {
+  background: transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(
+  .album-detail-hero,
+  .album-detail-track-console,
+  .album-detail-tabs,
+  .album-detail-facts,
+  .album-release-detail-card,
+  .album-release-version-card,
+  .album-external-rating-card,
+  .album-source-link-grid a
+) {
+  background: color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-surface-mix, 38%), transparent) !important;
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(.album-detail-track-console, .album-detail-tabs) {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-page-strong-mix, 38%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-page-muted-mix, 32%), transparent)
+    ),
+    transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(.album-detail-cover, .album-related-album-cover) {
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-field-mix, 52%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-surface-muted-mix, 34%), transparent)
+    ),
+    transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .album-detail-page .album-track-row {
+  background: transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .album-detail-page .album-track-row:hover {
+  background: var(--echo-polish-row-bg-hover) !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .album-detail-page .album-track-row[data-playing='true'] {
+  background: var(--echo-polish-row-bg-active) !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .page-surface:has(.dsp-page) {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-page-strong-mix, var(--app-acrylic-page-strong-mix, 38%)), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-readable-page-muted-mix, var(--app-acrylic-page-muted-mix, 32%)), transparent)
+    ),
+    transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .dsp-page {
+  background: transparent !important;
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .dsp-stage {
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-sidebar-mix, 48%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-readable-surface-mix, 36%), transparent) 28%,
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-readable-page-muted-mix, 30%), transparent)
+    ),
+    transparent !important;
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .dsp-rail,
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) .dsp-workspace {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-panel-bg-strong) var(--app-acrylic-readable-surface-strong-mix, 50%), transparent),
+      color-mix(in srgb, var(--theme-panel-bg-muted) var(--app-acrylic-readable-surface-mix, 38%), transparent)
+    ),
+    transparent !important;
+  backdrop-filter: blur(18px) saturate(1.1);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(
+  .dsp-chain-item:hover,
+  .dsp-chain-item:focus-visible,
+  .dsp-chain-item[data-selected="true"],
+  .dsp-focus-strip,
+  .dsp-pipeline-map,
+  .dsp-pipeline-map span,
+  .dsp-status-error,
+  .dsp-module-card,
+  .dsp-module-hero,
+  .dsp-module-metric,
+  .dsp-module-note,
+  .dsp-module-range,
+  .dsp-module-actions button,
+  .dsp-room-card,
+  .dsp-safety-card,
+  .dsp-headroom-card,
+  .opra-browser,
+  .opra-browser-control,
+  .opra-browser-main,
+  .opra-browser-preview,
+  .opra-product-list button,
+  .opra-preset-card,
+  .eq-panel,
+  .eq-header,
+  .eq-signal-strip,
+  .eq-status-card,
+  .eq-workbench,
+  .eq-preset-metadata,
+  .eq-preset-console,
+  .eq-dsp-guard,
+  .eq-routing-summary,
+  .eq-quick-strip,
+  .eq-simple-tones,
+  .eq-simple-zones,
+  .eq-simple-safety,
+  .eq-simple-insight,
+  .eq-simple-actions,
+  .eq-band-chip,
+  .eq-preset-trigger,
+  .eq-preset-filter-chip,
+  .eq-preset-option,
+  .eq-preset-search input,
+  .eq-preset-tools input,
+  .eq-preset-tools button,
+  .eq-soft-button,
+  .eq-icon-action,
+  .eq-preamp-bar,
+  .eq-level-meter,
+  .eq-inspector,
+  .eq-inspector label,
+  .eq-inspector input[type="number"],
+  .eq-compare-row
+) {
+  background: color-mix(in srgb, var(--theme-panel-bg) var(--app-acrylic-readable-surface-mix, 38%), transparent) !important;
+  backdrop-filter: blur(16px) saturate(1.1);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(
+  .dsp-chain-icon,
+  .eq-enable-pill,
+  .opra-enable-switch,
+  .eq-mode-toggle,
+  .eq-dsp-headroom-control,
+  .eq-dsp-headroom-presets button
+) {
+  background: color-mix(in srgb, var(--theme-field-bg) var(--app-acrylic-readable-surface-strong-mix, 52%), transparent) !important;
+  backdrop-filter: blur(16px) saturate(1.08);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(
+  .dsp-brand strong,
+  .dsp-chain-copy strong,
+  .dsp-topbar h1,
+  .dsp-topbar strong,
+  .eq-title-block h2,
+  .eq-status-card strong,
+  .eq-preset-metadata strong,
+  .eq-dsp-guard strong,
+  .eq-routing-summary strong,
+  .eq-simple-insight strong
+) {
+  color: var(--theme-heading-text) !important;
+  text-shadow:
+    0 1px 1px color-mix(in srgb, var(--theme-panel-bg-strong) 70%, transparent),
+    0 0 10px color-mix(in srgb, var(--theme-panel-bg-strong) 42%, transparent);
+}
+
+html .app-shell.app-shell--acrylic:not(.app-shell--wallpaper) :is(
+  .dsp-brand span,
+  .dsp-brand em,
+  .dsp-chain-stage,
+  .dsp-chain-copy small,
+  .dsp-topbar p,
+  .dsp-pipeline-map small,
+  .eq-title-block p,
+  .eq-status-card span,
+  .eq-preset-metadata p,
+  .eq-preset-metadata em,
+  .eq-dsp-guard p,
+  .eq-routing-summary small,
+  .eq-simple-insight span,
+  .eq-level-meter em,
+  .eq-level-meter p
+) {
+  color: color-mix(in srgb, var(--theme-heading-text) 72%, var(--theme-muted-text)) !important;
+  text-shadow: 0 1px 1px color-mix(in srgb, var(--theme-panel-bg-strong) 58%, transparent);
+}
+
+.settings-page :is(
+  .settings-nav-desc,
+  .settings-header-context em,
+  .setting-info p,
+  .settings-inline-note,
+  .settings-search-result small,
+  .settings-card > p,
+  .settings-card > em,
+  .settings-theme-preset-card p,
+  .settings-theme-preset-card em,
+  .settings-theme-preset-summary em,
+  .settings-theme-preset-copy em,
+  .settings-theme-custom-preview em,
+  .settings-theme-custom-header span,
+  .settings-theme-custom-group-header span,
+  .settings-theme-custom-summary em,
+  .settings-theme-custom-heading em,
+  .settings-theme-custom-theme-card em,
+  .settings-theme-custom-empty,
+  .settings-theme-custom-motion-row em,
+  .settings-theme-custom-mock-card em,
+  .settings-theme-custom-color-copy em,
+  .settings-theme-custom-slider span em,
+  .settings-font-picker-button em,
+  .settings-font-option em,
+  .settings-account-note,
+  .settings-proxy-note,
+  .settings-update-notes em,
+  .lyrics-word-highlight-notes p,
+  .settings-account-panel-header p,
+  .settings-credential-panel-header p,
+  .settings-database-protection p,
+  .diagnostics-assistant-summary-main small,
+  .settings-collapse-toggle small,
+  .settings-sidebar-layout-toggle em
+) {
+  font-weight: 400;
+}
+
+@media (max-width: 1180px) {
+  .app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell[data-feature-comments-hidden="true"] #settings-row-sidebar-layout,
+  .app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .setting-row--theme-presets,
+  .app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .setting-row--theme-custom {
+    grid-column: 1 / -1;
+  }
+
+  .app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-panel > .settings-expandable-content,
+  .app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-card-grid,
+  .app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-gradient-card,
+  .app-shell[data-feature-comments-hidden="true"] #settings-sec-appearance .settings-theme-custom-sliders {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

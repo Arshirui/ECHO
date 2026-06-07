@@ -1,4 +1,5 @@
 #include "DspChain.h"
+#include "DspSafetyLimiter.h"
 
 #include <algorithm>
 #include <cmath>
@@ -14,17 +15,15 @@ float sanitizeSample(float sample)
 
 float softLimitSample(float sample, bool& risk)
 {
-    constexpr float threshold = 0.98f;
-    constexpr float headroom = 1.0f - threshold;
+    constexpr float limitThreshold = 1.0f;
 
     const float sanitized = sanitizeSample(sample);
     const float magnitude = std::abs(sanitized);
-    if (magnitude <= threshold)
+    if (magnitude <= limitThreshold)
         return sanitized;
 
     risk = true;
-    const float limited = threshold + headroom * std::tanh((magnitude - threshold) / headroom);
-    return std::copysign(std::min(1.0f, limited), sanitized);
+    return std::copysign(limitThreshold, sanitized);
 }
 } // namespace
 
@@ -105,9 +104,19 @@ bool DspChain::isSafetyLimiterProtecting() const
     return safetyLimiterClippingRisk.load(std::memory_order_acquire);
 }
 
+void DspChain::setSafetyLimiterEnabled(bool enabled)
+{
+    setDspSafetyLimiterEnabled(enabled);
+}
+
+bool DspChain::isSafetyLimiterEnabled()
+{
+    return isDspSafetyLimiterEnabled();
+}
+
 void DspChain::processSafetyLimiter(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
 {
-    if (numSamples <= 0)
+    if (numSamples <= 0 || ! isSafetyLimiterEnabled())
     {
         safetyLimiterClippingRisk.store(false, std::memory_order_release);
         return;

@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AlbumsPage } from './AlbumsPage';
 import type { LibraryAlbum, LibraryPage, LibraryTrack } from '../../shared/types/library';
 import { I18nProvider } from '../i18n/I18nProvider';
 import { PlaybackQueueProvider, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { requestAlbumDetailNavigation } from '../utils/albumNavigation';
 
 const album = (id: string, overrides: Partial<LibraryAlbum> = {}): LibraryAlbum => ({
   id,
@@ -125,6 +127,19 @@ const renderAlbumsPage = (): ReturnType<typeof render> =>
     </I18nProvider>,
   );
 
+const renderAlbumsPageInStrictMode = (): ReturnType<typeof render> =>
+  render(
+    <StrictMode>
+      <I18nProvider>
+        <PlaybackQueueProvider>
+          <main className="page-surface">
+            <AlbumsPage />
+          </main>
+        </PlaybackQueueProvider>
+      </I18nProvider>
+    </StrictMode>,
+  );
+
 const QueueProbe = (): JSX.Element => {
   const { currentTrackId, tracks } = usePlaybackQueue();
 
@@ -241,6 +256,38 @@ describe('AlbumsPage', () => {
 
     await waitFor(() => expect(navigateRoute).toHaveBeenCalledWith(expect.objectContaining({ detail: 'home' })));
     window.removeEventListener('app:navigate:route', navigateRoute);
+  });
+
+  it('opens pending home album detail on first paint without exposing the album wall', () => {
+    const targetAlbum = album('1', { title: 'Dream within a dream' });
+    installLibrary(
+      vi.fn().mockResolvedValue(page([targetAlbum])),
+      vi.fn(),
+      vi.fn().mockResolvedValue(trackPage([])),
+      vi.fn().mockResolvedValue(null),
+    );
+
+    requestAlbumDetailNavigation(targetAlbum, { returnTo: 'home' });
+    const { container } = renderAlbumsPage();
+
+    expect(screen.getByLabelText('Dream within a dream album details')).toBeTruthy();
+    expect(container.querySelector('.albums-page')?.getAttribute('data-detail-open')).toBe('true');
+  });
+
+  it('keeps pending home album detail through strict-mode first mount replay', () => {
+    const targetAlbum = album('1', { title: 'Dream within a dream' });
+    installLibrary(
+      vi.fn().mockResolvedValue(page([targetAlbum])),
+      vi.fn(),
+      vi.fn().mockResolvedValue(trackPage([])),
+      vi.fn().mockResolvedValue(null),
+    );
+
+    requestAlbumDetailNavigation(targetAlbum, { returnTo: 'home' });
+    const { container } = renderAlbumsPageInStrictMode();
+
+    expect(screen.getByLabelText('Dream within a dream album details')).toBeTruthy();
+    expect(container.querySelector('.albums-page')?.getAttribute('data-detail-open')).toBe('true');
   });
 
   it('loads page 2 when the album wall scrolls to the spacer bottom', async () => {

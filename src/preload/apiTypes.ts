@@ -86,6 +86,7 @@ import type {
   LibraryFolderOverview,
   LibraryFolderPathRequest,
   LibraryFolderTracksQuery,
+  LibraryEmbeddedTagRescanOptions,
   ImportPlaylistFileResult,
   LibraryHealthReport,
   LibraryPage,
@@ -270,6 +271,7 @@ import type {
   StreamingTrackLikedResult,
   StreamingTrackSourceInfo,
 } from '../shared/types/streaming';
+import type { SleepTimerStartRequest, SleepTimerStatus } from '../shared/types/sleepTimer';
 
 export type FontFileAsset = {
   path: string;
@@ -325,6 +327,7 @@ export type EchoApi = {
     onUpdateStatus: (handler: (status: UpdateStatus) => void) => () => void;
     openRepository: () => Promise<void>;
     openExternalUrl: (url: string) => Promise<void>;
+    showTouchKeyboard: () => Promise<boolean>;
     testNetworkProxy: (patch?: Partial<AppSettings>) => Promise<NetworkProxyTestResult>;
     validateGlobalShortcut: (accelerator: string) => Promise<GlobalShortcutValidationResult>;
     onGlobalShortcutCommand: (handler: (action: GlobalShortcutAction) => void) => () => void;
@@ -369,7 +372,7 @@ export type EchoApi = {
     removeFolder: (folderId: string) => Promise<void>;
     scanFolder: (folderId: string, options?: Pick<LibraryScanOptions, 'reduceScanPressure'>) => Promise<LibraryScanStatus>;
     scanFolderChanges: (folderId: string) => Promise<LibraryScanStatus>;
-    rescanEmbeddedTags: (mode: Exclude<LibraryScanMode, 'normal'>) => Promise<LibraryScanStatus[]>;
+    rescanEmbeddedTags: (mode: Exclude<LibraryScanMode, 'normal'>, options?: LibraryEmbeddedTagRescanOptions) => Promise<LibraryScanStatus[]>;
     getScanStatus: (jobId: string) => Promise<LibraryScanStatus>;
     cancelScan: (jobId: string) => Promise<LibraryScanStatus>;
     getTrack: (trackId: string) => Promise<LibraryTrack | null>;
@@ -441,6 +444,9 @@ export type EchoApi = {
     setArtistImageJobsPaused: (paused: boolean) => Promise<ArtistImageJobStatus>;
     kickoffArtistImageBackfill: (options?: { force?: boolean; limit?: number }) => Promise<ArtistImageJobStatus>;
     clearArtistImageCache: () => Promise<ArtistImageCacheClearResult>;
+    chooseArtistAvatar: (artistId: string) => Promise<ArtistImageCacheEntry | null>;
+    setArtistAvatarFromUrl: (artistId: string, url: string) => Promise<ArtistImageCacheEntry | null>;
+    clearCustomArtistAvatar: (artistId: string) => Promise<ArtistImageCacheEntry | null>;
     onArtistImagesUpdated: (handler: (payload: { artistId: string | null; artistKey: string; status: string }) => void) => () => void;
     onLibraryChanged?: (handler: () => void) => () => void;
     onLikedTracksChanged?: (handler: () => void) => () => void;
@@ -496,6 +502,9 @@ export type EchoApi = {
     scanMissingMetadata: (options?: number | MissingMetadataScanOptions) => Promise<MissingMetadataScanResult>;
     startMissingMetadataScan: (options?: number | MissingMetadataScanOptions) => Promise<NetworkMetadataScanJobStatus>;
     getMissingMetadataScanStatus: (jobId: string) => Promise<NetworkMetadataScanJobStatus>;
+    startMissingCoverBackfill: (options?: number | MissingMetadataScanOptions) => Promise<NetworkMetadataScanJobStatus>;
+    getMissingCoverBackfillStatus: (jobId: string) => Promise<NetworkMetadataScanJobStatus>;
+    getActiveMissingCoverBackfillStatus?: () => Promise<NetworkMetadataScanJobStatus | null>;
     showNetworkCandidates: (trackId: string) => Promise<NetworkCandidateList>;
     searchNetworkTagCandidates: (
       trackId: string,
@@ -752,7 +761,7 @@ export type EchoApi = {
     reload: (pluginId: string) => Promise<PluginSummary>;
     openDirectory: (pluginId?: string) => Promise<void>;
     exportPackage: (pluginId: string) => Promise<string | null>;
-    importPackage: () => Promise<PluginImportPackageResult | null>;
+    importPackage: (source?: string | File) => Promise<PluginImportPackageResult | null>;
     runCommand: (request: PluginRunCommandRequest) => Promise<unknown>;
     queryMetadata: (request: PluginMetadataLookupRequest) => Promise<PluginMetadataLookupResult>;
     querySources: (request: PluginSourceSearchRequest) => Promise<PluginSourceSearchResult>;
@@ -797,6 +806,7 @@ export type EchoApi = {
     setBandEnabled: (request: EqSetBandEnabledRequest) => Promise<EqState>;
     setPreamp: (preampDb: number) => Promise<EqState>;
     setDspHeadroom: (headroomDb: number) => Promise<EqState>;
+    setDspSafetyLimiterEnabled: (enabled: boolean) => Promise<EqState>;
     setPreset: (presetId: string) => Promise<EqState>;
     reset: () => Promise<EqState>;
     listPresets: () => Promise<EqPreset[]>;
@@ -824,6 +834,12 @@ export type EchoApi = {
     setRoomCorrectionEnabled: (enabled: boolean) => Promise<RoomCorrectionState>;
     setRoomCorrectionTrim: (trimDb: number) => Promise<RoomCorrectionState>;
     clearRoomCorrection: () => Promise<RoomCorrectionState>;
+  };
+  sleepTimer: {
+    start: (request: SleepTimerStartRequest) => Promise<SleepTimerStatus>;
+    cancel: () => Promise<SleepTimerStatus>;
+    getStatus: () => Promise<SleepTimerStatus>;
+    onTick: (handler: (remainingMs: number) => void) => () => void;
   };
 };
 

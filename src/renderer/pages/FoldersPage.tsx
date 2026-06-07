@@ -1618,6 +1618,33 @@ export const FoldersPage = (): JSX.Element => {
     }
   }, [selected, selectedOverview, t]);
 
+  const handleRescanSelectedEmbeddedTags = useCallback(async (): Promise<void> => {
+    const library = window.echo?.library;
+    if (!selected || !library?.rescanEmbeddedTags) {
+      return;
+    }
+
+    const current = getLibraryScanStatuses()[selected.folderId];
+    if (current && runningStatuses.has(current.status)) {
+      setMessage(t('folders.message.alreadyScanning'));
+      return;
+    }
+
+    try {
+      const scans = await library.rescanEmbeddedTags('embedded-tags-all', {
+        folderId: selected.folderId,
+        path: selected.path,
+        recursive,
+      });
+      if (scans[0]) {
+        rememberLibraryScanStatus(scans[0]);
+      }
+      setMessage(t('folders.message.embeddedTagRescanStarted'));
+    } catch (scanError) {
+      setError(formatFolderError(scanError, t));
+    }
+  }, [recursive, selected, t]);
+
   const handleCancelScan = useCallback(async (): Promise<void> => {
     const library = window.echo?.library;
     if (!selectedScan || !library?.cancelScan || !runningStatuses.has(selectedScan.status)) {
@@ -2649,6 +2676,10 @@ export const FoldersPage = (): JSX.Element => {
                   <RefreshCw size={16} />
                   {t('folders.action.scanChanges')}
                 </button>
+                <button type="button" disabled={!selected || isSelectedScanning} onClick={() => void handleRescanSelectedEmbeddedTags()}>
+                  <RefreshCw size={16} />
+                  {t('folders.action.rescanEmbeddedTags')}
+                </button>
                 <button type="button" disabled={!isSelectedScanning} onClick={() => void handleCancelScan()}>
                   <XCircle size={16} />
                   {t('folders.action.cancel')}
@@ -2660,7 +2691,7 @@ export const FoldersPage = (): JSX.Element => {
               </>
             )}
           </div>
-          {mode === 'local' ? (
+          {hasRunningLocalScan ? (
             <div className="folders-scan-warning folders-scan-warning--panel" role="note">
               <AlertTriangle size={15} />
               <span>{t('folders.scan.patientWarning')}</span>
