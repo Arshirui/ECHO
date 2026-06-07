@@ -14440,6 +14440,14 @@ export const SettingsPage = (): JSX.Element => {
                     <button
                       className="settings-action-button"
                       type="button"
+                      onClick={() => void handleOpenExternalUrl(bilibiliSpaceUrl)}
+                    >
+                      <ExternalLink size={15} />
+                      哔哩哔哩
+                    </button>
+                    <button
+                      className="settings-action-button"
+                      type="button"
                       onClick={() => void handleOpenExternalUrl('https://afdian.com/a/echonext')}
                     >
                       <ExternalLink size={15} />
