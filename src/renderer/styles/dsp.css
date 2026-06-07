@@ -4587,10 +4587,21 @@ html[data-theme="dark"] .opra-empty-preset {
 }
 
 .dsp-editor-shell[data-module]:not([data-module="eq"]) .dsp-module-heading span {
-  min-height: 34px;
-  padding: 0 10px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dsp-editor-shell[data-module]:not([data-module="eq"]) .dsp-module-heading span svg {
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  padding: 7px;
+  color: var(--dsp-accent);
+  border: 1px solid color-mix(in srgb, var(--dsp-accent) 16%, transparent);
   border-radius: 8px;
-  background: var(--dsp-field);
+  background: color-mix(in srgb, var(--dsp-accent) 10%, transparent);
 }
 
 .dsp-editor-shell[data-module]:not([data-module="eq"]) :is(

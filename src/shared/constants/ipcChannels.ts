@@ -275,6 +275,8 @@ export const IpcChannels = {
   LibraryNetworkScanMissingMetadata: 'library:network-scan-missing-metadata',
   LibraryNetworkStartMissingMetadataScan: 'library:network-start-missing-metadata-scan',
   LibraryNetworkGetMissingMetadataScanStatus: 'library:network-get-missing-metadata-scan-status',
+  LibraryNetworkStartMissingCoverBackfill: 'library:network-start-missing-cover-backfill',
+  LibraryNetworkGetMissingCoverBackfillStatus: 'library:network-get-missing-cover-backfill-status',
   LibraryNetworkShowCandidates: 'library:network-show-candidates',
   LibrarySearchNetworkTagCandidates: 'library:search-network-tag-candidates',
   LibraryResolveLyricsBackgroundCover: 'library:resolve-lyrics-background-cover',

@@ -280,8 +280,7 @@
 .queue-list {
   display: block;
   min-height: 0;
-  overflow: auto;
-  padding-right: 4px;
+  overflow: visible;
 }
 
 .queue-list[data-virtualized='true'] {

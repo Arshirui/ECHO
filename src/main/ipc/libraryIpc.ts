@@ -2392,6 +2392,20 @@ export const registerLibraryIpc = (): void => {
   ipcMain.handle(IpcChannels.LibraryNetworkGetMissingMetadataScanStatus, (_event, jobId: unknown) =>
     getLibraryService().getMissingMetadataScanStatus(requireText(jobId, 'jobId')),
   );
+  ipcMain.handle(IpcChannels.LibraryNetworkStartMissingCoverBackfill, (_event, request: unknown) =>
+    {
+      const settings = getAppSettings();
+      if (!settings.networkMetadataEnabled) {
+        throw new Error('Network metadata completion is disabled in Settings');
+      }
+
+      const options = normalizeMissingMetadataScanOptions(request, 500);
+      return getLibraryService().startMissingCoverBackfill(options.limit, settings.networkMetadataProviders);
+    },
+  );
+  ipcMain.handle(IpcChannels.LibraryNetworkGetMissingCoverBackfillStatus, (_event, jobId: unknown) =>
+    getLibraryService().getMissingCoverBackfillStatus(requireText(jobId, 'jobId')),
+  );
   ipcMain.handle(IpcChannels.LibraryNetworkShowCandidates, (_event, trackId: unknown) =>
     getLibraryService().showNetworkCandidates(requireText(trackId, 'trackId')),
   );

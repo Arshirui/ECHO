@@ -1809,6 +1809,8 @@ const echoApi: EchoApi = {
     scanMissingMetadata: (options) => ipcRenderer.invoke(IpcChannels.LibraryNetworkScanMissingMetadata, options),
     startMissingMetadataScan: (options) => ipcRenderer.invoke(IpcChannels.LibraryNetworkStartMissingMetadataScan, options),
     getMissingMetadataScanStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryNetworkGetMissingMetadataScanStatus, jobId),
+    startMissingCoverBackfill: (options) => ipcRenderer.invoke(IpcChannels.LibraryNetworkStartMissingCoverBackfill, options),
+    getMissingCoverBackfillStatus: (jobId) => ipcRenderer.invoke(IpcChannels.LibraryNetworkGetMissingCoverBackfillStatus, jobId),
     showNetworkCandidates: (trackId) => ipcRenderer.invoke(IpcChannels.LibraryNetworkShowCandidates, trackId),
     searchNetworkTagCandidates: (trackId, options) =>
       ipcRenderer.invoke(IpcChannels.LibrarySearchNetworkTagCandidates, { trackId, ...options }),

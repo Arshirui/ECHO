@@ -182,6 +182,9 @@ type StandardAlbumGroup = AlbumIndexStats & {
   coverSourceHashes: Map<string, number>;
   links: StandardAlbumTrackIndexLink[];
 };
+type SeededAlbumGroup = AlbumIndexStats & {
+  links: StandardAlbumTrackIndexLink[];
+};
 type LooseAlbumCluster = {
   albumKey: string;
   representativeTitle: string;
@@ -5021,9 +5024,8 @@ export class LibraryStore {
     trackIds: readonly string[],
     albumService: AlbumService,
     now = nowIso(),
-    _options: { albumMergeStrategy?: AlbumMergeStrategy } = {},
+    options: { albumMergeStrategy?: AlbumMergeStrategy } = {},
   ): void {
-    void _options;
     const uniqueTrackIds = Array.from(
       new Set(trackIds.filter((trackId) => typeof trackId === 'string' && trackId.trim()).map((trackId) => trackId.trim())),
     );
@@ -5065,10 +5067,48 @@ export class LibraryStore {
       }
 
       const groups = this.buildStandardAlbumGroupsForRows(rows, albumService);
+      const albumKeys =
+        options.albumMergeStrategy === 'sameTitleAndCover'
+          ? this.makeLooseAlbumKeys(groups, albumService)
+          : new Map<string, string>();
+      const albumIdsByKey = new Map<string, string>();
+      const seededGroups = new Map<string, SeededAlbumGroup>();
 
       for (const group of groups.values()) {
+        const albumKey = albumKeys.get(group.albumKey) ?? group.albumKey;
+        const existing = this.getRow('SELECT id FROM albums WHERE album_key = ?', albumKey);
+        const albumId = albumIdsByKey.get(albumKey) ?? textOrNull(existing?.id) ?? randomUUID();
+        albumIdsByKey.set(albumKey, albumId);
+        affectedAlbumIds.add(albumId);
+
+        const seededGroup =
+          seededGroups.get(albumKey) ??
+          {
+            id: albumId,
+            albumKey,
+            title: group.title,
+            albumArtist: group.albumArtist,
+            albumArtistCredits: createAlbumArtistCreditStats(),
+            year: group.year,
+            trackCount: 0,
+            duration: 0,
+            coverId: group.coverId,
+            links: [],
+          };
+
+        mergeAlbumArtistCreditStats(seededGroup.albumArtistCredits, group.albumArtistCredits);
+        seededGroup.albumArtist = displayAlbumArtistForCredits(seededGroup.albumArtist, seededGroup.albumArtistCredits);
+        seededGroup.year ??= group.year;
+        seededGroup.trackCount += group.trackCount;
+        seededGroup.duration += group.duration;
+        seededGroup.coverId = seededGroup.coverId ?? group.coverId;
+        seededGroup.links.push(...group.links);
+        seededGroups.set(albumKey, seededGroup);
+      }
+
+      for (const group of seededGroups.values()) {
         const existing = this.getRow('SELECT id FROM albums WHERE album_key = ?', group.albumKey);
-        const albumId = textOrNull(existing?.id) ?? group.id;
+        const albumId = group.id;
         affectedAlbumIds.add(albumId);
 
         if (!existing) {

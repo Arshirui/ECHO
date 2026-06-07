@@ -6,6 +6,7 @@ import type {
   LibraryQualityIssueReason,
   LibraryQualityOverviewItem,
   MissingMetadataField,
+  NetworkMetadataScanJobStatus,
 } from '../../../shared/types/library';
 import { getLibraryBridge } from '../../utils/echoBridge';
 
@@ -53,6 +54,29 @@ const formatReason = (reason: LibraryQualityIssueReason): string => reasonLabels
 
 const overviewTotal = (overview: LibraryQualityOverviewItem[]): number =>
   overview.reduce((total, item) => total + item.count, 0);
+
+const wait = (durationMs: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, durationMs));
+
+const formatMissingCoverBackfillMessage = (job: NetworkMetadataScanJobStatus): string => {
+  const total = job.totalTracks || job.scannedCount || job.diagnostics.targetCount;
+  const processed = Math.min(total || job.processedTracks, job.processedTracks);
+  const applied = job.diagnostics.appliedCount;
+
+  if (job.status === 'queued') {
+    return '封面补全已排队，等待后台网络任务开始。';
+  }
+  if (job.status === 'running') {
+    if (!total) {
+      return '正在检测缺失/默认封面的歌曲并搜索网络封面...';
+    }
+    return `正在补全网络封面：${processed}/${total}，已应用 ${applied} 张`;
+  }
+  if (job.status === 'failed') {
+    return `封面补全失败：${job.errors[0] ?? '未知错误'}`;
+  }
+
+  return `封面补全完成：检测 ${job.scannedCount} 首，找到 ${job.candidateCount} 个候选，已应用 ${applied} 张`;
+};
 
 export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled = false }: LibraryQualityPanelProps): JSX.Element => {
   const [expanded, setExpanded] = useState(false);
@@ -220,6 +244,35 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
     [issuePage.page, loadIssues, networkMetadataEnabled, refreshOverview, selectedKind],
   );
 
+  const pollMissingCoverBackfillJob = useCallback(
+    async (jobId: string): Promise<void> => {
+      const library = getLibraryBridge();
+      if (!library?.getMissingCoverBackfillStatus) {
+        setActionBusy(null);
+        setMessage('桌面桥接暂不可用，无法读取封面补全进度。');
+        return;
+      }
+
+      try {
+        for (;;) {
+          await wait(900);
+          const status = await library.getMissingCoverBackfillStatus(jobId);
+          setMessage(formatMissingCoverBackfillMessage(status));
+          if (status.status === 'completed' || status.status === 'failed') {
+            await refreshOverview();
+            await loadIssues(selectedKind, issuePage.page);
+            return;
+          }
+        }
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        setActionBusy(null);
+      }
+    },
+    [issuePage.page, loadIssues, refreshOverview, selectedKind],
+  );
+
   const handleStartBatchScan = useCallback(async (): Promise<void> => {
     const library = getLibraryBridge();
     if (!networkMetadataEnabled) {
@@ -235,16 +288,35 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
       return;
     }
 
-    setActionBusy('batch-scan');
+    const isMissingCoverBackfill = selectedKind === 'missing_cover';
+    if (isMissingCoverBackfill && !library.startMissingCoverBackfill) {
+      setMessage('桌面桥接暂不可用，无法启动网络封面补全。');
+      return;
+    }
+
+    setActionBusy(isMissingCoverBackfill ? 'cover-backfill' : 'batch-scan');
     try {
+      if (isMissingCoverBackfill) {
+        const job = await library.startMissingCoverBackfill({ limit: 500, fields: ['cover'] });
+        setMessage(formatMissingCoverBackfillMessage(job));
+        if (job.status === 'completed' || job.status === 'failed') {
+          setActionBusy(null);
+        } else {
+          void pollMissingCoverBackfillJob(job.id);
+        }
+        return;
+      }
+
       const job = await library.startMissingMetadataScan({ limit: 100, fields: selectedFields });
       setMessage(`已开始小批量资料扫描：${job.id.slice(0, 8)}，最多处理 ${job.totalTracks || 100} 首。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setActionBusy(null);
+      if (!isMissingCoverBackfill) {
+        setActionBusy(null);
+      }
     }
-  }, [networkMetadataEnabled, selectedFields, selectedOverview?.actionAvailable]);
+  }, [networkMetadataEnabled, pollMissingCoverBackfillJob, selectedFields, selectedKind, selectedOverview?.actionAvailable]);
 
   return (
     <div className="settings-cache-panel settings-cache-panel--library-quality">
@@ -307,8 +379,8 @@ export const LibraryQualityPanel = ({ autoRefresh = true, networkMetadataEnabled
               onClick={() => void handleStartBatchScan()}
               type="button"
             >
-              <RefreshCw className={actionBusy === 'batch-scan' ? 'spinning-icon' : undefined} size={15} />
-              扫描当前分类
+              <RefreshCw className={actionBusy === 'batch-scan' || actionBusy === 'cover-backfill' ? 'spinning-icon' : undefined} size={15} />
+              {selectedKind === 'missing_cover' ? '补全缺失封面' : '扫描当前分类'}
             </button>
           </div>
 

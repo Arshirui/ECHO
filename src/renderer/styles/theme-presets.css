@@ -12378,21 +12378,17 @@ html[data-theme-preset="FINAL"] :is(.queue-page, .albums-page, .artists-page) {
 }
 
 html[data-theme-preset="FINAL"] .queue-page {
-  overflow: hidden;
+  overflow: visible;
 }
 
 html[data-theme-preset="FINAL"] .queue-list-section {
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 html[data-theme-preset="FINAL"] .queue-list {
   min-height: 140px;
-  overflow-x: hidden;
-  overflow-y: auto !important;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
 }
 
 html[data-theme-preset="FINAL"] :is(.albums-page, .artists-page) .media-wall-scroll-shell {

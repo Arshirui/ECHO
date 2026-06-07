@@ -259,6 +259,7 @@ export class LibraryService {
   private searchIndexBackfillRunning = false;
   private searchIndexBackfillAllowDuringPlayback = false;
   private artistImagePlaybackStatusUnsubscribe: (() => void) | null = null;
+  private readonly missingCoverBackfillJobs = new Map<string, NetworkMetadataScanJobStatus>();
   private readonly lyricsBackfillJobQueue: LyricsBackfillJobQueue;
   private closed = false;
 
@@ -1754,6 +1755,56 @@ export class LibraryService {
     return this.networkMetadataService.getMissingMetadataScanStatus(jobId);
   }
 
+  startMissingCoverBackfill(
+    limit: number,
+    providerNames?: AppSettings['networkMetadataProviders'],
+  ): NetworkMetadataScanJobStatus {
+    if (!this.networkMetadataService) {
+      throw new Error('Network metadata service is unavailable');
+    }
+
+    const activeJob = [...this.missingCoverBackfillJobs.values()].find((job) => job.status === 'queued' || job.status === 'running');
+    if (activeJob) {
+      return this.cloneMissingCoverBackfillJob(activeJob);
+    }
+
+    const timestamp = new Date().toISOString();
+    const job: NetworkMetadataScanJobStatus = {
+      id: randomUUID(),
+      status: 'queued',
+      fields: ['cover'],
+      totalTracks: 0,
+      processedTracks: 0,
+      scannedCount: 0,
+      candidateCount: 0,
+      items: [],
+      errors: [],
+      diagnostics: {
+        targetCount: 0,
+        providerErrors: 0,
+        noCandidateCount: 0,
+        protectedCount: 0,
+        appliedCount: 0,
+      },
+      startedAt: timestamp,
+      finishedAt: null,
+      currentTrackTitle: null,
+    };
+
+    this.missingCoverBackfillJobs.set(job.id, job);
+    void this.runMissingCoverBackfillJob(job, limit, providerNames);
+    return this.cloneMissingCoverBackfillJob(job);
+  }
+
+  getMissingCoverBackfillStatus(jobId: string): NetworkMetadataScanJobStatus {
+    const job = this.missingCoverBackfillJobs.get(jobId);
+    if (!job) {
+      throw new Error(`Unknown missing cover backfill job ${jobId}`);
+    }
+
+    return this.cloneMissingCoverBackfillJob(job);
+  }
+
   showNetworkCandidates(trackId: string): NetworkCandidateList {
     if (!this.networkMetadataService) {
       throw new Error('Network metadata service is unavailable');
@@ -1917,6 +1968,81 @@ export class LibraryService {
       ...result,
       status: 'applied_missing_only',
       appliedFields,
+    };
+  }
+
+  private async runMissingCoverBackfillJob(
+    job: NetworkMetadataScanJobStatus,
+    limit: number,
+    providerNames?: AppSettings['networkMetadataProviders'],
+  ): Promise<void> {
+    job.status = 'running';
+    job.currentTrackTitle = 'Searching network cover candidates';
+
+    try {
+      const result = await this.scanMissingMetadata(limit, providerNames, ['cover']);
+      job.items = result.items;
+      job.scannedCount = result.scannedCount;
+      job.candidateCount = result.candidateCount;
+      job.errors = [...result.errors];
+      job.diagnostics = { ...result.diagnostics };
+      job.totalTracks = result.scannedCount;
+
+      let appliedCount = 0;
+      let protectedCount = result.diagnostics.protectedCount;
+      for (const item of result.items) {
+        job.currentTrackTitle = item.track.title || item.track.path;
+        const candidate = item.candidates.metadata.find((entry) => Boolean(entry.coverUrl));
+        if (!candidate) {
+          job.processedTracks += 1;
+          continue;
+        }
+
+        try {
+          const applied = await this.applyNetworkMissingOnly(candidate.id, { fields: ['cover'] });
+          if (applied.appliedFields.coverId) {
+            appliedCount += 1;
+          } else if (applied.reason?.startsWith('cover_source_') || applied.reason === 'embedded_cover_not_ready') {
+            protectedCount += 1;
+          }
+        } catch (error) {
+          job.errors.push(`${item.track.title || item.track.path}: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          job.processedTracks += 1;
+        }
+      }
+
+      job.diagnostics = {
+        ...job.diagnostics,
+        providerErrors: job.errors.length,
+        protectedCount,
+        appliedCount,
+      };
+      job.status = 'completed';
+      job.currentTrackTitle = null;
+      job.finishedAt = new Date().toISOString();
+      if (appliedCount > 0) {
+        broadcastLibraryChanged();
+      }
+    } catch (error) {
+      job.status = 'failed';
+      job.currentTrackTitle = null;
+      job.finishedAt = new Date().toISOString();
+      job.errors.push(error instanceof Error ? error.message : String(error));
+      job.diagnostics = {
+        ...job.diagnostics,
+        providerErrors: job.errors.length,
+      };
+    }
+  }
+
+  private cloneMissingCoverBackfillJob(job: NetworkMetadataScanJobStatus): NetworkMetadataScanJobStatus {
+    return {
+      ...job,
+      fields: [...job.fields],
+      items: [...job.items],
+      errors: [...job.errors],
+      diagnostics: { ...job.diagnostics },
     };
   }
 
