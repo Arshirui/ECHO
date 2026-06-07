@@ -4,9 +4,7 @@ permissions:
 name: Linux build
 
 on:
-  push:
-    tags:
-      - '*'
+  workflow_dispatch:
 
 jobs:
   linux-x64:
