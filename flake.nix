@@ -53,18 +53,17 @@
               # Other Dependencies
               pkgs.yt-dlp
               # Electron Desktop Runtime Dependencies
-              pkgs.gtk3
-              pkgs.nss
-              pkgs.libxscrnsaver
-              pkgs.libxtst
-              pkgs.libdrm
-              pkgs.mesa
+              # pkgs.gtk3
+              # pkgs.nss
+              # pkgs.libxscrnsaver
+              # pkgs.libxtst
+              # pkgs.libdrm
+              # pkgs.mesa
               # patchelf: fix fpm binary for .deb packaging
               pkgs.patchelf
               pkgs.libxcrypt
             ];
 
-            # 可选：进入环境时自动执行的环境变量或提示
             shellHook = let
                 getLicenseStr = l: l.spdxId or l.shortName or l.fullName or "Unknown";
                 getLicense = str:
