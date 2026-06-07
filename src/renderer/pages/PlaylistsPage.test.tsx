@@ -343,7 +343,6 @@ describe('PlaylistsPage share actions', () => {
 describe('PlaylistsPage actions menu', () => {
   it('renames the selected playlist from the menu', async () => {
     const renamed = playlist({ name: 'Road Mix 2' });
-    window.prompt = vi.fn(() => 'Road Mix 2');
     window.echo = {
       library: {
         getPlaylists: vi.fn().mockResolvedValueOnce([playlist()]).mockResolvedValue([renamed]),
@@ -360,6 +359,8 @@ describe('PlaylistsPage actions menu', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '更多歌单操作' }));
     fireEvent.click(screen.getByRole('menuitem', { name: '重命名歌单' }));
+    fireEvent.change(screen.getByLabelText('歌单名称'), { target: { value: 'Road Mix 2' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() =>
       expect(window.echo.library.updatePlaylist).toHaveBeenCalledWith({ playlistId: 'playlist-1', name: 'Road Mix 2' }),

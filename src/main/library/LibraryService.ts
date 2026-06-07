@@ -838,6 +838,30 @@ export class LibraryService {
     return this.artistImageCacheService.refreshArtistImage(artistIdOrKey, force);
   }
 
+  setCustomArtistImageFromFile(artistIdOrKey: string, filePath: string): Promise<ArtistImageCacheEntry | null> {
+    if (!this.artistImageCacheService) {
+      return Promise.resolve(null);
+    }
+
+    return this.artistImageCacheService.setCustomArtistImageFromFile(artistIdOrKey, filePath);
+  }
+
+  setCustomArtistImageFromUrl(artistIdOrKey: string, url: string): Promise<ArtistImageCacheEntry | null> {
+    if (!this.artistImageCacheService) {
+      return Promise.resolve(null);
+    }
+
+    return this.artistImageCacheService.setCustomArtistImageFromUrl(artistIdOrKey, url);
+  }
+
+  clearCustomArtistImage(artistIdOrKey: string): ArtistImageCacheEntry | null {
+    if (!this.artistImageCacheService) {
+      return null;
+    }
+
+    return this.artistImageCacheService.clearCustomArtistImage(artistIdOrKey);
+  }
+
   clearArtistImageCache(): ArtistImageCacheClearResult {
     if (!this.artistImageCacheService) {
       return { removedRows: 0, deletedFiles: 0, freedBytes: 0 };
@@ -1093,6 +1117,7 @@ export class LibraryService {
       folderPath?: string;
       metadata?: Partial<Pick<EditableTrackTags, 'title' | 'artist' | 'album' | 'albumArtist'>>;
       coverUrl?: string | null;
+      deferGroupingRefresh?: boolean;
     } = {},
   ): Promise<LibraryTrack> {
     return runMainBackgroundTask('library-import-files', async () => {
@@ -1174,8 +1199,12 @@ export class LibraryService {
           this.startReplayGainAnalysis({ trackIds: [track.id], force: false });
         }
 
-        this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
-        this.store.refreshArtists();
+        if (options.deferGroupingRefresh === true) {
+          this.store.seedAlbumsForTracks([track.id], this.albumService, timestamp, this.albumRefreshOptions());
+        } else {
+          this.store.refreshAlbums(this.albumService, undefined, this.albumRefreshOptions());
+          this.store.refreshArtists();
+        }
 
         return track;
       });
@@ -1292,7 +1321,7 @@ export class LibraryService {
   async getPlaybackStatsDashboardPlaybackSafe(query?: PlaybackHistoryQuery): Promise<PlaybackStatsDashboard> {
     const cached = this.playbackStatsDashboardCache.get(this.playbackStatsDashboardCacheKey(query));
     if (await isPlaybackActiveForMainWork()) {
-      return cached ?? createEmptyPlaybackStatsDashboard();
+      return cached ?? this.store.getPlaybackStatsDashboardActivity(query);
     }
 
     return runMainBackgroundTask('library:get-playback-stats-dashboard', () => this.getPlaybackStatsDashboard(query));

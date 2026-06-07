@@ -264,6 +264,7 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": false,
+      "runAfterFinish": true,
       "installerIcon": "software.ico",
       "uninstallerIcon": "software.ico"
     },

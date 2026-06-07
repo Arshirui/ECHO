@@ -85,7 +85,6 @@ const fallbackLocale: AppLocale = 'zh-CN';
 const appThemeModes: AppThemeMode[] = ['light', 'dark', 'system'];
 const defaultAppearanceThemeScheduleDarkAt = '19:00';
 const defaultAppearanceThemeScheduleLightAt = '07:00';
-const defaultAppWindowAcrylicBlurPx = 22;
 const defaultAppWindowAcrylicTransparencyPercent = 70;
 const audioTransportFadeCurves: AudioTransportFadeCurve[] = ['linear', 'smooth', 'equalPower'];
 const defaultAudioTransportFadeDurationMs = 80;
@@ -373,7 +372,6 @@ export const defaultSettings: AppSettings = {
   appearanceSidebarLayoutExpanded: false,
   appWindowAcrylicEnabled: false,
   appWindowAcrylicKeepWhenUnfocusedEnabled: false,
-  appWindowAcrylicBlurPx: defaultAppWindowAcrylicBlurPx,
   appWindowAcrylicTransparencyPercent: defaultAppWindowAcrylicTransparencyPercent,
   appearancePreferences: { ...defaultAppearancePreferences },
   sidebarRouteOrder: [...defaultSidebarRouteOrder],
@@ -1623,9 +1621,6 @@ export const normalizeSettings = (value: unknown): AppSettings => {
     appearanceSidebarLayoutExpanded: settings.appearanceSidebarLayoutExpanded === true,
     appWindowAcrylicEnabled: settings.appWindowAcrylicEnabled === true,
     appWindowAcrylicKeepWhenUnfocusedEnabled: settings.appWindowAcrylicKeepWhenUnfocusedEnabled === true,
-    appWindowAcrylicBlurPx: Number.isFinite(settings.appWindowAcrylicBlurPx)
-      ? clamp(Math.round(Number(settings.appWindowAcrylicBlurPx)), 0, 40)
-      : defaultAppWindowAcrylicBlurPx,
     appWindowAcrylicTransparencyPercent: Number.isFinite(settings.appWindowAcrylicTransparencyPercent)
       ? clamp(Math.round(Number(settings.appWindowAcrylicTransparencyPercent)), 0, 100)
       : defaultAppWindowAcrylicTransparencyPercent,

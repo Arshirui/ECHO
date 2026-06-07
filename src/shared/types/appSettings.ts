@@ -191,7 +191,6 @@ export type AppSettings = {
   appearanceSidebarLayoutExpanded?: boolean;
   appWindowAcrylicEnabled?: boolean;
   appWindowAcrylicKeepWhenUnfocusedEnabled?: boolean;
-  appWindowAcrylicBlurPx?: number;
   appWindowAcrylicTransparencyPercent?: number;
   appearancePreferences?: AppearancePreferences;
   sidebarRouteOrder?: SidebarRouteId[];

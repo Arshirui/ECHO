@@ -15,7 +15,7 @@ import { likedAlbumsChangedEvent, likedChangedEvent } from '../hooks/useLikedMed
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationKey } from '../i18n/locales';
 import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
-import { albumDetailNavigationEvent, consumePendingAlbumDetailNavigation, type DetailReturnTarget } from '../utils/albumNavigation';
+import { albumDetailNavigationEvent, consumePendingAlbumDetailNavigation, peekPendingAlbumDetailNavigation, type DetailReturnTarget } from '../utils/albumNavigation';
 import { getRemoteSourcesBridge } from '../utils/echoBridge';
 import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 import { readStoredLibrarySort, writeStoredLibrarySort } from '../utils/librarySortMemory';
@@ -74,7 +74,7 @@ export const AlbumsPage = (): JSX.Element => {
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const [initialAlbumDetailRequest] = useState(() => consumePendingAlbumDetailNavigation());
+  const [initialAlbumDetailRequest] = useState(() => peekPendingAlbumDetailNavigation());
   const [selectedAlbum, setSelectedAlbum] = useState<LibraryAlbum | null>(() => initialAlbumDetailRequest?.album ?? null);
   const [selectedAlbumReturnTo, setSelectedAlbumReturnTo] = useState<DetailReturnTarget | null>(() => initialAlbumDetailRequest?.returnTo ?? null);
   const [isAlbumWallReturning, setIsAlbumWallReturning] = useState(false);

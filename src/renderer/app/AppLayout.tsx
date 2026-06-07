@@ -140,7 +140,6 @@ type AppWallpaperSettings = Pick<
   AppSettings,
   | 'appWindowAcrylicEnabled'
   | 'appWindowAcrylicKeepWhenUnfocusedEnabled'
-  | 'appWindowAcrylicBlurPx'
   | 'appWindowAcrylicTransparencyPercent'
   | 'appCustomWallpaperPath'
   | 'appPortraitWallpaperPath'
@@ -181,7 +180,6 @@ const defaultAppWallpaperSettings: AppWallpaperSettings = {
   appVideoWallpaperPauseMode: 'smart',
   appWindowAcrylicEnabled: false,
   appWindowAcrylicKeepWhenUnfocusedEnabled: false,
-  appWindowAcrylicBlurPx: 22,
   appWindowAcrylicTransparencyPercent: 70,
 };
 
@@ -245,9 +243,6 @@ const selectAppWallpaperSettings = (settings: AppSettings): AppWallpaperSettings
   appVideoWallpaperPauseMode: settings.appVideoWallpaperPauseMode ?? 'smart',
   appWindowAcrylicEnabled: settings.appWindowAcrylicEnabled === true,
   appWindowAcrylicKeepWhenUnfocusedEnabled: settings.appWindowAcrylicKeepWhenUnfocusedEnabled === true,
-  appWindowAcrylicBlurPx: Number.isFinite(settings.appWindowAcrylicBlurPx)
-    ? Math.max(0, Math.min(40, Math.round(Number(settings.appWindowAcrylicBlurPx))))
-    : defaultAppWallpaperSettings.appWindowAcrylicBlurPx,
   appWindowAcrylicTransparencyPercent: Number.isFinite(settings.appWindowAcrylicTransparencyPercent)
     ? Math.max(0, Math.min(100, Math.round(Number(settings.appWindowAcrylicTransparencyPercent))))
     : defaultAppWallpaperSettings.appWindowAcrylicTransparencyPercent,
@@ -689,12 +684,20 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     const unifiedAlpha = uiAlpha.toFixed(3);
     const acrylicTransparencyPercent = Math.max(0, Math.min(100, appWallpaperSettings.appWindowAcrylicTransparencyPercent ?? 70));
     const acrylicOpacityPercent = 100 - acrylicTransparencyPercent;
-    const acrylicBlurPx = Math.max(0, Math.min(40, appWallpaperSettings.appWindowAcrylicBlurPx ?? 22));
+    const acrylicReadabilityPercent = Math.max(acrylicOpacityPercent, 32);
+    const acrylicTextProtectionPercent = Math.max(acrylicOpacityPercent, 46);
     const acrylicMix = (factor: number, max: number): string => `${Math.round(Math.max(0, Math.min(max, acrylicOpacityPercent * factor)))}%`;
+    const acrylicReadableMix = (factor: number, max: number): string => `${Math.round(Math.max(0, Math.min(max, acrylicReadabilityPercent * factor)))}%`;
+    const acrylicProtectionMix = (factor: number, max: number): string => `${Math.round(Math.max(0, Math.min(max, acrylicTextProtectionPercent * factor)))}%`;
 
     return {
-      '--app-acrylic-blur': `${acrylicBlurPx}px`,
-      '--app-acrylic-titlebar-blur': `${Math.max(0, Math.min(44, acrylicBlurPx + 2))}px`,
+      '--app-acrylic-readable-page-strong-mix': acrylicReadableMix(0.82, 52),
+      '--app-acrylic-readable-page-muted-mix': acrylicReadableMix(0.66, 46),
+      '--app-acrylic-readable-surface-mix': acrylicReadableMix(0.78, 50),
+      '--app-acrylic-readable-surface-strong-mix': acrylicReadableMix(1.02, 58),
+      '--app-acrylic-readable-sidebar-mix': acrylicReadableMix(0.9, 54),
+      '--app-acrylic-readable-player-mix': acrylicReadableMix(1.06, 60),
+      '--app-acrylic-text-protection-mix': acrylicProtectionMix(0.34, 28),
       '--app-acrylic-page-strong-mix': acrylicMix(0.95, 58),
       '--app-acrylic-page-muted-mix': acrylicMix(0.78, 52),
       '--app-acrylic-titlebar-mix': acrylicMix(1.24, 70),
@@ -740,7 +743,6 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
     } as CSSProperties;
   }, [
     appWallpaperRawUiAlpha,
-    appWallpaperSettings.appWindowAcrylicBlurPx,
     appWallpaperSettings.appWindowAcrylicTransparencyPercent,
     appWallpaperSettings.appWallpaperVisualProtectionEnabled,
     appWallpaperSettings.appWallpaperUnifiedOpacityEnabled,
@@ -1697,7 +1699,6 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           'appWallpaperUnifiedOpacityEnabled' in patch ||
           'appWindowAcrylicEnabled' in patch ||
           'appWindowAcrylicKeepWhenUnfocusedEnabled' in patch ||
-          'appWindowAcrylicBlurPx' in patch ||
           'appWindowAcrylicTransparencyPercent' in patch ||
           'appVideoWallpaperPauseMode' in patch)
       ) {
@@ -1736,9 +1737,6 @@ export const AppLayout = ({ routes }: AppLayoutProps): JSX.Element => {
           appWindowAcrylicKeepWhenUnfocusedEnabled: 'appWindowAcrylicKeepWhenUnfocusedEnabled' in patch
             ? (patch.appWindowAcrylicKeepWhenUnfocusedEnabled === true)
             : current.appWindowAcrylicKeepWhenUnfocusedEnabled,
-          appWindowAcrylicBlurPx: 'appWindowAcrylicBlurPx' in patch && Number.isFinite(patch.appWindowAcrylicBlurPx)
-            ? Math.max(0, Math.min(40, Math.round(Number(patch.appWindowAcrylicBlurPx))))
-            : current.appWindowAcrylicBlurPx,
           appWindowAcrylicTransparencyPercent: 'appWindowAcrylicTransparencyPercent' in patch && Number.isFinite(patch.appWindowAcrylicTransparencyPercent)
             ? Math.max(0, Math.min(100, Math.round(Number(patch.appWindowAcrylicTransparencyPercent))))
             : current.appWindowAcrylicTransparencyPercent,

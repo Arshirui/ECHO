@@ -8,7 +8,7 @@ import { InfiniteScrollSentinel, readPageScrollTop, writePageScrollTop } from '.
 import { MediaWallScrollSpacer, useMediaWallScrollSpacer } from '../components/ui/MediaWallScrollSpacer';
 import { StyledSelect } from '../components/ui/StyledSelect';
 import { likedAlbumsChangedEvent, likedChangedEvent, likedTracksChangedEvent } from '../hooks/useLikedMedia';
-import { usePlaybackQueue } from '../stores/PlaybackQueueProvider';
+import { type QueueSource, usePlaybackQueue } from '../stores/PlaybackQueueProvider';
 import { useImeAwareDebouncedSearch } from '../utils/imeInput';
 
 const pageSize = 100;
@@ -147,6 +147,16 @@ export const LikedPage = (): JSX.Element => {
 
   const tracks = useMemo(() => trackItems.map(itemToTrack), [trackItems]);
   const albums = useMemo(() => albumItems.map(itemToAlbum), [albumItems]);
+  const likedQueueSource = useMemo<QueueSource>(() => {
+    const sourceLabel = likedTrackSourceProviders.find((item) => item.provider === trackSourceProvider)?.label ?? trackSourceProvider;
+    return {
+      type: 'liked',
+      label: `${sourceLabel} 我喜欢`,
+      sourceProvider: trackSourceProvider,
+      search: search || undefined,
+      sort,
+    };
+  }, [search, sort, trackSourceProvider]);
   const likedTrackMap = useMemo(() => Object.fromEntries(tracks.map((track) => [track.id, true])), [tracks]);
   const isLoading = isTrackLoading || isAlbumLoading;
   const { wallRef: likedAlbumWallRef, spacerHeight: likedAlbumSpacerHeight } = useMediaWallScrollSpacer<HTMLElement>({
@@ -300,12 +310,12 @@ export const LikedPage = (): JSX.Element => {
       return;
     }
 
-    replaceQueue(playable, { startTrackId: playable[0].id, source: { type: 'manual', label: '喜欢的歌曲' } });
-    await playTrack(playable[0], { source: { type: 'manual', label: '喜欢的歌曲' } });
+    replaceQueue(playable, { startTrackId: playable[0].id, source: likedQueueSource });
+    await playTrack(playable[0], { source: likedQueueSource });
     if (playable.length < tracks.length) {
       setError('部分文件不可用，播放时已跳过。');
     }
-  }, [playTrack, replaceQueue, tracks]);
+  }, [likedQueueSource, playTrack, replaceQueue, tracks]);
 
   const handleShuffleAll = useCallback(async (): Promise<void> => {
     const playable = tracks.filter((track) => !track.unavailable && track.path).sort(() => Math.random() - 0.5);
@@ -314,9 +324,9 @@ export const LikedPage = (): JSX.Element => {
       return;
     }
 
-    replaceQueue(playable, { startTrackId: playable[0].id, source: { type: 'manual', label: '喜欢的歌曲' } });
-    await playTrack(playable[0], { source: { type: 'manual', label: '喜欢的歌曲' } });
-  }, [playTrack, replaceQueue, tracks]);
+    replaceQueue(playable, { startTrackId: playable[0].id, source: likedQueueSource });
+    await playTrack(playable[0], { source: likedQueueSource });
+  }, [likedQueueSource, playTrack, replaceQueue, tracks]);
 
   const selectTrackSourceProvider = useCallback((provider: LikedTrackSourceProvider): void => {
     trackSourceProviderRef.current = provider;
@@ -428,7 +438,7 @@ export const LikedPage = (): JSX.Element => {
   }
 
   return (
-    <div ref={pageRootRef} className="liked-page">
+    <div ref={pageRootRef} className={`liked-page liked-page--${tab}`}>
       <header className="liked-hero">
         <div>
           <span className="queue-kicker">Library</span>
@@ -521,7 +531,7 @@ export const LikedPage = (): JSX.Element => {
             loadedCount={tracks.length}
             likedTrackIds={likedTrackMap}
             onEndReached={() => void loadTracks(trackPage + 1, 'append')}
-            onPlay={(track) => void playTrack(track, { replaceQueueWith: tracks.filter((item) => !item.unavailable), source: { type: 'manual', label: '喜欢的歌曲' } })}
+            onPlay={(track) => void playTrack(track, { replaceQueueWith: tracks.filter((item) => !item.unavailable), source: likedQueueSource })}
             onToggleLiked={(track) => void handleToggleTrackLiked(track)}
           />
         ) : (

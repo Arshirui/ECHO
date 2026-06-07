@@ -1735,6 +1735,10 @@ const echoApi: EchoApi = {
     setArtistImageJobsPaused: (paused) => ipcRenderer.invoke(IpcChannels.LibraryArtistImagesSetPaused, paused),
     kickoffArtistImageBackfill: (options) => ipcRenderer.invoke(IpcChannels.LibraryArtistImagesKickoff, options),
     clearArtistImageCache: () => ipcRenderer.invoke(IpcChannels.LibraryArtistImagesClearCache),
+    chooseArtistAvatar: (artistId) => ipcRenderer.invoke(IpcChannels.LibraryArtistImagesChooseCustom, artistId),
+    setArtistAvatarFromUrl: (artistId, url) =>
+      ipcRenderer.invoke(IpcChannels.LibraryArtistImagesSetCustomUrl, { artistId, url }),
+    clearCustomArtistAvatar: (artistId) => ipcRenderer.invoke(IpcChannels.LibraryArtistImagesClearCustom, artistId),
     onArtistImagesUpdated: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
         handler(payload as { artistId: string | null; artistKey: string; status: string });

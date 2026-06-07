@@ -617,6 +617,18 @@ const normalizeArtistImageRefreshOneRequest = (value: unknown): { artistIdOrKey:
   };
 };
 
+const normalizeArtistImageCustomUrlRequest = (value: unknown): { artistIdOrKey: string; url: string } => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('artist image URL request must be an object');
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    artistIdOrKey: requireText(input.artistId ?? input.artistKey ?? input.id, 'artistId'),
+    url: requireText(input.url, 'url'),
+  };
+};
+
 const normalizeArtistImageBackfillOptions = (value: unknown): { force?: boolean; limit?: number } => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -1154,6 +1166,7 @@ const importOsuArchiveFile = async (
   service: ReturnType<typeof getLibraryService>,
   archivePath: string,
   outputDirectory: string,
+  options: { deferGroupingRefresh?: boolean } = {},
 ): Promise<ImportAudioFilesResult['tracks'][number]> => {
   const imported = await importOsuArchiveAsMp3Queued({
     archivePath,
@@ -1162,6 +1175,7 @@ const importOsuArchiveFile = async (
 
   return service.importAudioFile(imported.outputPath, {
     folderPath: outputDirectory,
+    deferGroupingRefresh: options.deferGroupingRefresh,
     metadata: {
       title: imported.tags.title,
       artist: imported.tags.artist,
@@ -1242,7 +1256,7 @@ const importDroppedFiles = async (value: unknown): Promise<{
             temporaryArchivePath = archivePath;
             await writeFileAsync(archivePath, Buffer.from(file.bytes ?? new Uint8Array()));
           }
-          const track = await importOsuArchiveFile(service, archivePath, outputDirectory);
+          const track = await importOsuArchiveFile(service, archivePath, outputDirectory, { deferGroupingRefresh: true });
           importedTrackIds.push(track.id);
         } catch {
           failedCount += 1;
@@ -1266,7 +1280,7 @@ const importDroppedFiles = async (value: unknown): Promise<{
         } else {
           await writeFileAsync(outputPath, Buffer.from(file.bytes ?? new Uint8Array()));
         }
-        const track = await service.importAudioFile(outputPath, { folderPath: outputDirectory });
+        const track = await service.importAudioFile(outputPath, { folderPath: outputDirectory, deferGroupingRefresh: true });
         importedTrackIds.push(track.id);
       } catch {
         failedCount += 1;
@@ -1292,7 +1306,7 @@ const addLocalAudioFilesToPlaylist = async (playlistId: string, paths: string[])
 
   for (const filePath of classification.audioFiles) {
     try {
-      const track = await service.importAudioFile(filePath);
+      const track = await service.importAudioFile(filePath, { deferGroupingRefresh: true });
       trackIds.push(track.id);
     } catch {
       failedCount += 1;
@@ -1301,7 +1315,7 @@ const addLocalAudioFilesToPlaylist = async (playlistId: string, paths: string[])
 
   for (const filePath of classification.osuArchives) {
     try {
-      const track = await importOsuArchiveFile(service, filePath, osuOutputDirectory);
+      const track = await importOsuArchiveFile(service, filePath, osuOutputDirectory, { deferGroupingRefresh: true });
       trackIds.push(track.id);
     } catch {
       failedCount += 1;
@@ -1330,7 +1344,7 @@ const importAudioFiles = async (paths: string[]): Promise<ImportAudioFilesResult
 
     for (const filePath of classification.audioFiles) {
       try {
-        tracks.push(await service.importAudioFile(filePath));
+        tracks.push(await service.importAudioFile(filePath, { deferGroupingRefresh: true }));
       } catch {
         failedCount += 1;
       }
@@ -1338,7 +1352,7 @@ const importAudioFiles = async (paths: string[]): Promise<ImportAudioFilesResult
 
     for (const filePath of classification.osuArchives) {
       try {
-        tracks.push(await importOsuArchiveFile(service, filePath, osuOutputDirectory));
+        tracks.push(await importOsuArchiveFile(service, filePath, osuOutputDirectory, { deferGroupingRefresh: true }));
       } catch {
         failedCount += 1;
       }
@@ -2011,6 +2025,31 @@ export const registerLibraryIpc = (): void => {
     getLibraryService().kickoffArtistImageBackfill(normalizeArtistImageBackfillOptions(options)),
   );
   ipcMain.handle(IpcChannels.LibraryArtistImagesClearCache, () => getLibraryService().clearArtistImageCache());
+  ipcMain.handle(IpcChannels.LibraryArtistImagesChooseCustom, async (_event, artistIdOrKey: unknown) => {
+    const result = await dialog.showOpenDialog({
+      title: '设置艺术家头像',
+      properties: ['openFile'],
+      filters: [
+        {
+          name: 'Images',
+          extensions: ['jpg', 'jpeg', 'png', 'webp'],
+        },
+      ],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return getLibraryService().setCustomArtistImageFromFile(requireText(artistIdOrKey, 'artistId'), result.filePaths[0]);
+  });
+  ipcMain.handle(IpcChannels.LibraryArtistImagesSetCustomUrl, (_event, request: unknown) => {
+    const normalized = normalizeArtistImageCustomUrlRequest(request);
+    return getLibraryService().setCustomArtistImageFromUrl(normalized.artistIdOrKey, normalized.url);
+  });
+  ipcMain.handle(IpcChannels.LibraryArtistImagesClearCustom, (_event, artistIdOrKey: unknown) =>
+    getLibraryService().clearCustomArtistImage(requireText(artistIdOrKey, 'artistId')),
+  );
   ipcMain.handle(IpcChannels.LibraryArtistOnlineInfoClearCache, () => getLibraryService().clearArtistOnlineInfoCache());
   ipcMain.handle(IpcChannels.LibraryGetAlbumTracks, (_event, albumId: unknown, query: unknown) =>
     getLibraryService().getAlbumTracks(requireText(albumId, 'albumId'), normalizeQuery(query)),

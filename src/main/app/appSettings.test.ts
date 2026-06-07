@@ -95,7 +95,6 @@ describe('app settings normalization', () => {
     expect(settings.rememberedWindowSize).toBeNull();
     expect(settings.appWindowAcrylicEnabled).toBe(false);
     expect(settings.appWindowAcrylicKeepWhenUnfocusedEnabled).toBe(false);
-    expect(settings.appWindowAcrylicBlurPx).toBe(22);
     expect(settings.appWindowAcrylicTransparencyPercent).toBe(70);
     expect(settings.appCustomWallpaperPath).toBeNull();
     expect(settings.appWallpaperMediaType).toBe('image');
@@ -485,8 +484,6 @@ describe('app settings normalization', () => {
     expect(normalizeSettings({ appWindowAcrylicEnabled: true }).appWindowAcrylicEnabled).toBe(true);
     expect(normalizeSettings({ appWindowAcrylicEnabled: 'true' as never }).appWindowAcrylicEnabled).toBe(false);
     expect(normalizeSettings({ appWindowAcrylicKeepWhenUnfocusedEnabled: true }).appWindowAcrylicKeepWhenUnfocusedEnabled).toBe(true);
-    expect(normalizeSettings({ appWindowAcrylicBlurPx: -5 }).appWindowAcrylicBlurPx).toBe(0);
-    expect(normalizeSettings({ appWindowAcrylicBlurPx: 99 }).appWindowAcrylicBlurPx).toBe(40);
     expect(normalizeSettings({ appWindowAcrylicTransparencyPercent: -5 }).appWindowAcrylicTransparencyPercent).toBe(0);
     expect(normalizeSettings({ appWindowAcrylicTransparencyPercent: 100 }).appWindowAcrylicTransparencyPercent).toBe(100);
   });

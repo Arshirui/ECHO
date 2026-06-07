@@ -289,6 +289,19 @@ describe('preload SMTC API', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryCreateInboxPlaylist, { scope: 'latest', filter: 'missing_cover' });
   });
 
+  it('exposes custom artist avatar helpers through IPC', async () => {
+    await exposedApi!.library.chooseArtistAvatar('artist-1');
+    await exposedApi!.library.setArtistAvatarFromUrl('artist-1', 'https://example.test/avatar.png');
+    await exposedApi!.library.clearCustomArtistAvatar('artist-1');
+
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryArtistImagesChooseCustom, 'artist-1');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryArtistImagesSetCustomUrl, {
+      artistId: 'artist-1',
+      url: 'https://example.test/avatar.png',
+    });
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(IpcChannels.LibraryArtistImagesClearCustom, 'artist-1');
+  });
+
   it('serializes dropped files for library import', async () => {
     const file = new File([new Uint8Array([1, 2, 3])], 'song.flac', { type: 'audio/flac' });
     await exposedApi!.library.importDroppedFiles([file]);

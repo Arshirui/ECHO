@@ -444,6 +444,9 @@ export type EchoApi = {
     setArtistImageJobsPaused: (paused: boolean) => Promise<ArtistImageJobStatus>;
     kickoffArtistImageBackfill: (options?: { force?: boolean; limit?: number }) => Promise<ArtistImageJobStatus>;
     clearArtistImageCache: () => Promise<ArtistImageCacheClearResult>;
+    chooseArtistAvatar: (artistId: string) => Promise<ArtistImageCacheEntry | null>;
+    setArtistAvatarFromUrl: (artistId: string, url: string) => Promise<ArtistImageCacheEntry | null>;
+    clearCustomArtistAvatar: (artistId: string) => Promise<ArtistImageCacheEntry | null>;
     onArtistImagesUpdated: (handler: (payload: { artistId: string | null; artistKey: string; status: string }) => void) => () => void;
     onLibraryChanged?: (handler: () => void) => () => void;
     onLikedTracksChanged?: (handler: () => void) => () => void;

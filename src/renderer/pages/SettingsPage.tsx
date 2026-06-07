@@ -5140,7 +5140,6 @@ export const SettingsPage = (): JSX.Element => {
     playbackStatus: segmentPlaybackStatus,
     playbackVisualIntent: sharedPlaybackStatus.playbackVisualIntent,
   });
-  const libraryHeavyRefreshAllowed = segmentVisualState !== 'playing' && segmentVisualState !== 'loading';
   const segmentIsSpotifyTrack = isSpotifyTrack(segmentCurrentTrack);
   const segmentTitle = segmentCurrentTrack?.title ?? titleFromPath(segmentFilePath);
   const segmentArtist = segmentCurrentTrack?.artist ?? segmentCurrentTrack?.albumArtist ?? '';
@@ -5553,26 +5552,14 @@ export const SettingsPage = (): JSX.Element => {
       return undefined;
     }
 
-    let cacheInventoryTimer: number | null = null;
     const cancelIdleTask = scheduleSettingsIdleTask(() => {
       void refreshDuplicateSummary();
-
-      if (!libraryHeavyRefreshAllowed) {
-        return;
-      }
-
-      cacheInventoryTimer = window.setTimeout(() => {
-        void refreshCacheInventory();
-      }, 900);
     });
 
     return () => {
       cancelIdleTask();
-      if (cacheInventoryTimer !== null) {
-        window.clearTimeout(cacheInventoryTimer);
-      }
     };
-  }, [activeSection, libraryDeferredRefreshReady, libraryHeavyRefreshAllowed, refreshCacheInventory, refreshDuplicateSummary]);
+  }, [activeSection, libraryDeferredRefreshReady, refreshDuplicateSummary]);
 
   useEffect(() => {
     if (activeSection !== 'library') {
@@ -6930,15 +6917,6 @@ export const SettingsPage = (): JSX.Element => {
     (value: number): void => {
       patchAppSettings({
         appWindowAcrylicTransparencyPercent: Math.max(0, Math.min(100, Math.round(value))),
-      });
-    },
-    [patchAppSettings],
-  );
-
-  const handleWindowAcrylicBlurChange = useCallback(
-    (value: number): void => {
-      patchAppSettings({
-        appWindowAcrylicBlurPx: Math.max(0, Math.min(40, Math.round(value))),
       });
     },
     [patchAppSettings],
@@ -11423,29 +11401,25 @@ export const SettingsPage = (): JSX.Element => {
                     <button
                       className={`settings-shortcut-key ${isRecording ? 'is-recording' : ''}`}
                       type="button"
+                      aria-label={t('settings.shortcuts.action.record')}
                       disabled={!appSettings}
+                      title={t('settings.shortcuts.action.record')}
                       onClick={() => setRecordingShortcutTarget({ scope, action: item.action })}
                     >
                       {isRecording
                         ? t('settings.shortcuts.recording')
                         : formatAcceleratorForDisplay(binding.accelerator, t('settings.shortcuts.empty'))}
                     </button>
-                    <div className="settings-chip-row settings-chip-row--actions">
+                    <div className="settings-shortcut-actions">
                       <button
-                        className="settings-action-button"
+                        className="settings-icon-button settings-shortcut-clear"
                         type="button"
-                        disabled={!appSettings}
-                        onClick={() => setRecordingShortcutTarget({ scope, action: item.action })}
-                      >
-                        {t('settings.shortcuts.action.record')}
-                      </button>
-                      <button
-                        className="settings-action-button"
-                        type="button"
+                        aria-label={t('settings.shortcuts.action.clear')}
                         disabled={!appSettings || !binding.accelerator}
+                        title={t('settings.shortcuts.action.clear')}
                         onClick={() => handleShortcutClear(scope, item.action)}
                       >
-                        {t('settings.shortcuts.action.clear')}
+                        <X size={14} />
                       </button>
                       <ToggleButton
                         active={binding.enabled}
@@ -13073,17 +13047,6 @@ export const SettingsPage = (): JSX.Element => {
                           onChange={handleWindowAcrylicTransparencyChange}
                         />
                       </div>
-                      <div className="settings-acrylic-slider">
-                        <span>{t('settings.appearance.windowAcrylic.blur')}</span>
-                        <NumberRangeField
-                          min={0}
-                          max={40}
-                          step={1}
-                          suffix="px"
-                          value={appSettings.appWindowAcrylicBlurPx ?? 22}
-                          onChange={handleWindowAcrylicBlurChange}
-                        />
-                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -13838,6 +13801,10 @@ export const SettingsPage = (): JSX.Element => {
                     <strong title={currentCacheDirectoryLabel}>{currentCacheDirectoryLabel}</strong>
                   </div>
                   <div className="settings-chip-row settings-chip-row--left">
+                    <button className="settings-action-button" type="button" onClick={() => void refreshCacheInventory()} disabled={cacheInventoryBusy}>
+                      <RefreshCw className={cacheInventoryBusy ? 'spinning-icon' : undefined} size={15} />
+                      刷新清单
+                    </button>
                     <button className="settings-action-button" type="button" onClick={() => void handleCacheDirectoryChoose()} disabled={cacheDirectoryBusy}>
                       <FolderOpen size={15} />
                       选择目录

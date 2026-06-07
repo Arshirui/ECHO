@@ -507,6 +507,9 @@ const installLibraryService = () => {
       summary: { total: 2, matched: 0, pending: 2, loading: 0, notFound: 0, error: 0, rateLimited: 0 },
     })),
     clearArtistImageCache: vi.fn(() => ({ removedRows: 0, deletedFiles: 0, freedBytes: 0 })),
+    setCustomArtistImageFromFile: vi.fn(async () => null),
+    setCustomArtistImageFromUrl: vi.fn(async () => null),
+    clearCustomArtistImage: vi.fn(() => null),
     getAlbumTracks: vi.fn(),
     getSummary: vi.fn(() => ({ songCount: 2, albumCount: 1, artistCount: 2, folderCount: 1, totalDuration: 2, lastScanAt: null })),
     refreshAlbumGrouping: vi.fn(() => ({ songCount: 2, albumCount: 1, artistCount: 2, folderCount: 1, totalDuration: 2, lastScanAt: null })),
@@ -908,7 +911,10 @@ describe('library IPC', () => {
       outputDirectory: root,
     });
     expect(existsSync(join(root, 'song.flac'))).toBe(true);
-    expect(getLibraryServiceMock().importAudioFile).toHaveBeenCalledWith(join(root, 'song.flac'), { folderPath: root });
+    expect(getLibraryServiceMock().importAudioFile).toHaveBeenCalledWith(
+      join(root, 'song.flac'),
+      { folderPath: root, deferGroupingRefresh: true },
+    );
   });
 
   it('imports dropped osu archives through the shared importer without treating them as unsupported', async () => {
@@ -935,6 +941,7 @@ describe('library IPC', () => {
       `${root}\\Artist - Song.mp3`,
       expect.objectContaining({
         folderPath: root,
+        deferGroupingRefresh: true,
         metadata: expect.objectContaining({
           title: 'Song',
           artist: 'Artist',
@@ -997,8 +1004,8 @@ describe('library IPC', () => {
       missingPath,
     ]);
 
-    expect(service.importAudioFile).toHaveBeenCalledWith(firstPath);
-    expect(service.importAudioFile).toHaveBeenCalledWith(secondPath);
+    expect(service.importAudioFile).toHaveBeenCalledWith(firstPath, { deferGroupingRefresh: true });
+    expect(service.importAudioFile).toHaveBeenCalledWith(secondPath, { deferGroupingRefresh: true });
     expect(osuArchiveImportMock.importOsuArchiveAsMp3Queued).toHaveBeenCalledWith(
       expect.objectContaining({ archivePath: osuPath }),
     );
@@ -1155,7 +1162,7 @@ describe('library IPC', () => {
       filePath: playlistPath,
     });
     expect(service.createPlaylist).toHaveBeenCalledWith({ name: 'Road Mix' });
-    expect(service.importAudioFile).toHaveBeenCalledWith(audioPath);
+    expect(service.importAudioFile).toHaveBeenCalledWith(audioPath, { deferGroupingRefresh: true });
     expect(service.addTracksToPlaylist).toHaveBeenCalledWith('playlist-imported', [`track-${audioPath}`]);
   });
 
@@ -1410,6 +1417,7 @@ describe('library IPC', () => {
 
   it('registers artist image cache IPC handlers', async () => {
     const service = installLibraryService();
+    showOpenDialogMock.mockResolvedValue({ canceled: false, filePaths: ['D:\\Avatar\\suara.png'] });
 
     await handlers[IpcChannels.LibraryArtistImagesEnqueueMissing]!(null, {
       artists: [{ id: 'artist-1', name: 'Suara' }],
@@ -1424,6 +1432,9 @@ describe('library IPC', () => {
     await handlers[IpcChannels.LibraryArtistImagesSetPaused]!(null, true);
     await handlers[IpcChannels.LibraryArtistImagesKickoff]!(null, { force: true, limit: 50 });
     await handlers[IpcChannels.LibraryArtistImagesClearCache]!();
+    await handlers[IpcChannels.LibraryArtistImagesChooseCustom]!(null, 'artist-1');
+    await handlers[IpcChannels.LibraryArtistImagesSetCustomUrl]!(null, { artistId: 'artist-1', url: 'https://example.test/avatar.png' });
+    await handlers[IpcChannels.LibraryArtistImagesClearCustom]!(null, 'artist-1');
     await handlers[IpcChannels.LibraryArtistOnlineInfoClearCache]!();
 
     expect(service.enqueueMissingArtistImages).toHaveBeenCalledWith([{ id: 'artist-1', name: 'Suara', artistKey: undefined, artistName: undefined }], {
@@ -1438,6 +1449,9 @@ describe('library IPC', () => {
     expect(service.setArtistImageJobsPaused).toHaveBeenCalledWith(true);
     expect(service.kickoffArtistImageBackfill).toHaveBeenCalledWith({ force: true, limit: 50 });
     expect(service.clearArtistImageCache).toHaveBeenCalledTimes(1);
+    expect(service.setCustomArtistImageFromFile).toHaveBeenCalledWith('artist-1', 'D:\\Avatar\\suara.png');
+    expect(service.setCustomArtistImageFromUrl).toHaveBeenCalledWith('artist-1', 'https://example.test/avatar.png');
+    expect(service.clearCustomArtistImage).toHaveBeenCalledWith('artist-1');
     expect(service.clearArtistOnlineInfoCache).toHaveBeenCalledTimes(1);
   });
 

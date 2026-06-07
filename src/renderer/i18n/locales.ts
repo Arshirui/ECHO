@@ -1894,7 +1894,6 @@ export type TranslationKey =
   | 'settings.appearance.nowPlayingCoverColor.description'
   | 'settings.appearance.nowPlayingCoverColor.title'
   | 'settings.appearance.windowAcrylic.description'
-  | 'settings.appearance.windowAcrylic.blur'
   | 'settings.appearance.windowAcrylic.keepWhenUnfocused'
   | 'settings.appearance.windowAcrylic.restartConfirm'
   | 'settings.appearance.windowAcrylic.title'
@@ -5043,7 +5042,6 @@ const zhCN: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.description': '开启后，正在播放页会在空闲时从小封面抽样生成轻量背景；低负载模式会自动跳过。默认关闭。',
   'settings.appearance.windowAcrylic.title': '窗口亚克力',
   'settings.appearance.windowAcrylic.description': '开启后下次启动会使用系统亚克力材质，让桌面背景从窗口后方透出；界面会保留可读遮罩。Windows 11 22H2 及以上效果最佳。',
-  'settings.appearance.windowAcrylic.blur': '模糊度',
   'settings.appearance.windowAcrylic.keepWhenUnfocused': '失焦时保持通透',
   'settings.appearance.windowAcrylic.restartConfirm': '窗口亚克力需要重启 ECHO 才能改变系统窗口材质。现在重启吗？',
   'settings.appearance.windowAcrylic.transparency': '透明度',
@@ -8901,7 +8899,6 @@ const zhTW: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.description': '開啟後，正在播放頁會在閒置時從小封面取樣生成輕量背景；低負載模式會自動略過。預設關閉。',
   'settings.appearance.windowAcrylic.title': '視窗壓克力',
   'settings.appearance.windowAcrylic.description': '開啟後下次啟動會使用系統壓克力材質，讓桌面背景從視窗後方透出；介面會保留可讀遮罩。Windows 11 22H2 以上效果最佳。',
-  'settings.appearance.windowAcrylic.blur': '模糊度',
   'settings.appearance.windowAcrylic.keepWhenUnfocused': '失焦時保持通透',
   'settings.appearance.windowAcrylic.restartConfirm': '視窗壓克力需要重新啟動 ECHO 才能變更系統視窗材質。現在重新啟動嗎？',
   'settings.appearance.windowAcrylic.transparency': '透明度',
@@ -11833,7 +11830,6 @@ const jaJP: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.description': '有効にすると、再生中ページがアイドル時に小さなカバー画像から軽量な背景色を抽出します。低負荷モードでは自動的にスキップします。既定はオフです。',
   'settings.appearance.windowAcrylic.title': 'ウィンドウ アクリル',
   'settings.appearance.windowAcrylic.description': '有効にすると次回起動時にシステムのアクリル素材を使い、デスクトップ背景をウィンドウ越しに見せます。読みやすさを保つ保護レイヤーは維持します。Windows 11 22H2 以降で最適です。',
-  'settings.appearance.windowAcrylic.blur': 'ぼかし',
   'settings.appearance.windowAcrylic.keepWhenUnfocused': '非アクティブ時も透明感を維持',
   'settings.appearance.windowAcrylic.restartConfirm': 'ウィンドウ アクリルでシステムのウィンドウ素材を変更するには ECHO の再起動が必要です。今すぐ再起動しますか？',
   'settings.appearance.windowAcrylic.transparency': '透明度',
@@ -14954,7 +14950,6 @@ const enUS: TranslationMap = {
   'settings.appearance.nowPlayingCoverColor.description': 'Sample the small cover art while idle to tint the Now Playing page. Low-load playback mode skips it automatically. Off by default.',
   'settings.appearance.windowAcrylic.title': 'Window Acrylic',
   'settings.appearance.windowAcrylic.description': 'Use the system acrylic material on next launch so the desktop shows through behind the window, while keeping a readability scrim over the UI. Best on Windows 11 22H2 and later.',
-  'settings.appearance.windowAcrylic.blur': 'Blur',
   'settings.appearance.windowAcrylic.keepWhenUnfocused': 'Keep translucent when unfocused',
   'settings.appearance.windowAcrylic.restartConfirm': 'Window Acrylic needs an ECHO restart to change the system window material. Restart now?',
   'settings.appearance.windowAcrylic.transparency': 'Transparency',

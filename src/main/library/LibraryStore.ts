@@ -3948,6 +3948,76 @@ export class LibraryStore {
     return this.mapPlaybackStatsDashboard(totalsRow, topTrackRows, topArtistRows, topAlbumRows, formatRows, qualityRows, dayRows);
   }
 
+  getPlaybackStatsDashboardActivity(query?: PlaybackHistoryQuery): PlaybackStatsDashboard {
+    const { search, from, to, completedOnly } = pageFromHistoryQuery(query);
+    const searchOptions = this.readSearchOptions();
+    const searchFilter = buildSearchFilter(search, [
+      likePredicate('history.title'),
+      likePredicate('history.artist'),
+      likePredicate("COALESCE(history.album, '')"),
+      likePredicate("COALESCE(history.title_snapshot, '')"),
+      likePredicate("COALESCE(history.artist_snapshot, '')"),
+      likePredicate('history.track_path'),
+    ], searchOptions);
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+
+    if (searchFilter.sql) {
+      clauses.push(searchFilter.sql);
+      params.push(...searchFilter.params);
+    }
+
+    if (from) {
+      clauses.push('history.started_at >= ?');
+      params.push(from);
+    }
+
+    if (to) {
+      clauses.push('history.started_at < ?');
+      params.push(to);
+    }
+
+    if (completedOnly) {
+      clauses.push('history.completed > 0');
+    }
+
+    const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const historyKeySql = 'COALESCE(history.stable_key, history.track_id, history.track_path)';
+    const totalsRow = this.getRow(
+      `SELECT
+         COUNT(*) AS play_count,
+         COALESCE(SUM(CASE WHEN history.completed > 0 THEN 1 ELSE 0 END), 0) AS completed_count,
+         COALESCE(SUM(history.played_seconds), 0) AS played_seconds,
+         COUNT(DISTINCT ${historyKeySql}) AS unique_tracks,
+         COUNT(DISTINCT COALESCE(NULLIF(TRIM(COALESCE(history.artist_snapshot, history.artist, '')), ''), 'Unknown Artist')) AS unique_artists
+       FROM playback_history AS history
+       ${whereSql}`,
+      ...params,
+    );
+
+    const dayClauses = [...clauses];
+    const dayParams = [...params];
+    if (!from && !to) {
+      dayClauses.push('history.started_at >= ?');
+      dayParams.push(playbackStatsActivityStartIso());
+    }
+    const dayWhereSql = dayClauses.length > 0 ? `WHERE ${dayClauses.join(' AND ')}` : '';
+    const dayRows = this.allRows(
+      `SELECT
+         substr(history.started_at, 1, 10) AS date,
+         COUNT(*) AS play_count,
+         COALESCE(SUM(history.played_seconds), 0) AS played_seconds
+       FROM playback_history AS history
+       ${dayWhereSql}
+       GROUP BY 1
+       ORDER BY date DESC
+       LIMIT 371`,
+      ...dayParams,
+    );
+
+    return this.mapPlaybackStatsDashboard(totalsRow, [], [], [], [], [], dayRows);
+  }
+
   private getPlaybackStatsDashboardFromHistoryStats(): PlaybackStatsDashboard {
     const totalsRow = this.getRow(
       `SELECT

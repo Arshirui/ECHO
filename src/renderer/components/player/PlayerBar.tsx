@@ -32,6 +32,7 @@ import { PlayerSpeedControl } from './PlayerSpeedControl';
 import { PlayerStatusChips } from './PlayerStatusChips';
 import { PlayerTransport } from './PlayerTransport';
 import { PlayerVolumeControl } from './PlayerVolumeControl';
+import { SleepTimerButton } from './SleepTimerButton';
 import { formatAudioHostError, shouldSuppressAudioHostError } from './audioErrorFormat';
 import { applyMediaSessionSnapshot } from './mediaSession';
 import { titleFromPath } from './playerFormat';
@@ -2675,6 +2676,7 @@ export const PlayerBar = ({
       </div>
 
       <div className="output-status">
+        <SleepTimerButton />
         {hasDesktopLyricsBridge ? (
           <button
             className={`icon-button ${desktopLyricsVisible ? 'is-soft-active' : ''}`}

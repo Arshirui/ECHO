@@ -31,7 +31,6 @@ const settings: AppSettings = {
   touchOnScreenKeyboardEnabled: false,
   appWindowAcrylicEnabled: false,
   appWindowAcrylicKeepWhenUnfocusedEnabled: false,
-  appWindowAcrylicBlurPx: 22,
   appWindowAcrylicTransparencyPercent: 70,
   appCustomWallpaperPath: null,
   appWallpaperScalePercent: 100,
@@ -1796,12 +1795,9 @@ describe('SettingsPage', () => {
     expect(confirmSpy).toHaveBeenCalledWith('settings.appearance.windowAcrylic.restartConfirm');
     expect(relaunchAppMock).toHaveBeenCalledTimes(1);
 
-    const sliders = within(row).getAllByRole('slider') as HTMLInputElement[];
-    fireEvent.change(sliders[0], { target: { value: '100' } });
+    const transparencySlider = within(row).getByRole('slider') as HTMLInputElement;
+    fireEvent.change(transparencySlider, { target: { value: '100' } });
     await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appWindowAcrylicTransparencyPercent: 100 }));
-
-    fireEvent.change(sliders[1], { target: { value: '36' } });
-    await waitFor(() => expect(setSettingsMock).toHaveBeenCalledWith({ appWindowAcrylicBlurPx: 36 }));
 
     const keepWhenUnfocusedToggle = within(row)
       .getByText('settings.appearance.windowAcrylic.keepWhenUnfocused')

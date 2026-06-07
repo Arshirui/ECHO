@@ -12,7 +12,6 @@ import {
   SkipForward,
 } from 'lucide-react';
 import type { RepeatMode } from '../../stores/PlaybackQueueProvider';
-import { SleepTimerButton } from './SleepTimerButton';
 
 type PlayerTransportProps = {
   isPlaying: boolean;
@@ -105,6 +104,5 @@ export const PlayerTransport = ({
     <button className="icon-button" type="button" aria-label="MV" title="MV" onClick={onOpenMv}>
       <Film size={17} />
     </button>
-    <SleepTimerButton />
   </div>
 );
